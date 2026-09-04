@@ -1051,3 +1051,97 @@ per layer. Measured instead of assumed, in Release, warm, per file: the WHOLE re
 copper layer — compositing included, which dominates it — is **304 ms**, and all six copper layers
 together are **978 ms** of a ~13 s board import. The bounding-box prefilter is what makes it a
 non-issue; without one it would not be. Do not remove it.
+
+## Reading a `.clay` back was dominated by `EnsureValidHoles` — two box prefilters, 5.4x (2026-09-04)
+
+Found while moving the Gerber import off the UI thread (`src/Ui/RESOLVED.md` has the user-facing
+half). `LayoutPersistence.FromFileModel` runs `LayoutClipper.EnsureValidHoles` over every shape on
+load — deliberately, per S3.1a R10b: a hand-edited or otherwise not-Clipper2-produced shape may carry
+an invalid hole, and the loader enforces validity rather than trusting it. The comment there calls it
+"a no-op for the overwhelming common case (no holes, or holes already valid)", and on hand-drawn
+layouts it is. It is not a no-op on Gerber-imported artwork.
+
+### Measure in RELEASE, and measure PER SHAPE
+
+The first measurement of this was `dotnet run` and `dotnet test`, i.e. **Debug**, and read 17.4 s. The
+Release figure for the same file is **1.69 s** — this is a tight managed loop over `long[]`, which is
+about the worst case for a Debug build, while the Gerber parse beside it is string and file work and
+barely moves between the two. Quoted together, Debug made the load look like ten times the import
+when in the shipped app the two are about equal. Nothing here is measurable with `dotnet test`; a
+scratch harness built `-c Release` is.
+
+Per shape, on the 28 MB `.clay` a real 20-layer board imports to (3,284 shapes, 1,573 of them holed,
+3,591 holes between them), it is not spread out at all — **six shapes are 1.67 s of the 1.69 s**, and
+the worst one alone is 750 ms:
+
+| holes | outer ring vertices | hole vertices | before | after |
+|---|---|---|---|---|
+| 228 | 1,751 | 21,772 | 750 ms | 155 ms |
+| 55 | 1,562 | 12,220 | 230 ms | 25 ms |
+| 33 | 1,518 | 11,868 | 182 ms | 50 ms |
+| mean over all 1,573 | 390 | - | - | - |
+
+The mean shape has 2.3 holes. **The cost lives entirely in the composited copper pours**, and any
+attempt to reason about this from the average is reasoning about the wrong shape.
+
+### What the three terms actually cost, and which one a box can help
+
+For the 228-hole pour: point-in-outer is `holeVerts x outerV` = 38M; hole-vs-outer crossing is another
+38M segment-pair tests; and **hole-vs-hole is `sum over pairs of h_i x h_j` = ~233M**, the largest of
+the three, because `HolesAreValid` tested every PAIR of holes against every other in full.
+
+Two prefilters, and they are prefilters — every reject is a case where no segment pair can possibly
+meet, so the answer is unchanged:
+
+- **Hole vs hole: one ring-box overlap test per pair.** The holes of a pour are disjoint by
+  construction, so essentially every pair dies here — ~26k box tests instead of ~233M segment tests.
+- **Hole vs outer: reject the OUTER's segments against the HOLE's box.** This is the part that is
+  easy to get backwards and worthless if you do. A hole lies inside the outer ring's box, so
+  rejecting the hole's few segments against the outer's box discards nothing; it is the outer's
+  thousands of segments that have to be thrown away against the hole's small box. `RingsIntersect`
+  therefore puts the LONGER ring on the outside of the loop and rejects its segments against the
+  shorter ring's box — legitimate because `SegmentsIntersect` is symmetric in its two segments.
+
+Boxes are computed once per ring into a `RingInfo`, not per pair; that is what makes the pair reject
+O(1).
+
+**Result: 1.69 s -> 0.31 s for the check, and ~1.9 s -> ~0.45 s for the whole `LoadFromFile`
+(Release).**
+
+### The remaining term is not a box problem
+
+What is left is `PointInOrOnRing` — ~155 ms of the 0.31 s, nearly all on that one pour. A ray cast has
+to see every segment the ray can cross, so there is nothing to reject. **Gating `OnSegment` behind the
+segment's own box was tried and measured no better** (0.34 s against a 0.30-0.34 s spread, i.e. inside
+the noise): the test is three multiplies on values already in registers, so four integer compares and
+a branch buy back about what they cost. Cutting this further needs an INDEX over the outer ring —
+segments bucketed by y, so a cast at height `py` visits one band instead of all N — with a build cost
+of its own. Not done.
+
+### The one place a box reject DID change an answer, and it was not the boxes
+
+Caught by the differential gate on trial 115 of 3,000, not by reading the code.
+
+**A ring with a repeated consecutive vertex has a ZERO-LENGTH segment, and `OnSegment` answers true
+for every point against one** — its window is `0 <= dot <= lenSq`, and such a segment has `lenSq = 0`
+and `dot = 0` for all points. `SegmentsIntersect`'s collinear branch then returns true, so the
+unfiltered `RingsIntersect` calls such a ring intersecting against *anything at all*, wherever the two
+rings are. The box reject correctly says "these are nowhere near each other" and returns false — which
+would have turned every shape carrying a duplicated vertex from "re-derived through Clipper on load"
+into "loaded as it stands", silently, under a performance edit.
+
+Preserved rather than corrected: `RingInfo` carries `HasZeroLengthSegment`, computed in the same pass
+as the box, and `RingsIntersect` answers that case before the boxes get a say. Whether that repair
+*should* happen is a question about R10b and is left open — but it is now visible, which it was not.
+
+### The gate
+
+`tests/Ui.Tests/LayoutClipperHoleValidityTests.cs` is DIFFERENTIAL: it carries `BruteForce`, the
+pre-change algorithm verbatim and unfiltered, and asserts the two agree on every case. Nine named
+cases (touching holes, a hole touching the outer ring, boxes that overlap where the edges do not,
+duplicated vertices, empty and degenerate rings, a 400-gon with 60 holes) plus a 3,000-trial
+randomized corpus on a fixed seed. Half the trials are laid out adversarially on a coarse lattice —
+that is what produces the exactly-touching and exactly-collinear configurations — and half place
+holes in distinct cells of an interior grid, because an all-adversarial corpus answers "invalid" to
+almost everything and would exercise only one branch; the test asserts that split rather than
+assuming it. `HolesAreValid` was made `internal` so the corpus can drive it on ring arrays directly.

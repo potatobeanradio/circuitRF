@@ -3744,11 +3744,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// this is a defensive no-op path, not a case expected to fire).</summary>
     private void OpenPrimaryLayoutIfResolvable(string cellDir)
     {
+        if (ResolvePrimaryLayoutPath(cellDir) is { } path) OpenOrActivateLayout(path);
+    }
+
+    /// <summary>
+    /// The same open with the <c>.clay</c> READ on a background thread first.
+    ///
+    /// <para>Reading a layout is not free and is not proportional to how big the file looks:
+    /// <c>LayoutClipper.EnsureValidHoles</c> runs over every shape on load, and on a Gerber-imported
+    /// board — thousands of composited pours, each with hundreds of holes — that is seconds to tens
+    /// of seconds. Done inline it is a frozen window with no cursor and no way out, which is exactly
+    /// what an import that had already moved its own work off the thread still looked like.</para>
+    ///
+    /// <para>Only the READ moves. Everything the session and the document do afterwards touches
+    /// view-model state and the dock, so it stays on the UI thread — this hands
+    /// <see cref="OpenOrActivateLayout"/> a model that is already in memory rather than making any
+    /// of that concurrent.</para>
+    /// </summary>
+    private async Task OpenPrimaryLayoutIfResolvableAsync(string cellDir)
+    {
+        if (ResolvePrimaryLayoutPath(cellDir) is not { } path) return;
+
+        LayoutView? preloaded = null;
+        try { preloaded = await Task.Run(() => LayoutPersistence.LoadFromFile(Path.GetFullPath(path))); }
+        catch (Exception ex)
+        {
+            // Not fatal here, and not silent either: fall through to the ordinary open, which reads
+            // it again on the UI thread and reports the failure in its own words.
+            Messages.Warning($"Could not pre-read '{Path.GetFileName(path)}' ({ex.Message}); opening it directly.");
+        }
+
+        OpenOrActivateLayout(path, preloaded);
+    }
+
+    private static string? ResolvePrimaryLayoutPath(string cellDir)
+    {
         var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
         if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || primary.ResolvedName is null)
-            return;
-        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-        OpenOrActivateLayout(Path.Combine(layoutDir, primary.ResolvedName));
+            return null;
+        return Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), primary.ResolvedName);
     }
 
     /// <summary>Shows the shared L1g layer-mapping dialog (never a second reconciliation UI) for any
@@ -3972,57 +4006,151 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var techRes = ResolveTechFor(null, null); // the workspace's own default technology
         string chosen = files[0].Path.LocalPath;
 
-        // Both prompts have to be answerable from the background thread the import runs on, and both
-        // are dialogs, so both hop back to the UI thread the same way the shared layer-mapping bridge
-        // already does in every other import here.
-        CircuitRF.Design.Layout.Interchange.GerberImport.ImportResult result;
-        try
-        {
-            result = await Task.Run(() =>
-                CircuitRF.Design.Layout.Interchange.GerberImportEntry.Run(
-                    chosen, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
-                    promptForScope: survey => Dispatcher.UIThread
-                        .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog(survey)
-                            .ShowDialog<CircuitRF.Design.Layout.Interchange.GerberImportScope?>(window))
-                        .GetAwaiter().GetResult(),
-                    pickFolder: () => Dispatcher.UIThread
-                        .InvokeAsync(async () =>
-                        {
-                            var folders = await window.StorageProvider.OpenFolderPickerAsync(
-                                new FolderPickerOpenOptions { Title = "Import Gerber — Folder", AllowMultiple = false });
-                            return folders.Count == 0 ? null : folders[0].Path.LocalPath;
-                        })
-                        .GetAwaiter().GetResult(),
-                    resolveLayerMapping: rows =>
-                    {
-                        var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows))
-                            .GetAwaiter().GetResult();
-                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
-                    },
-                    resolveDrillFormat: (fileName, inferred, crossCheck, remaining) => Dispatcher.UIThread
-                        .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck, remaining))
-                        .GetAwaiter().GetResult()));
-        }
-        catch (Exception ex)
-        {
-            Messages.Error($"Import Gerber: {ex.Message}");
-            return;
-        }
+        // ── ONE live row for the whole thing (owner report, 2026-09-04) ──────────────────────────
+        //
+        // A real 20-layer board took ~20 s from picker to open with nothing said in between, which is
+        // indistinguishable from a hung application. So the import reports on ONE row that is
+        // rewritten in place, and its per-file notes — there are ~45 of them on that board — are
+        // posted in a block AFTERWARDS. Ticking each note out as it happens would bury the one thing
+        // the user is actually watching, which is how far through it is.
+        //
+        // Nothing here is new machinery: IMessageSink.BeginProgress / IProgressMessage /
+        // RunCancellation / RunControl are what the EM run, the mesh run and the wirebond sweep
+        // already report and cancel through.
+        var live = Messages.BeginProgress("Import Gerber");
+        live.Update("Import Gerber", "starting", indeterminate: true);
 
-        foreach (var msg in result.Messages) Messages.Info(msg);
+        CircuitRF.Design.Layout.Interchange.GerberImport.ImportResult result;
+        using (var cts = new CancellationTokenSource())
+        {
+            var control = new RunControl
+            {
+                Token    = cts.Token,
+                Progress = new Progress<RunProgress>(p => ReportGerberImportProgress(live, p)),
+            };
+
+            var cancellation = new RunCancellation("the Gerber import", () =>
+            {
+                // Said immediately, and it says what cancel MEANS here — the import answers at a file
+                // boundary, so a set mid-read does not stop the instant the menu item is clicked and
+                // silence would read as the Cancel doing nothing.
+                Messages.Info("Stopping the Gerber import. It stops after the file it is reading, and creates nothing.");
+                cts.Cancel();
+            });
+            live.BindCancellation(cancellation);
+
+            // Both prompts have to be answerable from the background thread the import runs on, and
+            // both are dialogs, so both hop back to the UI thread the same way the shared
+            // layer-mapping bridge already does in every other import here.
+            try
+            {
+                result = await Task.Run(() =>
+                    CircuitRF.Design.Layout.Interchange.GerberImportEntry.Run(
+                        chosen, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                        promptForScope: survey => Dispatcher.UIThread
+                            .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog(survey)
+                                .ShowDialog<CircuitRF.Design.Layout.Interchange.GerberImportScope?>(window))
+                            .GetAwaiter().GetResult(),
+                        pickFolder: () => Dispatcher.UIThread
+                            .InvokeAsync(async () =>
+                            {
+                                var folders = await window.StorageProvider.OpenFolderPickerAsync(
+                                    new FolderPickerOpenOptions { Title = "Import Gerber — Folder", AllowMultiple = false });
+                                return folders.Count == 0 ? null : folders[0].Path.LocalPath;
+                            })
+                            .GetAwaiter().GetResult(),
+                        resolveLayerMapping: rows =>
+                        {
+                            var settled = Dispatcher.UIThread
+                                .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows))
+                                .GetAwaiter().GetResult();
+                            return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                        },
+                        resolveDrillFormat: (fileName, inferred, crossCheck, remaining) => Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck, remaining))
+                            .GetAwaiter().GetResult(),
+                        control: control));
+            }
+            catch (Exception ex)
+            {
+                live.Complete(MessageLevel.Error, $"Import Gerber: {ex.Message}");
+                return;
+            }
+            finally
+            {
+                // On every exit path, so the row's Cancel can never keep offering to stop something
+                // that is already over.
+                cancellation.Finish();
+            }
+        }
 
         if (result.Cancelled)
         {
-            Messages.Info("Import Gerber cancelled — nothing was created.");
+            live.Complete(MessageLevel.Info, "Import Gerber cancelled — nothing was created.");
+            ReportGerberImportNotes(result);
             return;
         }
 
         _factory.ProjectTreeTool?.Refresh();
-        Messages.Success(
+
+        // ── Opening the cell is part of what the user waited for, so it reports on the same row ──
+        //
+        // And it was the WHOLE of the lock-up: on that same 20-layer board the import is ~1.8 s and
+        // was already off the thread, while reading the .clay back was ~1.9 s ON it (Release; Debug
+        // makes that read ~17 s and the import barely move, which is how the first pass at this
+        // mis-weighted the two). Left where it was, inside OpenPrimaryLayoutIfResolvable, that was
+        // two seconds of dead window — so the model is read on a background thread and handed to the
+        // open already loaded.
+        if (result.CellDir is { } gerberCellDir)
+        {
+            live.Update("Import Gerber", "opening the imported layout", indeterminate: true);
+            await OpenPrimaryLayoutIfResolvableAsync(gerberCellDir);
+        }
+
+        live.Complete(MessageLevel.Success,
             $"Imported {result.Layers.Count} layer(s) from Gerber into "
             + $"'{Path.GetFileName(result.ImportDir!)}'.");
-        if (result.CellDir is { } gerberCellDir) OpenPrimaryLayoutIfResolvable(gerberCellDir);
+
+        ReportGerberImportNotes(result);
+    }
+
+    /// <summary>
+    /// The import's per-file notes, posted in one block AFTER the whole operation has settled —
+    /// never between its two long phases.
+    ///
+    /// <para><b>Ordering is the whole point (owner report, 2026-09-04).</b> The Messages panel
+    /// auto-scrolls to its newest row on every collection change
+    /// (<c>MessagesView.ScrollToBottom</c>), so anything posted while the live row is still running
+    /// pushes that row out of view — and the user is then watching a static log while the thing they
+    /// wanted to see scrolls off. On a real board these are ~45 notes and the phase that follows them
+    /// is the layout open, which is most of what is left of the wait: posted first, the bar was
+    /// invisible for almost all of it. Posted last, the live row is the bottom row for both long
+    /// phases, and the notes land underneath the summary it settles into.</para>
+    /// </summary>
+    private void ReportGerberImportNotes(CircuitRF.Design.Layout.Interchange.GerberImport.ImportResult result)
+    {
+        foreach (var msg in result.Messages) Messages.Info(msg);
+    }
+
+    /// <summary>
+    /// The Gerber import's one live row, rewritten in place from a
+    /// <see cref="RunProgress"/>.
+    ///
+    /// <para>The import counts on the STAGE pair, not the outer one: its total is not knowable until
+    /// the file set has been classified, which is already work the user is waiting through, and
+    /// <see cref="RunControl.Total"/> is init-only. Everything that changes — the phase name and the
+    /// count — is kept in the counter, which is drawn AFTER the bar, so a long file name cannot shove
+    /// the bar sideways as it ticks past.</para>
+    /// </summary>
+    internal static void ReportGerberImportProgress(IProgressMessage live, RunProgress p)
+    {
+        string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        if (p.StageTotal > 0)
+            live.Update("Import Gerber",
+                        $"{what}  ({FormatCounter(p.StageCompleted, p.StageTotal)})",
+                        100.0 * p.StageCompleted / p.StageTotal);
+        else
+            live.Update("Import Gerber", what, indeterminate: true);
     }
 
     /// <summary>R-L4h-6's own prompt — raised only when L4f's inference had to guess. Null aborts the
@@ -4116,7 +4244,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         return await dialog.ShowDialog<int?>(owner);
     }
 
-    private void OpenOrActivateLayout(string absolutePath)
+    /// <param name="preloaded">A model already read from <paramref name="absolutePath"/> on another
+    /// thread, or null to read it here. Only ever an optimisation — a session already in the registry
+    /// wins over it, exactly as it wins over a fresh read.</param>
+    private void OpenOrActivateLayout(string absolutePath, LayoutView? preloaded = null)
     {
         if (ActivateIfOpen(absolutePath)) return;
 
@@ -4139,7 +4270,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // L3b: funnel through the session registry so a cell simultaneously open as its own tab
             // and pushed into elsewhere shares one session — GetOrCreateLayoutSession does the
             // load-and-wire that used to happen inline here.
-            var vm  = GetOrCreateLayoutSession(absolutePath);
+            var vm  = GetOrCreateLayoutSession(absolutePath, preloaded);
             var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath) { Hierarchy = this };
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -8644,12 +8775,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// ones re-run through the schematic→layout generator, so already-polluted designs are cleaned
     /// the first time they are opened, not only if the owner happens to regenerate them.
     /// </summary>
-    internal LayoutEditorViewModel GetOrCreateLayoutSession(string absClayPath)
+    /// <param name="preloaded">A model already read from <paramref name="absClayPath"/>, so a caller
+    /// that could afford to read it off the UI thread does not pay for it twice. It is used ONLY on
+    /// the fresh-load path: an existing session is still the one truth, and a preloaded model handed
+    /// in alongside one would be a second, silently diverging copy of a document that may already
+    /// have unsaved edits in it.</param>
+    internal LayoutEditorViewModel GetOrCreateLayoutSession(string absClayPath, LayoutView? preloaded = null)
     {
         var key = Path.GetFullPath(absClayPath);
         if (_layoutRegistry.TryGet(key, out var existing))
             return existing!;
-        var model = LayoutPersistence.LoadFromFile(key);
+        var model = preloaded ?? LayoutPersistence.LoadFromFile(key);
 
         int removedRatsnest = SchematicToLayoutGenerator.RemoveRatsnestShapes(model);
 

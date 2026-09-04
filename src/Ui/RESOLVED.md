@@ -18402,3 +18402,82 @@ UseHeadlessDrawing = false })`, `SetupWithoutStarting()`, show the dialog, `Capt
 That renders a real frame with the app's own styles and needs no display — `screencapture` is not
 available to this session, and a headless frame is a better artifact anyway. Worth remembering for
 the next dialog-layout question.
+
+## Importing a large Gerber set locked the window up — and the lock-up was not the import (2026-09-04)
+
+Owner report: importing a very large Gerber set freezes the UI; move it off the UI thread, report it
+in the Messages panel with a progress bar the user can cancel from, and do not flood the panel while
+it runs. Measured first, on a real 20-layer board (~750 KB of artwork across 23 files):
+
+| | Release | Debug |
+|---|---|---|
+| `GerberImport.Import` — classify, read 20 artwork files, 1 drill file, pair vias, write | ~1.8 s, ALREADY on a background thread | ~1.9 s |
+| `LayoutPersistence.LoadFromFile` on the 28 MB `.clay` the import just wrote | **~1.9 s, on the UI thread** | ~17.6 s |
+
+So the import that looked like the problem was already off the thread, and **the freeze was the
+auto-open afterwards** — the last line of `ImportGerberAsync` is `OpenPrimaryLayoutIfResolvable`,
+which reads the cell back inline. Two seconds of dead window on the example board, and it scales with
+the board.
+
+**Measure the load in RELEASE.** The first pass at this quoted 17.4 s, which is the Debug number: the
+load is a tight managed loop over `long[]` and Debug costs it ~10×, while the import beside it is
+string and file work and barely moves. Reported as a single figure the two look like a 1:10 split
+when in the shipped app they are about 1:1. `dotnet run`, `dotnet test` and a `dotnet build` with no
+`-c` all produce Debug, so this is the default thing to get wrong — a scratch harness built
+`-c Release` is the only one of those that answers the question the user is asking.
+
+**Where the load's time goes:** reading the bytes is milliseconds, `JsonSerializer.Deserialize<ClayFile>`
+is a fraction of it, and essentially all the rest is **`LayoutClipper.EnsureValidHoles`**, which
+`FromFileModel` runs over every shape. **Now fixed** — two bounding-box prefilters took it from
+1.69 s to 0.31 s (Release) and the whole load from ~1.9 s to ~0.45 s; `src/Design/RESOLVED.md` has
+the design, the differential gate, and the one place where a box reject would have silently changed
+an answer.
+
+### What changed
+
+- **`GerberImport.Import` takes an optional `RunControl`** — the same object `EmRunService.Run`
+  takes, cancellation and progress bundled rather than two parameters. Null runs the import
+  unobserved, which is why `src/Cli`'s call and every existing test compile untouched (verified: the
+  CLI's `.clay` for that board is **byte-identical** before and after).
+- **One monotone stage bar over `artwork + drill + 1` units**, because the per-artwork-file read is
+  1.5 s of the 1.9 s and a bar that only moved between phases would sit still through all of it.
+  Phases rename the label THROUGH `TickStage(1, nextLabel)`, never through `BeginStage`, which resets
+  the sub-counter and would send the bar backwards on every phase change.
+- **Ticked on ENTRY to each file loop, naming the file about to be read.** A tick at the bottom would
+  have to be repeated before each `continue` — an unreadable file, a refusal — and the one that got
+  forgotten would leave the bar permanently short of its own end.
+- **Cancellation stops being answered at step 10**, the write, and the LAST token check is the same
+  call that advances the counter to its total — so nothing after that line touches the control at
+  all. That placement is load-bearing, and the first build got it wrong: the write's unit was ticked
+  AFTER the write, and `TickStage` checks the token, so a cancel arriving during those ~150 ms would
+  have thrown with the cell already on disk — R-L4g-14's "nothing was created" broken by the
+  cancellation path itself. Everything before step 10 is reading and arithmetic in memory, so a stop
+  there genuinely creates nothing.
+- **The `.clay` is read on a background thread and handed to the open already loaded** —
+  `OpenPrimaryLayoutIfResolvableAsync` → `OpenOrActivateLayout(path, preloaded)` →
+  `GetOrCreateLayoutSession(path, preloaded)`. Only the READ moves; the session, the document and the
+  dock all stay on the UI thread. The preloaded model is used ONLY on the fresh-load path — an
+  existing session in the registry still wins, because a second copy of a document that may already
+  hold unsaved edits is worse than reading the file twice.
+- **One row, and the notes after EVERYTHING.** ~45 per-file notes on that board, all posted in a
+  block once the whole operation has settled (owner: a progress bar in one spot during, all the
+  messages after is fine). Everything that changes lives in the counter, which is drawn AFTER the
+  bar, so a long file name cannot shove the bar sideways as it ticks past.
+
+**The notes go last, not merely after the import — that is a second bug, reported on the first
+build.** The first version posted them the moment `Import` returned, which is BETWEEN the two long
+phases. `MessagesView.ScrollToBottom` auto-scrolls to the newest row on every collection change, so
+45 notes scrolled the live row out of view and the bar was then invisible for the layout open —
+most of what is left of the wait, and exactly the part the bar exists for. `ReportGerberImportNotes` is called
+after the row settles, on both the success and the cancelled path, which makes the live row the
+bottom row for both long phases. The cost is that the settled summary ends up ABOVE its own notes,
+which is the same shape the EM run's two rows already have and is the right trade.
+
+Cancel is the existing right-click-the-row menu item (`MessagesView.axaml`), reached through
+`RunCancellation` exactly as the EM run, the mesh run and the wirebond sweep reach it — no new
+machinery anywhere in this change.
+
+Gates: `tests/Ui.Tests/GerberImportProgressTests.cs` (9 tests — monotone counter reaching its own
+total, per-file labels, a null control behaving identically, an already-cancelled token creating
+nothing, a mid-run cancel stopping early and creating nothing, and the four row-rendering cases).
+Counters only; no wall-clock assertion.

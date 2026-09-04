@@ -8,6 +8,8 @@
 // WorkspaceViewModel supplies the pickers and the dialog, and every rule below is testable with no
 // Avalonia anywhere.
 
+using CircuitRF.Engine;
+
 namespace CircuitRF.Design.Layout.Interchange;
 
 /// <summary>What the user answered to <see cref="GerberImportEntry.FolderSurvey"/>'s question.
@@ -153,8 +155,15 @@ public static class GerberImportEntry
         PromptForScope promptForScope,
         PickFolder pickFolder,
         Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
-        GerberImport.ResolveDrillFormat? resolveDrillFormat = null)
+        GerberImport.ResolveDrillFormat? resolveDrillFormat = null,
+        RunControl? control = null)
     {
+        // The survey classifies every file in the folder BY CONTENT, before either prompt — so it is
+        // the first thing that can take a visible moment on a large set, and the first thing worth
+        // reporting. Cancellation is not offered across the two prompts: a dialog already has its own
+        // Cancel, and one that could also be cancelled from behind would be answering the same
+        // question twice.
+        control?.BeginStage("looking at what the folder holds");
         var survey = Survey(chosenFilePath);
 
         IReadOnlyList<string> files;
@@ -184,7 +193,7 @@ public static class GerberImportEntry
 
         return GerberImport.Import(
             files, parentDir, importName, destTech, destDbuPerMicron,
-            resolveLayerMapping, resolveDrillFormat);
+            resolveLayerMapping, resolveDrillFormat, control);
     }
 
     /// <summary>The same flow for a folder chosen outright, with no file and therefore no
@@ -195,13 +204,15 @@ public static class GerberImportEntry
         Technology? destTech,
         int destDbuPerMicron,
         Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
-        GerberImport.ResolveDrillFormat? resolveDrillFormat = null)
+        GerberImport.ResolveDrillFormat? resolveDrillFormat = null,
+        RunControl? control = null)
     {
         var (files, importName) = ResolveFolder(dir);
         if (files.Count == 0)
             return Cancelled("That folder holds no files, so nothing was imported.");
         return GerberImport.Import(
-            files, parentDir, importName, destTech, destDbuPerMicron, resolveLayerMapping, resolveDrillFormat);
+            files, parentDir, importName, destTech, destDbuPerMicron, resolveLayerMapping,
+            resolveDrillFormat, control);
     }
 
     private static GerberImport.ImportResult Cancelled(string why)

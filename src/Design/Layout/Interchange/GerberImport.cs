@@ -20,6 +20,7 @@
 using Clipper2Lib;
 
 using CircuitRF.Design.Cells;
+using CircuitRF.Engine;
 
 namespace CircuitRF.Design.Layout.Interchange;
 
@@ -90,6 +91,11 @@ public static class GerberImport
     /// import takes it. Returning null aborts the whole import and creates nothing.</param>
     /// <param name="resolveDrillFormat">L4f's format prompt. Called only when the inference actually
     /// had to guess, or when the hits disagree with the artwork's extent.</param>
+    /// <param name="control">Cancellation and progress, exactly as <c>EmRunService.Run</c> takes them
+    /// — the ONE object rather than two parameters. Null (the CLI's case, and every existing test's)
+    /// runs the import unobserved and uncancellable, which is what makes this an additive parameter.
+    /// See <see cref="ImportUnobserved"/> for where the ticks are and where cancellation stops being
+    /// answered.</param>
     public static ImportResult Import(
         IReadOnlyList<string> filePaths,
         string parentDir,
@@ -97,11 +103,64 @@ public static class GerberImport
         Technology? destTech,
         int destDbuPerMicron,
         Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
-        ResolveDrillFormat? resolveDrillFormat = null)
+        ResolveDrillFormat? resolveDrillFormat = null,
+        RunControl? control = null)
     {
         var messages = new List<string>();
+        try
+        {
+            return ImportUnobserved(filePaths, parentDir, importName, destTech, destDbuPerMicron,
+                                    resolveLayerMapping, resolveDrillFormat, control, messages);
+        }
+        catch (OperationCanceledException)
+        {
+            // GRACEFUL, and "nothing was created" is literally true: every cancellation checkpoint
+            // below is BEFORE step 10's ImportFolder.Create, so there is no half-written folder to
+            // clean up here. What the import had already worked out is still reported — a cancelled
+            // run that says nothing at all reads as a crash.
+            messages.Add("Import cancelled — nothing was created.");
+            return Nothing(messages);
+        }
+    }
 
+    /// <summary>
+    /// The import proper. Split out only so <see cref="Import"/> can own the one
+    /// <see cref="OperationCanceledException"/> catch: <see cref="RunControl.Tick"/> and
+    /// <see cref="RunControl.TickStage"/> answer cancellation by THROWING, and a checkpoint spelled
+    /// out at every one of the dozen work boundaries below would be a dozen places to forget one.
+    ///
+    /// <para><b>Where progress is reported.</b> One monotone stage bar over
+    /// <c>artwork + drill + 1</c> units, because the measured cost is overwhelmingly the per-artwork-file
+    /// read (1.5 s of a 1.9 s import on a real 20-layer board) and a bar that only moves between
+    /// phases would sit still through all of it. The label is renamed THROUGH the tick
+    /// (<see cref="RunControl.TickStage"/>'s <c>nextLabel</c>) rather than through
+    /// <see cref="RunControl.BeginStage"/>, which would reset the sub-counter and send the bar
+    /// backwards every time a phase changed.</para>
+    ///
+    /// <para><b>Where cancellation stops being answered: step 10.</b> Everything before it is
+    /// reading and arithmetic in memory, so stopping there creates nothing. From
+    /// <c>ImportFolder.Create</c> onward the import is writing a folder, a technology and a cell —
+    /// about 150 ms of the run — and a stop landing in the middle of that would leave exactly the
+    /// half-written import R-L4g-14 exists to make impossible. So it runs to the end.</para>
+    /// </summary>
+    private static ImportResult ImportUnobserved(
+        IReadOnlyList<string> filePaths,
+        string parentDir,
+        string importName,
+        Technology? destTech,
+        int destDbuPerMicron,
+        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping,
+        ResolveDrillFormat? resolveDrillFormat,
+        RunControl? control,
+        List<string> messages)
+    {
         // ── 1. What is in the set at all (R-L4g-1) ──────────────────────────────────────────────
+        // Indeterminate: the classifier reads every candidate file's CONTENT (R-L4g-1 decides by
+        // content, never by extension), so on a folder of any size this is real work — but its own
+        // denominator is the file count, which is not worth a second bar for the one pass that is
+        // always the cheapest thing here.
+        control?.BeginStage("looking at what the folder holds");
+
         // Deduplicated first: this entry point is public and takes any list, and every per-file map
         // below is keyed on the path. One repeated path is a duplicate key, which is an exception out
         // of the middle of an import rather than a message about it.
@@ -129,6 +188,11 @@ public static class GerberImport
             messages.Add("None of the files given hold Gerber artwork or drill data, so nothing was imported.");
             return Nothing(messages, drillCandidates);
         }
+
+        // ONE counted stage from here to the end, and the only BeginStage after this point — every
+        // later phase renames the label THROUGH the tick, which is what keeps the bar monotone. The
+        // +1 is step 10's write, ticked when the cell is on disk.
+        control?.BeginStage("reading the artwork", artworkFiles.Count + drillFiles.Count + 1);
 
         // ── 2. The job file (R-L4g-5 rung 0) ────────────────────────────────────────────────────
         GerberJobFile.JobFileContents? job = null;
@@ -164,6 +228,12 @@ public static class GerberImport
         var reads = new List<(GerberFileClass File, GerberReadResult Read)>();
         foreach (var file in artworkFiles)
         {
+            // Ticked on ENTRY, naming the file about to be read, so the counter is "which of the N
+            // files is being worked on" and every exit from this body — read, IOException, refusal —
+            // advances it. A tick at the bottom would have to be repeated before each `continue`,
+            // and the one that got forgotten would leave the bar permanently short of its own end.
+            control?.TickStage(1, $"reading {file.FileName}");
+
             GerberReadResult read;
             try
             {
@@ -213,6 +283,8 @@ public static class GerberImport
         for (int drillIndex = 0; drillIndex < drillFiles.Count; drillIndex++)
         {
             var file = drillFiles[drillIndex];
+            control?.TickStage(1, $"reading {file.FileName}");
+
             ExcellonReadResult read;
             try
             {
@@ -353,6 +425,7 @@ public static class GerberImport
         }
 
         // ── 6. Layer order (R-L4g-10) ───────────────────────────────────────────────────────────
+        control?.SetStageLabel("working out the layer stack");
         var conductors = identities.Where(i => i.IsConductor).ToList();
         var guessedOrder = conductors.Where(c => c.CopperIndex is null).ToList();
         var copperTopToBottom = conductors
@@ -455,6 +528,7 @@ public static class GerberImport
         }
 
         // ── 8. Vias (R-L4f) ─────────────────────────────────────────────────────────────────────
+        control?.SetStageLabel("reconstructing vias");
         var copperKeys = copperTopToBottom.Select(c => finalKeyByFile[c.FilePath]).ToList();
         var copperPaths = copperTopToBottom.Select(c => c.FilePath).ToHashSet(StringComparer.Ordinal);
         int compositedCopper = reads.Count(r => r.Read.Composited && copperPaths.Contains(r.File.Path));
@@ -526,6 +600,7 @@ public static class GerberImport
         }
 
         // ── 9. The technology this import mints (R-L4g-8, R-L4g-9) ──────────────────────────────
+        control?.SetStageLabel("building the technology");
         var tech = BuildTechnology(importName, allIdentities, copperTopToBottom, finalKeyByFile, destTech, sourceLayers);
 
         var stackup = GerberStackupMapping.Build(
@@ -557,6 +632,18 @@ public static class GerberImport
             });
 
         // ── 10. Write (R-L4g-13) — nothing is created before this point ─────────────────────────
+        //
+        // THE LAST CANCELLATION CHECKPOINT, and the stage's last unit, in one call — TickStage checks
+        // the token and advances the counter, so the bar reaches its own end here and NOTHING after
+        // this line touches `control` at all.
+        //
+        // That is the point of doing it here rather than after the write. Past this line the import
+        // is creating a folder, a technology and a cell, and a token check landing between any two of
+        // those would throw with the cell already on disk — turning R-L4g-14's "nothing was created"
+        // into a lie told by the cancellation path itself. The write is ~150 ms on a real 20-layer
+        // board, so running it to the end costs a cancelling user nothing they would notice, and a
+        // full bar labelled "writing the cell" for those 150 ms is the honest reading of it.
+        control?.TickStage(1, "writing the cell");
         string importDir = ImportFolder.Create(parentDir, importName);
         string folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(importDir));
         string cellDir;

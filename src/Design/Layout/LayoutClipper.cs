@@ -151,21 +151,90 @@ public static class LayoutClipper
         return FromClipperTree(tree, shape.Layer, shape.Net);
     }
 
-    private static bool HolesAreValid(IReadOnlyList<long[]> rings)
+    /// <summary>
+    /// The three conditions: every hole vertex lies inside-or-on the outer ring, no hole crosses that
+    /// ring, and no two holes cross each other.
+    ///
+    /// <para><b>Bounding boxes are a PREFILTER, never a decision.</b> Every reject below is a case in
+    /// which no segment pair can possibly meet, so this returns exactly what the unfiltered triple
+    /// loop returns — <c>LayoutClipperHoleValidityTests</c> holds that against a brute-force copy of
+    /// the original over a randomized corpus. What they buy, on the shape that motivated this (a
+    /// Gerber-imported copper pour: 228 holes, 21,772 hole vertices, a 1,751-vertex outer ring):</para>
+    /// <list type="bullet">
+    /// <item>the hole-vs-hole pairs are ~26k ring-box tests instead of ~233M segment-pair tests,
+    /// because the holes of one pour are disjoint by construction and essentially every pair dies on
+    /// its box;</item>
+    /// <item>the hole-vs-outer crossing test is ~1,751 segment-box tests plus a handful of full
+    /// scans, instead of 38M segment-pair tests — see <see cref="RingsIntersect"/> for why the LONGER
+    /// ring has to be the one on the outside of that loop.</item>
+    /// </list>
+    /// <para>The remaining term is the point-in-ring test, which no box helps: a ray cast has to see
+    /// every segment the ray can cross, so cutting it needs an index over the outer ring rather than
+    /// a rejection test.</para>
+    /// </summary>
+    internal static bool HolesAreValid(IReadOnlyList<long[]> rings)
     {
         var outer = rings[0];
+
+        // One pass per ring, computed once. Every prefilter below reads these rather than re-deriving
+        // them per pair, which is what makes the hole-vs-hole reject O(1) per pair.
+        var info = new RingInfo[rings.Count];
+        for (int i = 0; i < rings.Count; i++) info[i] = RingInfo.Of(rings[i]);
+
         for (int i = 1; i < rings.Count; i++)
         {
             var hole = rings[i];
             foreach (var v in EnumeratePoints(hole))
                 if (!PointInOrOnRing(outer, v.X, v.Y)) return false;
-            if (RingsIntersect(hole, outer)) return false;
+            if (RingsIntersect(hole, outer, info[i], info[0])) return false;
 
             for (int j = i + 1; j < rings.Count; j++)
-                if (RingsIntersect(hole, rings[j])) return false;
+                if (RingsIntersect(hole, rings[j], info[i], info[j])) return false;
         }
         return true;
     }
+
+    /// <summary>
+    /// What one pass over a ring tells the prefilters: its axis-aligned extent, its segment count,
+    /// and whether it carries a ZERO-LENGTH segment.
+    ///
+    /// <para><c>MaxX &lt; MinX</c> marks a ring with no vertices at all, which <see cref="Overlap"/>
+    /// then reports as overlapping nothing — correct, since a ring with no vertices has no segments
+    /// to intersect.</para>
+    /// </summary>
+    private readonly record struct RingInfo(
+        long MinX, long MinY, long MaxX, long MaxY, int Segments, bool HasZeroLengthSegment)
+    {
+        public static RingInfo Of(long[] xy)
+        {
+            int n = xy.Length / 2;
+            if (n == 0) return new RingInfo(0, 0, -1, -1, 0, false);
+
+            long minX = xy[0], maxX = xy[0], minY = xy[1], maxY = xy[1];
+            for (int i = 2; i < xy.Length; i += 2)
+            {
+                long x = xy[i], y = xy[i + 1];
+                if (x < minX) minX = x; else if (x > maxX) maxX = x;
+                if (y < minY) minY = y; else if (y > maxY) maxY = y;
+            }
+
+            // A one-vertex ring's single segment runs from the vertex to itself, so it counts too —
+            // the (i + 1) % n wrap in RingSegment is what makes that so.
+            bool zeroLength = n == 1;
+            for (int i = 0; i < n && !zeroLength; i++)
+            {
+                int j = (i + 1) % n;
+                zeroLength = xy[2 * i] == xy[2 * j] && xy[2 * i + 1] == xy[2 * j + 1];
+            }
+
+            return new RingInfo(minX, minY, maxX, maxY, n, zeroLength);
+        }
+    }
+
+    /// <summary>Touching boxes count as overlapping — a rejection has to be certain, and two rings
+    /// whose boxes share an edge can share a point.</summary>
+    private static bool Overlap(in RingInfo a, in RingInfo b)
+        => a.MinX <= b.MaxX && b.MinX <= a.MaxX && a.MinY <= b.MaxY && b.MinY <= a.MaxY;
 
     private static IEnumerable<(long X, long Y)> EnumeratePoints(long[] xy)
     {
@@ -173,6 +242,21 @@ public static class LayoutClipper
             yield return (xy[i], xy[i + 1]);
     }
 
+    /// <summary>
+    /// Ray-cast containment. <b>The one term no box helps</b> — a ray has to see every segment it can
+    /// cross, so there is nothing to reject — and after the two prefilters in
+    /// <see cref="HolesAreValid"/> it is what is left: ~155 ms of the 0.30 s that reading a
+    /// Gerber-imported board's 1,573 holed shapes now costs, nearly all of it on the one 228-hole
+    /// pour.
+    ///
+    /// <para><b>Gating <see cref="OnSegment"/> behind the segment's own box was tried and MEASURED NO
+    /// BETTER</b> — 0.34 s against a 0.30-0.34 s spread for this, i.e. inside the noise. The
+    /// point-lies-on-this-segment test is three multiplies on values already in registers, so four
+    /// integer compares and a branch per segment buy back about what they cost; the simpler code
+    /// wins on a tie. Cutting this further needs an INDEX over the outer ring — segments bucketed by
+    /// y, so a cast at height <c>py</c> visits one band instead of all N — which is a different piece
+    /// of work with a build cost of its own, and is not done here.</para>
+    /// </summary>
     private static bool PointInOrOnRing(long[] ring, long px, long py)
     {
         int n = ring.Length / 2;
@@ -198,15 +282,53 @@ public static class LayoutClipper
         return dot >= 0 && dot <= lenSq;
     }
 
-    private static bool RingsIntersect(long[] a, long[] b)
+    /// <summary>
+    /// Whether any segment of <paramref name="a"/> meets any segment of <paramref name="b"/>, with
+    /// the callers' precomputed boxes used to skip pairs that provably cannot meet.
+    ///
+    /// <para><b>The LONGER ring goes on the outside of the loop, and that is the whole point.</b> The
+    /// per-segment reject can only throw work away when it is tested against the OTHER ring's box, so
+    /// the ring being rejected has to be the long one: a hole lies inside the outer ring's box, so
+    /// rejecting the hole's few segments against the outer's box discards nothing, while rejecting
+    /// the outer's thousands against the hole's small box discards nearly all of them. Both orders
+    /// give the same answer — <see cref="SegmentsIntersect"/> is symmetric in its two segments — so
+    /// this picks the one that is fast.</para>
+    /// </summary>
+    private static bool RingsIntersect(long[] a, long[] b, in RingInfo ia, in RingInfo ib)
     {
-        int na = a.Length / 2, nb = b.Length / 2;
+        // A ZERO-LENGTH segment reports as meeting ANYTHING, wherever the two rings are — so this
+        // case has to be answered before the boxes get a say, and it is the one place a box reject
+        // would otherwise change the result. OnSegment's window is `0 <= dot <= lenSq`, and a
+        // segment from a point to itself has lenSq = 0 and dot = 0 for every point, so it passes for
+        // all of them; SegmentsIntersect's collinear branch then returns true. That makes the
+        // unfiltered algorithm call a ring with a repeated consecutive vertex invalid against
+        // everything, and such a shape is re-derived through Clipper on load today. Preserved, not
+        // corrected: whether that repair should happen is a question about R10b, not something a
+        // performance edit gets to settle silently. Found by the differential gate, not by reading.
+        if ((ia.HasZeroLengthSegment && ib.Segments > 0) ||
+            (ib.HasZeroLengthSegment && ia.Segments > 0)) return true;
+
+        if (!Overlap(ia, ib)) return false;
+        return a.Length >= b.Length ? ScanAgainst(a, b, ib) : ScanAgainst(b, a, ia);
+    }
+
+    private static bool ScanAgainst(long[] scanned, long[] against, in RingInfo againstBox)
+    {
+        int na = scanned.Length / 2, nb = against.Length / 2;
         for (int i = 0; i < na; i++)
         {
-            var (ax0, ay0, ax1, ay1) = RingSegment(a, i, na);
+            var (ax0, ay0, ax1, ay1) = RingSegment(scanned, i, na);
+
+            // A segment whose own extent misses the other ring's box cannot meet any segment of it —
+            // every one of them is inside that box. Kept inclusive (< / >, never <= / >=) so a
+            // segment merely touching the box's edge still goes through the real test.
+            if (Math.Max(ax0, ax1) < againstBox.MinX || Math.Min(ax0, ax1) > againstBox.MaxX ||
+                Math.Max(ay0, ay1) < againstBox.MinY || Math.Min(ay0, ay1) > againstBox.MaxY)
+                continue;
+
             for (int j = 0; j < nb; j++)
             {
-                var (bx0, by0, bx1, by1) = RingSegment(b, j, nb);
+                var (bx0, by0, bx1, by1) = RingSegment(against, j, nb);
                 if (SegmentsIntersect(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1)) return true;
             }
         }
