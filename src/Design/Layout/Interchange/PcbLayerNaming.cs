@@ -43,6 +43,17 @@ public static class PcbLayerNaming
         ("B.Fab", 48), ("F.Fab", 49),
     ];
 
+    /// <summary>
+    /// The technical (non-copper) rows of <see cref="Technical"/>, for a reader that SYNTHESISES a
+    /// layer table rather than reading one.
+    ///
+    /// <para>A standalone footprint file carries no <c>(layers …)</c> table, but its pads still state
+    /// wildcard layer specs — <c>*.Cu</c>, <c>*.Mask</c>, <c>*.Paste</c> — and
+    /// <c>PcbReader.ExpandLayerSpec</c> expands those against a table (R-PL1-13). Sharing these names
+    /// keeps the synthesised table and the written one spelling every layer the same way.</para>
+    /// </summary>
+    public static IReadOnlyList<(string Name, int Ordinal)> TechnicalRows => Technical;
+
     /// <summary>Where an unmapped layer goes. A general-purpose drawing layer: it carries no
     /// fabrication meaning, so putting artwork there cannot be mistaken for silkscreen, a board
     /// outline, or copper.</summary>

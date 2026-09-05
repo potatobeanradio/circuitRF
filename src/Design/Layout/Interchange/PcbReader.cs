@@ -153,6 +153,86 @@ public static class PcbReader
         return new ReadResult(board, null);
     }
 
+    // ── Standalone footprint files (brief-PL1-component-library-import.md §5) ───────────────────
+
+    /// <summary>What <see cref="ReadFootprint(string,int)"/> recovered from a standalone footprint
+    /// file, or why it recovered nothing.</summary>
+    /// <param name="LayerTable">The SYNTHESISED table the pads' wildcard specs were expanded against
+    /// (R-PL1-13) — a footprint file declares none of its own.</param>
+    /// <param name="Board">The counters, skip reasons and unknown-token tallies the read produced, in
+    /// the same shape a board read reports them.</param>
+    public sealed record FootprintReadResult(
+        PcbFootprintCell? Cell,
+        IReadOnlyList<PcbLayerTableEntry> LayerTable,
+        PcbBoard? Board,
+        string? Refusal);
+
+    /// <summary>The two root tags a standalone footprint file opens with — both epochs, dispatched on
+    /// the token present and never on a version stamp (R-PL1-14).</summary>
+    private static readonly string[] FootprintRootTags = ["footprint", "module"];
+
+    /// <summary>
+    /// R-PL1-13: the layer table a standalone footprint file does not carry.
+    ///
+    /// <para>TWO copper layers, front and back, because that is what a footprint file states — it names
+    /// a front side and a back side and nothing else. Expanding <c>*.Cu</c> against an inner-layer count
+    /// the file never mentions would place copper the part does not have. The technical rows come from
+    /// <see cref="PcbLayerNaming.TechnicalRows"/>, the same names the writer emits, so <c>*.Mask</c> and
+    /// <c>*.Paste</c> expand as they do on a board.</para>
+    /// </summary>
+    public static List<PcbLayerTableEntry> SynthesiseFootprintLayerTable()
+    {
+        var table = new List<PcbLayerTableEntry>
+        {
+            new(0, "F.Cu", "signal", null),
+            new(31, "B.Cu", "signal", null),
+        };
+        foreach (var (name, ordinal) in PcbLayerNaming.TechnicalRows)
+            table.Add(new PcbLayerTableEntry(ordinal, name, "user", null));
+        return table;
+    }
+
+    /// <summary>
+    /// Reads ONE standalone footprint file — R-PL1-12's sibling entry point to <see cref="Read"/>.
+    ///
+    /// <para><see cref="Read"/>'s root-tag guard is NOT relaxed: a footprint handed to the board reader
+    /// is still refused by name rather than read as a board with no tracks and no stackup. Everything
+    /// below the guard is shared.</para>
+    /// </summary>
+    public static FootprintReadResult ReadFootprint(string text, int dbuPerMicron)
+    {
+        long census = CountEntities(text);
+        if (census > EntityHardCeiling)
+            return new FootprintReadResult(null, [], null,
+                $"This footprint carries about {census:N0} entities, above the {EntityHardCeiling:N0} " +
+                "import ceiling — nothing was imported.");
+
+        var parsed = PcbSexpr.Parse(text);
+        if (parsed.Root is null)
+            return new FootprintReadResult(null, [], null,
+                "This file contains no S-expression at all — it is not a footprint file.");
+        if (!FootprintRootTags.Contains(parsed.Root.Tag))
+            return new FootprintReadResult(null, [], null,
+                $"This file's root is ({parsed.Root.Tag} …), not (footprint …) or (module …) — it is " +
+                "not a footprint file.");
+
+        var board = new PcbBoard();
+        board.Diagnostics.AddRange(parsed.Diagnostics);
+        board.Version = parsed.Root.ChildAtom("version");
+        board.LayerTable.AddRange(SynthesiseFootprintLayerTable());
+
+        var ctx = new Ctx(dbuPerMicron, new Dictionary<int, string>(), board, defaultViaDrillMm: 0);
+        ReadFootprint(parsed.Root, ctx);
+
+        var cell = board.FootprintCells.Values.FirstOrDefault();
+        if (cell is null)
+            return new FootprintReadResult(null, board.LayerTable, board,
+                "This footprint file declares no geometry at all.");
+
+        board.ShapesProduced = cell.Shapes.Count;
+        return new FootprintReadResult(cell, board.LayerTable, board, null);
+    }
+
     /// <summary>Cheap raw-text scan for <c>(tag</c> occurrences. Deliberately not a parse: R-L4d-20's
     /// whole point is to answer "is this too big" before a node tree is built.</summary>
     internal static long CountEntities(string text)

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE partlib SYSTEM "partlib.dtd">
+<partlib version="1.0">
+ <drawing>
+  <layers>
+   <layer number="20" name="Dimension" color="15" fill="1" visible="yes" active="yes"/>
+   <layer number="95" name="Names" color="7" fill="1" visible="yes" active="yes"/>
+   <layer number="1" name="Top" color="4" fill="1" visible="yes" active="yes"/>
+   <layer number="31" name="tCream" color="7" fill="4" visible="no" active="yes"/>
+   <layer number="17" name="Pads" color="2" fill="1" visible="yes" active="yes"/>
+   <layer number="94" name="Symbols" color="4" fill="1" visible="yes" active="yes"/>
+   <layer number="16" name="Bottom" color="1" fill="1" visible="yes" active="yes"/>
+   <layer number="21" name="tPlace" color="7" fill="1" visible="yes" active="yes"/>
+   <layer number="18" name="Vias" color="2" fill="1" visible="yes" active="yes"/>
+   <layer number="29" name="tStop" color="7" fill="3" visible="no" active="yes"/>
+  </layers>
+  <library>
+   <description>A synthetic library for the PL1 gate</description>
+   <packages>
+    <package name="PKG6">
+     <description>&lt;b&gt;Six-terminal fixture package&lt;/b&gt;&lt;br/&gt;Invented, not measured</description>
+     <wire x1="-2.5" y1="-1.5" x2="2.5" y2="-1.5" width="0.127" layer="21"/>
+     <wire x1="2.5" y1="-1.5" x2="2.5" y2="1.5" width="0.127" layer="21"/>
+     <wire x1="-2.5" y1="-1.5" x2="-1.5" y2="-1.5" width="0.127" layer="20" curve="90"/>
+     <rectangle x1="-0.4" y1="-0.4" x2="0.4" y2="0.4" layer="21"/>
+     <circle x="-2.0" y="1.0" radius="0.25" width="0.1" layer="21"/>
+     <polygon width="0.05" layer="21">
+      <vertex x="1.2" y="1.0"/>
+      <vertex x="2.0" y="1.0"/>
+      <vertex x="2.0" y="1.4"/>
+     </polygon>
+     <smd name="1" x="-2.0" y="0.75" dx="1.0" dy="0.4" layer="1"/>
+     <smd name="2" x="-2.0" y="0.0" dx="1.0" dy="0.4" layer="1"/>
+     <smd name="3" x="-2.0" y="-0.75" dx="1.0" dy="0.4" layer="1"/>
+     <smd name="4" x="2.0" y="0.75" dx="1.0" dy="0.4" layer="1" roundness="50"/>
+     <smd name="5" x="2.0" y="0.0" dx="1.0" dy="0.4" layer="1"/>
+     <pad name="MH" x="0.0" y="2.5" drill="0.9" diameter="1.6" shape="round"/>
+    </package>
+   </packages>
+   <symbols>
+    <symbol name="SYM_MAIN">
+     <wire x1="-2.54" y1="7.62" x2="2.54" y2="7.62" width="0.254" layer="94"/>
+     <wire x1="2.54" y1="7.62" x2="2.54" y2="-10.16" width="0.254" layer="94"/>
+     <wire x1="2.54" y1="-10.16" x2="-2.54" y2="-10.16" width="0.254" layer="94"/>
+     <wire x1="-2.54" y1="-10.16" x2="-2.54" y2="7.62" width="0.254" layer="94"/>
+     <pin name="PA" x="-5.08" y="5.08" length="point" direction="in" rot="R0"/>
+     <pin name="PB" x="-5.08" y="2.54" length="short" direction="in" rot="R0"/>
+     <pin name="PC" x="-5.08" y="0" length="middle" direction="in" rot="R0"/>
+     <pin name="PD" x="-5.08" y="-2.54" length="long" direction="in" rot="R0"/>
+     <pin name="GND@1" x="0" y="-12.7" length="short" direction="pwr" rot="R90"/>
+     <pin name="GND@2" x="2.54" y="-12.7" length="short" direction="pwr" rot="R90"/>
+    </symbol>
+    <symbol name="SYM_AUX">
+     <wire x1="-2.54" y1="2.54" x2="2.54" y2="2.54" width="0.254" layer="94"/>
+     <pin name="AUXA" x="-5.08" y="0" length="short" direction="in" rot="R0"/>
+    </symbol>
+   </symbols>
+   <devicesets>
+    <deviceset name="XLIB4" prefix="U">
+     <description>&lt;p&gt;A &lt;b&gt;synthetic&lt;/b&gt; two-gate part.&lt;/p&gt;</description>
+     <gates>
+      <gate name="G$1" symbol="SYM_MAIN" x="0" y="0"/>
+      <gate name="G$2" symbol="SYM_AUX" x="0" y="-20.32"/>
+     </gates>
+     <devices>
+      <device name="" package="PKG6">
+       <connects>
+        <connect gate="G$1" pin="PA" pad="1"/>
+        <connect gate="G$1" pin="PB" pad="2"/>
+        <connect gate="G$1" pin="PC" pad="3"/>
+        <connect gate="G$1" pin="GND@1" pad="4"/>
+        <connect gate="G$1" pin="GND@2" pad="5"/>
+       </connects>
+       <technologies>
+        <technology name="">
+         <attribute name="Manufacturer" value="Fixture Works" constant="no"/>
+         <attribute name="Datasheet" value="https://example.invalid/xlib4.pdf" constant="no"/>
+        </technology>
+       </technologies>
+      </device>
+      <device name="-ALT" package="PKG6">
+       <connects/>
+      </device>
+     </devices>
+    </deviceset>
+   </devicesets>
+  </library>
+ </drawing>
+</partlib>

@@ -309,7 +309,10 @@ public class FileMenuRestructureTests
             // "Gerber" (L4h) joined the geometry importers when Gerber stopped being export-only. It
             // sits after Board because the two are the same kind of thing — a whole fabricated board
             // arriving as one flat cell — and because the export side already lists them in that order.
-            "Data", "GDSII", "DXF", "Board", "Gerber", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
+            // "Component" (PL1) closes that group: one PART rather than a whole board, and ONE entry
+            // rather than one per format — the importer classifies the files it is given by content
+            // (R-PL1-3).
+            "Data", "GDSII", "DXF", "Board", "Gerber", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 

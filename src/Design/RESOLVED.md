@@ -1,5 +1,167 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Phase PL1 — COMPLETE: component library import (footprint + symbol + the map) (2026-09-05)
+
+`docs/sonnet-briefs/brief-PL1-component-library-import.md`. One menu item — **File ▸ Import ▸
+Component…** — that takes a file or a folder, scans for the files an import can use, and writes ONE
+cell: a `.csym`, one `.clay` per density variant, the pin↔pad map shared by both views, the free text
+the file states as read-only parameters, and a copy of the bytes each view was built from.
+
+Gate: `dotnet test tests/Ui.Tests` — 11,797 tests green, 47 of them new — and `tests/Firewall.Tests`
+(10, green). An earlier run of the same suite reported three failures on paths this change does not
+touch (`LayoutSnapPrewarmTests`, `SharedLibraryConcurrencyTests`, `BrokenInstanceVisibilityTests`);
+each passes in isolation and each counts filesystem calls against `CellStat.Freshness`'s time window,
+so they are load-dependent rather than caused here. Recorded because the same three will surface again
+under load.
+
+### What the code does
+
+| Piece | Where | Does |
+|---|---|---|
+| `ComponentClassifier` | `src/Design/Layout/Interchange` | classifies one file from its first 8 KB |
+| `ComponentFolderScan` | " | walks a folder, classifies, returns ranked candidates + a skipped summary |
+| `ComponentSymbolSexprReader` | " | `.kicad_sym` → `ComponentSymbolDrawing` (mils, +y up) |
+| `ComponentSymbolLegacyReader` | " | `.lib` → the same |
+| `ComponentLibraryXmlReader` | " | `.lbr` → symbol, package and the separate pin↔pad table |
+| `PcbReader.ReadFootprint` | " | `.kicad_mod` (both epochs) → `PcbFootprintCell` |
+| `ComponentTerminals.Build` | " | assigns `PortIndex` once, for both views |
+| `ComponentRead` | " | reads one candidate into one `ComponentPart` |
+| `ComponentImport` | `src/Ui/Layout` | reconciles layers, writes the cell folder |
+| `ComponentImportChooserDialog` | `src/Ui/Views/Dialogs` | shows the ranked list |
+
+### 1. The spike's four findings, as measurements
+
+**(1) R-PL1-17's exact-mil mapping HELD, and nothing is fitted.** `SymbolModel.cs` states 100 local
+units per connection-grid square P and `DsnSymbolReader.PinGrid` is `100.0`, so one local unit is one
+mil. The scale handed to `KitTemplateSymbol.BuildFromDrawing` is the literal `1.0`
+(`ComponentImport.SymbolScale`) — not `ChooseKitScale`, not `ChooseScale`, not clamped. The two symbol
+epochs of the gate fixture agree exactly: a pin stated at `2.54 mm` and the same pin stated at `100`
+mil both land on local 100, every pin coordinate is a whole multiple of 100, and the two epochs' nine
+pins compare equal on X, Y and PortIndex (gate 8). The fallback the brief allowed for — a fitted scale,
+at the cost of imported and hand-drawn symbols no longer sharing a grid — was not needed.
+
+*Not covered by that:* a part drawn on a 50-mil pin grid would collide two pins on circuitRF's 100-mil
+connection grid. `ComponentImport.BuildSymbol` counts the pins the snap moved and reports the count, so
+it is not silent, but no fixture exercises it — the count is a report rather than a tested behaviour.
+
+**(2) The synthesised two-copper-layer table expands the wildcards exactly as R-PL1-13 predicted.**
+`PcbReader.SynthesiseFootprintLayerTable` declares `F.Cu`/`B.Cu` as `signal` plus
+`PcbLayerNaming.TechnicalRows` as `user`; `ExpandLayerSpec` then resolves `*.Cu` → 2, `*.Mask` → 2,
+`*.Paste` → 2, and a through-hole pad lands on exactly `F.Cu`, `B.Cu` and `Drill` (gate 11c). The
+existing `ExpandLayerSpec` needed no change — it already keys on the table's TYPE word rather than on a
+name or an ordinal range, which is what made a synthetic table work.
+
+**(3) Every pad shape the S-expression format can state is already expressible.** Read out of
+`PcbReader.BuildPadShape`: `circle`, `rect` (cardinal and non-cardinal), `oval`, `roundrect` (including
+`chamfer`), `trapezoid` (including `rect_delta`) and `custom` (anchor UNION every primitive, plus each
+primitive's own pen width) all map onto `LayoutShape`. **Nothing was found that `LayoutShape` cannot
+express.** The XML library's pad vocabulary — `round`, `square`, `octagon`, `long`, plus
+`<smd roundness>` — is likewise covered.
+
+**(4) Multi-section and multi-variant are handled by REPORTING, and both paths are exercised.** The XML
+fixture states two `<gate>`s and two `<device>`s; the second of each is named in Messages and neither is
+merged nor dropped (gate 14). The S-expression symbol format's `_<unit>_<style>` sub-symbol suffix is
+read the same way — unit 0 and unit 1 at style 1 are the drawing, everything above is named.
+
+### 2. How much of §5 was genuinely new code
+
+**Almost none, and the honest number is 94 lines.** `git diff --stat` on the two files §5 touches:
+`PcbReader.cs` +82 (the `ReadFootprint(text, dbuPerMicron)` entry point, its result record, the
+two-root-tag guard and `SynthesiseFootprintLayerTable`) and `PcbLayerNaming.cs` +12 (exposing the
+technical rows the writer already transcribes). **Zero lines of the existing footprint reader
+changed** — `ReadFootprint(PcbNode, Ctx)`, `ReadPad`, `BuildPadShapes`, `Drill`, `ExpandLayerSpec` and
+every `fp_*` graphic are called unmodified, and `PcbReader.Read`'s own root-tag guard was left as it
+was (gate 11b asserts the board reader still refuses a footprint).
+
+**This sizes PL2 downward, not upward.** The footprint half of a new format is the cheap half only
+where that format's footprints are already the board format's; the ~3,300 lines this phase added are
+almost entirely the symbol side, the pin↔pad join, the classifier and the folder scan — none of which a
+new format reuses beyond `ComponentPart` and `ComponentTerminals`. Per format, expect roughly the size
+of `ComponentSymbolLegacyReader` (275 lines) for a simple text grammar and of
+`ComponentLibraryXmlReader` (697) for one that carries its own packages and layer table.
+
+### 3. The two-flip trap — how each was proven, and what would have missed it
+
+**Both halves of this import negate Y, for different reasons.** The FOOTPRINT flips because its source
+is +y down and `.clay` is +y up (`PcbUnits.Y`, unchanged from L4d). The SYMBOL flips because the source
+symbol formats are +y **UP** and `.csym` is +y **DOWN** (`SymbolModel.cs`: "+x right, +y down (screen
+convention)"). Reasoning "the layout is y-up so the symbol must be too" gets the symbol backwards, and
+it then renders upside down while the footprint beside it renders correctly.
+
+Proven as two independent tests over ONE fixture asymmetric on both axes in both views:
+
+- `Gate7a` asserts the footprint's L-shaped silkscreen outline coordinate by coordinate — 14 numbers,
+  Y negated and X untouched.
+- `Gate7b` asserts, separately, that a symbol pin stated at `+7.62 mm` lands at `−300` and that the
+  symbol's asymmetric corner mark keeps its handedness.
+
+**What would have missed it:** any fixture whose art is symmetric in one axis — a plain rectangular
+body with pins on the left and right. It imports identically whether the flip happened or not. The same
+applies to the arc: `Gate10` asserts the SWEEP DIRECTION (`−90°` in the file becomes `+90°` here).
+
+A third part of the same trap: **the arc's ANGLES must NOT be negated alongside its coordinates.**
+`KitSymbolArc` states its angles counter-clockwise while circuitRF's arc primitive measures them
+clockwise, and `KitTemplateSymbol.Convert` already flips both fields — which is the sign change
+negating Y calls for. Flipping them in `ComponentImport.FlipY` as well would cancel it out and leave a
+correct-looking arc drawn from the wrong end. `FlipY` therefore negates `Cy` only.
+
+### 4. What an imported part still cannot do — limitations, not omissions
+
+- **No netlist, no schematic view, no simulation model** (R-PL1-6). `Gate17c` asserts the `schematic/`
+  folder is empty and `PrimarySchematic` is null. Placing one and elaborating will not produce a device.
+- **No multi-section parts.** The first section is imported; the rest are named.
+- **No package-variant chooser.** The first `<device>` is imported and the rest are named. Density
+  variants of ONE pattern are the exception and become sibling `.clay` views (R-PL1-25).
+- **No stackup, and nothing invented in its place** (R-PL1-27). `ComponentImport.ImportResult` has no
+  stackup field, the destination technology's own is untouched (`Gate16`), and one Messages line states
+  what an EM run still needs.
+- **No derived (`extends`) symbols.** Reported; only what the definition states itself is read.
+- **No binary formats, no 3D models, and no DXF fallback** (R-PL1-30) — a dimensioned drawing is
+  classified as one and listed in the skipped summary.
+- **No writer of any of these formats** (§13).
+- A pin bonded to several pads gets one symbol pin on the FIRST of them; the rest are terminals with
+  copper and no drawn pin, reported as such.
+
+### 5. The folder chooser's ranking — UNVERIFIED against real files, and that must stay visible
+
+**§15's question 5 cannot be answered from what this phase tested, and is not.** The ranking is
+exercised only against the synthetic tree `Gate2` builds (`toolA`…`toolE`, five subfolders, two
+readable). What that test DOES establish is the property the ranking rests on: **classification is by
+content, never by name**, proven the hard way — the footprint sits in a folder called `symbols` under
+the name `part.txt` and is found, while the file named `part.kicad_sym` holds prose and is reported as
+unreadable text.
+
+Two decisions inside the ranking that only real files would settle:
+
+- **Candidates are grouped by FORMAT FAMILY, not by folder.** A symbol file and the footprint files it
+  pairs with may sit in sibling folders, so grouping by directory would split one importable component
+  into two incomplete candidates. The cost is the opposite error: a folder holding two unrelated parts
+  in the same format is offered as one candidate.
+- **Confidence order is S-expression, then XML, then the older text symbol format**, on the ground that
+  the first reuses L4d's whole footprint path. That is a claim about reader maturity, not about files.
+
+### 6. Is PL2's breadth worth building? Not on this evidence
+
+PL1 ships `.kicad_sym`, `.kicad_mod`, `.lib` and `.lbr`. PL2's own §1 already concludes its breadth buys
+nothing beyond that, and this phase produced no evidence to the contrary — it produced no evidence about
+real files at all. The measurement that would change the answer is the one §5 above says is missing: run
+`ComponentFolderScan.Scan` over several real component folders and count how many rank
+`SymbolFootprintAndMap` at the top. Until that number exists, PL2 is speculative breadth, and the
+cheaper next step is one of PL1's own limitations — multi-section parts, or a package-variant chooser —
+both of which affect files circuitRF can ALREADY read.
+
+### Two smaller things worth knowing
+
+**A `.lbr`'s DOCTYPE would have read as a corrupt file.** `XDocument.Parse` prohibits DTDs outright and
+throws "For security reasons DTD is prohibited" on the second line of an ordinary library.
+`ComponentLibraryXmlReader` parses through an `XmlReader` with `DtdProcessing.Ignore` and a null
+`XmlResolver` — tolerated, never resolved, and no entity in it can expand.
+
+**The XML format is recognised by its STRUCTURE, not by its root element's name.** `<library>` wrapping
+`<packages>`/`<symbols>`/`<devicesets>` is the test, in both the classifier and the reader, so a file
+whose root element is named anything at all still imports. The fixture's root is `partlib`, which is
+what proves it.
+
 ## A technology imported from Gerber greeted the user with 22 validation messages describing 2 facts (2026-09-04)
 
 Owner report: opening a `.ctech` imported from a real 21-file Gerber set filled the Technology

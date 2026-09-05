@@ -1,0 +1,22 @@
+(footprint "WIDGET9" (version 20221018) (generator pl1_fixture)
+  (layer "F.Cu")
+  (descr "Synthetic nine-terminal land pattern")
+  (attr smd)
+
+  (fp_poly
+    (pts (xy -3.5 -2.5) (xy -1.5 -2.5) (xy -1.5 -1.5) (xy -2.5 -1.5) (xy -2.5 -0.5) (xy -3.5 -0.5))
+    (stroke (width 0.12) (type solid)) (fill none) (layer "F.SilkS"))
+
+  (fp_line (start -1.234567 2.5) (end 1.234567 2.5)
+    (stroke (width 0.12) (type solid)) (layer "F.SilkS"))
+
+  (pad "1" smd rect (at -2.5 -1.905) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at -2.5 -0.635) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "3" smd rect (at -2.5 0.635) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "4" smd rect (at -2.5 1.905) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "5" smd rect (at 2.5 1.905) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "6" smd rect (at 2.5 0.635) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "7" smd rect (at 2.5 -0.635) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "8" smd rect (at 2.5 -1.905) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "THERMAL" smd rect (at 0 0) (size 2 2) (layers "F.Cu" "F.Mask"))
+)

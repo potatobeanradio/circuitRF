@@ -1,0 +1,5 @@
+(footprint "THRU" (version 20221018) (generator pl1_fixture)
+  (layer "F.Cu")
+  (pad "1" thru_hole circle (at -2.54 0) (size 1.6 1.6) (drill 0.8) (layers "*.Cu" "*.Mask"))
+  (pad "2" thru_hole circle (at 2.54 0) (size 1.6 1.6) (drill 0.8) (layers "*.Cu" "*.Mask" "*.Paste"))
+)

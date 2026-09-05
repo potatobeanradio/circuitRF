@@ -1,0 +1,18 @@
+(kicad_symbol_lib (version 20211014) (generator pl1_fixture)
+  (symbol "PATTERN" (in_bom yes) (on_board yes)
+    (property "Reference" "R" (id 0) (at 0 2.54 0))
+    (property "Value" "PATTERN" (id 1) (at 0 -2.54 0))
+    (property "ki_fp_filters" "PATTERN PATTERN-M PATTERN-L" (id 4) (at 0 0 0))
+    (symbol "PATTERN_0_1"
+      (rectangle (start -2.54 1.27) (end 2.54 -1.27)
+        (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "PATTERN_1_1"
+      (pin passive line (at -5.08 0 0) (length 2.54)
+        (name "A" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 5.08 0 180) (length 2.54)
+        (name "B" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27)))))
+    )
+  )
+)

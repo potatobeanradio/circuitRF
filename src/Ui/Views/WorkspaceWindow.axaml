@@ -93,6 +93,7 @@
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ImportBoardCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Gerber…" Command="{Binding ImportGerberCommand}"      CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Component…" Command="{Binding ImportComponentCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Model or Subcircuit…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -484,6 +485,10 @@
                               Command="{Binding ImportGerberCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="Import a Gerber/Excellon file set as one flat cell and a technology of its own. Point at a folder, or at one file and say whether its folder was meant. Vias are rebuilt where the drill data comes too."/>
+                    <MenuItem Header="_Component…"
+                              Command="{Binding ImportComponentCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Import a component — its symbol, its land pattern(s) and the pin-to-pad map between them — as one cell. Point at a file or a folder; the folder is scanned for files that can be imported, and the formats read are .kicad_sym, .kicad_mod, .lib and .lbr."/>
                     <MenuItem Header="_PDK…"
                               Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>

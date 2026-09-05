@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ComponentImportChooserDialog"
+        Title="Import Component"
+        Width="620"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="HeadingText" FontSize="12" TextWrapping="Wrap"/>
+
+        <ListBox Grid.Row="1"
+                 x:Name="CandidateList"
+                 Margin="0,12,0,0"
+                 MaxHeight="240"
+                 FontSize="12"/>
+
+        <TextBlock Grid.Row="2"
+                   x:Name="SkippedText"
+                   Margin="0,12,0,0"
+                   FontSize="11"
+                   Opacity="0.75"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="90" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button Content="Another Folder…" Width="140" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnAnotherFolderClick"
+                    ToolTip.Tip="Point at a different folder and scan that one instead."/>
+            <Button Content="Import" x:Name="ImportButton" Width="110" IsDefault="True"
+                    FontSize="12" HorizontalContentAlignment="Center" Click="OnImportClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

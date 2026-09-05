@@ -410,6 +410,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
         ImportGerberCommand.NotifyCanExecuteChanged();
+        ImportComponentCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
@@ -4342,6 +4343,135 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.BoardCellDir is { } boardDir) OpenPrimaryLayoutIfResolvable(boardDir);
     }
 
+    // ── Import Component (docs/sonnet-briefs/brief-PL1-component-library-import.md §2) ────────────
+    //
+    // ONE menu item, taking a FILE or a FOLDER (R-PL1-3). ComponentFolderScan scans for the files an
+    // import can use, ComponentRead reads the chosen one and ComponentImport writes the cell; this
+    // method is only picking, prompting and reporting (UI firewall), mirroring ImportBoardAsync with
+    // one extra prompt — the ranked chooser (R-PL1-4).
+    //
+    // FILE PICKER FIRST, as R-L4h-5 settled for Gerber: Avalonia's StorageProvider exposes
+    // OpenFilePickerAsync and OpenFolderPickerAsync as separate calls and one dialog cannot return
+    // both. The scan then runs over the chosen file's ENCLOSING folder, and the chooser carries an
+    // "Another Folder…" button that opens the folder picker.
+
+    [RelayCommand(CanExecute = nameof(CanImportComponent))]
+    private Task ImportComponent(Window? owner) => ImportComponentAsync(owner);
+    private bool CanImportComponent() => CurrentWorkspacePath is not null;
+
+    private async Task ImportComponentAsync(Window? owner)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Import Component",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Component symbol / footprint / library")
+                {
+                    Patterns = ["*.kicad_sym", "*.kicad_mod", "*.lib", "*.lbr"],
+                },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        string chosenPath = files[0].Path.LocalPath;
+        string? scanRoot = Path.GetDirectoryName(chosenPath) ?? chosenPath;
+
+        CircuitRF.Design.Layout.Interchange.ComponentCandidate? candidate = null;
+        while (candidate is null)
+        {
+            if (scanRoot is null) return;
+
+            var scan = await Task.Run(() =>
+                CircuitRF.Design.Layout.Interchange.ComponentFolderScan.Scan(scanRoot));
+
+            // R-PL1-4: one candidate made of one file means there is nothing to choose among, so the
+            // chooser is skipped and that file is imported.
+            if (scan.Candidates.Count == 1 && scan.Candidates[0].Files.Count == 1)
+            {
+                candidate = scan.Candidates[0];
+                break;
+            }
+
+            if (scan.Candidates.Count == 0)
+            {
+                // R-PL1-29: name the formats circuitRF does read, plus the categories the scan found.
+                var reasons = scan.SkippedSummary.Count > 0
+                    ? " This folder also holds " + string.Join(", ", scan.SkippedSummary) + "."
+                    : "";
+                Messages.Error(
+                    CircuitRF.Design.Layout.Interchange.ComponentRead.Refusal(Path.GetFileName(scanRoot))
+                    + reasons);
+                return;
+            }
+
+            var dialog = new CircuitRF.Ui.Views.Dialogs.ComponentImportChooserDialog(scan);
+            candidate = await dialog.ShowDialog<CircuitRF.Design.Layout.Interchange.ComponentCandidate?>(window);
+            if (candidate is null)
+            {
+                if (!dialog.ChooseAnotherFolder) return;
+                var folders = await window.StorageProvider.OpenFolderPickerAsync(
+                    new FolderPickerOpenOptions { Title = "Import Component — Folder", AllowMultiple = false });
+                if (folders.Count == 0) return;
+                scanRoot = folders[0].Path.LocalPath;
+            }
+        }
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null);   // the workspace's own default technology
+
+        CircuitRF.Ui.Layout.ComponentImport.ImportResult result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                var read = CircuitRF.Design.Layout.Interchange.ComponentRead.Read(
+                    candidate, LayoutUnits.DefaultDbuPerMicron);
+                if (read.Refusal is { } refusal)
+                    return CircuitRF.Ui.Layout.ComponentImport.ImportResult.Nothing([refusal]);
+
+                return CircuitRF.Ui.Layout.ComponentImport.Import(
+                    read.Part!, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    resolveLayerMapping: rows =>
+                    {
+                        var settled = Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Component", techRes.Tech, rows))
+                            .GetAwaiter().GetResult();
+                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                    });
+            });
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import Component: {ex.Message}");
+            return;
+        }
+
+        foreach (var msg in result.Messages) Messages.Info(msg);
+
+        if (result.Cancelled)
+        {
+            Messages.Info("Import Component cancelled — nothing was created.");
+            return;
+        }
+
+        // R-PL1-27: layers only. A component file states no stackup, and none is invented in its place.
+        ApplyImportToTechnology(techRes, result.LayersToAdd, stackup: null);
+
+        _factory.ProjectTreeTool?.Refresh();
+        if (result.CellDir is { } cellDir)
+        {
+            Messages.Success($"Imported component '{Path.GetFileName(cellDir)}'.");
+            await OpenPrimaryLayoutIfResolvableAsync(cellDir);
+        }
+    }
+
     // ── Import Gerber (docs/sonnet-briefs/brief-L4h-gerber-import-ui-and-round-trip.md §1) ────────
     // GerberImport does the read/reconcile/CellFolder-creation work and GerberImportEntry decides what
     // the user actually pointed at; this method is only picking, prompting and reporting (UI firewall),
@@ -4568,14 +4698,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ApplyBoardImportToTechnology(
         TechResolution techRes, CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result)
+        => ApplyImportToTechnology(techRes, result.LayersToAdd, result.Stackup);
+
+    /// <summary>The same, for an import that recovers layers but — like a COMPONENT file — no stackup
+    /// at all (R-PL1-27). Nothing is invented in its place: <paramref name="stackup"/> is null and the
+    /// technology's own is left exactly as it was.</summary>
+    private void ApplyImportToTechnology(
+        TechResolution techRes, IReadOnlyList<LayerDef> layersToAdd, Stackup? stackup)
     {
         if (techRes.Tech is not { } tech || techRes.ResolvedPath is not { } techPath) return;
-        if (result.LayersToAdd.Count == 0 && result.Stackup is null) return;
+        if (layersToAdd.Count == 0 && stackup is null) return;
 
         var clone = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
 
         int added = 0;
-        foreach (var def in result.LayersToAdd)
+        foreach (var def in layersToAdd)
         {
             if (clone.Layers.Any(l => l.Key == def.Key)) continue;
             clone.Layers.Add(def);
@@ -4583,7 +4720,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         bool stackupApplied = false;
-        if (result.Stackup is { } imported)
+        if (stackup is { } imported)
         {
             if (clone.Stackup.Layers.Count == 0)
             {

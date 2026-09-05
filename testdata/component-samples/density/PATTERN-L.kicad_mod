@@ -1,0 +1,5 @@
+(footprint "PATTERN-L" (version 20221018) (generator pl1_fixture)
+  (layer "F.Cu")
+  (pad "1" smd rect (at -1.05 0) (size 1.3 0.9) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at 1.05 0) (size 1.3 0.9) (layers "F.Cu" "F.Paste" "F.Mask"))
+)

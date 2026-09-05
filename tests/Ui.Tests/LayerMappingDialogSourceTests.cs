@@ -20,7 +20,7 @@ public class LayerMappingDialogSourceTests
         return File.ReadAllText(Path.Combine(dir!, relativePath));
     }
 
-    /// <summary>FOUR importers share one layer-mapping bridge, and it used to name GDSII in all four —
+    /// <summary>FIVE importers share one layer-mapping bridge, and it used to name GDSII in all of them —
     /// so a user importing Gerber was told, in the dialog's title AND in its body, that they were
     /// mapping GDSII layers. The format is a parameter now, and no call site may hard-code it back.</summary>
     [Fact]
@@ -32,7 +32,7 @@ public class LayerMappingDialogSourceTests
             .Select(m => m.Groups[1].Value)
             .ToList();
 
-        Assert.Equal(["Board", "DXF", "GDSII", "Gerber"], formats.Order(StringComparer.Ordinal));
+        Assert.Equal(["Board", "Component", "DXF", "GDSII", "Gerber"], formats.Order(StringComparer.Ordinal));
         Assert.DoesNotContain("Import GDSII — Layer Mapping", source, StringComparison.Ordinal);
     }
 
