@@ -75,6 +75,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     {
         NodeKind.KnownFilesGroup                  => "External files that are known to this workspace are listed here.",
         NodeKind.KnownFile when _node.IsDirectory => _node.AbsolutePath,
+        // A referenced cell's relative path is relative to the OTHER workspace, which says nothing
+        // about where the cell actually is — and two projects routinely hold a cell of the same name.
+        // The full path is the only thing that tells the two rows apart. (An unresolvable reference
+        // has no path, and its AbsolutePath is the ws:// text the .cws actually holds, which is what
+        // a repair needs to see.)
+        _ when IsReferencedCell                   => _node.AbsolutePath,
         _                                         => _node.RelativePath,
     };
 
@@ -88,7 +94,23 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsItalic  => IsWarning || Kind == NodeKind.NotReadYet;
 
     /// <summary>Material icon glyph — combines Kind + IsTestBench + directory flag.</summary>
-    public MaterialIconKind IconKind => (Kind, IsTestBench) switch
+    public MaterialIconKind IconKind => IsReferencedCell
+        // One cell referenced out of another workspace, drawn with the SAME network glyph a
+        // referenced workspace carries (owner, 2026-09-04). The two rows mean the same thing to a
+        // user — this is not mine, it lives somewhere else — and one glyph for that reading is worth
+        // more than a second one that distinguishes cell from workspace, which the row's own name
+        // and position already do.
+        ? MaterialIconKind.FolderNetworkOutline
+        // …and so do the folders INSIDE it (owner, 2026-09-04): the whole row, opened up, is still
+        // one thing that lives in someone else's workspace, and a plain folder glyph three rows down
+        // reads as content of this one. Scoped to a referenced CELL and no further: a cell reached
+        // through a referenced WORKSPACE is browsed like any other cell — the branch it hangs under
+        // already says where it came from, and marking every folder in a 200-cell library would say
+        // it 200 times.
+        : Kind is NodeKind.CellViewFolder or NodeKind.UserFolder
+          && ReferenceScope == ReferenceBranch.Cell
+        ? MaterialIconKind.FolderNetworkOutline
+        : (Kind, IsTestBench) switch
     {
         (NodeKind.Workspace,       _)     => MaterialIconKind.Folder,
         (NodeKind.Cell,            true)  => MaterialIconKind.TestTube,
@@ -98,7 +120,6 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         // MW2: a referenced WORKSPACE is not a library — it brings a technology, a kit set and a
         // .cws of its own — so it gets its own glyph rather than borrowing the book.
         (NodeKind.ReferencedWorkspace,      _) => MaterialIconKind.FolderNetworkOutline,
-        (NodeKind.ReferencedWorkspacesGroup,_) => MaterialIconKind.FolderNetworkOutline,
         (NodeKind.CellViewFolder,  _)     => MaterialIconKind.FolderOutline,
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
@@ -122,6 +143,17 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     public bool IsViewFile           => Kind == NodeKind.ViewFile;
     public bool IsCell               => Kind == NodeKind.Cell;
+
+    /// <summary>
+    /// This row IS one <c>.cws</c> <c>ReferencedCells</c> entry — a cell of another workspace, listed
+    /// here on its own. It is still a cell (it opens and places like any other); what differs is the
+    /// glyph, the filter toggle it rides, and that the destructive cell commands are not offered on
+    /// someone else's folder — "Remove Reference" drops the listing instead.
+    /// </summary>
+    public bool IsReferencedCell     => _node.IsReferencedCell;
+
+    /// <summary>A cell this workspace owns — everything Rename / Duplicate / Remove Cell may touch.</summary>
+    public bool IsOwnCell            => IsCell && !IsReferencedCell;
     public bool IsKnownFile          => Kind == NodeKind.KnownFile;
     public bool IsWorkspaceOrLibrary => Kind is NodeKind.Workspace or NodeKind.Library;
 
@@ -245,6 +277,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.Cell
                                           or NodeKind.Workspace
                                           or NodeKind.Library
+                                          // The other workspace's own folder. Offered even when the
+                                          // reference is BROKEN, like the Library row beside it:
+                                          // Reveal falls back to the nearest folder that IS there and
+                                          // says so, which is exactly what repairing a moved project
+                                          // starts with.
+                                          or NodeKind.ReferencedWorkspace
                                           or NodeKind.UserFolder
                                           or NodeKind.DataDisplayFile
                                           or NodeKind.HarmonicaFile
@@ -298,6 +336,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Opens the workspace a foreign cell belongs to, in a window of its own.</summary>
     public IRelayCommand OpenReferencedWorkspaceCommand { get; }
+
+    /// <summary>Drops one referenced-cell listing (never the cell itself, which is another
+    /// workspace's file).</summary>
+    public IAsyncRelayCommand RemoveCellReferenceCommand { get; }
 
     /// <summary>Removes this Referenced Workspace entry from the open workspace's own <c>.cws</c>.</summary>
     public IAsyncRelayCommand RemoveWorkspaceReferenceCommand { get; }
@@ -463,6 +505,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         _filter  = filter;
         _actions = actions;
         _parent  = parent;
+
+        ReferenceScope =
+            node.IsReferencedCell               ? ReferenceBranch.Cell
+            : node.Kind == NodeKind.ReferencedWorkspace ? ReferenceBranch.Workspace
+            : node.Kind == NodeKind.Library             ? ReferenceBranch.Library
+            : parent?.ReferenceScope;
         _onExpandUnreadReference = onExpandUnreadReference;
 
         // Workspace root is always expanded initially; other nodes restore from saved paths.
@@ -526,6 +574,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         RemoveWorkspaceReferenceCommand = new AsyncRelayCommand(
             () => _actions?.RemoveWorkspaceReferenceAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsReferencedWorkspace);
+
+        RemoveCellReferenceCommand = new AsyncRelayCommand(
+            () => _actions?.RemoveCellReferenceAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsReferencedCell);
 
         NewCellCommand = new AsyncRelayCommand(
             () => _actions?.NewCellAsync(this) ?? Task.CompletedTask,
@@ -593,15 +645,15 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         RemoveCellCommand = new AsyncRelayCommand(
             () => _actions?.RemoveCellAsync(this) ?? Task.CompletedTask,
-            () => _actions is not null && IsCell);
+            () => _actions is not null && IsOwnCell);
 
         DuplicateCellCommand = new AsyncRelayCommand(
             () => _actions?.DuplicateCellAsync(this) ?? Task.CompletedTask,
-            () => _actions is not null && IsCell);
+            () => _actions is not null && IsOwnCell);
 
         RenameCellCommand = new AsyncRelayCommand(
             () => _actions?.RenameCellAsync(this) ?? Task.CompletedTask,
-            () => _actions is not null && IsCell);
+            () => _actions is not null && IsOwnCell);
 
         SaveCommand = new AsyncRelayCommand(
             () => _actions?.SaveNodeAsync(this) ?? Task.CompletedTask);
@@ -717,6 +769,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>Which referenced branch a node belongs to, if any — the filter toggle that owns it.</summary>
+    private enum ReferenceBranch { Library, Workspace, Cell }
+
+    /// <summary>
+    /// The referenced branch this node is part of, or null when it is ordinary workspace content.
+    /// Computed once, from the node's own kind and its parent's answer, so the filter never walks
+    /// upward per node per pass. SL4's "not read yet" placeholder inherits it like any other child —
+    /// it IS the branch as far as the filter is concerned, and a rule that could hide it would leave
+    /// the branch rendering empty, which is the one thing the placeholder exists to prevent.
+    /// </summary>
+    private ReferenceBranch? ReferenceScope { get; }
+
     /// <summary>Scratch buffer for <see cref="SyncFilteredChildren"/> — per node rather than per call,
     /// so a full-tree pass allocates nothing.</summary>
     private readonly List<ProjectTreeNodeViewModel> _desired = [];
@@ -791,6 +855,23 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     private bool IsVisibleUnderFilter()
     {
         var f = _filter;
+
+        // Everything under a referenced root answers to that root's own toggle rather than to Cells
+        // (owner, 2026-09-04). Ancestor-preservation keeps a row whose descendants are visible, so a
+        // branch whose cells rode the Cells toggle could not be hidden by its own checkbox at all —
+        // turning "Referenced Workspaces" off simply did nothing while Cells was on. One toggle owns
+        // one branch, top to bottom.
+        if (ReferenceScope is { } scope)
+        {
+            bool branchOn = scope switch
+            {
+                ReferenceBranch.Cell      => f.ReferencedCells,
+                ReferenceBranch.Workspace => f.ReferencedWorkspaces,
+                _                         => f.Libraries,
+            };
+            return (branchOn && _searchSatisfied) || FilteredChildren.Count > 0;
+        }
+
         bool ownMatch = Kind switch
         {
             NodeKind.Workspace       => true,
@@ -798,12 +879,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.Cell            => f.Cells || (f.TestBenches && IsTestBench),
             NodeKind.CellViewFolder  => f.Cells,
             NodeKind.ViewFile        => f.Cells,
-            NodeKind.Library         => f.Libraries,
             NodeKind.LibrariesGroup  => f.Libraries,
-            // A referenced workspace's cells are cells; the branch itself rides the Libraries
-            // toggle, which is the "things this workspace REACHES rather than contains" filter.
-            NodeKind.ReferencedWorkspace       => f.Libraries,
-            NodeKind.ReferencedWorkspacesGroup => f.Libraries,
             NodeKind.DataDisplayFile => f.DataDisplays,
             // A .charm is a results-facing document beside a .cdd — same toggle, no seventh checkbox.
             NodeKind.HarmonicaFile   => f.DataDisplays,
@@ -818,11 +894,6 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.KnownFilesGroup => f.KnownFiles,
             NodeKind.UserFolder      => f.WorkspaceFileSystem,
             NodeKind.OtherFile       => f.WorkspaceFileSystem,
-            // SL4 R-sl4-11: the "not read yet" placeholder rides its parent's own toggle. It IS the
-            // referenced branch as far as the filter is concerned, and a rule that could hide it
-            // would leave the branch rendering empty — the one thing the placeholder exists to
-            // prevent.
-            NodeKind.NotReadYet      => f.Libraries,
             _                        => true,
         };
 

@@ -294,8 +294,7 @@ public sealed class SharedLibraryConcurrencyTests : IDisposable
 
     /// <summary>The referenced sub-tree's own cells, by name.</summary>
     private static string[] ReferencedCellNames(ProjectTreeNode root) =>
-        root.Children.Where(c => c.Kind == NodeKind.ReferencedWorkspacesGroup)
-            .SelectMany(g => g.Children)
+        root.Children.Where(c => c.Kind == NodeKind.ReferencedWorkspace)
             .SelectMany(w => w.Children)
             .SelectMany(f => f.Kind == NodeKind.UserFolder ? f.Children : [f])
             .Where(n => n.Kind == NodeKind.Cell)
@@ -392,9 +391,8 @@ public sealed class SharedLibraryConcurrencyTests : IDisposable
 
     private static ProjectTreeNodeViewModel FindReferencedWorkspaceNode(ProjectTreeTool tool)
     {
-        var group = tool.RootItems[0].Children
-            .First(c => c.Kind == NodeKind.ReferencedWorkspacesGroup);
-        return group.Children.First(c => c.Kind == NodeKind.ReferencedWorkspace);
+        return tool.RootItems[0].Children
+            .First(c => c.Kind == NodeKind.ReferencedWorkspace);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -436,7 +434,6 @@ public sealed class SharedLibraryConcurrencyTests : IDisposable
         var never = WorkspaceScanner.Scan(_ws, ReferencedSubtrees.Reuse, previous: null);
 
         var node = never.Children
-            .First(c => c.Kind == NodeKind.ReferencedWorkspacesGroup).Children
             .First(c => c.Kind == NodeKind.ReferencedWorkspace);
 
         var placeholder = Assert.Single(node.Children);

@@ -1003,7 +1003,31 @@ public partial class LayoutEditorView : UserControl
         if (target is not { } t) { e.Cancel = true; return; }
 
         var items = LayoutCanvasCtrl.BuildContextMenuItems(t.Wx, t.Wy);
+
+        // Re-reference Cell… is contributed HERE rather than by the canvas, for the same reason
+        // Push Into Cell is driven from this file: it is a workspace-level operation reached through
+        // LayoutDocument.Hierarchy, and the canvas knows nothing about either. It leads the menu when
+        // it appears at all — the click landed on an instance that cannot resolve, which is the only
+        // thing on that row worth doing.
+        if (BuildReReferenceItem() is { } reReference)
+            items = [reReference, new Separator(), .. items];
+
         if (sender is ContextMenu menu) menu.ItemsSource = items;
+
+        MenuItem? BuildReReferenceItem()
+        {
+            if (DataContext is not LayoutDocument doc || doc.Hierarchy is not { } host) return null;
+            if (doc.ActiveViewModel?.FindBrokenInstanceForContextMenu(
+                    t.Wx, t.Wy, LayoutCanvasCtrl.ContextMenuHitTolDbu) is not { } hit) return null;
+
+            var mi = new MenuItem { Header = "Re-reference Cell…" };
+            mi.Click += async (_, _) =>
+            {
+                await host.ReReferenceInstanceCellAsync(doc, hit.Instance);
+                LayoutCanvasCtrl.InvalidateVisual();
+            };
+            return mi;
+        }
     }
 
     // ── Toolbar field commit (§1 R6 typed entry — LostFocus commits; Enter commits + refocuses canvas) ──

@@ -11,6 +11,7 @@ namespace CircuitRF.Ui.Tests;
 /// Hierarchical extraction gate: cell instances, Library building, recursion, dedupe,
 /// cycle detection, and port-count mismatch.
 /// </summary>
+[Collection(CellStatGlobalsCollection.Name)]
 public class NetExtractorHierarchyTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────

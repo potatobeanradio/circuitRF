@@ -22,6 +22,7 @@ namespace CircuitRF.Ui.Tests;
 //  in the GUI and headlessly alike). The gate below is that the two agree.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class ExternalCellRefCliTests : IDisposable
 {
     private readonly string _root;

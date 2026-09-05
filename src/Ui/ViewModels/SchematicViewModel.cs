@@ -471,6 +471,35 @@ public sealed partial class SchematicViewModel : ObservableObject
         return edits.Count;
     }
 
+    /// <summary>
+    /// Points every instance carrying <paramref name="oldCellRef"/> at <paramref name="newCellRef"/>
+    /// — the rewrite behind <b>Re-reference Cell…</b>. One undo entry for the lot, like
+    /// <see cref="UpdateReferencesFor"/>, because it is one gesture: a user repairing a broken
+    /// reference means the reference, not the one instance they happened to right-click, and undoing
+    /// half of it would leave a document in a state nobody asked for.
+    /// </summary>
+    /// <returns>How many instances were rewritten; zero when none carried that reference.</returns>
+    public int RelinkCellReferences(string oldCellRef, string newCellRef)
+    {
+        if (string.IsNullOrEmpty(oldCellRef) || string.IsNullOrEmpty(newCellRef)
+            || string.Equals(oldCellRef, newCellRef, StringComparison.Ordinal)) return 0;
+
+        var edits = EditModel.Components
+            .Where(c => string.Equals(c.CellRef, oldCellRef, StringComparison.Ordinal))
+            .Select(c => (c, (string?)c.CellRef, newCellRef, c.MovedRedirect))
+            .ToList();
+        if (edits.Count == 0) return 0;
+
+        Execute(new UpdateCellReferenceCommand(EditModel, edits));
+
+        // The reference now points somewhere that resolves, so both watches have something new to
+        // say about it — SL3's interface hash was recorded against the cell as it was, and TM2's
+        // move marks were computed against a reference that did not resolve at all.
+        RescanCellInterfaces();
+        RescanMovedCells();
+        return edits.Count;
+    }
+
     // ── Render model rebuild ──────────────────────────────────────────────────
 
     /// <summary>

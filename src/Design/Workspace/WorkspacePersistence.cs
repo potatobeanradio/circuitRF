@@ -47,6 +47,15 @@ public sealed class CwsTreeViewState
     public bool KnownFiles          { get; set; } = true;
     public bool WorkspaceFileSystem { get; set; } = true;
 
+    /// <summary>
+    /// The root-level rows for cells referenced ONE AT A TIME out of another workspace
+    /// (<see cref="CwsFile.ReferencedCells"/>), and the root-level rows for whole referenced
+    /// workspaces. Both default to on, like every other category, and an older <c>.cws</c> with no
+    /// value for them therefore restores as on rather than hiding rows the user never turned off.
+    /// </summary>
+    public bool ReferencedCells      { get; set; } = true;
+    public bool ReferencedWorkspaces { get; set; } = true;
+
     /// <summary>Ordering mode; "alphabetical" is the only valid value in v1.</summary>
     [System.Text.Json.Serialization.JsonIgnore(
         Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -188,6 +197,25 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CwsWorkspaceRef>? ReferencedWorkspaces { get; set; }
+
+    /// <summary>
+    /// Individual cells in other workspaces this one references — each a <c>ws://alias/rel/path</c>
+    /// string resolving through <see cref="ReferencedWorkspaces"/>, and each rendered as ONE row at
+    /// the Project Tree's root.
+    ///
+    /// <para><b>Why a second list rather than more aliases.</b> Referencing a cell and referencing a
+    /// workspace are different acts with the same machinery underneath: the alias is how a
+    /// cross-workspace path is written down exactly once (R-mw2-4) and it has to exist either way,
+    /// but bringing in one cell must not bring in the other project's whole catalogue — which is what
+    /// listing only the alias did, and what put dozens of unwanted rows in the tree. So the alias is
+    /// still created, marked <see cref="CwsWorkspaceRef.CellsOnly"/>, and the CELL is what the tree
+    /// lists.</para>
+    ///
+    /// <para>Null or empty means this workspace references no individual cell. No
+    /// <c>FormatVersion</c> bump — an absent field on an older <c>.cws</c> loads as null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ReferencedCells { get; set; }
 }
 
 /// <summary>
@@ -209,6 +237,24 @@ public sealed class CwsWorkspaceRef
     /// the ordinary case, so relative is the ordinary answer and the pair travels together.
     /// </summary>
     public string Path { get; set; } = "";
+
+    /// <summary>
+    /// True when this alias exists ONLY to address the cells listed in
+    /// <see cref="CwsFile.ReferencedCells"/> — the alias table entry a per-cell reference needs, and
+    /// nothing more. Such an entry is NOT rendered in the Project Tree: referencing one cell brings
+    /// in one cell, never the other workspace's whole catalogue.
+    ///
+    /// <para><b>It changes addressing not at all.</b> A <c>ws://</c> reference resolves through the
+    /// same table whatever this flag says — <see cref="ExternalCellRef"/> never reads it — so the
+    /// flag is purely about what the tree shows. <c>File ▸ Reference Workspace…</c> on a workspace
+    /// already referenced this way clears it, which promotes the existing alias rather than adding a
+    /// second name for the same target.</para>
+    ///
+    /// <para>False on every entry written before this existed, which is the old behaviour: those
+    /// aliases were created BY the whole-workspace gesture and go on rendering as they did.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CellsOnly { get; set; }
 }
 
 /// <summary>

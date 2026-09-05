@@ -122,6 +122,17 @@ public interface ITreeActions
     /// </summary>
     Task RemoveWorkspaceReferenceAsync(ProjectTreeNodeViewModel referencedWorkspaceNode);
 
+    /// <summary>
+    /// Removes one referenced CELL from this workspace's <c>.cws</c> — the way out of the per-cell
+    /// reference, and the counterpart of the workspace one above.
+    ///
+    /// <para>Nothing on disk is touched: the row names another workspace's folder, and "remove" here
+    /// means this workspace stops listing it. The alias behind it goes too when it was created for
+    /// this cell alone and nothing else still resolves through it — an alias still in use is left
+    /// exactly where it is, since removing it would break instances already placed.</para>
+    /// </summary>
+    Task RemoveCellReferenceAsync(ProjectTreeNodeViewModel referencedCellNode);
+
     /// <summary>True when this node has unsaved work (drives the "Save" context item's visibility).</summary>
     bool IsNodeDirty(ProjectTreeNodeViewModel node);
 

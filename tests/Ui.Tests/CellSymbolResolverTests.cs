@@ -14,6 +14,7 @@ namespace CircuitRF.Ui.Tests;
 //  No .csym at all       → PrimaryMissing (NoView branch)
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class CellSymbolResolverTests : IDisposable
 {
     // One temp dir shared across tests in this class; wiped on Dispose.

@@ -604,7 +604,6 @@ public sealed class TreeMoveTests : IDisposable
         Assert.False(TreeMove.IsMovable(NodeKind.LibrariesGroup));
         Assert.False(TreeMove.IsMovable(NodeKind.KnownFilesGroup));
         Assert.False(TreeMove.IsMovable(NodeKind.ReferencedWorkspace));
-        Assert.False(TreeMove.IsMovable(NodeKind.ReferencedWorkspacesGroup));
         Assert.False(TreeMove.IsMovable(NodeKind.NotReadYet));
 
         Assert.True(TreeMove.IsMovable(NodeKind.Cell));

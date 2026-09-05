@@ -151,6 +151,8 @@
                             <CheckBox IsChecked="{Binding FilterState.KnownFiles}"          Content="Known Files"           FontSize="12"/>
                             <CheckBox IsChecked="{Binding FilterState.ColorThemes}"         Content="Color Themes"          FontSize="12"/>
                             <CheckBox IsChecked="{Binding FilterState.TechFiles}"           Content="Technology Files"      FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.ReferencedCells}"      Content="Referenced Cells"      FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.ReferencedWorkspaces}" Content="Referenced Workspaces" FontSize="12"/>
                         </StackPanel>
                     </Flyout>
                 </Button.Flyout>
@@ -494,9 +496,15 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Star" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
-                                        <!-- Separator before creation actions -->
-                                        <Separator IsVisible="{Binding CanCreateInside}"/>
-                                        <Separator IsVisible="{Binding IsCell}"/>
+                                        <!-- Separator before the creation actions. There is exactly
+                                             ONE, and it rides IsOwnCell: every item it introduces
+                                             does, so on a REFERENCED cell they are all hidden and the
+                                             separator sat straight against the next one. The
+                                             CanCreateInside twin it replaces separated nothing —
+                                             every kind that answers true to it (workspace, library,
+                                             user folder) shows no menu item ABOVE this point, so it
+                                             was a rule at the very top of the menu. -->
+                                        <Separator IsVisible="{Binding IsOwnCell}"/>
 
                                         <!-- Workspace / Library / user-folder node actions -->
                                         <MenuItem Header="New Cell"
@@ -518,27 +526,27 @@
                                         <!-- Cell node actions -->
                                         <MenuItem Header="New Schematic"
                                                   Command="{Binding NewSchematicCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FilePlusOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="New Symbol"
                                                   Command="{Binding NewSymbolCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ShapePlusOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="New Layout"
                                                   Command="{Binding NewLayoutCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="Duplicate…"
                                                   Command="{Binding DuplicateCellCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="Rename…"
                                                   Command="{Binding RenameCellCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FormTextbox" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <Separator IsVisible="{Binding IsCell}"/>
@@ -570,6 +578,15 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- The same way out, for a cell referenced on its own: the row
+                                             names another workspace's folder, so "remove" can only ever
+                                             mean stop listing it. -->
+                                        <MenuItem Header="Remove Cell Reference"
+                                                  Command="{Binding RemoveCellReferenceCommand}"
+                                                  IsVisible="{Binding IsReferencedCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- A cell that lives in ANOTHER workspace, and the Referenced
                                              Workspace row itself — directly above Reveal, since the two
                                              answer the same question ("where does this actually come
@@ -587,10 +604,10 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
-                                        <Separator IsVisible="{Binding IsCell}"/>
+                                        <Separator IsVisible="{Binding IsOwnCell}"/>
                                         <MenuItem Header="Remove Cell"
                                                   Command="{Binding RemoveCellCommand}"
-                                                  IsVisible="{Binding IsCell}">
+                                                  IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 

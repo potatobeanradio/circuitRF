@@ -66,9 +66,10 @@ A cell does not have to live in the workspace you are working in. Two commands b
 answer different questions.
 
 **File ▸ Reference Workspace…** points this workspace at another one and gives it a short **alias**.
-Its cells then appear in the Project panel under *Referenced Workspaces*, ready to place. Nothing is
-copied: the cells stay where they are, and when their owner edits one, your design picks up the change
-the next time it draws — no restart, and nothing to re-import.
+It appears in the Project panel as one row at the top level, carrying a network-folder icon, and all of
+its cells are inside it ready to place. Nothing is copied: the cells stay where they are, and when their
+owner edits one, your design picks up the change the next time it draws — no restart, and nothing to
+re-import.
 
 A referenced workspace is re-read when you open your workspace, when you expand its branch in the
 Project panel, and when you press **Refresh** there — not every time you switch back to the window. So
@@ -81,9 +82,12 @@ from one workspace window onto another. Either way you are asked the same questi
 - **Copy the cell in.** You get your own independent copy. Later changes on the other side do not reach
   you, and yours do not reach them. If the cell places cells of its own, you are asked whether those
   come along as copies too or stay referenced where they are.
-- **Reference the cell where it is.** The other workspace is added to your referenced list, and the
-  cell is instanced from there. One master, many users. Its own sub-cells are always referenced with
-  it — a referenced cell is the other project's, all the way down.
+- **Reference the cell where it is.** *That cell* — and only that cell — appears in your Project panel
+  as one row at the top level, carrying the same network icon a referenced workspace does, and is
+  instanced from there. One master, many
+  users. The rest of the other project's cells do not come with it. Its own sub-cells are always
+  referenced with it — a referenced cell is the other project's, all the way down. Right-click the row
+  and choose **Remove Cell Reference** to stop listing it; nothing is deleted.
 
 <div class="callout note">
 <span class="label">Which to choose</span>
@@ -105,6 +109,22 @@ workspace has not imported.
 
 Because a reference is written as *alias + cell name* rather than as a path, moving the shared library
 later is one edit in one place, not a hunt through every document that used it.
+
+**If a reference does break** — you removed it, or the other project moved — every instance that placed
+that cell draws as **Not Found**. Right-click one, in the schematic or the layout editor, and choose
+**Re-reference Cell…**. It looks for the cell first: in this workspace, in the ones open in other
+windows, in the ones you already reference, and in your recent list. If it finds it, the reference is
+put back — usually without changing your document at all, because the alias goes back under the name it
+had. If it finds nothing, or two cells of that name, it asks you to point at the cell's folder. Either
+way the repair covers *every* instance of that cell in the document, in one undo step. Referencing a single
+cell still records that alias — it is how the cell is addressed — but the alias itself draws no row, so
+one referenced cell is one row. Run **File ▸ Reference Workspace…** on the same project later and the
+existing alias is promoted rather than duplicated: the whole workspace then appears alongside, and
+anything already placed goes on resolving.
+
+The Project panel's filter button (the funnel) has a checkbox for each of these — *Referenced Cells* and
+*Referenced Workspaces* — both on by default, so either kind can be put out of the way without touching
+your own cells.
 
 ## Sharing a workspace with other people {#shared}
 

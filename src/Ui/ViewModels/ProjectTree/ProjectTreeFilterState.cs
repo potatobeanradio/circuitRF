@@ -19,6 +19,18 @@ public partial class ProjectTreeFilterState : ObservableObject
     [ObservableProperty] private bool _workspaceFileSystem = true;
 
     /// <summary>
+    /// The root-level rows for cells referenced one at a time out of another workspace, and
+    /// everything under them. Separate from <see cref="Libraries"/> and from
+    /// <see cref="ReferencedWorkspaces"/> because they are three different acts: a library is a
+    /// folder of parts, a referenced workspace is someone else's whole project, and a referenced cell
+    /// is exactly one design taken from it.
+    /// </summary>
+    [ObservableProperty] private bool _referencedCells      = true;
+
+    /// <summary>The root-level rows for whole referenced workspaces, and everything under them.</summary>
+    [ObservableProperty] private bool _referencedWorkspaces = true;
+
+    /// <summary>
     /// Free-text name filter (owner, 2026-08-25: a board import can add dozens of cells at once,
     /// which makes the user's own cells hard to find). Lives HERE, beside the category toggles,
     /// rather than on the tool: every node VM already subscribes to this object's PropertyChanged
@@ -50,10 +62,12 @@ public partial class ProjectTreeFilterState : ObservableObject
     public bool IsSearching => HasSearchQuery;
 
     public bool IsAllOn =>
-        Cells && Libraries && TestBenches && DataDisplays && ColorThemes && TechFiles && KnownFiles && WorkspaceFileSystem;
+        Cells && Libraries && TestBenches && DataDisplays && ColorThemes && TechFiles && KnownFiles
+        && WorkspaceFileSystem && ReferencedCells && ReferencedWorkspaces;
 
     public void SetAll(bool value)
     {
-        Cells = Libraries = TestBenches = DataDisplays = ColorThemes = TechFiles = KnownFiles = WorkspaceFileSystem = value;
+        Cells = Libraries = TestBenches = DataDisplays = ColorThemes = TechFiles = KnownFiles
+              = WorkspaceFileSystem = ReferencedCells = ReferencedWorkspaces = value;
     }
 }

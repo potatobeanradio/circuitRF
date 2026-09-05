@@ -18,6 +18,7 @@ namespace CircuitRF.Ui.Tests;
 /// happens to live inside someone else's workspace belongs to that workspace just as much, and a cell
 /// reached through a reference but sitting inside THIS workspace does not.</para>
 /// </summary>
+[Collection(CellStatGlobalsCollection.Name)]
 public class ReferencedWorkspaceContextMenuTests : IDisposable
 {
     private readonly string _tmp;
@@ -249,8 +250,11 @@ public class ReferencedWorkspaceContextMenuTests : IDisposable
         Assert.Contains("cws.ReferencedWorkspaces?.RemoveAll(", body, StringComparison.Ordinal);
         Assert.Contains("WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);", body,
                         StringComparison.Ordinal);
-        // The alias table a ws:// reference resolves through is memoised, and this rewrite changes it.
-        Assert.Contains("WorkspaceRootFinder.InvalidateCache();", body, StringComparison.Ordinal);
+        // The alias table a ws:// reference resolves through is memoised, and this rewrite changes it —
+        // and every open document that placed a cell through the alias is now showing a state its
+        // render model still holds. Both live in RefreshAfterReferenceChange, which is the one place
+        // a reference change says what has to happen next (see CellReferenceRelinkTests).
+        Assert.Contains("RefreshAfterReferenceChange();", body, StringComparison.Ordinal);
         // Nothing on disk, in either workspace.
         Assert.DoesNotContain("Directory.Delete", body, StringComparison.Ordinal);
         Assert.DoesNotContain("File.Delete", body, StringComparison.Ordinal);

@@ -20,6 +20,7 @@ namespace CircuitRF.Ui.Tests;
 //  afterwards.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class CrossWorkspaceDropTests : IDisposable
 {
     private readonly string _root;

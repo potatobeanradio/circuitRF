@@ -57,8 +57,12 @@ public partial class AddCellToWorkspaceDialog : Window
         CopyRadio.Content      = $"Copy the cell into {destWorkspaceName}";
         SubRefRadio.Content    = $"Keep them referenced in {sourceWorkspaceName}";
         ReferenceRadio.Content = $"Reference {sourceWorkspaceName}'s cell from {destWorkspaceName}";
+        // What the reference actually costs the receiving tree, which is the question a user is
+        // really asking here: ONE row. Referencing a cell used to list the whole source workspace,
+        // and this sentence used to say so.
         ReferenceNoteText.Text =
-            $"Adds \"{sourceWorkspaceName}\" to {destWorkspaceName}'s referenced workspaces.";
+            $"Lists {cellName} in {destWorkspaceName}'s Project Tree — one row, nothing copied. "
+          + $"{sourceWorkspaceName}'s other cells do not come with it.";
 
         SubCellPanel.IsVisible = hasSubCells;
 

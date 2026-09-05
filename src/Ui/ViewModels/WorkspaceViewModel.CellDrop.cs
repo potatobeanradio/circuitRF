@@ -135,34 +135,50 @@ public partial class WorkspaceViewModel
 
     // ── Reference ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// References ONE cell where it lives.
+    ///
+    /// <para><b>One cell in, one row out</b> (owner, 2026-09-04). The alias is still what a
+    /// <c>ws://</c> reference resolves through and is still created once per target workspace — that
+    /// part of MW2 is unchanged — but an alias created BY this gesture is recorded
+    /// <see cref="CwsWorkspaceRef.CellsOnly"/> and draws no row, and the CELL is listed instead. The
+    /// previous behaviour listed the alias alone, so taking one cell from a colleague's project put
+    /// their entire catalogue of cells in this workspace's tree, which is the opposite of what the
+    /// gesture names.</para>
+    /// </summary>
     private void ReferenceExternalCell(string myRoot, string sourceRoot, string sourceCellDir)
     {
         // R-mw3-7 / MW2 §2: the alias is created once and REUSED. Two aliases for one workspace would
         // make the same cell reachable under two names, and a rename repair would then have to guess.
         string? alias = ExistingAliasFor(myRoot, sourceRoot);
-        bool    added = false;
 
         if (alias is null)
         {
             alias = UniqueAlias(myRoot, FolderLeaf(sourceRoot));
-            if (!AddReferencedWorkspace(myRoot, alias, Path.Combine(sourceRoot, ".cws"), out string? error))
+            if (!AddReferencedWorkspace(
+                    myRoot, alias, Path.Combine(sourceRoot, ".cws"), out string? error, cellsOnly: true))
             {
                 Messages.Error(error!);
                 return;
             }
-            added = true;
         }
 
         string cellRef = ExternalCellRef.RefFor(
             alias, Path.GetRelativePath(sourceRoot, sourceCellDir).Replace('\\', '/'));
 
-        Messages.Success(added
-            ? $"'{FolderLeaf(sourceRoot)}' is now referenced as \"{alias}\"; place '{Path.GetFileName(sourceCellDir)}' "
-              + $"from the Project Tree ({cellRef})."
-            : $"'{Path.GetFileName(sourceCellDir)}' is already reachable through the existing reference "
-              + $"\"{alias}\" ({cellRef}).");
+        if (!AddReferencedCell(myRoot, cellRef, out string? cellError, out bool alreadyListed))
+        {
+            Messages.Error(cellError!);
+            return;
+        }
 
-        _factory.ProjectTreeTool?.Refresh();
+        string cellName = Path.GetFileName(sourceCellDir);
+        Messages.Success(alreadyListed
+            ? $"'{cellName}' is already referenced here ({cellRef})."
+            : $"'{cellName}' is now referenced from '{FolderLeaf(sourceRoot)}' and appears in the "
+              + $"Project Tree ({cellRef}).");
+
+        RefreshAfterReferenceChange();
     }
 
     // ── Copy ──────────────────────────────────────────────────────────────────
@@ -195,8 +211,7 @@ public partial class WorkspaceViewModel
         try { written = CrossWorkspaceCellCopy.Execute(plan); }
         catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return; }
 
-        CellSymbolResolver.InvalidateAll();
-        _factory.ProjectTreeTool?.Refresh();
+        RefreshAfterReferenceChange();
 
         int extra = plan.Folders.Count - 1;
         Messages.Success(

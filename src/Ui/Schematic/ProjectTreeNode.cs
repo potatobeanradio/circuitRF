@@ -78,11 +78,12 @@ public enum NodeKind
     /// set and a <c>.cws</c> of its own, which is why the reference names it rather than pointing at
     /// a path, and why a cell placed from it carries a <c>ws://</c> reference rather than a relative
     /// one.
+    ///
+    /// <para>Rendered as a ROW OF THE ROOT, not inside a group heading (owner, 2026-09-04): the
+    /// network-folder icon already says what the row is, so a "Referenced Workspaces" heading spent a
+    /// row of the tree repeating it.</para>
     /// </summary>
     ReferencedWorkspace,
-
-    /// <summary>Synthetic group node that contains all <see cref="ReferencedWorkspace"/> children.</summary>
-    ReferencedWorkspacesGroup,
 
     /// <summary>
     /// SL4 R-sl4-11 — the single placeholder child of a referenced <see cref="Library"/> or
@@ -153,24 +154,39 @@ public sealed class ProjectTreeNode
     /// </summary>
     public bool IsDirectory { get; }
 
+    /// <summary>
+    /// True for a <see cref="NodeKind.Cell"/> that this workspace references ONE AT A TIME out of
+    /// another workspace — a <c>.cws</c> <c>ReferencedCells</c> entry, drawn as a row of the root.
+    ///
+    /// <para><b>A flag rather than a kind, deliberately.</b> A referenced cell IS a cell in every way
+    /// that matters downstream — it opens, it places, it reveals, it carries the same views — and a
+    /// second kind would have to be added to every one of those call sites, which is precisely how one
+    /// gets missed. What actually differs is what it is called (its glyph), which filter toggle it
+    /// rides, and that "remove" means dropping the reference rather than deleting someone else's
+    /// folder; all three read this flag.</para>
+    /// </summary>
+    public bool IsReferencedCell { get; }
+
     public ProjectTreeNode(
         NodeKind kind,
         string   name,
         string   absolutePath,
         string   relativePath,
-        bool     isPrimary     = false,
-        bool     isTestBench   = false,
-        string?  warningReason = null,
-        bool     isDirectory   = false)
+        bool     isPrimary        = false,
+        bool     isTestBench      = false,
+        string?  warningReason    = null,
+        bool     isDirectory      = false,
+        bool     isReferencedCell = false)
     {
-        Kind          = kind;
-        Name          = name;
-        AbsolutePath  = absolutePath;
-        RelativePath  = relativePath;
-        IsPrimary     = isPrimary;
-        IsTestBench   = isTestBench;
-        WarningReason = warningReason;
-        IsDirectory   = isDirectory;
+        Kind             = kind;
+        Name             = name;
+        AbsolutePath     = absolutePath;
+        RelativePath     = relativePath;
+        IsPrimary        = isPrimary;
+        IsTestBench      = isTestBench;
+        WarningReason    = warningReason;
+        IsDirectory      = isDirectory;
+        IsReferencedCell = isReferencedCell;
     }
 
     /// <summary>Appends a child.  Called only by <see cref="WorkspaceScanner"/>.</summary>

@@ -1,5 +1,164 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Re-referencing a broken cell instance, and the stale "Not Found" glyph (2026-09-04)
+
+**Asked for:** placing a referenced cell and then removing the reference leaves the instance reading
+**Not Found** with no way back — a context item that tries to relink and falls back to an OS picker.
+And: re-adding the reference did not clear the glyph "until I dragged the instance" (the same for
+removing one).
+
+**The stale glyph was the smaller bug and the more instructive one.** A schematic's RENDER MODEL
+carries each component's `CellRefState`, resolved when the model is BUILT — so dropping
+`CellSymbolResolver`'s cache fixes what the next resolution answers and changes nothing on screen. The
+drag was doing the real work: it is an edit, and an edit rebuilds the model. Every gesture that changes
+this workspace's references now goes through one method, `RefreshAfterReferenceChange` — invalidate the
+walk-up/alias/symbol/layout caches, refresh the tree, `RebuildOpenSchematics()`, and nudge every open
+layout frame (`RepaintOpenLayouts`, the same broadcast the live-view seam makes). Add, promote, remove,
+copy-in and relink all call it; `CellReferenceRelinkTests` asserts each of those methods does, per
+method, because a tree-only refresh is still right for a gesture that changes no reference.
+
+**Re-reference Cell… searches before it asks.** `CellReferenceRepair` (framework-free) looks for the
+cell in the workspace, the ones open in other windows, the ones this workspace already references, and
+the recent list — most likely first, because that order IS the tie-breaking rule. Two ways it can
+find one: the same path under a candidate root (the ordinary case after a reference is removed — the
+alias goes back under **its old name**, so the reference the document already holds resolves again and
+nothing is rewritten), or exactly one cell of that name (the cell moved, so the reference is rewritten).
+**Two cells of one name is deliberately NOT resolved** — guessing wrong is worse than asking, and the
+picker is what asks. A folder the user picks is recorded as a reference like any other: a `CellsOnly`
+alias plus a `ReferencedCells` row, arrived at from the other end.
+
+- **The rewrite is per REFERENCE, not per instance** — `SchematicViewModel.RelinkCellReferences` takes
+  every component carrying the broken ref, in one undo entry. Repairing eleven instances one
+  right-click at a time is not a gesture anyone wants, and undoing half of it is not a state anyone
+  asked for.
+- **The item is hidden unless the instance is genuinely broken AND the reference names a folder.** A
+  kit part, a wBond and a SPICE model card also read `NotFound`, and "locate the cell folder" is not
+  the repair for any of them — `CellReferenceRepair.IsRepairable` is the one place that list is
+  written down.
+- **An unsaved schematic refuses out loud.** A cell reference is relative to the document's own folder;
+  a scratch schematic has none, which is *why* its instances read NotFound, and no folder the user
+  picks can change that.
+- **The LAYOUT editor has it too** (added the same day, owner's ask). The two entry points share
+  everything but the rewrite: `FindOrAskForCellAsync` (search, then picker) and `RecordReferenceFor`
+  (the alias, the tree row, the reference the document should now carry) are one implementation, and
+  each editor's own `RelinkCellReferences` — schematic and layout — puts one undo entry on its own
+  stack. The layout item is contributed by `LayoutEditorView`, not by `LayoutCanvas`, for the reason
+  Push Into Cell is driven from there: it is a workspace-level operation reached through
+  `LayoutDocument.Hierarchy`, which the canvas knows nothing about. It leads that menu when it appears
+  at all, since the click landed on an instance that cannot resolve.
+
+**The user doc** (`docs/user/src/reference/workspace.md`) describes the gesture in both editors.
+
+**MW2 R-mw2-13's layout chrome is withdrawn** (owner, 2026-09-04: "a referenced cell in layout should
+render just like a cell in the workspace"). A RESOLVED external instance drew a dashed
+selection-coloured surround and an `[alias]` tag; both are gone. The rule they served — being able to
+see without clicking that a cell is not this workspace's own — is carried by every other surface at no
+cost to the artwork: the Project Tree's network glyph, the Properties panel's provenance line, and the
+instance's own `ws://` reference. What remains is the marking on a reference that does NOT resolve,
+where naming the workspace is the repair rather than decoration (`DrawBrokenInstancePlaceholder`'s
+`[alias]` prefix). **The schematic's tag is untouched** — this was asked for the layout, where the
+artwork is the point.
+
+**Two owner-asked bits of wording/iconography alongside:** the schematic context menu's **Disconnect**
+is now **Disconnect Pins**, and a referenced CELL row carries the same `FolderNetworkOutline` glyph the
+referenced WORKSPACE row does — both rows say the same thing to a reader ("not mine, it lives
+elsewhere"), and the row's name and position already distinguish cell from workspace. **The folders
+INSIDE a referenced cell carry it too**: the row opened up is still one thing living in someone else's
+workspace, and a plain folder glyph three rows down reads as content of this one. It stops there — a
+cell reached through a referenced WORKSPACE keeps the ordinary glyphs, since the branch above it
+already says where it came from and marking every folder of a 200-cell library would say it two
+hundred times. The node's `ReferenceScope` (already computed for the filter) is what separates the two
+cases.
+
+**Test isolation, found by this work and pre-existing:** SL4's exact-count gates
+(`CellStat.Calls`) sit on a process-global counter, and `WorkspaceRootFinder.InvalidateCache` drops
+`CellStat`'s cache along with the alias table and `WorkspaceWritability`'s memo. Sixteen classes in
+`Ui.Tests` call that or `CellSymbolResolver.InvalidateAll` per test; only five were in
+`CellStatGlobalsCollection`, so the others had simply never been SCHEDULED against them — and adding
+two classes to the assembly was enough to make it happen ("expected 40, actual 58" is one fixture's
+cache drop landing inside another's counted edit). All sixteen are in the collection now; the suite
+runs in the same ~2 min.
+
+## Referencing a cell references the CELL, and the tree's reference rows moved to the root (2026-09-04)
+
+**Asked for:** File ▸ Add Cell to Workspace… (and the equivalent drag between two workspace windows)
+referenced the whole SOURCE WORKSPACE, so taking one cell from another project filled the Project Tree
+with dozens of cells nobody asked for. One referenced cell should be one row at the root, with a
+network-FILE icon beside the referenced workspace's network-FOLDER one; both kinds get a filter
+checkbox, on by default; and the *Referenced Workspaces* heading goes away entirely.
+
+**The alias is still created — it is how the cell is ADDRESSED — and that is why the fix is a flag
+rather than a new addressing scheme.** MW2 R-mw2-4's whole point is that a cross-workspace path is
+written down once, in `.cws`, so relocating the other project is one edit; `ws://alias/cells/Amp`
+resolves through that table and nothing else. What was wrong was never the alias, it was that the
+alias was also the only thing the tree LISTED. So:
+
+- `CwsWorkspaceRef.CellsOnly` marks an alias created purely to carry per-cell references. Nothing in
+  `ExternalCellRef` reads it — resolution is unchanged, and a document may still place any cell of
+  that workspace through the alias. `WorkspaceScanner` skips such an entry, and that is the whole of
+  its effect.
+- `CwsFile.ReferencedCells` — a list of `ws://` strings — is what the tree lists, one root row each.
+- `File ▸ Reference Workspace…` on a workspace already referenced this way **promotes** the existing
+  alias (clears the flag) instead of refusing or minting a second name for one target. A second alias
+  would make one cell reachable under two names, which is the thing MW2 declined to allow.
+
+**A referenced cell is `NodeKind.Cell` with `ProjectTreeNode.IsReferencedCell`, not a new kind.** It
+opens, places, reveals and drags exactly like any other cell, and every one of those call sites tests
+the kind; a new kind would have had to be added to all of them, which is how one gets missed. Three
+things actually differ, and all three read the flag: the glyph (`FileLinkOutline` — Material has no
+"file-network"), the filter toggle it rides, and that Rename/Duplicate/Remove Cell are not offered on
+another workspace's folder (`IsOwnCell`), with **Remove Cell Reference** in their place. Moving one is
+already refused upstream — `TreeMove.For`'s ownership check answers `NotOwned` for any path outside
+this workspace — so nothing new was needed there.
+
+**Removing a cell reference removes the alias too** — when it was created `CellsOnly` and no other
+`ReferencedCells` entry addresses it. **Instances that place the cell do NOT keep it alive**, and the
+first version of this got that wrong (owner, 2026-09-04: "I removed my reference from the Project tree,
+but the layout instance still resolves… I even quit the app and restarted"). Keeping the alias for
+their sake was wrong twice over: the removal dialog has already SAID those references will stop
+resolving, so keeping them working makes the app do the opposite of what it just promised; and it made
+the outcome depend on whether a document happened to be SAVED — `CountCellsUsingWorkspaceAlias` reads
+files on disk, so an unsaved schematic counted zero and its instances broke while a saved layout's did
+not. Removal now means the same thing every time, the dialog's warning is the whole of the trade, and
+**Re-reference Cell…** is the way back (the message says so, naming the count).
+
+**The group node is gone, and that exposed a filter bug that had been there all along.**
+`IsVisibleUnderFilter` ends in ancestor-preservation — visible if this node passes, **or any descendant
+is visible** — and a referenced branch's cells rode the `Cells` toggle. So `Libraries` off with `Cells`
+on left every library row on screen, and the same would have been true of the new
+`ReferencedWorkspaces` checkbox the moment its group node stopped hiding it. Each node now carries a
+`ReferenceScope` (Library / Workspace / Cell), inherited from its parent at construction, and every node
+in a referenced branch answers to that branch's own toggle — one toggle owns one branch, top to bottom.
+Computed once per node rather than walked per pass, because the filter is a full-tree walk on every
+keystroke.
+
+**Also fixed in passing:** `TechFiles` was in `CwsTreeViewState` but in neither the save nor the restore
+of the tree filter state, so that one checkbox silently did not persist. The two new categories are in
+both.
+
+Gate: `tests/Ui.Tests/ReferencedCellTreeTests.cs` (14 tests) — what the `.cws` records, one-cell-in
+one-row-out, an unresolvable reference as a row carrying its reason, the workspace row at the root with
+no heading, each toggle hiding its own branch (and leaving the other's alone), removal with and without
+a still-needed alias, `ws://` resolution through a `CellsOnly` alias, the promotion path, and the
+context-menu structure below.
+
+**Follow-up the same day — two adjacent separators on a referenced cell's menu, and Reveal for a
+referenced workspace.** The context menu had a separator per BLOCK, and the cell-creation block's
+separator rode `IsCell` while every item it introduced (New Schematic/Symbol/Layout, Duplicate,
+Rename) now rides `IsOwnCell` — so on a referenced cell the whole block vanished and its separator sat
+straight against the next one. It rides `IsOwnCell` too now. Its `CanCreateInside` twin beside it was
+deleted outright: every kind that answers true to that (workspace, library, user folder) shows NO menu
+item above this point, so that separator was a rule across the top of the menu — visible in the app on
+any folder, and it had been there all along. **`NodeKind.ReferencedWorkspace` joins `CanReveal`**, like
+the Library row beside it and including the broken case: `Reveal` already falls back to the nearest
+folder that does exist and says so, which is where repairing a moved project starts.
+
+The menu tests read the real `.axaml` as XML and resolve each `IsVisible` binding through the named
+property on a real node view-model, so a renamed or mistyped binding fails the test instead of quietly
+hiding an item. Two limits, both deliberate: `_actions` is null (an item whose visibility needs the host
+— `IsSaveable`, `CanOpenReferencedWorkspace` — reads false), and the workspace ROOT is not checked,
+because the TreeView binds to its children and that node's menu never opens.
+
 ## The empty document area shows the Welcome page's icon, and no text (2026-09-04)
 
 **Asked for:** with no documents open, show the icon from the Welcome page on its own — no text, not

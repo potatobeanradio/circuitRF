@@ -130,6 +130,8 @@ public class WBondOneEditorTests
         public void OpenCellInNewTab(LayoutDocument fromDoc, LayoutInstance instance) { }
         public System.Threading.Tasks.Task SaveLayoutDocumentAsync(LayoutDocument doc)
             => System.Threading.Tasks.Task.CompletedTask;
+        public System.Threading.Tasks.Task ReReferenceInstanceCellAsync(LayoutDocument doc, LayoutInstance instance)
+            => System.Threading.Tasks.Task.CompletedTask;
     }
 
     /// <summary>

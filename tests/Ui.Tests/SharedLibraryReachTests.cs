@@ -16,6 +16,7 @@ namespace CircuitRF.Ui.Tests;
 //  share could not be handed to a second user because their spelling of that share differs.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+[Collection(CellStatGlobalsCollection.Name)]
 public class SharedLibraryReachTests : IDisposable
 {
     private readonly string _root;
@@ -87,7 +88,7 @@ public class SharedLibraryReachTests : IDisposable
         });
 
         var tree = WorkspaceScanner.Scan(_root);
-        var ws   = FindKind(FindKind(tree, NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+        var ws   = FindKind(tree, NodeKind.ReferencedWorkspace);
 
         // Alphabetical (OrdinalIgnoreCase), folders and cells intermixed exactly as the workspace's
         // own scan orders them.
@@ -112,7 +113,7 @@ public class SharedLibraryReachTests : IDisposable
             ReferencedWorkspaces = [new CwsWorkspaceRef { Alias = "stdlib", Path = Path.Combine(_lib, ".cws") }],
         });
 
-        var ws   = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+        var ws   = FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspace);
         var cell = Child(Child(Child(Child(ws, "parts"), "passives"), "thinfilm"), "R0402");
 
         Assert.Equal(NodeKind.Cell, cell.Kind);
@@ -175,7 +176,7 @@ public class SharedLibraryReachTests : IDisposable
             ReferencedWorkspaces = [new CwsWorkspaceRef { Alias = "stdlib", Path = Path.Combine(_lib, ".cws") }],
         });
 
-        var ws    = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+        var ws    = FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspace);
         var parts = Child(ws, "parts");
         Assert.Equal(new[] { "R0402" }, parts.Children.Select(n => n.Name));
     }
@@ -215,14 +216,14 @@ public class SharedLibraryReachTests : IDisposable
             ReferencedWorkspaces = [new CwsWorkspaceRef { Alias = "stdlib", Path = Path.Combine(_lib, ".cws") }],
         });
 
-        var ws = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+        var ws = FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspace);
 
         // The nested workspace's FOLDER is walked like any other folder — its own CONFIGURATION is
         // not, so the third library it references is reached not at all.
         Assert.Equal("NestedCell", Child(ws, "delivery").Children.Single().Name);
         Assert.Empty(Descendants(ws).Where(n => n.Name == "ThirdPartyCell"));
         Assert.Empty(Descendants(ws).Where(n => n.Kind is NodeKind.LibrariesGroup or NodeKind.Library
-                                             or NodeKind.KnownFilesGroup or NodeKind.ReferencedWorkspacesGroup));
+                                             or NodeKind.KnownFilesGroup or NodeKind.ReferencedWorkspace));
 
         static System.Collections.Generic.IEnumerable<ProjectTreeNode> Descendants(ProjectTreeNode n)
             => n.Children.Concat(n.Children.SelectMany(Descendants));
@@ -249,7 +250,7 @@ public class SharedLibraryReachTests : IDisposable
             string? resolved = ExternalCellRef.ResolveCellDir("ws://stdlib/passives/R0402", _root);
             Assert.Equal(cellDir, resolved);
 
-            var ws = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+            var ws = FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspace);
             Assert.Null(ws.WarningReason);
             Assert.Equal("R0402", Child(ws, "passives").Children.Single().Name);
         }
@@ -272,7 +273,7 @@ public class SharedLibraryReachTests : IDisposable
 
         Assert.Null(ExternalCellRef.ResolveCellDir("ws://stdlib/passives/R0402", _root));
 
-        var ws = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspacesGroup), NodeKind.ReferencedWorkspace);
+        var ws = FindKind(WorkspaceScanner.Scan(_root), NodeKind.ReferencedWorkspace);
         Assert.NotNull(ws.WarningReason);
         Assert.Contains("${" + var + "}", ws.WarningReason);
         Assert.Contains("not set on this machine", ws.WarningReason);

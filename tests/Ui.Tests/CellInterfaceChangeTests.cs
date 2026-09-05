@@ -17,6 +17,7 @@ namespace CircuitRF.Ui.Tests;
 //  so every mutation drops the cache explicitly rather than trusting the mtime.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class CellInterfaceChangeTests : IDisposable
 {
     private readonly string _root;

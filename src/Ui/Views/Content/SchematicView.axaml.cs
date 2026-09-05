@@ -469,6 +469,16 @@ public partial class SchematicView : UserControl
         CtxPushIn.IsVisible      = isCell;
         CtxOpenInNewTab.IsVisible = isCell;
 
+        // Re-reference — only for an instance whose cell reference does not resolve, and only for a
+        // reference that NAMES A FOLDER: a kit part or a wBond also reads NotFound, and pointing at a
+        // cell folder is not the repair for either (CellReferenceRepair.IsRepairable is the one place
+        // that list is written down).
+        CtxReReference.IsVisible =
+            comp?.CellRef is { Length: > 0 } cellRef
+            && Schematic.CellReferenceRepair.IsRepairable(cellRef)
+            && Schematic.CellSymbolResolver.Resolve(cellRef, Vm?.EditModel.SchematicDirectory).State
+                   == Schematic.CellSymbolState.NotFound;
+
         // Flatten to Cell — a Match and nothing else. Shown only for one, and DISABLED with the
         // reason as its tooltip when the design refuses, the schematic is unsaved or there is no
         // workspace to write into: those are states the user has to act on, and a silently missing
@@ -564,6 +574,22 @@ public partial class SchematicView : UserControl
         if (result.Ok) Vm.MessageSink?.Success(result.Message);
         else Vm.MessageSink?.Warning(result.Message);
 
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Context menu ▸ Re-reference Cell… — the workspace's job, not the canvas's: it writes the
+    /// <c>.cws</c>, owns the picker's parent window and refreshes every open document, so the view
+    /// only identifies which instance was clicked.
+    /// </summary>
+    private async void OnCtxReReference(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null || doc.Hierarchy is null) return;
+
+        await doc.Hierarchy.ReReferenceCellAsync(doc, comp);
         SchematicCanvasCtrl.InvalidateVisual();
     }
 

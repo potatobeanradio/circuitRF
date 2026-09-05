@@ -24,6 +24,15 @@ namespace CircuitRF.Ui.Tests;
 /// <para>Add a class here the moment it either asserts on <c>CellStat.Calls</c> or calls
 /// <c>CellSymbolResolver.InvalidateAll</c> in a loop. Both are how this collection came to exist:
 /// TM2's own gate does the second, and it turned SL4's two count assertions red.</para>
+///
+/// <para><b>The rule reaches <c>WorkspaceRootFinder.InvalidateCache</c> too, and the membership grew
+/// to match on 2026-09-04.</b> That method drops <c>CellStat</c>'s cache as well (along with the
+/// alias table and <c>WorkspaceWritability</c>'s memo) — so a fixture calling it between two of the
+/// counted edits turns a cache HIT into a fresh stat, which is what "expected 40, actual 58" was:
+/// the second class's fixture, not the algorithm. Sixteen classes here call one of the two per test;
+/// they had simply never been scheduled against each other, and adding two more classes to the
+/// assembly was enough to make it happen. Cost is negligible — every class in this collection runs
+/// in milliseconds — and it removes a flake that says nothing about the code.</para>
 /// </summary>
 [CollectionDefinition(Name)]
 public sealed class CellStatGlobalsCollection

@@ -15,6 +15,7 @@ namespace CircuitRF.Ui.Tests;
 //  is the authority on.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class SchematicCycleRejectionTests : IDisposable
 {
     private readonly string _root;

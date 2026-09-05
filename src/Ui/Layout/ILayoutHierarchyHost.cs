@@ -25,4 +25,12 @@ public interface ILayoutHierarchyHost
     /// refreshes the project tree. The host resolves the owner window.
     /// </summary>
     Task SaveLayoutDocumentAsync(LayoutDocument doc);
+
+    /// <summary>
+    /// <b>Re-reference Cell…</b> for a broken instance — the layout counterpart of
+    /// <c>IHierarchyHost.ReReferenceCellAsync</c>, and the same flow behind it: look for the cell
+    /// first, ask the user to point at it only when that fails, record whatever reference the answer
+    /// needs, and rewrite the document only when the reference itself changed.
+    /// </summary>
+    Task ReReferenceInstanceCellAsync(LayoutDocument doc, LayoutInstance instance);
 }

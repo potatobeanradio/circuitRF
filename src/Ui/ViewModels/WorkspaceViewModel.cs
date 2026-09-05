@@ -1719,8 +1719,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     TestBenches         = fs.TestBenches,
                     DataDisplays        = fs.DataDisplays,
                     ColorThemes         = fs.ColorThemes,
+                    TechFiles           = fs.TechFiles,
                     KnownFiles          = fs.KnownFiles,
                     WorkspaceFileSystem = fs.WorkspaceFileSystem,
+                    ReferencedCells      = fs.ReferencedCells,
+                    ReferencedWorkspaces = fs.ReferencedWorkspaces,
                 };
             }
 
@@ -2497,8 +2500,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         fs.TestBenches         = tvs.TestBenches;
         fs.DataDisplays        = tvs.DataDisplays;
         fs.ColorThemes         = tvs.ColorThemes;
+        fs.TechFiles           = tvs.TechFiles;
         fs.KnownFiles          = tvs.KnownFiles;
         fs.WorkspaceFileSystem = tvs.WorkspaceFileSystem;
+        fs.ReferencedCells      = tvs.ReferencedCells;
+        fs.ReferencedWorkspaces = tvs.ReferencedWorkspaces;
 
         if (_filterStateHandler is not null) fs.PropertyChanged += _filterStateHandler;
     }
@@ -10113,10 +10119,89 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
 
-        // The alias table a ws:// reference resolves through is memoised, and this rewrite changes it.
-        WorkspaceRootFinder.InvalidateCache();
-        _factory.ProjectTreeTool?.Refresh();
+        // Every open document that placed a cell through this alias is now showing a reference that
+        // no longer resolves, and a render model carries that state until it is rebuilt.
+        RefreshAfterReferenceChange();
         Messages.Info($"Workspace reference \"{alias}\" removed (nothing was deleted).");
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveCellReferenceAsync(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null || !node.IsReferencedCell) return;
+
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        string myRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        if (ReferencedCellRefFor(myRoot, node) is not { } cellRef)
+        {
+            Messages.Warning($"'{node.Name}' is not listed as a referenced cell here.");
+            return;
+        }
+
+        // Instances of THIS cell, not of everything the alias reaches: the row names one cell, so the
+        // number the confirmation quotes has to be about that cell or it is answering a different
+        // question. An unresolved reference has no folder to count against and simply says nothing.
+        int usedIn = node.IsWarning
+            ? 0
+            : CellUsageScanner.CountReferencingCells(myRoot, node.AbsolutePath).Count;
+
+        var msg = $"Remove the reference to '{node.Name}'?\n\n"
+                + "Nothing is deleted — the cell stays exactly where it is in its own workspace. "
+                + "This workspace simply stops listing it.";
+        if (usedIn == 1)
+            msg += "\n\n\u26a0 1 cell here places it. That reference will no longer resolve.";
+        else if (usedIn > 1)
+            msg += $"\n\n\u26a0 {usedIn} cells here place it. Those references will no longer resolve.";
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            msg,
+            saveLabel:     "Remove Reference",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "Remove Cell Reference");
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        if (!RemoveReferencedCell(myRoot, cellRef, out string? error, out string? removedAlias))
+        {
+            Messages.Error(error!);
+            return;
+        }
+
+        RefreshAfterReferenceChange();
+
+        string what = $"'{node.Name}' is no longer referenced here (nothing was deleted)";
+        if (removedAlias is not null) what += $"; the workspace alias \"{removedAlias}\" went with it";
+        if (usedIn > 0)
+            what += $". {usedIn} cell{(usedIn == 1 ? "" : "s")} here placed it, and those instances now "
+                  + "read Not Found — right-click one and choose Re-reference Cell… to put it back";
+        Messages.Info(what + ".");
+    }
+
+    /// <summary>
+    /// The <c>ws://</c> entry in this workspace's <c>.cws</c> that produced <paramref name="node"/>.
+    /// Matched by RESOLVED path first — an alias may have been renamed, or the same cell listed under
+    /// two spellings of one path — and by the raw string second, which is the only thing an
+    /// unresolvable entry has.
+    /// </summary>
+    private static string? ReferencedCellRefFor(string workspaceRoot, ProjectTreeNodeViewModel node)
+    {
+        List<string> refs;
+        try { refs = WorkspacePersistence.LoadFromFile(Path.Combine(workspaceRoot, ".cws")).ReferencedCells ?? []; }
+        catch { return null; }
+
+        foreach (string r in refs)
+        {
+            if (string.Equals(r, node.AbsolutePath, StringComparison.OrdinalIgnoreCase)) return r;
+            if (ExternalCellRef.ResolveCellDir(r, workspaceRoot) is { } dir
+                && string.Equals(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                                 Path.GetFullPath(node.AbsolutePath).TrimEnd(Path.DirectorySeparatorChar),
+                                 StringComparison.OrdinalIgnoreCase))
+                return r;
+        }
+        return null;
     }
 
     // ── ITreeActions: dirty detection + per-node save ─────────────────────────

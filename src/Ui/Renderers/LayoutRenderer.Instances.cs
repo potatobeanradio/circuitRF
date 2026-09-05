@@ -1168,13 +1168,15 @@ public static partial class LayoutRenderer
             if (opts.ShowPCellPins && (subView.Pins.Count > 0 || subView.PCellOrigin is not null))
                 DrawPCellPinOverlay(canvas, inst, subView, tech, ps, scaleUm, opts.Theme, rows, cols);
 
-            // MW2 R-mw2-12/-13 — a RESOLVED external cell is marked too, not only a broken one: being
-            // able to see without clicking that a cell in this layout is not this workspace's own is
-            // the whole safety story for a reference. The mark is CHROME around the placement, never a
-            // tint on the geometry — layer colours are literal user-authored Rgba, and the reference
-            // exists to show the artwork exactly as its own tool does.
-            if (ExternalCellRef.TryParse(inst.CellRef, out string extAlias, out _))
-                DrawExternalInstanceChrome(canvas, extAlias, overallBbox, ps, scaleUm, opts.Theme, counters);
+            // MW2 R-mw2-13 marked a RESOLVED external cell with a dashed surround and an [alias] tag.
+            // WITHDRAWN (owner, 2026-09-04): "a referenced cell in layout should render just like a
+            // cell in the workspace" — the box and the workspace name are distracting on artwork the
+            // user is reading as geometry, and every other surface says the same thing at less cost
+            // (the Project Tree's network glyph, the Properties panel's provenance line, and the
+            // instance's own ws:// reference). The marking that remains is on a reference that does
+            // NOT resolve, where naming the workspace is the repair rather than decoration —
+            // DrawBrokenInstancePlaceholder's own [alias] prefix. The schematic's tag is untouched;
+            // this was asked for the LAYOUT, where the artwork is the point.
 
             // SL3 R-sl3-9 — the cell's published interface changed under this design. CHROME again,
             // and for the stronger reason: here the geometry is not merely someone else's, it is
@@ -1221,9 +1223,9 @@ public static partial class LayoutRenderer
     }
 
     /// <summary>The mark for an instance whose cell's interface changed since it was placed (SL3
-    /// R-sl3-9). A dashed surround in the WARNING role and a short tag, deliberately distinct from
-    /// <see cref="DrawExternalInstanceChrome"/>'s selection-coloured one beside it: the two say
-    /// different things and an instance can carry both at once.</summary>
+    /// R-sl3-9). A dashed surround in the WARNING role and a short tag. It used to sit beside a
+    /// selection-coloured surround marking an external cell; that one is gone (see the call site
+    /// above), so this is now the only surround an instance whose geometry is CORRECT can carry.</summary>
     private static void DrawInterfaceChangedChrome(
         SKCanvas canvas, Bbox overallBbox, PathSpace ps, double scaleUm,
         LayoutRenderTheme theme, LayoutFrameCounters counters)
@@ -1251,38 +1253,6 @@ public static partial class LayoutRenderer
         {
             canvas.DrawText(label, rect.Right, rect.Bottom + DevicePixelsToPathSpace(scaleUm, 10.0),
                             SKTextAlign.Right, font, textPaint);
-            counters.DrawCalls++;
-        }
-    }
-
-    /// <summary>The dashed surround plus alias tag that marks a resolved external instance. Drawn
-    /// once per instance rather than once per array cell: the mark answers "whose cell is this",
-    /// which an array does not multiply.</summary>
-    private static void DrawExternalInstanceChrome(
-        SKCanvas canvas, string alias, Bbox overallBbox, PathSpace ps, double scaleUm,
-        LayoutRenderTheme theme, LayoutFrameCounters counters)
-    {
-        var rect = NormalizedRect(ps.X(overallBbox.MinX), ps.Y(overallBbox.MinY),
-                                  ps.X(overallBbox.MaxX), ps.Y(overallBbox.MaxY));
-
-        using var stroke = new SKPaint
-        {
-            IsAntialias = true, Style = SKPaintStyle.Stroke,
-            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
-            Color = theme.Selection.WithAlpha(150),
-            PathEffect = SKPathEffect.CreateDash([3f, 3f], 0),
-        };
-        canvas.DrawRect(rect, stroke);
-        counters.DrawCalls++;
-
-        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
-                                    Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 10.0)));
-        using var textPaint = new SKPaint { IsAntialias = true, Color = theme.Selection.WithAlpha(200) };
-        string label = $"[{alias}]";
-        if (font.MeasureText(label) < rect.Width * 2f)
-        {
-            canvas.DrawText(label, rect.Left, rect.Top - DevicePixelsToPathSpace(scaleUm, 2.0),
-                            SKTextAlign.Left, font, textPaint);
             counters.DrawCalls++;
         }
     }

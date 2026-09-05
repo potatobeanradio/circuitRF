@@ -34,6 +34,7 @@ namespace CircuitRF.Ui.Tests;
 //  Cache, which is exactly where SL2 hung it.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class ReadOnlyWorkspaceTests : IDisposable
 {
     private readonly string _root;

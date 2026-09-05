@@ -19,6 +19,7 @@ namespace CircuitRF.Ui.Tests;
 //  read the stale answer.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class ExternalCellReferenceTests : IDisposable
 {
     private readonly string _root;

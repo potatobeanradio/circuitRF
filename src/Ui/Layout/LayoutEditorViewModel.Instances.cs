@@ -592,6 +592,60 @@ public sealed partial class LayoutEditorViewModel
         RescanMovedCells();
     }
 
+    // ── Re-referencing a broken instance ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The topmost instance under a right-click whose cell reference does NOT resolve — what
+    /// <b>Re-reference Cell…</b> is offered for. Mirrors <see cref="FindBitmapForContextMenu"/>'s
+    /// shape: any instance under the click, not just a selected one.
+    ///
+    /// <para>Null when the click landed on nothing, on an instance that resolves, or on one whose
+    /// reference names no folder (a kit part, a wBond) — for those, pointing at a cell folder is not
+    /// the repair, which is <c>CellReferenceRepair.IsRepairable</c>'s own rule.</para>
+    /// </summary>
+    public (int Index, LayoutInstance Instance)? FindBrokenInstanceForContextMenu(
+        double wx, double wy, long tolDbu)
+    {
+        string baseDir = InstanceBaseDir;
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        foreach (int idx in LayoutHitTest.HitInstanceStack(Model, Technology, baseDir, px, py, tolDbu))
+        {
+            var inst = Model.Instances[idx];
+            if (inst.CellRef is not { Length: > 0 } cellRef) continue;
+            if (!Schematic.CellReferenceRepair.IsRepairable(cellRef)) continue;
+            if (CellLayoutResolver.Resolve(cellRef, baseDir).State == CellLayoutState.Resolved) continue;
+            return (idx, inst);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Points every instance carrying <paramref name="oldCellRef"/> at <paramref name="newCellRef"/>
+    /// — the layout half of <b>Re-reference Cell…</b>, and the same bargain
+    /// <see cref="UpdateReferences"/> makes: one gesture, one undo entry, never automatic. Repairing
+    /// a reference means the reference, not the one instance that was right-clicked.
+    /// </summary>
+    /// <returns>How many instances were rewritten; zero when none carried that reference.</returns>
+    public int RelinkCellReferences(string oldCellRef, string newCellRef)
+    {
+        if (string.IsNullOrEmpty(oldCellRef) || string.IsNullOrEmpty(newCellRef)
+            || string.Equals(oldCellRef, newCellRef, StringComparison.Ordinal)) return 0;
+
+        var edits = new List<(LayoutInstance, string?, string)>();
+        foreach (var inst in Model.Instances)
+            if (string.Equals(inst.CellRef, oldCellRef, StringComparison.Ordinal))
+                edits.Add((inst, inst.CellRef, newCellRef));
+        if (edits.Count == 0) return 0;
+
+        Execute(new UpdateCellReferenceCommand(Model, edits));
+
+        // The reference resolves now, so both watches have something new to say about it.
+        RescanCellInterfaces();
+        RescanMovedCells();
+        return edits.Count;
+    }
+
     // ── Missing-instance warning — once per distinct CellRef per load (R-L3a-1) ─────────────────
     // Mirrors LayoutEditorViewModel.ReportUnknownLayers exactly.
 

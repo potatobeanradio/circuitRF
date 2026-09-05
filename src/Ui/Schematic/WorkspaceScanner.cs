@@ -101,17 +101,33 @@ public static class WorkspaceScanner
             root.AddChild(libGroup);
         }
 
-        // Referenced workspaces (from .cws) — alphabetical by alias. Rendered beside the libraries
-        // and by the same rule: each is its own sub-tree of cells, and one that does not resolve is a
-        // node carrying its reason rather than a silently absent row (§3.1/§3.2 — MW2 R-mw2-11's
-        // "broken" state, already designed and already built for libraries).
-        if (cws.ReferencedWorkspaces is { Count: > 0 } refs)
+        // Referenced workspaces (from .cws) — alphabetical by alias, AT THE ROOT, one row each.
+        //
+        // <b>No group node</b> (owner, 2026-09-04). "Referenced Workspaces" was a heading whose only
+        // content is a handful of rows that already say what they are: the network-folder icon marks
+        // a row as a reference, so the heading spent a row of the tree repeating it. Each is still its
+        // own sub-tree of cells, and one that does not resolve is still a node carrying its reason
+        // rather than a silently absent row (§3.1/§3.2 — MW2 R-mw2-11's "broken" state).
+        //
+        // An alias recorded CellsOnly is NOT rendered here: it exists so that the individual cells
+        // listed below can be addressed through it, and drawing it would put the other workspace's
+        // whole catalogue back in the tree — the exact thing the per-cell reference exists to avoid.
+        foreach (var entry in (cws.ReferencedWorkspaces ?? [])
+            .Where(r => !r.CellsOnly)
+            .OrderBy(r => r.Alias, StringComparer.OrdinalIgnoreCase))
         {
-            var wsGroup = new ProjectTreeNode(
-                NodeKind.ReferencedWorkspacesGroup, "Referenced Workspaces", workspaceRootDir, "");
-            foreach (var entry in refs.OrderBy(r => r.Alias, StringComparer.OrdinalIgnoreCase))
-                wsGroup.AddChild(ResolveReferencedWorkspace(entry, workspaceRootDir, carried));
-            root.AddChild(wsGroup);
+            root.AddChild(ResolveReferencedWorkspace(entry, workspaceRootDir, carried));
+        }
+
+        // Referenced CELLS (from .cws) — one root-level row per cell, alphabetical by cell name.
+        // A reference to one cell brings in one cell; its sub-cells come along by reference through
+        // its own documents (R-mw2-17) and are not listed separately, exactly as a local cell's are
+        // not.
+        foreach (var node in (cws.ReferencedCells ?? [])
+            .Select(r => ResolveReferencedCell(r, workspaceRootDir))
+            .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            root.AddChild(node);
         }
 
         // Known Files (from .cws) — alphabetical by ref string.
@@ -192,7 +208,8 @@ public static class WorkspaceScanner
 
     // ── Cell ──────────────────────────────────────────────────────────────────
 
-    private static ProjectTreeNode BuildCellNode(string cellDir, string workspaceRoot)
+    private static ProjectTreeNode BuildCellNode(
+        string cellDir, string workspaceRoot, bool isReferencedCell = false)
     {
         // Read .ccell for IsTestBench (tolerate corrupt file)
         bool isTestBench = false;
@@ -220,7 +237,8 @@ public static class WorkspaceScanner
             absolutePath: cellDir,
             relativePath: Rel(cellDir, workspaceRoot),
             isTestBench: isTestBench,
-            warningReason: warnings.Count > 0 ? string.Join(" ", warnings) : null);
+            warningReason: warnings.Count > 0 ? string.Join(" ", warnings) : null,
+            isReferencedCell: isReferencedCell);
 
         // CellViewFolder children — empty sub-folders produce no node (§3.1)
         foreach (ViewType vt in Enum.GetValues<ViewType>())
@@ -404,6 +422,43 @@ public static class WorkspaceScanner
         return node;
     }
 
+    // ── Referenced cell (one cell of another workspace) ───────────────────────
+
+    /// <summary>
+    /// One <c>ws://alias/…</c> cell reference as a single root-level row: an ordinary cell node — same
+    /// views, same double-click, same placement — flagged <see cref="ProjectTreeNode.IsReferencedCell"/>
+    /// so it draws the network-file glyph and rides its own filter toggle.
+    ///
+    /// <para>An unresolvable reference is a node carrying its reason, never an absent row: the alias
+    /// may have been removed, or the other workspace moved away, and both are states the user has to
+    /// be able to see in order to repair. The name then falls back to the reference's own last
+    /// segment, because there is no folder on disk to take one from.</para>
+    /// </summary>
+    private static ProjectTreeNode ResolveReferencedCell(string cellRef, string workspaceRoot)
+    {
+        string? cellDir = ExternalCellRef.ResolveCellDir(cellRef, workspaceRoot);
+
+        if (cellDir is null || !File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName)))
+            return new ProjectTreeNode(
+                NodeKind.Cell, RefLeaf(cellRef), cellDir ?? cellRef, "",
+                warningReason: UnresolvedReason("Referenced cell unresolved", cellRef),
+                isReferencedCell: true);
+
+        // Relative to the OTHER workspace's root where there is one, so the tooltip reads as the path
+        // the cell actually has over there rather than a ../../ climb out of this workspace.
+        string relativeTo = WorkspaceRootFinder.WorkspaceDirOf(cellDir) ?? Path.GetDirectoryName(cellDir)!;
+        return BuildCellNode(cellDir, relativeTo, isReferencedCell: true);
+    }
+
+    /// <summary>The last path segment of a <c>ws://alias/a/b/Cell</c> reference — what to call a row
+    /// whose folder cannot be found.</summary>
+    private static string RefLeaf(string cellRef)
+    {
+        string trimmed = cellRef.TrimEnd('/');
+        int slash = trimmed.LastIndexOf('/');
+        return slash >= 0 && slash < trimmed.Length - 1 ? trimmed[(slash + 1)..] : trimmed;
+    }
+
     // ── Referenced sub-trees: cells at any depth (SL1) ────────────────────────
 
     /// <summary>
@@ -464,10 +519,17 @@ public static class WorkspaceScanner
         var index = new Dictionary<string, ProjectTreeNode>(StringComparer.OrdinalIgnoreCase);
         if (previous is null) return index;
 
-        // Only the two GROUP nodes can hold them, so this is a two-level walk rather than a full one.
+        // A referenced WORKSPACE is a root child of its own; only the Libraries group holds the rest,
+        // so this is a two-level walk rather than a full one.
         foreach (var group in previous.Children)
         {
-            if (group.Kind is not (NodeKind.LibrariesGroup or NodeKind.ReferencedWorkspacesGroup))
+            if (group.Kind == NodeKind.ReferencedWorkspace)
+            {
+                index[group.AbsolutePath] = group;
+                continue;
+            }
+
+            if (group.Kind is not NodeKind.LibrariesGroup)
                 continue;
             foreach (var node in group.Children)
                 index[PathKey(node.AbsolutePath)] = node;

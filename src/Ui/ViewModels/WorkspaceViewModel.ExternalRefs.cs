@@ -63,6 +63,24 @@ public partial class WorkspaceViewModel
         string? techWarning =
             ExternalWorkspaceGate.WorkspaceTechnologyWarning(myRoot, otherRoot, _techCache);
 
+        // Already referenced — including by the per-cell gesture, whose alias is recorded CellsOnly
+        // and draws no row of its own. That is exactly the workspace this command is being run on, so
+        // it PROMOTES the existing alias rather than refusing or adding a second name for one target:
+        // a ws:// reference already written through it goes on resolving, unchanged.
+        if (ExistingAliasFor(myRoot, otherRoot) is { } existingAlias)
+        {
+            if (!ShowReferencedWorkspace(myRoot, existingAlias, out string? promoteError))
+            {
+                Messages.Error(promoteError!);
+                return;
+            }
+            Messages.Success($"'{FolderLeaf(otherRoot)}' is referenced as \"{existingAlias}\"; "
+                           + "its cells now appear in the Project Tree.");
+            if (techWarning is not null) Messages.Warning(techWarning);
+            RefreshAfterReferenceChange();
+            return;
+        }
+
         string suggested = UniqueAlias(myRoot, FolderLeaf(otherRoot));
         var dialog = new Views.Dialogs.InputNameDialog(
             "Reference Workspace", "Name this reference:", suggested);
@@ -85,9 +103,9 @@ public partial class WorkspaceViewModel
         }
 
         Messages.Success($"'{FolderLeaf(otherRoot)}' is now referenced as \"{alias}\". "
-                       + "Its cells appear in the Project Tree under Referenced Workspaces.");
+                       + "Its cells appear in the Project Tree.");
         if (techWarning is not null) Messages.Warning(techWarning);
-        _factory.ProjectTreeTool?.Refresh();
+        RefreshAfterReferenceChange();
     }
 
     private bool CanReferenceWorkspace() => CurrentWorkspacePath is not null;
@@ -101,8 +119,15 @@ public partial class WorkspaceViewModel
     /// second one for the same workspace: two aliases for one target would make the same cell reachable
     /// under two names, and a rename repair would then have to guess which.</para>
     /// </summary>
+    /// <param name="cellsOnly">
+    /// True when the alias is being created only so that ONE CELL can be addressed through it (MW3's
+    /// per-cell reference). Such an entry is recorded exactly as any other — a <c>ws://</c> reference
+    /// cannot tell the difference — but the Project Tree does not render it as a workspace, because
+    /// referencing one cell must not list the other project's whole catalogue.
+    /// </param>
     internal static bool AddReferencedWorkspace(
-        string workspaceRoot, string alias, string otherCwsPath, out string? error)
+        string workspaceRoot, string alias, string otherCwsPath, out string? error,
+        bool cellsOnly = false)
     {
         error = null;
         string cwsPath = Path.Combine(workspaceRoot, ".cws");
@@ -141,7 +166,8 @@ public partial class WorkspaceViewModel
             }
         }
 
-        cws.ReferencedWorkspaces.Add(new CwsWorkspaceRef { Alias = alias, Path = stored });
+        cws.ReferencedWorkspaces.Add(
+            new CwsWorkspaceRef { Alias = alias, Path = stored, CellsOnly = cellsOnly });
 
         // SL2 R-sl2-6: one of the two write sites that has something better to say than silence. An
         // alias the user has just typed is not convenience state about a session — it is the whole
@@ -181,6 +207,129 @@ public partial class WorkspaceViewModel
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// Clears an alias's <see cref="CwsWorkspaceRef.CellsOnly"/> flag, so the referenced workspace
+    /// renders as its own sub-tree of cells. Returns false only when the <c>.cws</c> could not be
+    /// read or written — an alias that is already visible is success with nothing to do.
+    /// </summary>
+    internal static bool ShowReferencedWorkspace(string workspaceRoot, string alias, out string? error)
+    {
+        error = null;
+        string cwsPath = Path.Combine(workspaceRoot, ".cws");
+
+        CwsFile cws;
+        try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch (Exception ex) { error = $"Could not read this workspace's .cws: {ex.Message}"; return false; }
+
+        var entry = (cws.ReferencedWorkspaces ?? []).FirstOrDefault(
+            r => string.Equals(r.Alias, alias, StringComparison.OrdinalIgnoreCase));
+        if (entry is null || !entry.CellsOnly) return true;
+
+        entry.CellsOnly = false;
+        return SaveCws(cwsPath, cws, out error);
+    }
+
+    /// <summary>
+    /// Records ONE cell of a referenced workspace in this workspace's <c>.cws</c> — the row the
+    /// Project Tree draws at its root (§ referenced cells). <paramref name="cellRef"/> is the
+    /// <c>ws://alias/…</c> form; the alias it names must already be recorded.
+    ///
+    /// <para>Adding a reference that is already listed is success, not an error: the gesture is
+    /// idempotent, and a user who drags the same cell across twice has not done anything wrong.
+    /// <paramref name="alreadyListed"/> says which of the two happened so the caller can say so.</para>
+    /// </summary>
+    internal static bool AddReferencedCell(
+        string workspaceRoot, string cellRef, out string? error, out bool alreadyListed)
+    {
+        error = null;
+        alreadyListed = false;
+        string cwsPath = Path.Combine(workspaceRoot, ".cws");
+
+        CwsFile cws;
+        try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch (Exception ex) { error = $"Could not read this workspace's .cws: {ex.Message}"; return false; }
+
+        cws.ReferencedCells ??= [];
+        if (cws.ReferencedCells.Any(r => string.Equals(r, cellRef, StringComparison.OrdinalIgnoreCase)))
+        {
+            alreadyListed = true;
+            return true;
+        }
+
+        cws.ReferencedCells.Add(cellRef);
+        return SaveCws(cwsPath, cws, out error);
+    }
+
+    /// <summary>
+    /// Drops one cell reference, and the alias behind it when that alias was created for this cell
+    /// alone and nothing else still needs it. Returns false when the entry was not there.
+    /// </summary>
+    internal static bool RemoveReferencedCell(
+        string workspaceRoot, string cellRef, out string? error, out string? removedAlias)
+    {
+        error = null;
+        removedAlias = null;
+        string cwsPath = Path.Combine(workspaceRoot, ".cws");
+
+        CwsFile cws;
+        try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch (Exception ex) { error = $"Could not read this workspace's .cws: {ex.Message}"; return false; }
+
+        int removed = cws.ReferencedCells?.RemoveAll(
+            r => string.Equals(r, cellRef, StringComparison.OrdinalIgnoreCase)) ?? 0;
+        if (removed == 0) { error = "That cell is not referenced here."; return false; }
+
+        // The alias goes too, whenever it was created for the referenced cells (CellsOnly) and no
+        // OTHER referenced cell still addresses it.
+        //
+        // <b>Instances that place the cell do NOT keep it alive</b> (owner, 2026-09-04: "I removed my
+        // reference from the Project tree, but the layout instance still resolves"). Keeping the alias
+        // for their sake was a defensible instinct and it was wrong twice over: the removal
+        // confirmation has already SAID those references will stop resolving, so keeping them working
+        // makes the app do the opposite of what it just promised; and it made the outcome depend on
+        // whether a document happened to be saved — an unsaved schematic counted zero, so removing the
+        // same reference broke the instances in one document and not in another. Removing a reference
+        // now means the same thing every time, the dialog's warning is the whole of the trade, and
+        // Re-reference Cell… is the way back.
+        if (ExternalCellRef.TryParse(cellRef, out string alias, out _)
+            && (cws.ReferencedWorkspaces ?? []).FirstOrDefault(
+                   r => string.Equals(r.Alias, alias, StringComparison.OrdinalIgnoreCase)) is { CellsOnly: true }
+            && !(cws.ReferencedCells ?? []).Any(
+                   r => ExternalCellRef.TryParse(r, out string a, out _)
+                        && string.Equals(a, alias, StringComparison.OrdinalIgnoreCase)))
+        {
+            cws.ReferencedWorkspaces!.RemoveAll(
+                r => string.Equals(r.Alias, alias, StringComparison.OrdinalIgnoreCase));
+            removedAlias = alias;
+        }
+
+        if (!SaveCws(cwsPath, cws, out error)) return false;
+
+        // The alias table a ws:// reference resolves through is memoised, and this rewrite changes it.
+        WorkspaceRootFinder.InvalidateCache();
+        return true;
+    }
+
+    /// <summary>
+    /// SL2 R-sl2-6's write, in one place: a read-only workspace refuses OUT LOUD rather than
+    /// appearing to succeed and losing the edit at the next open.
+    /// </summary>
+    private static bool SaveCws(string cwsPath, CwsFile cws, out string? error)
+    {
+        error = null;
+        try
+        {
+            if (!WorkspacePersistence.SaveToFileAtomic(cwsPath, cws))
+            {
+                error = $"'{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' is read-only on this " +
+                        "machine, so the reference could not be recorded in its .cws.";
+                return false;
+            }
+        }
+        catch (Exception ex) { error = $"Could not write this workspace's .cws: {ex.Message}"; return false; }
+        return true;
     }
 
     private static string UniqueAlias(string workspaceRoot, string suggested)
