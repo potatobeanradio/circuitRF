@@ -1,5 +1,15 @@
 namespace CircuitRF.Diagnostics;
 
+/// <summary>What the application was trying to do, which decides the VERB and nothing else.</summary>
+public enum FileAccessOperation
+{
+    /// <summary>Reading a file, or listing a directory.</summary>
+    Opening,
+
+    /// <summary>Writing a file, or replacing one.</summary>
+    Saving,
+}
+
 /// <summary>
 /// Turns a file-access failure into a diagnostic that names the actual cause.
 ///
@@ -31,14 +41,25 @@ public static class FileAccessDiagnostics
     /// access failure this can improve on — in which case the caller should report as it always has.
     /// Returning null rather than a vague diagnostic is deliberate: a wrong explanation is worse
     /// than the raw message.
+    ///
+    /// <para><paramref name="operation"/> exists because the two call sites in
+    /// <c>WorkspaceViewModel</c> are a LOAD and a SAVE, and both used to say "blocking circuitRF from
+    /// opening". The save one fires on a real path — a session whose workspace state is written back
+    /// on switch — and the kernel log for the 2026-09-04 report shows it firing
+    /// (<c>deny(1) file-write-unlink …/.cws</c>) while the user was told something was failing to
+    /// open. The remedy is identical either way, so the verb is the only thing that was wrong, and
+    /// the only thing this changes.</para>
     /// </summary>
-    public static Diagnostic? TryDescribe(string path, Exception exception)
+    public static Diagnostic? TryDescribe(string path, Exception exception,
+                                          FileAccessOperation operation = FileAccessOperation.Opening)
     {
         if (exception is not UnauthorizedAccessException) return null;
 
+        string verb = operation == FileAccessOperation.Saving ? "saving to" : "opening";
+
         if (OperatingSystem.IsMacOS() && TryGetProtectedFolder(path) is var (plain, toggle) && plain is not null)
             return IsLaunchedFromAppBundle()
-                ? BundledAppRefusal(path, plain, toggle!)
+                ? BundledAppRefusal(path, plain, toggle!, verb)
                 : TerminalLaunchRefusal(path, plain, toggle!);
 
         return Diagnostic.Create(
@@ -57,17 +78,17 @@ public static class FileAccessDiagnostics
     /// <para>Short sentences on purpose. This is read by someone whose work has just failed to open,
     /// and the earlier single-sentence version of it ran to sixty words.</para>
     /// </summary>
-    private static Diagnostic BundledAppRefusal(string path, string plain, string toggle) => Diagnostic.Create(
+    private static Diagnostic BundledAppRefusal(string path, string plain, string toggle, string verb) => Diagnostic.Create(
         "file.access.macos-protected-folder",
         DiagnosticSeverity.Error,
-        "macOS is blocking circuitRF from opening '{path}'. This is a privacy setting, not a file " +
+        "macOS is blocking circuitRF from {verb} '{path}'. This is a privacy setting, not a file " +
         "permission — the file itself is fine, and nothing is wrong with your workspace. macOS asks " +
         "before an app may use your {plain} folder, and circuitRF does not currently have that " +
         "permission. To fix it: open System Settings, go to Privacy & Security > Files and Folders, " +
         "find circuitRF in the list, and switch on \"{toggle}\". Then quit circuitRF and open it " +
         "again. If circuitRF is not in that list at all, granting it Full Disk Access under Privacy " +
         "& Security has the same effect.",
-        ("path", path), ("plain", plain), ("toggle", toggle));
+        ("path", path), ("plain", plain), ("toggle", toggle), ("verb", verb));
 
     /// <summary>
     /// The development case, and the one that wastes the most time: macOS attributes a file request

@@ -1,5 +1,78 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## After an update, macOS refused ~/Documents until the app was quit and relaunched (2026-09-04)
+
+**Symptom:** owner report — following an automatic update on macOS, every workspace under
+`~/Documents` refused to open with the protected-folder diagnostic, while a workspace elsewhere
+opened normally. **Quitting circuitRF and launching it again fixed it completely**, with no setting
+touched and no permission granted. The first click on a Recent Workspace appeared to do nothing at
+all; the second produced the message.
+
+**Three separate defects, one incident. Only the first is the cause.**
+
+### 1. The hand-over after a bundle swap was an `execv`, and the grant does not survive one
+
+The diagnostic was telling the truth — the kernel's own record, which is where this was finally
+settled rather than reasoned about:
+
+```
+System Policy: circuitRF(<pid>) deny(1) file-read-data      …/Documents/<workspace>
+System Policy: circuitRF(<pid>) deny(1) file-read-data      …/Documents/<workspace>/.cws
+System Policy: circuitRF(<pid>) deny(1) file-write-unlink   …/Documents/<workspace>/.cws
+```
+
+macOS resolves a protected-folder grant against the RESPONSIBLE process — the application identity
+the system established when the process was launched. `UpdateStartup.HandOverTo` applied a staged
+update by exchanging the `.app` bundle and then `execv`ing the new executable, and an `execv` keeps
+the launch-time attribution along with the pid and the process clock. The bundle that attribution
+names has just been replaced, so the System Policy check has nothing that satisfies the stored grant.
+**It does not prompt** — from TCC's point of view there is no unanswered question — it denies. The
+next ordinary launch is spawned by launchd with a fresh attribution and everything works, which is
+exactly the "quit and relaunch and it is fine" in the report.
+
+**The evidence that the denied session really was the exec'd image**, rather than an ordinary launch
+that happened to be broken: `ps` reported the process as starting at 19:41:52, while the crash
+reporter's session file for that same pid was stamped 19:41:58. Same pid, six seconds later — the
+signature `CrashReporter.IsOwnExecPredecessor` already documents, produced by `CrashReporter.Install`
+running twice in one pid, once either side of the exec.
+
+**Fixed in `Updates/AppRelaunch.cs`:** on macOS the successor is asked for through Launch Services
+(`open -n -a <bundle>`) so launchd spawns it, exactly as a double-click would. `-n` is load-bearing —
+this process is still alive when the request is made, and without it Launch Services would activate
+this instance, which is then the one that exits, turning an update into a quiet shutdown. Linux keeps
+`execv` (no TCC to go stale) and Windows still starts a successor. **Every route falls through to the
+next**: a refused Launch Services request still reaches `execv`, because a stale attribution for one
+session is bad and an update that starts nothing at all is much worse.
+
+### 2. The first click did nothing because the exception was never observed
+
+Every caller of `SwitchToWorkspace` is a `[RelayCommand]`, so an exception escaping it is captured by
+the `AsyncRelayCommand`'s task, which nobody awaits. It surfaced later, off-thread, as an unobserved
+task exception in the crash trail — `Access to the path '…/Documents/<workspace>' is denied` — and
+never as anything on screen.
+
+**And that is also why the SECOND click produced a message, which is what made this hard to report.**
+The failed first attempt had already set `CurrentWorkspacePath`, so the second one tried to record
+the outgoing session into the workspace it could not reach, and `WriteWorkspaceFile`'s own handler
+posted the diagnostic. One cause, two clicks, and the message attached to the wrong half of it.
+
+`SwitchToWorkspaceReporting` now wraps all three call sites. The workspace is still left
+half-switched when the switch throws — unwinding that is separate work — but the user is told, on the
+click that failed.
+
+### 3. A refused SAVE said "blocking circuitRF from opening"
+
+`FileAccessDiagnostics.TryDescribe` is shared by the load path and the save path and had one verb.
+The kernel log above shows the save branch firing (`file-write-unlink` on the `.cws`) while the
+message on screen talked about opening. The remedy is identical either way, so the verb is the only
+thing that was wrong: `FileAccessOperation` now carries it, defaulting to `Opening` so no existing
+caller changes.
+
+**Not the cause, and worth recording so it is not re-investigated:** the app's code identity is
+stable and was never the problem — `/Applications/circuitRF.app` is Developer ID signed, notarised
+and stapled, and the grant applies perfectly to any launch that is not the post-update one.
+
+
 ## A click into an instance array cost the whole array, times the whole sub-cell (2026-09-04)
 
 **Symptom:** owner report — in a `.clay` holding many instances of a complex design, clicking the

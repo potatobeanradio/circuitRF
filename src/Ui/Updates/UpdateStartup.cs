@@ -51,9 +51,10 @@ public static class UpdateStartup
     ///
     /// <para>It reclaims debris, resolves the outstanding startup attempt (raising it, or reverting a
     /// version that has failed to start twice), and applies anything staged. On macOS both an applied
-    /// update and a rollback <c>execv</c> the resulting executable and this call never returns;
-    /// everywhere else the pointer has been flipped before the stub started anything, so there is
-    /// nothing to re-exec.</para>
+    /// update and a rollback hand this launch to the resulting bundle through Launch Services and
+    /// this call never returns; everywhere else the pointer has been flipped before the stub started
+    /// anything, so there is nothing to re-exec. <see cref="HandOverTo"/> has the mechanisms and the
+    /// order they are tried in.</para>
     /// </summary>
     public static void RunBeforeUi(string[] args)
     {
@@ -166,21 +167,35 @@ public static class UpdateStartup
     /// A hand-over that then fails re-arms the reporter rather than leaving this session blind for
     /// the rest of its run.</para>
     ///
-    /// <para><b>Two mechanisms, because Windows has no <c>execv</c>.</b> Where there is one it is
-    /// used: it keeps the pid, the process clock and the parent's handle on this process, so nothing
-    /// outside notices the swap at all. On Windows the successor is STARTED and this process exits,
-    /// which the stub sees as its child finishing — so the stub exits too and the new version runs
-    /// with no parent. That is the one visible difference, it lasts for one launch per update, and
-    /// the process itself is byte-for-byte the one the stub would have created from the flipped
-    /// pointer a launch later.</para>
+    /// <para><b>Three mechanisms, in a deliberate order.</b> macOS goes through Launch Services —
+    /// <see cref="AppRelaunch"/> has the whole reason, and it is not a stylistic one: an
+    /// <c>execv</c> keeps the launch-time application attribution macOS resolves a protected-folder
+    /// grant against, and the update has just exchanged the bundle that attribution names, so the
+    /// updated session is denied <c>~/Documents</c> until the user quits and launches again. Linux
+    /// keeps <c>execv</c>: it keeps the pid, the process clock and the parent's handle on this
+    /// process, so nothing outside notices the swap at all, and there is no TCC to go stale. On
+    /// Windows, which has no <c>execv</c>, the successor is STARTED and this process exits, which the
+    /// stub sees as its child finishing — so the stub exits too and the new version runs with no
+    /// parent. That is the one visible difference, it lasts for one launch per update, and the
+    /// process itself is byte-for-byte the one the stub would have created from the flipped pointer a
+    /// launch later.</para>
     ///
-    /// <para><b>Nothing is at risk in either.</b> This runs in <c>Main</c> before Avalonia, so there
-    /// is no window, no open workspace and nothing unsaved — which is why it is not the "Relaunch"
-    /// button §10 refuses to grow, even though it relaunches.</para>
+    /// <para><b>Each mechanism falls through to the next</b>, so no route being available can leave
+    /// the user with no application. A Launch Services request that is refused still reaches
+    /// <c>execv</c>, which is precisely the behaviour this method had before — a stale privacy
+    /// attribution for one session is a bad outcome; not starting at all is a much worse one.</para>
+    ///
+    /// <para><b>Nothing is at risk in any of them.</b> This runs in <c>Main</c> before Avalonia, so
+    /// there is no window, no open workspace and nothing unsaved — which is why it is not the
+    /// "Relaunch" button §10 refuses to grow, even though it relaunches.</para>
     /// </summary>
     private static void HandOverTo(string executable, string[] args)
     {
         Diagnostics.CrashReporter.HandOffToExec();
+
+        // macOS first, and only macOS: launchd must be the one that spawns the successor, or the
+        // updated session inherits an attribution pointing at the bundle this update just replaced.
+        if (AppRelaunch.TryRelaunchBundle(executable, args)) Environment.Exit(0);
 
         // Returns only on failure; on success this process has already become the new one.
         UpdateSwap.ExecReplace(executable, args);

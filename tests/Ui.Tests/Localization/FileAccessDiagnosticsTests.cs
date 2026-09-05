@@ -116,6 +116,44 @@ public sealed class FileAccessDiagnosticsTests
     }
 
     /// <summary>
+    /// A save that is refused must not tell the user their workspace could not be OPENED. The
+    /// 2026-09-04 report reached exactly that: the kernel logged <c>deny(1) file-write-unlink
+    /// …/.cws</c> — a write — while the message on screen said "blocking circuitRF from opening".
+    /// The remedy is identical either way, so the verb is the only thing that was wrong.
+    /// </summary>
+    [Fact]
+    public void ARefusedSave_SaysSavingRatherThanOpening()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        if (!AppContext.BaseDirectory.Replace('\\', '/').Contains(".app/Contents/", StringComparison.Ordinal))
+            return;   // the terminal-launch message names no app and carries no verb
+
+        string path = Path.Combine(Home, "Documents", "ws", ".cws");
+        var ex = new UnauthorizedAccessException("denied");
+
+        string saving  = FileAccessDiagnostics.TryDescribe(path, ex, FileAccessOperation.Saving)!.Render();
+        string opening = FileAccessDiagnostics.TryDescribe(path, ex, FileAccessOperation.Opening)!.Render();
+
+        Assert.Contains("from saving to", saving,  StringComparison.Ordinal);
+        Assert.Contains("from opening",   opening, StringComparison.Ordinal);
+        Assert.DoesNotContain("from opening", saving, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The default is Opening, so every existing caller keeps the sentence it had. A verb that
+    /// changed under callers that never asked for one would be a regression dressed as a fix.
+    /// </summary>
+    [Fact]
+    public void TheDefaultOperation_IsOpening()
+    {
+        var ex   = new UnauthorizedAccessException("denied");
+        string p = Path.Combine(Home, "Documents", "ws", ".cws");
+
+        Assert.Equal(FileAccessDiagnostics.TryDescribe(p, ex)!.Render(),
+                     FileAccessDiagnostics.TryDescribe(p, ex, FileAccessOperation.Opening)!.Render());
+    }
+
+    /// <summary>
     /// Containment is by path SEGMENT, not by prefix. <c>~/Documents2</c> is not inside
     /// <c>~/Documents</c>, and describing it as a protected folder would send the user to toggle a
     /// setting that changes nothing.

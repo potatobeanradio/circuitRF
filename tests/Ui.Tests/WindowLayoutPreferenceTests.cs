@@ -189,7 +189,10 @@ public sealed class WindowLayoutPreferenceTests
     /// </summary>
     [Theory]
     [InlineData("private async Task NewWorkspace")]
-    [InlineData("private async Task SwitchToWorkspace")]
+    // The full parameter list, not a prefix: SwitchToWorkspaceReporting sits directly above
+    // SwitchToWorkspace and a prefix match finds the WRAPPER, whose body legitimately reads no
+    // preference at all. A signature scan has to name the method it means.
+    [InlineData("private async Task SwitchToWorkspace(string cwsPath)")]
     [InlineData("private void ResetToBlankShell")]
     public void CleanSlateRebuilds_HonorTheConfiguredWindowLayout(string methodSignature)
     {

@@ -1436,7 +1436,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // SL4 R-sl4-2: someone else may already have it open, on a machine this one cannot see.
         if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
 
-        await SwitchToWorkspace(cwsPath);
+        await SwitchToWorkspaceReporting(cwsPath);
     }
 
     // ---- Multiple workspace windows (MW1 §1) ---------------------------------
@@ -1670,7 +1670,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
 
         _lastWorkspaceParentDir = destination;
-        await SwitchToWorkspace(extracted.CwsPath);
+        await SwitchToWorkspaceReporting(extracted.CwsPath);
     }
 
     // silent = true suppresses the "Saved: …" message (used on debounce tick + clean exit).
@@ -1838,7 +1838,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // "Access to the path … is denied" is the same sentence for an OS privacy block and a
             // real permissions problem, and on macOS it points at the wrong one — the file's own
             // permissions are normal. Let the diagnostic name the actual cause where it can.
-            if (FileAccessDiagnostics.TryDescribe(path, ex) is { } diagnostic)
+            //
+            // Saving, and it has to SAY saving: this is the branch a workspace switch reaches while
+            // recording the outgoing session, and the shared message used to tell the user their
+            // workspace could not be OPENED while the kernel was refusing a write to it.
+            if (FileAccessDiagnostics.TryDescribe(path, ex, FileAccessOperation.Saving) is { } diagnostic)
                 Messages.PostDiagnostic(diagnostic, path);
             else
                 Messages.Error($"Workspace save failed: {ex.Message}");
@@ -2048,6 +2052,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Clears open docs, installs a fresh Dock layout, re-wires tools, restores theme,
     /// tree state, and the persisted open-document list.
     /// </summary>
+    /// <summary>
+    /// <see cref="SwitchToWorkspace"/>, with the failure REPORTED instead of lost.
+    ///
+    /// <para><b>The bug this closes (owner report, 2026-09-04): the first click did nothing at
+    /// all.</b> Every caller is a <c>[RelayCommand]</c>, so an exception escaping the switch is
+    /// captured by the <c>AsyncRelayCommand</c>'s task, which nobody awaits. It surfaced minutes
+    /// later, off-thread, as an unobserved task exception in the crash trail —
+    /// <c>UnauthorizedAccessException: Access to the path '…/Documents/&lt;workspace&gt;' is
+    /// denied</c> — and never as anything the user could see. Clicking a Recent Workspace appeared
+    /// to be ignored.</para>
+    ///
+    /// <para><b>Why the SECOND click then produced a message, which is what made this so confusing
+    /// to report.</b> The first attempt had already set <c>CurrentWorkspacePath</c> before it threw,
+    /// so the second one tried to record the outgoing session into the workspace it could not reach,
+    /// and <c>WriteWorkspaceFile</c>'s own handler posted the diagnostic. One cause, two clicks, and
+    /// a message that arrived attached to the wrong half of it.</para>
+    ///
+    /// <para>The workspace is left half-switched either way — that is what an exception through the
+    /// middle of this method means, and unwinding it is a different piece of work. What this
+    /// guarantees is that the user is TOLD, on the click that failed, with the diagnostic that names
+    /// the real cause where there is one.</para>
+    /// </summary>
+    private async Task SwitchToWorkspaceReporting(string cwsPath)
+    {
+        try
+        {
+            await SwitchToWorkspace(cwsPath);
+        }
+        catch (Exception ex)
+        {
+            if (FileAccessDiagnostics.TryDescribe(cwsPath, ex) is { } diagnostic)
+                Messages.PostDiagnostic(diagnostic, cwsPath);
+            else
+                Messages.Error(
+                    $"'{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' could not be opened. " +
+                    $"({ex.Message})");
+        }
+    }
+
     private async Task SwitchToWorkspace(string cwsPath)
     {
         // A workspace may be open in at most ONE window (MW1 R-mw1-9). Opening one that another
@@ -2471,7 +2514,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // so the notice is asked once, here, rather than at each of them.
         if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
 
-        await SwitchToWorkspace(cwsPath);
+        await SwitchToWorkspaceReporting(cwsPath);
     }
 
     /// <summary>

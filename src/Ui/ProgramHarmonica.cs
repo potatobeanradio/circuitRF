@@ -30,8 +30,9 @@ internal sealed class ProgramHarmonica
 
         // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
         // version that has failed to start twice, and apply a staged update. An applied update
-        // hands this launch over to the new version and this call does not return — by execv() on
-        // macOS and Linux, and by starting it and exiting on Windows, which has no execv. Never
+        // hands this launch over to the new version and this call does not return — through Launch
+        // Services on macOS (UpdateStartup.HandOverTo says why it may not be execv there), by
+        // execv() on Linux, and by starting it and exiting on Windows, which has no execv. Never
         // mid-session, for the reasons in docs/design/auto-update.md §3.
         Updates.UpdateStartup.RunBeforeUi(args);
 
