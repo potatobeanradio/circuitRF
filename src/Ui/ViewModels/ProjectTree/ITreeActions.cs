@@ -235,8 +235,13 @@ public interface ITreeActions
     // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
 
     /// <summary>Writes this .ctech node's workspace-relative path into .cws DefaultTechRef,
-    /// invalidates the technology cache for it, and refreshes every open layout's resolution.</summary>
-    void SetAsWorkspaceDefault(ProjectTreeNodeViewModel node);
+    /// invalidates the technology cache for it, and refreshes every open layout's resolution.
+    ///
+    /// <para>Asks first when it would change what existing layouts MEAN (§5C.2a/R47f): the default is
+    /// the live technology of every layout that has not chosen its own, so re-pointing it re-points
+    /// all of them. A change between two copies of one table, or in a workspace where nothing follows
+    /// the default, is silent.</para></summary>
+    Task SetAsWorkspaceDefaultAsync(ProjectTreeNodeViewModel node);
 
     /// <summary>Invalidates the cached Technology for this .ctech node so a hand-edited file takes
     /// effect without restarting — the live-refresh seam for open layouts using it. Prompts for

@@ -404,7 +404,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public IAsyncRelayCommand SaveCommand { get; }
 
     /// <summary>Write this .ctech node into .cws as the workspace default technology.</summary>
-    public IRelayCommand SetAsWorkspaceDefaultCommand { get; }
+    public IAsyncRelayCommand SetAsWorkspaceDefaultCommand { get; }
 
     /// <summary>Invalidate the cached Technology for this .ctech node (prompts first if a live,
     /// unsaved editor override exists for it).</summary>
@@ -658,8 +658,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         SaveCommand = new AsyncRelayCommand(
             () => _actions?.SaveNodeAsync(this) ?? Task.CompletedTask);
 
-        SetAsWorkspaceDefaultCommand = new RelayCommand(
-            () => _actions?.SetAsWorkspaceDefault(this),
+        SetAsWorkspaceDefaultCommand = new AsyncRelayCommand(
+            () => _actions?.SetAsWorkspaceDefaultAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsTechFile);
 
         ReloadTechnologyCommand = new AsyncRelayCommand(

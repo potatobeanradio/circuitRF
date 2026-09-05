@@ -87,50 +87,60 @@ public partial class WorkspaceViewModel
 
         string? sourceRoot = WorkspaceRootFinder.WorkspaceDirOf(source);
 
-        // Every reason Reference might be unavailable, in one sentence — the dialog disables the
-        // option and shows it, rather than letting the user pick a mode that then fails.
-        string? refusal = ReferenceRefusal(myRoot, sourceRoot, source);
-
-        var preview = CrossWorkspaceCellCopy.Plan(source, dest, myRoot, SubCellMode.Copy);
+        // The plan walks the cell's whole hierarchy — every reachable .csch and .clay, for the kit
+        // scan and the technology comparison — and that is what a user used to wait for with a frozen
+        // window before the dialog appeared (owner, 2026-09-05: ~60 s on a large cell). It now runs
+        // OFF the UI thread while the dialog is already up.
+        //
+        // <b>Its own TechnologyCache, deliberately.</b> Every other cache this walk touches
+        // (WorkspaceRootFinder, CellStat, CellSymbolResolver, CellLayoutResolver, PdkKitRegistry) is
+        // lock-guarded and safe to share; TechnologyCache is a plain Dictionary with no gate, and the
+        // UI thread holds the shared one. A private cache costs one extra .ctech read and removes the
+        // race rather than papering over it.
+        var pendingPlan = Task.Run(() =>
+            CrossWorkspaceCellCopy.Plan(source, dest, myRoot, SubCellMode.Copy, cache: new TechnologyCache()));
 
         var dialog = new AddCellToWorkspaceDialog(
             Path.GetFileName(source),
             sourceRoot is null ? "(no workspace)" : FolderLeaf(sourceRoot),
             FolderLeaf(myRoot),
-            refusal,
-            preview.UnimportedKits,
-            hasSubCells: preview.Folders.Count > 1);
+            // Answered from the top cell alone, so it is known before the walk finishes — and it is
+            // the same answer the walk would give, not an approximation. See HasSubCells.
+            hasSubCells: CrossWorkspaceCellCopy.HasSubCells(source, sourceRoot),
+            sourceIsInAWorkspace: sourceRoot is not null,
+            pendingPlan: pendingPlan);
 
         var choice = await dialog.ShowDialog<AddCellChoice?>(window);
         if (choice is null) return;
 
+        // Completed by construction: the dialog does not enable OK until it lands, so this neither
+        // blocks nor re-walks. Awaited rather than assumed so a faulted plan surfaces as an error
+        // here instead of as an exception inside the copy.
+        CrossWorkspaceCellCopy.CellCopyPlan preview;
+        try { preview = await pendingPlan; }
+        catch (Exception ex) { Messages.Error($"Could not examine '{Path.GetFileName(source)}': {ex.Message}"); return; }
+
         if (choice.Reference)
         {
+            // §5C.2a/R47e applied at the workspace rather than at one layout: the referenced cell stays
+            // where it is, so the layouts that will place it resolve their technology through the
+            // workspace DEFAULT — making it the default is what turns the refusal into a permit.
+            // Through R47f's confirmation, which is where the size of that decision is stated; a
+            // cancel there leaves the reference uncreated rather than creating one that cannot be
+            // placed.
+            if (choice.BringTechnology && !await AdoptTechnologyForWorkspaceAsync(preview.Technology))
+                return;
+
             ReferenceExternalCell(myRoot, sourceRoot!, source);
             return;
         }
 
-        await CopyExternalCellAsync(window, myRoot, sourceRoot, source, dest, choice.SubCells);
-    }
-
-    /// <summary>
-    /// Why this cell cannot be referenced where it is, or null when it can be.
-    ///
-    /// <para>The CELL gate is what is asked, and it is the same one <c>File ▸ Reference Workspace…</c>
-    /// leaves to placement: this gesture names a specific cell, so the two workspaces' DEFAULT
-    /// technologies have nothing to add over the technology that cell's own layout actually resolves.
-    /// A drag is still no looser than the deliberate gesture — the deliberate gesture creates an
-    /// alias and refuses nothing on technology grounds, and placing a cell through either route
-    /// meets this same check.</para>
-    /// </summary>
-    private string? ReferenceRefusal(string myRoot, string? sourceRoot, string sourceCellDir)
-    {
-        if (sourceRoot is null)
-            return $"'{Path.GetFileName(sourceCellDir)}' is not inside a workspace, so there is nothing "
-                 + "to reference it through — a ws:// reference names a workspace. It can be copied in.";
-
-        var cellCheck = ExternalWorkspaceGate.CheckCellTechnology(null, myRoot, sourceCellDir, _techCache);
-        return cellCheck.Permitted ? null : cellCheck.Refusal;
+        await CopyExternalCellAsync(
+            window, myRoot, sourceRoot, source, dest, choice.SubCells, choice.BringTechnology,
+            // Reuse the plan already computed for the dialog when the user kept the mode it was
+            // computed for — the walk it embodies is the expensive part, and re-doing it would put
+            // the cost straight back, just after the dialog instead of before it.
+            choice.SubCells == SubCellMode.Copy ? preview : null);
     }
 
     // ── Reference ─────────────────────────────────────────────────────────────
@@ -185,9 +195,12 @@ public partial class WorkspaceViewModel
 
     private async Task CopyExternalCellAsync(
         Window window, string myRoot, string? sourceRoot,
-        string sourceCellDir, string destParentDir, SubCellMode mode)
+        string sourceCellDir, string destParentDir, SubCellMode mode, bool bringTechnology,
+        CrossWorkspaceCellCopy.CellCopyPlan? alreadyPlanned = null)
     {
-        var plan = CrossWorkspaceCellCopy.Plan(sourceCellDir, destParentDir, myRoot, mode);
+        var plan = (alreadyPlanned
+                    ?? CrossWorkspaceCellCopy.Plan(sourceCellDir, destParentDir, myRoot, mode, cache: _techCache))
+            with { BringTechnology = bringTechnology };
 
         // R-mw3-9: collisions are ASKED about, never auto-suffixed. `Amp_2` appearing in someone's
         // project without their say-so is worse than a second dialog.
@@ -216,6 +229,15 @@ public partial class WorkspaceViewModel
         int extra = plan.Folders.Count - 1;
         Messages.Success(
             extra == 0 ? "Copied" : $"Copied, with {extra} sub-cell{(extra == 1 ? "" : "s")}", written);
+
+        // R47g. Both answers are worth a line: what the copy is drawn with is not visible in the tree,
+        // and the second case is the one where the shapes have just changed meaning on purpose.
+        if (plan.TechnologyNeedsAnswer)
+            Messages.Info(bringTechnology
+                ? $"{plan.Technology.TechnologyDisplay} came with it; the copied layouts point at "
+                  + "the copy in this workspace's tech/ folder."
+                : "The copied layouts use this workspace's technology — their layer numbers are "
+                  + "unchanged and now carry this workspace's meanings.");
     }
 
     /// <summary>

@@ -200,10 +200,112 @@ public sealed partial class LayoutEditorViewModel
 
         var check = ExternalWorkspaceGate.CheckCellTechnology(
             ResolvedTechPath, WorkspaceRootFinder.WorkspaceDirOf(InstanceBaseDir), cellDir);
-        if (check.Permitted) return true;
 
-        _messageSink?.Error(check.Refusal!);
-        return false;
+        switch (check.Outcome)
+        {
+            case ExternalRefOutcome.Permitted:
+                return true;
+
+            // §5C.2a/R47i — this layout draws with no technology at all, so nothing here can give the
+            // referenced cell's keys a different meaning. Adopt its technology and place. Zero clicks
+            // by design: a dialog whose only real answer is "yes" is a dialog that should not exist.
+            case ExternalRefOutcome.AdoptTheirTechnology:
+                return AdoptTechnologyForThisLayout(check);
+
+            default:
+                // R47e — the refusal is only the end of the road when nobody can offer the remedies.
+                // Wired, the host puts them in front of the user and re-enters TryPlaceNewInstance
+                // through PlaceInstanceAfterTechnologyRemedy; the placement then meets this same
+                // check and passes it.
+                if (RequestTechnologyRemedy is { } request)
+                {
+                    request(check, candidateCellRef, _lastRefusedPlacement);
+                    return false;
+                }
+                _messageSink?.Error(check.Refusal!);
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// R47i / R47e's first remedy: point THIS layout at <paramref name="check"/>'s technology, taking
+    /// a copy into the workspace's <c>tech/</c> folder when there is a workspace to put it in.
+    ///
+    /// <para><b>A copy, not a reference across the boundary.</b> A <c>TechRef</c> reaching into
+    /// another workspace would make this layout stop rendering the day that project moves, and §5C's
+    /// whole alias mechanism exists because a raw cross-workspace path is the thing not to write. The
+    /// copy is what makes the two workspaces genuinely agree, which is what R47 asks for; from then on
+    /// the gate's layer-table comparison permits the pair on its own (R47a — two copies of one
+    /// technology ARE one technology).</para>
+    ///
+    /// <para><b>No layer mapping runs, deliberately.</b> This is an adopt, not a retarget: the shapes
+    /// keep their keys, which previously had no names and now have them. Remapping keys here would
+    /// move geometry the user did not ask to move — and there is nothing to remap FROM.</para>
+    /// </summary>
+    internal bool AdoptTechnologyForThisLayout(ExternalRefCheck check)
+    {
+        if (check.TheirTechPath is not { Length: > 0 } theirTech || !File.Exists(theirTech))
+            return true;   // nothing to adopt; the placement was already permitted on its own terms
+
+        string adopted;
+        try
+        {
+            adopted = WorkspaceRootDir is { Length: > 0 } root
+                ? Schematic.CrossWorkspaceCellCopy.PlaceTechnology(theirTech, root)
+                : theirTech;
+        }
+        catch (Exception ex)
+        {
+            _messageSink?.Error($"Could not adopt '{check.TheirTechName ?? Path.GetFileName(theirTech)}': {ex.Message}");
+            return false;
+        }
+
+        Technology tech;
+        try { tech = TechPersistence.LoadFromFile(adopted); }
+        catch (Exception ex)
+        {
+            _messageSink?.Error($"Could not read '{adopted}': {ex.Message}");
+            return false;
+        }
+
+        string baseDir = CurrentLayoutPath is { } clay ? Path.GetDirectoryName(clay)!
+                       : WorkspaceRootDir is { Length: > 0 } r ? r
+                       : Path.GetDirectoryName(adopted)!;
+
+        RetargetTo(
+            Path.GetRelativePath(baseDir, adopted),
+            new TechResolution(tech, adopted, TechResolutionSource.LayoutRef, TechValidation.Validate(tech)),
+            adoptUnits: false,
+            mapping: []);
+
+        _messageSink?.Info(
+            $"This layout had no technology, so it adopted \u201c{tech.Name}\u201d from the cell being placed.");
+        return true;
+    }
+
+    /// <summary>
+    /// R47e's seam. Invoked instead of a bare refusal when a placement is blocked on technology
+    /// grounds, with the check (which carries the refusal sentence and the other side's <c>.ctech</c>),
+    /// the cell reference, and the placement to retry once a remedy has been applied. The host shows
+    /// the choices, applies one, and calls <see cref="PlaceInstanceAfterTechnologyRemedy"/>.
+    ///
+    /// <para>An EVENT-shaped seam rather than an awaited call because both commit paths
+    /// (<see cref="CommitInstancePlacement"/> and <see cref="CommitDragInstancePlacement"/>) are
+    /// reached from synchronous pointer/drop handling. Making those async to carry a dialog would
+    /// change the signature of the whole press pipeline for one branch of one check.</para>
+    /// </summary>
+    internal Action<ExternalRefCheck, string, (long X, long Y)>? RequestTechnologyRemedy { get; set; }
+
+    private (long X, long Y) _lastRefusedPlacement;
+
+    /// <summary>R47e: re-enters the ONE placement path after the host has applied a remedy. Refuses
+    /// again, through the same check, if the remedy did not actually make the two agree — which is the
+    /// point of re-entering rather than placing unconditionally.</summary>
+    internal bool PlaceInstanceAfterTechnologyRemedy(string cellRef, long x, long y)
+    {
+        bool placed = TryPlaceNewInstance(cellRef, x, y);
+        RebuildOverlay();
+        return placed;
     }
 
     // ── Instance-place tool (§6) — reuses L1f's paste-placement ghost-follows-cursor gesture ───────
@@ -274,6 +376,9 @@ public sealed partial class LayoutEditorViewModel
     private bool TryPlaceNewInstance(string cellRef, long x, long y)
     {
         if (!CheckNotCyclic(cellRef)) return false;
+        // Where to put it if a technology remedy has to be applied first — the ONE placement path is
+        // also the one place that knows the coordinates the gesture chose.
+        _lastRefusedPlacement = (x, y);
         if (!CheckExternalTechnology(cellRef)) return false;
         var instance = new LayoutInstance
         {

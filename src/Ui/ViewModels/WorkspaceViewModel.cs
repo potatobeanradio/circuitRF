@@ -4704,6 +4704,117 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // SourceWorkspaceName on every already-open document without re-wiring anything.
         vm.CurrentWorkspaceRootDirProvider = () => CurrentWorkspacePath is null
             ? null : Path.GetDirectoryName(CurrentWorkspacePath);
+        // §5C.2a/R47e — a technology refusal at placement is handed the remedies instead of ending in
+        // prose. Fire-and-forget because both commit paths are reached from synchronous pointer/drop
+        // handling; the placement is re-entered from inside the task once a remedy has been applied.
+        vm.RequestTechnologyRemedy = (check, cellRef, at) => _ = ShowTechnologyRemedyAsync(vm, check, cellRef, at);
+    }
+
+    /// <summary>
+    /// §5C.2a/R47e — the refusal, carrying its own remedies.
+    ///
+    /// <para>Ordered narrowest-first in the dialog and here: retargeting ONE layout changes one
+    /// document, and is the answer that leaves the rest of the workspace alone. The workspace-wide
+    /// remedy is the same act with a much larger blast radius, so it goes through R47f's confirmation
+    /// on the way. Copying the cell in is not a technology change at all — it is the other trade,
+    /// and it now states what the copy lands on (R47g).</para>
+    ///
+    /// <para><b>Every remedy ends by re-entering the ONE placement path</b>
+    /// (<c>PlaceInstanceAfterTechnologyRemedy</c>), which asks the gate again. A remedy that did not
+    /// actually make the two agree therefore refuses a second time rather than placing something the
+    /// check would not have permitted — which is the whole reason for re-entering instead of placing
+    /// directly.</para>
+    /// </summary>
+    private async Task ShowTechnologyRemedyAsync(
+        LayoutEditorViewModel vm, ExternalRefCheck check, string cellRef, (long X, long Y) at)
+    {
+        var window = ResolveOwner(null);
+        if (window is null) { Messages.Error(check.Refusal!); return; }
+
+        string cellName = Path.GetFileName(cellRef.TrimEnd('/'));
+        string techName = check.TechnologyDisplay;
+        string wsName   = CurrentWorkspacePath is null
+            ? "this workspace" : FolderLeaf(Path.GetDirectoryName(CurrentWorkspacePath)!);
+
+        var remedy = await new Views.Dialogs.TechnologyConflictDialog(
+            cellName, techName, wsName, check.Refusal!).ShowDialog<TechnologyRemedy?>(window);
+
+        if (remedy is null) { Messages.Error(check.Refusal!); return; }
+
+        switch (remedy)
+        {
+            case TechnologyRemedy.UseForThisLayout:
+                if (!vm.AdoptTechnologyForThisLayout(check)) return;
+                break;
+
+            case TechnologyRemedy.UseForThisWorkspace:
+                if (!await AdoptTechnologyForWorkspaceAsync(check)) return;
+                break;
+
+            case TechnologyRemedy.CopyCellIn:
+                if (await CopyRefusedCellInAsync(vm, cellRef) is not { } localRef) return;
+                cellRef = localRef;
+                break;
+        }
+
+        vm.PlaceInstanceAfterTechnologyRemedy(cellRef, at.X, at.Y);
+    }
+
+    /// <summary>R47e's second remedy: the same copy-into-<c>tech/</c> the per-layout one makes, written
+    /// to the workspace default — through R47f's confirmation, which is where the size of that
+    /// decision gets stated.</summary>
+    private async Task<bool> AdoptTechnologyForWorkspaceAsync(ExternalRefCheck check)
+    {
+        if (CurrentWorkspacePath is null) return false;
+        if (check.TheirTechPath is not { Length: > 0 } theirTech || !File.Exists(theirTech)) return false;
+
+        string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        string adopted;
+        try { adopted = Schematic.CrossWorkspaceCellCopy.PlaceTechnology(theirTech, workspaceDir); }
+        catch (Exception ex) { Messages.Error($"Could not copy the technology in: {ex.Message}"); return false; }
+
+        if (!await ConfirmWorkspaceDefaultTechChangeAsync(workspaceDir, adopted)) return false;
+
+        ApplyWorkspaceDefaultTech(workspaceDir, adopted);
+        Messages.Success("Set as workspace default technology", adopted);
+        return true;
+    }
+
+    /// <summary>R47e's third remedy: take a copy of the refused cell into this workspace and place
+    /// THAT. Returns the copy's own (workspace-local) cell reference, or null when the copy did not
+    /// happen. The technology deliberately does NOT come with it — the user has just been offered
+    /// both technology remedies and chose neither — so the copy lands on this workspace's table, and
+    /// R47g's line says so rather than leaving it to be discovered.</summary>
+    private async Task<string?> CopyRefusedCellInAsync(LayoutEditorViewModel vm, string cellRef)
+    {
+        if (CurrentWorkspacePath is null) return null;
+        string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        if (ExternalCellRef.ResolveCellDir(cellRef, vm.InstanceBaseDir) is not { } sourceCellDir) return null;
+
+        var window = ResolveOwner(null);
+        if (window is null) return null;
+
+        var plan = Schematic.CrossWorkspaceCellCopy
+            .Plan(sourceCellDir, workspaceDir, workspaceDir, SubCellMode.Copy, cache: _techCache);
+
+        // R-mw3-9 stands here too: a name already in use is asked about, never suffixed silently.
+        var resolved = await ResolveCollisionsAsync(window, plan.Folders);
+        if (resolved is null) return null;
+        plan = plan with { Folders = resolved, DestCellDir = resolved[0].DestDir };
+
+        string written;
+        try { written = Schematic.CrossWorkspaceCellCopy.Execute(plan); }
+        catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return null; }
+
+        RefreshAfterReferenceChange();
+        Messages.Success("Copied", written);
+        if (plan.TechnologyNeedsAnswer)
+            Messages.Info("The copy uses this workspace's technology — its layer numbers are "
+                        + "unchanged and now carry this workspace's meanings.");
+
+        return ExternalCellRef.MakeCellRef(vm.InstanceBaseDir, written);
     }
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
@@ -9212,6 +9323,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             CellMoveWatch.Scan(model, vm.InstanceBaseDir,
                                WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(key))),
             report => Messages.Info(report.Message, key));
+
+        // §5C.2a/R47h — the same shape again, for the permit rather than the interface: once per
+        // fresh load, one line per affected CELL, nothing written.
+        AuditExternalTechnologyPermits(vm, key);
         if (removedRatsnest > 0)
         {
             vm.IsDirty = true;
@@ -9290,6 +9405,51 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         foreach (var doc in _openDocsByPath.Values.OfType<LayoutDocument>().Concat(_scratchLayouts))
             foreach (var (session, _) in doc.NavFrames)
                 session.Model.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+
+        // §5C.2a/R47h. This is the event that fires when a referenced cell CHANGES — the only way an
+        // already-granted permit can stop holding, since it was granted over the keys that cell
+        // occupied at the time. Every open layout is re-asked, not just the one that changed: a cell
+        // is reachable from several of them, and the walk is geometry-free and cheap.
+        foreach (var doc in _openDocsByPath.Values.OfType<LayoutDocument>().Concat(_scratchLayouts))
+            foreach (var (session, _) in doc.NavFrames)
+                AuditExternalTechnologyPermits(session, session.CurrentLayoutPath);
+    }
+
+    /// <summary>
+    /// §5C.2a/R47h — re-asks the gate about every external cell already placed in
+    /// <paramref name="vm"/>, and reports the ones whose answer has changed.
+    ///
+    /// <para><b>Why a permit can expire.</b> R47h compares only the layer keys the referenced cell
+    /// occupied when it was placed — that is what stops two projects sharing a metal stack from being
+    /// refused over documentation layers neither of them draws the cell on. The cell lives in someone
+    /// else's workspace, so a shape can afterwards be drawn on a key the two tables disagree about.
+    /// Nothing is stored at placement time; the answer is recomputed from both documents, which also
+    /// means a fix made on either side clears the warning with no bookkeeping.</para>
+    ///
+    /// <para><b>Reported, never enforced.</b> The instance is already placed and built on. Removing it,
+    /// or refusing to render it, would be a worse failure than the reinterpretation being warned
+    /// about — and the user cannot act on a warning about geometry that has vanished.</para>
+    ///
+    /// <para>Deduplicated per document per message, because this runs on every live-refresh tick and
+    /// an unchanging problem must not accumulate a line each time a neighbouring cell is edited.</para>
+    /// </summary>
+    private readonly Dictionary<string, HashSet<string>> _reportedTechPermitWarnings =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private void AuditExternalTechnologyPermits(LayoutEditorViewModel vm, string? documentKey)
+    {
+        var findings = ExternalWorkspaceGate.AuditPlacedExternalRefs(
+            vm.Model, vm.ResolvedTechPath, vm.InstanceBaseDir, _techCache);
+
+        string key = documentKey ?? vm.InstanceBaseDir;
+        if (findings.Count == 0) { _reportedTechPermitWarnings.Remove(key); return; }
+
+        if (!_reportedTechPermitWarnings.TryGetValue(key, out var already))
+            _reportedTechPermitWarnings[key] = already = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var finding in findings)
+            if (already.Add(finding))
+                Messages.Warning(finding, documentKey);
     }
 
     /// <summary>
@@ -10890,28 +11050,94 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
 
     /// <inheritdoc/>
-    public void SetAsWorkspaceDefault(ProjectTreeNodeViewModel node)
+    public async Task SetAsWorkspaceDefaultAsync(ProjectTreeNodeViewModel node)
     {
         if (CurrentWorkspacePath is null) return;
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
 
+        if (!await ConfirmWorkspaceDefaultTechChangeAsync(workspaceDir, node.AbsolutePath)) return;
+
+        ApplyWorkspaceDefaultTech(workspaceDir, node.AbsolutePath);
+        Messages.Success("Set as workspace default technology", node.AbsolutePath);
+    }
+
+    /// <summary>
+    /// §5C.2a/R47f — the blast radius, stated before it happens.
+    ///
+    /// <para><c>TechRef = null</c> is the ordinary case (§5A.2), so the workspace default is the LIVE
+    /// technology of every layout that has not deliberately deviated. Re-pointing it re-points all of
+    /// them at once, and this used to happen behind a plain success message. That is how the obvious
+    /// workaround for an R47 refusal — copy the other workspace's <c>.ctech</c> in and make it the
+    /// default — ends up MOVING the hazard instead of removing it: the referenced cell becomes safe,
+    /// and the user's own cells become the ones whose layer keys may have been reinterpreted.</para>
+    ///
+    /// <para><b>A difference of none is dispatched silently</b>, because it is the common case and
+    /// because a confirmation nobody can act on trains people to click through the one that matters:
+    /// two copies of one process are the same table (R47a), and re-pointing between them changes
+    /// what nothing means. Likewise a workspace with no layouts following the default yet.</para>
+    /// </summary>
+    private async Task<bool> ConfirmWorkspaceDefaultTechChangeAsync(string workspaceDir, string newTechPath)
+    {
+        string? currentDefault = null;
+        try
+        {
+            if (WorkspacePersistence.LoadFromFile(CurrentWorkspacePath!).DefaultTechRef is { Length: > 0 } r)
+                currentDefault = Path.GetFullPath(Path.Combine(workspaceDir, r));
+        }
+        catch { /* unreadable .cws — treated as "no default", which needs no confirmation */ }
+
+        if (currentDefault is null) return true;
+
+        string? difference = ExternalWorkspaceGate.CompareTechnologies(currentDefault, newTechPath, _techCache);
+        if (difference is null) return true;   // same table: nothing changes meaning
+
+        var affected = ExternalWorkspaceGate.LayoutsFollowingWorkspaceDefault(workspaceDir);
+        if (affected.Count == 0) return true;
+
+        var window = ResolveOwner(null);
+        if (window is null) return true;       // nowhere to ask; the gesture was explicit either way
+
+        string names = string.Join("\n    ",
+            affected.Take(5).Select(p => Path.GetRelativePath(workspaceDir, p).Replace('\\', '/')));
+        string more = affected.Count > 5 ? $"\n    …and {affected.Count - 5} more" : "";
+
+        string message =
+            $"{affected.Count} layout{(affected.Count == 1 ? "" : "s")} in this workspace "
+          + $"{(affected.Count == 1 ? "uses" : "use")} the default technology, so "
+          + $"{(affected.Count == 1 ? "it" : "they")} will be drawn with "
+          + $"'{Path.GetFileName(newTechPath)}' from now on:\n\n    {names}{more}\n\n"
+          + $"{difference}\n\n"
+          + "Their shapes keep their layer numbers, so any layer the two disagree about changes "
+          + "meaning. To change only one layout, use \u201cChange Technology\u2026\u201d in that "
+          + "layout instead.";
+
+        var choice = await new Views.Dialogs.SaveChangesDialog(
+            message, saveLabel: "Change Default", dontSaveLabel: null, cancelLabel: "Cancel",
+            title: "Change Workspace Technology").ShowDialog<SaveChangesResult>(window);
+
+        return choice == SaveChangesResult.Save;
+    }
+
+    /// <summary>The write itself — shared by <see cref="SetAsWorkspaceDefaultAsync"/> and R47e's
+    /// "use it for this whole workspace" remedy, so both go through one invalidate-and-refresh.</summary>
+    private void ApplyWorkspaceDefaultTech(string workspaceDir, string techPath)
+    {
         string relPath;
-        try   { relPath = Path.GetRelativePath(workspaceDir, node.AbsolutePath); }
-        catch { relPath = node.AbsolutePath; }
+        try   { relPath = Path.GetRelativePath(workspaceDir, techPath); }
+        catch { relPath = techPath; }
 
         CwsFile cws;
-        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath!); }
         catch { cws = new CwsFile(); }
 
         cws.DefaultTechRef = relPath;
-        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, cws);
 
         // The new default's cached entry (if any) may be stale relative to what's on disk now;
         // Invalidate forces a fresh load, then every open layout re-resolves against it.
-        _techCache.Invalidate(node.AbsolutePath);
+        _techCache.Invalidate(techPath);
         RefreshAllOpenLayoutTech();
         _factory.ProjectTreeTool?.Refresh();
-        Messages.Success("Set as workspace default technology", node.AbsolutePath);
     }
 
     /// <inheritdoc/>

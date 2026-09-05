@@ -249,10 +249,10 @@ public sealed class ExternalCellReferenceTests : IDisposable
     }
 
     [Fact]
-    public void ACopyThatRENAMESOneLayerKey_IsNotTheSameTechnology()
+    public void ACopyThatRENAMESAKeyTheCellDRAWSON_IsNotTheSameTechnology()
     {
-        // The other side of the same rule, and the collision the gate exists for: same key, different
-        // meaning, right colours, wrong layer, nothing said.
+        // The collision the gate exists for: same key, different meaning, right colours, wrong layer,
+        // nothing said. §5C.2a/R47h narrowed WHICH keys are compared; it did not soften this.
         var renamed = StarterTechnologies.Pcb2Layer();
         renamed.Layers[6].Name = "Substrate";   // key (7,0) — Drill on the starter
 
@@ -261,6 +261,7 @@ public sealed class ExternalCellReferenceTests : IDisposable
         WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
         WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
         string amp = CreateCell(_wsA, "Amp");
+        DrawOn(amp, new LayerKey(7, 0));        // the cell now OCCUPIES the key that disagrees
         WorkspaceRootFinder.InvalidateCache();
 
         var check = ExternalWorkspaceGate.CheckCellTechnology(null, _wsB, amp, new TechnologyCache());
@@ -268,6 +269,39 @@ public sealed class ExternalCellReferenceTests : IDisposable
         Assert.Contains("layer 7/0", check.Refusal);
         Assert.Contains("Substrate", check.Refusal);
         Assert.Contains("Drill", check.Refusal);
+    }
+
+    [Fact]
+    public void ACopyThatRENAMESAKeyTheCellDoesNOTDrawOn_IsPermitted()
+    {
+        // §5C.2a/R47h, and the behaviour change it makes: the hazard is a key being REINTERPRETED,
+        // which can only happen to a key something is drawn on. Two projects that share a metal stack
+        // and differ in their documentation layers used to be refused over a disagreement neither
+        // cell could ever express. This test is the old
+        // ACopyThatRENAMESOneLayerKey_IsNotTheSameTechnology, inverted on purpose.
+        var renamed = StarterTechnologies.Pcb2Layer();
+        renamed.Layers[6].Name = "Substrate";   // key (7,0) — and Amp draws only on (1,0)
+
+        string techA = WriteTechnology(_wsA, "processA.ctech", renamed);
+        string techB = WriteTechnology(_wsB, "processB.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
+
+        Assert.True(ExternalWorkspaceGate
+            .CheckCellTechnology(null, _wsB, amp, new TechnologyCache()).Permitted);
+    }
+
+    /// <summary>Adds one rectangle on <paramref name="key"/> to a cell's primary layout — the cheapest
+    /// way to make a cell OCCUPY a layer key for R47h's sake.</summary>
+    private static void DrawOn(string cellDir, LayerKey key)
+    {
+        string layDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        string clay   = Directory.GetFiles(layDir, "*.clay")[0];
+        var view = LayoutPersistence.LoadFromFile(clay);
+        view.Shapes.Add(new RectShape { Layer = key, X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 });
+        LayoutPersistence.SaveToFile(clay, view);
     }
 
     [Fact]

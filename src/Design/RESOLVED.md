@@ -1261,3 +1261,69 @@ that is what produces the exactly-touching and exactly-collinear configurations 
 holes in distinct cells of an interior grid, because an all-adversarial corpus answers "invalid" to
 almost everything and would exercise only one branch; the test asserts that split rather than
 assuming it. `HolesAreValid` was made `internal` so the corpus can drive it on ring arrays directly.
+
+## §5C.2a — cross-workspace technology agreement (2026-09-04)
+
+`ExternalWorkspaceGate` was refusing more than it had to, and had two cases it refused with advice the
+user could not act on.
+
+**"The same technology" now means the same layer table over the keys the referenced cell actually
+OCCUPIES** (R47h), not over both tables entire. The hazard R47 names is a key being *reinterpreted*, and
+only a key something is drawn on can be. Comparing the whole table refuses two projects sharing a metal
+stack that differ in their documentation layers, which is the ordinary case and no hazard at all.
+`CellHierarchy.OccupiedLayerKeys` is the walk: transitive through instances, and **it counts a via's
+`LandingLayer` as a second key on the same shape** — reading only `LayoutShape.Layer` would have missed
+where a via's copper actually lands, which is exactly the field `ViaShape`'s own doc comment warns about.
+It reads no coordinates, since a transform moves a shape and never changes its layer; that is what makes
+it cheap enough to run per placement with no cache.
+
+**The cost, and where it is paid.** A permit is now a statement about the referenced cell's contents at
+one moment, and that cell lives in another workspace where it can grow a shape on a disagreeing key
+afterwards. `AuditPlacedExternalRefs` re-asks the whole question and stores nothing — so a fix on either
+side clears the warning with no bookkeeping — and it is **reported, never enforced**: the geometry is
+already placed and built on, and withdrawing it would be a worse failure than the reinterpretation.
+
+**Two null cases were being refused with a repair that does not exist** (R47i). A technology that is not
+there cannot give a key a different meaning:
+- *No HOST technology* — the host already renders on generated fallback colours, so nothing is lost by the
+  cell arriving. It now returns `AdoptTheirTechnology`, and the caller adopts.
+- *No EXTERNAL technology* — its shapes were authored against no layer table, so there is no author's
+  meaning for the host's table to contradict. Permitted.
+
+Both used to print "(no technology)" on one side of a refusal naming two files, one of which did not exist.
+
+**A fallback that must not be inverted:** a referenced cell whose `.clay` cannot be READ falls back to
+comparing the WHOLE table, not to comparing nothing. "Compare nothing" would turn a broken file into a
+silent permit, which is the one direction this gate must never fail in.
+
+### The occupied-key walk was exponential (2026-09-05, same day, owner-reported)
+
+Dropping a large library cell into a workspace hung the UI for ~60 s before the "Add Cell to
+Workspace" dialog appeared. It was `CellHierarchy.OccupiedLayerKeys`, added the previous day.
+
+**The defect, in one line: it carried only the DFS-PATH set, not a VISITED set.** `ResolveForWalk`'s
+`visiting` argument is a path (added before recursing, removed after) because that is what cycle
+detection needs, and it was the only set the walk had — so a shared sub-cell was re-walked once per
+PATH reaching it, and every walk re-enumerated all of its shapes. Measured on a synthetic DAG (depth
+5, fan-out 7, 43 unique cells, 2,000 shapes/leaf): **5,764 ms**. Deduped: **32 ms**, and 13 ms warm.
+At depth 7 / fan-out 9 the old form has 4.8 M path-visits and does not finish in useful time; the new
+one is 326 ms cold. The drop path also asked the question twice (once for the Reference refusal, once
+inside `CrossWorkspaceCellCopy.Plan`); it now asks once.
+
+**Why deduping is CORRECT here and is not for the bbox walk beside it.** `CellBboxRecursive` cannot
+dedupe: a bbox depends on the transform chain that reached it, so one sub-cell down two paths is
+genuinely two answers. A layer key is not transformed — a rotation moves a shape, it never changes
+its layer — so a second visit can only re-derive what the first contributed. The answer is a set
+UNION over reachable cells, and a union needs each cell once.
+
+**Cycles stopped mattering; depth started.** A union over a graph is well defined however the edges
+run, and the visited set terminates it, so `Cyclic` from `ResolveForWalk` is now the ORDINARY signal
+for a shared sub-cell and is simply skipped. Depth is the opposite: a chain past `MaxDepth` is
+truncated, and a SHORT key set is a permit the gate did not earn. That case returns **null** —
+"unknown", never "none" — and `ExternalWorkspaceGate` falls back to comparing the whole table.
+
+Own-shape keys are additionally memoized per `LayoutView` reference, on `_shapesBboxCache`'s exact
+terms (a resolver hit returns the same instance; a file change makes a new one). Unlike the bbox memo
+this one is unconditionally safe to share, since it depends on neither depth nor path — and it matters
+because the R47h re-check runs on the process-wide live-refresh tick, where a generated cell's
+six-figure via field would otherwise be re-enumerated every time.

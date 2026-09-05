@@ -223,7 +223,11 @@ public static class CellHierarchy
     /// <c>LayoutRenderer.InvalidateCompiledGeometry</c>, which calls this, and which documents the
     /// in-place-edited push-in session the eviction exists for. Safe on a view never measured (no-op).
     /// </summary>
-    public static void InvalidateShapesBbox(LayoutView view) => _shapesBboxCache.Remove(view);
+    public static void InvalidateShapesBbox(LayoutView view)
+    {
+        _shapesBboxCache.Remove(view);
+        InvalidateOwnLayerKeys(view);
+    }
 
     private static Bbox ShapesBbox(LayoutView view, Func<LayerKey, bool>? layerVisible = null)
     {
@@ -323,6 +327,117 @@ public static class CellHierarchy
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { res.ResolvedCellDir! };
         return CanReach(res.View!, LayoutBaseDirOf(res.ResolvedCellDir!), target, visiting, 1);
     }
+
+    // ── Occupied layer keys (§5C.2a/R47h) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Every <see cref="LayerKey"/> a cell's hierarchy actually PUTS something on — its own shapes
+    /// (including a via's <see cref="ViaShape.LandingLayer"/>, which is a second, different key on the
+    /// same shape) and its pins, unioned with the same answer for every cell it can reach.
+    /// <b>Null when the walk could not be completed</b> (see below), which callers must treat as
+    /// "unknown", never as "none".
+    ///
+    /// <para><b>Why this exists:</b> R47's cross-workspace technology gate compares two layer tables,
+    /// and the hazard it names is a key being REINTERPRETED — which can only happen to a key something
+    /// is drawn on. Comparing the whole table refuses two projects that share a metal stack and differ
+    /// only in their documentation layers, which is the ordinary case and not a hazard at all. This is
+    /// the set the comparison is honestly over.</para>
+    ///
+    /// <para><b>The answer is a UNION over reachable cells, so every cell is visited ONCE.</b> That is
+    /// what separates this walk from <see cref="CellBboxRecursive"/>, which cannot dedupe: a bbox
+    /// depends on the transform chain that reached it, so the same sub-cell down two paths is
+    /// genuinely two different answers. A layer key is not transformed — a rotation moves a shape, it
+    /// never changes its layer — so the second visit can only re-derive what the first already
+    /// contributed. <b>This distinction is the whole performance story:</b> the first version of this
+    /// method carried only the DFS-path set and re-walked a shared sub-cell once per PATH to it, which
+    /// is exponential in depth. A 43-cell fixture (depth 5, fan-out 7) took 5.8 s; deduped it is
+    /// sub-millisecond, and a real library cell dropped into a workspace hung the UI for a minute.</para>
+    ///
+    /// <para><b>Cycles need no special handling here</b>, for the same reason: a union over a graph is
+    /// well defined however the edges run, and the visited set terminates it. Depth is different — a
+    /// chain longer than <see cref="MaxDepth"/> is TRUNCATED by <see cref="ResolveForWalk"/>, which
+    /// would silently under-report the union and hand the gate a permit it did not earn. That case
+    /// returns <b>null</b> instead, and <c>ExternalWorkspaceGate</c> falls back to comparing the whole
+    /// table — the strict direction, which is the only safe one for a gate.</para>
+    ///
+    /// <para>An instance that does not resolve contributes nothing rather than failing the walk — its
+    /// layers are unknowable, and it is already reported as a broken reference by every other
+    /// consumer.</para>
+    /// </summary>
+    /// <param name="view">The cell's own layout view.</param>
+    /// <param name="viewBaseDir">The directory <paramref name="view"/>'s own <c>CellRef</c>s resolve
+    /// against — the <c>layout/</c> sub-folder holding its <c>.clay</c>, per <see cref="LayoutBaseDirOf"/>.</param>
+    public static IReadOnlySet<LayerKey>? OccupiedLayerKeys(LayoutView view, string viewBaseDir)
+    {
+        var keys = new HashSet<LayerKey>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool truncated = false;
+        CollectOccupiedKeys(view, viewBaseDir, visited, 0, keys, ref truncated);
+        return truncated ? null : keys;
+    }
+
+    private static void CollectOccupiedKeys(
+        LayoutView view, string viewBaseDir, HashSet<string> visited, int depth,
+        HashSet<LayerKey> keys, ref bool truncated)
+    {
+        keys.UnionWith(OwnLayerKeys(view));
+
+        foreach (var inst in view.Instances)
+        {
+            var step = ResolveForWalk(inst, viewBaseDir, visited, depth);
+
+            if (step.State == InstanceResolutionState.DepthExceeded) { truncated = true; continue; }
+
+            // Cyclic here means "already in the visited set", which after dedup is the ORDINARY case
+            // for a shared sub-cell, not an error: its keys are in the union already.
+            if (step.State != InstanceResolutionState.Resolved) continue;
+
+            if (!visited.Add(step.ResolvedCellDir!)) continue;
+            CollectOccupiedKeys(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visited, depth + 1,
+                                keys, ref truncated);
+        }
+    }
+
+    /// <summary>
+    /// One view's OWN layer keys — shapes (both of a via's two layer fields) and pins, nothing
+    /// recursive. Memoized on the view REFERENCE, on exactly the terms
+    /// <see cref="_shapesBboxCache"/> documents: a <see cref="CellLayoutResolver"/> hit hands back the
+    /// same <see cref="LayoutView"/> instance and a file change produces a new one, so the memo goes
+    /// stale for free with no invalidation call to forget.
+    ///
+    /// <para>Unlike the bbox memo this one is unconditionally safe to share, because it depends on
+    /// neither the depth nor the path a view was reached by. It matters because the R47h re-check runs
+    /// on the process-wide live-refresh tick, and a generated cell can hold a six-figure via field
+    /// that would otherwise be re-enumerated on every one.</para>
+    /// </summary>
+    private static IReadOnlySet<LayerKey> OwnLayerKeys(LayoutView view)
+    {
+        if (_ownLayerKeysCache.TryGetValue(view, out var cached)) return cached.Value;
+
+        var own = new HashSet<LayerKey>();
+        foreach (var shape in view.Shapes)
+        {
+            own.Add(shape.Layer);
+            // A via occupies its barrel layer AND its pad layer, and the two are deliberately
+            // different fields (ViaShape's own doc comment). Missing the landing layer here would
+            // permit a placement whose PADS land on a key the host table means something else by.
+            if (shape is ViaShape { LandingLayer: { } landing }) own.Add(landing);
+        }
+        foreach (var pin in view.Pins) own.Add(pin.Layer);
+
+        _ownLayerKeysCache.AddOrUpdate(view, new StrongBoxKeys(own));
+        return own;
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<LayoutView, StrongBoxKeys>
+        _ownLayerKeysCache = new();
+
+    private sealed class StrongBoxKeys(IReadOnlySet<LayerKey> value) { public readonly IReadOnlySet<LayerKey> Value = value; }
+
+    /// <summary>Evicts <paramref name="view"/>'s memoized own-layer keys — called from
+    /// <see cref="InvalidateShapesBbox"/>, since the one thing that invalidates either is the same
+    /// thing: this view's shapes were edited in place by an open push-in session.</summary>
+    private static void InvalidateOwnLayerKeys(LayoutView view) => _ownLayerKeysCache.Remove(view);
 
     private static bool CanReach(LayoutView view, string viewBaseDir, string targetAbsDir, HashSet<string> visiting, int depth)
     {

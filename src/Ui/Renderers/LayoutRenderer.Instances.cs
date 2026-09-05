@@ -844,6 +844,29 @@ public static partial class LayoutRenderer
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
         var layerMap = tech?.Layers.ToDictionary(l => l.Key);
 
+        // Built on first broken instance and shared by every one after it, so a workspace that has
+        // lost a whole library pays for one set of paints rather than one per placement — and a
+        // layout with nothing broken (the overwhelmingly common case) pays for none.
+        BrokenPlaceholderPaints? brokenPaints = null;
+
+        // ── One resolution per distinct CellRef per FRAME ────────────────────────────────────────
+        //
+        // A broken reference costs a real filesystem stat every time it is resolved: CellStat caches
+        // a TRUE answer for its freshness bound but deliberately never caches a FALSE one (R-sl4-8 —
+        // a cell folder missing because a share blinked has to be re-asked on the very next resolve,
+        // not T later). That rule is right for RESOLUTION and wrong for PAINTING, because the
+        // renderer re-resolves every visible instance on every frame: 5,000 broken placements
+        // measured 390 ms per frame, essentially all of it syscalls.
+        //
+        // The fix belongs here rather than in CellStat, and it is not a weakening of R-sl4-8: a memo
+        // scoped to ONE frame cannot show anyone a stale answer, since no folder can meaningfully
+        // appear halfway through a paint. It also matches the shape of the real failure — a workspace
+        // that has lost one library has thousands of instances pointing at a handful of missing cells,
+        // so this collapses thousands of stats into a handful.
+        var frameResolutions = new Dictionary<string, InstanceResolutionStep>(StringComparer.Ordinal);
+
+        try
+        {
         foreach (var entry in candidates)
         {
             if (entry.Kind != SpatialEntryKind.Instance) continue;
@@ -852,12 +875,19 @@ public static partial class LayoutRenderer
             // the model itself is untouched until the drag commits (mirrors dragOverrides for shapes).
             var inst = dragOverrides.TryGetValue(entry.Index, out var ov) ? ov : view.Instances[entry.Index];
 
-            var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, 0);
+            // baseDir is fixed for this whole call (the sub-cell descent happens inside CompileCell,
+            // not here), so the reference string alone is the identity.
+            if (!frameResolutions.TryGetValue(inst.CellRef, out var step))
+            {
+                step = CellHierarchy.ResolveForWalk(
+                    inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0);
+                frameResolutions[inst.CellRef] = step;
+            }
 
             if (step.State != InstanceResolutionState.Resolved)
             {
-                DrawBrokenInstancePlaceholder(canvas, inst, step.State, ps, scaleUm, opts.Theme, counters);
+                brokenPaints ??= new BrokenPlaceholderPaints(opts.Theme, scaleUm);
+                DrawBrokenInstancePlaceholder(canvas, inst, step.State, ps, scaleUm, brokenPaints, counters);
                 if (!string.IsNullOrEmpty(inst.CellRef)) missingCellRefs.Add(inst.CellRef);
                 continue;
             }
@@ -901,9 +931,12 @@ public static partial class LayoutRenderer
                     opts.DetailPixelThreshold > 0 ? opts.DetailPixelThreshold : DefaultDetailPixelThreshold,
                     subDbuToUm * placementScale * scaleUm);
 
-            visiting.Add(step.ResolvedCellDir!);
+            // The DFS path for the descent below this top-level instance — its own cell, and nothing
+            // else, exactly as before. Built here rather than around the resolve so a memoized
+            // resolution does not have to carry a mutable set with it, and so a BROKEN instance
+            // (which never descends) allocates nothing at all.
+            var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { step.ResolvedCellDir! };
             var compiled = CompileCell(subView, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, counters, cellDetailDbu);
-            visiting.Remove(step.ResolvedCellDir!);
 
             // Resolved once per candidate instance, reused across every placement (R-L3a-3's "N matrix
             // draws" — not N paint allocations). Magnification is baked into the stroke width HERE
@@ -1193,6 +1226,8 @@ public static partial class LayoutRenderer
                 && inst.CellRef is { Length: > 0 } mr && moved.Contains(mr))
                 DrawMovedChrome(canvas, overallBbox, ps, scaleUm, opts.Theme, counters);
         }
+        }
+        finally { brokenPaints?.Dispose(); }
     }
 
     /// <summary>
@@ -1296,12 +1331,100 @@ public static partial class LayoutRenderer
         }
     }
 
-    /// <summary>R-L3a-1 — a missing/broken TOP-LEVEL instance renders a labelled dashed placeholder at
-    /// its stored extent, array-expanded (each array cell is independently a placeholder — there is no
-    /// real geometry to have compressed via the array in the first place), and remains fully selectable
-    /// (the caller's spatial index already indexes it via <c>CellHierarchy.PlaceholderBbox</c>).</summary>
+    /// <summary>
+    /// <b>The smallest a broken placeholder is ever drawn, in device pixels.</b> Its stored extent is
+    /// a fixed 50 µm (<c>CellHierarchy.PlaceholderHalfExtentDbu</c>), which on a 100 mm board is
+    /// 0.05% of the width — under one pixel, so on PCB work the marker for missing artwork was
+    /// invisible exactly where it was most needed (owner, 2026-09-05). A floor in SCREEN space is what
+    /// makes an error marker behave like an error marker: findable at any zoom, on any board size.
+    ///
+    /// <para>Remembering the cell's real extent would NOT have fixed this. A missing 0402 footprint
+    /// remembered exactly is smaller still — size memory makes the drawing honest, and this makes it
+    /// findable, which are different problems.</para>
+    /// </summary>
+    private const double MinBrokenPlaceholderDevicePixels = 28.0;
+
+    /// <summary>
+    /// The paints one draw pass shares across every broken instance in it.
+    ///
+    /// <para><b>Why they are not built per placeholder.</b> They used to be: three
+    /// <see cref="SKPaint"/>s, an <see cref="SKFont"/> and a dash <see cref="SKPathEffect"/>
+    /// constructed and disposed inside the per-instance call. That is invisible with three broken
+    /// references and is the dominant cost with thousands (owner, 2026-09-05: "what if there are
+    /// thousands of unreferenced cells — we still need to render fast so the user can repair them").
+    /// A workspace losing one library loses every instance of it at once, so thousands is the case
+    /// that actually happens, not a hypothetical.</para>
+    /// </summary>
+    private sealed class BrokenPlaceholderPaints(LayoutRenderTheme theme, double scaleUm) : IDisposable
+    {
+        /// <summary>The dashed outline R-L3a-1 specifies, for a placeholder drawn at its real size.</summary>
+        public readonly SKPaint Stroke = new()
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Warning, PathEffect = SKPathEffect.CreateDash([6f, 4f], 0),
+        };
+
+        /// <summary>
+        /// The same outline WITHOUT the dash, for a placeholder that had to be inflated to the screen
+        /// floor. Both halves of that are the point: a dash is not legible on a 28-pixel box, so it
+        /// buys nothing there — and a dashed stroke is the single most expensive mark this method
+        /// makes, because Skia builds dash geometry per rect rather than stroking one.
+        /// </summary>
+        public readonly SKPaint StrokePlain = new()
+        {
+            IsAntialias = false, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Warning,
+        };
+        public readonly SKPaint Fill = new() { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Warning.WithAlpha(40) };
+
+        /// <summary>The floored marker's fill. Antialiasing an axis-aligned rectangle that has just
+        /// been snapped to a pixel floor smooths nothing and is not free at these counts.</summary>
+        public readonly SKPaint FillPlain = new() { IsAntialias = false, Style = SKPaintStyle.Fill, Color = theme.Warning.WithAlpha(40) };
+        // LayoutTextOutline.ResolveTypeface (not SkiaFonts.PlexRegular directly) — the same seam
+        // LayoutRenderer.DrawLabelText uses, so this text ALSO honors LayoutTextOutline.
+        // TestOverrideTypeface (SkiaFonts.PlexRegular cannot load without a live Avalonia app host,
+        // confirmed empirically in the L1-era label work — see src/Ui/CLAUDE.md).
+        public readonly SKFont Font = new(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
+                                          Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 11.0)));
+        public readonly SKPaint Text = new() { IsAntialias = true, Color = theme.Warning };
+
+        /// <summary>Measured label widths, by label. There are five distinct labels plus one per
+        /// referenced-workspace alias, so this is a handful of entries — and it takes the one
+        /// remaining per-ARRAY-CELL cost (a text measurement of a string that cannot vary within a
+        /// placeholder, let alone within an array of one) out of the inner loop for good.</summary>
+        private readonly Dictionary<string, float> _widths = new(StringComparer.Ordinal);
+
+        public float MeasureLabel(string label)
+        {
+            if (_widths.TryGetValue(label, out float w)) return w;
+            w = Font.MeasureText(label);
+            _widths[label] = w;
+            return w;
+        }
+
+        public void Dispose()
+        {
+            Stroke.Dispose(); StrokePlain.Dispose();
+            Fill.Dispose(); FillPlain.Dispose();
+            Font.Dispose(); Text.Dispose();
+        }
+    }
+
+    /// <summary>R-L3a-1 — a missing/broken TOP-LEVEL instance renders a labelled dashed placeholder,
+    /// array-expanded (each array cell is independently a placeholder — there is no real geometry to
+    /// have compressed via the array in the first place), and remains fully selectable (the caller's
+    /// spatial index already indexes it via <c>CellHierarchy.PlaceholderBbox</c>).
+    ///
+    /// <para>Drawn at its stored extent OR <see cref="MinBrokenPlaceholderDevicePixels"/>, whichever
+    /// is larger on screen — see that constant for why. <b>The label is dropped whenever the floor had
+    /// to be applied</b>, which is both the cheap thing and the right thing: a placeholder that had to
+    /// be inflated to be seen at all is far too small to carry legible text, and text is by a wide
+    /// margin the most expensive mark here. Zoomed out over a board full of broken references you get
+    /// boxes; zoom toward one and it names itself.</para></summary>
     private static void DrawBrokenInstancePlaceholder(SKCanvas canvas, LayoutInstance inst, InstanceResolutionState state,
-        PathSpace ps, double scaleUm, LayoutRenderTheme theme, LayoutFrameCounters counters)
+        PathSpace ps, double scaleUm, BrokenPlaceholderPaints paints, LayoutFrameCounters counters)
     {
         string label = state switch
         {
@@ -1318,34 +1441,34 @@ public static partial class LayoutRenderer
         if (ExternalCellRef.TryParse(inst.CellRef, out string alias, out _))
             label = $"[{alias}] {label}";
 
-        using var strokePaint = new SKPaint
-        {
-            IsAntialias = true, Style = SKPaintStyle.Stroke,
-            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
-            Color = theme.Warning, PathEffect = SKPathEffect.CreateDash([6f, 4f], 0),
-        };
-        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Warning.WithAlpha(40) };
-        // LayoutTextOutline.ResolveTypeface (not SkiaFonts.PlexRegular directly) — the same seam
-        // LayoutRenderer.DrawLabelText uses, so this text ALSO honors LayoutTextOutline.
-        // TestOverrideTypeface (SkiaFonts.PlexRegular cannot load without a live Avalonia app host,
-        // confirmed empirically in the L1-era label work — see src/Ui/CLAUDE.md).
-        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular), Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 11.0)));
-        using var textPaint = new SKPaint { IsAntialias = true, Color = theme.Warning };
-
         long half = CellHierarchy.PlaceholderHalfExtentDbu;
+        float minHalf = 0.5f * DevicePixelsToPathSpace(scaleUm, MinBrokenPlaceholderDevicePixels);
+
         int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
         for (int r = 0; r < rows; r++)
         for (int c = 0; c < cols; c++)
         {
             var (ox, oy) = LayoutInstanceTransform.ArrayCellOrigin(inst, r, c);
             var rect = NormalizedRect(ps.X(ox - half), ps.Y(oy - half), ps.X(ox + half), ps.Y(oy + half));
-            canvas.DrawRect(rect, fillPaint);
-            canvas.DrawRect(rect, strokePaint);
+
+            bool floored = rect.Width < minHalf * 2f || rect.Height < minHalf * 2f;
+            if (floored)
+            {
+                float cx = rect.MidX, cy = rect.MidY;
+                float w = Math.Max(rect.Width, minHalf * 2f), h = Math.Max(rect.Height, minHalf * 2f);
+                rect = new SKRect(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f);
+            }
+
+            canvas.DrawRect(rect, floored ? paints.FillPlain : paints.Fill);
+            canvas.DrawRect(rect, floored ? paints.StrokePlain : paints.Stroke);
             counters.DrawCalls += 2;
 
-            float textWidth = font.MeasureText(label);
-            if (textWidth < rect.Width * 4) // only draw the label when it's not wildly larger than the box
-                canvas.DrawText(label, rect.MidX - textWidth / 2f, rect.MidY, SKTextAlign.Left, font, textPaint);
+            if (!floored)
+            {
+                float textWidth = paints.MeasureLabel(label);
+                if (textWidth < rect.Width * 4) // only draw the label when it's not wildly larger than the box
+                    canvas.DrawText(label, rect.MidX - textWidth / 2f, rect.MidY, SKTextAlign.Left, paints.Font, paints.Text);
+            }
             counters.InstancesDrawn++;
         }
     }
@@ -1462,7 +1585,8 @@ public static partial class LayoutRenderer
 
         if (step.State != InstanceResolutionState.Resolved)
         {
-            DrawBrokenInstancePlaceholder(canvas, pending.Instance, step.State, ps, scaleUm, theme, counters);
+            using var ghostPaints = new BrokenPlaceholderPaints(theme, scaleUm);
+            DrawBrokenInstancePlaceholder(canvas, pending.Instance, step.State, ps, scaleUm, ghostPaints, counters);
             return;
         }
 

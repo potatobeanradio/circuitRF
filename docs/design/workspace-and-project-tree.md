@@ -1,8 +1,8 @@
 # circuitRF — Workspace & Project Tree Design
 
 **Status:** Steps 1–7 done · project-tree arc complete · §5A added · §1.2.1 attachments added 2026-08-17 ·
-**§5B / §5C added AND built 2026-09-03** ·
-**Date:** 2026-09-03 · **Phase:** 6g (post-symbol-editor)
+**§5B / §5C added AND built 2026-09-03** · **§5C.2a technology-agreement remedies added AND built 2026-09-04** ·
+**Date:** 2026-09-04 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that
@@ -1086,6 +1086,152 @@ real feature and it is a different one.
 
 **Schematics carry no technology and are unaffected** — the constraint applies to layout views only.
 
+**R47c. A referenced cell is drawn with the HOST layout's technology — always, and it is the only one
+loaded.** `LayoutRenderer.CompileCell` takes a single `Technology?` and passes that same reference down
+every level of the instance hierarchy; layers are matched by numeric `LayerKey`. The referenced cell's own
+`.ctech` is read exactly **once** — at placement, by `ExternalWorkspaceGate.CheckCellTechnology`, purely to
+answer "is it the same layer table?" — and is never consulted again, at render, DRC, flatten, export or EM
+extraction. This is the direct consequence of R47's one-table rule and of per-instance technology being a
+non-goal, but it was not written down, and a user who works around a refusal cannot tell which of the two
+files is in force. It is the host's.
+
+*The corollary that makes the rule safe rather than merely stated:* because the gate has already established
+that the two tables agree on key, name and purpose, "the host's" and "its own" are the same table by every
+property the renderer reads. The refusal is what buys the right to ignore the other file.
+
+**R47d. The alternative — a sub-hierarchy under its own technology — is refused on more than rendering
+cost.** Rendering is the cheapest thing that would have to become per-subtree. DRC region expressions name
+layers by name; `LayoutBooleans` and `LayoutFlatten` produce geometry on a layer key with no room to record
+whose table it came from; a flattened `.clay` and every interchange export (GDSII, DXF, Gerber) have exactly
+one layer table by construction; and the EM extractors read the technology's **stackup**, where two
+disagreeing answers in one layout are not ambiguous but physically meaningless. "The cell brings its own
+technology" is not a smaller version of this feature — it is a different data model for a layout.
+
+#### 5C.2a Making the two workspaces agree *(designed and built 2026-09-04)*
+
+R47 is the right rule and stays. What R47 did **not** do is give the user a way to satisfy it, and that gap
+is what a real two-project pair hits first: the refusal named two technologies and then offered prose
+("copy the cell in, or change one workspace's technology") with nothing to click. The rules below are
+ordered by how much they reduce clicks per unit of risk, which is also the order they were built in.
+
+**One behaviour deliberately CHANGED rather than added: R47h narrows what "the same technology" compares.**
+A pair that used to be refused over a layer neither cell draws on is now permitted. `ExternalCellReferenceTests`'
+`ACopyThatRENAMESOneLayerKey_IsNotTheSameTechnology` encoded the old whole-table rule and was replaced by the
+two tests that state the new one — same key renamed, refused when the cell draws on it and permitted when it
+does not.
+
+**R47e. The refusal carries its own remedies as ACTIONS** (`TechnologyConflictDialog`). The dialog offers:
+- **Use their technology for this layout** — copies the foreign `.ctech` into the host workspace's `tech/`
+  and writes it as this `.clay`'s own `TechRef`. This is the narrowest correct fix and should be the
+  default: it changes one document, and `TechRef` is exactly the field §5A.2 defines for "this layout
+  deliberately deviates from the workspace default."
+- **Use their technology for this whole workspace** — the same copy, written to `.cws` `DefaultTechRef`.
+- **Copy the cell in instead** — the existing route, subject to R47g.
+
+**R47e-ref. The same remedy is what un-refuses a REFERENCE, and the Add Cell dialog offers it there
+too.** Ticking "bring their technology" makes Reference selectable rather than sitting beside a
+permanently-disabled option, which read — correctly — as the checkbox promising something it did not do.
+The two modes consume it by different routes and the dialog states both: a **copy** is pointed at the
+brought file directly (a `TechRef` per copied `.clay`), while a **reference** cannot be, since the cell
+stays where it is and the host layouts that place it resolve through the workspace DEFAULT — so it
+becomes the default, through R47f's confirmation, and cancelling there leaves the reference uncreated
+rather than creating one that cannot be placed. The one refusal this must not undo is a cell in no
+workspace at all: there is no `ws://` alias to reach it through, and no technology fixes that.
+
+**R47e-async. The Add Cell dialog is shown BEFORE the hierarchy walk that fills it in.** `Plan` reads
+every reachable `.csch` and `.clay` — for the kit scan and the technology comparison — and doing that
+before `ShowDialog` is what a frozen window looks like. It now runs on a worker with its own
+`TechnologyCache` (every other cache the walk touches is lock-guarded; that one is a bare `Dictionary`
+and the UI thread holds the shared instance). The sub-cell choice needs no walk at all —
+`CollectHierarchy` adds a cell only through an in-workspace reference, so "more than one folder travels"
+holds exactly when the top cell has at least one, which `HasSubCells` reads from that cell alone.
+**OK is disabled until the plan lands and Cancel is not**: both outstanding answers change what OK
+means, so finishing early would drop a question the user never saw.
+
+**R47e-name. A technology is named `"Name" (file.ctech)`, never by name alone.** A workspace may hold
+several files claiming one name — the Change Technology picker already disambiguates its rows for
+exactly this reason — and which FILE is crossing the boundary is the question every one of these dialogs
+turns on. Rendered once, by `ExternalRefCheck.TechnologyDisplay`, because three surfaces show it.
+
+**R47f. Setting a workspace default technology states its blast radius before it acts.** `TechRef = null`
+is the normal case (§5A.2), so `DefaultTechRef` is the *live* technology of every layout in the workspace
+that has not deviated. Re-pointing it therefore re-points all of them at once, and today
+`SetAsWorkspaceDefault` did it with a plain success message. That is how the workaround this section was
+written from ends up moving the hazard rather than removing it: the referenced cell is now safe, and the
+user's OWN cells are the ones whose keys may have been reinterpreted, with nothing said. The confirmation
+names how many layouts resolve through the default (and the first five of them) and how the outgoing and
+incoming tables differ; a difference of none, or a workspace where nothing yet follows the default, is
+dispatched silently — a confirmation nobody can act on trains people to click through the one that matters.
+`LayoutsFollowingWorkspaceDefault` counts a layout with a DANGLING `TechRef` as following the default, since
+it is already falling back; an unreadable one counts too, which over-states the blast radius rather than
+hiding part of it.
+
+**R47g. "Copy the cell in instead" was the UNCHECKED door, and that was a defect, not a policy.**
+`CrossWorkspaceCellCopy` rewrites every `CellRef` by resolution and never touches `TechRef`. So a copied
+cell with `TechRef = null` — the normal case — silently adopts the destination's default: precisely the
+reinterpretation R47 refuses at placement, arriving through the route the refusal itself recommends. A
+copied cell WITH an explicit `TechRef` fares differently and no better: the relative path travels verbatim
+and no longer resolves, so the technology comes back null and the layout renders on fallback colours. The
+copy now runs the same check the placement gate runs (`CellCopyPlan.Technology`) and, on a difference, offers
+to bring the `.ctech` along — it lands in the destination's `tech/` and every copied `.clay` is pointed at it.
+Declined, a `TechRef` that no longer resolves is cleared to null, because the destination default is at least
+a real, resolvable, stated answer where a dangling relative path is silence; a `TechRef` that DOES still
+resolve (a technology kept inside the cell folder travels with it) is left exactly as it was. An identical
+`.ctech` already in `tech/` is reused rather than numbered — two copies of one process in one workspace is
+the confusion the Change Technology picker's duplicate-name disambiguation had to be widened for.
+
+**R47i. A host that resolves NO technology has nothing to reinterpret, so it adopts theirs rather than
+refusing.** `CheckCellTechnology` used to treat null-versus-a-technology as a disagreement, so a workspace with no
+`DefaultTechRef` — a new one, or one where layout work is starting from a colleague's cell — is refused with
+"(no technology)" on its own side. There is no layer table there to give a key the wrong meaning: with no
+technology the renderer already falls back to generated colours, so the failure R47 exists to prevent cannot
+occur. This is the one case that needs **zero** clicks: the host adopts the referenced cell's technology (a
+copy into `tech/`, written as the host layout's `TechRef`) and says so. It is also the likeliest first
+encounter with R47, which is why it is separated from the general case rather than left to R47e's dialog.
+
+*A copy, never a `TechRef` reaching across the boundary* — that would make this layout stop rendering the day
+the other project moves, and §5C's whole alias mechanism exists because a raw cross-workspace path is the
+thing not to write. The copy is what makes the two workspaces genuinely agree, and from then on R47a permits
+the pair on its own. *No layer mapping runs*: this is an adopt, not a retarget — the shapes keep their keys,
+which had no names and now have them, and there is nothing to remap FROM.
+
+**The mirror case is permitted for the same reason.** An external cell that resolves no technology while the
+host does was also refused, and is now allowed: its shapes were authored against no layer table, so there is
+no author's meaning for the host's table to contradict — and no `.ctech` to adopt, so the refusal named a
+repair that did not exist.
+
+**R47h-perf. The union is over reachable CELLS, so each is visited once — and that is a correctness
+argument, not only a speed one.** The first implementation carried only the DFS-path set (which is what
+cycle detection needs) and re-walked a shared sub-cell once per path reaching it: exponential in depth,
+5.8 s on a 43-cell fixture, and a ~60 s UI hang on a real library cell. The bbox walk beside it
+genuinely cannot dedupe — a bbox depends on the transform chain that reached it — but **a layer key is
+not transformed**, so a second visit can only re-derive what the first contributed. Deduped: 32 ms.
+Cycles then stop mattering (a union over a graph is well defined, and the visited set terminates it);
+depth starts mattering, because a chain past `MaxDepth` is truncated and a SHORT key set is a permit the
+gate did not earn — so truncation returns **null**, meaning "unknown", and falls back to the whole table.
+
+**R47h. Only the layer keys the referenced cell actually OCCUPIES are compared.** This is the change that
+removes the most clicks, and it was built last, because it is the only one that can go stale. A single
+disagreement anywhere in either table used to refuse — including on layers neither cell draws on. The hazard R47
+names is reinterpretation of keys that are *present*, so the honest comparison is over the transitive key set
+of the external cell's own hierarchy (`CellHierarchy.OccupiedLayerKeys`), not over the whole table. Two
+projects that share a metal stack and differ in their documentation or assembly layers now place with no user
+action at all. The walk counts a via's `LandingLayer` as a second key on the same shape and counts pins, and
+it reads no coordinates — a transform moves a shape, it never changes its layer — which is what makes it cheap
+enough to run at placement with no cache. A cell whose `.clay` cannot be READ falls back to comparing the
+whole table: "compare nothing" would turn a broken file into a silent permit, the one direction this gate
+must never fail in.
+
+*What made it non-trivial, and was built with it:* the permit is a statement about the referenced cell's
+contents at one moment, and that cell lives in someone else's workspace where it can grow a shape on a new
+layer afterwards. `AuditPlacedExternalRefs` re-asks the whole question, storing nothing — which also means a
+fix made on either side clears the warning with no bookkeeping — and it hangs off machinery that already
+exists: `CellLayoutResolver.LiveViewChanged` fires on every edit and every on-disk change, and a host document
+is audited on open beside `CellInterfaceWatch`/`CellMoveWatch`. A permit that has gone out of bounds is
+**reported**, never silently withdrawn: the geometry is already placed and built on, and the user needs to be
+told which layer went out of range, not to find the instance missing. One line per CELL, not per placement,
+and deduplicated per document, since the live-refresh tick fires whenever any neighbouring cell is edited.
+
 ### 5C.3 Sub-cells, kits, and the three states
 
 **R48. A reference is to one cell; its sub-cells come along by reference, always.** There is no
@@ -1460,7 +1606,14 @@ cell-driven open (the deferred 4c-later items); 6–7 complete authoring + works
 - **Rename-surviving cell references** / rename-fixes-references-from-tree — v1 is rename-at-risk (§4.1).
 - **Docking documents across workspace windows** — an explicit **non-goal**, not a deferral (R39).
 - **Per-instance technology** (a referenced cell rendered under its own layer table) — an explicit
-  **non-goal** for §5C (R47), and a real feature in its own right if it is ever wanted.
+  **non-goal** for §5C (R47/R47d), and a real feature in its own right if it is ever wanted. R47d records what
+  else would have to become per-subtree with it: DRC region expressions, booleans, flatten, every interchange
+  export, and the EM stackup.
+- **§5C.2a — satisfying R47 without a workaround** *(raised and BUILT 2026-09-04)*. R47e–R47i are all in;
+  the remaining judgement call is R47h's re-check cadence — it runs on document open and on every
+  `CellLayoutResolver.LiveViewChanged`, which does not cover a referenced cell edited in a *different
+  process* while this one is open. That is the same gap the deliberately-unbuilt `FileSystemWatcher` leaves
+  everywhere else in this document, and it closes with that, not before.
 - **Automatic instance-value migration on cell-parameter rename/remove** — v1 surfaces the consequence (§7).
 - **Registry → `.ccell`-loader mechanical migration** (§6) — sequenced with step 5.
 - **`.cdd` / unviewable-type open** — deferred until the owning viewer exists (§3.5).

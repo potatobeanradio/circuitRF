@@ -63,6 +63,10 @@ public static class CrossWorkspaceCellCopy
     /// into the source workspace — always so for <see cref="SubCellMode.KeepReferenced"/>, and also
     /// when a copied cell reaches something the copy does not carry.</param>
     /// <param name="SourceWorkspaceRoot">The workspace the cell came from, or null when it is in none.</param>
+    /// <param name="Technology">§5C.2a/R47g — what the DESTINATION's layer table would make of the
+    /// copied cell's shapes, asked with the same gate a placement is asked with. Refused means the
+    /// copy would land the same reinterpretation R47 refuses at placement; Adopt means the
+    /// destination has no technology of its own to reinterpret with. See <see cref="BringTechnology"/>.</param>
     public sealed record CellCopyPlan(
         string                       SourceCellDir,
         string                       DestCellDir,
@@ -70,7 +74,20 @@ public static class CrossWorkspaceCellCopy
         IReadOnlyList<string>        Collisions,
         IReadOnlyList<string>        UnimportedKits,
         bool                         NeedsSourceAlias,
-        string?                      SourceWorkspaceRoot);
+        string?                      SourceWorkspaceRoot,
+        ExternalRefCheck             Technology)
+    {
+        /// <summary>
+        /// True to copy the source technology into the destination workspace's <c>tech/</c> and point
+        /// every copied <c>.clay</c> at it — set by the dialog, never by <see cref="Plan"/>, because it
+        /// is the user's answer and not a fact about the copy.
+        /// </summary>
+        public bool BringTechnology { get; init; }
+
+        /// <summary>True when the destination would read the copy's layers differently, or has no
+        /// table at all — the two cases <see cref="BringTechnology"/> answers.</summary>
+        public bool TechnologyNeedsAnswer => Technology.Outcome is not ExternalRefOutcome.Permitted;
+    }
 
     /// <summary>
     /// Plans a copy of <paramref name="sourceCellDir"/> into <paramref name="destParentDir"/>.
@@ -79,9 +96,10 @@ public static class CrossWorkspaceCellCopy
     /// about, since a <c>pdk://</c> reference resolves against the referencing document's OWN parent
     /// workspace (MW1 R-mw1-5).</param>
     /// <param name="topName">The name the copied top cell takes; null keeps its own.</param>
+    /// <param name="cache">Technology cache for the R47g check; a fresh one when the caller has none.</param>
     public static CellCopyPlan Plan(
         string sourceCellDir, string destParentDir, string destWorkspaceRoot,
-        SubCellMode mode, string? topName = null)
+        SubCellMode mode, string? topName = null, TechnologyCache? cache = null)
     {
         string source        = Path.GetFullPath(sourceCellDir);
         string sourceParent  = Path.GetDirectoryName(source) ?? source;
@@ -132,7 +150,11 @@ public static class CrossWorkspaceCellCopy
                 ? HasSubCellIn(source, sourceRoot)
                 : reached.Any(c => ReachesUnmapped(c, sourceRoot, map)));
 
-        return new CellCopyPlan(source, destTop, folders, collisions, kits, needsAlias, sourceRoot);
+        // The same question a PLACEMENT is asked (R47g): "copy the cell in instead" was the route the
+        // refusal itself recommended, and it was the one route nothing checked.
+        var techCheck = ExternalWorkspaceGate.CheckCellTechnology(null, destWorkspaceRoot, source, cache);
+
+        return new CellCopyPlan(source, destTop, folders, collisions, kits, needsAlias, sourceRoot, techCheck);
     }
 
     // ── Executing it ──────────────────────────────────────────────────────────
@@ -157,7 +179,126 @@ public static class CrossWorkspaceCellCopy
         foreach (var folder in plan.Folders)
             RewriteRefsIn(folder, map);
 
+        RewriteTechRefs(plan);
+
         return plan.DestCellDir;
+    }
+
+    // ── The technology the copy lands on (§5C.2a/R47g) ────────────────────────
+
+    /// <summary>
+    /// Where a brought-along technology lands: the destination workspace's <c>tech/</c>, under the
+    /// source file's own name, or a numbered variant when that name is taken by a DIFFERENT file.
+    /// An identical file already sitting there is reused rather than duplicated — two copies of one
+    /// process in one workspace is exactly the confusion the picker's duplicate-name disambiguation
+    /// had to be widened for.
+    /// </summary>
+    internal static string PlaceTechnology(string sourceTechPath, string destWorkspaceRoot)
+    {
+        string techDir = Path.Combine(destWorkspaceRoot, "tech");
+        Directory.CreateDirectory(techDir);
+
+        string stem = Path.GetFileNameWithoutExtension(sourceTechPath);
+        string ext  = Path.GetExtension(sourceTechPath);
+
+        for (int n = 0; ; n++)
+        {
+            string candidate = Path.Combine(techDir, n == 0 ? stem + ext : $"{stem}_{n}{ext}");
+            if (!File.Exists(candidate))
+            {
+                File.Copy(sourceTechPath, candidate);
+                return candidate;
+            }
+            if (SameFileContent(candidate, sourceTechPath)) return candidate;
+        }
+    }
+
+    private static bool SameFileContent(string a, string b)
+    {
+        try
+        {
+            var fa = new FileInfo(a);
+            var fb = new FileInfo(b);
+            if (fa.Length != fb.Length) return false;
+            return File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b));
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// R47g. A copied <c>.clay</c> arrives in a workspace whose technology is not the one it was drawn
+    /// with, and neither of the two states it can be in survives the move on its own:
+    ///
+    /// <list type="bullet">
+    /// <item><c>TechRef = null</c> — the ordinary case — means "my workspace's default", and after the
+    /// copy that is the DESTINATION's default. The shapes are then read through a table nobody
+    /// compared, which is precisely the reinterpretation the placement gate refuses.</item>
+    /// <item>A non-null <c>TechRef</c> is a path relative to the <c>.clay</c>'s own directory. It
+    /// travels verbatim, and unless the file it names travelled too (a technology kept inside the cell
+    /// folder does), it now resolves to nothing and the layout renders on fallback colours.</item>
+    /// </list>
+    ///
+    /// <para>So: when the user chose to bring the technology, every copied layout is pointed at where
+    /// it landed. Otherwise a <c>TechRef</c> that no longer resolves is cleared to null — the
+    /// destination default is at least a real, resolvable, stated answer, where a dangling relative
+    /// path is silence. A <c>TechRef</c> that DOES still resolve is left exactly as it was.</para>
+    /// </summary>
+    private static void RewriteTechRefs(CellCopyPlan plan)
+    {
+        string? brought = null;
+        if (plan.BringTechnology && plan.Technology.TheirTechPath is { Length: > 0 } sourceTech)
+        {
+            string? destRoot = WorkspaceRootFinder.WorkspaceDirOf(plan.DestCellDir);
+            if (destRoot is not null && File.Exists(sourceTech))
+            {
+                try { brought = PlaceTechnology(sourceTech, destRoot); }
+                catch { /* the copy itself succeeded; a technology that could not be written is
+                           reported by the layout resolving none, not by losing the cell */ }
+            }
+        }
+
+        foreach (var folder in plan.Folders)
+        {
+            string layoutDir = CellFolder.SubFolderPath(folder.DestDir, ViewType.Layout);
+            if (!Directory.Exists(layoutDir)) continue;
+
+            foreach (var clay in Directory.EnumerateFiles(layoutDir, "*.clay"))
+            {
+                try { RewriteTechRefIn(clay, brought); }
+                catch { /* an unreadable view keeps whatever it had — the same bargain RewriteRefsIn strikes */ }
+            }
+        }
+    }
+
+    private static void RewriteTechRefIn(string clayPath, string? broughtTechPath)
+    {
+        var node = JsonNode.Parse(File.ReadAllText(clayPath));
+        if (node is null) return;
+
+        string clayDir = Path.GetDirectoryName(clayPath)!;
+        string? existing = node["TechRef"]?.GetValue<string?>();
+
+        string? rewritten;
+        if (broughtTechPath is not null)
+        {
+            rewritten = Path.GetRelativePath(clayDir, broughtTechPath).Replace('\\', '/');
+        }
+        else if (existing is { Length: > 0 })
+        {
+            // Left alone when the file it names travelled with the copy (a technology kept beside its
+            // own cell), cleared when it did not.
+            bool stillResolves;
+            try { stillResolves = File.Exists(Path.GetFullPath(Path.Combine(clayDir, existing))); }
+            catch { stillResolves = false; }
+            if (stillResolves) return;
+            rewritten = null;
+        }
+        else return;   // null TechRef, nothing brought: the destination default, stated by omission
+
+        if (string.Equals(existing, rewritten, StringComparison.Ordinal)) return;
+
+        node["TechRef"] = rewritten is null ? null : JsonValue.Create(rewritten);
+        File.WriteAllText(clayPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static void RewriteRefsIn(CopiedFolder folder, Dictionary<string, string> map)
@@ -231,6 +372,20 @@ public static class CrossWorkspaceCellCopy
             CollectHierarchy(abs, workspaceRoot, seen, ordered);
         }
     }
+
+    /// <summary>
+    /// Whether the Add Cell dialog needs to offer a sub-cell choice at all — <b>answered from the top
+    /// cell's own views, without walking the hierarchy</b>, so the dialog can be on screen before
+    /// <see cref="Plan"/> has finished.
+    ///
+    /// <para>It is not an approximation of <c>Plan(...).Folders.Count &gt; 1</c>; it is the same
+    /// answer. <see cref="CollectHierarchy"/> seeds the reachable set with the top cell and adds a
+    /// cell only through an in-workspace reference, so "more than one folder travels" holds exactly
+    /// when the top cell has at least one such reference — which is what this asks. The transitive
+    /// walk can change HOW MANY sub-cells there are; it cannot change WHETHER there are any.</para>
+    /// </summary>
+    public static bool HasSubCells(string cellDir, string? workspaceRoot) =>
+        workspaceRoot is { Length: > 0 } && HasSubCellIn(Path.GetFullPath(cellDir), workspaceRoot);
 
     /// <summary>True when this cell places another cell of its own workspace — which is what makes
     /// <see cref="SubCellMode.KeepReferenced"/> need an alias back into it.</summary>

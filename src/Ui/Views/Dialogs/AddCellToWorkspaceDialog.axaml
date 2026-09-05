@@ -33,6 +33,16 @@
         <TextBlock x:Name="RefusalText" FontSize="11" TextWrapping="Wrap"
                    Margin="22,4,0,0" IsVisible="False" Foreground="{DynamicResource CrfWarningBrush}"/>
 
+
+        <!-- §5C.2a/R47g — what the DESTINATION's layer table would make of the copied shapes -->
+        <StackPanel x:Name="BringTechPanel" Margin="22,6,0,0" Spacing="2" IsVisible="False">
+            <TextBlock x:Name="BringTechWarningText" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource CrfWarningBrush}"/>
+            <CheckBox x:Name="BringTechCheck" FontSize="11" IsChecked="True" Margin="0,2,0,0"/>
+            <TextBlock x:Name="BringTechEffectText" FontSize="10" Opacity="0.7" TextWrapping="Wrap"
+                       Margin="24,0,0,0" IsVisible="False"/>
+        </StackPanel>
+
         <!-- The kit trap (R-mw3-8) -->
         <TextBlock x:Name="KitWarningText" FontSize="11" TextWrapping="Wrap"
                    Margin="0,14,0,0" IsVisible="False" Foreground="{DynamicResource CrfWarningBrush}"/>
@@ -41,10 +51,31 @@
                    Margin="0,14,0,0"
                    Text="A copy writes folders on disk and cannot be undone."/>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+        <!-- The busy indicator: its OWN full-width row, directly above the buttons.
+             It shared the button row first, and that was wrong twice over. A StackPanel in a star
+             column does not CLIP, so the caption ran straight over the buttons the moment the real
+             font measured wider than my arithmetic said (owner, 2026-09-05) — and squeezing a bar
+             plus a sentence into the ~250 px left beside two buttons was fragile whatever the
+             numbers, since any theme or font change re-breaks it. Full width has 420 px, room for
+             the whole caption, and no contention with anything.
+
+             The row RESERVES its height whether or not it is showing, so a dialog that has just
+             opened does not change size 200 ms later and again when the walk lands. Directly above
+             OK is still beside the button whose disabled state it explains. -->
+        <Panel Height="18" Margin="0,14,0,0">
+            <StackPanel x:Name="BusyPanel" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center" IsVisible="False">
+                <ProgressBar x:Name="BusyBar" IsIndeterminate="True"
+                             Width="120" Height="4" MinHeight="4" VerticalAlignment="Center"/>
+                <TextBlock x:Name="CheckingText" FontSize="11" Opacity="0.75" VerticalAlignment="Center"
+                           Text="Checking sub-cells, kits and technology…"/>
+            </StackPanel>
+        </Panel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
             <Button Content="Cancel" Width="80" FontSize="12"
                     HorizontalContentAlignment="Center" Click="OnCancelClick"/>
-            <Button Content="OK" Width="80" IsDefault="True" FontSize="12"
+            <Button x:Name="OkButton" Content="OK" Width="80" IsDefault="True" FontSize="12"
                     HorizontalContentAlignment="Center" Click="OnOkClick"/>
         </StackPanel>
 

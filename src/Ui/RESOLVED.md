@@ -19800,3 +19800,146 @@ zooming back out reuses the compile it already paid for). No wall-clock assertio
 was right. Decimation compares CHEBYSHEV distance, so on a circle the tightest spacing is not the arc
 step but its 45-degree projection, arc/sqrt(2) — a tolerance between the two thins the ring on its
 diagonal runs and only there. Pick such a fixture's zoom by arithmetic, not by eye.
+
+## §5C.2a — the R47 refusal now carries its remedies (2026-09-04)
+
+Owner report: referencing a cell from another workspace was refused because the technology did not exist
+here, and the workaround found was to copy the other workspace's `.ctech` in and make it the workspace
+default. It works. It also silently re-points every layout in the workspace, which is the finding.
+
+**Which technology was the referenced cell drawn with? The HOST's — always, and it is the only one
+loaded.** `LayoutRenderer.CompileCell` takes one `Technology?` and passes that same reference down every
+level; the referenced cell's own `.ctech` is read exactly once, at placement, by
+`ExternalWorkspaceGate.CheckCellTechnology`, for the comparison alone. Nothing downstream — render, DRC,
+flatten, export, EM extraction — consults it. This was true before and simply was not written down, which
+is why a user who works around the refusal cannot tell which of the two files is in force.
+
+**`SetAsWorkspaceDefault` was the sharp edge, not the refusal.** `TechRef = null` is the ordinary case and
+means "the workspace default", so re-pointing the default re-points every layout that has not deliberately
+deviated — and it did so behind a plain success message. It is now `SetAsWorkspaceDefaultAsync` and states
+how many layouts change, names the first five, and says how the two tables differ. **A difference of none
+is dispatched silently on purpose**: two copies of one process are the same table, and a confirmation
+nobody can act on trains people to click through the one that matters.
+
+**The placement refusal is a dialog with actions** (`TechnologyConflictDialog`), narrowest first: retarget
+THIS layout (a copy of their `.ctech` into `tech/`, written as this document's own `TechRef`), adopt it for
+the whole workspace (through the confirmation above), or copy the cell in instead. **Every remedy ends by
+re-entering the one placement path** rather than placing directly, so a remedy that did not actually make
+the two agree refuses a second time instead of placing what the gate would not have permitted.
+
+**The seam is an `Action`, not an awaited call.** Both commit paths — the Instance tool's
+`CommitInstancePlacement` and the drop handler's `CommitDragInstancePlacement` — are reached from
+synchronous pointer/drop handling, and making those async to carry one dialog on one branch of one check
+would have changed the signature of the whole press pipeline. The host fires the dialog and calls back into
+`PlaceInstanceAfterTechnologyRemedy`.
+
+**`CrossWorkspaceCellCopy` was the unchecked door — in the route the refusal itself recommended.** It
+rewrote every `CellRef` by resolution and never touched `TechRef`, so a copied cell with `TechRef = null`
+(the normal case) silently adopted the destination's table: precisely the reinterpretation the placement
+gate refuses. A cell WITH an explicit `TechRef` fared no better — the relative path travelled verbatim and
+resolved to nothing. The copy now asks the same question a placement asks and offers to bring the `.ctech`;
+declined, a `TechRef` that no longer resolves is cleared to null (a resolvable default beats a dangling
+path), while one that DOES still resolve — a technology kept inside the cell folder travels with it — is
+left alone.
+
+### Add Cell to Workspace: the checkbox promised what it did not do (2026-09-05)
+
+Owner: Reference stayed unselectable even with "Bring <technology>" ticked, and the dialog named the
+technology without naming its FILE.
+
+**Reference is now enabled by that checkbox, because bringing the technology in is exactly what makes
+a reference legal** — it is R47e's first remedy applied at the workspace instead of at one layout.
+The two modes need it for different reasons and the dialog now says so: a COPY is pointed at the
+brought file directly (a `TechRef` per copied `.clay`), while a REFERENCE cannot be — the cell stays
+where it is and the host layouts that will place it resolve through the workspace DEFAULT — so it
+becomes the default, through R47f's confirmation. Cancelling that confirmation leaves the reference
+uncreated rather than creating one that cannot be placed. The one refusal the checkbox must NOT undo
+is a cell that is in no workspace at all: there is no `ws://` alias to reach it through, and no
+technology fixes that, which is why the flag passed in is `referenceRefusalIsTechnologyOnly` rather
+than "was there a refusal".
+
+**Un-ticking under a selected Reference re-selects Copy.** Leaving a disabled radio checked would have
+let OK fall through to a copy the user had not asked for.
+
+**The technology is named as `"Name" (file.ctech)` everywhere**, via `ExternalRefCheck.TechnologyDisplay`.
+The name alone is ambiguous — a workspace can hold several files claiming one name, which is why the
+Change Technology picker already disambiguates its rows the same way — and which FILE crosses is the
+whole question. It lives on the result rather than in a dialog because three surfaces render it (this
+dialog, the placement-remedy dialog, the post-copy message) and they had drifted apart on day one.
+
+### The Add Cell dialog now opens before the walk finishes (2026-09-05)
+
+`Plan` walks the cell's whole hierarchy — every reachable `.csch` and `.clay`, for the kit scan and
+the technology comparison — and that ran BEFORE `ShowDialog`, so a large cell meant a frozen window.
+It now runs on a worker while the dialog is already up and fills itself in.
+
+**Its own `TechnologyCache`.** Everything else the walk touches is lock-guarded — `WorkspaceRootFinder`,
+`CellStat`, `CellSymbolResolver`, `CellLayoutResolver`, `PdkKitRegistry` — but `TechnologyCache` is a
+plain `Dictionary` with no gate, and the UI thread holds the shared one. A private cache costs one
+extra `.ctech` read and removes the race instead of papering over it.
+
+**The sub-cell choice is available immediately and is not an approximation.** `HasSubCells` reads the
+top cell's own views only. `CollectHierarchy` seeds the reachable set with the top cell and adds a cell
+only through an in-workspace reference, so "more than one folder travels" holds exactly when the top
+cell has at least one such reference. The walk changes HOW MANY sub-cells there are; it cannot change
+WHETHER there are any.
+
+**OK is disabled until the plan lands; Cancel is not.** Both outstanding answers change what OK MEANS —
+whether Reference is available, and whether a technology travels — so completing early would either
+drop a question the user never saw or ask it after they had committed. The plan is also reused for the
+copy when the mode matches the one it was computed for, so the cost does not simply move to after the
+dialog.
+
+### A broken instance at PCB extents: visible, and cheap in thousands (2026-09-05)
+
+Owner: at board level the Not Found marker could not be seen, so there was no way to tell where the
+missing artwork was — followed by "what if there are thousands of unreferenced cells".
+
+**The marker now has a 28-device-pixel floor.** Its stored extent is a fixed 50 µm
+(`CellHierarchy.PlaceholderHalfExtentDbu`), which on a 100 mm board is 0.05% of the width — 0.75 px on
+a 1500-px window. **Remembering the cell's real extent would not have fixed this**: a missing 0402
+footprint remembered exactly is smaller still. Size memory makes the drawing honest; a screen floor
+makes it findable, and they are different problems.
+
+**What made thousands slow was not the count — it was the dash.** 5,000 broken placements over a whole
+board measured **382 ms/frame**; it is now **15 ms**. In order of what the measurements actually said:
+- **The dashed stroke was essentially all of it** (382 → 17.7 ms). Skia builds dash geometry per rect.
+  It is now dropped exactly when the floor is applied — which is also exactly when a dash on a 28-pixel
+  box could not be seen anyway. The label goes with it, for the same two reasons.
+- Antialiasing off on the floored marker: 17.7 → 15.0 ms. An axis-aligned rect snapped to a pixel floor
+  smooths nothing.
+- The paints were being built PER PLACEHOLDER — three `SKPaint`s, an `SKFont` and a dash
+  `SKPathEffect`, constructed and disposed inside the per-instance call. Now one set per draw pass,
+  built lazily so a layout with nothing broken pays for none.
+- A frame-scoped resolution memo. `CellStat` caches a TRUE stat but deliberately never a FALSE one
+  (R-sl4-8), which is right for resolution and wrong for painting, since the renderer re-resolves every
+  visible instance every frame. A memo scoped to one frame cannot show a stale answer, and a workspace
+  that lost one library has thousands of placements pointing at a handful of missing cells.
+
+**Two hypotheses were wrong before the measurement, and both were plausible:** the per-instance paint
+construction, and the syscalls. Fixing the syscalls moved 390 ms to 382 ms. Only the dash mattered.
+
+**Known and not chased:** a steady-state frame still makes about one filesystem call per instance from a
+DIFFERENT path — the spatial index measures each instance's bbox, and `CellHierarchy.InstanceBbox`
+resolves to do it. It is not what made the frame slow, and `BrokenInstanceVisibilityTests`' bound is set
+to pass with it and fail without the paint-side memo.
+
+**The async dialog needed a busy indicator, not just a sentence (2026-09-05).** The first version put
+"Checking this cell's sub-cells, kits and technology…" in the dialog BODY, at 11 px and 75% opacity,
+tucked under the Reference radio. Owner: there was no indicator anything was happening — you sit there
+wondering why OK is disabled, then it suddenly enables. Two things were wrong and both matter:
+
+- **Position.** What the user is looking at while the walk runs is the DISABLED OK BUTTON, so the
+  explanation belongs on that row, not up in the body. It now shares the button row (`Grid` with the
+  buttons right-aligned), which also means the row keeps the buttons' height and nothing reflows when
+  it clears.
+- **Motion.** A static line beside a disabled button reads as "broken"; what reads as "working" is an
+  indeterminate `ProgressBar`.
+
+**It appears only after 200 ms.** Most cells finish in single-digit milliseconds, and a bar that flashes
+for one frame on every ordinary drop is noise — noise is what teaches people to ignore the indicator on
+the drop that actually takes a minute.
+
+**Indeterminate is the honest choice, not a shortcut.** `CollectHierarchy` is a graph traversal that
+discovers what it must visit as it goes, so there is no total to divide by; a bar showing an invented
+fraction would be worse than one that only says "still working".
