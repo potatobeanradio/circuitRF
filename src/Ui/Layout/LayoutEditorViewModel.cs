@@ -2394,6 +2394,71 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         SetDuplicateDragArmed(false);
     }
 
+
+    /// <summary>
+    /// <b>A moved port re-seats the conductor END it names.</b> Companion to the move commands, folded
+    /// into the SAME undo entry, so a port dragged from one face of a pad to another arrives facing the
+    /// face it landed on.
+    ///
+    /// <para><b>The bug this exists for (owner report, 2026-09-05): "move a port to another face of the
+    /// square pad and you can't rotate it — you have to delete it and add it again."</b> A port's
+    /// direction was stamped once, by the Port tool, at placement, and nothing ever reconsidered it.
+    /// Everything a port IS follows from that stamp: <see cref="LayoutPortDirection.PlaneOf"/> puts the
+    /// reference-plane bar and the arrow at the face the DIRECTION names, and the port is picked and
+    /// highlighted by that mark (<c>PortMarkerRegion</c>), not by its anchor. So dragging the label to
+    /// another face of a square pad moved the name and left the mark behind: clicking where the port now
+    /// appears selected the PAD underneath, and Rotate — which acts on the selection — turned the pad
+    /// instead. Deleting and re-placing worked because placement is the one moment the artwork is asked.
+    /// This asks it again, at the one other moment the answer can change.</para>
+    ///
+    /// <para><b>An explicit rotation still survives an ordinary nudge.</b> The trigger is not "the port
+    /// moved" but "the ARTWORK's own answer under the port changed" — the inference at the old anchor
+    /// versus the new one. Sliding a port along the face it already names infers the same direction at
+    /// both ends and leaves a user's rotation untouched; crossing to a different face is the case where
+    /// the stated direction has stopped describing where the port is.</para>
+    ///
+    /// <para><b>Labels only, and never alongside an instance.</b> The inference is evaluated against the
+    /// PRE-move model, which is only the same question as the post-move one while the conductor is
+    /// standing still. Moving a pad and its port together is one rigid thing whose relative geometry
+    /// cannot change, so it is skipped outright rather than answered from a lookup that would have the
+    /// metal in its old place and the port in its new one.</para>
+    /// </summary>
+    private IUiCommand? ReseatMovedPortDirections(IReadOnlyList<int> shapeIndices, long dx, long dy)
+    {
+        if ((dx == 0 && dy == 0) || shapeIndices.Count == 0) return null;
+        if (_selectedInstanceIndices.Count > 0) return null;
+
+        bool anyPort = false;
+        foreach (int i in shapeIndices)
+        {
+            if (Model.Shapes[i] is not LabelShape label) return null;   // the conductor is moving too
+            anyPort |= label.IsPort;
+        }
+        if (!anyPort) return null;
+
+        var conductorAt = LayoutPortDirection.LookupFor(Model, Technology, InstanceBaseDir);
+        LayoutRotation? InferredAt(long x, long y) =>
+            conductorAt(x, y) is { } info ? LayoutPortDirection.DirectionAt(info, x, y) : null;
+
+        IUiCommand? combined = null;
+        foreach (int i in shapeIndices)
+        {
+            if (Model.Shapes[i] is not LabelShape { IsPort: true } port) continue;
+
+            var before = InferredAt(port.X, port.Y);
+            if (InferredAt(port.X + dx, port.Y + dy) is not { } adopted) continue;  // landed off the metal
+            if (adopted == before || port.PortDirection == adopted) continue;
+
+            // "Move" rather than a name of its own: CompositeCommand takes its description from the
+            // LAST command, and this rides along with a move rather than being one of its own.
+            var stated = port.PortDirection;
+            IUiCommand cmd = new Commands.Layout.SetShapeFieldCommand<LayoutRotation?>(
+                Model, "Move", stated, adopted, v => port.PortDirection = v);
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+        return combined;
+    }
+
     /// <summary>brief-L3a-followups.md §2/R-fix-2: moves whichever of shapes/instances are currently
     /// selected, TOGETHER, as one undo entry — a <see cref="CompositeCommand"/> of
     /// <see cref="Commands.Layout.MoveShapesCommand"/> and <see cref="Commands.Layout.MoveInstancesCommand"/>
@@ -2419,6 +2484,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 IUiCommand rulerCmd = new Commands.Layout.MoveRulersCommand(Model, _selectedRulerIndices, _moveLiveDx, _moveLiveDy);
                 combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
             }
+            // Built from the PRE-move anchors, which is why it is composed here rather than applied
+            // after Execute — see ReseatMovedPortDirections.
+            if (combined is not null
+                && ReseatMovedPortDirections(shapeIndices, _moveLiveDx, _moveLiveDy) is { } reseat)
+                combined = new CompositeCommand(combined, reseat);
             if (combined is not null)
             {
                 // Captured BEFORE the move, because a mark is keyed by the label's anchor and Execute
@@ -2619,6 +2689,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             IUiCommand rulerCmd = new Commands.Layout.MoveRulersCommand(Model, _selectedRulerIndices, dx, dy);
             combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
         }
+        // A keyboard nudge is a move like any other: a port nudged across a face re-seats too.
+        if (combined is not null && ReseatMovedPortDirections(shapeIndices, dx, dy) is { } reseat)
+            combined = new CompositeCommand(combined, reseat);
         if (combined is not null) Execute(combined);
     }
 

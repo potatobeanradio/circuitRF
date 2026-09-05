@@ -20122,3 +20122,53 @@ refreshes the tab by path out of `_openDocsByPath` and the inspector by comparin
 Gate: `CellParameterEditorViewModelTests` — a symbol created after construction becomes selectable and
 persists; a bare `null` write-back leaves the saved primary standing and restores the combo's display;
 and picking "(none specified)" still clears it. Removing the guard turns the second one red.
+
+## A port moved to another face of a pad could not be rotated (2026-09-05)
+
+**Report:** move a port to another face of the square pad it sits on and you cannot rotate it — the
+only way out is to delete it and place it again.
+
+**Rotate was never the problem; the port was never selected.** A port's `PortDirection` names the
+conductor END it sits at, and it was stamped exactly once — by the Port tool, at placement — with
+nothing ever reconsidering it. Everything a port *is* follows from that stamp:
+`LayoutPortDirection.PlaneOf` puts the reference-plane bar and the arrow at the face the DIRECTION
+names, and a port is picked and highlighted by that **mark**, not by its anchor
+(`LayoutEditorViewModel.PortMarkerRegion` → `LayoutHitTest.PortPickBbox`). So dragging the label to
+another face of a square pad moved the *name* and left the *mark* behind: clicking where the port now
+appeared selected the PAD underneath it, and Rotate — which acts on the selection — turned the pad.
+Deleting and re-placing worked because placement is the one moment the artwork is asked.
+
+**A square pad is the shape that exposes it**, and that is not incidental: `FromBbox` picks the
+NEAREST side, so on a long thin trace the anchor and the end face are always within a whisker of each
+other and the stale mark is invisible. On a square all four faces are equally plausible and the mark
+can end up a full pad-width from the label — far enough that the two are unrelated click targets.
+
+**Fix:** `LayoutEditorViewModel.ReseatMovedPortDirections` — a companion command folded into the SAME
+undo entry as the move (both `CommitMoveDrag` and `NudgeSelection`), re-asking the artwork the same
+question placement asks.
+
+Three things about it that are load-bearing:
+
+- **The trigger is not "the port moved" but "the artwork's own answer under the port changed"** —
+  the inference at the old anchor versus the new one. Sliding a port along the face it already names
+  infers the same direction at both ends, so a user's explicit rotation survives an ordinary nudge.
+  Re-seating unconditionally would let a 1-DBU nudge silently discard a deliberate rotation, which is
+  the whole reason `PortDirection` exists (owner report, 2026-08-09).
+- **Labels only, and never alongside an instance.** The inference is evaluated against the PRE-move
+  model — which is only the same question as the post-move one while the conductor is standing still.
+  Moving a pad and its port together is one rigid thing whose relative geometry cannot change, so it
+  is skipped outright rather than answered from a lookup holding the metal in its old place and the
+  port in its new one.
+- **It is composed BEFORE `Execute`**, because it reads the pre-move anchors, and it is described as
+  `"Move"` because `CompositeCommand` takes its description from the LAST command it holds.
+
+Gate: `tests/Ui.Tests/Layout/LayoutPortMoveReseatsDirectionTests.cs` — the reported drag, that the
+moved port is pickable *where it now is* (the half that made Rotate unreachable), one-entry undo, and
+the three cases that must NOT re-seat: sliding along the same face with an explicit R180, landing off
+the metal, and moving the pad and its port together.
+
+**Still true, and deliberately not changed:** a port that has been ROTATED away from its inferred
+face on a square pad still draws its mark on one face with its name on another (joined by the dashed
+leader), and is picked by the mark. That is the 2026-08-25 pick-region decision — a port is grabbed by
+its arrow, not by its text — and repeated Rotate presses work regardless, since the rotate command
+keeps the selection.
