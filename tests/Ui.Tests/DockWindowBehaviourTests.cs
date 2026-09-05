@@ -591,10 +591,12 @@ public sealed class DockWindowBehaviourTests
         Assert.Contains("e.Cancel = true;", onClosing);
         Assert.Contains("Dispatcher.UIThread.Post(CloseFloatedToolPanels);", onClosing);
 
-        // Asked as "not a document float", never "holds a tool": a real close was traced arriving on a
-        // window whose model layout no longer named the panel it was showing, and the old question sent
-        // exactly that window into the crashing cascade.
-        Assert.Contains("!FloatsAnyDocument()", onClosing);
+        // The question itself moved into ShouldTearDownOurWay so it could be gated headlessly (a
+        // CrfHostWindow cannot be constructed in this suite), but the two inputs it is asked of are
+        // unchanged: asked as "not a document float", never "holds a tool", because a real close was
+        // traced arriving on a window whose model layout no longer named the panel it was showing, and
+        // the old question sent exactly that window into the crashing cascade.
+        Assert.Contains("ShouldTearDownOurWay(_closingForLayoutRebuild, IsTracked, FloatsAnyDocument())", onClosing);
         Assert.DoesNotContain("FloatsAnyTool()", onClosing);
 
         var j = src.IndexOf("private void CloseFloatedToolPanels()", StringComparison.Ordinal);
@@ -785,6 +787,98 @@ public sealed class DockWindowBehaviourTests
         // host window, which is never wrong for a tool float.
         Assert.Contains("return false;", body);
         Assert.Contains("RaiseToolPanelVisibilityChanged();", body);
+    }
+
+    // ── An undocked document closed by its tab's ✕ (owner, 2026-09-05) ───────
+
+    /// <summary>
+    /// <b>The reported bug's own mechanism.</b> Owner, 2026-09-05: closing an undocked <c>.csym</c>
+    /// document with the ✕ on its tab closed the TAB and left the native OS window standing. Nothing
+    /// on the path branches on document type — the tab ✕ binds to <c>IFactory.CloseDockable</c> for
+    /// every document alike — so this is asserted on a plain document, and the fix is likewise
+    /// type-blind.
+    ///
+    /// <para>This test pins the PREMISE the fix rests on: closing the last dockable in a float does
+    /// walk all the way up to <c>RemoveWindow</c>. <c>FactoryBase.CloseDockable</c> →
+    /// <c>RemoveDockable(collapse: true)</c> → <c>CollapseDock</c> empties the floating document dock,
+    /// removes it from the floating root, and then — the root being an <c>IRootDock</c> with a
+    /// <c>Window</c> — calls <c>RemoveWindow</c>, which calls <c>IDockWindow.Exit()</c>. On the desktop
+    /// that <c>Exit()</c> is what reaches <c>CrfHostWindow.OnClosing</c>, with the document ALREADY out
+    /// of the layout, which is why <see cref="CrfHostWindow.ShouldTearDownOurWay"/> may not answer that
+    /// question from the layout alone.</para>
+    ///
+    /// <para>Headless: the floating window has no <c>Host</c>, so <c>Exit()</c> is a no-op and only the
+    /// model half is observable here. The host half is the truth table below.</para>
+    /// </summary>
+    [Fact]
+    public void ClosingTheLastDocumentInAFloat_CascadesAllTheWayToRemoveWindow()
+    {
+        var factory = new CircuitRfDockFactory();
+        var root    = factory.CreateLayout();
+        factory.InitLayout(root);
+
+        var doc = new FakeDocument { Id = "Doc", Title = "Doc" };
+        var window = factory.CreateWindowFrom(doc);
+        Assert.NotNull(window);
+
+        // AddWindowWithoutHost's own three lines, inlined: FactoryBase.AddWindow would resolve a host,
+        // i.e. construct a real CrfHostWindow, which needs a windowing platform this suite has not got.
+        root.Windows ??= factory.CreateList<IDockWindow>();
+        root.Windows.Add(window!);
+        factory.InitDockWindow(window!, root, hostWindow: null);
+
+        Assert.Single(root.Windows!);
+        Assert.NotNull(window!.Layout);
+
+        factory.CloseDockable(doc);
+
+        // The window is gone from the root — i.e. RemoveWindow ran, and on the desktop the host's own
+        // Close() ran with it. Before the fix that Close() was cancelled and nothing closed the window.
+        Assert.Empty(root.Windows!);
+    }
+
+    /// <summary>
+    /// The host-side half: <see cref="CrfHostWindow.ShouldTearDownOurWay"/>'s complete truth table.
+    ///
+    /// <para><c>IsTracked</c> is the discriminator the fix adds. <c>HostAdapter.Exit</c> clears it in
+    /// the line before it calls <c>Close()</c> and nothing else in Dock 12.0.0.2 ever clears it, so a
+    /// close arriving with it false is Dock finishing its own teardown and must be allowed through —
+    /// cancelling it is what left the owner's window on screen, because <c>window.Host</c> is nulled
+    /// the moment that <c>Close()</c> returns and the deferred teardown then had no host to close.</para>
+    /// </summary>
+    [Theory]
+    // closingForLayoutRebuild, isTracked, floatsAnyDocument, expected
+    [InlineData(false, true,  false, true)]   // a tool-only (or content-less) float's close box — ours
+    [InlineData(false, true,  true,  false)]  // a live document float's close box — the platform's
+    [InlineData(false, false, false, false)]  // THE BUG: Dock's own teardown, document already removed
+    [InlineData(false, false, true,  false)]  // Dock tearing down a float that still names a document
+    [InlineData(true,  true,  false, false)]  // our own CloseForLayoutRebuild — never re-enters itself
+    [InlineData(true,  false, false, false)]
+    public void ShouldTearDownOurWay_CancelsOnlyACloseThatIsNotAlreadyDocksOwnTeardown(
+        bool closingForLayoutRebuild, bool isTracked, bool floatsAnyDocument, bool expected)
+    {
+        Assert.Equal(expected,
+            CrfHostWindow.ShouldTearDownOurWay(closingForLayoutRebuild, isTracked, floatsAnyDocument));
+    }
+
+    /// <summary>
+    /// The deferred teardown must never be able to close NOTHING. Once Dock has detached a float,
+    /// <c>window.Host</c> is null and both of <c>CloseFloatedToolPanels</c>' normal routes
+    /// (<c>WorkspaceViewModel.CloseFloatingToolWindow</c> and <c>CircuitRfDockFactory.CloseFloatingWindow</c>)
+    /// return having closed nothing — <c>CloseFloatingWindow</c> reads <c>window.Host</c> and has no
+    /// window left to act on. The guard closes this host directly instead.
+    /// </summary>
+    [Fact]
+    public void TheDeferredTeardown_ClosesThisHostDirectly_WhenTheDockWindowNoLongerPointsAtIt()
+    {
+        var src = ReadRepoFile("src/Ui/ViewModels/Dock/CrfHostWindow.cs");
+        var body = src[src.IndexOf("private void CloseFloatedToolPanels()")..];
+        body = body[..body.IndexOf("/// <summary>")];
+
+        Assert.Contains("ReferenceEquals(dockWindow.Host, this)", body);
+        // and it must be the FIRST decision — reached before either route that would silently no-op.
+        Assert.True(body.IndexOf("ReferenceEquals") < body.IndexOf("ResolveWorkspace"));
+        Assert.True(body.IndexOf("ReferenceEquals") < body.IndexOf("CloseFloatingWindow"));
     }
 
     private static string ReadRepoFile(string relativePath)

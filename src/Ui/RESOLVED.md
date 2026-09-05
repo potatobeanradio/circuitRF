@@ -1,5 +1,70 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## An undocked document's tab ✕ closed the tab and left its window on screen (2026-09-05)
+
+**Reported as:** an undocked `.csym` document was closed with the ✕ on its tab item; the tab closed
+but the native OS window stayed open. **Nothing on the path is `.csym`-specific** — the tab ✕ binds
+to `IFactory.CloseDockable` for every document type alike (the button is Dock's own, in
+`Dock.Avalonia.Themes.Fluent`, and its command trampoline names `IFactory.CloseDockable`), so this
+was every torn-off document.
+
+**The window's close was CANCELLED, by us, at the very end of Dock's own teardown.** Closing the
+last tab in a float runs one cascade all the way up:
+
+```
+IFactory.CloseDockable(doc)
+  → FactoryBase.RemoveDockable(doc, collapse: true)     the doc leaves the floating DocumentDock
+  → CollapseDock(documentDock)                          now empty → leaves the floating RootDock
+  → CollapseDock(rootDock)                              now empty, and it has a Window
+  → RemoveWindow(window) → IDockWindow.Exit()
+  → HostAdapter.Exit()   → HostWindow.Exit() → Close()  ← reaches CrfHostWindow.OnClosing
+```
+
+So the platform close arrives **after** the document has already left the layout. `OnClosing` asked
+"does this float hold a document?", got `false` for what was really a document float finishing its
+own teardown, and cancelled — the branch that exists to keep a TOOL float out of Dock's crashing
+`CloseWindow` → recursive `CloseDockable` cascade (2026-09-02, in this file).
+
+**Cancelling it was fatal rather than merely late, and that is the part worth remembering.** The
+deferred `CloseFloatedToolPanels` could no longer reach anything: `HostAdapter.Exit` sets
+`window.Host = null` the instant `Close()` returns, and `RemoveWindow` then clears the window's
+`Factory`, `Layout` and `Owner`. Both of that method's routes read `window.Host` —
+`CircuitRfDockFactory.CloseFloatingWindow` does `var host = window.Host; … if (host is CrfHostWindow
+crf) crf.CloseForLayoutRebuild();` — so with `Host` already null **it ran to completion having closed
+nothing, and reported no error.** A silent no-op, on a window that was still on screen.
+
+**`IHostWindow.IsTracked` is the discriminator**, and it is exact rather than a heuristic:
+`HostAdapter.Exit` clears it in the line *before* it calls `Close()`, and nothing else in Dock
+12.0.0.2 ever clears it. `false` at `OnClosing` therefore means precisely "Dock is already tearing
+this window down"; a user pressing the window's own close box still arrives with it `true` and is
+untouched. The decision moved into `CrfHostWindow.ShouldTearDownOurWay(closingForLayoutRebuild,
+isTracked, floatsAnyDocument)` — pure and static, because a `CrfHostWindow` cannot be constructed in
+the test suite, so a truth table is the only headless gate available.
+
+**Letting that close through is safe as well as correct, and the reason is structural.** The one
+caller of `RemoveWindow` inside `FactoryBase` is `CollapseDock`, which reaches it only once the
+floating layout is EMPTY. `HostWindow.OnClosed` then calls `IFactory.CloseWindow(Window)`, whose
+whole body is a walk over `layout.VisibleDockables` — nothing left to walk, so the recursive
+`CloseDockable` that crashes on a tool teardown is never entered. It also gets the bookkeeping right
+for free: `OnClosed` removes the host from `IFactory.HostWindows` before its `if (!IsTracked) return`.
+
+**Second, independent defect, fixed with it:** `CloseFloatedToolPanels` had no way to fail loudly. It
+now checks `ReferenceEquals(dockWindow.Host, this)` FIRST and falls back to `CloseForLayoutRebuild()`
+— so a detached float closes itself rather than quietly persisting. This class has now shipped an
+inert close box twice (the Library palette, 2026-09-02; this); the guard is there so a third reason
+nobody anticipated cannot produce the same symptom.
+
+**Gates** (`tests/Ui.Tests/DockWindowBehaviourTests.cs`):
+`ClosingTheLastDocumentInAFloat_CascadesAllTheWayToRemoveWindow` pins the premise on the real factory
+— headless, so the float has no host and only the model half is observable, but `root.Windows` does
+empty, which is `RemoveWindow` running;
+`ShouldTearDownOurWay_CancelsOnlyACloseThatIsNotAlreadyDocksOwnTeardown` is the six-row truth table;
+`TheDeferredTeardown_ClosesThisHostDirectly_WhenTheDockWindowNoLongerPointsAtIt` pins the guard and
+its position.
+
+**Not interactively verified** — needs a desktop: tear a document off, close its tab, and confirm the
+window goes with it.
+
 ## File ▸ Save Workspace As… was a dead end, and is now a folder copy (2026-09-05)
 
 **Reported as:** the menu offers to save a `.crfw` file — is that spelling dead, and if the item is a

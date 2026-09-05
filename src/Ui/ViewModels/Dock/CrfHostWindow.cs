@@ -187,15 +187,7 @@ public class CrfHostWindow : HostWindow
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        // Anything that is not a DOCUMENT float is closed OUR way, never the platform's: cancel this
-        // close and run the safe teardown on the next dispatcher pass. See CloseFloatedToolPanels.
-        //
-        // Asked as "no documents here" rather than "a tool is here" on purpose. A real close was traced
-        // arriving with `tool=False` on a window titled "Window" — a host whose model layout no longer
-        // named what it was showing — and the old question sent exactly that case into Dock's crashing
-        // cascade, which is the one place it must never go. The teardown below is correct for an empty
-        // window too: it detaches and closes it.
-        if (!_closingForLayoutRebuild && !FloatsAnyDocument())
+        if (ShouldTearDownOurWay(_closingForLayoutRebuild, IsTracked, FloatsAnyDocument()))
         {
             e.Cancel = true;
             Dispatcher.UIThread.Post(CloseFloatedToolPanels);
@@ -204,6 +196,44 @@ public class CrfHostWindow : HostWindow
 
         base.OnClosing(e);
     }
+
+    /// <summary>
+    /// Whether this close must be cancelled and re-run as <see cref="CloseFloatedToolPanels"/>, rather
+    /// than handed to the platform. Pure, static and internal so it can be gated headlessly — a
+    /// <c>CrfHostWindow</c> cannot be constructed in the test suite.
+    ///
+    /// <para><b>Anything that is not a DOCUMENT float is closed OUR way, never the platform's.</b>
+    /// Asked as "no documents here" rather than "a tool is here" on purpose. A real close was traced
+    /// arriving with <c>tool=False</c> on a window titled "Window" — a host whose model layout no
+    /// longer named what it was showing — and the old question sent exactly that case into Dock's
+    /// crashing cascade, which is the one place it must never go. The teardown is correct for an empty
+    /// window too: it detaches and closes it.</para>
+    ///
+    /// <para><b><paramref name="isTracked"/> is what stops that rule eating Dock's OWN teardown</b>
+    /// (owner, 2026-09-05: closing an undocked <c>.csym</c> by its tab's ✕ closed the tab and left the
+    /// native window on screen — and nothing about it is specific to <c>.csym</c>; every torn-off
+    /// document type reaches the same code). Closing the last tab in a float runs
+    /// <c>FactoryBase.CloseDockable</c> → <c>RemoveDockable</c> → <c>CollapseDock</c>, which walks up
+    /// the emptied floating tree to <c>RemoveWindow</c> → <c>IDockWindow.Exit()</c> → this window's
+    /// <c>Close()</c>. So the close arrives AFTER the document has left the layout, and the question
+    /// above answers "no documents here" for what is really a document float finishing its own
+    /// teardown. Cancelling it was fatal rather than merely late: <c>HostAdapter.Exit</c> sets
+    /// <c>window.Host = null</c> the moment <c>Close()</c> returns, and <c>RemoveWindow</c> then clears
+    /// <c>Factory</c>, <c>Layout</c> and <c>Owner</c> — so by the time the posted teardown ran there was
+    /// no host left for it to find, and it closed nothing at all.</para>
+    ///
+    /// <para><c>HostAdapter.Exit</c> clears <see cref="Dock.Model.Core.IHostWindow.IsTracked"/> in the
+    /// line before it calls <c>Close()</c>, and nothing else in Dock 12.0.0.2 ever clears it — so
+    /// <c>IsTracked == false</c> here means exactly "Dock is already tearing this window down", and the
+    /// only correct answer is to let the close finish. It is safe as well as correct: the sole caller
+    /// of <c>RemoveWindow</c> is <c>CollapseDock</c>, which reaches it only once the floating layout is
+    /// EMPTY, so the <c>HostWindow.OnClosed</c> cascade this class exists to avoid
+    /// (<c>IFactory.CloseWindow</c> → a recursive <c>CloseDockable</c>) has nothing left to walk. A
+    /// user pressing the window's own close box still arrives with <c>IsTracked == true</c> and is
+    /// unaffected.</para>
+    /// </summary>
+    internal static bool ShouldTearDownOurWay(bool closingForLayoutRebuild, bool isTracked, bool floatsAnyDocument)
+        => !closingForLayoutRebuild && isTracked && !floatsAnyDocument;
 
     /// <summary>True when the floated layout contains at least one <see cref="IDocument"/>.</summary>
     internal bool FloatsAnyDocument()
@@ -246,13 +276,27 @@ public class CrfHostWindow : HostWindow
     private void CloseFloatedToolPanels()
     {
         var dockWindow = Window;
-        if (dockWindow is not null && Views.WirePanelKeys.ResolveWorkspace() is { } workspace)
+
+        // ALREADY DETACHED — neither route below can reach this host any more, and both would return
+        // having closed nothing, leaving the window on screen for good. That is not hypothetical: it is
+        // exactly the state Dock's own teardown leaves behind (see ShouldTearDownOurWay), because
+        // HostAdapter.Exit nulls window.Host the instant Close() returns and RemoveWindow then clears
+        // Factory, Layout and Owner. ShouldTearDownOurWay now keeps that case out of here entirely; this
+        // guard is the belt to its braces, so a close box can never be inert again for a reason nobody
+        // anticipated.
+        if (dockWindow is null || !ReferenceEquals(dockWindow.Host, this))
+        {
+            CloseForLayoutRebuild();
+            return;
+        }
+
+        if (Views.WirePanelKeys.ResolveWorkspace() is { } workspace)
         {
             workspace.CloseFloatingToolWindow(dockWindow);
             return;
         }
 
-        if (dockWindow?.Factory is CircuitRfDockFactory factory)
+        if (dockWindow.Factory is CircuitRfDockFactory factory)
         {
             factory.CloseFloatingWindow(factory.CurrentRoot, dockWindow);
             return;
