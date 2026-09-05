@@ -1,5 +1,72 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A click into an instance array cost the whole array, times the whole sub-cell (2026-09-04)
+
+**Symptom:** owner report — in a `.clay` holding many instances of a complex design, clicking the
+layout canvas or starting a marquee took many seconds. Measured on the reported file, a 20x20 array
+of a 3,284-shape board: **1,063 ms for one press**, and a click on blank space paid the same as a
+click on metal.
+
+**Only ONE instance was placed, so "many instances" was the array, not the instance list.** Nothing
+in the top-level pick stack was slow: `HitStack`'s shape query and the marquee's own predicate are
+both bbox work through the R-tree and measured 0.0 ms. The whole cost was inside
+`LayoutHitTest.InstanceHitTest`, which had two multiplications stacked on each other:
+
+- **Every array cell was descended into, unconditionally** — `for r in Rows, c in Cols`, at every
+  level of hierarchy. 400 descents for one click.
+- **Inside each descent, `CellGeometryHitTest` walked the sub-cell's WHOLE shape list**, running the
+  exact per-shape test — which calls `LayoutFlattener.Flatten`, so every polygon in the board was
+  re-flattened per array cell.
+
+400 x 3,284 flatten-and-test operations to answer one click, and a MISS ran all of them: `found` only
+short-circuits when something is hit, so the empty canvas — the click that starts a marquee — was
+the worst case rather than the cheap one.
+
+**Both are gone and neither needed new machinery.** The sub-cell already has its own
+`LayoutSpatialIndex`; `CellGeometryHitTest` now queries it exactly as the top-level `HitStack`
+queries the document's, so reaching a shape through an instance costs what reaching it directly on
+the canvas costs. This is safe *because* of the index's own contract:
+`LayoutSpatialIndex.ConservativeBboxOf` is documented as never smaller than any consumer's exact
+test could match (its label case pads generously, and a port is never culled at all) — over-inclusion
+is the only error it can make. The candidate sets of the two paths now agree, as their per-shape test
+already did.
+
+The array loop is narrowed by arithmetic rather than by search. Pitch is uniform and applied in the
+parent's own unrotated frame, so cell `(r,c)` is `CellHierarchy.BasePlacementBbox` translated by
+`(c*PitchX, r*PitchY)`, and "which cells can reach this point" is one division per axis
+(`LayoutHitTest.ArrayCellsToTest`/`AxisRange`) — constant time whatever the array's size. `InstanceBbox`
+now reads as `ArrayExpand(BasePlacementBbox(...))` so the whole-array box and the single-cell box
+cannot disagree about where a cell is. The same arithmetic replaced the identical `Rows*Cols` scan in
+`ArrayCellsContain`, the broken-reference placeholder path.
+
+**Conservative on purpose, and by a stated margin.** The per-cell test works in the sub-cell's LOCAL
+frame with the tolerance divided by the magnification; a local box grown by that tolerance maps back
+into the parent no more than `tol*sqrt(2)` outside the axis-aligned base box at any rotation, so the
+prefilter grows by `2*tol`. An over-estimate costs one wasted descent; an under-estimate would lose a
+hit, which is why the margin is derived rather than fitted.
+
+**Measured after, same file, same points: 1,063 ms -> 0.7 ms** for the press; a full
+`OnPointerPressed` averages 0.58 ms over 200 clicks, and a 100-move marquee drag is 0.023 ms/move.
+
+**Verified equivalent, not assumed.** A scratch harness compared the new answer against the old
+Rows x Cols loop over 7,000 sampled points across 14 transform variants of the real file — the four
+cardinals, 37 degrees, mirrored, magnified 0.37x and 2.5x, negative pitch, zero pitch on one axis
+and both, 1x1, 1x40, and the broken reference. Zero mismatches.
+
+**The gate is a COUNTER, not a stopwatch** (`LayoutInstanceHitTestTests`, via the new
+`out InstanceHitTestCounters` overload of `HitInstanceStack` — nothing global, so it is unaffected by
+what else the suite is running). `ArrayCellsDescended` is 1 for a click on geometry, **0 for a click
+on blank space**, and stays 1 when the array grows from 20x20 to 60x60; `ShapeTestsRun` stays under
+10 for a click into a 500-shape cell. Both assertions were checked to actually go red: reverting
+either half of the fix fails this class.
+
+**The snap query has the same `Rows*Cols` shape and was left alone deliberately** —
+`LayoutSnapQuery.RecurseInstance` also loops every array cell, on every pointer MOVE, but each
+iteration is a bounded `LayoutSnapFeatureIndex.QueryNear` rather than a full geometry walk, and it
+measures 0.3 ms per move on this same file. Worth narrowing the same way if an array ever gets large
+enough to matter; not worth it now, and recorded here so the next person does not have to re-measure
+to find that out.
+
 ## circuitRF's own switch was reported as a name the model would refuse (2026-09-04)
 
 **Symptom:** placing a compiled Verilog-A model showed "Not declared by this model: OpVars — these

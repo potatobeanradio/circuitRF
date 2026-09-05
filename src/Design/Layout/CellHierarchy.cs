@@ -124,20 +124,32 @@ public static class CellHierarchy
     /// viewer turned off is a page mostly full of nothing (owner report, 2026-09-04). Supplying a
     /// filter bypasses the <see cref="ShapesBbox"/> memo, which is keyed on the view alone.</param>
     public static Bbox InstanceBbox(LayoutInstance inst, string baseDir, Func<LayerKey, bool>? layerVisible = null)
+        => ArrayExpand(BasePlacementBbox(inst, baseDir, layerVisible), inst);
+
+    /// <summary>
+    /// <see cref="InstanceBbox"/> for ONE array cell — the row-0/col-0 placement, WITHOUT the
+    /// <c>Rows x Cols x Pitch</c> expansion. Identical work and identical result otherwise; the two
+    /// share one body precisely so a caller reasoning about a single cell can never disagree with
+    /// the whole-array box about where that cell is.
+    ///
+    /// <para>Hit-testing is what wants it: with a uniform pitch, "which array cells can this point
+    /// possibly be in" is arithmetic on this box, so a 20x20 array costs one or two descents into
+    /// the sub-cell rather than four hundred (<c>LayoutHitTest.InstanceHitTest</c>).</para>
+    /// </summary>
+    public static Bbox BasePlacementBbox(LayoutInstance inst, string baseDir, Func<LayerKey, bool>? layerVisible = null)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var step = ResolveForWalk(inst, baseDir, visiting, 0);
         if (step.State != InstanceResolutionState.Resolved)
-            return ArrayExpand(PlaceholderBbox(inst), inst);
+            return PlaceholderBbox(inst);
 
         visiting.Add(step.ResolvedCellDir!);
         var localBbox = CellBboxRecursive(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, layerVisible);
         visiting.Remove(step.ResolvedCellDir!);
 
-        if (localBbox.IsEmpty) return ArrayExpand(PlaceholderBbox(inst), inst);
+        if (localBbox.IsEmpty) return PlaceholderBbox(inst);
 
-        var transformed = TransformBboxToParent(localBbox, inst);
-        return ArrayExpand(transformed, inst);
+        return TransformBboxToParent(localBbox, inst);
     }
 
     /// <summary>

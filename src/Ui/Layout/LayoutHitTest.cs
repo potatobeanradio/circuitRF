@@ -1,13 +1,39 @@
 // Framework-free hit-testing (docs/design/layout-view.md §6.2/§6.3, brief-L1c-selection-and-properties).
-// No spatial index — L1c iterates shapes linearly, which is correct for this phase (§5.2's R-tree is
-// L2; this signature deliberately does not presuppose one). Hit-testing is a screen-to-world feature:
-// callers convert a ~4 px tolerance into DBU using the CURRENT zoom, per query, never cached — see
-// the brief's "Read first" section for why a cached/derived-from-SnapDbu tolerance is the exact class
-// of bug the L1b/L1-fix round already made once.
+// Hit-testing is a screen-to-world feature: callers convert a ~4 px tolerance into DBU using the
+// CURRENT zoom, per query, never cached — see the brief's "Read first" section for why a
+// cached/derived-from-SnapDbu tolerance is the exact class of bug the L1b/L1-fix round already made
+// once.
+//
+// EVERY shape scan here goes through a LayoutSpatialIndex — the document's own for a top-level click
+// (L2b), and the SUB-CELL's own for a click reaching geometry through an instance (2026-09-04; that
+// one was still the L1c-era linear walk, and it is why a click into an array of a large cell took a
+// second — src/Ui/RESOLVED.md). The exact per-shape test is unchanged either way: the index only
+// decides which shapes are CONSIDERED, and its stored bbox is contractually never smaller than what
+// an exact test could match (LayoutSpatialIndex.ConservativeBboxOf).
 
 using System.Linq;
 
 namespace CircuitRF.Ui.Layout;
+
+/// <summary>
+/// What one instance hit-test actually did — the same shape as <see cref="SnapQueryCounters"/>, and
+/// for the same reason: the property that matters here is STRUCTURAL ("a click descends into the one
+/// array cell it landed in, not all four hundred"), and a wall-clock assertion would measure the
+/// machine instead. Reported through the <c>out</c> overload of
+/// <see cref="LayoutHitTest.HitInstanceStack"/>; nothing global, so a test asserting on it is
+/// unaffected by whatever else the suite is running.
+/// </summary>
+public struct InstanceHitTestCounters
+{
+    /// <summary>Array cells actually descended into — the count <see cref="LayoutHitTest"/> narrows
+    /// with <c>ArrayCellsToTest</c>. Before that narrowing it was unconditionally
+    /// <c>Rows*Cols</c> per instance, at every level of hierarchy.</summary>
+    public int ArrayCellsDescended;
+
+    /// <summary>Shapes handed to the exact per-shape test (which flattens curves and polygons) — the
+    /// spatial index's candidates, not the cell's whole shape list.</summary>
+    public int ShapeTestsRun;
+}
 
 public static class LayoutHitTest
 {
@@ -118,7 +144,14 @@ public static class LayoutHitTest
     /// order — instances have no <c>ZOrder</c>/layer of their own, so "topmost" is simply "drawn
     /// last," i.e. descending index).</summary>
     public static IReadOnlyList<int> HitInstanceStack(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu)
+        => HitInstanceStack(view, tech, baseDir, x, y, tolDbu, out _);
+
+    /// <inheritdoc cref="HitInstanceStack(LayoutView, Technology?, string, long, long, long)"/>
+    /// <param name="counters">What the walk did — see <see cref="InstanceHitTestCounters"/>.</param>
+    public static IReadOnlyList<int> HitInstanceStack(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu,
+                                                     out InstanceHitTestCounters counters)
     {
+        counters = default;
         tolDbu = Math.Max(tolDbu, 0);
         var queryRect = new Bbox(x - tolDbu, y - tolDbu, x + tolDbu, y + tolDbu);
         Bbox InstanceBboxFor(LayoutInstance i) => CellHierarchy.InstanceBbox(i, baseDir);
@@ -129,51 +162,120 @@ public static class LayoutHitTest
             if (entry.Kind != SpatialEntryKind.Instance) continue;
             int idx = entry.Index;
             if (idx < 0 || idx >= view.Instances.Count) continue;
-            if (InstanceHitTest(view.Instances[idx], tech, baseDir, x, y, tolDbu)) hits.Add(idx);
+            if (InstanceHitTest(view.Instances[idx], tech, baseDir, x, y, tolDbu, ref counters)) hits.Add(idx);
         }
         hits.Sort(static (a, b) => b.CompareTo(a)); // descending index = topmost (last drawn) first
         return hits;
     }
 
-    private static bool InstanceHitTest(LayoutInstance inst, Technology? tech, string baseDir, long px, long py, long tolDbu)
+    private static bool InstanceHitTest(LayoutInstance inst, Technology? tech, string baseDir, long px, long py, long tolDbu,
+                                        ref InstanceHitTestCounters counters)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, 0);
         if (step.State != InstanceResolutionState.Resolved)
             return ArrayCellsContain(inst, CellHierarchy.PlaceholderBbox(inst), px, py, tolDbu);
 
+        // Only the array cells that could CONTAIN the point are descended into. See ArrayCellsToTest:
+        // the loop used to run every Rows x Cols placement unconditionally, and each one of those is a
+        // full walk of the sub-cell's geometry — a 20x20 array of a 3,284-shape board meant 1.3 million
+        // per-shape tests (with a polygon FLATTEN inside each) for one click, about a second per press,
+        // and a MISS paid the whole bill every time.
+        if (!ArrayCellsToTest(inst, CellHierarchy.BasePlacementBbox(inst, baseDir), px, py, tolDbu,
+                              out int r0, out int r1, out int c0, out int c1))
+            return false;
+
         visiting.Add(step.ResolvedCellDir!);
-        int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
         bool found = false;
-        for (int r = 0; r < rows && !found; r++)
-        for (int c = 0; c < cols && !found; c++)
+        for (int r = r0; r <= r1 && !found; r++)
+        for (int c = c0; c <= c1 && !found; c++)
         {
+            counters.ArrayCellsDescended++;
             var (lx, ly) = LayoutInstanceTransform.InverseTransformPoint(px, py, inst, r, c);
             long localTol = (long)Math.Round(tolDbu / Math.Max(Math.Abs(inst.Mag), 1e-9));
             found = CellGeometryHitTest(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!),
-                (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, 1);
+                (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, 1, ref counters);
         }
         visiting.Remove(step.ResolvedCellDir!);
         return found;
     }
+
+    /// <summary>
+    /// Which array cells of <paramref name="inst"/> a point can possibly land in — the row and column
+    /// ranges, INCLUSIVE, or false when no cell can contain it.
+    ///
+    /// <para>Array pitch is uniform and is applied in the parent's own unrotated frame
+    /// (<see cref="LayoutInstanceTransform.ArrayCellOrigin"/>), so cell <c>(r,c)</c> occupies
+    /// <paramref name="baseBbox"/> translated by <c>(c*PitchX, r*PitchY)</c> and "which cells reach
+    /// this point" is arithmetic, not a search. That is the whole saving: the ranges are computed once
+    /// per instance, in constant time, whatever the array's size.</para>
+    ///
+    /// <para><b>Conservative by construction, so it can only ever skip cells that could not have
+    /// hit.</b> <paramref name="baseBbox"/> is the axis-aligned box of the sub-cell's whole
+    /// transformed extent, and the per-cell test that follows works in the sub-cell's LOCAL frame with
+    /// the tolerance divided by the magnification — a local box grown by that tolerance maps back into
+    /// the parent no further than <c>tol*sqrt(2)</c> outside this box at any rotation, so growing by
+    /// <c>2*tol</c> here is a safe over-estimate rather than a fitted one.</para>
+    /// </summary>
+    private static bool ArrayCellsToTest(LayoutInstance inst, Bbox baseBbox, long px, long py, long tolDbu,
+                                         out int r0, out int r1, out int c0, out int c1)
+    {
+        r0 = c0 = 0;
+        r1 = Math.Max(1, inst.Rows) - 1;
+        c1 = Math.Max(1, inst.Cols) - 1;
+        if (baseBbox.IsEmpty) return true;   // nothing measurable to narrow with — behave as before
+
+        long grow = SafeGrow(tolDbu, 2);
+        return AxisRange(baseBbox.MinX, baseBbox.MaxX, inst.PitchX, Math.Max(1, inst.Cols), px, grow, out c0, out c1)
+            && AxisRange(baseBbox.MinY, baseBbox.MaxY, inst.PitchY, Math.Max(1, inst.Rows), py, grow, out r0, out r1);
+    }
+
+    /// <summary>One axis of <see cref="ArrayCellsToTest"/>: the inclusive index range <c>k</c> for
+    /// which <c>[min,max] + k*pitch</c>, grown by <paramref name="tol"/>, contains <paramref name="p"/>.
+    /// A zero pitch stacks every cell in the same place, so cell 0 answers for all of them.</summary>
+    private static bool AxisRange(long min, long max, long pitch, int count, long p, long tol, out int lo, out int hi)
+    {
+        lo = 0;
+        hi = count - 1;
+
+        // k*pitch must land in [loBound, hiBound] for cell k's grown box to reach p.
+        double loBound = (double)p - tol - max;
+        double hiBound = (double)p + tol - min;
+
+        if (pitch == 0)
+        {
+            hi = 0;
+            return loBound <= 0 && 0 <= hiBound;
+        }
+
+        double a = loBound / pitch, b = hiBound / pitch;
+        if (pitch < 0) (a, b) = (b, a);            // dividing by a negative reverses the inequality
+
+        double first = Math.Ceiling(a), last = Math.Floor(b);
+        if (first > last || last < 0 || first > count - 1) return false;
+
+        lo = (int)Math.Clamp(first, 0, count - 1);
+        hi = (int)Math.Clamp(last, 0, count - 1);
+        return true;
+    }
+
+    /// <summary>Grows a tolerance by <paramref name="factor"/> without overflowing — a caller is free
+    /// to pass a nonsense tolerance and this must widen the search, never wrap it into a negative.</summary>
+    private static long SafeGrow(long tolDbu, int factor) =>
+        tolDbu > long.MaxValue / factor ? long.MaxValue / factor : tolDbu * factor;
 
     /// <summary>Whether (px,py) (grown by <paramref name="tolDbu"/>) falls inside ANY array cell of
     /// <paramref name="baseBbox"/> — used only for the broken/unresolved placeholder case, where the
     /// whole box (not real geometry within it) is the click target.</summary>
     private static bool ArrayCellsContain(LayoutInstance inst, Bbox baseBbox, long px, long py, long tolDbu)
     {
+        // The placeholder box is axis-aligned and each array cell is a pure translation of it, so the
+        // same index arithmetic ArrayCellsToTest uses answers this EXACTLY — a cell exists in range iff
+        // it contains the point. No per-cell loop, for the same reason: an array of a broken reference
+        // is as large as an array of a good one.
         var grown = new Bbox(baseBbox.MinX - tolDbu, baseBbox.MinY - tolDbu, baseBbox.MaxX + tolDbu, baseBbox.MaxY + tolDbu);
-        long w = grown.MaxX - grown.MinX, h = grown.MaxY - grown.MinY;
-        int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
-        for (int r = 0; r < rows; r++)
-        for (int c = 0; c < cols; c++)
-        {
-            var (ox, oy) = LayoutInstanceTransform.ArrayCellOrigin(inst, r, c);
-            long dx = ox - inst.X, dy = oy - inst.Y;
-            var cell = new Bbox(grown.MinX + dx, grown.MinY + dy, grown.MinX + dx + w, grown.MinY + dy + h);
-            if (cell.Contains(px, py)) return true;
-        }
-        return false;
+        return AxisRange(grown.MinX, grown.MaxX, inst.PitchX, Math.Max(1, inst.Cols), px, 0, out _, out _)
+            && AxisRange(grown.MinY, grown.MaxY, inst.PitchY, Math.Max(1, inst.Rows), py, 0, out _, out _);
     }
 
     /// <summary>Recursive, depth-capped test of whether (x,y) (already in THIS view's own local frame,
@@ -182,10 +284,22 @@ public static class LayoutHitTest
     /// <see cref="HitTestShape"/> unchanged — the SAME per-shape test a top-level click uses, so a
     /// shape's hit footprint can never silently differ between "directly on the canvas" and "reached
     /// through an instance."</summary>
-    private static bool CellGeometryHitTest(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu, HashSet<string> visiting, int depth)
+    private static bool CellGeometryHitTest(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu, HashSet<string> visiting, int depth,
+                                            ref InstanceHitTestCounters counters)
     {
-        foreach (var shape in view.Shapes)
-            if (HitTestShape(shape, x, y, tolDbu, tech)) return true;
+        // The sub-cell's OWN R-tree, exactly as HitStack uses the top-level one. This was a linear walk
+        // of every shape in the cell, and every candidate it produced ran HitTestShape's polygon
+        // FLATTEN — so a placed board cost its whole shape count per array cell whether the click was
+        // anywhere near it or not. Querying the index makes reaching a shape through an instance cost
+        // what reaching it directly on the canvas costs, which is also the candidate set a top-level
+        // click already gets: the two paths now agree about what is CONSIDERED as well as about the
+        // per-shape test itself.
+        var queryRect = new Bbox(x - tolDbu, y - tolDbu, x + tolDbu, y + tolDbu);
+        foreach (int i in view.SpatialIndex.QueryIntersecting(view.Shapes, queryRect))
+        {
+            counters.ShapeTestsRun++;
+            if (HitTestShape(view.Shapes[i], x, y, tolDbu, tech)) return true;
+        }
 
         if (depth >= CellHierarchy.MaxDepth) return false;
 
@@ -194,16 +308,22 @@ public static class LayoutHitTest
             var step = CellHierarchy.ResolveForWalk(nested, baseDir, visiting, depth);
             if (step.State != InstanceResolutionState.Resolved) continue; // a nested broken ref contributes no real geometry to hit
 
+            // Same narrowing as the top level (ArrayCellsToTest) — a nested array is where the cost
+            // would otherwise multiply, one factor of Rows*Cols per level of hierarchy.
+            if (!ArrayCellsToTest(nested, CellHierarchy.BasePlacementBbox(nested, baseDir), x, y, tolDbu,
+                                  out int r0, out int r1, out int c0, out int c1))
+                continue;
+
             visiting.Add(step.ResolvedCellDir!);
-            int rows = Math.Max(1, nested.Rows), cols = Math.Max(1, nested.Cols);
             bool found = false;
-            for (int r = 0; r < rows && !found; r++)
-            for (int c = 0; c < cols && !found; c++)
+            for (int r = r0; r <= r1 && !found; r++)
+            for (int c = c0; c <= c1 && !found; c++)
             {
+                counters.ArrayCellsDescended++;
                 var (lx, ly) = LayoutInstanceTransform.InverseTransformPoint(x, y, nested, r, c);
                 long localTol = (long)Math.Round(tolDbu / Math.Max(Math.Abs(nested.Mag), 1e-9));
                 found = CellGeometryHitTest(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!),
-                    (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, depth + 1);
+                    (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, depth + 1, ref counters);
             }
             visiting.Remove(step.ResolvedCellDir!);
             if (found) return true;
