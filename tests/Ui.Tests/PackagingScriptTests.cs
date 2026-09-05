@@ -137,6 +137,64 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>Both Linux architectures of the OSDI worker are targeted by the build and demanded by
+    /// packaging.</b>
+    ///
+    /// <para>The Windows half of this rule is above; this is the same rule on the platform where it
+    /// went unnoticed longest. Until 2026-09 <c>tools/osdi-worker/build.sh</c> took its
+    /// <c>--arch</c> flag only on macOS and the .csproj derived one only for the <c>osx-*</c> RIDs,
+    /// so a Linux publish compiled for whatever machine happened to be running it and dropped the
+    /// result into that RID's publish tree under the bare name packaging copies verbatim — an x86-64
+    /// ELF in the arm64 <c>.deb</c> and tarball when cut on an x64 box, and a Mach-O binary
+    /// altogether when a Mac published for Linux.</para>
+    ///
+    /// <para><b>Nothing downstream catches it.</b> The architecture guard in
+    /// <c>VerilogAFileResolver</c> reads a PE header, and a POSIX worker that declares no
+    /// architecture is deliberately used as-is — see <c>OsdiWorkerArchitectureTests</c> — so the
+    /// first symptom is an exec failure on a user's machine, naming a file that is plainly there.
+    /// Three things therefore have to hold together, and each is asserted where it lives.</para>
+    /// </summary>
+    [Fact]
+    public void BothLinuxOsdiWorkers_AreTargetedByTheBuildAndDemandedByPackaging()
+    {
+        string build   = File.ReadAllText(RepoFile("tools", "osdi-worker", "build.sh"));
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+        string script  = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+
+        // 1. The script can produce EITHER architecture, from either machine. One compiler builds
+        //    one target, so a cross route has to be named for this to be true at all.
+        foreach (string target in new[] { "x86_64-linux-gnu", "aarch64-linux-gnu" })
+            Assert.True(build.Contains(target, StringComparison.Ordinal),
+                        $"tools/osdi-worker/build.sh cannot cross-build '{target}', so the other "
+                        + "Linux architecture can only ever be built on a machine that already is one.");
+
+        // 2. ...and it is TOLD which one, by RID rather than by asking the machine. The target OS
+        //    travels with it: an architecture alone leaves a Mach-O and an ELF indistinguishable,
+        //    which is exactly how a Mach-O reached publish/linux-x64.
+        foreach (string rid in new[] { "linux-x64", "linux-arm64" })
+            Assert.True(project.Contains($"'$(RuntimeIdentifier)' == '{rid}'", StringComparison.Ordinal),
+                        $"the .csproj derives no OSDI worker architecture for '{rid}', so "
+                        + "`dotnet publish -r " + rid + "` builds for the machine doing the publishing.");
+
+        Assert.True(project.Contains("--os $(_CrfOsdiOs)", StringComparison.Ordinal),
+                    "the OSDI worker's build step is never told its target OS, so a Mac publishing "
+                    + "for Linux writes a Mach-O binary into the Linux publish tree.");
+
+        // 3. And packaging does not take any of that on trust, exactly as the macOS script runs lipo
+        //    over the bundle. Building only warns; a RELEASE must not.
+        Assert.True(script.Contains("osdi-worker", StringComparison.Ordinal),
+                    "packaging/linux/build-linux.sh never mentions the OSDI worker, so a Linux "
+                    + "package can ship without it — or with one of the wrong architecture — in "
+                    + "silence.");
+
+        Assert.True(script.Contains("7f454c46:linux-x64:3e00", StringComparison.Ordinal)
+                    && script.Contains("7f454c46:linux-arm64:b700", StringComparison.Ordinal),
+                    "packaging/linux/build-linux.sh does not read the OSDI worker's ELF magic and "
+                    + "machine back out of the publish tree, so a helper that quietly fell back to "
+                    + "the building machine reaches a released package.");
+    }
+
+    /// <summary>
     /// <b>Every <c>.ps1</c> in <c>packaging/</c> must be pure ASCII.</b>
     ///
     /// <para>Windows PowerShell 5.1 — still the default <c>powershell.exe</c> on every Windows box —

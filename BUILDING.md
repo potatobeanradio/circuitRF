@@ -104,6 +104,8 @@ Then `dotnet build` picks it up by itself. To build the helpers without a full b
 
 ```bash
 tools/senior-worker/ensure-built.sh                       # macOS / Linux
+tools/osdi-worker/build.sh                                # macOS / Linux, this machine
+tools/osdi-worker/build.sh --os linux --arch arm64        # ...or any target, given zig
 tools/macos-vmhost/ensure-built.sh --with-image           # macOS only — the ~330 MB, once
 tools/macos-vmhost/ensure-built.sh --with-image --arch x86_64   # ...and the other architecture
 ```
@@ -118,7 +120,7 @@ zig is not the only route:
 |---|---|---|
 | Windows | x86-64 MSYS2/MinGW `gcc`, or Docker/Podman plus a `bash` | for the OSDI worker, zig only — see the second note below |
 | macOS | Docker/Podman | Xcode command line tools, and a network for the VM image |
-| Linux | host `gcc` (x86-64), or Docker/Podman | |
+| Linux | host `gcc` (x86-64), or Docker/Podman | for the OSDI worker on the architecture you are NOT on, zig — see the third note below |
 
 Some things worth knowing before they surprise you:
 
@@ -133,8 +135,16 @@ Some things worth knowing before they surprise you:
   `osdi-worker-arm64.exe` both ship in every Windows package and circuitRF reads the model's own PE
   header to pick. **This is why zig is named on its own for Windows below:** a single-target compiler
   builds only the architecture it runs on, which is half of what ships.
-- **There is no 64-bit ARM Linux build of the worker.** `build-linux.sh arm64` says so and packages
-  without it; everything else in that package is unaffected.
+- **There is no 64-bit ARM Linux build of the *device* worker** — the same x86-64-always rule as the
+  first note, for the same reason. `build-linux.sh arm64` says so and packages without it; everything
+  else in that package is unaffected.
+- **The *OSDI* worker, by the same split, ships for BOTH Linux architectures** — it hosts the user’s
+  own build output, so it must match the package. `tools/osdi-worker/build.sh` cross-compiles either
+  one with `zig cc -target`, and takes `--os` as well as `--arch` because it is the one helper that
+  ships on all three platforms: naming an architecture alone leaves a Mach-O and an ELF
+  indistinguishable. Both flags come from the RID, so `dotnet publish -r linux-arm64` is enough.
+  Without zig, a machine can only build for itself, and `build-linux.sh` refuses to package the
+  other architecture rather than shipping this machine’s binary under the name the package expects.
 - **The macOS VM image is per-architecture and costs ~330 MB the first time for each.** Packaging
   both disk images therefore downloads both guest images once — Alpine aarch64 and Alpine x86-64 —
   plus a small x86-64 glibc runtime that **both** need: the guest userland is Alpine, which is musl,

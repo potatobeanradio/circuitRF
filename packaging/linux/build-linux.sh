@@ -153,6 +153,56 @@ for ARCH in $ARCHES; do
         fi
     fi
 
+    # -- The OSDI worker ------------------------------------------------------
+    #
+    # The program that hosts a Verilog-A model the USER compiled. Same contract as the device worker
+    # above, checked here for the same reason: the build step only ever warns, which is right for a
+    # build and wrong for a release.
+    #
+    # It differs from the device worker in the one way that decides this block. That one is x86-64
+    # ALWAYS - the vendor model libraries it hosts only ever ship as x64 - so on arm64 there is
+    # nothing to build and the warning above says so. This one loads the user's own build output, so
+    # its architecture must match THE PACKAGE's, and both are buildable:
+    # tools/osdi-worker/build.sh cross-compiles either one with zig. A missing worker here is
+    # therefore a machine that needs a toolchain, not a platform nobody supports.
+    #
+    # Set CRF_ALLOW_NO_OSDI_WORKER=1 to package without it on purpose.
+    OSDI="${PUBLISH}/osdi-worker"
+
+    if [ -f "$OSDI" ]; then
+        # THE MAGIC IS READ AS WELL AS THE MACHINE, unlike the check above. Until 2026-09 the OSDI
+        # build script ignored the target it was handed off macOS, so a Mac publishing for Linux
+        # dropped a Mach-O binary into this tree under this exact name - and bytes 18-19 of a Mach-O
+        # are not an architecture at all, so reading them alone can agree by accident. 0x7f E L F is
+        # what separates "wrong architecture" from "not even an ELF".
+        elf="$(od -An -tx1 -N4        "$OSDI" | tr -d ' ')"
+        machine="$(od -An -tx1 -j18 -N2 "$OSDI" | tr -d ' ')"
+        case "${elf}:${RID}:${machine}" in
+            7f454c46:linux-x64:3e00|7f454c46:linux-arm64:b700) ;;
+            *) echo "WARNING: the OSDI worker in the publish tree is not a ${RID} binary; leaving it out."
+               rm -f "$OSDI" ;;
+        esac
+    fi
+
+    if [ ! -f "$OSDI" ]; then
+        if [ "${CRF_ALLOW_NO_OSDI_WORKER:-}" = 1 ]; then
+            echo "WARNING: packaging without the OSDI worker on purpose. Compiled Verilog-A models will not run."
+        else
+            echo "ERROR: the OSDI worker is missing from ${PUBLISH}."
+            echo ""
+            echo "   circuitRF builds it during \`dotnet build\` (tools/osdi-worker/build.sh), but only"
+            echo "   warns when it cannot - so this machine has no toolchain that targets ${RID}:"
+            echo ""
+            echo "       zig            builds either Linux architecture from either; the preferred route"
+            echo "       gcc            the host compiler, when packaging natively on ${ARCH}"
+            echo "       docker/podman  pulls a small gcc image the first time"
+            echo ""
+            echo "   A zig that is installed but not on PATH can be named: CRF_ZIG=/path/to/zig"
+            echo "   To package deliberately without it: CRF_ALLOW_NO_OSDI_WORKER=1 $0 $ARCH"
+            exit 1
+        fi
+    fi
+
     for KIND in $KINDS; do
         case "$KIND" in
 
@@ -214,6 +264,7 @@ for ARCH in $ARCHES; do
             cp -a "${PUBLISH}/." "$APPDIR/"
             chmod +x "${APPDIR}/circuitRF" 2>/dev/null || true
             [ -f "${APPDIR}/senior_worker" ] && chmod +x "${APPDIR}/senior_worker"
+            [ -f "${APPDIR}/osdi-worker" ]   && chmod +x "${APPDIR}/osdi-worker"
 
             cp "${HERE}/install.sh"          "${STAGE}/circuitRF-${CRF_VERSION}/install.sh"
             cp "${HERE}/circuitrf-mime.xml"  "${STAGE}/circuitRF-${CRF_VERSION}/circuitrf-mime.xml"

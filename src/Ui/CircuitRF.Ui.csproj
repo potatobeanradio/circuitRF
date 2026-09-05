@@ -394,9 +394,15 @@
           Command="&quot;$(MSBuildProjectDirectory)/../../tools/senior-worker/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot;"
           ContinueOnError="WarnAndContinue"
           StandardOutputImportance="high" />
-    <!-- Same rule, same reason: keep the OSDI worker in step, and never fail the build over it. -->
+    <!--
+      Same rule, same reason: keep the OSDI worker in step, and never fail the build over it.
+
+      It takes $(_CrfOsdiTargetFlags) rather than $(_CrfHelperArchFlag) because this worker is the
+      one helper that ships on every platform, so naming the target ARCHITECTURE is not enough - it
+      has to be told the target OS as well. See the property group at the foot of this file.
+    -->
     <Exec Condition="'$(OS)' != 'Windows_NT'"
-          Command="&quot;$(MSBuildProjectDirectory)/../../tools/osdi-worker/build.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfHelperArchFlag)"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/osdi-worker/build.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfOsdiTargetFlags)"
           ContinueOnError="true" StandardOutputImportance="low" />
     <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
           Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\senior-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
@@ -476,6 +482,35 @@
     <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">arm64</_CrfHelperArch>
     <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-x64'">x86_64</_CrfHelperArch>
     <_CrfHelperArchFlag Condition="'$(_CrfHelperArch)' != ''">--arch $(_CrfHelperArch)</_CrfHelperArchFlag>
+
+    <!--
+      ...AND THE OSDI WORKER NEEDS THE TARGET OS TOO, WHICH IS WHY IT HAS ITS OWN PAIR.
+
+      crf-vmhost is macOS-only, so for it an architecture IS the whole target. The OSDI worker ships
+      on all three platforms, so an arch flag of `x86_64` alone is ambiguous between a Mach-O and an
+      ELF, and the answer it used to reach was always "whatever this machine is". Until 2026-09 the
+      flags above named osx-* only, so `dotnet publish -r linux-x64` and `-r linux-arm64` passed
+      nothing at all, and tools/osdi-worker/build.sh ignored an arch flag off macOS in any case. Both
+      Linux RIDs therefore published the BUILDING machine's own worker, under the bare name packaging
+      copies verbatim: an x86-64 ELF in the arm64 .deb and tarball when cut on an x64 box, and -
+      measured in this tree, not supposed - a Mach-O arm64 binary in publish/linux-x64 whenever a Mac
+      published for Linux.
+      No architecture-mismatch guard catches either: VerilogAFileResolver reads a PE header, so a
+      POSIX worker is deliberately taken as-is, and the failure surfaces as an exec error on a user's
+      machine naming a file that is plainly present.
+
+      packaging/linux/build-linux.sh now reads the ELF header back out of the publish tree, the same
+      way packaging/macos/build-macos.sh runs lipo, so neither this nor a stale build directory can
+      reach a released package - but getting it right here is what makes that check quiet.
+    -->
+    <_CrfOsdiArch Condition="'$(RuntimeIdentifier)' == 'osx-arm64' or '$(RuntimeIdentifier)' == 'linux-arm64'">arm64</_CrfOsdiArch>
+    <_CrfOsdiArch Condition="'$(RuntimeIdentifier)' == 'osx-x64' or '$(RuntimeIdentifier)' == 'linux-x64'">x86_64</_CrfOsdiArch>
+    <_CrfOsdiOs Condition="$(RuntimeIdentifier.StartsWith('osx'))">darwin</_CrfOsdiOs>
+    <_CrfOsdiOs Condition="$(RuntimeIdentifier.StartsWith('linux'))">linux</_CrfOsdiOs>
+    <!-- Empty for a plain `dotnet build` (no RID), where build.sh falls back to this machine's own
+         OS and architecture - so nothing about everyday building changes. -->
+    <_CrfOsdiTargetFlags Condition="'$(_CrfOsdiArch)' != ''">--arch $(_CrfOsdiArch)</_CrfOsdiTargetFlags>
+    <_CrfOsdiTargetFlags Condition="'$(_CrfOsdiOs)' != ''">$(_CrfOsdiTargetFlags) --os $(_CrfOsdiOs)</_CrfOsdiTargetFlags>
   </PropertyGroup>
 
 </Project>

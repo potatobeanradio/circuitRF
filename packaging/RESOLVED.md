@@ -5,6 +5,76 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## The OSDI worker was never built for the machine a Linux package targets (2026-09-04)
+
+**Symptom:** none yet, which is the point. Asked to confirm that the OSDI worker is available on
+Linux x64 and arm64, and it was not — on either, except by accident.
+
+**Three separate things had to be true for it to work and none of them were.**
+
+- **`tools/osdi-worker/build.sh` had no cross-compilation off macOS.** Its `--arch` flag was
+  documented as *ignored off macOS, where -arch means nothing and there is only ever one target*, and
+  it invoked `${CC:-cc}` with no target flags. One compiler, one target: the machine doing the
+  building. Its Windows counterpart `build.cmd` has driven `zig cc -target` at both architectures
+  since the entry above; that route was simply never applied here.
+- **The `.csproj` derived a target for `osx-*` RIDs only.** `_CrfHelperArch` named `osx-arm64` and
+  `osx-x64`, so `dotnet publish -r linux-x64` and `-r linux-arm64` passed no flag at all — and per
+  the point above it would have been discarded anyway.
+- **`packaging/linux/build-linux.sh` never mentioned this worker.** It presence-checks
+  `senior_worker` and validates its ELF machine word, and `build-windows.ps1` demands both
+  `osdi-worker-*.exe` while `build-macos.sh` runs `lipo -archs` over the bundle. Linux did neither
+  for this file, so a package could ship without it, or with the wrong one, in silence.
+
+**What that produced, measured in this tree rather than reasoned about.** `file` on the publish trees
+of a routine developer build on an arm64 Mac:
+
+```
+src/Ui/bin/Release/net10.0/linux-x64/osdi-worker    Mach-O 64-bit executable arm64
+src/Ui/bin/Release/net10.0/linux-x64/senior_worker  ELF 64-bit LSB, x86-64      <- correct
+```
+
+A Mach-O binary named `osdi-worker`, in a Linux publish tree, alongside a correct `senior_worker` —
+because that one's script always cross-builds for x86-64 Linux and this one had no equivalent. On a
+Linux x64 release box the same mechanism puts an x86-64 ELF in the arm64 `.deb` and tarball.
+
+**Nothing downstream catches it, and that is by design elsewhere.** The architecture guard added in
+the entry above reads a **PE** header; `PeImports.MachineOf` returns null for an ELF or a Mach-O and
+`OsdiWorkerArchitectureTests.AWorkerThatDeclaresNoArchitecture_IsStillUsed` pins that such a worker is
+used as-is — correct, since a native POSIX worker has nothing to declare. The consequence is that a
+wrong-architecture Linux worker is selected and then fails to exec, on a user's machine, for a file
+that is plainly present beside the application.
+
+**Fixed at all three levels**, so the check is the backstop rather than the mechanism:
+
+- `build.sh` now takes `--os` as well as `--arch`, and routes through `zig cc -target
+  {x86_64,aarch64}-linux-gnu` (then docker/podman) when the host compiler cannot reach the target.
+  **The target OS travels with the architecture because this is the one helper that ships on all
+  three platforms** — `crf-vmhost` is macOS-only, so for it an architecture *is* the whole target,
+  which is why `_CrfHelperArchFlag` stays as it was and this worker got its own `_CrfOsdiTargetFlags`.
+- Output goes to `build/linux-<arch>/`, OS-qualified unlike the macOS `build/<arch>/`, because one
+  Mac can hold a Mach-O and an ELF of the same architecture at once.
+- `build-linux.sh` reads the ELF **magic as well as** the machine word — unlike the `senior_worker`
+  check beside it, which reads bytes 18-19 alone. Those two bytes of a Mach-O are not an architecture
+  at all, so magic is what separates "wrong architecture" from "not even an ELF". Missing or rejected
+  is a hard `exit 1` on both architectures now (escape hatch `CRF_ALLOW_NO_OSDI_WORKER=1`), not the
+  warn-and-continue `senior_worker` gets on arm64 — that warning is right for a worker no toolchain
+  can produce, and wrong for one that zig cross-builds from anywhere.
+
+**Verified by publishing, not by reading.** From an arm64 Mac: `linux-x64` → x86-64 ELF,
+`linux-arm64` → aarch64 ELF, `osx-x64` → Mach-O x86_64, `osx-arm64` → Mach-O arm64, each in both the
+output folder and the publish tree, with `crf-vmhost` unchanged. zig's cross builds need only
+GLIBC_2.14 / GLIBC_2.17, so they are more portable than a host `gcc` build, not less. **Not run:** the
+built ELFs were never executed — the container engine on this machine was not running.
+
+**Left alone deliberately:** `dotnet publish -r win-x64` **from a Mac or Linux** still drops a host
+binary named `osdi-worker` into that publish tree (the POSIX `Exec` is conditioned on the BUILDING
+machine, not the target). It reaches no package: `build-windows.ps1` must run on Windows, where that
+step never runs, and it demands `osdi-worker-x64.exe` / `-arm64.exe` rather than the bare name.
+
+**Gate:** `PackagingScriptTests.BothLinuxOsdiWorkers_AreTargetedByTheBuildAndDemandedByPackaging` —
+the cross targets exist in `build.sh`, both Linux RIDs derive an architecture AND an OS in the
+`.csproj`, and `build-linux.sh` reads the magic-plus-machine pair back out of the publish tree.
+
 ## A compiled Verilog-A model could never be evaluated on Windows, and the message blamed a compiler (2026-09-04)
 
 **Symptom:** on a packaged Windows arm64 install (beta.10, auto-updated from GitHub), the Component
