@@ -2,6 +2,90 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## An unsaved schematic's relative references resolved into the recovery folder (2026-09-04)
+
+**Symptom:** a placed SPICE model reported that its file was not found, naming a path inside the
+per-session autosave directory under `LocalApplicationData` — a folder nothing had ever been pointed
+at, and one that is deleted on clean exit. Reported separately: an unsaved schematic behaves oddly in
+general. Both are the same defect, seen from two sides.
+
+**A space in the containing folder name is not the cause and never could be.** The failing call is
+`FileInfo.Exists` inside `SpiceModelPeek.Read` — managed code, no shell, no quoting anywhere on the
+path. The 12 hex characters in the reported directory name are the tell:
+`Guid.NewGuid().ToString("N")[..12]`, which is `RecoveryManager`'s session id and nothing else in the
+product.
+
+### 1. Autosave rebased the live document (the headline)
+
+`SchematicPersistence.SaveToFile` records the directory it wrote to *on the model* — deliberately, so
+a New-Schematic document acquires a base directory the first time it is really saved, which is what
+`CellRef` resolution needs. `RecoveryManager.AutoSave` called that same method with a destination
+under `LocalApplicationData/circuitRF/recovery/<session>/`.
+
+So **30 seconds into editing an unsaved schematic, `SchematicDirectory` silently became the recovery
+folder** — and stayed there. Every relative reference the document carried resolved against it from
+then on: the SPICE model file, Touchstone, `CellRef`. No gesture triggers it and nothing on screen
+changes; the design is simply broken from that tick onward. Worse than a wrong answer, it also turned
+honest guards into false passes — cell placement's `if (SchematicDirectory is null)` refusal stopped
+firing, and computed a `CellRef` relative to the recovery folder instead.
+
+`SaveToFile` now takes `rebaseDirectory` (default true — a real save still rebases); `AutoSave`
+passes false. **An autosave is not a save-as.**
+
+### 2. A restored document was based on a folder about to be deleted
+
+`RecoveryManager.LoadSession` reads the recovery `.csch` through `LoadFromFile`, which bases the
+model on the file it read — the recovery directory — and `WorkspaceViewModel.CheckForRecovery`
+deletes every prior-session directory immediately after restoring. A restored document is a SCRATCH
+document again, so `LoadSession` now clears `SchematicDirectory`.
+
+### 3. Store and resolve used two different workspace roots
+
+Independent of recovery, and the reason a scratch schematic could not hold a SPICE model at all:
+
+- **store** — `ParameterEditorViewModel.PickSpiceModelFileAsync` passed the OPEN WINDOW's root
+  (`SchematicViewModel.WorkspaceRoot`, i.e. `CurrentWorkspacePath`).
+- **resolve** — `SpiceModelSymbolProvider.ResolvePath` walks UP from the schematic's own directory
+  for a `.cws`, falling back to that directory when there is none. This is deliberate (a foreign
+  document belongs to the workspace it came from) and is documented on the method.
+
+They agree for a saved document inside the open workspace and disagree everywhere else. A scratch
+document has no directory to walk up from, so the pick stored a workspace-relative path that the
+resolver could only join to whatever base the model happened to carry. **Before the first autosave
+that base is null, so the component drew as the pinless broken-reference placeholder — unwirable;
+after it, the recovery folder above.**
+
+Fixed at the store end: `SpiceModelSymbolProvider.ToStored` now sits beside `ResolvePath` and derives
+the root by the same walk-up, so the pair cannot drift. With no root there is nothing portable to
+write, so the absolute path is kept — which is what `SnpPathPolicy.ToStored` already does for a null
+root, and what `MoveRefRegistry` already promises to leave alone (`Path.IsPathRooted(was) ? abs : …`).
+
+**Note the SnP path does NOT share this rule**: `ParameterEditorViewModel` stores and previews a
+Touchstone against the window root, and `WorkspaceViewModel`'s Run passes the window root to
+`Elaborator.BaseDirectory`. Self-consistent, so SnP works in a scratch document — but it is a second
+rule, and the two are worth collapsing if this area is touched again.
+
+### What is still degraded in a scratch schematic (pre-existing, unchanged, reported not fixed)
+
+Everything keyed on `SchematicDirectory` is inert or refused until the document is saved:
+
+- **Microstrip technology defaults** — `MicrostripSubstrateInjection.ApplyTechnologyDefaults` resolves
+  the technology by ancestor `.cws`, gets null, and returns without doing anything. An MLIN placed in
+  an unsaved schematic keeps the hardcoded mm defaults instead of the workspace's own unit, and gets
+  no 50 Ω width synthesis. **Saving does not retro-apply them** — the values are already the user's.
+- **Cell placement** refused (with a clear message), and `PlacedCellRef.HashFor`, `CellMoveWatch` and
+  `CellInterfaceWatch` are inert, so no staleness is detected.
+- **A linked wBond payload** cannot resolve its path.
+- `ParameterRowViewModel` / `ParameterEditorViewModel` skip `ResolveCcell` for a non-kit `CellRef`.
+
+The scratch → workspace save itself is sound: `SavePlanExecutor` calls `SaveToFile` on the default
+path, so the base directory is set exactly once, by a real save.
+
+**Gates:** `tests/Ui.Tests/RecoverySessionLifecycleTests.cs` (three new — scratch and saved documents
+both survive an autosave, a restored document has no base directory; all three verified red without
+the fix) and `tests/Ui.Tests/SpiceModelScratchPathTests.cs` (the store/resolve round trip, saved and
+scratch, with a space in the containing folder name carried through every case).
+
 ## VAR/MEAS label placement, and a parameter added after the labels were moved (2026-09-02)
 
 Two reports about the same label block. Both are geometry, and both were single-source-of-truth

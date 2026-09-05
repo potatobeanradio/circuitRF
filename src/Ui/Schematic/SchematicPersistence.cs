@@ -287,8 +287,18 @@ public static class SchematicPersistence
         return JsonSerializer.Serialize(file, _jsonOpts);
     }
 
+    /// <param name="rebaseDirectory">
+    /// True (the default) for a real save: the model now lives at <paramref name="path"/>, so its
+    /// base directory moves there. <b>False for a write that is not where the document lives</b> —
+    /// the only one is <see cref="RecoveryManager.AutoSave"/>, whose destination is a per-session
+    /// scratch folder under LocalApplicationData. Rebasing onto that folder silently repoints every
+    /// relative reference the document carries (SPICE model file, Touchstone, CellRef) at
+    /// <c>…/circuitRF/recovery/&lt;session&gt;/</c>, where nothing the user ever pointed at exists —
+    /// and it happens 30 seconds into editing an unsaved schematic, with no gesture behind it.
+    /// </param>
     public static void SaveToFile(string path, SchematicEditModel model, string cellName = "",
-                                  double panX = 0, double panY = 0, double zoom = 1.0)
+                                  double panX = 0, double panY = 0, double zoom = 1.0,
+                                  bool rebaseDirectory = true)
     {
         AtomicFile.WriteAllText(path, Serialize(model, cellName, panX, panY, zoom));
         // A model saved to a path now has a known on-disk location. Record its directory so
@@ -296,7 +306,8 @@ public static class SchematicPersistence
         // Without this, a schematic created via New Schematic keeps SchematicDirectory = null
         // for its whole session (saving alone never reloaded it), so cell placement — which needs
         // the base dir to compute and resolve CellRef — aborted silently at its first guard.
-        model.SchematicDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (rebaseDirectory)
+            model.SchematicDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
     }
 
     // ── Read ──────────────────────────────────────────────────────────────────

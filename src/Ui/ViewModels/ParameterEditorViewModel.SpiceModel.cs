@@ -170,8 +170,11 @@ public sealed partial class ParameterEditorViewModel
         string? picked = await PickSpiceFileAsync();
         if (picked is null) return;
 
-        // Portable when it can be, exactly as a picked Touchstone path is.
-        string stored = SnpPathPolicy.ToStored(picked, _schematicVm.WorkspaceRoot);
+        // Portable when it can be, exactly as a picked Touchstone path is — and against the same
+        // root SpiceModelSymbolProvider.ResolvePath will read it back with, which is NOT the open
+        // window's workspace root. See SpiceModelSymbolProvider.ToStored.
+        string stored = SpiceModelSymbolProvider.ToStored(
+            picked, _schematicVm.EditModel.SchematicDirectory);
 
         // A NEW file means a new set of definitions, so the name is cleared and re-resolved rather
         // than carried over: the old name almost certainly does not exist in the new file, and a

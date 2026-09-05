@@ -61,7 +61,12 @@ public sealed class RecoveryManager
             Directory.CreateDirectory(SessionDir);
             var file = Path.Combine(SessionDir, SafeFileName(doc.Id));
             var tmp  = file + ".tmp";
-            SchematicPersistence.SaveToFile(tmp, doc.ViewModel.EditModel, doc.Id);
+            // rebaseDirectory: false — an autosave is not a save. The destination is this
+            // session's scratch folder, and rebasing the LIVE model onto it would repoint every
+            // relative reference in an unsaved schematic at a directory that holds nothing but
+            // recovery .csch files (and is deleted on clean exit).
+            SchematicPersistence.SaveToFile(tmp, doc.ViewModel.EditModel, doc.Id,
+                                            rebaseDirectory: false);
             File.Move(tmp, file, overwrite: true);
         }
         catch { /* autosave is non-critical — editing must never be interrupted */ }
@@ -141,6 +146,14 @@ public sealed class RecoveryManager
                 try
                 {
                     var (model, _, cellName) = SchematicPersistence.LoadFromFile(file);
+
+                    // A recovered document is a SCRATCH document again — it has never been saved
+                    // anywhere the user chose. LoadFromFile bases it on the file it read, which
+                    // here is this recovery directory, and the caller deletes that directory
+                    // immediately after restoring. Carrying it would resolve the document's
+                    // relative references against a folder that no longer exists.
+                    model.SchematicDirectory = null;
+
                     var name = !string.IsNullOrWhiteSpace(cellName)
                         ? cellName
                         : Path.GetFileNameWithoutExtension(file);

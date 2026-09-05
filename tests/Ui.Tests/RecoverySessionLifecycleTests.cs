@@ -128,4 +128,68 @@ public sealed class RecoverySessionLifecycleTests : IDisposable
         var next = new RecoveryManager();
         Assert.Contains(dir, RecoveryManager.FindPriorSessions(next.SessionDir));
     }
+
+    // ================================================================
+    //  Autosave must not REBASE the document (2026-09-04)
+    //
+    //  Reported: a placed SPICE model could not find its file, naming a path inside the
+    //  per-session recovery directory — which holds nothing but .csch autosaves and is
+    //  deleted on clean exit. Nothing had ever pointed anything there.
+    //
+    //  SchematicPersistence.SaveToFile records the directory it wrote to on the model, so a
+    //  New-Schematic document gets a base directory the first time it is saved. RecoveryManager
+    //  .AutoSave called that same method — so 30 seconds into editing an UNSAVED schematic, the
+    //  live model's SchematicDirectory silently became the recovery folder, and every relative
+    //  reference the document carried (SPICE model file, Touchstone, CellRef) resolved against
+    //  it from then on. No gesture triggers it; the design is simply broken from that tick.
+    // ================================================================
+
+    /// <summary>A scratch document has no directory, and an autosave must not give it one.</summary>
+    [Fact]
+    public void Autosave_DoesNotRebaseAScratchDocument()
+    {
+        var mgr   = new RecoveryManager();
+        var model = new SchematicEditModel();
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Capacitor, InstanceName = "C1" });
+        var doc = new SchematicDocument("Untitled", new ViewModels.SchematicViewModel(model));
+
+        mgr.AutoSave(doc);
+
+        Assert.Null(model.SchematicDirectory);
+        Assert.True(File.Exists(Path.Combine(mgr.SessionDir, "Untitled.csch")));   // it really did write
+    }
+
+    /// <summary>And a document that HAS been saved keeps pointing where the user saved it.</summary>
+    [Fact]
+    public void Autosave_DoesNotRebaseASavedDocument()
+    {
+        var home = Path.Combine(_root, "design");
+        Directory.CreateDirectory(home);
+
+        var mgr   = new RecoveryManager();
+        var model = new SchematicEditModel { SchematicDirectory = home };
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Capacitor, InstanceName = "C1" });
+        var doc = new SchematicDocument("Amp", new ViewModels.SchematicViewModel(model));
+
+        mgr.AutoSave(doc);
+
+        Assert.Equal(home, model.SchematicDirectory);
+    }
+
+    /// <summary>
+    /// A RESTORED document is a scratch document again. LoadSession reads it out of the recovery
+    /// directory, and CheckForRecovery deletes that directory immediately afterwards — so basing
+    /// the restored model on it would hand the user a document whose relative references resolve
+    /// into a folder that no longer exists.
+    /// </summary>
+    [Fact]
+    public void ARestoredDocument_HasNoBaseDirectory()
+    {
+        var dir = PlantAbandonedSession();
+
+        var restored = RecoveryManager.LoadSession(dir);
+
+        var (_, model) = Assert.Single(restored);
+        Assert.Null(model.SchematicDirectory);
+    }
 }

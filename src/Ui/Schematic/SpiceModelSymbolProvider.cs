@@ -129,6 +129,23 @@ public static class SpiceModelSymbolProvider
     public static string? ResolvePath(string? file, string? schematicDir)
         => SnpPathPolicy.Resolve(file, WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
 
+    /// <summary>
+    /// What to store in the <c>File</c> parameter for a picked absolute path — the exact inverse of
+    /// <see cref="ResolvePath"/>, and defined beside it so the pair cannot drift.
+    ///
+    /// <para><b>The root must be the same one the resolver will use.</b> The picker used to pass
+    /// <c>SchematicViewModel.WorkspaceRoot</c> (the OPEN WINDOW's workspace) while the resolver
+    /// walked up from the schematic's own directory for a <c>.cws</c>. The two agree for a saved
+    /// document inside the open workspace and disagree everywhere else — most sharply for a SCRATCH
+    /// document, which has no directory to walk up from: the pick stored a workspace-relative path,
+    /// and the resolver, finding no <c>.cws</c>, joined it to whatever base directory the model
+    /// happened to carry. With no root there is nothing portable to write, so the absolute path is
+    /// kept — which is exactly what <see cref="SnpPathPolicy.ToStored"/> already does when handed a
+    /// null root.</para>
+    /// </summary>
+    public static string ToStored(string absolutePath, string? schematicDir)
+        => SnpPathPolicy.ToStored(absolutePath, WBondSymbolProvider.WorkspaceRootOf(schematicDir));
+
     // ── The CellSymbolResolver seam ───────────────────────────────────────────
 
     /// <summary>
