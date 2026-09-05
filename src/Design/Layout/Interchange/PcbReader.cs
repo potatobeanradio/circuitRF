@@ -813,31 +813,63 @@ public static class PcbReader
         var specs = span is null ? [] : span.Atoms.ToList();
         string padLayer = specs.Count > 0 ? specs[0] : "";
 
-        bool through = true;
+        // Ordinal order IS top-to-bottom order in this format — the same fact ExpandLayerSpec and
+        // PcbLayerReconciliation's copper ranking already rely on. The ordinal VALUES are not stable
+        // across epochs and are never compared to a constant here, only to each other.
+        var copper = ctx.Board.LayerTable.Where(e => e.IsCopper).OrderBy(e => e.Ordinal).ToList();
+
+        PcbLayerTableEntry? from = null, to = null;
         if (specs.Count >= 2)
         {
-            var copper = ctx.Board.LayerTable.Where(e => e.IsCopper).ToList();
-            var from = copper.FirstOrDefault(e => Matches(e, specs[0]));
-            var to = copper.FirstOrDefault(e => Matches(e, specs[1]));
-            through = from is not null && to is not null
-                      && from.Ordinal == copper.Min(e => e.Ordinal)
-                      && to.Ordinal == copper.Max(e => e.Ordinal);
+            from = copper.FirstOrDefault(e => Matches(e, specs[0]));
+            to = copper.FirstOrDefault(e => Matches(e, specs[1]));
             padLayer = specs[0];
         }
+
+        bool statedPair = specs.Count >= 2;
+        if ((from is null || to is null) && !statedPair && copper.Count >= 2)
+        {
+            // No (layers …) at all. That is not silence about the span: an unqualified via in this
+            // format MEANS a hole drilled clean through, so the outermost declared copper pair is what
+            // the file said — read as such rather than left spanless for a writer to guess at again.
+            from = copper[0];
+            to = copper[^1];
+        }
+
+        string? spanFrom = null, spanTo = null;
+        if (from is not null && to is not null)
+        {
+            // Top first, so PcbImport never has to re-derive a direction the file already fixed. The
+            // NAMES kept are the ones the file's own entities reference (i.e. the spec as written when
+            // it matched), because that is what layer reconciliation is keyed by — canonicalizing here
+            // would mint a second source layer for a board whose entities use the user name.
+            (spanFrom, spanTo) = from.Ordinal <= to.Ordinal
+                ? (SpecNameOf(from, specs, 0), SpecNameOf(to, specs, 1))
+                : (SpecNameOf(to, specs, 1), SpecNameOf(from, specs, 0));
+        }
+
         // The kind word is a bare atom in every epoch measured — but tolerate the childless-list
         // spelling too rather than silently treating a blind via as a through one (R-L4d-1's own habit).
-        if (IsFlagged(node, "blind") || IsFlagged(node, "micro") || IsFlagged(node, "buried")) through = false;
+        bool flaggedBlind = IsFlagged(node, "blind") || IsFlagged(node, "micro") || IsFlagged(node, "buried");
+        bool through = from is not null && to is not null
+                       && from.Ordinal == copper[0].Ordinal && to.Ordinal == copper[^1].Ordinal;
 
-        if (!through)
-            // A via's span is expressible — it lives on the technology's StackupKind.Via entry
-            // (ViaSpanResolver), and the EXPORT side now writes it. What the READ side has no route to
-            // is a per-span via ENTRY: it would have to synthesize one, plus a drawing layer for it, per
-            // distinct span in the file, and graft both onto whatever destination technology the import
-            // is landing in. Until it does, the via is placed on its top span layer and the span is
-            // lost — reported by count, naming where it was put, rather than pretended away.
-            ctx.Degraded($"blind/buried via placed on its top span layer \"{padLayer}\" only " +
-                        "(importing a via span needs a matching via entry in the destination technology; " +
-                        "add one in the technology editor's Stackup tab and redraw the via on its layer)");
+        // Both halves of a span that could not be read are reported, and neither is guessed at. The
+        // span itself now SURVIVES the read — PcbImport turns it into a StackupKind.Via entry bound to
+        // its own drawing layer — so the only things left to report are the two ways the file itself
+        // does not settle the question.
+        if (spanFrom is null)
+            ctx.Degraded(statedPair
+                ? $"via whose (layers \"{specs[0]}\" \"{specs[1]}\") pair names copper this board's layer table " +
+                  "does not declare — the via was imported, its span was not"
+                : "via that states no (layers …) pair on a board declaring fewer than two copper layers — " +
+                  "the via was imported, its span was not");
+        else if (flaggedBlind && through)
+            // A contradiction inside one entity, and the layer pair is the specific half. Saying so is
+            // the point: the alternative is to honour the word and write a span the file's own pair
+            // denies, or to honour the pair and drop the word without a trace.
+            ctx.Degraded($"via marked blind/buried/micro whose (layers \"{spanFrom}\" \"{spanTo}\") pair runs " +
+                         "outer copper to outer copper — the layer pair was taken as the span");
 
         Add(into, new ViaShape
         {
@@ -846,8 +878,15 @@ public static class PcbReader
             DrillSize = PcbUnits.Length(drillMm, ctx.Dbu),
             LandingLayer = null,                 // set by PcbImport once the layer keys are reconciled
             Net = ctx.NetOf(node),
-        }, DrillLayerName, padLayerName: padLayer);
+        }, DrillLayerName, padLayerName: padLayer, spanFromName: spanFrom, spanToName: spanTo);
     }
+
+    /// <summary>The name to carry forward for a matched copper table entry: the SPEC the file wrote
+    /// when that is what matched, so the span reconciles against the very same source layer the
+    /// board's own geometry does. Falls back to the canonical name when the pair was synthesized
+    /// (no <c>(layers …)</c> at all), which is the only case with no spec to quote.</summary>
+    private static string SpecNameOf(PcbLayerTableEntry entry, IReadOnlyList<string> specs, int index)
+        => index < specs.Count && Matches(entry, specs[index]) ? specs[index] : entry.CanonicalName;
 
     private static bool IsFlagged(PcbNode node, string flag)
         => node.HasAtom(flag) || node.Child(flag) is not null;
@@ -1539,6 +1578,7 @@ public static class PcbReader
 
     /// <summary>Records a shape against its SOURCE layer name. A via additionally records the name of
     /// its landing (pad) layer, which <c>PcbImport</c> resolves once the keys are known.</summary>
-    private static void Add(List<PcbImportedShape> into, LayoutShape shape, string layerName, string? padLayerName = null)
-        => into.Add(new PcbImportedShape(shape, layerName, padLayerName));
+    private static void Add(List<PcbImportedShape> into, LayoutShape shape, string layerName,
+                            string? padLayerName = null, string? spanFromName = null, string? spanToName = null)
+        => into.Add(new PcbImportedShape(shape, layerName, padLayerName, spanFromName, spanToName));
 }

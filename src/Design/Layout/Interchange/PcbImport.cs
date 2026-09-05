@@ -14,16 +14,24 @@ namespace CircuitRF.Design.Layout.Interchange;
 
 public static class PcbImport
 {
+    /// <param name="ViaEntries">The <see cref="StackupKind.Via"/> entries this import needs, one per
+    /// distinct via span in the file, each binding a drawing layer that is also in
+    /// <paramref name="LayersToAdd"/>. <b>Carried separately from <paramref name="Stackup"/> on
+    /// purpose</b>: replacing a technology's whole stackup silently would be indefensible and both
+    /// appliers refuse it when the destination already declares one, but a via entry is purely
+    /// ADDITIVE — it declares a drill, it cannot invalidate a substrate — so it applies either way.
+    /// Empty when the board has no vias, or when nothing states which conductors they join.</param>
     public sealed record ImportResult(
         bool Cancelled,
         IReadOnlyList<string> CreatedCellDirs,
         string? BoardCellDir,
         IReadOnlyList<LayerDef> LayersToAdd,
         Stackup? Stackup,
-        IReadOnlyList<string> Messages);
+        IReadOnlyList<string> Messages,
+        IReadOnlyList<StackupLayer> ViaEntries);
 
     private static ImportResult Nothing(IReadOnlyList<string> messages)
-        => new(true, [], null, [], null, messages);
+        => new(true, [], null, [], null, messages, []);
 
     /// <summary>
     /// Imports the whole board in <paramref name="stream"/> as real cell folders under
@@ -59,17 +67,9 @@ public static class PcbImport
 
         // ── Layers ──────────────────────────────────────────────────────────────────────────────
         var allNames = new List<string>();
-        foreach (var s in board.Shapes)
-        {
-            allNames.Add(s.LayerName);
-            if (s.LandingLayerName is { Length: > 0 } landing) allNames.Add(landing);
-        }
+        foreach (var s in board.Shapes) CollectNames(s, allNames);
         foreach (var cell in board.FootprintCells.Values)
-            foreach (var s in cell.Shapes)
-            {
-                allNames.Add(s.LayerName);
-                if (s.LandingLayerName is { Length: > 0 } landing) allNames.Add(landing);
-            }
+            foreach (var s in cell.Shapes) CollectNames(s, allNames);
         allNames = [.. allNames.Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
 
         var (sourceLayers, keyByName) = PcbLayerReconciliation.BuildSourceLayers(allNames, board.LayerTable, destTech);
@@ -100,6 +100,35 @@ public static class PcbImport
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
         if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
+
+        // ── Stackup, and the via entries its conductors make expressible ─────────────────────────
+        // Built HERE rather than at the end, because the via spans are named against it and the vias
+        // have to be moved onto their entries' drawing layers before the cells are written. Its own
+        // messages still go out in their original place, below.
+        var stackup = PcbStackupMapping.Build(
+            board.Stackup, board.OverallThicknessMm, destDbuPerMicron,
+            name => ResolveKey(keyByName, choices, name));
+
+        // Which stackup is actually in force after this import: the destination's whenever it declares
+        // one, because neither applier ever replaces a stackup that is already there. Naming a span
+        // against the stackup that is about to be REFUSED would produce entries whose conductors do not
+        // exist, which ViaSpanResolver reads back as no span at all.
+        var effectiveStackup = destTech is { } dt && dt.Stackup.Layers.Count > 0 ? dt.Stackup : stackup.Stackup;
+
+        var spanByShape = new Dictionary<PcbImportedShape, PcbViaSpanMapping.SourceSpan>();
+        foreach (var s in board.Shapes.Concat(board.FootprintCells.Values.SelectMany(c => c.Shapes)))
+        {
+            if (s.Shape is not ViaShape) continue;
+            if (s.SpanFromName is not { Length: > 0 } from || s.SpanToName is not { Length: > 0 } to) continue;
+            if (ResolveKey(keyByName, choices, from) is not { } fromKey) continue;
+            if (ResolveKey(keyByName, choices, to) is not { } toKey) continue;
+            spanByShape[s] = new PcbViaSpanMapping.SourceSpan(fromKey, toKey);
+        }
+
+        var viaSpans = PcbViaSpanMapping.Build(
+            [.. spanByShape.Values.Distinct()],
+            effectiveStackup,
+            [.. sourceLayers.Select(l => l.Key).Concat(destTech?.Layers.Select(l => l.Key) ?? [])]);
 
         // ── Cell folders ────────────────────────────────────────────────────────────────────────
         var cellsByKey = board.FootprintCells.Values.ToList();
@@ -136,6 +165,21 @@ public static class PcbImport
         var layersToAdd = new List<LayerDef>();
         var addedKeys = new HashSet<LayerKey>();
 
+        // A minted drill layer carries no shapes until the vias are moved onto it below, and a span's
+        // own copper may carry none at all (an inner plane a blind via lands on, with no artwork on
+        // this board). ApplyReconciliation only ever adds a layer some SHAPE was on, so neither would
+        // otherwise reach the technology — and a via entry binding a layer the technology does not
+        // declare resolves to nothing, which is the defect this whole path exists to close.
+        foreach (var def in viaSpans.NewDrawingLayers)
+            if (addedKeys.Add(def.Key)) layersToAdd.Add(def);
+        foreach (var span in spanByShape.Values.Distinct())
+            foreach (var key in new[] { span.From, span.To })
+                if (!addedKeys.Contains(key) && sourceLayers.FirstOrDefault(l => l.Key == key) is { } def)
+                {
+                    addedKeys.Add(key);
+                    layersToAdd.Add(def);
+                }
+
         foreach (var cell in cellsByKey)
         {
             var reconciled = LayoutFragment.ApplyReconciliation([.. cell.Shapes.Select(s => s.Shape)], sourceLayers, choices);
@@ -144,7 +188,7 @@ public static class PcbImport
 
             var view = new LayoutView { DbuPerMicron = destDbuPerMicron };
             view.Shapes.AddRange(reconciled.Shapes);
-            ResolveViaLandingLayers(cell.Shapes, reconciled.Shapes, keyByName, choices);
+            ResolveViaLayers(cell.Shapes, reconciled.Shapes, keyByName, choices, spanByShape, viaSpans);
             foreach (var (pin, layerName) in cell.Pins)
             {
                 if (ResolveKey(keyByName, choices, layerName) is { } key) pin.Layer = key;
@@ -161,7 +205,7 @@ public static class PcbImport
 
         var boardView = new LayoutView { DbuPerMicron = destDbuPerMicron };
         boardView.Shapes.AddRange(boardReconciled.Shapes);
-        ResolveViaLandingLayers(board.Shapes, boardReconciled.Shapes, keyByName, choices);
+        ResolveViaLayers(board.Shapes, boardReconciled.Shapes, keyByName, choices, spanByShape, viaSpans);
 
         string boardLayoutDir = CellFolder.SubFolderPath(boardDir, ViewType.Layout);
         foreach (var placement in board.Placements)
@@ -183,10 +227,8 @@ public static class PcbImport
         WriteCell(boardDir, boardView);
 
         // ── Stackup ─────────────────────────────────────────────────────────────────────────────
-        var stackup = PcbStackupMapping.Build(
-            board.Stackup, board.OverallThicknessMm, destDbuPerMicron,
-            name => ResolveKey(keyByName, choices, name));
         messages.AddRange(stackup.Messages);
+        messages.AddRange(viaSpans.Messages);
 
         // ── What came in, and what did not ──────────────────────────────────────────────────────
         messages.Add(
@@ -211,11 +253,23 @@ public static class PcbImport
             "The whole board was imported. A real board is not a MoM problem as a whole — select the " +
             "region you intend to simulate and crop it before setting up EM ports.");
 
-        return new ImportResult(false, createdDirs, boardDir, layersToAdd, stackup.Stackup, messages);
+        return new ImportResult(false, createdDirs, boardDir, layersToAdd, stackup.Stackup, messages, viaSpans.NewEntries);
     }
 
     private static string UniqueName(IReadOnlyDictionary<string, string> names, string proposed, int index)
         => names.TryGetValue(proposed, out var name) ? name : $"footprint_{index}";
+
+    /// <summary>Every SOURCE layer name one imported shape refers to. A via refers to three — its own
+    /// barrel layer, its pad's copper, and the two conductors its span joins — and all of them must
+    /// reach reconciliation, because a span conductor with no artwork on this board still has to end up
+    /// as a real layer for the via entry naming it to resolve.</summary>
+    private static void CollectNames(PcbImportedShape s, List<string> into)
+    {
+        into.Add(s.LayerName);
+        if (s.LandingLayerName is { Length: > 0 } landing) into.Add(landing);
+        if (s.SpanFromName is { Length: > 0 } from) into.Add(from);
+        if (s.SpanToName is { Length: > 0 } to) into.Add(to);
+    }
 
     private static LayerKey KeyOf(IReadOnlyDictionary<string, LayerKey> keyByName, string name)
         => name.Length > 0 && keyByName.TryGetValue(name, out var key) ? key : default;
@@ -238,22 +292,37 @@ public static class PcbImport
     }
 
     /// <summary>
-    /// R-L4d-10, applied AFTER reconciliation: <see cref="LayoutShape.Layer"/> is the via's BARREL and
+    /// A via's two layers, both settled AFTER reconciliation.
+    ///
+    /// <para>R-L4d-10: <see cref="LayoutShape.Layer"/> is the via's BARREL and
     /// <see cref="ViaShape.LandingLayer"/> is its PAD. <see cref="ViaShape"/>'s own doc comment states
     /// the consequence of getting it backwards in as many words — a plausible-looking export with
-    /// copper where the hole should be.
+    /// copper where the hole should be.</para>
+    ///
+    /// <para>The barrel moves off the generic drill layer onto the one bound to the via entry for its
+    /// own SPAN, because the drawing layer is what selects the entry and therefore what states the
+    /// span (R-via-3, <see cref="ViaSpanResolver"/>). A via whose span could not be expressed keeps
+    /// the drill layer it was read onto — the pre-existing behaviour, still reachable and still
+    /// reported, which is what lets an import land in a technology the user does not want changed.</para>
     /// </summary>
-    private static void ResolveViaLandingLayers(
+    private static void ResolveViaLayers(
         IReadOnlyList<PcbImportedShape> sources,
         IReadOnlyList<LayoutShape> reconciled,
         IReadOnlyDictionary<string, LayerKey> keyByName,
-        IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices)
+        IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices,
+        IReadOnlyDictionary<PcbImportedShape, PcbViaSpanMapping.SourceSpan> spanByShape,
+        PcbViaSpanMapping.Result viaSpans)
     {
         for (int i = 0; i < sources.Count && i < reconciled.Count; i++)
         {
             if (reconciled[i] is not ViaShape via) continue;
-            if (sources[i].LandingLayerName is not { Length: > 0 } name) continue;
-            via.LandingLayer = ResolveKey(keyByName, choices, name);
+
+            if (sources[i].LandingLayerName is { Length: > 0 } name)
+                via.LandingLayer = ResolveKey(keyByName, choices, name);
+
+            if (spanByShape.TryGetValue(sources[i], out var span)
+                && viaSpans.BarrelLayerBySpan.TryGetValue(span, out var barrel))
+                via.Layer = barrel;
         }
     }
 

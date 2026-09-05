@@ -1,6 +1,8 @@
 # Brief — importing a via SPAN, not just a via
 
-**Status:** not built.
+**Status:** Complete (2026-09-05) — findings in `src/Design/RESOLVED.md`, gates in
+`tests/Ui.Tests/PcbViaSpanImportTests.cs`. Gate 5's premise did not hold (the counter was already
+zero for an import, and why is recorded there); every other gate is met as written.
 **Depends on:** `src/Design/Layout/ViaSpanResolver.cs` (built), which is the shared answer to "which
 two conductors does this via join?" and is what the export half now reads.
 **Scope:** the board-format read path. Smaller than it first looks — see §3, which corrects the

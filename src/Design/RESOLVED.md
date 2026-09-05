@@ -1811,8 +1811,91 @@ three export diagnostics all say the same thing about the same state. Consumers:
 
 ### Still open
 
-Import: `PcbReader.ReadVia` identifies a blind/buried via and then loses its span, because expressing
-one on the read side means synthesizing a via entry AND a drawing layer per distinct span and grafting
-both onto the destination technology. `docs/sonnet-briefs/brief-via-span-import.md` has the shape and
-the gates. Also unchanged and out of scope there: `ViaShape` carries ONE landing layer, so a through
-via in a 4-layer board still cannot state a pad on every copper layer it passes.
+Nothing on the span itself — the import half landed in
+`docs/sonnet-briefs/brief-via-span-import.md` (below). Still unchanged and still out of scope there:
+`ViaShape` carries ONE landing layer, so a through via in a 4-layer board cannot state a pad on every
+copper layer it passes.
+
+---
+
+## Importing a via SPAN, not just a via (brief-via-span-import.md)
+
+The read half of the above. Two defects, and the brief is right that only the first is about blind
+vias — but the SECOND is the one that hit every board anyone ever imported.
+
+**(a) `PcbReader.ReadVia` discarded the pair it had just read.** It identified a blind/buried via
+correctly, placed it on its top span layer and recorded a `Degraded` count. `specs[0]`/`specs[1]` were
+read and dropped.
+
+**(b) `PcbStackupMapping.Build` emitted no `StackupKind.Via` entry at all** — its `KindOf` maps only
+`copper` and `core`/`prepreg`, everything else counted as ignored. So an imported board's technology
+had ZERO via entries, and every imported via, THROUGH VIAS INCLUDED, resolved no span. Re-exporting
+one wrote it as an unspanned through via with a note.
+
+### The shape it took
+
+`src/Design/Layout/Interchange/PcbViaSpanMapping.cs` is the read-side counterpart of
+`ViaSpanResolver`: N vias in, one `StackupKind.Via` entry per DISTINCT span out, each binding a drill
+layer of its own, plus the map that tells `PcbImport` which layer to move each via onto. The span
+travels from reader to importer on `PcbImportedShape.SpanFromName`/`SpanToName` — the same route
+`LandingLayerName` already took, and for the same reason: a span is a process parameter, so it must
+not land on `ViaShape`.
+
+`PcbImport.ImportResult` carries `ViaEntries` as **its own field, never folded into `Stackup`**, and
+that separation is the whole reason the graft works. Both appliers
+(`WorkspaceViewModel.ApplyImportToTechnology`, `Cli/LayoutConvert.MintTechnology`) refuse an imported
+stackup when the destination already declares one — right for a substrate, wrong for a via entry,
+which declares a drill and cannot invalidate anything. Folding the entries into the stackup would have
+made a blind via importable only into a technology with no stackup, which is the one case nobody has.
+
+### Five things measured rather than assumed
+
+- **The brief's estimate of the hard part was right.** The graft mechanism was already wired end to
+  end on both paths; what was missing was only the thing that CONSTRUCTS the entry. No new plumbing.
+
+- **A span must be named against the stackup that will be IN FORCE, not the one the file brought.**
+  `PcbImport` computes that the same way both appliers do (`destTech.Stackup.Layers.Count > 0` →
+  the destination's) and resolves the two source copper names to drawing-layer KEYS, then to whichever
+  conductor entries claim those keys. Naming the file's own `F.Cu`/`In1.Cu` into a technology whose
+  conductors are called `Top`/`Inner 1` produces an entry `ViaSpanResolver` reads back as **no span at
+  all** — the same null the change exists to remove, arrived at by a longer route.
+
+- **`LayoutFragment.ApplyReconciliation` adds a layer only when some SHAPE was already on it**, so
+  neither a minted drill layer (nothing is on it until the vias move) nor a span's own conductor (an
+  inner plane a blind via lands on, with no artwork on this board) would ever reach the technology.
+  Both are added explicitly in `PcbImport`. A via entry binding a layer the technology does not
+  declare resolves nothing, so this is not cosmetic.
+
+- **The span layer names must be the SPEC AS WRITTEN, not the layer table's canonical name.** At the
+  20171130 epoch a renamed layer's user name occupies the canonical slot, and entities may reference
+  either — so canonicalizing a via's `(layers …)` pair mints a SECOND source layer for copper the
+  board's own geometry is already on. `PcbReader.SpecNameOf` keeps the spec whenever it is what
+  matched.
+
+- **Gate 5 was already green before the change, and the brief's premise for it is wrong.** It expects
+  a re-exported import to report one `GerberExport.UnspannedViaPads` per via. It reports zero, and did
+  before: `PcbImport.ResolveViaLayers` (then `ResolveViaLandingLayers`) has always set
+  `ViaShape.LandingLayer` from the file's own `(layers …)` first entry, and `ViaSpanResolver.PadLayer`
+  takes an explicit landing layer ahead of the span. The counter only ever fired for a via that
+  carries NEITHER — an EDITOR-drawn one, which is the case `ViaSpanTests` already gates. The test is
+  kept as a regression guard; it is not evidence of the defect it was written to describe.
+
+### The one behaviour change outside the import
+
+`(layers …)` is now the span, and the kind atom is only a cross-check. Where a file contradicts itself
+— `(via blind … (layers "F.Cu" "B.Cu"))`, which `testdata/pcb-samples/via.kicad_pcb` carries — **the
+pair wins**, because it is the specific half and it is what becomes a stackup entry; the overruled
+word is reported by count rather than dropped. A via stating no `(layers …)` at all now takes the
+outermost declared copper pair, which is what an unqualified via MEANS in this format, rather than
+being left spanless for a writer to guess at a second time.
+
+### Gates
+
+`tests/Ui.Tests/PcbViaSpanImportTests.cs` (10), against
+`testdata/pcb-samples/via-blind.kicad_pcb` — four copper layers, a real stackup, two vias sharing a
+blind Top→In1 span and one through via. Every assertion goes through `ViaSpanResolver.Resolve`, never
+through a layer name, or it would pass on a coincidence of naming while the resolver still answered
+null. Gate 2 (round trip) runs the real `circuitrf convert` as a separate process and compares the
+`(via …)` lines against the source file's, so a graft that works only in `WorkspaceViewModel` cannot
+pass it. **Verified as a negative control**: neutering `PcbViaSpanMapping.Build` turns 8 of the 10
+red.

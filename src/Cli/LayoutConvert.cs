@@ -347,7 +347,7 @@ public static class LayoutConvert
         string? cellDir = PickCell(o.Cell, r.CreatedCellDirs, r.BoardCellDir, "footprint");
         if (cellDir is null) return null;
 
-        var tech = MintTechnology(staging, name, destTech, r.LayersToAdd, r.Stackup, r.CreatedCellDirs);
+        var tech = MintTechnology(staging, name, destTech, r.LayersToAdd, r.Stackup, r.CreatedCellDirs, r.ViaEntries);
         return Finish(cellDir, tech, r.CreatedCellDirs);
     }
 
@@ -412,9 +412,14 @@ public static class LayoutConvert
     /// what Gerber import already does for itself (R-L4g-8), for the same reason, and it means an
     /// intermediate kept with --keep-cells opens in the application as a real design.</para>
     /// </summary>
+    /// <param name="viaEntries">The import's <see cref="StackupKind.Via"/> entries, appended even when
+    /// the whole stackup below was refused. Additive, unlike a stackup: a via entry declares a drill
+    /// and cannot invalidate a substrate, so the rule protecting a declared stackup does not reach it.
+    /// This is what makes an imported via's span survive the round trip out again.</param>
     private static Technology MintTechnology(
         string staging, string name, Technology? destTech,
-        IReadOnlyList<LayerDef> layersToAdd, Stackup? stackup, IReadOnlyList<string> cellDirs)
+        IReadOnlyList<LayerDef> layersToAdd, Stackup? stackup, IReadOnlyList<string> cellDirs,
+        IReadOnlyList<StackupLayer>? viaEntries = null)
     {
         var tech = destTech is null
             ? new Technology { Name = name }
@@ -426,6 +431,13 @@ public static class LayoutConvert
         // Never replace a stackup that is already there — the same rule board import follows in the
         // GUI: what was recovered is reported, and nothing already declared is overwritten.
         if (stackup is not null && tech.Stackup.Layers.Count == 0) tech.Stackup = stackup;
+
+        // Keyed on the DRAWING LAYER, which is what selects an entry (R-via-3) — the same dedup rule
+        // WorkspaceViewModel.ApplyImportToTechnology applies, so the two paths mint the same file.
+        foreach (var entry in viaEntries ?? [])
+            if (!tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via
+                                              && l.DrawingLayers.Any(k => entry.DrawingLayers.Contains(k))))
+                tech.Stackup.Layers.Add(entry);
 
         string techPath = Path.Combine(staging, name + ".ctech");
         TechPersistence.SaveToFile(techPath, tech);

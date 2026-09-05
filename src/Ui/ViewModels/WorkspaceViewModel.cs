@@ -4768,16 +4768,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ApplyBoardImportToTechnology(
         TechResolution techRes, CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result)
-        => ApplyImportToTechnology(techRes, result.LayersToAdd, result.Stackup);
+        => ApplyImportToTechnology(techRes, result.LayersToAdd, result.Stackup, result.ViaEntries);
 
     /// <summary>The same, for an import that recovers layers but — like a COMPONENT file — no stackup
     /// at all (R-PL1-27). Nothing is invented in its place: <paramref name="stackup"/> is null and the
     /// technology's own is left exactly as it was.</summary>
+    /// <param name="viaEntries">Via entries the import needs, applied even when the whole-stackup
+    /// import above was refused — a via entry is ADDITIVE (it declares a drill, it cannot invalidate a
+    /// substrate), so the rule that protects a declared stackup does not reach it. Without this an
+    /// imported board's vias resolve no span at all, which is what made every one of them re-export as
+    /// an unspanned through via with its pad on no copper layer.</param>
     private void ApplyImportToTechnology(
-        TechResolution techRes, IReadOnlyList<LayerDef> layersToAdd, Stackup? stackup)
+        TechResolution techRes, IReadOnlyList<LayerDef> layersToAdd, Stackup? stackup,
+        IReadOnlyList<StackupLayer>? viaEntries = null)
     {
+        viaEntries ??= [];
         if (techRes.Tech is not { } tech || techRes.ResolvedPath is not { } techPath) return;
-        if (layersToAdd.Count == 0 && stackup is null) return;
+        if (layersToAdd.Count == 0 && stackup is null && viaEntries.Count == 0) return;
 
         var clone = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
 
@@ -4806,7 +4813,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
-        if (added == 0 && !stackupApplied) return;
+        int viasAdded = 0;
+        foreach (var entry in viaEntries)
+        {
+            // Keyed on the DRAWING LAYER, which is what selects an entry (R-via-3): two entries
+            // claiming one layer is the state ViaSpanResolver cannot resolve deterministically, and
+            // re-importing the same board must not create it.
+            if (clone.Stackup.Layers.Any(l => l.Kind == StackupKind.Via
+                                              && l.DrawingLayers.Any(k => entry.DrawingLayers.Contains(k))))
+                continue;
+            clone.Stackup.Layers.Add(entry);
+            viasAdded++;
+        }
+
+        if (added == 0 && !stackupApplied && viasAdded == 0) return;
 
         // The technology editor may already be open on this file. It holds its OWN working copy, so a
         // bare SetLive would leave that copy — the one the user is looking at, and the one its Save
@@ -4823,7 +4843,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         Messages.Info(
             $"Technology \"{clone.Name}\" updated in this session: " +
-            $"{added} layer(s) added{(stackupApplied ? $", stackup replaced with the board's {clone.Stackup.Layers.Count} layer(s)" : "")}. " +
+            $"{added} layer(s) added{(stackupApplied ? $", stackup replaced with the board's {clone.Stackup.Layers.Count} layer(s)" : "")}" +
+            $"{(viasAdded > 0 ? $", {viasAdded} via entr{(viasAdded == 1 ? "y" : "ies")} added" : "")}. " +
             "Nothing was written to disk — open the technology and save it to keep this.");
     }
 

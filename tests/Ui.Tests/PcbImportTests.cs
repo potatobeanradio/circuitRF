@@ -317,13 +317,32 @@ public class PcbImportTests : IDisposable
             "if it is not, Layer and LandingLayer are the wrong way round");
     }
 
+    /// <summary>
+    /// <c>via.kicad_pcb</c>'s second via contradicts itself: the kind word says <c>blind</c> and the
+    /// <c>(layers …)</c> pair runs outer copper to outer copper. <b>The pair wins</b> — it is the
+    /// specific half, and it is what <c>PcbImport</c> turns into a stackup via entry — and the word
+    /// being overruled is REPORTED rather than dropped without a trace.
+    ///
+    /// <para>Before brief-via-span-import.md this read the other way round: the kind word decided, the
+    /// span was discarded, and the count said the via had been put on its top span layer only.</para>
+    /// </summary>
     [Fact]
-    public void Gate9_BlindVia_IsReportedByCount_NamingWhereItWasPlaced()
+    public void Gate9_AViaWhoseKindWordContradictsItsLayerPair_KeepsThePair_AndSaysSo()
     {
         var board = ReadFixture("via.kicad_pcb");
-        var blind = Assert.Single(board.DegradedCounts, kv => kv.Key.Contains("blind/buried via"));
-        Assert.Equal(1, blind.Value);
-        Assert.Contains("F.Cu", blind.Key);            // names WHERE it was put, not merely that it was odd
+
+        var reported = Assert.Single(board.DegradedCounts, kv => kv.Key.Contains("blind/buried/micro"));
+        Assert.Equal(1, reported.Value);
+        Assert.Contains("F.Cu", reported.Key);         // names the pair it kept, not merely that it was odd
+
+        // Both vias — the plain one and the self-contradicting one — carry the same outer-to-outer span.
+        var vias = board.Shapes.Where(sh => sh.Shape is ViaShape).ToList();
+        Assert.Equal(2, vias.Count);
+        Assert.All(vias, v =>
+        {
+            Assert.Equal("F.Cu", v.SpanFromName);
+            Assert.Equal("B.Cu", v.SpanToName);
+        });
     }
 
     // ── Gate 10: footprints (R-L4d-15) ──────────────────────────────────────────────────────────

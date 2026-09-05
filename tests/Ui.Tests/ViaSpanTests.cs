@@ -184,18 +184,28 @@ public class ViaSpanTests : IDisposable
         Assert.Equal(0, plan.Summary.BlindOrBuriedVias);
     }
 
-    /// <summary>The written blind via comes back through <c>PcbReader</c> as a blind one — the reader
-    /// keys on the same bare kind atom the writer now emits, so the cycle closes on the CLASSIFICATION
-    /// even though the model still cannot store the far end of the span.</summary>
+    /// <summary>The written blind via comes back through <c>PcbReader</c> carrying the SPAN, not merely
+    /// the kind word — the far half of the cycle, and the thing brief-via-span-import.md §2(a) exists to
+    /// close. Until it landed, <c>ReadVia</c> identified the span correctly and then dropped it.</summary>
     [Fact]
-    public void AWrittenBlindVia_IsReadBackAsBlind_AndTheReaderSaysWhatItCouldNotKeep()
+    public void AWrittenBlindVia_IsReadBackWithItsSpan_NotJustItsKindWord()
     {
         var cellDir = CreateCell("BOARD", v => v.Shapes.Add(EditorVia(BlindDrill)));
         string text = ExportBoard(cellDir, ThreeLayerTech(), out _);
 
         var read = PcbReader.Read(text, Dbu);
         Assert.Null(read.Refusal);
-        Assert.Contains(read.Board!.DegradedCounts.Keys, d => d.Contains("blind/buried", StringComparison.OrdinalIgnoreCase));
+
+        // The names are the BOARD-format ones the writer chose for those two conductors (PcbLayerNaming),
+        // not circuitRF's own layer names — which is exactly right: they are what the file says, and what
+        // its own entities reference.
+        Assert.Contains("(layers \"F.Cu\" \"In1.Cu\")", text);
+        var via = Assert.Single(read.Board!.Shapes, sh => sh.Shape is ViaShape);
+        Assert.Equal("F.Cu", via.SpanFromName);
+        Assert.Equal("In1.Cu", via.SpanToName);
+
+        // Nothing was degraded: the file said blind, the pair says blind, and both survived the read.
+        Assert.Empty(read.Board.DegradedCounts);
     }
 
     /// <summary>A technology that states no span still writes a via — a written via must name SOME

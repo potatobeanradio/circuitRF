@@ -34,7 +34,24 @@ public sealed record PcbLayerTableEntry(int Ordinal, string CanonicalName, strin
 /// resolved to <see cref="ViaShape.LandingLayer"/> once reconciliation has decided the keys. Null for
 /// every other shape kind — carried here rather than in a side table so a via and its landing layer
 /// cannot be separated by a list copy.</param>
-public sealed record PcbImportedShape(LayoutShape Shape, string LayerName, string? LandingLayerName = null);
+/// <param name="SpanFromName">Vias only: the source name of the UPPER copper layer the via's own
+/// <c>(layers …)</c> pair named, ordered top-first by the layer table's own ordinal (which is
+/// top-to-bottom order in this format). Null when the file named a pair this board declares no copper
+/// for, and when the board declares fewer than two copper layers.</param>
+/// <param name="SpanToName">The LOWER copper layer of that same pair.</param>
+/// <remarks>
+/// The span travels beside the shape rather than on <see cref="ViaShape"/> for the same reason
+/// <paramref name="LandingLayerName"/> does: a via's span is a PROCESS parameter, carried by the
+/// technology's <see cref="StackupKind.Via"/> stackup entry (R-via-3) and selected by the via's
+/// drawing layer, so it does not belong on the artwork. <c>PcbImport</c> turns these two names into
+/// one via entry per distinct span and moves the via onto that entry's own drawing layer.
+/// </remarks>
+public sealed record PcbImportedShape(
+    LayoutShape Shape,
+    string LayerName,
+    string? LandingLayerName = null,
+    string? SpanFromName = null,
+    string? SpanToName = null);
 
 /// <summary>A pin plus the source layer NAME its copper sits on (R-L4d-17).</summary>
 public sealed record PcbImportedPin(LayoutPin Pin, string LayerName);
