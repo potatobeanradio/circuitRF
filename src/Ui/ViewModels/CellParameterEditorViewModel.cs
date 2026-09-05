@@ -79,6 +79,7 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
     partial void OnSelectedPrimarySchematicChanged(string value)
     {
         if (_suppressPrimaryChangeEvents) return;
+        if (IsControlResettingItself(value, _editModel.PrimarySchematic, AvailableSchematics)) return;
         var mapped = value == NoneOption ? null : value;
         if (mapped == _editModel.PrimarySchematic) return;
         UndoRedo.Execute(new SetCellPrimaryCommand(_editModel, isSymbol: false, mapped));
@@ -87,9 +88,32 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
     partial void OnSelectedPrimarySymbolChanged(string value)
     {
         if (_suppressPrimaryChangeEvents) return;
+        if (IsControlResettingItself(value, _editModel.PrimarySymbol, AvailableSymbols)) return;
         var mapped = value == NoneOption ? null : value;
         if (mapped == _editModel.PrimarySymbol) return;
         UndoRedo.Execute(new SetCellPrimaryCommand(_editModel, isSymbol: true, mapped));
+    }
+
+    /// <summary>
+    /// True when the incoming value is a ComboBox clearing its own SelectedItem rather than a user
+    /// choosing something — which is what a reassigned ItemsSource makes it do.
+    ///
+    /// <para>The write-back is DEFERRED, so it lands outside
+    /// <see cref="_suppressPrimaryChangeEvents"/> and used to be recorded as "set primary to
+    /// nothing", wiping the saved primary (the persistence bug).  A null/empty selection is never
+    /// something the user can pick — "(none specified)" is the item that means that — so it is
+    /// always the control, and the model's own value is restored when the list can still show it.
+    /// When it cannot, the combo is left blank rather than looping: re-asserting a value the list
+    /// does not contain would only make the control clear itself again.</para>
+    /// </summary>
+    private bool IsControlResettingItself(string? value, string? modelValue, IReadOnlyList<string> available)
+    {
+        if (!string.IsNullOrEmpty(value)) return false;
+
+        if (modelValue is not null && available.Contains(modelValue, StringComparer.OrdinalIgnoreCase))
+            SyncPrimarySelectionsFromModel();
+
+        return true;
     }
 
     partial void OnNumPortsChanged(int value)
@@ -124,7 +148,7 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
 
         _editModel.Changed += (_, _) => RebuildRows();
 
-        BuildAvailableFileLists();   // file lists are stable for the editor's lifetime — build ONCE
+        BuildAvailableFileLists();
         RebuildRows();
     }
 
@@ -170,12 +194,27 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Re-reads the cell folder so a view file created while this editor was open becomes
+    /// selectable.  Called by the workspace whenever it writes a new <c>.csym</c> / <c>.csch</c>
+    /// into this cell — New Symbol is the ordinary case, and before this the drop-down offered only
+    /// "(none specified)" until circuitRF was restarted.
+    ///
+    /// <para>Safe to call at any time: the selections are re-synced from the model afterwards, and
+    /// <see cref="IsControlResettingItself"/> absorbs the ComboBox's own deferred clear so a
+    /// rebuilt ItemsSource can no longer wipe the saved primary.</para>
+    /// </summary>
+    public void RefreshAvailableFiles()
+    {
+        BuildAvailableFileLists();
+        SyncPrimarySelectionsFromModel();
+    }
+
+    /// <summary>
     /// Builds the Primary Schematic / Symbol combo item lists from the cell folder.
-    /// The available files are stable for the editor's lifetime, so this is called ONCE at
-    /// construction — NEVER on parameter edits.  Reassigning the ItemsSource on every model
-    /// change made the ComboBox transiently null its SelectedItem, whose write-back escaped
-    /// the suppression window and fired a spurious "set primary to (none specified)" command that wiped
-    /// the saved primary (the persistence bug).
+    /// NOT called on parameter edits — only at construction and from
+    /// <see cref="RefreshAvailableFiles"/>, because reassigning the ItemsSource makes the ComboBox
+    /// transiently null its SelectedItem and that write-back is deferred past the suppression
+    /// window.  <see cref="IsControlResettingItself"/> is what makes the reassignment survivable.
     /// </summary>
     private void BuildAvailableFileLists()
     {

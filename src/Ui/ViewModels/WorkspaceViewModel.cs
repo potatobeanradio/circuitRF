@@ -9052,6 +9052,44 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // A symbol save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
     private void OnSymbolSaveError(string message) => Messages.Error(message);
 
+    /// <summary>
+    /// Re-reads the cell folder behind any open cell-parameter editor for
+    /// <paramref name="cellDir"/> — its own tab and the Properties inspector both — so a view file
+    /// that has just been created shows up in the Primary Schematic / Primary Symbol drop-downs.
+    ///
+    /// <para>Without this the lists are whatever the folder held when the editor was opened: draw a
+    /// symbol for a cell whose editor is already up and the only choice on offer stays "(none
+    /// specified)" until circuitRF is restarted.</para>
+    /// </summary>
+    private void RefreshCellEditorFileLists(string? cellDir)
+    {
+        if (cellDir is null) return;
+
+        if (_openDocsByPath.TryGetValue(cellDir, out var doc) && doc is CellParameterEditorDocument cellDoc)
+            cellDoc.ViewModel.RefreshAvailableFiles();
+
+        // The inspector's VM is a SECOND editor over the same .ccell (built on tree selection), so
+        // it needs the same refresh — it is not the tab's view model.
+        if (_factory.PropertiesTool?.CellEditorVm is { } inspectorVm
+            && SameDirectory(Path.GetDirectoryName(inspectorVm.CcellPath), cellDir))
+        {
+            inspectorVm.RefreshAvailableFiles();
+        }
+    }
+
+    private static bool SameDirectory(string? a, string? b)
+    {
+        if (a is null || b is null) return false;
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
+                Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     private void OnSymbolSaved(string savedSymPath)
     {
         // Derive cell folder: .../CellName/symbol/foo.csym → .../CellName
@@ -9062,6 +9100,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         else
             CellSymbolResolver.InvalidateAll();
         RebuildOpenSchematics();
+        RefreshCellEditorFileLists(cellDir);
     }
 
     /// <summary>
@@ -9074,6 +9113,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CellSymbolResolver.Invalidate(cellAbsDir);
         _factory.ProjectTreeTool?.Refresh();
         RebuildOpenSchematics();
+        RefreshCellEditorFileLists(cellAbsDir);
     }
 
     /// <summary>
@@ -11567,6 +11607,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath[filePath] = doc;
             HookSymbolCellDirty(doc);
 
+            RefreshCellEditorFileLists(cellDir);
             Messages.Success("Created", filePath);
         }
         catch (Exception ex)
@@ -11661,6 +11702,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
+            RefreshCellEditorFileLists(cellDir);
             Messages.Success("Created", filePath);
             return true;
         }
@@ -11730,6 +11772,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath[filePath] = doc;
             HookLayoutCellDirty(doc);
 
+            RefreshCellEditorFileLists(cellDir);
             Messages.Success("Created", filePath);
         }
         catch (Exception ex)

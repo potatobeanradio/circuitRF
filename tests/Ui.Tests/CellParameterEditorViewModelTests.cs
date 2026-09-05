@@ -272,4 +272,92 @@ public class CellParameterEditorViewModelTests
     {
         Assert.Equal(expected, CellParameterRowViewModel.IsValidParamName(name));
     }
+
+    // ── Primary Symbol drop-down tracks the cell folder ───────────────────────
+
+    /// <summary>
+    /// Draw a symbol for a cell whose editor is already open and the new <c>.csym</c> must become
+    /// selectable.  It used to appear only after a restart: the file lists were built once at
+    /// construction and nothing rebuilt them, so the drop-down kept offering "(none specified)"
+    /// alone and the symbol could never be made primary.
+    /// </summary>
+    [Fact]
+    public void RefreshAvailableFiles_PicksUpASymbolDrawnAfterTheEditorWasOpened()
+    {
+        var (vm, model, cellDir) = CreateCellFolderVm();
+        try
+        {
+            Assert.Equal("(none specified)", Assert.Single(vm.AvailableSymbols));
+
+            File.WriteAllText(Path.Combine(cellDir, CellFolder.SymbolSubFolder, "MyCell.csym"), "{}");
+
+            vm.RefreshAvailableFiles();
+            Assert.Contains("MyCell.csym", vm.AvailableSymbols);
+
+            vm.SelectedPrimarySymbol = "MyCell.csym";
+            Assert.Equal("MyCell.csym", model.PrimarySymbol);
+            Assert.Equal("MyCell.csym", CellPersistence.LoadFromFile(model.CcellPath).PrimarySymbol);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(cellDir)!, recursive: true); }
+    }
+
+    /// <summary>
+    /// Rebuilding the ItemsSource makes the bound ComboBox clear its own SelectedItem and write the
+    /// null back after the suppression window has closed.  That must not be recorded as an edit:
+    /// it is what wiped the saved primary before, and is why the lists were frozen at construction.
+    /// </summary>
+    [Fact]
+    public void AComboBoxClearingItsOwnSelection_DoesNotWipeTheSavedPrimary()
+    {
+        var (vm, model, cellDir) = CreateCellFolderVm();
+        try
+        {
+            File.WriteAllText(Path.Combine(cellDir, CellFolder.SymbolSubFolder, "a.csym"), "{}");
+            File.WriteAllText(Path.Combine(cellDir, CellFolder.SymbolSubFolder, "b.csym"), "{}");
+            vm.RefreshAvailableFiles();
+
+            vm.SelectedPrimarySymbol = "b.csym";
+            Assert.Equal("b.csym", model.PrimarySymbol);
+
+            // The deferred write-back, exactly as the control makes it — outside any guard.
+            vm.SelectedPrimarySymbol = null!;
+
+            Assert.Equal("b.csym", model.PrimarySymbol);
+            Assert.Equal("b.csym", CellPersistence.LoadFromFile(model.CcellPath).PrimarySymbol);
+            Assert.Equal("b.csym", vm.SelectedPrimarySymbol);   // and the combo shows it again
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(cellDir)!, recursive: true); }
+    }
+
+    /// <summary>"(none specified)" is a real choice and must still clear the primary.</summary>
+    [Fact]
+    public void SelectingNoneSpecified_ClearsThePrimary()
+    {
+        var (vm, model, cellDir) = CreateCellFolderVm();
+        try
+        {
+            File.WriteAllText(Path.Combine(cellDir, CellFolder.SymbolSubFolder, "a.csym"), "{}");
+            vm.RefreshAvailableFiles();
+            vm.SelectedPrimarySymbol = "a.csym";
+            Assert.Equal("a.csym", model.PrimarySymbol);
+
+            vm.SelectedPrimarySymbol = "(none specified)";
+            Assert.Null(model.PrimarySymbol);
+            Assert.Null(CellPersistence.LoadFromFile(model.CcellPath).PrimarySymbol);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(cellDir)!, recursive: true); }
+    }
+
+    /// <summary>A real cell FOLDER (not a bare .ccell) — the file lists read its sub-folders.</summary>
+    private static (CellParameterEditorViewModel vm, CellParameterEditModel model, string cellDir)
+        CreateCellFolderVm()
+    {
+        var root    = Path.Combine(Path.GetTempPath(), "crf-cellvm-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(root);
+        var cellDir = CellFolder.CreateCellFolder(root, "MyCell");
+
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var model     = new CellParameterEditModel(ccellPath, CellPersistence.LoadFromFile(ccellPath));
+        return (new CellParameterEditorViewModel("MyCell", model), model, cellDir);
+    }
 }
