@@ -402,6 +402,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         NewFolderInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
+        SaveWorkspaceAsCommand.NotifyCanExecuteChanged();
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
         ReferenceWorkspaceCommand.NotifyCanExecuteChanged();
         AddCellToWorkspaceCommand.NotifyCanExecuteChanged();
@@ -1507,46 +1508,115 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void CloseWorkspaceWindow() => Views.WorkspaceLocator.WindowFor(this)?.Close();
 
     [RelayCommand]
-    private async Task SaveWorkspace(Window? owner)
+    private void SaveWorkspace()
     {
         if (CurrentWorkspacePath is not null)
         {
             WriteWorkspaceFile(CurrentWorkspacePath);
             return;
         }
-        await SaveWorkspaceAs(owner);
+
+        // No workspace is open, so there is nothing to write and nothing to copy. This used to fall
+        // through to Save Workspace As…, which asked for a file name and wrote a lone manifest into
+        // a folder holding none of the things a workspace is — see SaveWorkspaceAs's own note. Say
+        // what the user actually needs instead of performing a save that produces nothing usable.
+        Messages.Info("No workspace is open. Use File ▸ New Workspace… to create one, "
+                    + "or File ▸ Open Workspace… to open an existing one.");
     }
 
-    [RelayCommand]
+    /// <summary>
+    /// File ▸ Save Workspace As… — the whole workspace FOLDER copied somewhere else, which this
+    /// window then switches to.
+    ///
+    /// <para><b>It was a file save until 2026-09-05, and every consequence of that was wrong.</b> A
+    /// workspace is a directory whose manifest is a dotfile named literally <c>.cws</c>, so the old
+    /// <c>SaveFilePicker</c> wrote <c>untitled.cws</c> — a name <c>Open Workspace…</c> cannot find,
+    /// since it looks for <c>&lt;folder&gt;/.cws</c>, as do the scanner and the reference registry. It
+    /// copied no cell, no technology and no document; assigning the picked path to
+    /// <c>CurrentWorkspacePath</c> silently re-rooted this window at a folder with nothing in it; and
+    /// <c>WriteWorkspaceFile</c> then found every open document OUTSIDE that new root and dropped the
+    /// entire open-document list, so what landed on disk held a dock layout and nothing else. The
+    /// advisory lock stayed on the workspace being left, too, because only the switch path moves it.
+    /// The mechanics of the replacement live in <see cref="WorkspaceCopy"/>.</para>
+    ///
+    /// <para><b>The window follows the copy</b>, which is what Save As means everywhere else and is
+    /// also the only outcome that stays consistent: routing through
+    /// <see cref="SwitchToWorkspaceReporting"/> drops the source's lock, takes the copy's, and reopens
+    /// the same tabs out of the copy's own <c>.cws</c> — whose document paths are workspace-relative,
+    /// so they resolve against the copy without a single rewrite.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCloseWorkspace))]
     private async Task SaveWorkspaceAs(Window? owner)
     {
         var window = ResolveOwner(owner);
-        if (window is null) return;
-        var result = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save Workspace As",
-            SuggestedFileName = "untitled",
-            DefaultExtension = "cws",
-            FileTypeChoices = new[]
-            {
-                new FilePickerFileType("circuitRF Workspace") { Patterns = new[] { "*.cws" } },
-            },
-        });
+        if (window is null || CurrentWorkspacePath is null) return;
 
-        if (result is null) return;
+        // A copy is built from what is on DISK — so unsaved work is offered up first, through the
+        // same prompt and for the same reason as Archive Workspace…: copying over the top of unsaved
+        // edits produces a copy of a design nobody has, and nobody finds out until they open it.
+        if (HasAnyDirtyWork(includeFloated: false) &&
+            !await PromptSaveBeforeClose(window, "saving a copy of the workspace", includeFloated: false))
+            return;
 
-        // SL2 R-sl2-13: refuse at the picker rather than accepting the path, adopting it as
-        // CurrentWorkspacePath, and then writing nothing — the choke point (R-sl2-6) would skip the
-        // write silently and correctly, leaving the shell pointed at a workspace that does not exist.
-        string picked = result.Path.LocalPath;
-        if (UnwritableParentRefusal(Path.GetDirectoryName(picked), "The workspace was not saved") is { } refusal)
+        // The .cws is always refreshed first: the dock arrangement and the open-document list reach
+        // disk only from here, and they are what the copy will come up in.
+        WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+
+        string sourceRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        string parentDir  = Path.GetDirectoryName(sourceRoot) ?? sourceRoot;
+
+        var choice = await new SaveWorkspaceAsDialog(sourceRoot, parentDir)
+            .ShowDialog<SaveWorkspaceAsResult?>(window);
+        if (choice is null) return;
+
+        string destRoot = Path.Combine(choice.ParentDir, choice.Name);
+
+        // SL2 R-sl2-13: refuse here, naming the directory, rather than part-way through a copy that
+        // would leave a half-written workspace to clean up and report the failure as a file error
+        // about whichever file happened to be first.
+        if (UnwritableParentRefusal(choice.ParentDir, "The workspace was not copied") is { } refusal)
         {
             Messages.Error(refusal);
             return;
         }
 
-        CurrentWorkspacePath = picked;
-        WriteWorkspaceFile(CurrentWorkspacePath);
+        // Re-asked at commit time. The dialog answered this while the user was typing; the answer is
+        // a moment old and the filesystem is shared.
+        if (WorkspaceCopy.Refusal(sourceRoot, destRoot) is { } stale)
+        {
+            Messages.Error(stale);
+            return;
+        }
+
+        WorkspaceCopyResult result;
+        try   { result = await Task.Run(() => WorkspaceCopy.Run(sourceRoot, destRoot)); }
+        catch (Exception ex)
+        {
+            if (FileAccessDiagnostics.TryDescribe(destRoot, ex, FileAccessOperation.Saving) is { } diagnostic)
+                Messages.PostDiagnostic(diagnostic, destRoot);
+            else
+                Messages.Error($"The workspace was not copied — {ex.Message}");
+            return;
+        }
+
+        Messages.Success(
+            $"Copied {result.FileCount} file(s) to '{choice.Name}' " +
+            $"({WorkspaceArchivePlan.FormatSize(result.Bytes)}).");
+
+        if (result.RewrittenFiles.Count > 0)
+            Messages.Info(
+                $"Repointed references in {result.RewrittenFiles.Count} file(s) so they still " +
+                "resolve from the copy.");
+
+        // Surfaced, never rolled back — the same contract the archive writer keeps. The copy is on
+        // disk either way, and naming what did not come across is the only thing that leaves the user
+        // able to act on it.
+        foreach (var failure in result.Failures)
+            Messages.Warning($"Not copied, or not repaired: {failure}");
+
+        _lastWorkspaceParentDir = choice.ParentDir;
+
+        await SwitchToWorkspaceReporting(Path.Combine(destRoot, WorkspaceCopy.CwsFileName));
     }
 
     // ── Archive / Unarchive (owner request, 2026-08-15) ───────────────────────
@@ -11176,7 +11246,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
           + $"'{Path.GetFileName(newTechPath)}' from now on:\n\n    {names}{more}\n\n"
           + $"{difference}\n\n"
           + "Their shapes keep their layer numbers, so any layer the two disagree about changes "
-          + "meaning. To change only one layout, use \u201cChange Technology\u2026\u201d in that "
+          + "meaning. To change only one layout, use \u201cChange Technology…\u201d in that "
           + "layout instead.";
 
         var choice = await new Views.Dialogs.SaveChangesDialog(

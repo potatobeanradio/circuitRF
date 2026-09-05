@@ -1,5 +1,86 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## File ▸ Save Workspace As… was a dead end, and is now a folder copy (2026-09-05)
+
+**Reported as:** the menu offers to save a `.crfw` file — is that spelling dead, and if the item is a
+dead end, clean it up; a Save Workspace As… is welcome, but it should write the whole workspace
+DIRECTORY somewhere else, not one file.
+
+**`.crfw` was already gone as a save target, and had been for a long time.** It was the original
+workspace spelling; commit `74a64a66` (Phase 6d) changed both the open filter and
+`DefaultExtension = "crfw"` to `cws`, so the picker had offered `*.cws` ever since — a `.crfw` in a
+live dialog means an old installed build, not this tree. What survives is a READ alias, deliberately:
+`App.OpenFiles` still accepts `.crfw`, and the macOS plist, the WiX `.wxs` and the Linux mime file
+still register it, so a workspace saved by a build from that era still double-clicks. That is
+compatibility, not residue, and it stays.
+
+**The extension was never the problem.** A workspace is a FOLDER whose manifest is a dotfile named
+literally `.cws` — no stem. The command was an ordinary `SaveFilePicker`, and every consequence of
+that was wrong at once:
+
+- It wrote `untitled.cws`, **a name nothing in circuitRF looks for.** `Open Workspace…` opens
+  `Path.Combine(pickedFolder, ".cws")`, and `WorkspaceScanner`, `MoveRefRegistry`,
+  `WorkspaceViewModel.ExternalRefs`, `CellRelink` and `WorkspaceArchiveScanner` all hard-code the
+  same whole-file name. Only a double-click could ever reach the result, by extension match.
+- **It copied nothing** — no cell, no `tech/`, no document. One JSON file.
+- **It silently re-rooted the live window.** `CurrentWorkspacePath = picked` fires
+  `OnCurrentWorkspacePathChanged`, which re-scans the Project Tree at the new folder, re-points the
+  pCell generators there and re-points the Analyses tool.
+- **The file it then wrote was empty of content.** `WriteWorkspaceFile` derives `wsDir` from the new
+  path, so every open document failed `WorkspaceRootFinder.IsOutside` and was skipped —
+  `OpenDocuments` and `ActiveDocumentPath` written as null — while `LibraryRefs`/`KnownFiles`/
+  `ReferencedCells` were read back from the nonexistent target `.cws` and came out empty too. What
+  landed held a dock layout, a colour scheme and the tree filter flags. Nothing else.
+- **The advisory lock was left behind.** `SwitchToWorkspace` calls `MoveWorkspaceLock`; this path
+  never did, so the source stayed locked and the destination was never taken.
+
+Net effect of using it: a window titled after a folder with an empty tree, every open document
+suddenly foreign, a stray `untitled.cws`, and the original still locked by this process.
+
+**The replacement is `WorkspaceCopy` (`src/Ui/Schematic/WorkspaceCopy.cs`), and it is two existing
+mechanisms joined.** The copy filter is `WorkspaceArchiveScanner.IsSkipped`, shared with Archive
+rather than restated — it already names the rebuildable pCell cache, the OS clutter, the in-flight
+`.crf-tmp` atomic-write files and, the one that matters here, the `.crf-` session bookkeeping.
+**Copying the advisory lock into the destination would hand the copy a held lock naming a session
+that has nothing to do with it.** The reference repair is `WorkspaceMove.Capture`/`Apply`, which
+already expresses exactly this map: resolve every reference against the old tree, re-store it as
+`Store(Relocate(target), Relocate(base))`.
+
+**The one place a copy differs from a move, and it is the whole difference: only the copied workspace
+is captured.** A move makes the old location vanish, so `Capture` is handed every other open
+workspace too and their referrers follow it. A copy leaves the original exactly where it was, so a
+referrer elsewhere must be left pointing at it — **handing `Capture` the other roots is the single
+mistake that silently turns Save-a-Copy into a move**, and `TheOriginalWorkspaceIsLeftByteForByteAlone`
+is the test that catches it. Inside the copy the map then does the rest for free: a reference whose
+target and base both moved re-derives to the identical spelling and is not written at all
+(`WorkspaceMove`'s R-tm1-6), while a reference OUT of the workspace has a moved base and an unmoved
+target and is re-spelled to still name the very same file.
+
+**Three things that are easy to get wrong here:**
+
+- **Invalidate `WorkspaceRootFinder` between the copy and the repair.** `Apply`'s `StoreCellRef`
+  routes through `ExternalCellRef`, whose alias table and workspace walk-up are both memoised per
+  directory, and it is being asked about a tree that appeared a moment ago. The move path invalidates
+  at exactly the same seam.
+- **Empty folders have to be created explicitly.** `EnumerateFilesSafe` yields files only, and a
+  folder the user made and left empty is part of the project tree; dropping it makes the copy a
+  different workspace.
+- **The window follows the copy**, routed through `SwitchToWorkspaceReporting`. That is what Save As
+  means everywhere else, and it is the only outcome that stays consistent: the switch drops the
+  source's lock, takes the copy's, and reopens the same tabs from the copy's own `.cws`, whose
+  document paths are workspace-relative and so resolve against the copy with no rewrite.
+
+**`File ▸ Save Workspace` no longer falls through to Save As with no workspace open.** That fall-through
+is how a window that had never opened a workspace could be talked into writing a manifest of its dock
+layout into an unrelated folder. Save As is now `CanExecute = CanCloseWorkspace` (greyed out, like
+Archive Workspace…), and Save says what to use instead.
+
+**Gates:** `tests/Ui.Tests/WorkspaceCopyTests.cs` — the folder-carries-everything claim, the skip
+list, the not-rewritten and re-spelled reference halves (the second copies to a DIFFERENT DEPTH,
+since same-depth passes with no rewrite at all and would prove nothing), the original left byte for
+byte, the two path refusals, and a source-level gate that the command reaches no file picker and
+never assigns `CurrentWorkspacePath` itself.
+
 ## Design ▸ Place Cell Instance…, and View moving beside Window (2026-09-05)
 
 **Asked for:** the View menu immediately left of Window (window arrangement and view arrangement are
