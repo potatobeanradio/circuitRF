@@ -144,11 +144,15 @@ public static class ComponentLibraryXmlReader
             string section = Attr(connect, "gate") ?? "";
             if (gateName is { Length: > 0 } g && section.Length > 0 && section != g) continue;
 
-            string pin = StripBondSuffix(Attr(connect, "pin") ?? "");
+            string stated = Attr(connect, "pin") ?? "";
+            string pin = StripBondSuffix(stated);
+            bool bonded = pin.Length != stated.Length;
             // One <connect> may name SEVERAL pads, space separated — the format's own spelling for a
             // pin bonded to more than one.
-            foreach (var pad in (Attr(connect, "pad") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                if (pin.Length > 0) part.ConnectTable.Add(new ComponentConnect(pin, pad, section));
+            var pads = (Attr(connect, "pad") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var pad in pads)
+                if (pin.Length > 0)
+                    part.ConnectTable.Add(new ComponentConnect(pin, pad, section, bonded || pads.Length > 1));
         }
 
         // ── The package ─────────────────────────────────────────────────────────────────────────
@@ -499,7 +503,9 @@ public static class ComponentLibraryXmlReader
     {
         if (!Num(e, "x", out double x) || !Num(e, "y", out double y)) return;
 
-        string name = StripBondSuffix(Attr(e, "name") ?? "");
+        string statedName = Attr(e, "name") ?? "";
+        string name = StripBondSuffix(statedName);
+        bool bonded = name.Length != statedName.Length;
         string lengthWord = Attr(e, "length") ?? "long";
         if (!NamedPinLengths.TryGetValue(lengthWord, out int lengthMil))
         {
@@ -509,7 +515,7 @@ public static class ComponentLibraryXmlReader
 
         int px = (int)Math.Round(Mil(x), MidpointRounding.AwayFromZero);
         int py = (int)Math.Round(Mil(y), MidpointRounding.AwayFromZero);
-        drawing.Pins.Add(new ComponentSymbolPin(name, null, px, py));
+        drawing.Pins.Add(new ComponentSymbolPin(name, null, px, py, bonded));
 
         // The lead from the terminal to the body. This is the only place the named length is used; a
         // numeric parse yields 0 for all four names and collapses every lead to nothing.

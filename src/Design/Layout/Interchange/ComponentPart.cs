@@ -27,7 +27,13 @@ namespace CircuitRF.Design.Layout.Interchange;
 /// </summary>
 /// <param name="XMil">Mils, X right.</param>
 /// <param name="YMil">Mils, <b>Y up</b> — the source's own handedness, flipped by the consumer.</param>
-public sealed record ComponentSymbolPin(string Name, string? PadName, int XMil, int YMil);
+/// <param name="Bonded">
+/// This declaration carried the format's own bonding suffix — <c>GND@1</c>, <c>GND@2</c> — which says
+/// it is one of SEVERAL drawn pins of ONE logical pin (R-PL1-11). Two declarations that are bonded and
+/// share a name are one terminal; two that merely share a name are two. Only the format's suffix
+/// separates those, and it is stripped from <paramref name="Name"/>, so it is recorded here instead.
+/// </param>
+public sealed record ComponentSymbolPin(string Name, string? PadName, int XMil, int YMil, bool Bonded = false);
 
 /// <summary>One symbol section — a whole symbol for a single-section part, one gate of a multi-section
 /// one (R-PL1-23).</summary>
@@ -119,7 +125,9 @@ public sealed class ComponentPart
 /// <param name="Pin">The SYMBOL pin's name, with any format-level bonding suffix already removed:
 /// <c>GND@1</c> and <c>GND@2</c> are one logical pin bonded to two pads, and the <c>@n</c> belongs to
 /// the format rather than to the name (R-PL1-11).</param>
-public sealed record ComponentConnect(string Pin, string Pad, string? Section = null);
+/// <param name="Bonded">As <see cref="ComponentSymbolPin.Bonded"/> — this row named the pin with the
+/// format's bonding suffix, so it is one of several pads of one logical pin.</param>
+public sealed record ComponentConnect(string Pin, string Pad, string? Section = null, bool Bonded = false);
 
 // ── The one place PortIndex is decided ───────────────────────────────────────────────────────────
 
@@ -131,7 +139,17 @@ public sealed record ComponentConnect(string Pin, string Pad, string? Section = 
 /// <param name="PadName">Null for a symbol pin the map joins to no pad.</param>
 /// <param name="PinName">Null for a pad no symbol pin references — a mounting or shield pad, or the
 /// second pad of a pin bonded to two.</param>
-public sealed record ComponentTerminal(int PortIndex, string? PadName, string? PinName);
+/// <param name="SymbolPinIndex">
+/// WHICH declaration in <see cref="ComponentSymbolDrawing.Pins"/> this terminal is, or -1 for a pad no
+/// symbol pin references.
+///
+/// <para><b>A pin name is not an identity.</b> A real part declares <c>VSS</c> seven times and
+/// <c>VDD</c> six, each its own pin bonded to its own pad, so a join keyed on the name reads six of
+/// those seven as "one logical pin bonded to seven pads" — it drops six terminals' symbol side and
+/// gives all seven declarations one <c>PortIndex</c>. The declaration is the identity; the name is
+/// text that happens to repeat.</para>
+/// </param>
+public sealed record ComponentTerminal(int PortIndex, string? PadName, string? PinName, int SymbolPinIndex = -1);
 
 /// <summary>
 /// Builds the ordered terminal table — <b>the invariant this whole phase exists to preserve</b>.
@@ -162,21 +180,68 @@ public static class ComponentTerminals
     /// the same pads.</param>
     public static Result Build(ComponentPart part, IReadOnlyList<string> padOrder)
     {
-        // pad → the symbol pin bonded to it. Both spellings of the map land here.
-        var pinByPad = new Dictionary<string, string>(StringComparer.Ordinal);
+        var symbolPins = part.Symbol?.Pins ?? [];
+
+        // ── Which declarations are ONE pin ──────────────────────────────────────────────────────
+        //
+        // Ordinarily a declaration is a terminal: a part declares VSS seven times, each its own pin on
+        // its own pad, and a join keyed on the name would collapse six of them. The one exception is
+        // the format that spells one logical pin's several drawn halves `GND@1`/`GND@2` — those share
+        // an identity, which is what makes the second pad a pad with no symbol pin rather than a second
+        // GND terminal. The suffix is the ONLY thing separating the two cases.
+        var identity = new int[symbolPins.Count];
+        for (int i = 0; i < symbolPins.Count; i++)
+        {
+            identity[i] = i;
+            if (!symbolPins[i].Bonded) continue;
+            for (int j = 0; j < i; j++)
+                if (symbolPins[j].Bonded
+                    && string.Equals(symbolPins[j].Name, symbolPins[i].Name, StringComparison.Ordinal))
+                {
+                    identity[i] = identity[j];
+                    break;
+                }
+        }
+
+        // pad → the symbol pin bonded to it, as (declaration index, name). The INDEX is the identity —
+        // see ComponentTerminal.SymbolPinIndex for why a name is not one.
+        var pinByPad = new Dictionary<string, (int Index, string Name)>(StringComparer.Ordinal);
         var padsByPin = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        void Join(string pin, string pad)
+        void Join(int index, string pin, string pad)
         {
             if (pad.Length == 0) return;
-            pinByPad.TryAdd(pad, pin);
-            if (!padsByPin.TryGetValue(pin, out var pads)) padsByPin[pin] = pads = [];
+            pinByPad.TryAdd(pad, (index, pin));
+            string key = KeyOf(index, pin);
+            if (!padsByPin.TryGetValue(key, out var pads)) padsByPin[key] = pads = [];
             if (!pads.Contains(pad)) pads.Add(pad);
         }
 
-        foreach (var c in part.ConnectTable) Join(c.Pin, c.Pad);
-        foreach (var p in part.Symbol?.Pins ?? [])
-            if (p.PadName is { Length: > 0 } pad) Join(p.Name, pad);
+        // ── The two spellings of the map ────────────────────────────────────────────────────────
+        //
+        // A separate table names the pin, and it is the one spelling that can bond ONE pin to several
+        // pads — so its rows are resolved to declarations by name, in order: the k-th row naming a name
+        // takes the k-th declaration of it, and rows past the last declaration bond to that one. Two
+        // pins called VSS with two rows are therefore two terminals, while one pin called GND with two
+        // rows (the format's own `GND@1`/`GND@2`, already stripped) is one pin on two pads.
+        foreach (var group in part.ConnectTable.GroupBy(c => c.Pin, StringComparer.Ordinal))
+        {
+            var declarations = Enumerable.Range(0, symbolPins.Count)
+                .Where(i => string.Equals(symbolPins[i].Name, group.Key, StringComparison.Ordinal))
+                .ToList();
+            int k = 0;
+            foreach (var c in group)
+            {
+                int declaration = declarations.Count == 0 ? -1 : declarations[Math.Min(k, declarations.Count - 1)];
+                Join(declaration < 0 ? -1 : identity[declaration], c.Pin, c.Pad);
+                k++;
+            }
+        }
+
+        // The other spelling states the pad inside the pin, so each DECLARATION joins its own pad and
+        // no name is consulted at all.
+        for (int i = 0; i < symbolPins.Count; i++)
+            if (symbolPins[i].PadName is { Length: > 0 } pad) Join(identity[i], symbolPins[i].Name, pad);
 
         // ── Padded terminals first, in pad order ────────────────────────────────────────────────
         var padded = new List<string>(padOrder.Count);
@@ -208,28 +273,36 @@ public static class ComponentTerminals
         var pinPlaced = new HashSet<string>(StringComparer.Ordinal);
         foreach (var pad in padded)
         {
-            string? pin = pinByPad.TryGetValue(pad, out var p) ? p : null;
+            (int Index, string Name)? pin = pinByPad.TryGetValue(pad, out var p) ? p : null;
 
-            // A pin bonded to SEVERAL pads appears once in the symbol, so only its first pad carries
-            // the symbol pin. The rest are real terminals with real copper and no drawn pin of their
-            // own — reported, never dropped and never invented (R-PL1-11).
-            if (pin is not null && !pinPlaced.Add(pin)) { pin = null; padsWithNoPin++; }
+            // A pin bonded to SEVERAL pads is ONE declaration, so only its first pad carries the symbol
+            // pin. The rest are real terminals with real copper and no drawn pin of their own —
+            // reported, never dropped and never invented (R-PL1-11).
+            if (pin is { } joined && !pinPlaced.Add(KeyOf(joined.Index, joined.Name)))
+            {
+                pin = null;
+                padsWithNoPin++;
+            }
             else if (pin is null) padsWithNoPin++;
 
-            terminals.Add(new ComponentTerminal(index++, pad, pin));
+            terminals.Add(new ComponentTerminal(index++, pad, pin?.Name, pin?.Index ?? -1));
         }
 
         // ── Then the symbol pins that joined to nothing, in declaration order ───────────────────
         int pinsWithNoPad = 0;
-        foreach (var pin in part.Symbol?.Pins ?? [])
+        for (int i = 0; i < symbolPins.Count; i++)
         {
-            if (padsByPin.ContainsKey(pin.Name)) continue;
-            if (!pinPlaced.Add(pin.Name)) continue;
+            string key = KeyOf(identity[i], symbolPins[i].Name);
+            if (padsByPin.ContainsKey(key)) continue;
+            if (!pinPlaced.Add(key)) continue;
             pinsWithNoPad++;
-            terminals.Add(new ComponentTerminal(index++, null, pin.Name));
+            terminals.Add(new ComponentTerminal(index++, null, symbolPins[i].Name, identity[i]));
         }
 
         return new Result(terminals, pinsWithNoPad, padsWithNoPin);
     }
 
+    /// <summary>The identity of one symbol pin: its declaration when it has one, its name only when
+    /// the map named a pin the symbol does not declare.</summary>
+    private static string KeyOf(int index, string name) => index >= 0 ? "#" + index : "$" + name;
 }

@@ -1,0 +1,122 @@
+.FILETYPE CELL_LIBRARY
+.VERSION "1.01.01"
+
+.UNITS TH
+
+.PACKAGE_CELL "GIZMO4_LAND"
+ ..NUMBER_LAYERS 4
+ ..PACKAGE_GROUP IC_SOIC
+ ..PIN "1"
+  ...XY (-80, 30)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "2"
+  ...XY (-80, 10)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "3"
+  ...XY (80, 10)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "4"
+  ...XY (80, 30)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "TPAD"
+  ...XY (0, 0)
+  ...PADSTACK "LANDB"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..ASSEMBLY_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 0
+   ....XY (-100, -20)
+          (100, -20)
+          (100, 40)
+ ..SILKSCREEN_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 5
+   ....XY (-100, 40)
+          (-100, -20)
+.PACKAGE_CELL "GIZMO4_LAND-M"
+ ..NUMBER_LAYERS 4
+ ..PACKAGE_GROUP IC_SOIC
+ ..PIN "1"
+  ...XY (-72, 27)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "2"
+  ...XY (-72, 9)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "3"
+  ...XY (72, 9)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "4"
+  ...XY (72, 27)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "TPAD"
+  ...XY (0, 0)
+  ...PADSTACK "LANDB"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..ASSEMBLY_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 0
+   ....XY (-90, -18)
+          (90, -18)
+          (90, 36)
+ ..SILKSCREEN_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 5
+   ....XY (-90, 36)
+          (-90, -18)
+.PACKAGE_CELL "GIZMO4_LAND-L"
+ ..NUMBER_LAYERS 4
+ ..PACKAGE_GROUP IC_SOIC
+ ..PIN "1"
+  ...XY (-88, 33)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "2"
+  ...XY (-88, 11)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "3"
+  ...XY (88, 11)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "4"
+  ...XY (88, 33)
+  ...PADSTACK "LANDA"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..PIN "TPAD"
+  ...XY (0, 0)
+  ...PADSTACK "LANDB"
+  ...ROTATION 0
+  ...PIN_OPTIONS NONE
+ ..ASSEMBLY_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 0
+   ....XY (-110, -22)
+          (110, -22)
+          (110, 44)
+ ..SILKSCREEN_OUTLINE
+  ...POLYLINE_PATH
+   ....WIDTH 5
+   ....XY (-110, 44)
+          (-110, -22)

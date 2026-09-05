@@ -110,6 +110,138 @@ public class ComponentImportTests : IDisposable
         Assert.Contains("text format", skipped);       // the prose named .kicad_sym
     }
 
+    // ── Gate 2c: one candidate is ONE component, never two folders' worth ───────────────────────
+
+    /// <summary>
+    /// A library folder holding the SAME part written out once per target format, in sibling folders,
+    /// yields one candidate per folder — never one candidate stitched out of several.
+    ///
+    /// <para>Ranking the whole tree as a single pool is what this holds shut, and it fails loudly in
+    /// two different ways: a symbol in one folder pairs with every footprint in the tree (so the cell
+    /// gets land patterns belonging to another part), and a multi-file set reads the FIRST file of each
+    /// kind (so the other folders' parts are silently dropped). Neither shows up on a tree holding one
+    /// part in one format, which is why the fixture holds two of each.</para>
+    /// </summary>
+    [Fact]
+    public void Gate2c_SiblingFormatFolders_AreSeparateCandidates_NeverOneStitchedTogether()
+    {
+        string root = Path.Combine(_dir, "library");
+        void Put(string relative, string[] fixture)
+        {
+            string path = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.Copy(Fixture(fixture), path);
+        }
+
+        // Two S-expression pairs, each with its symbol one level above its land patterns — the shape a
+        // downloaded part actually has, and the reason a group is not simply a directory.
+        Put("partA/sexpr/PART.kicad_sym", ["widget9", "WIDGET9.kicad_sym"]);
+        Put("partA/sexpr/patterns/PART.kicad_mod", ["widget9", "WIDGET9.kicad_mod"]);
+        Put("partB/sexpr/PART.kicad_sym", ["widget9", "WIDGET9.kicad_sym"]);
+        Put("partB/sexpr/patterns/PART.kicad_mod", ["widget9", "WIDGET9.kicad_mod"]);
+
+        // And two copies of a multi-file set, which is the half that used to lose parts silently.
+        foreach (var name in new[] { "PARTLIB.p", "PARTLIB.d", "PARTLIB.c" })
+        {
+            Put($"partA/records/{name}", ["pl2", "records", name]);
+            Put($"partB/records/{name}", ["pl2", "records", name]);
+        }
+
+        var scan = ComponentFolderScan.Scan(root);
+
+        // No candidate spans two parts.
+        foreach (var candidate in scan.Candidates)
+        {
+            var parts = candidate.Files
+                .Select(f => Path.GetRelativePath(root, f.Path).Split(Path.DirectorySeparatorChar)[0])
+                .Distinct().ToList();
+            Assert.Single(parts);
+        }
+
+        // Each S-expression pair kept its own single land pattern — not both parts' worth.
+        var pairs = scan.Candidates
+            .Where(c => c.SymbolFile?.Kind == ComponentFileKind.SymbolSexpr).ToList();
+        Assert.Equal(2, pairs.Count);
+        Assert.All(pairs, c => Assert.Single(c.FootprintFiles));
+
+        // Both record triples survive as their own candidate; neither is swallowed by the other.
+        var triples = scan.Candidates.Where(c => c.Family == ComponentFormatFamily.Records).ToList();
+        Assert.Equal(2, triples.Count);
+        Assert.All(triples, c => Assert.Equal(3, c.Files.Count));
+
+        // And the list says which folder each came from, since several rows read identically without it.
+        Assert.Equal(scan.Candidates.Count, scan.Candidates.Select(c => c.Location + c.FormatSummary).Distinct().Count());
+        Assert.Contains(scan.Candidates, c => c.ToString().Contains("partA", StringComparison.Ordinal));
+        Assert.Contains(scan.Candidates, c => c.ToString().Contains("partB", StringComparison.Ordinal));
+    }
+
+    /// <summary>The best reader still tops the list once groups exist: ordering groups by path would
+    /// preselect whichever format folder sorts first (R-PL1-4).</summary>
+    [Fact]
+    public void Gate2d_TheTopRowIsStillTheBestReader_NotTheFirstFolderAlphabetically()
+    {
+        string root = Path.Combine(_dir, "ranked");
+        void Put(string relative, string[] fixture)
+        {
+            string path = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.Copy(Fixture(fixture), path);
+        }
+
+        Put("aaa-script/Library.scr", ["pl2", "scr", "Library.scr"]);
+        Put("zzz-sexpr/PART.kicad_sym", ["widget9", "WIDGET9.kicad_sym"]);
+        Put("zzz-sexpr/PART.kicad_mod", ["widget9", "WIDGET9.kicad_mod"]);
+
+        var scan = ComponentFolderScan.Scan(root);
+
+        Assert.Equal(ComponentFormatFamily.Pl1, scan.Candidates[0].Family);
+        Assert.Equal(ComponentCompleteness.SymbolFootprintAndMap, scan.Candidates[0].Completeness);
+    }
+
+    /// <summary>
+    /// A scan that hit one of its own ceilings says so. A capped walk reporting three candidates is
+    /// indistinguishable from a folder that holds three, and the whole point of the ceiling is that a
+    /// folder chosen by mistake — a home directory, a filesystem root — cannot crawl forever.
+    /// </summary>
+    [Fact]
+    public void Gate2e_AScanThatHitItsDepthCeiling_SaysSoRatherThanReportingAShortList()
+    {
+        string deep = Path.Combine(_dir, "deep");
+        string dir = deep;
+        for (int i = 0; i <= ComponentFolderScan.MaxDepth + 1; i++) dir = Path.Combine(dir, $"level{i}");
+        Directory.CreateDirectory(dir);
+        File.Copy(Fixture("widget9", "WIDGET9.kicad_mod"), Path.Combine(dir, "PART.kicad_mod"));
+
+        var scan = ComponentFolderScan.Scan(deep);
+
+        Assert.True(scan.Truncated);
+        Assert.NotNull(scan.TruncationNote);
+        Assert.Empty(scan.Candidates);          // the file below the ceiling was never reached
+
+        // And a scan of the same file at a reachable depth is NOT reported as truncated.
+        string shallow = Path.Combine(_dir, "shallow");
+        Directory.CreateDirectory(shallow);
+        File.Copy(Fixture("widget9", "WIDGET9.kicad_mod"), Path.Combine(shallow, "PART.kicad_mod"));
+        var ok = ComponentFolderScan.Scan(shallow);
+        Assert.False(ok.Truncated);
+        Assert.Null(ok.TruncationNote);
+    }
+
+    /// <summary>The scan answers a cancellation between files — the ceilings make it finite, this makes
+    /// it stoppable, and on a network share those are different properties.</summary>
+    [Fact]
+    public void Gate2f_TheScanIsCancellable()
+    {
+        string root = Path.Combine(_dir, "cancellable");
+        Directory.CreateDirectory(root);
+        for (int i = 0; i < 40; i++)
+            File.Copy(Fixture("widget9", "WIDGET9.kicad_mod"), Path.Combine(root, $"PART{i}.kicad_mod"));
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.Throws<OperationCanceledException>(() => ComponentFolderScan.Scan(root, cts.Token));
+    }
+
     /// <summary>R-PL1-30: a drawing is classified as a dimensioned DRAWING and never offered as a
     /// component candidate. It carries no pad identifiers and no pin names, so it cannot supply the
     /// pin↔pad map, and it is listed in the skipped summary instead.</summary>
@@ -224,6 +356,47 @@ public class ComponentImportTests : IDisposable
         var result = Import(part);
         Assert.Contains(result.Messages, m =>
             m.Contains("1 symbol pin(s) reference no pad") && m.Contains("2 pad(s) are referenced by no symbol pin"));
+    }
+
+    /// <summary>
+    /// R-PL1-8/R-PL1-11: a pin NAME is not a pin identity. The fixture declares <c>GND</c> three times,
+    /// each on its own pad — the ordinary shape of any real part, where <c>VSS</c> and <c>VDD</c> repeat
+    /// half a dozen times each.
+    ///
+    /// <para>A join keyed on the name reads the second and third as "one logical pin bonded to three
+    /// pads": two terminals lose their symbol side, and — worse, because nothing reports it — all three
+    /// declarations are given the FIRST one's <c>PortIndex</c>, so three symbol pins claim one terminal.
+    /// Both halves are asserted here.</para>
+    ///
+    /// <para>The bonded case that <i>does</i> collapse is the one the format spells with its own
+    /// <c>@n</c> suffix, and <c>Gate5</c> holds that shut from the other side.</para>
+    /// </summary>
+    [Fact]
+    public void Gate5b_ARepeatedPinName_IsSeveralPins_NotOnePinOnSeveralPads()
+    {
+        var part = ReadPart(Candidate(
+            (["repeated", "REPEAT6.kicad_sym"], ComponentFileKind.SymbolSexpr),
+            (["repeated", "REPEAT6.kicad_mod"], ComponentFileKind.FootprintSexpr)));
+
+        var terminals = ComponentTerminals.Build(part, part.Footprints[0].PadNames);
+
+        Assert.Equal(6, terminals.Terminals.Count);
+        Assert.Equal(0, terminals.PadsWithNoPin);
+        Assert.Equal(0, terminals.PinsWithNoPad);
+        Assert.Equal(
+            ["IN", "GND", "GND", "GND", "VDD", "OUT"],
+            terminals.Terminals.Select(t => t.PinName));
+
+        // And each declaration got its OWN port, in both views.
+        string cellDir = Import(part).CellDir!;
+        var symbol = LoadSymbol(cellDir);
+        var layout = LoadLayout(cellDir);
+
+        Assert.Equal(6, symbol.Pins.Select(p => p.PortIndex).Distinct().Count());
+        foreach (var pin in symbol.Pins)
+            Assert.Equal(pin.Name, terminals.Terminals[pin.PortIndex - 1].PinName);
+        for (int i = 0; i < layout.Pins.Count; i++)
+            Assert.Equal(terminals.Terminals[i].PadName, layout.Pins[i].Name);
     }
 
     // ── Gate 6: footprint units (R-PL1-14 / R-L4d-2) ────────────────────────────────────────────

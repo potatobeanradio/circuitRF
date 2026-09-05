@@ -1,0 +1,12 @@
+(footprint "REPEAT6" (version 20221018) (generator pl1_fixture)
+  (layer "F.Cu")
+  (descr "Synthetic six-pad land pattern for the repeated-pin-name gate")
+  (attr smd)
+
+  (pad "1" smd rect (at -2.5 -1.27) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at -2.5 0) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "3" smd rect (at -2.5 1.27) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "4" smd rect (at 2.5 1.27) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "5" smd rect (at 2.5 0) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "6" smd rect (at 2.5 -1.27) (size 1.2 0.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+)

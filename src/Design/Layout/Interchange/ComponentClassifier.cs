@@ -49,6 +49,45 @@ public enum ComponentFileKind
 
     /// <summary>Not text at all.</summary>
     Binary,
+
+    // ── PL2's formats (brief-PL2-component-library-breadth.md) ──────────────────────────────────
+    //
+    // Every one of these lands on PL1's entry point, PL1's chooser and PL1's cell-folder output. The
+    // classifier is the ONLY thing PL2 widens (§5) — there is no second import path.
+
+    /// <summary>The part type of the <c>.p</c>/<c>.d</c>/<c>.c</c> triple: the pin↔pad map.</summary>
+    PartRecords,
+
+    /// <summary>The land-pattern decals of that triple — <c>.d</c>.</summary>
+    FootprintRecords,
+
+    /// <summary>The schematic decal of that triple — <c>.c</c>.</summary>
+    SymbolRecords,
+
+    /// <summary>The <c>.hkp</c> part file — dotted grammar, holds the map and the properties.</summary>
+    HkpParts,
+
+    /// <summary>The <c>.hkp</c> cell file — dotted grammar, holds ALL density variants (R-PL2-9).</summary>
+    HkpCells,
+
+    /// <summary>The <c>.hkp</c> padstack file — dotted grammar.</summary>
+    HkpPadstacks,
+
+    /// <summary>The <c>.hkp</c> symbol file — the STARRED grammar, same extension (R-PL2-6).</summary>
+    HkpSymbols,
+
+    /// <summary>An encrypted <c>.hkp</c> twin. Skipped SILENTLY (R-PL2-7): the plaintext original sits
+    /// beside it, so reporting this as unreadable doubles the chooser's noise for no information.</summary>
+    HkpEncrypted,
+
+    /// <summary>The <c>.PLX</c>/<c>.DSL</c> S-expression library — one reader, two extensions.</summary>
+    PlxLibrary,
+
+    /// <summary>The flat tab-separated <c>.cxf</c> library.</summary>
+    CxfLibrary,
+
+    /// <summary>The <c>.scr</c> command script — interpreted, not parsed (R-PL2-15).</summary>
+    ScriptLibrary,
 }
 
 /// <summary>Classifies one file by its content.</summary>
@@ -62,7 +101,10 @@ public static class ComponentClassifier
     /// <summary>The extensions this phase reads. A refusal lists them (R-PL1-29) so the message names
     /// what would work rather than only what did not.</summary>
     public static readonly IReadOnlyList<string> ReadableExtensions =
-        [".kicad_sym", ".kicad_mod", ".lib", ".lbr"];
+    [
+        ".kicad_sym", ".kicad_mod", ".lib", ".lbr",
+        ".p", ".d", ".c", ".hkp", ".plx", ".dsl", ".cxf", ".scr",
+    ];
 
     public static ComponentFileKind Classify(string path)
     {
@@ -85,6 +127,12 @@ public static class ComponentClassifier
     public static ComponentFileKind ClassifyContent(ReadOnlySpan<byte> head, string extension = "")
     {
         if (head.Length == 0) return ComponentFileKind.Unknown;
+
+        // R-PL2-7, and it must precede the binary test: an encrypted twin IS binary, and letting it
+        // fall through would report it in the skipped summary as "a binary format" — the doubled
+        // noise the rule exists to prevent.
+        if (ComponentHkpReader.IsEncryptedTwin(head)) return ComponentFileKind.HkpEncrypted;
+
         if (LooksBinary(head)) return Model3DByContent(head) ?? ComponentFileKind.Binary;
 
         string text = Decode(head);
@@ -93,6 +141,9 @@ public static class ComponentClassifier
         // ── The three text markers that decide it outright ──────────────────────────────────────
         if (trimmed.StartsWith("EESchema-LIBRARY", StringComparison.OrdinalIgnoreCase))
             return ComponentFileKind.SymbolLegacyText;
+
+        // ── PL2's formats, every one of them by CONTENT ─────────────────────────────────────────
+        if (ClassifyPl2(trimmed, text) is { } pl2) return pl2;
 
         if (trimmed.StartsWith('('))
         {
@@ -132,6 +183,89 @@ public static class ComponentClassifier
             ".dxf" or ".gbr" or ".gtl" or ".gbl" => ComponentFileKind.Drawing,
             _ => ComponentFileKind.UnreadableText,
         };
+    }
+
+    /// <summary>
+    /// PL2's five formats, each by its own first record.
+    ///
+    /// <para><b>R-PL2-6 is the reason the two <c>.hkp</c> grammars are separated HERE</b> rather than
+    /// inside their reader: one extension carries two grammars in the same folder, and the file NAMES
+    /// are not part of any specification, and R-PL2-6 records that they vary between sources. So the
+    /// dispatch is on the first non-comment character (<c>*</c> against <c>.</c>) and, for the dotted
+    /// three, on the <c>.FileType</c> the file declares about itself.</para>
+    /// </summary>
+    private static ComponentFileKind? ClassifyPl2(string trimmed, string text)
+    {
+        // ── The `.p` / `.d` / `.c` triple, each with its own banner ─────────────────────────────
+        //
+        // Tested against the FIRST LINE only, and with Contains rather than StartsWith: the banner is
+        // `*<product>-LIBRARY-PART-TYPES-V9*` and the product word is one this repo does not carry
+        // (R-PL2-18, and ComponentRecordsReader's own note on the constants).
+        int firstBreak = trimmed.IndexOf('\n');
+        string firstLine = (firstBreak < 0 ? trimmed : trimmed[..firstBreak]).TrimEnd('\r');
+
+        if (ComponentRecordsReader.IsBanner(firstLine, ComponentRecordsReader.PartHeader))
+            return ComponentFileKind.PartRecords;
+        if (ComponentRecordsReader.IsBanner(firstLine, ComponentRecordsReader.DecalHeader))
+            return ComponentFileKind.FootprintRecords;
+        if (ComponentRecordsReader.IsBanner(firstLine, ComponentRecordsReader.SymbolHeader))
+            return ComponentFileKind.SymbolRecords;
+
+        // ── The `.PLX` / `.DSL` dialect — the banner is the only difference between them ─────────
+        if (ComponentPlxReader.IsThisDialect(trimmed)) return ComponentFileKind.PlxLibrary;
+
+        // ── The `.hkp` set ──────────────────────────────────────────────────────────────────────
+        switch (ComponentHkpReader.Grammar(text))
+        {
+            case HkpGrammar.Starred when trimmed.StartsWith("*VERSION", StringComparison.OrdinalIgnoreCase)
+                                      || trimmed.Contains("*CELL_OPEN", StringComparison.OrdinalIgnoreCase)
+                                      || trimmed.Contains("*UNITS", StringComparison.OrdinalIgnoreCase):
+                return ComponentFileKind.HkpSymbols;
+
+            case HkpGrammar.Dotted:
+                return ComponentHkpReader.DottedKind(text) switch
+                {
+                    HkpDottedKind.Parts => ComponentFileKind.HkpParts,
+                    HkpDottedKind.Cells => ComponentFileKind.HkpCells,
+                    HkpDottedKind.Padstacks => ComponentFileKind.HkpPadstacks,
+                    _ => null,
+                };
+        }
+
+        // ── `.cxf`: tab-separated `KEY=VALUE` runs, opening on a COMPONENT record ────────────────
+        if (trimmed.StartsWith("COMPONENT", StringComparison.Ordinal) && trimmed.Contains('\t')
+            && trimmed.Contains("NAME=", StringComparison.Ordinal))
+            return ComponentFileKind.CxfLibrary;
+
+        // ── `.scr`: a command script. Recognised by its COMMANDS, since it has no banner at all —
+        //    two of this dialect's opening statements, which prose and a shell script do not have.
+        if (LooksLikeScript(text)) return ComponentFileKind.ScriptLibrary;
+
+        return null;
+    }
+
+    /// <summary>
+    /// A command script of the <c>.scr</c> dialect. Requires TWO distinct opening commands rather than
+    /// one, because a single <c>Grid</c> or <c>Layer</c> line appears in plenty of unrelated text and
+    /// a false positive here routes a file to an interpreter that will refuse it by name — a confusing
+    /// message about a file that was never this format.
+    /// </summary>
+    private static bool LooksLikeScript(string text)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in text.Split('\n').Take(64))
+        {
+            string line = raw.TrimEnd('\r').Trim();
+            if (line.Length == 0 || line[0] == '#') continue;
+            if (!line.EndsWith(';')) continue;
+
+            int space = line.IndexOf(' ');
+            if (space <= 0) continue;
+            string word = line[..space];
+            if (word is "Grid" or "Edit" or "Layer" or "Smd" or "Connect" or "Package" or "Technology")
+                seen.Add(word);
+        }
+        return seen.Count >= 2;
     }
 
     /// <summary>

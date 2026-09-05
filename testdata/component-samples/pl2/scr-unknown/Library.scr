@@ -1,0 +1,77 @@
+# Synthetic fixture, invented part.
+# Layer commands are interleaved with the geometry throughout, which is the point:
+# collapsing them puts every shape on one layer.
+
+Grid mil;
+Set Wire_Bend 2;
+
+Edit 'GIZMO4_LAND.pac';
+Grid Mil;
+Layer 1;
+Smd '1' 60 10 -0 R0 (-80 30);
+Layer 1;
+Smd '2' 60 10 -0 R0 (-80 10);
+Layer 1;
+Smd '3' 60 10 -0 R0 (80 10);
+Layer 1;
+Smd '4' 60 10 -0 R0 (80 30);
+Layer 1;
+Smd 'TPAD' 70 90 -0 R0 (0 0);
+Layer 21;
+Wire 5 (-100 40) (100 40);
+Sculpt 3 7;
+Wire 6 (-100 -20) (100 -20);
+Layer 21;
+Wire 5 (-100 -20) (-100 40);
+Sculpt 3 7;
+Wire 6 (100 -20) (100 40);
+
+Edit 'GIZMO4_LAND-M.pac';
+Grid Mil;
+Layer 1;
+Smd '1' 54 9 -0 R0 (-72 27);
+Layer 1;
+Smd '2' 54 9 -0 R0 (-72 9);
+Layer 1;
+Smd '3' 54 9 -0 R0 (72 9);
+Layer 1;
+Smd '4' 54 9 -0 R0 (72 27);
+Layer 1;
+Smd 'TPAD' 63 81 -0 R0 (0 0);
+Layer 21;
+Wire 5 (-90 36) (90 36);
+
+Edit 'GIZMO4.sym';
+Grid Mil;
+Change Size 82;
+Layer 21;
+Wire 5 (300 200) (1500 200);
+Layer 21;
+Wire 5 (1500 200) (1500 -800);
+Layer 21;
+Wire 5 (1500 -800) (300 -800);
+Layer 21;
+Wire 5 (300 -800) (300 200);
+Pin 'ALPHA' Pas None Long R0 Both 0 (0 0)
+Pin 'DELTA' Pas None Long R0 Both 0 (0 -100)
+Pin 'BETA' Pas None Long R0 Both 0 (0 -300)
+Pin 'GAMMA' Pas None Long R180 Both 0 (1800 -300)
+Pin 'THERMAL' Pas None Long R180 Both 0 (1800 0)
+
+Edit 'GIZMO4.dev';
+Prefix 'U';
+Description 'Synthetic fixture, invented part';
+Package 'GIZMO4_LAND';
+Add GIZMO4 'A' Next  0 (0 0);
+Connect 'A.ALPHA' '1';
+Connect 'A.BETA' '2';
+Connect 'A.GAMMA' '3';
+Connect 'A.DELTA' '4';
+Connect 'A.THERMAL' 'TPAD';
+Package 'GIZMO4_LAND-M' 'GIZMO4_LAND-M';
+Connect 'A.ALPHA' '1';
+Connect 'A.BETA' '2';
+Connect 'A.GAMMA' '3';
+Connect 'A.DELTA' '4';
+Connect 'A.THERMAL' 'TPAD';
+Attribute Manufacturer_Name 'Example Works';

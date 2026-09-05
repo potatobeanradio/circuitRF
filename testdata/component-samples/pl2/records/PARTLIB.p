@@ -1,0 +1,12 @@
+*EXAMPLE-LIBRARY-PART-TYPES-V9*
+
+GIZMO4 GIZMO4_LAND:GIZMO4_LAND_M:GIZMO4_LAND_L I U 2 1 0 0
+"Manufacturer_Name" Example Works
+"Description" Synthetic fixture, invented part
+GATE 1 5 0
+GIZMO4
+1 0 U ALPHA
+4 0 U DELTA
+2 0 U BETA
+3 0 U GAMMA
+TPAD 0 U THERMAL

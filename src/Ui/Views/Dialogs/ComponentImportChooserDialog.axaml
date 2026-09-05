@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
 
         <TextBlock Grid.Row="0" x:Name="HeadingText" FontSize="12" TextWrapping="Wrap"/>
 
@@ -25,7 +25,14 @@
                    Opacity="0.75"
                    TextWrapping="Wrap"/>
 
-        <StackPanel Grid.Row="3"
+        <TextBlock Grid.Row="3"
+                   x:Name="TruncationText"
+                   Margin="0,8,0,0"
+                   FontSize="11"
+                   IsVisible="False"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="4"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="8"

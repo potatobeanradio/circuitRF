@@ -1,5 +1,262 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Phases PL1/PL2 — post-implementation review (2026-09-05)
+
+Both phases re-read against their briefs, and the whole path exercised on library folders shaped the
+way a user's are rather than the way the fixtures are: many parts under one root, each written out
+once per target format into a sibling folder, and pin names that repeat. Every finding below is a
+defect the committed gates passed over. All four are fixed.
+
+### 1. A pin NAME was being used as a pin IDENTITY, and it fails on nearly every real part
+
+`ComponentTerminals.Build` keyed the pin↔pad join on the symbol pin's NAME. R-PL1-11's "a pin bonded
+to several pads appears once in the symbol" was implemented as "a name seen twice is one pin seen
+twice", and those are not the same statement. **A real part declares `VSS` seven times and `VDD` six,
+each its own pin on its own pad** — so six of those seven lost their symbol side, were counted as
+"pads referenced by no symbol pin", and, worse because nothing reported it, **all seven declarations
+were given the FIRST one's `PortIndex`**. That breaks R-PL1-8's whole invariant on the majority of
+parts with more than one supply pin.
+
+Measured, on a 144-pad part whose imported section declares 72 pins: **65 of them joined before the
+fix, 72 after** — all of them. On a 6-terminal part, 5 → 6.
+
+**The identity is the DECLARATION, not the name** (`ComponentTerminal.SymbolPinIndex`, and
+`ComponentImport.BuildSymbol` keys its `PortIndex` lookup on it). The genuine bonded case — the XML
+library's `GND@1`/`GND@2`, one logical pin drawn twice — is separated by the format's own suffix and
+nothing else, so `ComponentSymbolPin.Bonded` / `ComponentConnect.Bonded` record that the suffix was
+there before it is stripped, and only bonded declarations sharing a name collapse to one terminal.
+
+**Why the fixtures could not catch it**: `WIDGET9`'s nine pins have nine distinct names, and every
+other fixture in both phases is the same shape. A part whose pin names are all distinct cannot
+distinguish "keyed on the name" from "keyed on the declaration". `REPEAT6` exists for exactly that
+and declares `GND` three times (`Gate5b`); `Gate5` holds the bonded case shut from the other side.
+
+### 2. One candidate could be built out of two different parts' files
+
+`ComponentFolderScan` ranked the WHOLE scanned tree as a single pool. A library folder holds many
+parts, and one part is routinely written out once per target format into a subfolder of its own, so:
+
+- a symbol in one folder paired with **every** footprint in the tree — one cell came out carrying
+  another part's land patterns, reported only as "these land patterns are not density levels of one
+  pattern";
+- a multi-file set (`.p`/`.d`/`.c`, the `.hkp` four) collected every such file in the tree into ONE
+  candidate, and the reader takes the first file of each kind — **so pointing at a folder of four
+  parts imported one and silently dropped three.**
+
+Measured, on a root holding four parts in eight formats each: **13 candidates before, most of them
+mixtures of two or more parts; 23 after, each one a single component.**
+
+The fix is a grouping pass ahead of the ranking (`RankGrouped`). A group is not a directory — a
+symbol's land patterns genuinely sit in a child folder — so **a directory that directly holds a file
+which can BEGIN a component is a group root, and every other file joins the nearest group root above
+it.** Groups keep their candidates together and are ordered by the best candidate in each, so the
+preselected top row is still the best reader rather than whichever folder sorts first
+(`Gate2c`, `Gate2d`). Each row now names its folder (`ComponentCandidate.Location`), because a part
+written out in eight formats produces rows that are otherwise indistinguishable.
+
+### 3. The folder walk's ceilings were silent, and unstoppable
+
+`MaxDepth`/`MaxFiles` made the walk finite, which is not the same as stoppable: twenty thousand file
+opens on a network share is minutes of apparently-hung window, and a scan that stopped at a ceiling
+reported a short list indistinguishable from a small folder. `Scan` now takes a `CancellationToken`
+and a progress callback and reports `Truncated`; the UI runs it behind the same live progress row and
+Cancel the Gerber import uses, and says when it was cut short (`Gate2e`, `Gate2f`).
+
+### 4. The chooser was skipped on a candidate the user had not pointed at
+
+R-PL1-4's "pointed at a single file, skip the chooser and import it" was implemented as "skip whenever
+the scan found one option", which imports something other than what was clicked and also removes the
+only route to the folder picker. It now skips only when the clicked file IS the whole of the only
+candidate.
+
+### What the review did NOT find
+
+**The readers themselves hold up, and that is the useful half of the answer.** One nine-terminal part
+written out in all seven grammars produces the *same* terminal table from every one of them — same
+order, same pad identifiers, same pin names, both `symPinNum` indirections followed — and 23 of 23
+candidates across four parts import with no refusal and no exception. Multi-section parts remain the
+one visible limitation, and they are named rather than merged (R-PL1-23).
+
+
+## Phase PL2 — COMPLETE: component library import, breadth (2026-09-05)
+
+`docs/sonnet-briefs/brief-PL2-component-library-breadth.md`. Five more formats behind PL1's single
+**File ▸ Import ▸ Component…** — no new menu item, no new cell shape, no second import path. The
+classifier is the only thing widened (§5); everything below `ComponentPart` is PL1's, unchanged.
+
+Gate: `dotnet test tests/Ui.Tests` and `tests/Firewall.Tests` (10), both green. 41 new tests in
+`ComponentImportBreadthTests`, covering the brief's §7 items 1-16.
+
+### 1. All five landed — and the return went flat before the first one, which the owner overrode
+
+**R-PL2-3 asked for the return to be measured after each format and for the phase to stop when it
+went flat. It was flat at the start.** PL1's own completion note (§6, above) already concluded PL2
+was speculative breadth, and PL2 §1 concedes the same in its opening paragraph: every format here
+sits alongside one PL1 already reads, so no part becomes reachable that was not reachable before.
+That was put to the owner before a line was written, with the sizing below, and the decision was to
+build all five as insurance. **Recorded because "we measured and built anyway" is a legitimate
+outcome and "we never measured" is not.**
+
+What PL2 does buy, and it is the honest whole of it:
+
+- **A library folder that happens to hold none of PL1's four now imports** instead of being refused
+  by name (R-PL2-1). That is the entire value proposition, and it is about which format a folder was
+  assembled with, never about which parts exist.
+- **The chooser's "text formats circuitRF has no reader for" count drops sharply** on a folder
+  carrying several of these, because five of its formats stop being noise and one — the encrypted
+  `.hkp` twins — stops being reported at all (R-PL2-7).
+
+**The cost was HIGHER per format than PL1's, not lower, and for a reason worth keeping.** PL1's §2
+records that its footprint half cost 94 lines because `.kicad_mod` *is* the board format and
+`PcbReader.ReadFootprint` already existed. **No PL2 format shares that lineage.** Each states its own
+pads, outlines and layer numbering, so each needed its own footprint geometry reader as well as its
+own symbol reader and its own map join. `ComponentArtwork.cs` (305 lines) exists purely to stop that
+being written five times: readers emit neutral pads/paths/circles and it alone builds the
+`PcbFootprintCell`, synthesises the layer table and converts to DBU.
+
+Measured, in lines:
+
+| Format | Reader | Lines |
+|---|---|---|
+| shared | `ComponentArtwork` + `ComponentFootprintBuilder` | 305 |
+| `.p`/`.d`/`.c` | `ComponentRecordsReader` | 547 |
+| `.hkp` set | `ComponentHkpReader` | 619 |
+| `.PLX`/`.DSL` | `ComponentPlxReader` + `ComponentPlxSexpr` | 370 + 180 |
+| `.cxf` | `ComponentCxfReader` | 359 |
+| `.scr` | `ComponentScrReader` | 417 |
+
+### 2. The `symPinNum` indirection (R-PL2-12), and its undocumented twin in the `.hkp` set
+
+**The brief flags this for `.PLX` only. It is present in the `.hkp` set too, and the brief does not
+say so** — which is the single most useful thing this phase learned.
+
+- **`.PLX`/`.DSL`**: `compDef` states one `compPin` per pad, each carrying a `pinName` and a
+  `symPinNum` that is *not* the pad number. Followed always. **The `padPinMap` cross-check never
+  disagreed on a well-formed file** — it is a redundant restatement, and every file that parsed at
+  all had the two in agreement. It is kept because a disagreement is the exact signature of the bug
+  this rule exists to prevent, and `Gate9b` proves the refusal fires by feeding it a fixture whose
+  two spellings contradict each other on one pad.
+- **The `.hkp` twin**: the part file states the map as three parallel lists (SwapIDs, PinNames,
+  PinNumbers) joined by POSITION, **ordered by pad**; the symbol file numbers its own pins in
+  DRAWING order and carries its own name/number text records keyed by that ordinal. **The two orders
+  are different.** Indexing the part file's lists by a symbol pin's ordinal yields a fully populated,
+  correctly-shaped, wrongly-wired part. The symbol file's own text records are authoritative for the
+  symbol; the two maps are cross-checked as sets and a genuine contradiction is a refusal.
+
+**How both are proven**: `Gate3a` runs one fixture part through all five grammars and asserts one
+map string. The fixture's symbol is drawn in the order ALPHA, DELTA, BETA, GAMMA, THERMAL while its
+pads number 1, 2, 3, 4, TPAD — so an ordinal join produces `1=ALPHA 2=DELTA 3=BETA 4=GAMMA` and the
+correct answer is `1=ALPHA 2=BETA 3=GAMMA 4=DELTA`. Nothing but that assertion separates them.
+
+**The indirection is frequently the identity**, which is the trap inside the trap: a part whose
+symbol happens to be drawn in pad order has `symPinNum == padNum` throughout, and a reader that
+notices this on the file in front of it and takes the shortcut is correct until it is not.
+
+### 3. Was the `.hkp` symbol grammar worth its cost? Yes — and for a reason that is not its content
+
+It is the most work of the five (two grammars behind one extension, four files, a two-step padstack
+name indirection) and it is the only format here whose cell file **names its layers semantically** —
+`ASSEMBLY_OUTLINE`, `SILKSCREEN_OUTLINE`, `PLACEMENT_OUTLINE`. Every other format in this phase
+numbers its layers and ships no legend, so every other reader carries a `RoleOf(int)` table of fixed
+meanings plus an R-PL2-14 report for the rest.
+
+**That makes this format the only one whose layer assignment is not a claim.** If a future format is
+being sized, that property is worth more than its richness: a numbered-layer format's `RoleOf` table
+is the part of its reader that can be quietly wrong for years, because artwork on the wrong
+documentation layer still looks like artwork.
+
+The symbol grammar specifically was worth it for a second reason — being self-sufficient, it is what
+makes the cross-check in §2 possible at all. A format that stated its map once would have offered no
+way to catch the ordinal trap.
+
+### 4. The separate S-expression tokenizer (R-PL2-11): 180 lines, 71 of them code
+
+`ComponentPlxSexpr.cs` is 180 lines total and **71 non-blank, non-comment lines**. The brief
+estimated ~150 and asked for the measurement so the decision could be re-judged rather than
+re-argued: it came in under, and the two dialect quirks that forced it are both inside the ATOM,
+which is the one part of `PcbSexpr` a caller cannot parameterise — commas *inside* coordinate atoms
+(`(pt 0, -100)`) and unit words *after* numbers (`(pinLength 300 mils)`). Widening `PcbSexpr` would
+have put a foreign dialect's quirks into the reader L4d's board import depends on, to save 71 lines.
+
+### 5. The handedness rule here is the INVERSE of PL1's, and that is the sharpest edge in the phase
+
+`PcbUnits.Y` negates because the board format is +y down. **Every format in this phase is already
++y up**, so the footprint half passes Y through untouched — and calling `PcbUnits.Y` out of habit
+mirrors the whole land pattern. The reason is structural rather than incidental: the board format is
+a PCB editor's own on-disk frame (screen convention), while these are library artwork in the
+drafting convention, which is what `.clay` uses.
+
+`Gate3c` holds it shut over a fixture whose pads sit at +30 and +10 mil and nowhere below the axis —
+a land pattern symmetric about its X axis imports identically whether the flip happened or not,
+which is PL1 §3's trap pointing the other way. The symbol half is unaffected: readers hand over +y up
+and `ComponentImport.FlipY` does the `.csym` flip downstream, exactly as PL1's readers do.
+
+### 6. Two things the format documentation does not tell you, both found by replaying counts
+
+- **The `.d`/`.c` decal header declares TWO counted text runs, and they are not adjacent.** `labels`
+  precede the drawn pieces and `texts` follow them. Reading only the first — the obvious mistake,
+  since the two are spelled identically — leaves the cursor `2 × texts` lines short, and the pad
+  stacks are then parsed out of the middle of a free-text label. This is R-PL2-4's exact failure mode
+  and the geometry that comes out of it looks entirely plausible.
+- **A `.scr` restates its whole `Connect` map once per land pattern it edits.** A part with three
+  density variants states the same joins three times. They are one map; `ComponentTerminals` reads
+  the table as a set of joins, and a triplicated entry misreports the pin count of every part that
+  ships variants (`Gate12b`).
+
+### 7. R-PL2-18 vs. the file formats' own magic — resolved, and worth knowing
+
+**Three of these five formats carry a commercial product's name inside the banner a reader must
+match to classify the file at all** — root `CLAUDE.md`'s "Commercial Vendor References" rule forbids
+that name anywhere in the repo, including as a string literal, and names `.kicad_pcb` as the only
+standing exception.
+
+Resolved without an exception: **the banners are matched on their vendor-free substring**, which is
+just as specific in practice. `-LIBRARY-PART-TYPES-`, `-LIBRARY-PCB-DECALS-` and
+`-LIBRARY-SCH-DECALS-` for the triple (anchored to a `*`-prefixed first line); `_LIBRARY_ASCII` and
+`_INTERMEDIATE_ASCII` for the two S-expression extensions, which is also exactly what distinguishes
+them from each other and therefore all the banner was ever needed for. The synthetic fixtures carry
+invented prefixes in the same slot and classify identically.
+
+**The obvious gate for this — scanning new files against a list of tool and manufacturer names — is
+itself forbidden**, and that is not a technicality: the rule says "not even as a glossery of names to
+filter out", so a test storing that list is the leak it claims to prevent. It was written that way
+first, and removed. (It was also blunt enough to be wrong twice over: an early draft matched the
+plural of "pad" against this codebase's own vocabulary, and the word "librarian" against a
+pre-existing note about a site librarian handing out a starter workspace.)
+
+What replaced it asserts the property that makes a leak impossible rather than enumerating leaks:
+`Gate15a` requires every banner constant to BEGIN with the separator that follows a product word, so
+none of them can spell one; `Gate15b` requires each fixture's banner to carry the invented prefix and
+to still classify, which is the proof the product word was never needed; `Gate15c` pins the
+extensions and the family names.
+
+### 8. What still cannot be imported, by category
+
+- **Proprietary binary containers** — schematic and PCB library binaries, and the packaged project
+  files that wrap them. Reported as binary formats in the skipped summary. Out of scope by §5, not
+  by accident.
+- **Three-dimensional models** — reported as such, by count.
+- **Dimensioned drawings** — PL1 R-PL1-30 stands and PL2 §5 restates it: they carry no pad
+  identifiers and no pin names, so they cannot satisfy the pin↔pad invariant and are listed in the
+  skipped summary rather than offered as a component that would import wired to nothing.
+- **Every PL1 limitation, unchanged and now five times as reachable**: no netlist and no simulation
+  model, first section only for a multi-section part, first device variant only, no stackup, no
+  derived symbols. PL1 §6 named multi-section parts and a package-variant chooser as the cheaper
+  next step *because they affect files circuitRF can already read*; landing five more readers has
+  made that argument stronger, not weaker — there are now more paths to a part whose second section
+  is reported rather than imported.
+- **No writer of any of these formats.** §5, and unchanged from PL1.
+
+### 9. One reader-independent fact worth not re-investigating
+
+Two formats describing the same part can disagree about the NAME of a pin, with neither being wrong.
+Where a part has two pins that genuinely share a name, each exporter invents its own disambiguating
+suffix, and two of them assign that suffix to opposite pins. Both files are internally consistent —
+the cross-checks in §2 correctly stay silent — and the pads, coordinates and electrical map agree
+exactly. **This is a property of the source files, not a reader defect, and it is not fixable from
+this side.**
+
+
 ## Phase PL1 — COMPLETE: component library import (footprint + symbol + the map) (2026-09-05)
 
 `docs/sonnet-briefs/brief-PL1-component-library-import.md`. One menu item — **File ▸ Import ▸
@@ -123,6 +380,13 @@ correct-looking arc drawn from the wrong end. `FlipY` therefore negates `Cy` onl
   copper and no drawn pin, reported as such.
 
 ### 5. The folder chooser's ranking — UNVERIFIED against real files, and that must stay visible
+
+> **ANSWERED 2026-09-05, and the predicted cost was real** — see "Phases PL1/PL2 — post-implementation
+> review" at the top of this file, §2. The paragraph below correctly names the opposite error
+> ("a folder holding two unrelated parts in the same format is offered as one candidate") and
+> understates it: for a multi-FILE set the reader takes the first file of each kind, so the other parts
+> were dropped with nothing said. Grouping now happens before ranking. §6's own conclusion below still
+> stands on its own terms.
 
 **§15's question 5 cannot be answered from what this phase tested, and is not.** The ranking is
 exercised only against the synthetic tree `Gate2` builds (`toolA`…`toolE`, five subfolders, two

@@ -4354,6 +4354,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // OpenFilePickerAsync and OpenFolderPickerAsync as separate calls and one dialog cannot return
     // both. The scan then runs over the chosen file's ENCLOSING folder, and the chooser carries an
     // "Another Folder…" button that opens the folder picker.
+    //
+    // The chooser is skipped only when the file the user pointed AT is itself the whole of the only
+    // candidate — R-PL1-4's "pointed at a single file, skip the chooser and import it", read
+    // literally. Skipping it whenever the scan happened to find one option would also remove the only
+    // route to the folder picker, and would import something other than what was clicked.
+    //
+    // AND THE SCAN IS CANCELLABLE. ComponentFolderScan bounds itself — eight levels, twenty thousand
+    // files — so a folder chosen by mistake cannot crawl a whole filesystem, but twenty thousand file
+    // opens on a network share is still minutes of apparently-hung window. So it runs off the thread
+    // behind the same live progress row the Gerber import uses, with a Cancel that answers between
+    // files, and a scan that DID hit a ceiling says so rather than reporting a short list as if it
+    // were the whole folder.
 
     [RelayCommand(CanExecute = nameof(CanImportComponent))]
     private Task ImportComponent(Window? owner) => ImportComponentAsync(owner);
@@ -4380,7 +4392,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
         if (files.Count == 0) return;
 
-        string chosenPath = files[0].Path.LocalPath;
+        string? chosenPath = files[0].Path.LocalPath;
         string? scanRoot = Path.GetDirectoryName(chosenPath) ?? chosenPath;
 
         CircuitRF.Design.Layout.Interchange.ComponentCandidate? candidate = null;
@@ -4388,12 +4400,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             if (scanRoot is null) return;
 
-            var scan = await Task.Run(() =>
-                CircuitRF.Design.Layout.Interchange.ComponentFolderScan.Scan(scanRoot));
+            var scan = await ScanForComponentsAsync(scanRoot);
+            if (scan is null) return;                       // cancelled, and it said so on its own row
 
-            // R-PL1-4: one candidate made of one file means there is nothing to choose among, so the
-            // chooser is skipped and that file is imported.
-            if (scan.Candidates.Count == 1 && scan.Candidates[0].Files.Count == 1)
+            if (scan.TruncationNote is { } note) Messages.Warning(note);
+
+            // R-PL1-4, read literally: the chooser is skipped only when the file that was clicked IS
+            // the whole of the only candidate.
+            if (scan.Candidates.Count == 1
+                && scan.Candidates[0].Files.Count == 1
+                && chosenPath is not null
+                && string.Equals(scan.Candidates[0].Files[0].Path, chosenPath, StringComparison.Ordinal))
             {
                 candidate = scan.Candidates[0];
                 break;
@@ -4420,6 +4437,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     new FolderPickerOpenOptions { Title = "Import Component — Folder", AllowMultiple = false });
                 if (folders.Count == 0) return;
                 scanRoot = folders[0].Path.LocalPath;
+                chosenPath = null;                          // nothing was clicked in the new folder
             }
         }
 
@@ -4469,6 +4487,58 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Success($"Imported component '{Path.GetFileName(cellDir)}'.");
             await OpenPrimaryLayoutIfResolvableAsync(cellDir);
+        }
+    }
+
+    /// <summary>
+    /// The folder scan, off the UI thread, on one live row with a Cancel — null when the user stopped
+    /// it (the row says so; the caller creates nothing).
+    /// </summary>
+    /// <remarks>
+    /// The scan's own ceilings make it FINITE; this makes it STOPPABLE, which is a different property
+    /// and the one that matters when the folder chosen by mistake sits on a network share. The counter
+    /// is files classified — never a clock (root <c>CLAUDE.md</c>).
+    /// </remarks>
+    private async Task<CircuitRF.Design.Layout.Interchange.ComponentScanResult?> ScanForComponentsAsync(string root)
+    {
+        var live = Messages.BeginProgress("Import Component");
+        live.Update("Import Component", "scanning the folder", indeterminate: true);
+
+        using var cts = new CancellationTokenSource();
+        var cancellation = new RunCancellation("the component scan", () =>
+        {
+            Messages.Info("Stopping the component scan. It stops at the next file, and creates nothing.");
+            cts.Cancel();
+        });
+        live.BindCancellation(cancellation);
+
+        try
+        {
+            var scan = await Task.Run(() =>
+                CircuitRF.Design.Layout.Interchange.ComponentFolderScan.Scan(
+                    root,
+                    cts.Token,
+                    onProgress: n => Dispatcher.UIThread.Post(() =>
+                        live.Update("Import Component", $"scanning the folder — {n:N0} file(s)", indeterminate: true))));
+
+            live.Complete(MessageLevel.Info,
+                $"Scanned {scan.FilesScanned:N0} file(s) in '{Path.GetFileName(Path.TrimEndingDirectorySeparator(root))}' — "
+                + $"{scan.Candidates.Count:N0} importable component(s) found.");
+            return scan;
+        }
+        catch (OperationCanceledException)
+        {
+            live.Complete(MessageLevel.Info, "Component scan cancelled — nothing was created.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            live.Complete(MessageLevel.Error, $"Import Component: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            cancellation.Finish();
         }
     }
 

@@ -1,0 +1,28 @@
+*VERSION 15000000
+!
+! Synthetic fixture. The DRAWING order below is deliberately not the part file's
+! pad order: pin 2 is DELTA on pad 4, where an ordinal join would say BETA on pad 2.
+!
+*UNITS 1000.000000 per_inch
+*CELL_OPEN GIZMO4 0
+*GFX_LINE 0 0.005in 3 0 <300,200> <1500,200>
+*GFX_LINE 0 0.005in 3 0 <1500,200> <1500,-800>
+*GFX_LINE 0 0.005in 3 0 <1500,-800> <300,-800>
+*GFX_LINE 0 0.005in 3 0 <300,-800> <300,200>
+*PIN 1 11 <0,0>
+*PIN 2 11 <0,-100>
+*PIN 3 11 <0,-300>
+*PIN 4 11 <1800,-300>
+*PIN 5 11 <1800,0>
+*TEXT 0.082in 0 3 -1 0 1 1 6 "DEFAULT" 0 <310,0> 1 0 "ALPHA"
+*TEXT 0.082in 0 4 1 -1 1 1 6 "DEFAULT" 0 <100,0> 1 0 "1"
+*TEXT 0.082in 0 3 -1 0 1 2 6 "DEFAULT" 0 <310,-100> 1 0 "DELTA"
+*TEXT 0.082in 0 4 1 -1 1 2 6 "DEFAULT" 0 <100,-100> 1 0 "4"
+*TEXT 0.082in 0 3 -1 0 1 3 6 "DEFAULT" 0 <310,-300> 1 0 "BETA"
+*TEXT 0.082in 0 4 1 -1 1 3 6 "DEFAULT" 0 <100,-300> 1 0 "2"
+*TEXT 0.082in 0 3 1 0 1 4 6 "DEFAULT" 0 <1490,-300> 1 0 "GAMMA"
+*TEXT 0.082in 0 4 -1 -1 1 4 6 "DEFAULT" 0 <1300,-300> 1 0 "3"
+*TEXT 0.082in 0 3 1 0 1 5 6 "DEFAULT" 0 <1490,0> 1 0 "THERMAL"
+*TEXT 0.082in 0 4 -1 -1 1 5 6 "DEFAULT" 0 <1300,0> 1 0 "TPAD"
+*TEXT 0.082in 0 7 0 0 1 0 6 "DEFAULT" 0 <900,400> 1 0 "Ref Des"
+*CELL_CLOSE <0,0>

@@ -266,14 +266,18 @@ public static class ComponentImport
         // The numbering comes from the terminal table, never from the declaration order the pins
         // arrived in (R-PL1-10). Both strings are kept: SymbolPin.Name is the symbol's pin name, and
         // the layout pin carries the pad identifier.
-        var indexByPin = new Dictionary<string, int>(StringComparer.Ordinal);
+        //
+        // Keyed on the DECLARATION, not the name: a real part declares VSS seven times, and a
+        // name-keyed lookup gives all seven the first one's PortIndex — which breaks R-PL1-8's
+        // invariant on the majority of real parts rather than on an exotic one.
+        var portByDeclaration = new Dictionary<int, int>();
         foreach (var t in terminals)
-            if (t.PinName is { Length: > 0 } name) indexByPin.TryAdd(name, t.PortIndex);
+            if (t.SymbolPinIndex >= 0) portByDeclaration.TryAdd(t.SymbolPinIndex, t.PortIndex);
 
         for (int i = 0; i < symbol.Pins.Count && i < drawing.Pins.Count; i++)
         {
             symbol.Pins[i].Name = drawing.Pins[i].Name;
-            if (indexByPin.TryGetValue(drawing.Pins[i].Name, out int index))
+            if (portByDeclaration.TryGetValue(i, out int index))
                 symbol.Pins[i].PortIndex = index;
         }
 

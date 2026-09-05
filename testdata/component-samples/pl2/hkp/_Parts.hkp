@@ -1,0 +1,34 @@
+.FileType ASCII_PDB
+.Version "1"
+.Units th
+.Notation si
+
+.Number "GIZMO4"
+..Name "GIZMO4"
+..RefPrefix "U"
+..TopCell "GIZMO4_LAND"
+..AltCell "GIZMO4_LAND-M"
+..AltCell "GIZMO4_LAND-L"
+  ..Prop "Type", "IC", "Text"
+..Prop "Description","Synthetic fixture, invented part","Text"
+..SwapGroup "Gns1"
+...SwapID "Pns1"
+...SwapID "Pns2"
+...SwapID "Pns3"
+...SwapID "Pns4"
+...SwapID "Pns5"
+..Symbol "sym:GIZMO4"
+...Default
+...Symbol_Swapgroup "Gns1"
+....PinName "ALPHA"
+....PinName "BETA"
+....PinName "GAMMA"
+....PinName "DELTA"
+....PinName "THERMAL"
+..Slots
+...Slot_SwapGroup "Gns1"
+....PinNumber "1"
+....PinNumber "2"
+....PinNumber "3"
+....PinNumber "4"
+....PinNumber "TPAD"
