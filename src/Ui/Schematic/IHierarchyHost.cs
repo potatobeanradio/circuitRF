@@ -29,4 +29,20 @@ public interface IHierarchyHost
     /// when the reference itself actually changed.
     /// </summary>
     Task ReReferenceCellAsync(SchematicDocument doc, EditableComponent comp);
+
+    /// <summary>
+    /// The <b>Reference Cell…</b> escape hatch in the cell picker: pick a cell folder anywhere on
+    /// disk and take it into THIS workspace — by reference or by copy, through the same prompt and the
+    /// same code as File ▸ Add Cell to Workspace… and the cross-workspace drag. Returns the absolute
+    /// cell folder the chosen cell now occupies (unchanged for a reference, the new copy for a copy),
+    /// or null when the user cancelled anywhere along the way.
+    ///
+    /// <para>Run by the CALLER after the picker has closed, never from inside it: the flow shows
+    /// modal dialogs of its own on the same owner window.</para>
+    /// </summary>
+    Task<string?> ReferenceExternalCellAsync();
+
+    /// <summary>False when there is no workspace to take a cell into — the picker then offers its
+    /// plain folder-browse instead of the reference flow.</summary>
+    bool CanReferenceExternalCell { get; }
 }

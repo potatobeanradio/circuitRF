@@ -666,6 +666,28 @@ public sealed partial class SchematicViewModel : ObservableObject
         CancelCurrentOp();
     }
 
+    /// <summary>
+    /// Arms a click-to-place of an ordinary workspace CELL, given its absolute folder — what
+    /// <c>Design ▸ Place Cell Instance…</c> does after the picker closes. The click that follows takes
+    /// the same <see cref="CommitCellPlacementAsync"/> path a drag from the Project Tree does.
+    ///
+    /// <para>Routed through the app-level <see cref="PlacementService"/> rather than set here, so the
+    /// palette's armed tile clears and Escape disarms exactly as they do for any other placement —
+    /// there is one armed state in the application and this is not a second one. Returns false when
+    /// there is no service to arm (a document opened outside a workspace shell), and says so rather
+    /// than leaving the user clicking a canvas that will never place anything.</para>
+    /// </summary>
+    public void BeginCellPlacement(string cellAbsDir)
+    {
+        if (string.IsNullOrWhiteSpace(cellAbsDir)) return;
+        if (_placementService is null)
+        {
+            _messageSink?.Warning("This schematic is not open in a workspace, so a cell cannot be armed for placement.");
+            return;
+        }
+        _placementService.ArmCell(cellAbsDir);
+    }
+
     /// <summary>The symbol currently being placed (valid only when ActiveTool == Tool.Place).</summary>
     public SymbolKind PlacementSymbol => _placementSymbol;
 
@@ -3172,7 +3194,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         IReadOnlyList<SymbolPrimitive>? prims = null;
         IReadOnlyList<SymbolPin>?       pins  = null;
 
-        if (_placementService?.Pending?.Pdk?.CellDir is { Length: > 0 } cellDir)
+        if (ArmedCellDir is { Length: > 0 } cellDir)
         {
             try
             {
@@ -3196,20 +3218,32 @@ public sealed partial class SchematicViewModel : ObservableObject
                                   _placementPortCount, prims, pins);
     }
 
+    /// <summary>
+    /// The cell folder the armed placement will place, or null when the armed entry is an ordinary
+    /// palette component. Two sources, one accessor: an imported KIT part (whose symbol was installed
+    /// as a real cell at import time) and a workspace CELL armed from the cell picker. The ghost and
+    /// the commit both ask this, so neither can draw one thing and place another.
+    /// </summary>
+    private string? ArmedCellDir
+        => _placementService?.Pending is not { } p ? null
+         : p.Pdk is { } pdk ? pdk.CellDir
+         : p.CellDir;
+
     private void HandlePlacePress(double wx, double wy)
     {
         // A part armed from an imported kit is placed as a cell reference — its symbol was installed
         // as a real cell at import time, so this reuses the ordinary cell-placement path rather than
-        // introducing a second component species with its own render/pin/hit-test rules.
-        if (_placementService?.Pending?.Pdk is { } pdk)
+        // introducing a second component species with its own render/pin/hit-test rules. A cell armed
+        // from the picker takes the identical path, which is the whole reason it needs no code here.
+        if (_placementService?.Pending is { Pdk: { } pdk } && pdk.CellDir is null)
         {
-            if (pdk.CellDir is null)
-            {
-                _messageSink?.Warning(
-                    $"\"{pdk.PartId}\" has no symbol circuitRF could read, so it cannot be placed yet.");
-                return;
-            }
-            _ = CommitCellPlacementAsync(pdk.CellDir, wx, wy, _placementRot);
+            _messageSink?.Warning(
+                $"\"{pdk.PartId}\" has no symbol circuitRF could read, so it cannot be placed yet.");
+            return;
+        }
+        if (ArmedCellDir is { Length: > 0 } armedCell)
+        {
+            _ = CommitCellPlacementAsync(armedCell, wx, wy, _placementRot);
             return;
         }
 

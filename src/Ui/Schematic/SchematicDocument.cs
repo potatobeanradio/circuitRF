@@ -42,6 +42,12 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     public event Action? ZoomToFitRequested;
     public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
 
+    // ── Design ▸ Place Cell Instance… — mirrors ZoomToFitRequested exactly. The cell picker is a
+    // Window and lives in the view's code-behind (UI firewall); the menu item is bound to
+    // WorkspaceViewModel, which has no view reference, so it raises this instead.
+    public event Action? PlaceCellInstanceRequested;
+    public void RequestPlaceCellInstance() => PlaceCellInstanceRequested?.Invoke();
+
     // ── Navigation frame ──────────────────────────────────────────────────────
 
     private readonly record struct NavFrame(SchematicViewModel Session, string Label);

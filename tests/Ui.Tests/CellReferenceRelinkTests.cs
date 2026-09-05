@@ -400,8 +400,8 @@ public sealed class CellReferenceRelinkTests : IDisposable
         foreach (var (file, method) in new[]
         {
             ("WorkspaceViewModel.ExternalRefs.cs", "private async Task ReferenceWorkspace("),
-            ("WorkspaceViewModel.CellDrop.cs",     "private void ReferenceExternalCell("),
-            ("WorkspaceViewModel.CellDrop.cs",     "private async Task CopyExternalCellAsync("),
+            ("WorkspaceViewModel.CellDrop.cs",     "private bool ReferenceExternalCell("),
+            ("WorkspaceViewModel.CellDrop.cs",     "private async Task<string?> CopyExternalCellAsync("),
             ("WorkspaceViewModel.cs",              "public async Task RemoveWorkspaceReferenceAsync("),
             ("WorkspaceViewModel.cs",              "public async Task RemoveCellReferenceAsync("),
         })

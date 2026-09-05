@@ -1,5 +1,61 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Design ▸ Place Cell Instance…, and View moving beside Window (2026-09-05)
+
+**Asked for:** the View menu immediately left of Window (window arrangement and view arrangement are
+the same kind of question, so they belong together); and a more obvious way to put a cell instance
+into a schematic or a layout than drag-and-drop — a menu item opening a dialog of the workspace's
+cells, with a quiet "Reference Cell…" for one that lives outside the workspace. The layout toolbar's
+existing Instance button was then asked to use whatever dialog this produced.
+
+**One picker, both editors.** `InstanceCellPickerDialog` already existed for the layout toolbar
+button and the Properties Inspector's re-target row; it now takes a `ViewType` and serves the
+schematic too, and every entry point shares it. **The only real difference between the two lists is
+what a MISSING view means**, and it is not cosmetic: a cell with no layout view has nothing to draw
+and is refused, while the same cell in a schematic is placeable because `CommitCellPlacementAsync`
+offers to generate a symbol from its ports — so that row is enabled and carries a remark instead of a
+refusal that is not true. `InstanceCellChoice` gained a `Note` beside `DisabledReason` and one
+`Annotation` accessor, so the template has one binding and the two can never both render.
+
+**The picker now offers referenced cells too** (`CollectWithReferences`). They are already in the
+Project Tree and a drag already places them, so a list that omitted them made the menu strictly less
+capable than the gesture it exists to replace. A `CellsOnly` alias is not enumerated wholesale — only
+the cells actually listed against it — which is the same rule the tree follows, and for the same
+reason: referencing one cell must not pull in the other project's whole catalogue.
+
+**Three traps, each of which fails in a way that survives review:**
+
+- **"Reference Cell…" must CLOSE the picker, not run the flow from inside it.** The cross-workspace
+  flow shows modal dialogs of its own on the same owner window, and stacking two modals over one owner
+  hangs on some platforms and not others. The dialog returns `CellPickResult.Reference`, the caller
+  runs `ReferenceExternalCellAsync()` and re-opens the picker — or, when a cell came back, arms it
+  directly rather than asking the user to find it in the list they just added it to. `Browse…` remains
+  as the fallback for a document with no workspace behind it; the two share one button.
+- **A `[RelayCommand(CanExecute=…)]` gated on the active document is not re-evaluated on its own** and
+  must be notified from BOTH fan-outs in `WorkspaceViewModel`. That standing gotcha is already
+  documented there and has already shipped a permanently-greyed menu item once (Gerber export); the
+  new command is asserted by a source scan that counts exactly two notifications.
+- **The schematic arms through the app-level `PlacementService`, never a second armed state.**
+  `PendingPlacement` gained a `CellDir` — deliberately its own field, not a synthesised `PdkPartRef`,
+  since a kit part carries a kit+part identity the palette compares armed tiles by and a workspace
+  cell has none. `SchematicViewModel.ArmedCellDir` is the one accessor both the ghost and the commit
+  ask, so neither can draw one thing and place another.
+
+**`AcceptCellFromOtherWorkspaceAsync` was split rather than widened.** The flow now reports the
+absolute folder the cell occupies here (the source for a reference, the copy for a copy) as
+`AcceptCellFromOtherWorkspaceCoreAsync`; the public entry point keeps its `Task` shape because
+`ITreeActions` exposes it and the drag and File-menu gestures have no use for the answer.
+
+**Menu order is held by a source scan** (`PlaceCellInstanceTests`) on BOTH surfaces — the macOS
+`NativeMenu` and the in-window `Menu` are hand-mirrored, and drift between them is the standing hazard.
+The code-behind that relabels "Hide/Show Dockers" and rebuilds the Window menu finds both by header
+text and command identity, never by index, so moving View cost nothing there.
+
+**Unrelated flake found on the way**: `BrokenInstanceVisibilityTests` asserts an exact
+`CellStat.Calls` count but was not in `CellStatGlobalsCollection`, so a full-solution run reported
+"4040 filesystem calls for 2000 placements" for a paint that is correct and passes alone. Added to the
+collection, which is exactly what that collection's own note says to do.
+
 ## Re-referencing a broken cell instance, and the stale "Not Found" glyph (2026-09-04)
 
 **Asked for:** placing a referenced cell and then removing the reference leaves the instance reading

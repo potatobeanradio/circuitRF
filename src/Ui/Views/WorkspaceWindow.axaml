@@ -138,42 +138,11 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
-            <NativeMenuItem Header="View">
-                <NativeMenuItem.Menu>
-                    <NativeMenu>
-                        <NativeMenuItem Header="Reset Layout"     Command="{Binding ResetLayoutCommand}"/>
-                        <!-- Header is relabelled at runtime from DockersMenuHeader by
-                             WorkspaceWindow.axaml.cs — a NativeMenuItem is an AvaloniaObject with no
-                             DataContext, so it cannot bind. -->
-                        <NativeMenuItem Header="Hide Dockers" Command="{Binding HideShowDockersCommand}" Gesture="Meta+Shift+H"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Panels">
-                            <NativeMenuItem.Menu>
-                                <NativeMenu>
-                                    <NativeMenuItem Header="Workspace" Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree"/>
-                                    <NativeMenuItem Header="Library"      Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette"/>
-                                    <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
-                                    <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
-                                    <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
-                                    <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
-                                    <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
-                                    <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
-                                </NativeMenu>
-                            </NativeMenuItem.Menu>
-                        </NativeMenuItem>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Push Into Cell"       Command="{Binding HierarchyPushInCommand}"       Gesture="Meta+OemCloseBrackets"/>
-                        <NativeMenuItem Header="Pop Out"              Command="{Binding HierarchyPopOutCommand}"       Gesture="Meta+OemOpenBrackets"/>
-                        <NativeMenuItem Header="Open Cell in New Tab" Command="{Binding HierarchyOpenInNewTabCommand}"/>
-                    </NativeMenu>
-                </NativeMenuItem.Menu>
-            </NativeMenuItem>
-
             <NativeMenuItem Header="Design">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
+                        <NativeMenuItem Header="Place Cell Instance…"       Command="{Binding PlaceCellInstanceCommand}" Gesture="Meta+Shift+I"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
                         <NativeMenuItemSeparator/>
@@ -213,6 +182,39 @@
                              Tools menu below; the two surfaces are hand-maintained and must not drift.
                         <NativeMenuItem Header="wBond" Command="{Binding NewWBondCommand}"/>
                         -->
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <NativeMenuItem Header="View">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Reset Layout"     Command="{Binding ResetLayoutCommand}"/>
+                        <!-- Header is relabelled at runtime from DockersMenuHeader by
+                             WorkspaceWindow.axaml.cs — a NativeMenuItem is an AvaloniaObject with no
+                             DataContext, so it cannot bind. -->
+                        <NativeMenuItem Header="Hide Dockers" Command="{Binding HideShowDockersCommand}" Gesture="Meta+Shift+H"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Panels">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Workspace" Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree"/>
+                                    <NativeMenuItem Header="Library"      Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette"/>
+                                    <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
+                                    <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
+                                    <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
+                                    <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
+                                    <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
+                                    <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Push Into Cell"       Command="{Binding HierarchyPushInCommand}"       Gesture="Meta+OemCloseBrackets"/>
+                        <NativeMenuItem Header="Pop Out"              Command="{Binding HierarchyPopOutCommand}"       Gesture="Meta+OemOpenBrackets"/>
+                        <NativeMenuItem Header="Open Cell in New Tab" Command="{Binding HierarchyOpenInNewTabCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -285,6 +287,8 @@
              every other gesture in this file before choosing it — nothing else uses it. -->
         <KeyBinding Gesture="Ctrl+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
         <KeyBinding Gesture="Meta+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+I"  Command="{Binding PlaceCellInstanceCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+I"  Command="{Binding PlaceCellInstanceCommand}"/>
         <!-- §9B.6 R-rul-13: clear every in-design ruler annotation, one undo entry, no prompt. The
              UNSHIFTED K is free — Ctrl+Shift+K above is Check Design Rules and is left alone. -->
         <KeyBinding Gesture="Ctrl+K"        Command="{Binding ClearAllRulersCommand}"/>
@@ -599,79 +603,14 @@
                 </MenuItem>
             </MenuItem>
 
-            <MenuItem Header="_View" Padding="8,4">
-                <MenuItem Header="Reset _Layout"
-                          Command="{Binding ResetLayoutCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="{Binding DockersMenuHeader}"
-                          Command="{Binding HideShowDockersCommand}"
-                          InputGesture="Ctrl+Shift+H">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <Separator/>
-                <!-- Reopen a closed tool panel. Without these, closing one strands it until
-                     Reset Layout, which also discards every other panel placement. -->
-                <MenuItem Header="_Panels">
-                    <MenuItem Header="_Workspace"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_Library"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="P_roperties"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_Analyses"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_Messages"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_DRC"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <!-- wbond.md §10.1 — the two wBond panels, which follow the active layout. Not in
-                         either shipped default layout: most designs have no wirebonds. -->
-                    <MenuItem Header="Wire Pro_file"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="Array Induc_tance"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                </MenuItem>
-                <Separator/>
-                <MenuItem Header="Zoom to _Fit"
-                          Command="{Binding ZoomToFitCommand}"
-                          InputGesture="Ctrl+D0">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <Separator/>
-                <MenuItem Header="Push _Into Cell"
-                          Command="{Binding HierarchyPushInCommand}"
-                          InputGesture="Ctrl+OemCloseBrackets">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowRight" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Pop _Out"
-                          Command="{Binding HierarchyPopOutCommand}"
-                          InputGesture="Ctrl+OemOpenBrackets">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open Cell in _New Tab"
-                          Command="{Binding HierarchyOpenInNewTabCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-            </MenuItem>
-
             <MenuItem Header="_Design" Padding="8,4">
+                <MenuItem Header="_Place Cell Instance…"
+                          Command="{Binding PlaceCellInstanceCommand}"
+                          InputGesture="Ctrl+Shift+I"
+                          ToolTip.Tip="Choose a cell and click to place an instance of it. Requires an active schematic or layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ShapeSquarePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
                 <MenuItem Header="Update _Layout from Schematic"
                           Command="{Binding UpdateLayoutFromSchematicCommand}"
                           InputGesture="Ctrl+U"
@@ -742,6 +681,78 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 -->
+            </MenuItem>
+
+            <MenuItem Header="_View" Padding="8,4">
+                <MenuItem Header="Reset _Layout"
+                          Command="{Binding ResetLayoutCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="{Binding DockersMenuHeader}"
+                          Command="{Binding HideShowDockersCommand}"
+                          InputGesture="Ctrl+Shift+H">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <!-- Reopen a closed tool panel. Without these, closing one strands it until
+                     Reset Layout, which also discards every other panel placement. -->
+                <MenuItem Header="_Panels">
+                    <MenuItem Header="_Workspace"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Library"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="P_roperties"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Analyses"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Messages"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_DRC"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- wbond.md §10.1 — the two wBond panels, which follow the active layout. Not in
+                         either shipped default layout: most designs have no wirebonds. -->
+                    <MenuItem Header="Wire Pro_file"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Array Induc_tance"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Zoom to _Fit"
+                          Command="{Binding ZoomToFitCommand}"
+                          InputGesture="Ctrl+D0">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Push _Into Cell"
+                          Command="{Binding HierarchyPushInCommand}"
+                          InputGesture="Ctrl+OemCloseBrackets">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowRight" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Pop _Out"
+                          Command="{Binding HierarchyPopOutCommand}"
+                          InputGesture="Ctrl+OemOpenBrackets">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open Cell in _New Tab"
+                          Command="{Binding HierarchyOpenInNewTabCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
 
             <!-- Window: every open circuitRF window, selectable to bring it to the front. Contents

@@ -44,11 +44,44 @@ public partial class WorkspaceViewModel
         });
         if (folders.Count == 0) return;
 
-        await AcceptCellFromOtherWorkspaceAsync(
+        await AcceptCellFromOtherWorkspaceCoreAsync(
             Path.GetFullPath(folders[0].Path.LocalPath), destFolderDir: null);
     }
 
     private bool CanAddCellToWorkspace() => CurrentWorkspacePath is not null;
+
+    /// <inheritdoc cref="Schematic.IHierarchyHost.CanReferenceExternalCell"/>
+    public bool CanReferenceExternalCell => CurrentWorkspacePath is not null;
+
+    /// <inheritdoc cref="Schematic.IHierarchyHost.ReferenceExternalCellAsync"/>
+    ///
+    /// <remarks>
+    /// The cell picker's <b>Reference Cell…</b> button, and deliberately the SAME folder pick and the
+    /// SAME prompt as <c>File ▸ Add Cell to Workspace…</c> — a third way to bring a cell in would be a
+    /// third place for "reference or copy?", "bring its technology?" and the collision prompts to
+    /// drift. Only the answer differs: this one reports where the cell ended up, so the picker's
+    /// caller can go straight on and place it.
+    /// </remarks>
+    public async Task<string?> ReferenceExternalCellAsync()
+    {
+        var window = ResolveOwner(null);
+        if (window is null || CurrentWorkspacePath is null) return null;
+
+        IStorageFolder? startLocation = null;
+        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        catch { }
+
+        var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title                  = "Reference Cell",
+            AllowMultiple          = false,
+            SuggestedStartLocation = startLocation,
+        });
+        if (folders.Count == 0) return null;
+
+        return await AcceptCellFromOtherWorkspaceCoreAsync(
+            Path.GetFullPath(folders[0].Path.LocalPath), destFolderDir: null);
+    }
 
     // ── The shared flow ───────────────────────────────────────────────────────
 
@@ -57,11 +90,24 @@ public partial class WorkspaceViewModel
     /// into this one, asking first.
     /// </summary>
     /// <param name="destFolderDir">The folder the cell was dropped on; null means the workspace root.</param>
-    public async Task AcceptCellFromOtherWorkspaceAsync(string sourceCellDir, string? destFolderDir)
+    public Task AcceptCellFromOtherWorkspaceAsync(string sourceCellDir, string? destFolderDir)
+        => AcceptCellFromOtherWorkspaceCoreAsync(sourceCellDir, destFolderDir);
+
+    /// <summary>
+    /// The flow itself, reporting the ABSOLUTE cell folder the cell now occupies here — the source
+    /// folder for a reference (it stays where it is), the new folder for a copy — or null when
+    /// nothing was taken in.
+    ///
+    /// <para>The drag and the File-menu gesture both discard that answer; the cell picker's
+    /// <b>Reference Cell…</b> button is the one caller that needs it, because its whole point is to
+    /// place the cell it has just brought in. Split from the public entry point rather than widening
+    /// it: <c>ITreeActions</c> exposes the void-shaped one and has no use for a return value.</para>
+    /// </summary>
+    internal async Task<string?> AcceptCellFromOtherWorkspaceCoreAsync(string sourceCellDir, string? destFolderDir)
     {
-        if (CurrentWorkspacePath is null) return;
+        if (CurrentWorkspacePath is null) return null;
         var window = ResolveOwner(null);
-        if (window is null) return;
+        if (window is null) return null;
 
         string myRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
         string source = Path.GetFullPath(sourceCellDir);
@@ -69,7 +115,7 @@ public partial class WorkspaceViewModel
         if (!File.Exists(Path.Combine(source, CellFolder.CcellFileName)))
         {
             Messages.Error($"'{Path.GetFileName(source)}' is not a cell folder (no {CellFolder.CcellFileName}).");
-            return;
+            return null;
         }
 
         // R-mw3-4: a cell already in this workspace has nothing to add. The drop handler answers
@@ -79,7 +125,7 @@ public partial class WorkspaceViewModel
         {
             Messages.Info($"'{Path.GetFileName(source)}' is already in this workspace. "
                         + "Use Duplicate Cell to make a copy of it here.");
-            return;
+            return null;
         }
 
         string dest = destFolderDir is null ? myRoot : Path.GetFullPath(destFolderDir);
@@ -111,14 +157,14 @@ public partial class WorkspaceViewModel
             pendingPlan: pendingPlan);
 
         var choice = await dialog.ShowDialog<AddCellChoice?>(window);
-        if (choice is null) return;
+        if (choice is null) return null;
 
         // Completed by construction: the dialog does not enable OK until it lands, so this neither
         // blocks nor re-walks. Awaited rather than assumed so a faulted plan surfaces as an error
         // here instead of as an exception inside the copy.
         CrossWorkspaceCellCopy.CellCopyPlan preview;
         try { preview = await pendingPlan; }
-        catch (Exception ex) { Messages.Error($"Could not examine '{Path.GetFileName(source)}': {ex.Message}"); return; }
+        catch (Exception ex) { Messages.Error($"Could not examine '{Path.GetFileName(source)}': {ex.Message}"); return null; }
 
         if (choice.Reference)
         {
@@ -129,13 +175,13 @@ public partial class WorkspaceViewModel
             // cancel there leaves the reference uncreated rather than creating one that cannot be
             // placed.
             if (choice.BringTechnology && !await AdoptTechnologyForWorkspaceAsync(preview.Technology))
-                return;
+                return null;
 
-            ReferenceExternalCell(myRoot, sourceRoot!, source);
-            return;
+            // The cell stays where it is, so where it is IS the answer.
+            return ReferenceExternalCell(myRoot, sourceRoot!, source) ? source : null;
         }
 
-        await CopyExternalCellAsync(
+        return await CopyExternalCellAsync(
             window, myRoot, sourceRoot, source, dest, choice.SubCells, choice.BringTechnology,
             // Reuse the plan already computed for the dialog when the user kept the mode it was
             // computed for — the walk it embodies is the expensive part, and re-doing it would put
@@ -156,7 +202,9 @@ public partial class WorkspaceViewModel
     /// their entire catalogue of cells in this workspace's tree, which is the opposite of what the
     /// gesture names.</para>
     /// </summary>
-    private void ReferenceExternalCell(string myRoot, string sourceRoot, string sourceCellDir)
+    /// <returns>True when the reference is recorded — the cell picker's Reference Cell… button then
+    /// places it, so a failure must not read as a silent success.</returns>
+    private bool ReferenceExternalCell(string myRoot, string sourceRoot, string sourceCellDir)
     {
         // R-mw3-7 / MW2 §2: the alias is created once and REUSED. Two aliases for one workspace would
         // make the same cell reachable under two names, and a rename repair would then have to guess.
@@ -169,7 +217,7 @@ public partial class WorkspaceViewModel
                     myRoot, alias, Path.Combine(sourceRoot, ".cws"), out string? error, cellsOnly: true))
             {
                 Messages.Error(error!);
-                return;
+                return false;
             }
         }
 
@@ -179,7 +227,7 @@ public partial class WorkspaceViewModel
         if (!AddReferencedCell(myRoot, cellRef, out string? cellError, out bool alreadyListed))
         {
             Messages.Error(cellError!);
-            return;
+            return false;
         }
 
         string cellName = Path.GetFileName(sourceCellDir);
@@ -189,11 +237,13 @@ public partial class WorkspaceViewModel
               + $"Project Tree ({cellRef}).");
 
         RefreshAfterReferenceChange();
+        return true;
     }
 
     // ── Copy ──────────────────────────────────────────────────────────────────
 
-    private async Task CopyExternalCellAsync(
+    /// <returns>The absolute folder the copy landed in, or null when it was cancelled or failed.</returns>
+    private async Task<string?> CopyExternalCellAsync(
         Window window, string myRoot, string? sourceRoot,
         string sourceCellDir, string destParentDir, SubCellMode mode, bool bringTechnology,
         CrossWorkspaceCellCopy.CellCopyPlan? alreadyPlanned = null)
@@ -205,7 +255,7 @@ public partial class WorkspaceViewModel
         // R-mw3-9: collisions are ASKED about, never auto-suffixed. `Amp_2` appearing in someone's
         // project without their say-so is worse than a second dialog.
         var resolved = await ResolveCollisionsAsync(window, plan.Folders);
-        if (resolved is null) return;
+        if (resolved is null) return null;
         plan = plan with { Folders = resolved, DestCellDir = resolved[0].DestDir };
 
         // The alias has to exist BEFORE the rewrite: ExternalCellRef.MakeCellRef reads the table, and
@@ -216,13 +266,13 @@ public partial class WorkspaceViewModel
             if (!AddReferencedWorkspace(myRoot, alias, Path.Combine(sourceRoot, ".cws"), out string? error))
             {
                 Messages.Error(error!);
-                return;
+                return null;
             }
         }
 
         string written;
         try { written = CrossWorkspaceCellCopy.Execute(plan); }
-        catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return; }
+        catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return null; }
 
         RefreshAfterReferenceChange();
 
@@ -238,6 +288,8 @@ public partial class WorkspaceViewModel
                   + "the copy in this workspace's tech/ folder."
                 : "The copied layouts use this workspace's technology — their layer numbers are "
                   + "unchanged and now carry this workspace's meanings.");
+
+        return written;
     }
 
     /// <summary>

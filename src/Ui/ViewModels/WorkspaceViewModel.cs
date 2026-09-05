@@ -7428,6 +7428,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool IsCheckableDocumentActive() => ResolveDrcTargetLayout() is not null;
 
     /// <summary>
+    /// Design ▸ Place Cell Instance… — the third, and most findable, way to put an instance of a cell
+    /// into the active document. Drag-and-drop from the Project Tree has always worked in both
+    /// editors and the layout editor has a toolbar button; neither announces itself, and a menu item
+    /// is what a user looks for first (owner, 2026-09-05).
+    ///
+    /// <para><b>Raises a request; does not open the dialog.</b> The cell picker is a Window, so it
+    /// lives in the active view's own code-behind (UI firewall) — the same one the layout editor's
+    /// Instance button already opens. This command only decides WHICH document is being placed into,
+    /// exactly as the GDSII/DXF/Gerber export commands do.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPlaceCellInstance))]
+    private void PlaceCellInstance()
+    {
+        switch (ResolveActiveDocumentForCommands())
+        {
+            case LayoutDocument layout:      layout.RequestPlaceCellInstance(); break;
+            case SchematicDocument schematic: schematic.RequestPlaceCellInstance(); break;
+        }
+    }
+
+    /// <summary>Enabled for a schematic or a layout and nothing else — the two documents that can
+    /// hold a cell instance. A wBond document is deliberately excluded even though DRC reaches its
+    /// reference layout: its canvas draws wires over a layout it does not own, and placing an
+    /// instance into that layout from here would edit a document the user is not looking at.</summary>
+    private bool CanPlaceCellInstance()
+        => ResolveActiveDocumentForCommands() is LayoutDocument or SchematicDocument;
+
+    /// <summary>
     /// Ctrl+K / Cmd+K — docs/design/layout-view.md §9B.6 R-rul-13: removes every in-design RULER
     /// annotation from the active layout, as ONE undo entry, with no confirmation prompt (the
     /// operation is undoable, and a prompt on an undoable action trains people to dismiss prompts).
@@ -12546,6 +12574,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Design ▸ Check Design Rules is enabled when a layout document is active, and when a wBond
         // document is — a wirebond design is checked through its reference layout.
         CheckDesignRulesCommand.NotifyCanExecuteChanged();
+        // Design ▸ Place Cell Instance… — a schematic or a layout, so BOTH fan-outs, per the standing
+        // gotcha noted just below.
+        PlaceCellInstanceCommand.NotifyCanExecuteChanged();
         // Same document-type gate, same fan-out — see the standing gotcha note further down: a
         // [RelayCommand(CanExecute=...)] gated on the active document is NOT re-evaluated on its own.
         ClearAllRulersCommand.NotifyCanExecuteChanged();
@@ -12806,6 +12837,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (doc is IEditHistoryDocument focusedHistory) SetActiveUndoTarget(focusedHistory);
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        PlaceCellInstanceCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
         // the active document type is NOT re-evaluated on its own — it must be added to BOTH
         // fan-outs, or it silently stays stuck at whatever it was on construction.

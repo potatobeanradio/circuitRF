@@ -132,6 +132,9 @@ public class WBondOneEditorTests
             => System.Threading.Tasks.Task.CompletedTask;
         public System.Threading.Tasks.Task ReReferenceInstanceCellAsync(LayoutDocument doc, LayoutInstance instance)
             => System.Threading.Tasks.Task.CompletedTask;
+        public System.Threading.Tasks.Task<string?> ReferenceExternalCellAsync()
+            => System.Threading.Tasks.Task.FromResult<string?>(null);
+        public bool CanReferenceExternalCell => false;
     }
 
     /// <summary>

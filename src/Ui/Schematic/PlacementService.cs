@@ -43,6 +43,22 @@ public sealed partial class PlacementService : ObservableObject
         Pending = alreadyArmed ? null : new PendingPlacement(item.Kind, item.PortCount, SymbolRotation.R0, pdk);
     }
 
+    /// <summary>
+    /// Arm an ordinary workspace CELL by its absolute folder — the cell picker's answer, and the
+    /// click-to-place counterpart of dragging that same cell out of the Project Tree.
+    ///
+    /// <para>Always arms, never toggles. The picker is a deliberate act that has just cost the user a
+    /// dialog; disarming because the same cell happened to be armed already would answer a click with
+    /// nothing at all.</para>
+    /// </summary>
+    public void ArmCell(string cellAbsDir)
+    {
+        if (string.IsNullOrWhiteSpace(cellAbsDir)) return;
+        // SymbolKind.Generic is the same placeholder a kit part is armed with — the real symbol is
+        // resolved from the cell itself, both for the ghost and at the commit.
+        Pending = new PendingPlacement(SymbolKind.Generic, 2, SymbolRotation.R0, null, cellAbsDir);
+    }
+
     /// <summary>Clear the armed state.</summary>
     public void Disarm() => Pending = null;
 

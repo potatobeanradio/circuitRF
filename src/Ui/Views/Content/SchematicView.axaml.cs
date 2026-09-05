@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Controls;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 using CircuitRF.Ui.Schematic;
@@ -82,6 +83,7 @@ public partial class SchematicView : UserControl
             _subscribedDoc.ActiveViewModelChanged   -= OnActiveViewModelChanged;
             _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
             _subscribedDoc.ZoomToFitRequested       -= OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.PlaceCellInstanceRequested -= OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc = null;
         }
 
@@ -94,6 +96,7 @@ public partial class SchematicView : UserControl
             doc.ActiveViewModelChanged   += OnActiveViewModelChanged;
             doc.ActivationFocusRequested += OnActivationFocusRequested;
             doc.ZoomToFitRequested       += OnZoomToFitRequestedFromMenu;
+            doc.PlaceCellInstanceRequested += OnPlaceCellInstanceRequestedFromMenu;
             // If this tab was activated before the view bound (first open), the request is pending.
             if (doc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
@@ -101,6 +104,55 @@ public partial class SchematicView : UserControl
 
     // View->Zoom to Fit dispatches here from WorkspaceViewModel via SchematicDocument.RequestZoomToFit().
     private void OnZoomToFitRequestedFromMenu() => SchematicCanvasCtrl.ZoomToFit();
+
+    // Design ▸ Place Cell Instance… dispatches here the same way.
+    private void OnPlaceCellInstanceRequestedFromMenu() => _ = BeginCellPlacementAsync();
+
+    /// <summary>
+    /// Shows the cell picker and arms a click-to-place of whatever it returns — the schematic's
+    /// counterpart of the layout editor's Instance toolbar button, sharing that button's dialog and
+    /// its <b>Reference Cell…</b> loop (the picker CLOSES to run the cross-workspace flow, so two
+    /// modals never stack over one owner window; see the dialog's own note).
+    ///
+    /// <para>The picker lives here in code-behind, not in the view-model, for the same reason every
+    /// other dialog in this project does — the UI firewall. What it returns goes to
+    /// <c>SchematicViewModel.BeginCellPlacement</c>, and the click that follows takes the ordinary
+    /// cell-placement path a Project Tree drag already takes.</para>
+    /// </summary>
+    private async Task BeginCellPlacementAsync()
+    {
+        if (_subscribedDoc is not { } doc) return;
+        var vm = doc.ActiveViewModel;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        // The schematic's own folder is the cell's `schematic/` sub-folder; references are made
+        // against it, exactly as CommitCellPlacementAsync makes them.
+        string baseDir = vm.EditModel.SchematicDirectory ?? vm.WorkspaceRoot ?? "";
+        bool canReference = doc.Hierarchy?.CanReferenceExternalCell ?? false;
+
+        while (true)
+        {
+            var dialog = new InstanceCellPickerDialog(
+                vm.WorkspaceRoot, baseDir, vm.CurrentCellDir,
+                ViewType.Symbol, canReference);
+            var pick = await dialog.ShowDialog<CellPickResult?>(owner);
+            if (pick is null) return;
+
+            if (pick.ReferenceRequested)
+            {
+                if (doc.Hierarchy is not { } host) return;
+                string? broughtIn = await host.ReferenceExternalCellAsync();
+                if (broughtIn is null) continue;   // cancelled or refused — back to the list
+                pick = new CellPickResult(broughtIn, broughtIn);
+            }
+
+            if (pick.AbsoluteCellDir.Length == 0) return;
+            vm.BeginCellPlacement(pick.AbsoluteCellDir);
+            SchematicCanvasCtrl.Focus();
+            return;
+        }
+    }
 
     // Tab activated → grab keyboard focus so Select All / nudges work without a click.
     private void OnActivationFocusRequested()

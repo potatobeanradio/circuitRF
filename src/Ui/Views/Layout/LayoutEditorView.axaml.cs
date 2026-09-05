@@ -601,6 +601,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
             _subscribedDoc.ExportBoardRequested       -= OnExportBoardRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         -= OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.PlaceCellInstanceRequested -= OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc.CutRequested                -= OnCutRequestedFromMenu;
             _subscribedDoc.CopyRequested                -= OnCopyRequestedFromMenu;
             _subscribedDoc.PasteRequested                -= OnPasteRequestedFromMenu;
@@ -616,6 +617,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
             _subscribedDoc.ExportBoardRequested       += OnExportBoardRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         += OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.PlaceCellInstanceRequested += OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc.CutRequested                += OnCutRequestedFromMenu;
             _subscribedDoc.CopyRequested                += OnCopyRequestedFromMenu;
             _subscribedDoc.PasteRequested                += OnPasteRequestedFromMenu;
@@ -803,6 +805,8 @@ public partial class LayoutEditorView : UserControl
     // brief-layout-testing-fixes.md item 8: File → Export → GDSII/DXF fire these via
     // LayoutDocument.RequestExportGdsii/RequestExportDxf — the SAME toolbar code path, never a second
     // export entry point (item 5/R-fix-4's own "route every entry point through the same accessor").
+    private void OnPlaceCellInstanceRequestedFromMenu() => _ = BeginInstancePlacementAsync();
+
     private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
     private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
     private void OnExportGerberRequestedFromMenu() => _ = OnExportGerberAsync();
@@ -1371,18 +1375,52 @@ public partial class LayoutEditorView : UserControl
 
     // ── L3a — Instance-place tool (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md §6) ────────
 
-    private async void OnInstanceTool(object? sender, RoutedEventArgs e)
+    private async void OnInstanceTool(object? sender, RoutedEventArgs e) => await BeginInstancePlacementAsync();
+
+    /// <summary>
+    /// The ONE cell-picker-then-arm path for this editor — the Instance toolbar button and
+    /// <c>Design ▸ Place Cell Instance…</c> both land here (the menu through
+    /// <see cref="LayoutDocument.PlaceCellInstanceRequested"/>), so the two entry points cannot show
+    /// different dialogs or arm differently.
+    ///
+    /// <para>The loop is the <b>Reference Cell…</b> escape hatch: the picker CLOSES to run that flow
+    /// (a modal inside a modal over one owner window is what that avoids), the workspace brings the
+    /// cell in, and the picker re-opens — unless the cell came back, in which case it is armed
+    /// directly, because asking the user to find it in the list they just added it to is a step for
+    /// nothing.</para>
+    /// </summary>
+    private async Task BeginInstancePlacementAsync()
     {
         if (Vm is not { } vm) return;
         var owner = TopLevel.GetTopLevel(this) as Window;
         if (owner is null) return;
 
-        var dialog = new InstanceCellPickerDialog(vm.WorkspaceRootDir, vm.InstanceBaseDir, vm.CurrentCellDir);
-        var cellRef = await dialog.ShowDialog<string?>(owner);
-        if (string.IsNullOrEmpty(cellRef)) return;
+        var host = (DataContext as LayoutDocument)?.Hierarchy;
+        bool canReference = host?.CanReferenceExternalCell ?? false;
 
-        vm.BeginInstancePlacement(cellRef);
-        LayoutCanvasCtrl.InvalidateVisual();
+        while (true)
+        {
+            var dialog = new InstanceCellPickerDialog(
+                vm.WorkspaceRootDir, vm.InstanceBaseDir, vm.CurrentCellDir,
+                ViewType.Layout, canReference);
+            var pick = await dialog.ShowDialog<CellPickResult?>(owner);
+            if (pick is null) return;
+
+            if (pick.ReferenceRequested)
+            {
+                if (host is null) return;
+                string? broughtIn = await host.ReferenceExternalCellAsync();
+                if (broughtIn is null) continue;   // cancelled or refused — back to the list
+                pick = new CellPickResult(
+                    ExternalCellRef.MakeCellRef(vm.InstanceBaseDir, broughtIn), broughtIn);
+            }
+
+            if (pick.CellRef.Length == 0) return;
+            vm.BeginInstancePlacement(pick.CellRef);
+            LayoutCanvasCtrl.InvalidateVisual();
+            LayoutCanvasCtrl.Focus();
+            return;
+        }
     }
 
     // ── Export GDSII (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md, R-L4a-3) ──────────────────

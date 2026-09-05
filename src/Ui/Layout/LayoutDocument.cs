@@ -59,6 +59,13 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     public event Action? ZoomToFitRequested;
     public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
 
+    // ── Design ▸ Place Cell Instance… — same shape as the export requests above, and for the same
+    // reason: the cell picker lives in the view's code-behind (UI firewall), and a menu item bound to
+    // WorkspaceViewModel has no view to call it on. Routed to the view's ONE picker-then-arm path, so
+    // the menu and the Instance toolbar button are the same gesture reached two ways.
+    public event Action? PlaceCellInstanceRequested;
+    public void RequestPlaceCellInstance() => PlaceCellInstanceRequested?.Invoke();
+
     // ── Toolbar Cut/Copy/Paste — the workspace toolbar's Cut/Copy/Paste buttons have no direct
     // reference to this document's canvas; the view (already wired to the canvas's own
     // ClipboardCopy/Cut/PasteRequested events) runs the real operation.

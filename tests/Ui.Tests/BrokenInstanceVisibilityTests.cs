@@ -21,6 +21,11 @@ namespace CircuitRF.Ui.Tests;
 //  screen and this big", which is a property of the drawing, not of the machine.
 // ──────────────────────────────────────────────────────────────────────────────
 
+// One test here asserts an exact CellStat.Calls count, which is process-global — see
+// CellStatGlobalsCollection's own note ("add a class here the moment it asserts on CellStat.Calls").
+// It was missing from that collection, and a full-solution run duly reported "4040 calls for 2000
+// placements" for a paint that resolves once per missing cell; it passes alone every time.
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class BrokenInstanceVisibilityTests(ITestOutputHelper Out)
 {
     /// <summary>100 mm, in DBU at the default 1000 DBU/µm.</summary>

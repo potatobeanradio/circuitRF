@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -82,11 +83,15 @@ public partial class LayoutShapePropertiesView : UserControl
         var owner = TopLevel.GetTopLevel(this) as Window;
         if (owner is null) return;
 
+        // No "Reference Cell…" here, deliberately: re-targeting is an edit on one existing instance,
+        // and taking a cell in from another workspace is a change to the WORKSPACE. Offering it from a
+        // property row would bury a workspace-level act inside a field edit. The picker falls back to
+        // its plain Browse… for the same reason it always did.
         var dialog = new InstanceCellPickerDialog(editorVm.WorkspaceRootDir, editorVm.InstanceBaseDir, editorVm.CurrentCellDir);
-        var cellRef = await dialog.ShowDialog<string?>(owner);
-        if (string.IsNullOrEmpty(cellRef)) return;
+        var pick = await dialog.ShowDialog<CellPickResult?>(owner);
+        if (pick is null || pick.ReferenceRequested || pick.CellRef.Length == 0) return;
 
-        editorVm.RetargetSelectedInstance(cellRef);
+        editorVm.RetargetSelectedInstance(pick.CellRef);
     }
 
     // ── Vertex-list rows (Tag = "X" or "Y"; DataContext = the row itself) ───────────────────────
