@@ -223,6 +223,7 @@ public class CircuitRfDockFactory : Factory
                 Id               = "Documents",
                 Title            = "Documents",
                 IsCollapsable    = false,
+                EmptyContent     = null,   // Dock's default is the string "No documents open" — see EmptyDocumentArea
                 VisibleDockables = CreateList<IDockable>(welcome),
                 ActiveDockable   = welcome,
             };
@@ -818,6 +819,7 @@ public class CircuitRfDockFactory : Factory
                 // space back and one that is stuck there until Reset Layout.
                 IsCollapsable = true,
 
+                EmptyContent     = null,   // Dock's default is the string "No documents open" — see EmptyDocumentArea
                 Proportion       = node.Proportion is > 0.0 and < 1.0 ? node.Proportion : double.NaN,
                 VisibleDockables = CreateList<IDockable>(),
             };
@@ -1048,6 +1050,7 @@ public class CircuitRfDockFactory : Factory
             Id               = $"DocumentsSide{++_sidePaneCount}",
             Title            = "Documents",
             IsCollapsable    = true,
+            EmptyContent     = null,   // Dock's default is the string "No documents open" — see EmptyDocumentArea
             VisibleDockables = CreateList<IDockable>(),
         };
 

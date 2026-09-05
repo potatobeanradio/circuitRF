@@ -1350,6 +1350,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ResetHarmonicaDockedFocusTracking();
             // Same as the switch path: the workspace being left keeps its own session record.
             PersistOutgoingWorkspaceSession();
+        // …and any debounce still counting down for it is now redundant — the write it was going to
+        // make has just been made. Left running it would fire mid-open, against the INCOMING
+        // workspace path and a dock tree that is not finished yet (SuspendLayoutPersistence stops
+        // new ones being armed, but a timer already ticking is not covered by that).
+        _cwsSaveTimer?.Stop();
             // A torn-off document belonging to the OLD workspace closes with it; a foreign one
             // survives. Must run while CurrentWorkspacePath still names the workspace being left.
             CloseFloatedDocumentsOwnedByWorkspace(CurrentWorkspacePath);
@@ -1876,6 +1881,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void ScheduleCwsSave()
     {
         if (CurrentWorkspacePath is null) return;
+        // Nothing an open or a rebuild does to the tree is an arrangement the user chose, and for
+        // part of an open the tree is deliberately incomplete — see SuspendLayoutPersistence.
+        if (LayoutPersistenceSuspended) return;
 
         if (_cwsSaveTimer is null)
         {
@@ -2139,7 +2147,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CurrentWorkspacePath = cwsPath;
 
         // Honor Settings ▸ On Launch ▸ Window Layout for the clean-slate rebuild — a saved .cws
-        // arrangement (applied below via ApplyRestoredDockLayout, when present) still wins, but a
+        // arrangement (applied below via ApplyRestoredDockShell, when present) still wins, but a
         // workspace with no saved layout block should fall back to the chosen preset, not the
         // hardcoded §2.0 default.
         var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
@@ -2179,15 +2187,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         ApplyTreeViewState(cws.TreeViewState);
 
-        // R-L5g-7/8: clean start even after a crash, then warm the cache back up before any layout
-        // actually opens below — see this file's "Generated-cell lifecycle" section for the full story.
-        DeleteGeneratedCellsFolder(cwsPath);
-        await RegenerateAllGeneratedCellsAsync(cwsPath);
-
-        // The dock arrangement is PARSED here but applied after the documents are open, so the
-        // rebuilt shell re-hosts the populated DocumentDock rather than an empty one. Its document
-        // order feeds RestoreOpenDocuments — R-dock-2: the layout supplies ARRANGEMENT, while
-        // cws.OpenDocuments stays authoritative for MEMBERSHIP.
+        // The arrangement is parsed here and its SHELL applied immediately below, before anything
+        // slow happens. Its document order still feeds RestoreOpenDocuments — R-dock-2: the layout
+        // supplies ARRANGEMENT, while cws.OpenDocuments stays authoritative for MEMBERSHIP.
         var dockLayoutRead = ReadDockLayout(cws);
 
         // The workspace's own lines are posted BEFORE the documents are restored, and the ordering is
@@ -2195,16 +2197,42 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // below can post a live progress row that would then be cleared out from under a user who is
         // watching it. It also reads correctly — the workspace IS open at this point, and the
         // documents are being restored INTO it.
+        //
+        // Ahead of the generated-cell pass, not behind it, since the pass has warnings of its own
+        // and a Clear() that ran afterwards simply threw them away.
         PushRecent(cwsPath);
         Messages.Clear();
         Messages.Info("Opened", cwsPath);
 
-        await RestoreOpenDocumentsAsync(cws, workspaceDir, dockLayoutRead.Layout);
-        // SL2 R-sl2-11: an unwritable workspace OPENS — it is never refused — and says so once, here,
-        // where it reads as part of the open rather than as an interruption later.
-        ReportWorkspaceReadOnlyIfNeeded(cwsPath);
+        // The restore is now several dispatcher turns long BY DESIGN, and for most of it the dock
+        // tree is deliberately incomplete. Held across the whole of it so the `.cws` debounce cannot
+        // land a half-built arrangement on top of the user's real one — see SuspendLayoutPersistence.
+        using (SuspendLayoutPersistence())
+        {
+            // ── Phase one: the shell, on screen, before any of the slow work ────────────────────
+            //
+            // Owner instruction, 2026-09-04: the panels go where the workspace says they go and are
+            // RENDERED, and only then do the documents open. See ApplyRestoredDockShell for what
+            // phase one can and cannot do without the documents, and why splitting it costs nothing.
+            //
+            // Nothing awaits between the clean-slate rebuild above and this, so the default
+            // arrangement is never painted — the first frame is already the workspace's own.
+            ApplyRestoredDockShell(dockLayoutRead, WillRestoreDocument(cws, workspaceDir));
+            await ShellRenderedAsync();
 
-        ApplyRestoredDockLayout(dockLayoutRead);
+            // R-L5g-7/8: clean start even after a crash, then warm the cache back up before any
+            // layout actually opens below — see this file's "Generated-cell lifecycle" section.
+            DeleteGeneratedCellsFolder(cwsPath);
+            await RegenerateAllGeneratedCellsAsync(cwsPath);
+
+            await RestoreOpenDocumentsAsync(cws, workspaceDir, dockLayoutRead.Layout);
+            // SL2 R-sl2-11: an unwritable workspace OPENS — it is never refused — and says so once,
+            // here, where it reads as part of the open rather than as an interruption later.
+            ReportWorkspaceReadOnlyIfNeeded(cwsPath);
+
+            // ── Phase two: the documents into the shell that is already up ──────────────────────
+            FinishRestoredDockLayout(dockLayoutRead);
+        }
 
         // R-res-11 — migrate any results/<key>/run.npy directories left from the earlier layout to
         // the flat results/<key>.npy one, reporting what moved. Cheap no-op on an already-flat workspace.
@@ -2308,6 +2336,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// the project tree) so a brief pause already looks like something happening, and a bar that
     /// flashes up on every ordinary open would be noise.</summary>
     private const int WorkspaceOpenProgressAppearsAfterMs = 1000;
+
+    /// <summary>
+    /// Which document keys <see cref="RestoreOpenDocumentsAsync"/> is going to open, answered from
+    /// the <c>.cws</c> open list BEFORE any of them is open.
+    ///
+    /// <para>This is R-dock-2's membership test, moved one step earlier in time and not changed:
+    /// the open list still decides, and a saved split pane whose documents have all been deleted
+    /// off disk is still never built. What it may not do is ask <c>_openDocsByPath</c>, which at
+    /// phase one is empty — that would drop every split pane on every open.</para>
+    ///
+    /// <para>The existence checks mirror the restore loop's own, case for case; a key that fails one
+    /// there is skipped, so counting it as a pane member here would leave the same empty half-window
+    /// the rule exists to prevent.</para>
+    /// </summary>
+    internal static Func<string, bool> WillRestoreDocument(CwsFile cws, string workspaceDir)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in cws.OpenDocuments ?? [])
+        {
+            var abs = Path.IsPathRooted(entry.Path)
+                ? entry.Path
+                : Path.GetFullPath(Path.Combine(workspaceDir, entry.Path));
+
+            bool exists = string.Equals(entry.Kind, "cell", StringComparison.OrdinalIgnoreCase)
+                ? Directory.Exists(abs)
+                : File.Exists(abs);
+
+            if (exists) keys.Add(entry.Path);
+        }
+
+        return keys.Contains;
+    }
 
     private async Task RestoreOpenDocumentsAsync(CwsFile cws, string workspaceDir, Docking.CwsDockLayout? dockLayout = null)
     {

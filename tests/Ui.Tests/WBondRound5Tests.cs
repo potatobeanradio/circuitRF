@@ -1617,11 +1617,13 @@ public class WBondRound5Tests
 
         Assert.Contains("if (_layoutRebuildDepth > 0) return;", docking, StringComparison.Ordinal);
 
-        // ApplyDockLayout raises the guard around the whole rebuild, InitLayout included.
+        // ApplyDockLayout raises the guard around the whole rebuild, InitLayout included. The window
+        // is sized to reach past the signature, which now carries the shell phase's two extra
+        // parameters over three lines — the guard itself is unchanged.
         int apply = docking.IndexOf("private void ApplyDockLayout(", StringComparison.Ordinal);
         Assert.True(apply >= 0);
-        Assert.Contains("_layoutRebuildDepth++", docking[apply..(apply + 300)], StringComparison.Ordinal);
-        Assert.Contains("finally { _layoutRebuildDepth--; }", docking[apply..(apply + 300)], StringComparison.Ordinal);
+        Assert.Contains("_layoutRebuildDepth++", docking[apply..(apply + 600)], StringComparison.Ordinal);
+        Assert.Contains("finally { _layoutRebuildDepth--; }", docking[apply..(apply + 600)], StringComparison.Ordinal);
 
         // …and so does the workspace-open clean-slate rebuild, which is the one that could clobber.
         Assert.Contains("WhileRebuildingLayout(() =>",
@@ -2128,9 +2130,10 @@ public class WBondRound5Tests
         Assert.True(cap >= 0);
         Assert.Contains("Open = false", docking[cap..(cap + 900)], StringComparison.Ordinal);
 
-        // Seeded from the file BEFORE the layout is applied — the apply drops closed entries.
+        // Seeded from the file BEFORE the layout is applied — the apply drops closed entries. Both
+        // now live in the restore's SHELL phase, which is what applies the arrangement.
         int seed = docking.IndexOf("SeedPanelHomesFrom(layout);", StringComparison.Ordinal);
-        int apply = docking.IndexOf("ApplyDockLayout(layout, placer);", StringComparison.Ordinal);
+        int apply = docking.IndexOf("ApplyDockLayout(layout, placer, willBeOpen", StringComparison.Ordinal);
         Assert.True(seed >= 0 && apply > seed);
 
         // …and a closed entry really does place nothing when the layout is built.

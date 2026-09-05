@@ -1101,10 +1101,60 @@ public partial class WorkspaceViewModel
         finally { _layoutRebuildDepth--; }
     }
 
-    private void ApplyDockLayout(CwsDockLayout state, FloatingWindowPlacer? placer = null)
+    /// <summary>
+    /// The same suppression, held across an <c>await</c> — which the <see cref="Action"/> form cannot
+    /// do. Used to cover a whole workspace open, from the moment the shell goes up to the moment the
+    /// documents have been placed in it.
+    ///
+    /// <para><b>Why an open needs it and a single apply does not.</b> The open now spans several
+    /// dispatcher turns by design (the shell renders, then the generated-cell pass, then the layout
+    /// reads), and for that whole span the tree on screen is deliberately INCOMPLETE — the split
+    /// document panes exist but are empty until phase two fills them. The three-second `.cws`
+    /// debounce is a DispatcherTimer, so it fires perfectly happily inside that span, and what it
+    /// would write is the half-built arrangement over the user's real one. The same hazard was
+    /// already there while the restore ran on the DEFAULT layout; it is simply no longer left to
+    /// chance.</para>
+    /// </summary>
+    internal IDisposable SuspendLayoutPersistence() => new LayoutPersistenceSuspension(this);
+
+    private sealed class LayoutPersistenceSuspension : IDisposable
+    {
+        private WorkspaceViewModel? _owner;
+
+        public LayoutPersistenceSuspension(WorkspaceViewModel owner)
+        {
+            _owner = owner;
+            owner._layoutRebuildDepth++;
+        }
+
+        public void Dispose()
+        {
+            if (_owner is null) return;
+            _owner._layoutRebuildDepth--;
+            _owner = null;
+        }
+    }
+
+    /// <summary>True while an arrangement is being rebuilt or a workspace opened — see
+    /// <see cref="SuspendLayoutPersistence"/> for what a write landing in that window would cost.</summary>
+    internal bool LayoutPersistenceSuspended => _layoutRebuildDepth > 0;
+
+    /// <param name="documentMembership">
+    /// R-dock-2's membership test, overridden. Null means "the documents that are open RIGHT NOW",
+    /// which is right for every rebuild of a shell that is already populated (Hide/Show Dockers,
+    /// Reset Layout). The workspace-open path supplies its own, because there it runs BEFORE the
+    /// documents exist — see <see cref="ApplyRestoredDockShell"/>.
+    /// </param>
+    /// <param name="fillDocumentPanes">
+    /// False leaves the split panes built but EMPTY, for a caller that will populate them itself
+    /// once its documents are open (<see cref="FinishRestoredDockLayout"/>).
+    /// </param>
+    private void ApplyDockLayout(CwsDockLayout state, FloatingWindowPlacer? placer = null,
+                                Func<string, bool>? documentMembership = null,
+                                bool fillDocumentPanes = true)
     {
         _layoutRebuildDepth++;
-        try { ApplyDockLayoutCore(state, placer); }
+        try { ApplyDockLayoutCore(state, placer, documentMembership, fillDocumentPanes); }
         finally { _layoutRebuildDepth--; }
 
         // A rebuild replaces the whole tree, so any panel may have appeared or vanished — the one
@@ -1112,7 +1162,9 @@ public partial class WorkspaceViewModel
         RaiseToolPanelVisibilityChanged();
     }
 
-    private void ApplyDockLayoutCore(CwsDockLayout state, FloatingWindowPlacer? placer)
+    private void ApplyDockLayoutCore(CwsDockLayout state, FloatingWindowPlacer? placer,
+                                     Func<string, bool>? documentMembership = null,
+                                     bool fillDocumentPanes = true)
     {
         placer ??= FloatingWindowPlacer.For(state, CurrentScreens());
 
@@ -1123,10 +1175,13 @@ public partial class WorkspaceViewModel
             ? Path.GetDirectoryName(cwsForRegion)
             : null;
 
+        var membership = documentMembership
+            ?? (wsDirForRegion is null ? null : key => ResolveOpenDocument(key, wsDirForRegion) is not null);
+
         var newLayout = _factory.CreateLayoutFromState(
             state,
             w => placer.Place(w.X, w.Y, w.Width, w.Height),
-            wsDirForRegion is null ? null : key => ResolveOpenDocument(key, wsDirForRegion) is not null);
+            membership);
         // InitLayout also executes IRootDock.ShowWindows (confirmed by decompiling
         // FactoryBase.InitLayout), so the floating windows this arrangement re-created are presented
         // here — calling ShowWindows again afterwards would present each of them twice.
@@ -1141,7 +1196,7 @@ public partial class WorkspaceViewModel
         SubscribeToFilterState();
         SubscribeToTreeSelection();
 
-        RestoreSplitDocumentPanes(wsDirForRegion);
+        if (fillDocumentPanes) RestoreSplitDocumentPanes(wsDirForRegion);
     }
 
     /// <summary>
@@ -1167,6 +1222,15 @@ public partial class WorkspaceViewModel
         for (int i = 1; i < panes.Count; i++)
         {
             var pane = panes[i];
+
+            // The pane must still BE in the live tree. It always is when this runs inline off an
+            // apply, but the workspace open now fills the panes in a later phase (see
+            // FinishRestoredDockLayout), and a dock that has left the tree in between would swallow
+            // every document moved into it — worse than the tab strip this falls back to, because a
+            // detached dock is not on screen at all.
+            if (Layout is null || !DockLayoutCapture.EnumerateDocumentDocks(Layout).Contains(pane.Dock))
+                continue;
+
             try
             {
                 IDockable? active = null;
@@ -1410,25 +1474,88 @@ public partial class WorkspaceViewModel
         }
     }
 
+    // ---- The restore, in two phases: the shell, then the documents ----------
+    //
+    // Owner instruction, 2026-09-04: a big workspace must open in a systematic order — the panels
+    // land where the workspace says they go and are ON SCREEN before the documents start loading.
+    //
+    // It used to be one call, made LAST, and the reason it was there is real: the apply rebuilds the
+    // whole tree and re-hosts the existing DocumentDock, so doing it after the restore meant the
+    // rebuilt shell picked up a dock that already had its tabs. The cost was that everything slow in
+    // an open — the generated-cell pass, then reading a 27 MB .clay — happened while the window was
+    // still showing the DEFAULT arrangement, and the user's own panel layout snapped into place at
+    // the very end, after the documents. The panels appeared to be ignored until the wait was over.
+    //
+    // Splitting it costs nothing, because only two steps of the apply actually need the documents to
+    // exist, and neither is part of building the shell:
+    //   * which split panes to build at all — R-dock-2 membership, which the shell phase answers
+    //     from the OPEN LIST it is about to restore instead of from the documents already open;
+    //   * moving each document into its pane and re-floating the torn-off windows, which is the
+    //     whole of phase two.
+    // Everything else — the tool docks, the sides, the inboard columns, the floating TOOL windows —
+    // is arrangement, and arrangement is exactly what the user is waiting to see.
+
+    /// <summary>The placer phase one built, held for phase two so both use one — see
+    /// <see cref="FloatingWindowPlacer"/>'s own note on why the restore may not build two.</summary>
+    private FloatingWindowPlacer? _restorePlacer;
+
     /// <summary>
-    /// Applies a parsed arrangement (and reports why it could not be used, when that is the case).
-    /// R-dock-5 in one method: nothing here can throw into the workspace-open sequence, and every
-    /// failure leaves the shell on the default layout with a message the user can act on.
+    /// Phase one: the SHELL. Puts the tool panels where the workspace says they go, builds (but does
+    /// not fill) the split document panes, and reports why the saved arrangement could not be used
+    /// when that is the case.
+    ///
+    /// <para>R-dock-5 unchanged: nothing here can throw into the workspace-open sequence, and every
+    /// failure leaves the shell on the default layout with a message the user can act on.</para>
     /// </summary>
-    private void ApplyRestoredDockLayout(DockLayoutSerialization.ReadResult read)
+    /// <param name="willBeOpen">
+    /// Which document keys the restore that follows is going to open. R-dock-2 is unchanged — the
+    /// open list still decides membership — but at this point the answer has to come from the list
+    /// rather than from <c>_openDocsByPath</c>, which is still empty. Reading it from the live
+    /// dictionary here would drop every split pane, since none of its documents is open YET.
+    /// </param>
+    private void ApplyRestoredDockShell(DockLayoutSerialization.ReadResult read, Func<string, bool> willBeOpen)
     {
+        _restorePlacer = null;
+
         if (read.Report is not null) Messages.Warning(read.Report);
+        if (read.Layout is not { } layout) return;
 
-        if (read.Layout is { } layout)
+        // Before applying it: the CLOSED entries are places, not panels, and the apply drops them.
+        SeedPanelHomesFrom(layout);
+
+        try
         {
-            // Before applying it: the CLOSED entries are places, not panels, and the apply drops them.
-            SeedPanelHomesFrom(layout);
+            // One placer for the whole restore — see FloatingWindowPlacer's own note.
+            var placer = FloatingWindowPlacer.For(layout, CurrentScreens());
+            ApplyDockLayout(layout, placer, willBeOpen, fillDocumentPanes: false);
+            _restorePlacer = placer;
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Saved window layout could not be applied; using the default layout. ({ex.Message})");
+        }
+    }
 
+    /// <summary>
+    /// Phase two: the DOCUMENTS, into the shell that is already on screen. Moves each restored
+    /// document into the pane the saved layout put it in and re-floats the torn-off windows.
+    ///
+    /// <para>A phase one that fell back to the default layout leaves <see cref="_restorePlacer"/>
+    /// null and this does nothing but the collapsed-state pass — the documents stay as ordinary tabs
+    /// in the primary strip, which is the same degraded-but-usable outcome R-dock-5 always
+    /// specified.</para>
+    /// </summary>
+    private void FinishRestoredDockLayout(DockLayoutSerialization.ReadResult read)
+    {
+        if (read.Layout is { } layout && _restorePlacer is { } placer)
+        {
             try
             {
-                // One placer for the whole restore — see FloatingWindowPlacer's own note.
-                var placer = FloatingWindowPlacer.For(layout, CurrentScreens());
-                ApplyDockLayout(layout, placer);
+                // Suppressed for the same reason the apply itself is: these moves raise the very
+                // arrangement-changed events that would arm a `.cws` write of what was just restored.
+                var wsDir = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
+                WhileRebuildingLayout(() => RestoreSplitDocumentPanes(wsDir));
+
                 RestoreFloatingDocumentWindows(layout, placer);
             }
             catch (Exception ex)
@@ -1437,7 +1564,30 @@ public partial class WorkspaceViewModel
             }
         }
 
+        _restorePlacer = null;
+
         // A view preference, not a property of the design — it survives the workspace switch.
         ReapplyCollapsedStateIfNeeded();
+    }
+
+    /// <summary>
+    /// Lets the shell phase one just installed actually REACH THE SCREEN before the caller starts
+    /// the next slow step. Without it the panels are only in the model: the open goes straight on to
+    /// the generated-cell pass and the layout reads, and the first frame anyone sees is the one after
+    /// all of that — which is the whole of what phase one was meant to avoid.
+    ///
+    /// <para><c>Background</c> sits BELOW <c>Loaded</c> and <c>Render</c>, so an operation that
+    /// completes at that priority has waited for the layout and render passes the new tree queued
+    /// ahead of it. Off the UI thread, or with no Avalonia application at all (the headless test and
+    /// CLI paths), there is nothing to wait for and this is a no-op rather than a hang.</para>
+    /// </summary>
+    private static async Task ShellRenderedAsync()
+    {
+        if (Avalonia.Application.Current is null) return;
+
+        var dispatcher = Avalonia.Threading.Dispatcher.UIThread;
+        if (!dispatcher.CheckAccess()) return;
+
+        await dispatcher.InvokeAsync(static () => { }, Avalonia.Threading.DispatcherPriority.Background);
     }
 }

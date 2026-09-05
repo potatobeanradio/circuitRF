@@ -154,6 +154,55 @@
         <Style Selector="dockCtrl|DocumentDockControl">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
         </Style>
+
+        <!-- ══ THE EMPTY DOCUMENT AREA — the Welcome page's icon, and nothing else ═══════════════
+             Owner request: with no documents open, show the icon from the Welcome page on its own —
+             no text, not even "Welcome to circuitRF". (The Welcome document page itself is
+             untouched; this is only what fills the area when there is no document at all.)
+
+             WHAT IT REPLACES: Dock.Model.Mvvm's DocumentDock.EmptyContent defaults to the literal
+             string "No documents open" — that string is in the package, not in this repo, which is
+             why it cannot be found by grepping for it here. The Fluent theme's DocumentControl
+             template puts it in PART_EmptyContentHost, whose ContentTemplate is template-bound to
+             DocumentControl.EmptyContentTemplate; a template set here therefore wins over whatever
+             the model carries, and does so for EVERY document dock — including the ones Dock's own
+             tab context menu creates (New Horizontal/Vertical Document Dock), which this repo never
+             constructs and so could not fix at the model end.
+
+             Our own three document docks additionally set EmptyContent = null (see
+             CircuitRfDockFactory), so the string is gone from the model too and the failure mode, if
+             this template is ever lost to a Dock upgrade, is an empty area rather than the old text
+             quietly coming back.
+
+             The icon is deliberately the same MaterialIcon, size, brush and opacity as
+             Views/Content/StubContentView.axaml's — it IS the Welcome page's icon, not a copy that
+             can drift. -->
+        <Style Selector="dockCtrl|DocumentControl">
+            <Setter Property="EmptyContentTemplate">
+                <DataTemplate>
+                    <mi:MaterialIcon Kind="IntegratedCircuitChip"
+                                     Width="48" Height="48"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource SystemBaseMediumColor}"
+                                     Opacity="0.4"/>
+                </DataTemplate>
+            </Setter>
+        </Style>
+
+        <!-- The same, for the MDI layout mode the tab context menu can switch the area into. -->
+        <Style Selector="dockCtrl|MdiDocumentControl">
+            <Setter Property="EmptyContentTemplate">
+                <DataTemplate>
+                    <mi:MaterialIcon Kind="IntegratedCircuitChip"
+                                     Width="48" Height="48"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource SystemBaseMediumColor}"
+                                     Opacity="0.4"/>
+                </DataTemplate>
+            </Setter>
+        </Style>
         <Style Selector="dockCtrl|RootDockControl">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
         </Style>

@@ -1,5 +1,135 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The empty document area shows the Welcome page's icon, and no text (2026-09-04)
+
+**Asked for:** with no documents open, show the icon from the Welcome page on its own — no text, not
+even "Welcome to circuitRF". The Welcome document **page** itself is to be left alone.
+
+**Where "No documents open" actually came from — it is not in this repository.**
+`Dock.Model.Mvvm`'s `DocumentDock.EmptyContent` **defaults** to that literal string. Grepping the
+repo for it finds only comments describing it, which is exactly how it could sit there for months
+looking like someone else's text. The Fluent theme's `DocumentControl` template puts that value in a
+`PART_EmptyContentHost` `ContentControl`, whose `ContentTemplate` is template-bound to
+`DocumentControl.EmptyContentTemplate` — verified by walking the real applied template in a headless
+Avalonia probe rather than by reading Dock's source, since the theme XAML is compiled into the
+package.
+
+**Fixed in two halves, and both are load-bearing.**
+
+- **`Styles/CircuitRfStyles.axaml` sets `EmptyContentTemplate`** on `dockCtrl|DocumentControl` and on
+  `dockCtrl|MdiDocumentControl`, to a `DataTemplate` holding one `MaterialIcon` and nothing else.
+  This is what draws the icon, and it is the half that reaches **every** document dock — including
+  the ones Dock's own tab context menu creates (New Horizontal/Vertical Document Dock), which this
+  repository never constructs and so could not fix at the model end. All three applications
+  (`App`, `HarmonicaApp`, `WBondApp`) `StyleInclude` this file, so one setter covers all of them.
+- **`CircuitRfDockFactory` sets `EmptyContent = null`** on each of the three document docks it builds
+  itself (the primary, a restored split pane, and the pane `SplitDocumentRightOf` opens). This
+  removes the string from the model as well, so if the template is ever lost to a Dock upgrade the
+  failure mode is an EMPTY area, not the old text quietly returning. A null renders the template
+  exactly as a non-null value does — checked in the probe, because the opposite is the more usual
+  `ContentPresenter` behaviour and it would have silently produced nothing.
+
+**Why a style rather than a marker view model + `DataTemplate` in `App.axaml`.** The implicit
+`DataTemplate` route reaches only the applications that declare it, and `StubDocument`'s template
+lives in `App.axaml` alone — so harmonicaRF and wBond would have rendered a marker object's
+`ToString()`, which is worse than the text being replaced. The style file is already the one thing
+all three include.
+
+**The icon is the Welcome page's own** — same `Kind`, size, brush and opacity as
+`Views/Content/StubContentView.axaml`'s. `StubContentView` is untouched: the Welcome page keeps its
+heading, and only the empty area behind it loses text.
+
+Gate: `tests/Ui.Tests/EmptyDocumentAreaTests.cs` (8 tests). Dock's default string is pinned through
+the real package — not a tautology, it is the only assertion here a package upgrade rather than a code
+change can invalidate, and every other one is meaningless without it. The three docks are driven for
+real (including `SplitDocumentRightOf`), a count check catches a fourth `new DocumentDock` added
+later without the clear, and the two templates are scanned for the icon and for the ABSENCE of any
+`TextBlock` or `Text=` — the request itself, stated as a test. One test-authoring trap worth naming:
+the style block must be found from the `EmptyContentTemplate` setter OUTWARDS, because
+`dockCtrl|DocumentControl` already carries an unrelated chrome style earlier in the same file and
+looking the selector up by name finds that one.
+
+## A large workspace now opens shell-first: panels placed and rendered, then the documents (2026-09-04)
+
+**Asked for:** set the dock panels up in the workspace's own positions, get them rendered, and only
+then open the documents, so a workspace carrying a large `.clay` opens in a visible, systematic
+order.
+
+**What it was doing.** `SwitchToWorkspace` installed the CLEAN-SLATE default arrangement, ran the
+generated-cell pass, restored every document, and applied the workspace's own saved arrangement
+**last**. So the entire wait — the regeneration, then reading a 27 MB board — happened against the
+DEFAULT panel layout, and the user's panels snapped into place at the very end, after the tabs. The
+panels looked ignored for as long as the open took. (The progress row added earlier the same day
+covers the READ; it never covered the arrangement.)
+
+**Why it was last, and why that reason does not require it to be.** The apply rebuilds the whole dock
+tree and re-hosts the existing `DocumentDock`, so running it after the restore meant the rebuilt shell
+picked up a dock that already held its tabs — a real property, and it is unchanged: the preserved dock
+is still pane zero. Only two steps of the apply actually need documents to exist:
+
+- **which split panes to build at all** — R-dock-2 membership; and
+- **moving each document into its pane, and re-floating the torn-off windows.**
+
+Everything else (the tool docks, the four sides, the inboard columns, the floating TOOL windows) is
+arrangement, which is exactly what the user is waiting to see. So `ApplyRestoredDockLayout` split into
+`ApplyRestoredDockShell` (before) and `FinishRestoredDockLayout` (after), with
+`ApplyDockLayout` gaining two parameters — a membership override and `fillDocumentPanes` — and every
+other caller (Hide/Show Dockers, Reset Layout, collapse) taking the defaults and behaving as before.
+
+**The one way this could have gone quietly wrong.** The membership test was
+`key => ResolveOpenDocument(key, wsDir) is not null` — "is it open right now". Asked in the shell
+phase that is always **false**, since nothing is open yet, so every saved split pane would have been
+dropped on **every** open and a side-by-side workspace would silently reopen as one tab strip.
+R-dock-2 is unchanged (the open list still decides membership); the answer simply has to come from
+`cws.OpenDocuments` instead of `_openDocsByPath`. `WillRestoreDocument` mirrors the restore loop's own
+existence checks case for case — `Directory.Exists` for a cell folder, `File.Exists` for the rest —
+because a key the restore skips must not count as a pane member either, or the blank half-window
+R-dock-2 exists to prevent comes back.
+
+**Rendering is a step, not a side effect.** Putting the panels in the MODEL first buys nothing on its
+own: with no yield, the next slow step starts immediately and the first frame anyone sees is still the
+one after all of it. `ShellRenderedAsync` waits for a dispatcher operation at `Background` priority,
+which sits below `Loaded`/`Render` and therefore completes only after the layout and render passes the
+new tree queued ahead of it. Off the UI thread, or with no Avalonia application (headless, CLI), it is
+a no-op rather than a hang.
+
+**A flash that had to be removed at the same time.** Nothing may `await` between the clean-slate
+rebuild and the shell apply, or the DEFAULT arrangement gets a frame of its own on the way past. That
+is now true (the `.cws` load and the tree view-state are synchronous) and pinned by a test, because it
+is a property an ordinary-looking refactor would break without any visible symptom in a test run.
+
+**Two things the longer open made unsafe, fixed with it:**
+
+- **The `.cws` debounce could land mid-open.** The three-second write is a `DispatcherTimer` and fires
+  perfectly happily inside a restore that now spans several dispatcher turns — and for most of that
+  span the tree is deliberately incomplete (panes built, not yet filled). `SuspendLayoutPersistence`
+  is the `await`-able form of `WhileRebuildingLayout`; it holds the existing `_layoutRebuildDepth`
+  guard across the whole open, and `ScheduleCwsSave` now respects that guard too. A timer already
+  counting down when the switch begins is stopped outright — the suspension flag only stops NEW ones
+  being armed, and `PersistOutgoingWorkspaceSession` has just made the write it was going to make.
+  The same hazard existed before, against the DEFAULT layout; it was simply left to chance.
+- **A secondary pane must still be in the live tree when phase two fills it.** Dock removes an
+  `IsCollapsable` document dock when its last tab closes — an empty pane that was never populated has
+  no close event, so it does not collapse, but the gap between building a pane and filling it is new
+  and a dock that left the tree in between would swallow every document moved into it. Detached is
+  strictly worse than the tab strip, so `RestoreSplitDocumentPanes` now skips a pane it cannot find in
+  `Layout`.
+
+**One thing that quietly got better.** `Messages.Clear()` used to run AFTER the generated-cell pass,
+which threw away that pass's own warnings on every open. It is now ahead of it, so a regeneration
+failure survives to be read.
+
+Gate: `tests/Ui.Tests/WorkspaceOpenShellFirstTests.cs` (13 tests, 0.2 s) — the membership predicate
+against real files on disk, the real factory building both panes of a saved split with nothing open,
+the secondary pane left empty for phase two, a pane whose files are gone still dropped, the suspension
+scope's nesting and double-dispose, and the step order inside `SwitchToWorkspace`. The order is
+source-scanned for the same reason `AsyncDocumentOpenRoutingTests` scans its call sites: it is a
+sequence of awaits on the UI thread, which this project's tests may not run, and a step moved back
+behind the documents still opens the workspace — just with the panels arriving last, which is the whole
+of the complaint. Two existing source scans in `WBondRound5Tests` were pinned to literals this changed
+(`ApplyDockLayout`'s signature grew past their 300-character window; `ApplyDockLayout(layout, placer)`
+gained arguments) — the properties they assert are unchanged.
+
 ## After an update, macOS refused ~/Documents until the app was quit and relaunched (2026-09-04)
 
 **Symptom:** owner report — following an automatic update on macOS, every workspace under
