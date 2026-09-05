@@ -184,8 +184,11 @@ public static class GdsiiWriter
 
     /// <summary>§4.3/R-via-9: a <see cref="ViaShape"/> emits one flattened-circle BOUNDARY per mapped
     /// layer it participates in — the barrel (<see cref="LayoutShape.Layer"/>, ALWAYS present) and the
-    /// pad (<see cref="ViaShape.LandingLayer"/>, only when set). GDSII has no via primitive at all, so
-    /// "mapped" here means simply "has a landing layer to draw on" — GDSII writes a raw
+    /// pad (<see cref="ViaSpanResolver.PadLayer"/> — the shape's own <see cref="ViaShape.LandingLayer"/>
+    /// when an importer set one, otherwise the TOP conductor of the span its stackup via entry states,
+    /// because the layout editor's Via tool has never set the per-shape field and a via that lost its
+    /// pad on the way out is a via with no annular ring). GDSII has no via primitive at all, so
+    /// "mapped" here means simply "has a pad layer to draw on" — GDSII writes a raw
     /// <c>(layer, datatype)</c> key directly with no name lookup, unlike DXF, so there is no separate
     /// "layer known to this technology" failure mode to check. Reuses <see cref="WriteBoundaryLike"/>
     /// (via a synthetic <see cref="CircleShape"/>) rather than a hand-rolled square, so the pad/barrel
@@ -198,7 +201,7 @@ public static class GdsiiWriter
         var barrel = new CircleShape { Layer = via.Layer, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.DrillSize, 2) / 2 };
         WriteBoundaryLike(w, barrel, tech, ref curveCount, ref holeCount);
 
-        if (via.LandingLayer is { } landing)
+        if (ViaSpanResolver.PadLayer(via, tech) is { } landing)
         {
             var pad = new CircleShape { Layer = landing, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.PadSize, 2) / 2 };
             WriteBoundaryLike(w, pad, tech, ref curveCount, ref holeCount);
@@ -206,7 +209,9 @@ public static class GdsiiWriter
         else
         {
             viaPadsSkipped++;
-            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no landing layer set — pad not exported.");
+            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no pad layer — " +
+                            (ViaSpanResolver.Explain(via.Layer, tech) ?? "no landing layer is set.") +
+                            " Pad not exported.");
         }
     }
 

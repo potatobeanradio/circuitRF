@@ -697,6 +697,35 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // press — so they cannot both be armed or the wire tool would look armed and never see a click.
         // The other direction is in OnWireDrawArmedChanged/OnWireRotateArmedChanged.
         if (value != Tool.Select) { WireDrawArmed = false; WireRotateArmed = false; }
+
+        if (value == Tool.Via) MoveToTheOnlyViaLayer();
+    }
+
+    /// <summary>
+    /// Arming the Via tool moves the current layer to the technology's via layer <b>when there is
+    /// exactly one</b>.
+    ///
+    /// <para>Every other drawing tool draws on whatever layer is current, and a via ought to be no
+    /// different — except that a via's drawing layer is not a cosmetic choice: it is what selects the
+    /// <see cref="StackupKind.Via"/> stackup entry, and therefore the SPAN. On the ordinary
+    /// two-layer board there is one via entry and no choice to make, so making the user find the drill
+    /// layer in a combo before the tool will work is friction with no decision behind it. Where the
+    /// stackup declares SEVERAL via entries — which is precisely the blind/buried and the MMIC
+    /// backside-vs-post case — there IS a decision, one this method must not make silently, so the
+    /// current layer is left alone and <see cref="ViaToolAvailability"/> refuses with a reason that
+    /// names the candidates.</para>
+    ///
+    /// <para>Never moves off a layer that is ALREADY a via layer: a user who picked one meant it.</para>
+    /// </summary>
+    private void MoveToTheOnlyViaLayer()
+    {
+        if (Technology is not { } tech) return;
+        var drill = ViaSpanResolver.DrillLayerKeys(tech);
+        if (drill.Contains(CurrentLayerKey) || drill.Count != 1) return;
+
+        var only = drill.Single();
+        if (AvailableLayers.FirstOrDefault(l => l.Key.Equals(only)) is { } item) CurrentLayerItem = item;
+        else CurrentLayerKey = only;
     }
 
     /// <summary>
@@ -720,16 +749,39 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     // ── Via tool (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1) ───────────────────────
 
-    /// <summary>R13a: "tool prominence follows the technology — needed where the stackup has a via
-    /// layer with a drill function; on a technology without one it is redundant, since a via there is
-    /// ordinary geometry (§1)." A via layer is any <see cref="StackupKind.Via"/> stackup entry, exactly
-    /// how R-via-4 completed both starter stackups — no separate "has a drill function" flag exists or
-    /// is needed, since <c>StackupKind.Via</c> IS that function.</summary>
-    public LayoutCommandAvailability ViaToolAvailability =>
-        Technology is { } tech && tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via)
-            ? LayoutCommandAvailability.Enabled
-            : LayoutCommandAvailability.Disabled(
-                "Via: this technology's stackup has no via layer — draw geometry on a via/drill layer directly instead.");
+    /// <summary>
+    /// R13a: "tool prominence follows the technology — needed where the stackup has a via layer with a
+    /// drill function; on a technology without one it is redundant, since a via there is ordinary
+    /// geometry (§1)." A via layer is any <see cref="StackupKind.Via"/> stackup entry, exactly how
+    /// R-via-4 completed both starter stackups — no separate "has a drill function" flag exists or is
+    /// needed, since <c>StackupKind.Via</c> IS that function.
+    ///
+    /// <para>Enabled only when the CURRENT layer is one a via entry claims — not merely when the
+    /// stackup has a via entry somewhere.</para>
+    ///
+    /// <para><b>Why the extra condition.</b> <see cref="CommitViaPlacement"/> places on
+    /// <see cref="CurrentLayerKey"/>, and a via on a layer no <see cref="StackupKind.Via"/> entry binds
+    /// belongs to no entry — so it has no span, and it is inert in every consumer that needs one: DRC
+    /// net extraction never joins across it, the planar extractor drops it, the board writer cannot
+    /// state its span, and its pad has no copper layer to land on. It draws perfectly and does nothing,
+    /// which is the worst of the available outcomes. Refusing with a reason that NAMES the layers that
+    /// would work is the same R13a habit <see cref="ConvertToViaAvailability"/> already applies.</para>
+    /// </summary>
+    public LayoutCommandAvailability ViaToolAvailability
+    {
+        get
+        {
+            if (Technology is not { } tech || !tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via))
+                return LayoutCommandAvailability.Disabled(
+                    "Via: this technology's stackup has no via layer — draw geometry on a via/drill layer directly instead.");
+
+            if (!ViaSpanResolver.DrillLayerKeys(tech).Contains(CurrentLayerKey))
+                return LayoutCommandAvailability.Disabled(
+                    "Via: " + (ViaSpanResolver.Explain(CurrentLayerKey, tech) ?? "the current layer is not a via layer."));
+
+            return LayoutCommandAvailability.Enabled;
+        }
+    }
 
     /// <summary>The toolbar tooltip text — the base description when enabled, the R13a reason when
     /// not (bound directly rather than left to code-behind, since a toolbar button has no natural
@@ -2708,6 +2760,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     partial void OnCurrentLayerItemChanged(LayerPickerItem? value)
     {
         if (value is not null) CurrentLayerKey = value.Key;
+    }
+
+    /// <summary>The Via tool's enablement depends on the CURRENT layer, not only on the technology —
+    /// see <see cref="ViaToolAvailability"/> — so the toolbar has to be told when it moves.</summary>
+    partial void OnCurrentLayerKeyChanged(LayerKey value)
+    {
+        OnPropertyChanged(nameof(ViaToolAvailability));
+        OnPropertyChanged(nameof(ViaToolTipText));
     }
 
     /// <summary>Repopulates <see cref="AvailableLayers"/> from <see cref="Technology"/> (ordered by

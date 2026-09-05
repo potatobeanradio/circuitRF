@@ -1753,3 +1753,66 @@ terms (a resolver hit returns the same instance; a file change makes a new one).
 this one is unconditionally safe to share, since it depends on neither depth nor path — and it matters
 because the R47h re-check runs on the process-wide live-refresh tick, where a generated cell's
 six-figure via field would otherwise be re-enumerated every time.
+
+---
+
+## A via's span reached the technology but never the interchange writers (2026-09-05)
+
+Reported from a public forum: there is no way to place a blind or buried via, because a via can be
+assigned a layer but nothing says where it ends.
+
+**Half of that is a documentation gap and half was a real bug.** The span HAS been expressible since
+the via primitive landed — `StackupLayer.SpanFromLayer`/`SpanToLayer` on a `StackupKind.Via` entry
+(R-via-3), edited in the technology editor's Stackup tab as `Spans: <conductor> → <conductor>`, with
+the via's DRAWING LAYER selecting the entry. One entry per span, each on its own drawing layer, is the
+mechanism; the shipped `pcb-4layer_FR-4_62mil_1oz` technology already ships a blind stitching via
+beside its PTH, and the MMIC technology ships three entries. Nothing in the editor said so.
+
+### What was actually broken
+
+`DrcConnectivity` and `PlanarExtractor.BuildVias` both read the span. **Every interchange writer
+invented its own answer instead**, and both inventions reach a fab:
+
+- **`PcbWriter.WriteVia` wrote `from` = the pad's copper and `to` = `OppositeCopper(...)`.** Every via
+  it wrote was a through via. A blind or buried via left circuitRF as a hole drilled clean through the
+  board, silently. The IMPORT side has always refused to pretend in the other direction (a blind via
+  it reads is reported as degraded), which is what made the asymmetry visible once looked at.
+- **`GdsiiWriter`/`DxfWriter`/`GerberExport` keyed the pad off `ViaShape.LandingLayer`**, which
+  `CommitViaPlacement` has never set — it writes Layer, X, Y, PadSize, DrillSize and nothing else. So
+  every via drawn in the editor exported as a bare barrel with no annular ring (GDSII, DXF), or
+  flashed its pad into the DRILL layer's own Gerber file (Gerber). **`GerberLayerOf`'s own doc comment
+  asserted the opposite** — "the layout editor's Via tool always sets one" — and that claim is what
+  had kept the case looking covered. Copper in a drill file is the exact fabrication bug the paragraph
+  above it says L4h fixed; it was only ever fixed for vias that came from an IMPORT.
+
+A fourth, in the editor: **the Via tool was enabled whenever the stackup had any via entry**, and
+placed on `CurrentLayerKey` — which after `RebuildAvailableLayers` is the technology's FIRST layer,
+i.e. copper. A via there belongs to no entry, so it has no span and is inert in DRC net extraction, in
+the planar extractor, and in every export. It drew perfectly and did nothing.
+
+### The fix
+
+`src/Design/Layout/ViaSpanResolver.cs` — one answer to "which two conductors does this via join?",
+plus `Explain(...)`, which writes the failure sentence once so the tool tooltip, the inspector and
+three export diagnostics all say the same thing about the same state. Consumers: `PcbWriter`
+(real span + the `blind` kind atom + a note when it falls back to through), the three pad writers
+(`PadLayer` = the shape's `LandingLayer` when an importer set one, else the span's TOP conductor),
+`ViaToolAvailability`, and a read-only "Spans" row in the properties inspector.
+
+**Two traps worth keeping.**
+
+- `SpanFromLayer`/`SpanToLayer` carry NO ordering promise — a hand-authored technology may name them
+  either way round. The resolver takes the direction from `Stackup.Layers`' own top-to-bottom order
+  (R-em-3), never from which field said what. Writing them in the field order produces a layer pair a
+  board reader silently mis-orders.
+- Arming the Via tool moves the current layer to the sole via layer when the stackup has exactly one,
+  and deliberately does NOT choose when there are several — because with several entries the drawing
+  layer IS the span choice, and picking one silently is how a blind via becomes a through via again.
+
+### Still open
+
+Import: `PcbReader.ReadVia` identifies a blind/buried via and then loses its span, because expressing
+one on the read side means synthesizing a via entry AND a drawing layer per distinct span and grafting
+both onto the destination technology. `docs/sonnet-briefs/brief-via-span-import.md` has the shape and
+the gates. Also unchanged and out of scope there: `ViaShape` carries ONE landing layer, so a through
+via in a 4-layer board still cannot state a pad on every copper layer it passes.

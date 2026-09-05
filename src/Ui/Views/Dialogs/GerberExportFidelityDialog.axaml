@@ -22,6 +22,8 @@
             <SelectableTextBlock x:Name="FormatLine" FontSize="11" TextWrapping="Wrap"/>
             <SelectableTextBlock x:Name="UnpairedDrillLine" FontSize="11" TextWrapping="Wrap"
                        Foreground="{DynamicResource CrfWarningBrush}"/>
+            <SelectableTextBlock x:Name="UnspannedViaPadLine" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource CrfWarningBrush}"/>
             <!-- Shown only when nothing needed converting, so the list of WHAT did not need it was
                  telling the reader about categories that were never in play. The line says the
                  outcome; the lines above it are where the exceptions appear when there are any. -->

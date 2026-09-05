@@ -829,10 +829,15 @@ public static class PcbReader
         if (IsFlagged(node, "blind") || IsFlagged(node, "micro") || IsFlagged(node, "buried")) through = false;
 
         if (!through)
-            // R-L4d-10: the model carries ONE landing layer, so a blind/buried via cannot be expressed.
-            // Report it by count, naming where it was put, rather than pretending otherwise.
+            // A via's span is expressible — it lives on the technology's StackupKind.Via entry
+            // (ViaSpanResolver), and the EXPORT side now writes it. What the READ side has no route to
+            // is a per-span via ENTRY: it would have to synthesize one, plus a drawing layer for it, per
+            // distinct span in the file, and graft both onto whatever destination technology the import
+            // is landing in. Until it does, the via is placed on its top span layer and the span is
+            // lost — reported by count, naming where it was put, rather than pretended away.
             ctx.Degraded($"blind/buried via placed on its top span layer \"{padLayer}\" only " +
-                        "(the model carries one landing layer)");
+                        "(importing a via span needs a matching via entry in the destination technology; " +
+                        "add one in the technology editor's Stackup tab and redraw the via on its layer)");
 
         Add(into, new ViaShape
         {

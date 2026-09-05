@@ -58,7 +58,11 @@ public sealed record PcbWriteSummary(
     int Footprints, int PadsFromPins, int PinsWithNoArtwork,
     int CubicsFlattened, int BitmapsSkipped, int HolesKeyholed, int UnnamedDrills,
     IReadOnlyList<string> UnmappedLayerNames,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes,
+    /// <summary>Vias whose span came from the stackup and is NOT outer-to-outer.</summary>
+    int BlindOrBuriedVias = 0,
+    /// <summary>Vias written as through vias because nothing stated their span.</summary>
+    int UnspannedVias = 0);
 
 public static class PcbWriter
 {
@@ -71,7 +75,7 @@ public static class PcbWriter
     {
         var layers = PcbLayerNaming.Assign(model.Tech);
         double dbuPerMm = model.DbuPerMicron * 1000.0;
-        var ctx = new Ctx(w, layers, dbuPerMm);
+        var ctx = new Ctx(w, layers, dbuPerMm, model.Tech);
 
         w.Write("(kicad_pcb (version ");
         w.Write(PcbLayerNaming.TargetVersion);
@@ -108,23 +112,44 @@ public static class PcbWriter
                 $"{ctx.Zones} copper region(s) were written as filled zones so they carry their net. " +
                 "Refilling zones in the receiving tool re-derives their shape from the outline and its " +
                 "clearances, which will differ from what circuitRF drew.");
+        if (ctx.BlindOrBuriedVias > 0)
+            ctx.Notes.Add(
+                $"{ctx.BlindOrBuriedVias} via(s) span layers other than the two outer coppers and were " +
+                "written as blind/buried vias, at the span their stackup via entry states. This format " +
+                "has no separate spelling for buried, so both are written with the same kind word.");
+        if (ctx.UnspannedVias > 0)
+            ctx.Notes.Add(
+                $"{ctx.UnspannedVias} via(s) were written as THROUGH vias (outer copper to outer copper) " +
+                "because nothing states the layers they actually join, and a written via must name some " +
+                "span. Check this before fabricating: " +
+                string.Join(" ", ctx.UnspannedViaReasons));
 
         return new PcbWriteSummary(
             ctx.Segments, ctx.Arcs, ctx.Vias, ctx.Zones, ctx.Graphics, ctx.Texts,
             ctx.Footprints, ctx.PadsFromPins, ctx.PinsWithNoArtwork,
             ctx.CubicsFlattened, ctx.BitmapsSkipped, ctx.HolesKeyholed, ctx.UnnamedDrills,
-            layers.UnmappedLayerNames, ctx.Notes);
+            layers.UnmappedLayerNames, ctx.Notes, ctx.BlindOrBuriedVias, ctx.UnspannedVias);
     }
 
     // ── Context ─────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class Ctx(TextWriter w, PcbLayerNaming.Result layers, double dbuPerMm)
+    private sealed class Ctx(TextWriter w, PcbLayerNaming.Result layers, double dbuPerMm, Technology? tech)
     {
         public TextWriter W { get; } = w;
         public PcbLayerNaming.Result Layers { get; } = layers;
         public double DbuPerMm { get; } = dbuPerMm;
+
+        /// <summary>Needed for one question only, and it is a question no layer table can answer:
+        /// which two CONDUCTORS a via joins (<see cref="ViaSpanResolver"/>). The layer table maps a
+        /// drawing layer to a row; the span lives on the stackup's via entry.</summary>
+        public Technology? Tech { get; } = tech;
         public IReadOnlyDictionary<string, int> NetOrdinals { get; set; } = new Dictionary<string, int>();
         public List<string> Notes { get; } = [];
+
+        /// <summary>Vias written with a span nothing stated, and the distinct reasons why — reported
+        /// as a note rather than left to look like a deliberate through via.</summary>
+        public int UnspannedVias, BlindOrBuriedVias;
+        public List<string> UnspannedViaReasons { get; } = [];
 
         public int Segments, Arcs, Vias, Zones, Graphics, Texts;
         public int Footprints, PadsFromPins, PinsWithNoArtwork;
@@ -526,26 +551,75 @@ public static class PcbWriter
         return [.. combined];
     }
 
+    /// <summary>
+    /// <b>The span comes from the TECHNOLOGY, not from the artwork</b> — R-via-3, and the same split
+    /// <c>DrcConnectivity</c> and <c>PlanarExtractor.BuildVias</c> already apply: the drawing says
+    /// WHERE a via is, the stackup's via entry says WHICH TWO CONDUCTORS it joins.
+    ///
+    /// <para><b>What this replaced, and why it was a bug rather than a limitation.</b> The writer used
+    /// to take <see cref="ViaShape.LandingLayer"/> as one end of the span and the OPPOSITE OUTER
+    /// copper as the other, so every via it wrote was a through via — a blind or buried via left
+    /// circuitRF as a hole drilled clean through the board, silently, in the file a fab reads. The
+    /// import side has always refused to pretend the other way (a blind via it reads is reported as
+    /// degraded, because the model carries one landing layer), which is what made the asymmetry
+    /// visible.</para>
+    ///
+    /// <para><b>The kind word is written, not left to inference.</b> A reader that sees only a
+    /// non-outer layer pair has to decide for itself whether the file means a blind via or a
+    /// mis-stated through one; <c>PcbReader</c> keys on the bare atom (and so does this format's own
+    /// parser), so a span that is not outer-to-outer says <c>blind</c> and round-trips as one.</para>
+    /// </summary>
     private static void WriteVia(Ctx ctx, ViaShape via)
     {
-        // R-L4d-10 in reverse: LandingLayer is the PAD's copper, and it is what names the span. The
-        // barrel's own layer is a circuitRF drill layer with no counterpart here — the hole is the
-        // (drill …) value, not a layer.
-        string from = via.LandingLayer is { } landing ? ctx.LayerName(landing) ?? "F.Cu" : "F.Cu";
-        string to = OppositeCopper(ctx, from);
+        string from, to;
+        bool through;
+
+        if (ViaSpanResolver.Resolve(via.Layer, ctx.Tech) is { } span
+            && CopperNameOf(ctx, span.Top) is { } topName
+            && CopperNameOf(ctx, span.Bottom) is { } bottomName)
+        {
+            from = topName;
+            to = bottomName;
+            through = ViaSpanResolver.IsThrough(span, ctx.Tech);
+        }
+        else
+        {
+            // Nothing states the span. Outer-to-outer is the only honest default — it is what an
+            // unqualified via MEANS in this format — but it is a guess about fabrication, so it is
+            // reported rather than written quietly. ViaSpanResolver.Explain names the remedy.
+            (from, to) = OuterCopperPair(ctx);
+            through = true;
+            string why = ViaSpanResolver.Explain(via.Layer, ctx.Tech) ?? "the span could not be resolved.";
+            ctx.UnspannedVias++;
+            if (!ctx.UnspannedViaReasons.Contains(why)) ctx.UnspannedViaReasons.Add(why);
+        }
+
+        string kind = through ? "" : "blind ";
         ctx.W.WriteLine(
-            $"  (via (at {ctx.Mm(via.X)} {ctx.My(via.Y)}) (size {ctx.Mm(via.PadSize)}) " +
+            $"  (via {kind}(at {ctx.Mm(via.X)} {ctx.My(via.Y)}) (size {ctx.Mm(via.PadSize)}) " +
             $"(drill {ctx.Mm(via.DrillSize)}) (layers {Quote(from)} {Quote(to)}) (net {ctx.NetOf(via.Net)}))");
         ctx.Vias++;
+        if (!through) ctx.BlindOrBuriedVias++;
     }
 
-    private static string OppositeCopper(Ctx ctx, string from)
+    /// <summary>The board-format copper name a CONDUCTOR stackup entry writes as, found through its own
+    /// drawing layers so an explicit <c>InterchangeMapping.PcbLayerName</c> alias still wins (the same
+    /// route <c>WriteSetup</c> takes). Null when the entry binds no drawing layer that reached the
+    /// copper part of the table — a conductor nothing is drawn on, which cannot name a span.</summary>
+    private static string? CopperNameOf(Ctx ctx, StackupLayer conductor)
+    {
+        foreach (var key in conductor.DrawingLayers)
+            if (ctx.Layers.RowByKey.TryGetValue(key, out var row) && row.IsCopper)
+                return row.Name;
+        return null;
+    }
+
+    /// <summary>The outermost declared copper pair, top first — what a through via spans.</summary>
+    private static (string From, string To) OuterCopperPair(Ctx ctx)
     {
         var copper = ctx.Layers.Table.Where(r => r.IsCopper).ToList();
-        if (copper.Count < 2) return from == "F.Cu" ? "B.Cu" : "F.Cu";
-        var first = copper.MinBy(r => r.Ordinal)!;
-        var last = copper.MaxBy(r => r.Ordinal)!;
-        return from == first.Name ? last.Name : first.Name;
+        if (copper.Count < 2) return ("F.Cu", "B.Cu");
+        return (copper.MinBy(r => r.Ordinal)!.Name, copper.MaxBy(r => r.Ordinal)!.Name);
     }
 
     private static void WriteText(Ctx ctx, LabelShape label, string layer, string prefix = "gr", string indent = "  ")

@@ -732,7 +732,9 @@ public static partial class DxfWriter
 
     /// <summary>§4.3/R-via-9: a <see cref="ViaShape"/> emits one exact CIRCLE per mapped layer it
     /// participates in — the barrel (<see cref="LayoutShape.Layer"/>, at <see cref="ViaShape.DrillSize"/>)
-    /// and the pad (<see cref="ViaShape.LandingLayer"/>, at <see cref="ViaShape.PadSize"/>). "Mapped"
+    /// and the pad (<see cref="ViaSpanResolver.PadLayer"/>, at <see cref="ViaShape.PadSize"/> — the
+    /// shape's own <see cref="ViaShape.LandingLayer"/> when an importer set one, otherwise the TOP
+    /// conductor of the span the stackup states). "Mapped"
     /// here means the layer has a real <see cref="LayerDef"/> in <paramref name="tech"/> — checked
     /// against the technology directly, NOT against <paramref name="layerNames"/> membership alone,
     /// since <c>ResolveLayerNames</c> always synthesizes SOME entry for a via's LandingLayer (so the
@@ -741,8 +743,8 @@ public static partial class DxfWriter
     /// is unknown (<c>LayerOf</c>'s own default), a via part with an undeclared layer is SKIPPED and
     /// reported instead: falling back to "0" would put pad/barrel copper on an arbitrary layer, "an
     /// export that looks plausible and puts copper where the hole should be" (§4.3's own explicit
-    /// warning). The pad is additionally skipped (and reported) when <see cref="ViaShape.LandingLayer"/>
-    /// is null — nothing to draw it on at all.</summary>
+    /// warning). The pad is additionally skipped (and reported) when NEITHER the shape's landing layer
+    /// nor its stackup via entry's span names a layer — nothing to draw it on at all.</summary>
     private static void WriteViaAsCircles(
         DxfGroupWriter w, ViaShape via, Technology? tech, IReadOnlyDictionary<LayerKey, string> layerNames,
         double dbuToDrawingUnit, Counts counts, List<string> diagnostics, DxfHandles handles, string ownerHandle,
@@ -763,12 +765,14 @@ public static partial class DxfWriter
 
         WriteCircle(via.Layer, via.DrillSize);
 
-        if (via.LandingLayer is { } landing)
+        if (ViaSpanResolver.PadLayer(via, tech) is { } landing)
             WriteCircle(landing, via.PadSize);
         else
         {
             counts.ViaPartsSkipped++;
-            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no landing layer set — pad not exported.");
+            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no pad layer — " +
+                            (ViaSpanResolver.Explain(via.Layer, tech) ?? "no landing layer is set.") +
+                            " Pad not exported.");
         }
     }
 

@@ -47,6 +47,15 @@ public partial class GerberExportFidelityDialog : Window
         UnpairedDrillLine.Text = $"• {plan.UnpairedDrillCircles} circle(s) on a drill layer will produce unpaired holes — convert to Vias for annular-ring checking?";
         UnpairedDrillLine.IsVisible = plan.UnpairedDrillCircles > 0;
 
+        // A via whose pad has no copper layer to land on flashes into the BARREL layer's own file —
+        // copper written into a drill file, which a fab etches where the annular ring belongs. The pad
+        // is still written (never silently dropped, R13a); what is reported is that it is in the wrong
+        // file and why.
+        UnspannedViaPadLine.Text =
+            $"• {plan.UnspannedViaPads} via(s) resolve no landing copper, so their pad flash goes in the " +
+            "barrel layer's own file. Set Spans on the via entry in the technology editor's Stackup tab.";
+        UnspannedViaPadLine.IsVisible = plan.UnspannedViaPads > 0;
+
         NoChangesLine.IsVisible = plan.HasNothingToReport;
 
         if (plan.UnresolvedInstances.Count > 0)

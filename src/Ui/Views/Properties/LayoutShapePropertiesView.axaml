@@ -173,6 +173,19 @@
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>
                         </Grid>
+                        <!-- Read-only: a via's span is a PROCESS parameter on the stackup via entry its
+                             drawing layer selects (R-via-3), not a per-shape field. Shown because
+                             "which layers does this via connect?" was otherwise unanswerable from the
+                             editor, and a via whose layer resolves no span is inert in DRC, in EM and
+                             in every export. -->
+                        <Grid ColumnDefinitions="56,*" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="Spans" VerticalAlignment="Top" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Which two conductors this via joins. Set on the via entry in the technology editor's Stackup tab — the via's drawing layer is what selects the entry, so a different span means a different layer."/>
+                            <TextBlock Grid.Column="1" Text="{Binding ViaSpanText}" FontSize="11"
+                                       TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Classes.warn="{Binding ViaSpanIsProblem}"/>
+                        </Grid>
                     </StackPanel>
 
                     <!-- ── Path ──────────────────────────────────────────────────────────── -->

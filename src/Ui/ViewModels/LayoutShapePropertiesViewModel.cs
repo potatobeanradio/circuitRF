@@ -471,6 +471,23 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     // in the Properties Inspector") ──────────────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool _showVia;
+
+    /// <summary>
+    /// Which two conductors the selected via joins, read from the technology — <b>the one via property
+    /// that is not on the shape</b>. A via's span is a process parameter carried on the matching
+    /// <see cref="StackupKind.Via"/> stackup entry (R-via-3), and the via's DRAWING LAYER is what
+    /// selects the entry, so "which layers does this via connect?" was previously unanswerable from
+    /// the editor: the inspector showed pad, drill and position, and nothing anywhere tied the layer
+    /// to a span. Read-only on purpose — a via that needs a different span needs a different drawing
+    /// layer, not an override here, because a fab plates every via of a kind identically.
+    /// </summary>
+    [ObservableProperty] private string _viaSpanText = "";
+
+    /// <summary>True when <see cref="ViaSpanText"/> is stating a problem rather than a span, so the
+    /// view can style it as a warning. A via with no resolvable span is inert in DRC, in EM and in
+    /// every export's span — it draws and does nothing.</summary>
+    [ObservableProperty] private bool _viaSpanIsProblem;
+
     [ObservableProperty] private string _viaPadSizeText = "";
     [ObservableProperty] private string? _viaPadSizeError;
     public bool HasViaPadSizeError => ViaPadSizeError is not null;
@@ -528,6 +545,39 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         ViaDrillSizeError = null;
         ApplyToEach<long>("Drill", s => ((ViaShape)s).DrillSize, (s, v) => ((ViaShape)s).DrillSize = v, dbu, s => s is ViaShape);
         RefreshFromVm();
+    }
+
+    /// <summary>Resolves the selection's span for <see cref="ViaSpanText"/>. A mixed selection says so
+    /// rather than showing one via's span for all of them.</summary>
+    private void UpdateViaSpan(List<ViaShape> vias)
+    {
+        var tech = _vm?.Technology;
+        var descriptions = vias
+            .Select(v => ViaSpanResolver.Resolve(v.Layer, tech) is { } span
+                ? $"{span.Top.Name} \u2192 {span.Bottom.Name}"
+                : null)
+            .Distinct()
+            .ToList();
+
+        if (descriptions.Count == 1 && descriptions[0] is { } only)
+        {
+            ViaSpanText = only;
+            ViaSpanIsProblem = false;
+            return;
+        }
+
+        if (descriptions.Count > 1)
+        {
+            ViaSpanText = descriptions.Any(d => d is null)
+                ? "(mixed \u2014 some of these vias resolve no span)"
+                : "(mixed)";
+            ViaSpanIsProblem = descriptions.Any(d => d is null);
+            return;
+        }
+
+        // Every selected via failed the same way, so one explanation covers them all.
+        ViaSpanText = ViaSpanResolver.Explain(vias[0].Layer, tech) ?? "no span stated.";
+        ViaSpanIsProblem = true;
     }
 
     // ── Path ───────────────────────────────────────────────────────────────────
@@ -1890,6 +1940,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             SetTextIfNotFocused("ViaDrillSize", FormatSharedDbu(vias.Select(v => (long?)v.DrillSize)), () => ViaDrillSizeText, v => ViaDrillSizeText = v);
             SetTextIfNotFocused("ViaX", FormatSharedDbu(vias.Select(v => (long?)v.X)), () => ViaXText, v => ViaXText = v);
             SetTextIfNotFocused("ViaY", FormatSharedDbu(vias.Select(v => (long?)v.Y)), () => ViaYText, v => ViaYText = v);
+            UpdateViaSpan(vias);
         }
 
         ShowPath = _selected.All(s => s is PathShape);

@@ -14,10 +14,7 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>R-via-5's own identity for "drill-function layer" — any layer named in a
     /// <see cref="StackupKind.Via"/> stackup entry's <c>DrawingLayers</c>, the same set
     /// <see cref="ViaToolAvailability"/> and <c>GerberExport</c>'s unpaired-circle report both use.</summary>
-    private HashSet<LayerKey> DrillLayerKeys() =>
-        Technology is { } tech
-            ? [.. tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).SelectMany(l => l.DrawingLayers)]
-            : [];
+    private HashSet<LayerKey> DrillLayerKeys() => ViaSpanResolver.DrillLayerKeys(Technology);
 
     /// <summary>R-via-6: enabled for a selection of exactly one Circle on a drill layer, or that
     /// Circle plus one concentric (same center) second Circle to use as the pad. Any other selection

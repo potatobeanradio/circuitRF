@@ -38,7 +38,13 @@ public static class GerberExport
         /// genuinely correct (§1), way to draw a via. Each still contributes an Excellon hit (never
         /// refused, never silently dropped — R13a) but is unpaired: no matching pad, no annular-ring
         /// data. Reported here so the dialog can suggest <c>Convert to Via</c> (R-via-6).</summary>
-        int UnpairedDrillCircles = 0)
+        int UnpairedDrillCircles = 0,
+        /// <summary>Vias whose PAD had no copper layer to go on — neither a
+        /// <see cref="ViaShape.LandingLayer"/> set by an importer nor a span on the stackup via entry
+        /// their drawing layer selects. Their pad flash lands in the barrel layer's own file, which for
+        /// a drill layer is copper written into a drill file, so this is reported rather than left to
+        /// be discovered at the fab.</summary>
+        int UnspannedViaPads = 0)
     {
         public bool RequiresMappingConfirmation => PendingCrossTechMappings.Count > 0;
 
@@ -55,7 +61,7 @@ public static class GerberExport
             CubicEdgesFlattened == 0 && TopLevelInstancesFlattened == 0 &&
             LabelsConvertedToGeometry == 0 && PortLabelsOmitted == 0 && BitmapsOmitted == 0 &&
             PathsAsRegion == 0 && UnresolvedInstances.Count == 0 && !FormatIsNonDefault &&
-            UnpairedDrillCircles == 0;
+            UnpairedDrillCircles == 0 && UnspannedViaPads == 0;
     }
 
     public sealed record WriteResult(IReadOnlyList<string> FilesWritten, int DrillToolsDefined, int DrillHitsWritten);
@@ -167,7 +173,8 @@ public static class GerberExport
             geometry, format, cubics, labelsConverted, portLabelsOmitted, bitmapsOmitted, strokes, regions,
             flatten.TopLevelInstancesFlattened, flatten.ShapesContributedByInstances,
             flatten.UnresolvedInstances, flatten.PendingCrossTechMappings, false,
-            [], rootTech, unpairedCircles.Count);
+            [], rootTech, unpairedCircles.Count,
+            vias.Count(v => ViaSpanResolver.PadLayer(v, rootTech) is null));
     }
 
     /// <summary>R-via-5: a drill-function layer is any layer named in a <see cref="StackupKind.Via"/>
@@ -294,7 +301,7 @@ public static class GerberExport
         foreach (var s in shapes)
         {
             if (s is CircleShape && drillLayers.Contains(s.Layer)) continue;
-            var key = GerberLayerOf(s);
+            var key = GerberLayerOf(s, tech);
             if (!map.TryGetValue(key, out var list)) map[key] = list = [];
             list.Add(s);
         }
@@ -328,12 +335,22 @@ public static class GerberExport
     /// layer's file; files exported after it put them in the landing layer's, as
     /// brief-L4c-gerber-export.md's own §5 line ("a pad flash in copper") always said they should.</para>
     ///
-    /// <para>A via carrying NO landing layer keeps the old answer, because there is then no copper
-    /// layer to name — the pad has to go somewhere and the barrel's layer is the only one stated. The
-    /// layout editor's Via tool always sets one; a hand-edited <c>.clay</c> need not.</para>
+    /// <para><b>The landing layer is asked of the TECHNOLOGY when the shape does not carry one.</b>
+    /// The claim this comment used to make — that the layout editor's Via tool always sets one — was
+    /// simply false: <c>CommitViaPlacement</c> sets Layer, X, Y, PadSize and DrillSize and nothing
+    /// else, so EVERY via drawn in the editor fell into the "keeps the old answer" branch and put its
+    /// copper pad into the DRILL layer's own Gerber file. That is the exact fabrication bug the
+    /// paragraph above says L4h fixed — a fab reading that file etches copper where the annular ring
+    /// belongs and the copper layer has no pad at all — and it was only ever fixed for vias that came
+    /// from an IMPORT. <see cref="ViaSpanResolver.PadLayer"/> answers from the stackup's via entry
+    /// instead, which is where the process states what a via lands on.</para>
+    ///
+    /// <para>A via that neither carries a landing layer nor resolves a span still keeps the old
+    /// answer, because there is then genuinely no copper layer to name — and
+    /// <see cref="UnspannedViaPads"/> counts those so the fidelity dialog can say so.</para>
     /// </summary>
-    private static LayerKey GerberLayerOf(LayoutShape shape)
-        => shape is ViaShape { LandingLayer: { } landing } ? landing : shape.Layer;
+    private static LayerKey GerberLayerOf(LayoutShape shape, Technology? tech)
+        => shape is ViaShape via ? ViaSpanResolver.PadLayer(via, tech) ?? via.Layer : shape.Layer;
 
     /// <summary>The largest coordinate MAGNITUDE across every shape's own defining fields — mirrors
     /// <c>GdsiiCoordinateValidation</c>'s per-shape field walk, but computes a max rather than validating
