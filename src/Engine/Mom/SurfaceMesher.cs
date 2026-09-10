@@ -287,11 +287,14 @@ public static class SurfaceMesher
     /// refusal quote goes through this. <c>null</c> (the default) is SI engineering notation, byte for
     /// byte what every caller got before this parameter existed; a UI caller supplies one built from
     /// the open layout's own display unit.</param>
-    /// <param name="ports">M2 — read ONLY by <see cref="PlanarMeshSettings.TransmissionLineMesh"/>,
-    /// and only to CHECK the direction the metal itself gave (<c>PlanarMeshPitchField</c>). Null or
+    /// <param name="ports">M2 — read ONLY by <see cref="PlanarCurrentModel.TransmissionLine"/>, and
+    /// only to CHECK the direction the metal itself gave (<c>PlanarMeshPitchField</c>);
+    /// <see cref="PlanarCurrentModel.Sheet"/> does not read them at all, because the question they
+    /// answer is about a direction and a sheet has none. Null or
     /// empty is a first-class case: a setup with no port labels yet must still produce a mesh, and
     /// the field is measured from the artwork regardless. <b>It never changes the mesh with the
-    /// transmission-line mesh off</b>, which is what keeps the pre-solve report and the run in step —
+    /// current model at <see cref="PlanarCurrentModel.None"/></b>, which is what keeps the pre-solve
+    /// report and the run in step —
     /// the panel and <c>PlanarKernel.Mesh</c> reach this from different places.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
@@ -419,9 +422,17 @@ public static class SurfaceMesher
         // With this on, each setting governs its own direction — λ ALONG the current, narrowness
         // ACROSS it — and the direction is measured per point so a bend is followed rather than
         // averaged. See PlanarMeshPitchField, which is where all of it lives.
+        //
+        // ── ANT-3 — AND THE SECOND INTENT, WHICH IS THE CASE THE FIRST DECLINES BY CONSTRUCTION ──
+        //
+        // A wide radiating sheet has no single current direction and does not want one: the current
+        // varies on the scale of a wavelength in BOTH axes and the interior carries no singularity.
+        // `PlanarCurrentModel.Sheet` asks the same field builder for λ_g/N in both directions,
+        // floored locally by the metal's own width only where that is finer. Same field, same
+        // grading, same one-way floor — see PlanarMeshPitchField's header.
         PlanarPitchField? pitch = null;
         string? pitchNote = null;
-        if (s.TransmissionLineMesh)
+        if (s.CurrentModel != PlanarCurrentModel.None)
         {
             // The field is graded at the EDGE FAN's own ratio, so the bulk field and the fan cannot
             // disagree about how fast a cell size may change. Derived from the pitch the per-axis
@@ -434,9 +445,10 @@ public static class SurfaceMesher
             double fieldGrowth = probeRatio > 1.0 ? probeRatio - 1.0 : MinGrowthRatio - 1.0;
 
             // hx/hy here are still the per-axis rule's own pitches, and they go in as the FLOOR:
-            // the transmission-line mesh may only coarsen.
+            // neither intent may refine anything.
             pitch = PlanarMeshPitchField.Build(problem, hWave, s.MinCellsAcrossConductor,
-                                               fieldGrowth, hx, hy, ports, detailFloor);
+                                               fieldGrowth, hx, hy, ports, detailFloor,
+                                               s.CurrentModel);
             if (pitch.Ok)
             {
                 // The scalar pitches become the field's own FINEST value, because everything derived
@@ -491,10 +503,16 @@ public static class SurfaceMesher
                 // FIELD on the λ knobs are NOT inert, and this refusal fires on exactly the boards
                 // most likely to have it turned on.
                 (pitch is not null
-                    ? $"The transmission-line mesh is on, so λ_g/{s.CellsPerWavelength} = {fmt(hWave)} " +
-                      "sets the pitch along the current and the metal's width sets it across: lower " +
-                      "Cells per wavelength, size the mesh at a lower Mesh frequency, coarsen the Detail " +
-                      "floor (a SMALLER divisor), or analyse a smaller region."
+                    ? (s.CurrentModel == PlanarCurrentModel.Sheet
+                        ? $"The sheet mesh is on, so λ_g/{s.CellsPerWavelength} = {fmt(hWave)} sets " +
+                          "the pitch in BOTH axes and the metal's own width sets it only where the " +
+                          "metal is narrower than that: lower Cells per wavelength, size the mesh at " +
+                          "a lower Mesh frequency, coarsen the Detail floor (a SMALLER divisor), or " +
+                          "analyse a smaller region."
+                        : $"The transmission-line mesh is on, so λ_g/{s.CellsPerWavelength} = {fmt(hWave)} " +
+                          "sets the pitch along the current and the metal's width sets it across: lower " +
+                          "Cells per wavelength, size the mesh at a lower Mesh frequency, coarsen the Detail " +
+                          "floor (a SMALLER divisor), or analyse a smaller region.")
                  : hWave <= Math.Min(narrowX, narrowY) / s.MinCellsAcrossConductor
                     ? $"The cell size is set by wavelength (λ_g/{s.CellsPerWavelength} = {fmt(hWave)}): " +
                       "lower Cells per wavelength, size the mesh at a lower Mesh frequency, or analyse " +
@@ -867,11 +885,22 @@ public static class SurfaceMesher
                   //    range, the finest value is local to the narrowest neck, and Cells per
                   //    wavelength sets the ALONG pitch at every point of it. Telling a user the λ
                   //    knobs are inert here sends them away from the one that works.
-                  ? $"Cells per wavelength sets the pitch ALONG the current ({fmt(hWave)}); the metal's " +
-                    $"own width sets it ACROSS, {s.MinCellsAcrossConductor} cells over " +
-                    $"{fmt(narrowest)} at the narrowest. The field spans {fmt(Math.Min(hx, hy))}–" +
-                    $"{fmt(Math.Max(pitch.MaxPitchX, pitch.MaxPitchY))}, so BOTH knobs move this mesh, " +
-                    "each in its own direction."
+                  //
+                  //    ANT-3: a SHEET says the same thing in one direction fewer. λ sets the pitch
+                  //    in both axes there, and the width floor is LOCAL to the narrow metal rather
+                  //    than a transverse rule — so the sentence about "ACROSS" would be describing
+                  //    a decomposition this mesh does not have.
+                  ? (s.CurrentModel == PlanarCurrentModel.Sheet
+                     ? $"Cells per wavelength sets the pitch in BOTH axes ({fmt(hWave)}); the metal's " +
+                       $"own width sets it only where the metal is narrower than that, " +
+                       $"{s.MinCellsAcrossConductor} cells over {fmt(narrowest)} at the narrowest. The " +
+                       $"field spans {fmt(Math.Min(hx, hy))}–" +
+                       $"{fmt(Math.Max(pitch.MaxPitchX, pitch.MaxPitchY))}, so BOTH knobs move this mesh."
+                     : $"Cells per wavelength sets the pitch ALONG the current ({fmt(hWave)}); the metal's " +
+                       $"own width sets it ACROSS, {s.MinCellsAcrossConductor} cells over " +
+                       $"{fmt(narrowest)} at the narrowest. The field spans {fmt(Math.Min(hx, hy))}–" +
+                       $"{fmt(Math.Max(pitch.MaxPitchX, pitch.MaxPitchY))}, so BOTH knobs move this mesh, " +
+                       "each in its own direction.")
                   : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
                     $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
                     $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +
@@ -1231,7 +1260,14 @@ public static class SurfaceMesher
                       && (hWave <= narrowX / s.MinCellsAcrossConductor
                        || hWave <= narrowY / s.MinCellsAcrossConductor);
 
-        var why = field
+        var why = field && s.CurrentModel == PlanarCurrentModel.Sheet
+            ? $" The sheet mesh is on, so λ_g/{s.CellsPerWavelength} = {fmt(hWave)} sets the pitch in " +
+              $"BOTH axes and {s.MinCellsAcrossConductor} cells across the metal binds only where the " +
+              $"metal is narrower than that — {fmt(narrowest)} at its narrowest here. The pitch field " +
+              $"that came out spans {fmt(pitch)} to {fmt(coarsestPitch)} over {fmt(extentX)} × " +
+              $"{fmt(extentY)} of artwork — the finest value is local to the narrowest metal, not the " +
+              "pitch of the whole grid, and both controls move this count."
+            : field
             ? $" The transmission-line mesh is on, so the two controls act in DIFFERENT directions " +
               $"and both of them move this count: λ_g/{s.CellsPerWavelength} = {fmt(hWave)} along the " +
               $"current, and {s.MinCellsAcrossConductor} cells across metal {fmt(narrowest)} wide at " +
@@ -1248,11 +1284,14 @@ public static class SurfaceMesher
               $"tensor product over the whole layout, so the narrow end is paid for everywhere. The " +
               $"λ_g/{s.CellsPerWavelength} cap is {fmt(hWave)}, {hWave / pitch:G3}× coarser, so " +
               "LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY WILL NOT REDUCE THIS COUNT." +
-              (s.TransmissionLineMesh
-                  ? " (The transmission-line mesh is on but DECLINED on this artwork — see the notes " +
-                    "beside this message for why — so the per-axis rule is what meshed it.)"
-                  : " Turning the transmission-line mesh on makes the two controls orthogonal, and " +
-                    "then Cells per wavelength does reduce it.");
+              (s.CurrentModel != PlanarCurrentModel.None
+                  ? $" (The {ModelName(s.CurrentModel)} is on but DECLINED on this artwork — see the " +
+                    "notes beside this message for why — so the per-axis rule is what meshed it.)"
+                  : " Telling the mesher what this metal IS makes the two controls act separately, and " +
+                    "then Cells per wavelength does reduce it: the transmission-line mesh for a line, " +
+                    "which puts λ along the current and the width across it; the sheet mesh for a " +
+                    "radiator, which puts λ in both axes and resolves the width only where the metal " +
+                    "is actually narrow.");
 
         // Short imperatives only. An action carrying its own explanatory clause reads as part of the
         // NEXT action once the list is joined ("…its narrowest, turn the edge mesh off or analyse a
@@ -1315,6 +1354,18 @@ public static class SurfaceMesher
                "this kernel is built for." + why +
                " What acts on the count here: " + JoinOr(acts) + "." + how + " " + costNote;
     }
+
+    /// <summary>What to CALL a current model in a sentence a user reads. One place, because the mesher
+    /// names it in a refusal and in two notes, and three spellings of one control is how a user ends
+    /// up believing there are three. <b>The PANEL has its own labels</b>
+    /// (<c>PlanarCurrentModelNameConverter</c>) and deliberately so: a combo item names the STRUCTURE
+    /// ("Radiating sheet") while a sentence about the mesh names what is meshing it.</summary>
+    internal static string ModelName(PlanarCurrentModel m) => m switch
+    {
+        PlanarCurrentModel.TransmissionLine => "transmission-line mesh",
+        PlanarCurrentModel.Sheet            => "sheet mesh",
+        _                                   => "per-axis rule",
+    };
 
     /// <summary>"a, b or c" — a remedy list reads as prose, and a bare comma list reads as a checklist
     /// the user has to do all of.</summary>

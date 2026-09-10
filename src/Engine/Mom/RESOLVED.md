@@ -3177,3 +3177,178 @@ rim — and at `EdgeCells` = 3 each costs about three gridlines by definition. T
 board is only 15 lines, because the transmission-line mesh makes the along pitch λ_g/20 over 55 mm;
 five three-cell fans on a 15-line grid is the whole of the ratio. Going below it is asking for fewer
 graded cells, which is `EdgeCells` and not a mesher change.
+
+---
+
+## ANT-3 — the SHEET intent, for metal that is a radiator rather than a line (2026-09-10)
+
+`brief-antenna-3-mesh-sheet-intent.md`. Mesher-only, on ANT-2's own testing rule: no EM solve
+anywhere, no de-embedded point. Gates: `tests/Engine.Tests/Mom/SheetMeshTests.cs` (11 tests, ~3 s)
+and `tests/Ui.Tests/Em/SheetMeshUiTests.cs` (14 tests, 121 ms).
+
+### What was wrong, and it was not a bug
+
+`PlanarMeshSettings.TransmissionLineMesh` asks *which way is the current going* and **declines when
+it cannot tell** — which is right, and ANT-3 does not weaken it. A wide radiating sheet is the case
+it declines by construction, and it is also the case where the question does not apply: on a patch
+the current varies on the scale of a wavelength in **both** directions, a half-cosine along the
+resonant dimension and near-uniform across the width, with no singularity in the interior to
+resolve.
+
+A patch fails the direction test twice over. It is a one-port, so the port vector is unavailable and
+the area moment is the only source; and the area moment of a 41.3 × 49.4 mm rectangle reports the
+**longer side**, which on the measured board is perpendicular to both the feed and the resonant
+dimension. That the directed mesh still helped enormously there is a measure of how bad the per-axis
+rule was, not evidence that the direction was right.
+
+### M1 — one three-way control, not a second boolean
+
+`PlanarCurrentModel { None, TransmissionLine, Sheet }` **replaces** the `bool
+TransmissionLineMesh` in `PlanarMeshSettings`, in place, at the same position. Two independent flags
+that can both be true is a state nothing downstream could act on, and the two intents are mutually
+exclusive by construction. `None` is the default, so every number in `HISTORY.md` stays reproducible.
+It **survives `Auto`** on the settled taxonomy — `Auto` chooses a *resolution*, and this says what
+the resolutions are FOR.
+
+**The persistence migration is the part that is a decision.**
+
+- The new key `PlanarMesh.CurrentModel` is written, omitted at its default, so a pre-ANT-3 `.cem`
+  gains no byte and re-serialises byte-identically.
+- The legacy `PlanarMesh.TransmissionLineMesh` is **read and never written**. Alone, `true` reads as
+  `TransmissionLine` and `false` as `None`; a file carrying it comes back out on the new key, which
+  is the whole of the migration.
+- **A file carrying BOTH and disagreeing is a refusal naming both keys.** The obvious alternative is
+  a precedence rule ("the new key wins") and it is the wrong answer for a reason this area has
+  already paid for: a precedence rule means a user who set one control watched the other one silently
+  win, which is the exact defect the transmission-line mesh was built to fix. Agreement is not a
+  conflict and loads quietly.
+- **`EmSnpProvenance.MeshHash` keeps the transmission-line term's exact BYTES** — `|tline=True` —
+  rather than re-spelling it as the enum. That value's meaning did not change, only its name in C#,
+  so an `.snp` stamped under the boolean must go on reading as current; a tidier
+  `|model=TransmissionLine` would have marked every one of them stale for no reason a user could
+  see. `Sheet` gets its own term, `|sheet=True`.
+
+The panel's checkbox becomes a three-item combo, and the row reads **"This metal is …"** and
+**every label names the STRUCTURE rather than the algorithm** — "Unstated", "Transmission line",
+"Radiating sheet". Someone who knows they have drawn a patch can answer that; the same person has no
+view on a pitch field. `None` is "Unstated" rather than "Off" for the same reason: nothing is
+switched off, the question simply has not been answered.
+
+### M2 — the field without a direction
+
+Same `PlanarMeshPitchField`, same `FieldSamples` grid, same longest-chord width estimator, same
+Lipschitz lower envelope at the edge fan's own growth ratio, same one-way floor at the per-axis rule.
+The direction term drops out and nothing else does: per metal sample,
+`h = max(acrossFloor, min(hWave, localWidth/MinCellsAcrossConductor))`, contributed to **both**
+`needX[ix]` and `needY[iy]`.
+
+Three things worth knowing:
+
+- **The width estimator is REUSED, not replaced.** The temptation is to take the shortest chord now
+  that there is no "along" — and it is the same trap L8b's own note records: a scan line nearly
+  tangent to a rim cuts a chord one sampling step long, which collapsed the "width" to ~1 µm and
+  meshed a plain 10 mm line at 2.27 million cells. The estimate does not become safer because the
+  intent changed.
+- **The aspect cap cannot bind, structurally.** Both axes are asked for the same number at every
+  point, so the requested aspect is exactly 1:1 — `WorstAspect` is 1 and `Capped` is never true. On
+  the same fixture the directed field asks for ~4,000:1 and is clamped to 64. What a realised CELL
+  comes out at is still the product of two independent axis fields, which is the tensor product and
+  is true of every mode here.
+- **The port check is the directed mode's and only its.** It asks whether a port sits on a face the
+  metal runs *into*, which is a question about a direction; asking it under `Sheet` would report a
+  "disagreement" on every patch, about an answer nothing used.
+
+It **never declines**, so the note is the only way a user sees that it acted — and the note carries
+the three things §4 asks for by name: the bulk pitch in each axis, where the width floor bound, and
+the worst aspect.
+
+### "Where the floor bound" is a question about the OUTCOME, not the request
+
+Written first as `localWidth/MinCellsAcrossConductor < hWave` — i.e. *did this sample's width term
+come out finer than the λ cap*. That counts every sample the per-axis floor then raised straight back
+to the λ cap, which is most of a rim on wide metal: **73 % of a 20 × 30 mm plate**, whose x pitch came
+out at λ_g/20 exactly. A user reading "the width set the pitch on 73 % of this plate" beside a pitch
+that IS the wavelength cap has been told something false. The predicate is `hSheet < hWave`, which
+says only what actually happened; the same plate now reports the width binding where it genuinely
+does and the note's other branch — "nothing on this artwork is narrow enough, so the bulk pitch is
+the whole answer" — fires on a bare patch, where it is true.
+
+### §5's expected range: MISSED by 1.14×, and the whole of the miss is the edge fan
+
+The brief's arithmetic: λ_g at 1.74 GHz on εᵣ 4.4 is ≈ 83 mm, λ_g/20 ≈ 4.2 mm, so a 41.3 × 49.4 mm
+patch is 10 × 12 cells in the bulk, and with a bounded fan on four rims and a locally resolved
+349 µm feed the expectation is **order 500-900 unknowns**. Measured on the ANT-2 reconstruction of
+that board (which is a fixture, not the owner's file — its per-axis count is 402,607 where the real
+board's was 704,482), one frequency point, `LocalConductorWidth`, cells/λ = 20, 4 across, λ_g/200:
+
+| board | per-axis rule | TransmissionLine | **Sheet** | Sheet, edge mesh off |
+|---|---|---|---|---|
+| as imported (connector present) | 402,607 — refused | 2,710 | **3,231** | 1,519 |
+| connector deleted | 17,277 — refused | 1,320 | **1,029** | 521 |
+
+**1,029 against an expected 500-900, and 521 with the edge mesh off — which lands inside the range
+exactly.** So the estimate is right about the bulk and does not account for the fan's
+tensor-product cost: the longest fan is 3 cells, as ANT-2 intended, but each of those cells is a
+gridline across the whole part and there are six real conductor rims (four patch, two feed). Per §5
+this is **reported, not tuned** — nothing about the default was changed to close it, and the number
+to argue with is the number above.
+
+**The bulk arithmetic came out as predicted, by a route worth recording.** The feed's x columns are
+*not* refined to its width: `needX` is floored at the per-axis rule's own `hx`, which on this board is
+`narrowX/4` = 2.577 mm (the feed's x-runs are ~10.3 mm, not its 349 µm width), so the feed gets ~4
+columns in x and 4 rows in y — 16 cells, not the ~400 an isotropic reading of the feed would have
+cost. The one-way floor produces the physically right answer there for a reason that is not about
+physics at all, and it is worth knowing that it does: had the artwork put the feed *inside* the
+patch's own x range, the column-wise minimum would have charged its width across the patch too.
+
+### The one-way invariant: TRUE on the pitch, and NOT true on the cell count
+
+§6 asks that "for every fixture in the mesher's existing set, Sheet's cell count is ≤ the per-axis
+rule's. Assert it, do not assume it." **Asserted, and it fails — on the 8-segment taper, 702 cells
+under the per-axis rule against 810 under Sheet.** The cause is not new and is not the sheet's: a
+coarser bulk gives the graded edge fan further to climb, its ratio is clamped at 3× per cell, and on
+artwork that is mostly rim and hardly any bulk the extra fan cells outweigh the bulk saving. The
+transmission-line mesh's own version of this gate had to be stated the same way for the same
+measurement (728 → 858 on the same taper), and the mesher reports the trade in its notes.
+
+**With the edge mesh off, all three modes give 679 on that taper.** So the invariant is gated in the
+three forms that are true:
+
+1. **On the PITCH, unconditionally** — the largest cell Sheet produces is never smaller than the
+   per-axis rule's, on every fixture at cells/λ 20, 10 and 5. This is the structural one.
+2. **On the cell count with the fan removed, exactly** — every fixture, every cells/λ.
+3. **On the cell count with the fan on, within the same 1.25× the sibling intent's gate allows.**
+
+### A plain line as a sheet: coarse along, unchanged across — and not gridline-identical
+
+§6's safety property, and it holds in the form that matters. Measured on the 200 µm × 10 mm FR-4
+line: **23 x gridlines under the per-axis rule against 15 under Sheet, y identical at 10, cells
+198 → 126.** Two things that "exactly the per-axis rule" does not literally mean:
+
+- **The x count differs because `BuildGridLines` drops its per-interval minimum-cell floor whenever
+  a field is present** (that floor throws the marched partition away for a uniform one, and a single
+  number computed from a varying field is wrong somewhere — the trap is recorded in that method). The
+  *cap* is identical; the marcher simply places fewer, larger cells under it.
+- **The fan's interior y gridlines move by ~1.5e-5 relative** — 94.1257 µm against 94.1226 µm —
+  because with a field the fan grades toward the LOCAL bulk cap rather than one global `hy` (ANT-2's
+  per-attractor rate). The gate is therefore the transverse line count and the **finest** transverse
+  cell, which are what say the 1/√d edge current is still resolved; the fan's internal spacing is
+  not.
+
+On the 2.9 mm line the y count itself drops 10 → 9, because there the width term (725 µm) and the λ
+cap (714.6 µm) are within 1.5 % of each other and the field's own grading is free to lose one interior
+line. The finest transverse cell is unchanged.
+
+### What was NOT done
+
+- **No auto-detection of the intent**, per §7. It is a statement about what the current does, which
+  is a modelling decision and therefore the user's; a detector would guess "sheet" on a wide bend and
+  under-resolve it silently, which is exactly what the direction decline exists to prevent.
+- **The transmission-line decline is untouched.** Gated: on an L-bend the directed field still keeps
+  each arm's own transverse resolution, which a single averaged direction cannot.
+- **Sheet does not skip the rim**, per §7's named trap. Gated as "the fan is still built under Sheet,
+  and turning the edge mesh off still changes the mesh" — the two radiating edges set the effective
+  length, hence the resonant frequency, hence every number downstream.
+- **No default was changed**, and no accuracy measurement was taken: this brief's rule is mesher-only,
+  and the question of whether a sheet mesh gives a *better* resonant frequency than a directed one is
+  ANT-9's (the resonance sweep), on a real solve.

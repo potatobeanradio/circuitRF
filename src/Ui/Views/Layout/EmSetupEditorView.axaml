@@ -805,17 +805,28 @@
                          the sweep's own frequency unit through the same staged-text committer every
                          other dimensioned field here uses; blank means "max sweep". -->
                     <!-- The seventh control, and the one that makes the two wavelength controls
-                         work at all on a transmission line. Owner report, 2026-09-09: lowering
-                         Cells per wavelength or Mesh frequency did not reduce the cell count, and it
-                         could not, because the pitch is the SAME min in both axes and the geometry
-                         term wins in both. With this on the two are orthogonal — wavelength along
-                         the current, narrowness across it. Placed directly under the two settings it
-                         governs, because it is the answer to "why does that number do nothing". -->
-                    <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Transmission line" VerticalAlignment="Center"/>
-                    <CheckBox  Grid.Row="5" Grid.Column="1" Name="PlanarTransmissionLineMeshCheck" FontSize="11"
-                               Content="Follow the direction of current"
-                               IsChecked="{Binding ViewModel.PlanarTransmissionLineMesh}"
-                               ToolTip.Tip="Makes Cells per wavelength and Cells across conductor orthogonal instead of competing. Off, the cell size is the smaller of the two in BOTH directions, so on artwork with fine features the wavelength settings cannot change the mesh at all. On, the cell is sized by wavelength ALONG the current and by the conductor width ACROSS it. The direction is measured per point from the metal, so a bend is followed rather than averaged, and no cell is ever finer than it would have been with this off."/>
+                         work at all. Owner report, 2026-09-09: lowering Cells per wavelength or Mesh
+                         frequency did not reduce the cell count, and it could not, because the pitch
+                         is the SAME min in both axes and the geometry term wins in both. Naming what
+                         the metal IS is what separates them. Placed directly under the two settings
+                         it governs, because it is the answer to "why does that number do nothing".
+
+                         ANT-3 made it a THREE-WAY choice rather than adding a second checkbox: a
+                         line and a sheet are mutually exclusive intents, and the LABEL is about the
+                         structure — what this metal is — rather than about the algorithm, because
+                         that is the question the user can actually answer. -->
+                    <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="This metal is" VerticalAlignment="Center"/>
+                    <ComboBox  Grid.Row="5" Grid.Column="1" Name="PlanarCurrentModelCombo" FontSize="11"
+                               Width="150" HorizontalAlignment="Left"
+                               ItemsSource="{x:Static em:EmSetupEditorViewModel.CurrentModelChoices}"
+                               SelectedItem="{Binding ViewModel.PlanarCurrentModel}"
+                               ToolTip.Tip="What the current on this artwork does — which is what decides whether Cells per wavelength and Cells across conductor compete or act separately. Unstated: the cell size is the smaller of the two in BOTH directions, so on artwork with fine features the wavelength settings cannot change the mesh at all. Transmission line: wavelength ALONG the current, conductor width ACROSS it, with the direction measured per point from the metal so a bend is followed rather than averaged. Radiating sheet: a patch or any wide radiator, where the current varies on the scale of a wavelength in BOTH directions and there is no along — wavelength sets both axes, and the metal's own width is resolved only where the metal is genuinely narrow, such as a feed. No cell is ever finer than it would have been with this left alone.">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static conv:PlanarCurrentModelNameConverter.Instance}}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <!-- ANT-2's eighth control. Placed with the two settings it modifies rather
                          than at the end: it does not change the resolution, it changes which drawn
                          geometry the resolution is measured against, and the question it answers

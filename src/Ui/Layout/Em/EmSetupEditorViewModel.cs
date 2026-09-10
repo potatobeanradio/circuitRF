@@ -591,18 +591,28 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _planarMinCellsAcrossText     = "";
 
     /// <summary>
-    /// The transmission-line mesh — the SEVENTH control, and the one that makes the two wavelength
-    /// controls work at all on a transmission line.
+    /// <b>What the current on this metal DOES</b> — the SEVENTH control (as a transmission-line
+    /// checkbox) and, since ANT-3, a three-way choice, because the same question has a second
+    /// answer.
     ///
     /// <para>Owner report, 2026-09-09, three times: lowering Cells per wavelength or Mesh frequency
     /// did not reduce the cell count. It could not — the pitch is
     /// <c>min(λ_g/CellsPerWavelength, narrowest/CellsAcross)</c> in BOTH axes, so on artwork whose
     /// metal is narrower than a λ cell the geometry term wins everywhere and both wavelength knobs
-    /// are inert at every value. With this on the two become ORTHOGONAL — λ along the current,
-    /// narrowness across it — and each always moves the mesh in its own direction. Measured on the
-    /// owner's own connector cutout: N = 3,521 at cells/λ = 20, 10 and 5 alike with it off; 1,971 /
-    /// 1,715 / 1,652 with it on.</para></summary>
-    [ObservableProperty] private bool   _planarTransmissionLineMesh;
+    /// are inert at every value. On a transmission line the two become ORTHOGONAL — λ along the
+    /// current, narrowness across it — and each always moves the mesh in its own direction. Measured
+    /// on the owner's own connector cutout: N = 3,521 at cells/λ = 20, 10 and 5 alike at
+    /// <c>None</c>; 1,971 / 1,715 / 1,652 at <c>TransmissionLine</c>.</para>
+    ///
+    /// <para><b>ANT-3 added the sheet</b>, which is the case the transmission-line mesh declines by
+    /// construction: a patch has no single current direction and does not want one. λ_g/N in both
+    /// axes, the metal's own width only where the metal is genuinely narrow.</para>
+    ///
+    /// <para><b>It is ONE combo rather than two checkboxes</b>, because the two intents are mutually
+    /// exclusive and a pair of flags that can both be true is a state nothing downstream could act
+    /// on.</para></summary>
+    [ObservableProperty] private PlanarCurrentModel _planarCurrentModel =
+        PlanarMeshSettings.DefaultCurrentModel;
 
     /// <summary>
     /// ANT-2's detail floor — the EIGHTH control. Metal narrower than λ_g ÷ this does not set the
@@ -633,6 +643,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// hand-listed so a third member cannot silently fail to appear.</summary>
     public static IReadOnlyList<PlanarBoundaryCells> BoundaryCellsChoices { get; } =
         Enum.GetValues<PlanarBoundaryCells>();
+
+    /// <summary>The three current models, for the panel's combo. Sourced from the enum rather than
+    /// hand-listed so a fourth member cannot silently fail to appear — the same rule
+    /// <see cref="BoundaryCellsChoices"/> follows.</summary>
+    public static IReadOnlyList<PlanarCurrentModel> CurrentModelChoices { get; } =
+        Enum.GetValues<PlanarCurrentModel>();
 
     /// <summary>
     /// The unit the mesh-frequency field is edited in — <b>the sweep's own top-frequency unit</b>,
@@ -1037,20 +1053,20 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// <b>The transmission-line mesh, committed on the click like the edge-mesh checkbox.</b>
+    /// <b>The current model, committed on selection like the boundary-cell combo.</b>
     ///
     /// <para><b><see cref="PlanarMeshSettings.Auto"/> is NOT cleared here</b>, and the reason is
-    /// <see cref="OnPlanarBoundaryCellsChanged"/>'s: this is not a resolution, it is which DIRECTION
-    /// the resolutions apply in, and Auto has no opinion about the direction of current flow.
-    /// Clearing Auto would also pin the cell size the instant a user ticked this, which is a
+    /// <see cref="OnPlanarBoundaryCellsChanged"/>'s: this is not a resolution, it says what the
+    /// resolutions are FOR, and Auto has no opinion about whether this metal is a line or a
+    /// radiator. Clearing Auto would also pin the cell size the instant a user chose one, which is a
     /// different mesh for a reason they never asked for.</para></summary>
-    partial void OnPlanarTransmissionLineMeshChanged(bool value)
+    partial void OnPlanarCurrentModelChanged(PlanarCurrentModel value)
     {
         if (_suppressCommit) return;
-        if (value == Working.PlanarMesh.TransmissionLineMesh) return;
+        if (value == Working.PlanarMesh.CurrentModel) return;
         var before = SnapshotJson();
-        Working.PlanarMesh = Working.PlanarMesh with { TransmissionLineMesh = value };
-        CommitEdit(before, "Change transmission-line mesh");
+        Working.PlanarMesh = Working.PlanarMesh with { CurrentModel = value };
+        CommitEdit(before, "Change mesh current model");
         InvalidateMesh();
         Refresh();
     }
@@ -1268,7 +1284,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarMinCellsAcrossText     = pm.MinCellsAcrossConductor.ToString(CultureInfo.InvariantCulture);
         PlanarDetailFloorText        = pm.DetailFloorDivisor.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeMesh               = pm.EdgeMesh;
-        PlanarTransmissionLineMesh   = pm.TransmissionLineMesh;
+        PlanarCurrentModel           = pm.CurrentModel;
         PlanarBoundaryCells          = pm.BoundaryCells;
         PlanarMeshFrequencyText      = pm.MeshFrequencyHz is { } mf
             ? (mf / ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit))

@@ -318,11 +318,22 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   GEOMETRY-BOUND ARTWORK.** `h = min(λ_g/CellsPerWavelength, narrowest/MinCellsAcrossConductor)`, the
   same min for x and for y, so wherever the metal is narrower than a λ cell the geometry term wins in
   BOTH directions and neither Cells per wavelength nor Mesh frequency can move the mesh AT ALL, at
-  any value. Owner report, three times. **`PlanarMeshSettings.TransmissionLineMesh` (default off)
-  makes them ORTHOGONAL** — λ ALONG the current with no narrowness floor, narrowness ACROSS it — and
-  the direction is a per-point FIELD (`PlanarMeshPitchField`), so a bend is followed rather than
-  averaged. Measured on the owner's connector cutout: N = 3,521 at cells/λ 20, 10 and 5 and at 10 GHz
-  and 100 MHz alike with it off; 1,971 / 1,715 / 1,652 with it on. `RESOLVED.md` §M2.
+  any value. Owner report, three times. **`PlanarMeshSettings.CurrentModel` (default
+  `PlanarCurrentModel.None`) is what separates them, and it is a statement about the STRUCTURE rather
+  than about the algorithm.** `TransmissionLine` makes them ORTHOGONAL — λ ALONG the current with no
+  narrowness floor, narrowness ACROSS it — and the direction is a per-point FIELD
+  (`PlanarMeshPitchField`), so a bend is followed rather than averaged. Measured on the owner's
+  connector cutout: N = 3,521 at cells/λ 20, 10 and 5 and at 10 GHz and 100 MHz alike at `None`;
+  1,971 / 1,715 / 1,652 at `TransmissionLine`. `RESOLVED.md` §M2.
+  **`Sheet` is ANT-3's second answer to the same question, for the case the first DECLINES by
+  construction** — a wide radiator, where the current varies on the scale of a wavelength in BOTH
+  axes and the direction question is meaningless. λ_g/N in both directions, floored locally by
+  `localWidth/MinCellsAcrossConductor` only where the metal is genuinely narrower than that; same
+  field, same longest-chord width estimator, same Lipschitz envelope, same one-way floor at the
+  per-axis rule. **It never declines**, and **the aspect cap cannot bind on it** (both axes are asked
+  for the same number at every point, so the requested aspect is exactly 1:1). **The two are ONE
+  three-way enum rather than two booleans** — the intents are mutually exclusive, and two flags that
+  can both be true is a state nothing downstream could act on. `RESOLVED.md` §ANT-3.
 - **Cell-size cap**: `cellSize = λ_g(f_mesh)/N = c/(f_mesh·√ε·N)` — depends only on the **product**
   `MeshFrequencyHz × CellsPerWavelength`. Effective cells/λ at the sweep top is
   `CellsPerWavelength × MeshFrequencyHz / sweepTop`, a physical quantity, never hertz.
@@ -482,8 +493,16 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 - **Tabulate the REMAINDER, not the kernel.** `_full` still diverges as 1/ρ (and ln ρ from poles)
   after static asymptotes; subtract `Extracted` first and hand back `table + Extracted`. Tell: worst
   error at self and touching cell pairs.
+- **"Where did the floor bind" is a question about the OUTCOME, not the request** (ANT-3,
+  2026-09-10). The sheet field's report counted samples whose WIDTH TERM came out finer than the λ
+  cap — which includes every sample the per-axis floor then raised straight back to the λ cap, i.e.
+  most of a rim on wide metal. It read **73% of a 20 x 30 mm plate whose x pitch was λ_g/20 exactly**.
+  Any note about a floor, a cap or a clamp must be computed from the value that survived, never from
+  the value that was asked for.
 - **A per-point width estimate must take the direction of the LONGEST local chord, never the
-  shortest.** The shortest chord through a point IS the local width in the middle of a strip and is
+  shortest** — *and this does not become safe when the intent stops having a direction* (ANT-3). The
+  sheet mode has no "across", so taking the shortest chord as the local width looks natural there;
+  it is the same estimator with the same failure, and it is reused unchanged for that reason. The shortest chord through a point IS the local width in the middle of a strip and is
   garbage anywhere near a rim: a scan line nearly tangent to an edge cuts a chord one sampling step
   long. Taking it as the transverse direction collapsed the "width" to ~1 µm and meshed a plain
   10 mm line at **2.27 million cells** — a setting turned on to make the mesh smaller made it
@@ -588,7 +607,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 |---|---|---|
 | `PlanarMeshSettings.CellsPerWavelength` | 20 | with mesh frequency, only the **product** matters |
 | `PlanarMeshSettings.MinCellsAcrossConductor` | 4 | sets transverse pitch; **does not respond to λ** |
-| **`PlanarMeshSettings.TransmissionLineMesh`** | **`false` = off** | The seventh control, and the one that makes the other two work on a transmission line. Off, the pitch is the SAME `min` in both axes and both λ controls are INERT wherever the metal is narrower than a λ cell — owner report, 2026-09-09, three times. On, the two are ORTHOGONAL: λ_g/CellsPerWavelength ALONG the current with no narrowness floor, `narrowest/MinCellsAcrossConductor` ACROSS it. The direction is a per-point field measured from the metal's own longest local chord, so **a bend is followed rather than averaged**; the ports only CHECK it (two ports of an L-bend both say 45°, which is the direction of neither arm). **It may only COARSEN** — every pitch is floored at the per-axis rule's own — but the cell COUNT can still rise a few per cent on rim-dominated artwork, because a coarser bulk gives the graded edge fan further to climb; the mesher says so. `RESOLVED.md` §M2. |
+| **`PlanarMeshSettings.CurrentModel`** | **`None` = the per-axis rule** | The seventh control and, since ANT-3, the ninth too, because the same question has a second answer. It asks **what this metal IS**, not what the mesher should do about it, and the panel's labels say so. At `None` the pitch is the SAME `min` in both axes and both λ controls are INERT wherever the metal is narrower than a λ cell — owner report, 2026-09-09, three times. **`TransmissionLine`**: the two become ORTHOGONAL — λ_g/CellsPerWavelength ALONG the current with no narrowness floor, `narrowest/MinCellsAcrossConductor` ACROSS it — with the direction a per-point field measured from the metal's own longest local chord, so **a bend is followed rather than averaged**; the ports only CHECK it (two ports of an L-bend both say 45°, which is the direction of neither arm), and it **DECLINES** where the metal states no usable direction. **`Sheet`** (ANT-3, 2026-09-10): the case that decline is right about and the direction question is meaningless for — a patch's current varies on the scale of a wavelength in BOTH axes. λ_g/CellsPerWavelength in both, floored locally by the metal's own width only where the metal is genuinely narrower; **it never declines**, and the aspect cap cannot bind (1:1 by construction). **Both may only COARSEN the PITCH** — every value is floored at the per-axis rule's own — but the cell COUNT can still rise a few per cent on rim-dominated artwork, because a coarser bulk gives the graded edge fan further to climb (measured on an 8-segment taper: 702 per-axis / 810 Sheet / 824 TransmissionLine, and **679 for all three with the edge mesh off**); the mesher says so. **One enum, not two booleans** — the intents are mutually exclusive. In the `.cem` the legacy `TransmissionLineMesh: true` is **read and never written**, and a file carrying BOTH keys and disagreeing is a **REFUSAL naming both** rather than a precedence rule. `RESOLVED.md` §M2, §ANT-3. |
 | `PlanarMeshSettings.EdgeCells` | — | reference length = **the metal at each edge** (`PlanarEdgeReference.LocalConductorWidth`, default since 2026-09-09; was the narrowest conductor anywhere). May only coarsen — every per-edge `c₀` is floored at the global one — so the cell count is bounded above by the old rule's, structurally. `RESOLVED.md` §M4. |
 | **`PlanarMeshSettings.PlanarBoundaryCells`** | **`Staircase` — conformal SHIPS OFF** | the fourth control, added on explicit instruction. All four flip gates now pass; it stays off only so every accuracy figure recorded in `HISTORY.md` stays reproducible. **Flipping the default is a separate deliberate act.** |
 | **`PlanarMeshSettings.DetailFloorDivisor`** | **200 — i.e. λ_g/200, and it is ON by default** | ANT-2's eighth control. **Metal narrower than λ_g ÷ this does not set the cell pitch, and an edge shorter than it raises no graded fan** — the hard gridlines stay, so the feature is still meshed exactly and R-msh-1 is untouched; what changes is only what the geometry is allowed to ASK for. It exists because an imported board's narrowest metal is routinely a connector via land or an aperture-rounded corner: on the measured patch board that was 310 µm (λ_g/265, ~9 mm from anything electrically interesting) and deleting only those features was worth **14×** the unknown count. **λ-relative, never absolute** — an absolute µm figure is a different decision at 1.7 GHz and 40 GHz — taken at the same λ_g the cell-size cap uses; with no sweep frequency there is no floor at all. **It may only COARSEN**, so the cell count is bounded above by the floor-off count structurally. **It SURVIVES `Auto`** (Auto chooses a resolution; which geometry is electrically real is not one) and it is hashed by `EmSnpProvenance.MeshHash` **unconditionally**, breaking the omit-at-default rule on purpose — this is the first control whose default is not the pre-existing behaviour, so a `.snp` stamped before it describes a mesh built with no floor. **200 is measured**: de-embedded |S₁₁| at the patch's resonance moves 1.7e-3 across the whole off → λ_g/100 ladder, inside the kernel's own de-embedding residual, while λ_g/500 produces a mesh identical to the floor being off on the board it was written for. `RESOLVED.md` §ANT-2. |
@@ -616,7 +635,10 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 - **`PlanarProblem.MaxFrequencyHz` still means the SWEEP's top only**, and that separation is
   load-bearing: pointing `CanSolve`'s via bound, the ρ/λ note or the geometry hash at the mesh
   frequency would let a **performance** knob silently widen a **physics** refusal. `CanSolve` sees
-  only a `PlanarProblem`. `EmSnpProvenance.MeshHash` includes `BoundaryCells`.
+  only a `PlanarProblem`. `EmSnpProvenance.MeshHash` includes `BoundaryCells`, and `CurrentModel` **keeps the
+  transmission-line term's exact bytes (`|tline=True`)** rather than re-spelling it as the enum — the
+  value's meaning did not change, only its name in C#, so no `.snp` stamped under the boolean reads
+  as stale; `Sheet` gets its own `|sheet=True`.
 
 ---
 

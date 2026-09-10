@@ -30,14 +30,75 @@ public enum PlanarBoundaryCells
 }
 
 /// <summary>
+/// <b>What the current on this metal DOES — a line, a sheet, or "do not ask".</b> ANT-3's intent,
+/// and the ninth user control.
+///
+/// <para><b>It is one three-way choice rather than two booleans, and that is a decision.</b> The two
+/// intents are mutually exclusive: metal is being meshed as a line or as a sheet, never both, and
+/// two independent flags that can both be true is a state nothing downstream could act on. It is
+/// also not a resolution — it says what the resolutions are FOR — so it survives
+/// <see cref="PlanarMeshSettings.Auto"/> exactly as <see cref="PlanarBoundaryCells"/> does.</para>
+///
+/// <para><b>Nothing infers it from the artwork, deliberately.</b> It is a statement about what the
+/// current does, which is a modelling decision and therefore the user's — the same test
+/// <see cref="PlanarBoundaryCells"/>' own note sets for what earns a control. An auto-detector would
+/// guess "sheet" on a wide bend and under-resolve it silently, which is precisely the failure
+/// <see cref="TransmissionLine"/>'s own direction decline exists to prevent.</para>
+/// </summary>
+public enum PlanarCurrentModel
+{
+    /// <summary>No statement — the per-axis rule, <c>h = min(λ_g/CellsPerWavelength,
+    /// narrowest/MinCellsAcrossConductor)</c> in both directions. <b>The default</b>, and the model
+    /// every measured number in this directory's <c>HISTORY.md</c> was taken on.</summary>
+    None,
+
+    /// <summary>
+    /// <b>A transmission line: the current has a DIRECTION, and the mesher follows it.</b> λ along
+    /// the current with no narrowness floor, the metal's own width across it, measured per point so
+    /// a bend is followed rather than averaged. <b>It DECLINES where it cannot tell</b> — see
+    /// <c>PlanarMeshPitchField</c>'s own header — and that decline is right and is not weakened by
+    /// <see cref="Sheet"/> existing.
+    /// </summary>
+    TransmissionLine,
+
+    /// <summary>
+    /// <b>A radiating sheet: the current varies on the scale of a wavelength in BOTH axes, and there
+    /// is no "along".</b> ANT-3, 2026-09-10, for the case <see cref="TransmissionLine"/> declines by
+    /// construction and for which the direction question does not apply at all.
+    ///
+    /// <para>The dominant patch mode is a half-cosine along the resonant dimension and near-uniform
+    /// across the width — smooth on the scale of a wavelength, with no singularity in the interior
+    /// to resolve. So the bulk pitch is λ_g/<see cref="PlanarMeshSettings.CellsPerWavelength"/> in
+    /// both axes, floored locally by <c>localWidth/MinCellsAcrossConductor</c> only where the metal
+    /// is genuinely narrower than that — which on a patch is the feed and nothing else.</para>
+    ///
+    /// <para><b>The rim is NOT skipped, and the temptation to skip it is the trap.</b> A patch
+    /// interior is smooth and the rim is where the cells go, so dropping the edge fan looks like
+    /// free money. The two radiating edges set the effective length, hence the resonant frequency,
+    /// hence every number downstream; the two non-radiating edges carry the transverse 1/√d
+    /// singularity. ANT-2's per-attractor grading is what makes that affordable.</para>
+    ///
+    /// <para><b>It never declines</b>, because nothing about it is ambiguous: there is no direction
+    /// to be unsure of. It is still bounded above by the per-axis rule on every input — the same
+    /// one-way invariant <c>PlanarMeshPitchField</c> and
+    /// <see cref="PlanarEdgeReference.LocalConductorWidth"/> already state — so a line meshed as a
+    /// sheet comes out coarse along its length and correctly fine across it, which is exactly the
+    /// per-axis rule. The mis-choice that costs is a SHEET meshed as a line.</para>
+    /// </summary>
+    Sheet,
+}
+
+/// <summary>
 /// D3 asked for <b>exactly three user controls</b> — <c>Auto</c>, <c>Cells per wavelength</c>,
-/// <c>Edge mesh on/off + cell count</c> — and that is §10.5's own list, verbatim. <b>There are eight
+/// <c>Edge mesh on/off + cell count</c> — and that is §10.5's own list, verbatim. <b>There are nine
 /// now, and every addition past the third was an explicit owner decision recorded at the parameter
 /// it added</b> (<see cref="PlanarBoundaryCells"/>, <see cref="MeshFrequencyHz"/>,
-/// <see cref="MinCellsAcrossConductor"/>, <see cref="TransmissionLineMesh"/>,
-/// <see cref="DetailFloorDivisor"/>). D3's REASONING still governs what may be added: a control
-/// earns its place by being a modelling or responsibility decision that is the user's to make, never
-/// by being a number that happens to exist in the mesher.
+/// <see cref="MinCellsAcrossConductor"/>, <see cref="CurrentModel"/>,
+/// <see cref="DetailFloorDivisor"/>, and — the ninth — ANT-3's <see cref="PlanarCurrentModel.Sheet"/>,
+/// a second VALUE for <see cref="CurrentModel"/> rather than a second field, because the two intents
+/// are mutually exclusive). D3's REASONING still governs what may be added: a control earns its place
+/// by being a modelling or responsibility decision that is the user's to make, never by being a
+/// number that happens to exist in the mesher.
 ///
 /// <para><b>Kernel A's <see cref="EmMeshSettings"/> has six, and the temptation is to mirror it. Do
 /// not.</b> Its six exist because a boundary mesher over infinite dielectric interfaces has a
@@ -60,9 +121,13 @@ public enum PlanarBoundaryCells
 /// <see cref="PlanarBoundaryCells"/> for why it is a control at all, and this directory's
 /// <c>CLAUDE.md</c> for the measurement that decides whether the default ever flips.
 /// </param>
-/// <param name="TransmissionLineMesh">
-/// <b>The SEVENTH control, and the one that makes the other two work at all on a transmission
-/// line — owner instruction, 2026-09-09, asked three times before it was understood.</b>
+/// <param name="CurrentModel">
+/// <b>What the current on this metal DOES — the SEVENTH control (as
+/// <c>TransmissionLineMesh</c>, owner instruction 2026-09-09, asked three times before it was
+/// understood) and, since ANT-3, the NINTH as well, because the same question has a second
+/// answer.</b> See <see cref="PlanarCurrentModel"/> for the three values; this note is the
+/// <see cref="PlanarCurrentModel.TransmissionLine"/> half's own history, kept because it is the
+/// record of a real defect.
 ///
 /// <para><b>The complaint:</b> lowering <see cref="CellsPerWavelength"/>, or lowering
 /// <see cref="MeshFrequencyHz"/>, did not reduce the cell count. Not "reduced it less than
@@ -81,21 +146,24 @@ public enum PlanarBoundaryCells
 /// the scale of a wavelength and λ_g/20 is plenty. Taking the min in the along direction refines
 /// for a singularity that is not there.</para>
 ///
-/// <para>So with this on: <b>the along pitch is λ_g/CellsPerWavelength with NO narrowness floor</b>,
-/// and the across pitch is <c>min(λ_g/CellsPerWavelength, acrossNarrow/MinCellsAcrossConductor)</c>
-/// exactly as before. Both knobs then always move the mesh, in their own direction.</para>
+/// <para>So with <see cref="PlanarCurrentModel.TransmissionLine"/>: <b>the along pitch is
+/// λ_g/CellsPerWavelength with NO narrowness floor</b>, and the across pitch is
+/// <c>min(λ_g/CellsPerWavelength, acrossNarrow/MinCellsAcrossConductor)</c> exactly as before. Both
+/// knobs then always move the mesh, in their own direction.</para>
 ///
-/// <para><b>Which way is "along" comes from the PORTS</b> — the owner's own suggestion, and the only
-/// source that states the direction of current flow rather than guessing it from shape. The vector
-/// between a two-port problem's port locations; failing that (no ports, or one, or more than two)
-/// the principal axis of the artwork's own area moment; and when both exist and disagree by more
-/// than <see cref="DirectionAgreementDegrees"/>, the mesher <b>DECLINES and meshes as today</b>,
-/// saying so — a bent or branched structure has no single current direction and inventing one would
-/// under-resolve a real bend.</para>
+/// <para><b>Which way is "along" is measured PER POINT from the metal's own longest local chord,
+/// so a bend is followed rather than averaged</b>; the ports only CHECK the answer, because two
+/// ports of an east-then-north bend both state 45°, which is the direction of neither arm. Where
+/// the metal states no usable direction the mode <b>DECLINES and meshes as before</b>, saying so —
+/// a branched structure has no single current direction and inventing one would under-resolve a
+/// real bend. <b>A wide radiating sheet is the case it declines by construction</b>, which is what
+/// <see cref="PlanarCurrentModel.Sheet"/> exists for.</para>
 ///
-/// <para><b>Default OFF</b>, because it changes the mesh on every piece of artwork and every number
-/// in this directory's <c>HISTORY.md</c> must stay reproducible. It is NOT bit-identical when on,
-/// even on axis-aligned artwork — dropping the along floor is the whole point of it.</para>
+/// <para><b>Default <see cref="PlanarCurrentModel.None"/></b>, because either intent changes the
+/// mesh on every piece of artwork and every number in this directory's <c>HISTORY.md</c> must stay
+/// reproducible. Neither is bit-identical when on, even on axis-aligned artwork — dropping the
+/// along floor is the whole point of the first, and dropping the direction is the whole point of
+/// the second.</para>
 /// </param>
 /// <param name="MeshFrequencyHz">
 /// <b>The frequency the λ_g/N cell-size cap is sized at — the FIFTH control, and the only one that
@@ -147,7 +215,7 @@ public enum PlanarBoundaryCells
 /// <para><b>It SURVIVES <see cref="Auto"/></b>, on the settled taxonomy: Auto means <i>choose the
 /// resolution for me</i>, and which geometry is electrically real is not a resolution. Same reasoning
 /// that carried <see cref="BoundaryCells"/>, <see cref="MeshFrequencyHz"/> and
-/// <see cref="TransmissionLineMesh"/> through <see cref="Resolved"/>.</para>
+/// <see cref="CurrentModel"/> through <see cref="Resolved"/>.</para>
 ///
 /// <para><b>The default is <see cref="DefaultDetailFloorDivisor"/> and it is a MEASURED answer</b> —
 /// see that constant, and this directory's <c>RESOLVED.md</c> for the convergence table (off /
@@ -162,7 +230,7 @@ public sealed record PlanarMeshSettings(
     PlanarBoundaryCells BoundaryCells = PlanarBoundaryCells.Staircase,
     double? MeshFrequencyHz = null,
     int  MinCellsAcrossConductor = 4,
-    bool TransmissionLineMesh = false,
+    PlanarCurrentModel CurrentModel = PlanarCurrentModel.None,
     int  DetailFloorDivisor = 200)
 {
     public const int  DefaultCellsPerWavelength = 20;
@@ -199,7 +267,15 @@ public sealed record PlanarMeshSettings(
     /// </summary>
     public const int DefaultMinCellsAcrossConductor = 4;
 
-    public const bool DefaultTransmissionLineMesh = false;
+    /// <summary>
+    /// <b>Neither intent, i.e. the per-axis rule</b> — and the default for the reason every mesh
+    /// control past the third carries: every number in this directory's <c>HISTORY.md</c> was taken
+    /// on it. ANT-3 replaced the <c>bool TransmissionLineMesh</c> this used to spell with a
+    /// three-way <see cref="PlanarCurrentModel"/> rather than adding a second boolean, because the
+    /// two intents are mutually exclusive and two flags that can both be true is a state nothing
+    /// downstream could act on.
+    /// </summary>
+    public const PlanarCurrentModel DefaultCurrentModel = PlanarCurrentModel.None;
 
     /// <summary>
     /// <b>λ_g ÷ this is the detail floor</b> — see <see cref="PlanarMeshSettings.DetailFloorDivisor"/>.
@@ -226,7 +302,7 @@ public sealed record PlanarMeshSettings(
 
     /// <summary>
     /// How far the port direction and the artwork's own principal axis may disagree before
-    /// <see cref="TransmissionLineMesh"/> declines to pick one. A straight line puts them within a
+    /// <see cref="PlanarCurrentModel.TransmissionLine"/> declines to pick one. A straight line puts them within a
     /// fraction of a degree of each other; a right-angle bend puts them 45° apart, which is the
     /// case that must NOT get a direction, because a directed pitch there coarsens one of the two
     /// arms along its own transverse axis. 15° admits an ordinary mitre and a feed that leaves at a
@@ -275,10 +351,11 @@ public sealed record PlanarMeshSettings(
     /// who set a mesh frequency and left Auto on silently got the sweep's top instead — the exact
     /// shape of failure the boundary-cell control above already had to be protected from.</para>
     ///
-    /// <para><b><see cref="TransmissionLineMesh"/> SURVIVES Auto too.</b> It is not a resolution at
-    /// all — it says which DIRECTION the resolutions apply in, and Auto has no opinion about the
-    /// direction of current flow. It is also the control that exists because a setting was being
-    /// silently ignored, so having Auto silently ignore it would be a joke at the user's expense.</para>
+    /// <para><b><see cref="CurrentModel"/> SURVIVES Auto too, in BOTH of its non-default values.</b>
+    /// It is not a resolution at all — it says what the resolutions are FOR, and Auto has no opinion
+    /// about whether this metal is a line or a radiator. It is also the control that exists because a
+    /// setting was being silently ignored, so having Auto silently ignore it would be a joke at the
+    /// user's expense.</para>
     ///
     /// <para><b><see cref="DetailFloorDivisor"/> SURVIVES Auto too</b>, on the taxonomy rather than
     /// against it: it does not say how finely to discretise anything, it says which drawn geometry is
@@ -296,7 +373,7 @@ public sealed record PlanarMeshSettings(
         ? new PlanarMeshSettings(Auto: false, BoundaryCells: BoundaryCells,
                                  MeshFrequencyHz: MeshFrequencyHz,
                                  MinCellsAcrossConductor: MinCellsAcrossConductor,
-                                 TransmissionLineMesh: TransmissionLineMesh,
+                                 CurrentModel: CurrentModel,
                                  DetailFloorDivisor: DetailFloorDivisor)
         : this with
         {

@@ -30,7 +30,9 @@ public class DetailFloorTests(ITestOutputHelper output)
     private static PlanarMeshSettings At(int div, bool tl = true, bool edge = true,
                                          int cpw = 20, int across = 4) =>
         new(Auto: false, CellsPerWavelength: cpw, EdgeMesh: edge, EdgeCells: 3,
-            MinCellsAcrossConductor: across, TransmissionLineMesh: tl, DetailFloorDivisor: div);
+            MinCellsAcrossConductor: across,
+            CurrentModel: tl ? PlanarCurrentModel.TransmissionLine : PlanarCurrentModel.None,
+            DetailFloorDivisor: div);
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The fixture: the shape the brief measured, reduced to its essential.

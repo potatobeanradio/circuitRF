@@ -48,7 +48,7 @@ public class CoplanarDeembedTests(ITestOutputHelper output)
 
     private static PlanarMeshSettings Mesh(int cellsPerWavelength, int across, bool edge = false) =>
         new(Auto: false, CellsPerWavelength: cellsPerWavelength, EdgeMesh: edge,
-            MinCellsAcrossConductor: across, TransmissionLineMesh: true);
+            MinCellsAcrossConductor: across, CurrentModel: PlanarCurrentModel.TransmissionLine);
 
     /// <summary>The two ends of a coplanar pair, each a two-cut EDGE port.</summary>
     private static PlanarPort[] CoplanarEnds(double lengthM, double w, double s, double z0 = 50.0)

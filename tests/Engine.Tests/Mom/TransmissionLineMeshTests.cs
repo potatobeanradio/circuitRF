@@ -55,7 +55,8 @@ public class TransmissionLineMeshTests
     ];
 
     private static PlanarMeshSettings At(int cellsPerWavelength, bool tline) =>
-        new(Auto: false, CellsPerWavelength: cellsPerWavelength, TransmissionLineMesh: tline);
+        new(Auto: false, CellsPerWavelength: cellsPerWavelength,
+            CurrentModel: tline ? PlanarCurrentModel.TransmissionLine : PlanarCurrentModel.None);
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // THE BUG
@@ -161,8 +162,8 @@ public class TransmissionLineMeshTests
         // Every number in this directory's HISTORY.md was taken without it, and a default that
         // changed them would make them unreproducible. Asserted on the GRID rather than on N,
         // because two different meshes can share an unknown count.
-        Assert.False(PlanarMeshSettings.Default.TransmissionLineMesh);
-        Assert.False(PlanarMeshSettings.Default.Resolved.TransmissionLineMesh);
+        Assert.Equal(PlanarCurrentModel.None, PlanarMeshSettings.Default.CurrentModel);
+        Assert.Equal(PlanarCurrentModel.None, PlanarMeshSettings.Default.Resolved.CurrentModel);
 
         var p = Trace();
         var a = SurfaceMesher.Mesh(p, At(20, false));
@@ -180,8 +181,9 @@ public class TransmissionLineMeshTests
     {
         // A number the user typed must not be discarded because a checkbox is ticked — and this one
         // above all, since it exists because a setting was being silently ignored.
-        var s = PlanarMeshSettings.Default with { Auto = true, TransmissionLineMesh = true };
-        Assert.True(s.Resolved.TransmissionLineMesh);
+        var s = PlanarMeshSettings.Default with
+            { Auto = true, CurrentModel = PlanarCurrentModel.TransmissionLine };
+        Assert.Equal(PlanarCurrentModel.TransmissionLine, s.Resolved.CurrentModel);
     }
 
     /// <summary>The finest grid step anywhere inside [lo, hi] of one axis.</summary>

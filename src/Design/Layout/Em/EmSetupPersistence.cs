@@ -69,11 +69,28 @@ public sealed class CemPlanarMesh
     public int? MinCellsAcrossConductor { get; set; }
 
     /// <summary>
-    /// The transmission-line mesh. <b>Nullable, and omitted at its default of false</b>, so a
-    /// <c>.cem</c> written before this control existed gains no byte — the same rule every control
-    /// added after the first three follows.
+    /// <b>The LEGACY spelling of the transmission-line mesh, and it is READ-ONLY: nothing writes it
+    /// any more.</b> ANT-3 replaced the boolean with the three-way
+    /// <see cref="CurrentModel"/>, because a second boolean beside it could be true at the same time
+    /// and the two intents are mutually exclusive.
+    ///
+    /// <para>A file carrying only this key reads as
+    /// <see cref="PlanarCurrentModel.TransmissionLine"/> (or <see cref="PlanarCurrentModel.None"/>
+    /// for an explicit <c>false</c>) and is written back on the new key, which is the whole of the
+    /// migration. A file carrying BOTH and DISAGREEING is a <b>refusal naming both keys</b> rather
+    /// than a precedence rule — a precedence rule here means a user who set one control watched the
+    /// other one win, which is the defect the transmission-line mesh itself existed to fix.</para>
     /// </summary>
     public bool? TransmissionLineMesh { get; set; }
+
+    /// <summary>
+    /// ANT-3's current model — what the metal on this layout IS. <b>Nullable, and omitted at its
+    /// default of <see cref="PlanarCurrentModel.None"/></b>, so a <c>.cem</c> written before it
+    /// existed gains no byte and its hash is unchanged; the same rule every control added after the
+    /// first three follows. See <see cref="TransmissionLineMesh"/> for the migration off the legacy
+    /// boolean.
+    /// </summary>
+    public PlanarCurrentModel? CurrentModel { get; set; }
 
     /// <summary>
     /// ANT-2's detail floor divisor (λ_g ÷ this). <b>Nullable, and omitted at its default</b>, same
@@ -265,9 +282,11 @@ public static class EmSetupPersistence
             MinCellsAcrossConductor =
                 s.PlanarMesh.MinCellsAcrossConductor == PlanarMeshSettings.DefaultMinCellsAcrossConductor
                     ? null : s.PlanarMesh.MinCellsAcrossConductor,
-            TransmissionLineMesh =
-                s.PlanarMesh.TransmissionLineMesh == PlanarMeshSettings.DefaultTransmissionLineMesh
-                    ? null : s.PlanarMesh.TransmissionLineMesh,
+            // The legacy key is never written — one setting, one spelling. A file that carried it
+            // comes back out on CurrentModel, which is the migration.
+            TransmissionLineMesh = null,
+            CurrentModel = s.PlanarMesh.CurrentModel == PlanarMeshSettings.DefaultCurrentModel
+                    ? null : s.PlanarMesh.CurrentModel,
             DetailFloorDivisor =
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
@@ -305,12 +324,49 @@ public static class EmSetupPersistence
                                      pm.MeshFrequencyHz,
                                      pm.MinCellsAcrossConductor
                                          ?? PlanarMeshSettings.DefaultMinCellsAcrossConductor,
-                                     pm.TransmissionLineMesh
-                                         ?? PlanarMeshSettings.DefaultTransmissionLineMesh,
+                                     ResolveCurrentModel(pm),
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
             : PlanarMeshSettings.Default,
     };
+
+    /// <summary>
+    /// <b>ANT-3's persistence migration, and the refusal is the part that is a decision.</b>
+    ///
+    /// <para>The new key wins where it is the only one present, and the legacy
+    /// <see cref="CemPlanarMesh.TransmissionLineMesh"/> is read as
+    /// <see cref="PlanarCurrentModel.TransmissionLine"/> where IT is the only one present — that is
+    /// the migration, and it is why a pre-ANT-3 <c>.cem</c> opens on exactly the mesh it described.
+    /// </para>
+    ///
+    /// <para><b>A file carrying both keys and disagreeing is REFUSED, naming both.</b> The obvious
+    /// alternative is a precedence rule ("the new key wins"), and it is the wrong answer for a
+    /// reason this area has already paid for once: a precedence rule means a user who set one
+    /// control watched the other one silently win, which is the exact defect the transmission-line
+    /// mesh was built to fix. Two keys that say different things about one setting is a file nobody
+    /// can act on, and the person holding it is the one who knows which they meant.</para>
+    ///
+    /// <para>Agreement is not a refusal: <c>true</c> beside <c>TransmissionLine</c>, and
+    /// <c>false</c> beside <c>None</c>, are two spellings of one answer and load quietly.</para>
+    /// </summary>
+    private static PlanarCurrentModel ResolveCurrentModel(CemPlanarMesh pm)
+    {
+        if (pm.TransmissionLineMesh is not { } legacy)
+            return pm.CurrentModel ?? PlanarMeshSettings.DefaultCurrentModel;
+
+        var fromLegacy = legacy ? PlanarCurrentModel.TransmissionLine : PlanarCurrentModel.None;
+        if (pm.CurrentModel is not { } current) return fromLegacy;
+        if (current == fromLegacy) return current;
+
+        throw new InvalidDataException(
+            $"This .cem states its mesh current model twice and the two disagree: " +
+            $"'PlanarMesh.CurrentModel' says '{current}' while the legacy " +
+            $"'PlanarMesh.TransmissionLineMesh' says '{(legacy ? "true" : "false")}' " +
+            $"(which means '{fromLegacy}'). These are one setting written two ways, so there is no " +
+            "answer here that is not a guess about which one you meant. Delete whichever line is " +
+            "wrong — 'TransmissionLineMesh' is the older spelling and is no longer written — and " +
+            "open it again.");
+    }
 
     /// <summary>Null for an empty list, so the field is omitted entirely rather than written as [].</summary>
     private static List<double>? FlattenPortZ0s(List<Complex> z)

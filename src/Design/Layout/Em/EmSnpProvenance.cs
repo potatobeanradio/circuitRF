@@ -175,10 +175,16 @@ public static class EmSnpProvenance
     /// <b>Appended at the END and only when it is off its default</b>, so every <c>.snp</c> stamped
     /// before this control existed keeps the hash it already carries and does not read as stale.</para>
     ///
-    /// <para><b><see cref="PlanarMeshSettings.TransmissionLineMesh"/> too</b> (2026-09-09) — it
-    /// changes both pitches and follows the artwork's bends, so it changes the cells, the unknowns
-    /// and the answer more than any other mesh control does. <b>Appended at the END and only when
-    /// on</b>, for the same reason.</para>
+    /// <para><b><see cref="PlanarMeshSettings.CurrentModel"/> too</b> (2026-09-09 as the
+    /// transmission-line boolean, 2026-09-10 as ANT-3's three-way) — it changes both pitches, so it
+    /// changes the cells, the unknowns and the answer more than any other mesh control does.
+    /// <b>Appended at the END and only when it is off its default</b>, for the same reason.</para>
+    ///
+    /// <para><b>ANT-3 kept the transmission-line term's exact BYTES — <c>|tline=True</c> — rather
+    /// than re-spelling it as the enum.</b> That value's meaning did not change, only its name in
+    /// C#, so an <c>.snp</c> stamped under the boolean must go on reading as current; a tidier
+    /// <c>|model=TransmissionLine</c> would have marked every one of them stale for no reason a user
+    /// could see. The new value gets its own term.</para>
     ///
     /// <para><b><see cref="PlanarMeshSettings.DetailFloorDivisor"/> too</b> (ANT-2, 2026-09-10) — it
     /// decides which drawn geometry is allowed to set the pitch, so it changes the mesh and therefore
@@ -196,8 +202,8 @@ public static class EmSnpProvenance
                $"{(m.MeshFrequencyHz is { } f ? R(f) : "auto")}" +
                (m.MinCellsAcrossConductor == PlanarMeshSettings.DefaultMinCellsAcrossConductor
                     ? "" : $"|across={m.MinCellsAcrossConductor}") +
-               (m.TransmissionLineMesh == PlanarMeshSettings.DefaultTransmissionLineMesh
-                    ? "" : $"|tline={m.TransmissionLineMesh}")
+               (m.CurrentModel == PlanarCurrentModel.TransmissionLine ? "|tline=True" : "")
+             + (m.CurrentModel == PlanarCurrentModel.Sheet ? "|sheet=True" : "")
              + $"|detail={m.DetailFloorDivisor}");
 
     /// <summary>
