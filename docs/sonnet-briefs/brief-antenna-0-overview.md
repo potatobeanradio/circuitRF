@@ -118,7 +118,7 @@ feature.
 
 ---
 
-## 2. The three limits that bound every claim in this series
+## 2. The four limits that bound every claim in this series
 
 Stated once here so no brief has to re-argue them, and so none of them can be discovered by a user
 getting a wrong answer.
@@ -127,6 +127,17 @@ getting a wrong answer.
   note. The measured board's is 70 × 70 mm = **0.40 λ₀** at 1.74 GHz. The real antenna will have
   substantial back radiation and a tilted, rippled pattern this model cannot see. Directivity will
   read optimistic.
+- **Every DIELECTRIC LAYER is laterally infinite too, and this is the limit most likely to be
+  mis-remembered.** circuitRF does model *drawn* dielectric artwork — MIM-7's patterned film, tied to
+  its plate conductor — but that mechanism decides **whether** a layer is in the run, never **where it
+  stops**. `PatternedDielectric.Deactivate` says so in its own words: *"A thin-film capacitor's
+  dielectric is patterned: it exists under the plates and nowhere else. The 2.5D premise cannot
+  express that laterally — inside a run every dielectric is laterally infinite — but it does not force
+  the film to be present in EVERY run."* If the plate is one of the analysis levels the film is in the
+  stack, everywhere, to infinity; if not, the band becomes air and the stack is rebuilt. A vertical
+  dielectric boundary is outside the 2.5-D premise entirely and no amount of layering reaches it
+  (`QuasiStaticKernel`'s sloped-boundary refusal). **There is no board edge**, which is why ANT-5 books
+  surface-wave power as loss permanently, and why ANT-11's §1 says what it now says.
 - **Apertures in the ground plane are not representable at all.** That rules out slot antennas,
   CPW-fed slots and aperture-coupled patches — which is the good way to feed a patch. Edge-fed,
   inset-fed and probe-fed are all fine. Probe-fed is a particularly clean fit: the existing internal

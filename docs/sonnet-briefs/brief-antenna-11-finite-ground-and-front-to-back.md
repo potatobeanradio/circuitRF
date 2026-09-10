@@ -23,10 +23,38 @@ On a real board none of the three is true. The measured example's ground is 70 �
 at 1.74 GHz — small enough that the pattern will have real back radiation, real ripple, and a
 directivity meaningfully below what the infinite model reports.
 
-**The full answer is to mesh the ground plane as finite metal, and that is a different-size project**:
-it makes every problem two-level, more than doubles the unknown count on exactly the structures that
-are already near the ceiling, and needs currents on the plane. It is out of scope here and should stay
-out until something forces it.
+**Meshing the ground plane as finite metal is NOT the full answer, and that matters to the decision.**
+It is commonly assumed to be, so the reason is worth stating once:
+
+- **The dielectric stays laterally infinite either way.** The 2.5-D premise cannot express a lateral
+  dielectric boundary at all — see the overview's §2 bullet and `PatternedDielectric.Deactivate`'s own
+  sentence. Drawn dielectric artwork (MIM-7) decides *whether* a layer is in the run, never *where it
+  stops*. So a meshed finite ground still gives you a board with **no edge**: the surface wave still
+  never reaches one and still never diffracts back. **That is §3.3's dominant back-radiation mechanism
+  on a thin substrate**, so the expensive path fixes the secondary mechanism and leaves the primary one
+  exactly as absent as it is today.
+- **It costs more than it looks, and the ceiling moves the wrong way.** It makes every problem
+  two-level, and `PlanarAimGeometry.Build` refuses a multi-level or via-bearing mesh regardless of what
+  the caller asks for, so such a run is judged against `SurfaceMesher.UnknownCeiling` (5,000, dense) and
+  not `AcceleratedUnknownCeiling` (12,000). The measured board solves at N = 4,854 today; its
+  70 × 70 mm ground is ~2.4× the patch's area, so even at the *same* pitch it lands around 15,000 — 3×
+  past a ceiling it just forfeited the accelerator for.
+- **The pitch on the ground is set by h, not by λ.** The return current is essentially the patch's
+  mirror image, concentrated within ~h laterally; h = 203.2 µm here, so resolving it wants ~344 cells a
+  side, ≈ 118,000 cells, ≈ 2×10⁵ unknowns. And an under-resolved ground does not degrade gracefully —
+  it fails to short the field under the patch, which shifts the resonance and inflates radiated power.
+  The infinite-plane image is **exact and free**.
+- **The port reference disappears.** `PlanarExtractor`'s `UngroundedRefusal` names it: Z_c = γ/(jωC_pul)
+  and the calibration standard's end run is measured in substrate heights. MIM-4 generalised the
+  electrostatics to an arbitrary `LayerStack` (`InteriorStaticGreens`), so the blocker is now the
+  narrower and more physical one — a single conductor with no return has no C_pul at all. The probe-fed
+  patch this series calls the cleanest fit is clean *because* its port's − terminal is the analytic
+  plane.
+
+**So it is a different-size project that buys part of one mechanism.** It is out of scope here and
+should stay out until something forces it — and if something does, the thing that forces it will
+probably be a structure where the ground plane IS the radiator (a PCB monopole or IFA), which is a case
+no post-process rescues, rather than a patch.
 
 **What is in scope is the cheap, standard, honest correction.**
 
@@ -105,7 +133,8 @@ Three non-negotiables:
 
 ## 6. Must NOT
 
-- **Do not mesh the ground plane.** Different project; say so if it is wanted.
+- **Do not mesh the ground plane.** Different project, and a PARTIAL answer even when taken — §1.
+  Say both if it is wanted.
 - **Do not merge the estimate into the primary pattern.**
 - **Do not extrapolate past the validity range.**
 - **Do not delete the front-to-back refusal.** Narrow it.

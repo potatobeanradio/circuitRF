@@ -112,8 +112,8 @@ gain**, and it must be recorded here in the cube's own units either way.
 
 ## 5. Gates
 
-Four oracles, in increasing order of what they can catch. All three of the first are independent of
-the MoM solve, which is the point.
+Five oracles, in increasing order of what they can catch. Every one before the power balance is
+independent of the MoM solve, which is the point.
 
 ### 5.1 The εᵣ = 1 reduction
 
@@ -138,6 +138,23 @@ functions it is testing proves only that they are self-consistent.
 1e-12, as L8c's inner integrals were. Includes the cut-cell case if §2 derives it rather than refusing
 it.
 
+### 5.3a The STRATIFIED stack — the path every other oracle here misses
+
+**§5.1, §5.2 and §5.3 all exercise the one-slab kernel only, and that is not the only kernel the fill
+uses.** Any stratified medium turns the general path on even at a single conductor level — a
+superstrate, a soldermask, a cover layer, a buried level (`PlanarExtractor`'s MIM-4 note, and
+`PlanarProblem.RequiresGeneralKernel`, which is the single place that choice is made). A covered patch
+is an ordinary antenna, not a corner case, and as the gate list stood it would take an untested
+spectral path and return a plausible pattern.
+
+- **Extend §5.2's dipole oracle to a stratified stack** — the same infinitesimal horizontal dipole,
+  the same published closed form, over a slab with a cover layer above the metal. It shares no
+  approximation with `LayeredSpectralGreens` and it is the only thing that says the general element
+  factors were derived correctly rather than merely evaluated.
+- **The one-slab reduction**: collapse the cover layer to εᵣ = 1 and the general path must reproduce
+  §5.2's answer to the same tolerance. This is the free self-test and it catches a cascade-ordering or
+  region-indexing error immediately.
+
 ### 5.4 Power balance — reported first, gated once trusted
 
 The hemisphere integral of `U` must equal the power the solve says left the port, less the losses. In
@@ -155,6 +172,10 @@ balance will close *optimistically*, and that is expected, not a defect. ANT-5 o
 
 - The far-field path must not call `Dcim` at all — assert it, so the validated-range refusal cannot
   leak in later by an innocent-looking refactor.
+- **The far field selects its spectral kernel through `PlanarProblem.RequiresGeneralKernel`, not by
+  deciding for itself.** That is the single place the fill makes the same choice, and a far field that
+  re-derives it can disagree with the currents it is transforming — silently, and only on a stratified
+  stack. Assert that the far field and the fill agree on which kernel the problem is.
 - Reciprocity: a symmetric structure driven at symmetric ports gives mirrored patterns.
 - Cost: pattern evaluation for the measured board's mesh over a 1° grid, **measured once in a scratch
   harness and reported**. It does not become a timing test.
@@ -175,6 +196,8 @@ balance will close *optimistically*, and that is expected, not a defect. ANT-5 o
 - **Do not add a far-field measurement to the `TestBench` `measure` grammar.** An EM run is a `.cem`
   run producing a `DataSet`, not a TestBench analysis; these are diagnostics cubes, in the group
   pattern kernel B already established.
+- **Do not hard-wire the one-slab kernel.** §5.3a. `GroundedSlab` is one of two paths and a covered or
+  buried-level patch takes the other; the choice is `PlanarProblem.RequiresGeneralKernel`'s to make.
 - **Do not optimise before measuring.** The direct sum is exact; an FFT or an interpolation over
   directions trades that away for a cost that has not been shown to matter.
 

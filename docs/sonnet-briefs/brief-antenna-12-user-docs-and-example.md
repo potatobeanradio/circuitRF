@@ -30,12 +30,38 @@ Every limit in `brief-antenna-0-overview.md` §2 belongs there, in the user's wo
 - **Surface-wave power is booked as loss**, permanently, because the substrate is laterally infinite.
   On a small board it reaches the edge and radiates. So the reported efficiency is a lower bound and
   the pattern is missing that contribution.
+- **A drawn dielectric is not a finite dielectric.** circuitRF *does* model patterned dielectric
+  artwork (the MIM thin film, tied to its plate conductor), and a user who knows that will reasonably
+  assume a superstrate drawn over the patch alone is modelled where it is drawn. It is not: that
+  mechanism decides **whether** a layer is in the run, never **where it stops**, and inside a run every
+  dielectric is laterally infinite. So a patterned radome, conformal coating or gain-raising
+  superstrate is modelled as covering the whole run, to infinity. **This one must be on the page in the
+  user's own words**, because a superstrate moves resonance, gain and surface-wave excitation enough
+  that it cannot be a footnote — and because the wrong inference here is a comfortable one.
 - **Which cross-pol definition** (ANT-6) and **which gain** (ANT-5) — the two places a number is
   reproducible only if the convention is stated.
 
 **The design note and the user page must not contradict each other** — the existing standing rule for
 this pair. Anything ANT-4 through ANT-11 wrote into `docs/design/mom-engine.md` gets its user-facing
 half here, in the same phase where possible.
+
+### 1a. One Can-list entry that has to be MEASURED before it is written: the uniform superstrate
+
+A limits list that only subtracts is half a list, and there is a capability here the whole series
+currently fails to mention. A **uniform** cover layer — a radome, a conformal coating, a superstrate
+over the patch — appears to be representable today: metal at an interior interface turns the general
+kernel on (`PlanarExtractor`'s stratified-medium note), `Dcim.CanFit` requires only a half-space on
+top, and MIM-4 handles a buried level's de-embedding. That is a real antenna capability and it belongs
+on the Can list beside the patterned-superstrate limit above, which is what makes the pair legible.
+
+**But it is a reading of the refusals, not a measurement, and it must not be written as fact until one
+run has been taken.** Run one covered patch — the ANT-12 example with a cover layer added to its
+technology — and take the outcome as the answer:
+
+- **it runs** → the Can list gains it, with the run's own numbers, and ANT-4's §5 gate below is what
+  says the *pattern* is right and not merely produced;
+- **it refuses** → the Cannot list gains it instead, quoting the refusal, and the phase records which
+  one fired. Either way the page is right; only guessing makes it wrong.
 
 ## 2. M2 — an antenna page
 
@@ -92,8 +118,11 @@ If any of it cannot, that is a finding about the CLI surface and it belongs in t
 
 ## 5. Gates
 
-- The user page's Can and Cannot lists cover every limit in `brief-antenna-0-overview.md` §2, and the
-  design note and the user page agree — assert by review, and record the pairing.
+- The user page's Can and Cannot lists cover every limit in `brief-antenna-0-overview.md` §2 — **all
+  four, including the laterally-infinite dielectric** — and the design note and the user page agree:
+  assert by review, and record the pairing.
+- **The superstrate run of §1a was actually taken**, and the page says what it found rather than what
+  the refusals suggested. Record the run.
 - **The example is a test**: it runs end to end through the CLI, headless, and its metrics sit inside
   stated tolerances. That is what stops the series from silently regressing.
 - The example's numbers are checked against the **cavity model** — an independent analytic reference,
@@ -112,6 +141,7 @@ If any of it cannot, that is a finding about the CLI surface and it belongs in t
 - **Do not write a Cannot list that offers no alternative.**
 - **Do not let the user page and the design note drift.**
 - **Do not report a metric in the docs without its convention.**
+- **Do not write the superstrate onto the Can list from the refusals alone.** §1a.
 
 ## 7. Reading order
 
