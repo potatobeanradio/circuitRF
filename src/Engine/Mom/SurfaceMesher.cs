@@ -85,10 +85,28 @@ public enum PlanarEdgeReference
 /// </summary>
 internal readonly record struct EdgeAttractor(double Coord, double LocalWidthM);
 
-/// <summary>An attractor resolved against a reference: its coordinate and its OWN finest cell.
-/// This is what the size field is built from, and the only place the edge reference choice
-/// reaches the marcher.</summary>
-internal readonly record struct GradedAttractor(double Coord, double C0);
+/// <summary>
+/// An attractor resolved against a reference: its coordinate, its OWN finest cell, and its OWN
+/// growth rate. This is what the size field is built from, and the only place the edge reference
+/// choice reaches the marcher.
+///
+/// <para><b><see cref="Growth"/> is r − 1 for THIS attractor, and making it per-attractor is ANT-2's
+/// M2.</b> A fan's length is <c>log_r(bulk / c0)</c>, and until 2026-09-10 <c>r</c> was one global
+/// number derived from the global narrowest conductor against <c>min(hx, hy)</c> — which, with the
+/// transmission-line mesh on, is the FINEST pitch the field asks for anywhere. The fan then had to
+/// climb from c0 all the way to the LOCAL bulk pitch at a rate sized for a target it had already
+/// passed. Measured on an imported patch board whose field spans 78 µm to 3.485 mm: r came out 2.03
+/// against a climb of 375×, i.e. <b>eight graded cells</b>, and a tensor product turns each of those
+/// into a gridline crossing the whole 41 × 49 mm part. Deriving r from the attractor's own c0 and the
+/// bulk pitch AT the attractor is what makes the fan short.</para>
+///
+/// <para><b>It is floored at the global rate, so the field can only COARSEN</b> — h is monotone
+/// non-decreasing in both c0 and (for d ≥ c0) g, so flooring both against the global pair makes
+/// <c>h_local(x) ≥ h_global(x)</c> pointwise and the cell count bounded above by today's. Same
+/// invariant, and the same reason, as <see cref="PlanarEdgeReference.LocalConductorWidth"/>'s c0
+/// floor.</para>
+/// </summary>
+internal readonly record struct GradedAttractor(double Coord, double C0, double Growth);
 
 /// <summary>
 /// Whether an OBLIQUE boundary run contributes edge attractors, and how many.
@@ -306,6 +324,21 @@ public static class SurfaceMesher
         double hWave   = double.IsInfinity(lambdaG) ? double.PositiveInfinity
                                                     : lambdaG / s.CellsPerWavelength;
 
+        // ── M1 — THE DETAIL FLOOR (ANT-2): metal narrower than this does not get to set the pitch ──
+        //
+        // Three separate width measurements drive the mesh — MeasureNarrowness' global 5th percentile,
+        // PlanarMeshPitchField's local across-chord, and LocalConductorWidth's per-edge run — and none
+        // of them has any notion of a feature being too small to matter electrically. On an imported
+        // board that is the normal case rather than a corner one: on a 1.74 GHz patch the narrowest
+        // metal was 310 µm of connector via land and aperture-rounded corner, λ_g/265 in size and
+        // ~9 mm from anything electrically interesting, and deleting only those features moved the
+        // default mesh from 704,482 unknowns to 51,031.
+        //
+        // It is λ-RELATIVE and taken at the SAME λ_g the cell-size cap uses, so it is one decision on
+        // a 1.7 GHz board and on a 40 GHz one rather than two. It FLOORS and never refines, so every
+        // field it touches is pointwise ≥ what it was and no configuration gets worse. With no
+        // frequency there is no λ_g and therefore no floor — geometry is all there is to go on.
+
         var layerNames = new List<string>(problem.Layers.Count);
         foreach (var l in problem.Layers) layerNames.Add(l.Name);
 
@@ -322,12 +355,52 @@ public static class SurfaceMesher
             return Empty(layerNames, meshFreqHz, lambdaG, hWave, notes);
         }
 
+        // ── M1 — THE DETAIL FLOOR (ANT-2): metal narrower than this does not get to set the pitch ──
+        //
+        // Three separate width measurements drive the mesh — MeasureNarrowness' global 5th percentile,
+        // PlanarMeshPitchField's local across-chord, and LocalConductorWidth's per-edge run — and none
+        // of them has any notion of a feature being too small to matter electrically. On an imported
+        // board that is the normal case rather than a corner one: on a 1.74 GHz patch the narrowest
+        // metal was 310 µm of connector via land and aperture-rounded corner, λ_g/265 in size and
+        // ~9 mm from anything electrically interesting, and deleting only those features moved the
+        // default mesh from 704,482 unknowns to 51,031.
+        //
+        // It is λ-RELATIVE and taken at the SAME λ_g the cell-size cap uses, so it is one decision on
+        // a 1.7 GHz board and on a 40 GHz one rather than two. It FLOORS and never refines, so every
+        // field it touches is pointwise ≥ what it was and no configuration gets worse. With no
+        // frequency there is no λ_g and therefore no floor — geometry is all there is to go on.
+        //
+        // ── AND IT IS CAPPED AT A FRACTION OF THE ARTWORK'S OWN EXTENT, WHICH IS NOT A GUARD ─────
+        //
+        // The floor's whole premise is that a feature is small RELATIVE TO THE PART, so it has no
+        // meaning at all when the part itself is smaller than a wavelength by orders of magnitude —
+        // and that is an ordinary structure here, not a pathology: `MimThinLayerTests`' plates are
+        // 0.8 µm square at 10 GHz on GaAs, where λ_g/200 is 41.8 µm, fifty times the whole thing.
+        // Uncapped, the floor discarded every width on the artwork and the mesh came back EMPTY
+        // ("'rowCount' must be a positive value"). `CapMinFractionOfExtent` is already this file's
+        // constant for "one cell at the finest mesh this kernel can afford", and the argument carries
+        // over unchanged: a floor coarser than one such cell is not declining to size on a detail, it
+        // is declining to mesh the part.
+        double detailFloorAsked = s.DetailFloorDivisor > 0 && !double.IsInfinity(lambdaG) && lambdaG > 0
+            ? lambdaG / s.DetailFloorDivisor
+            : 0.0;
+        double detailFloorCap = CapMinFractionOfExtent * Math.Min(x1 - x0, y1 - y0);
+        double detailFloor    = Math.Min(detailFloorAsked, detailFloorCap);
+
         // Sampling every polygon on every layer — the one pre-grid pass whose cost scales with the
         // ARTWORK rather than with the cell count, and therefore the one R17's ceiling does not bound.
         control?.BeginStage("measuring the artwork");
         // ── R-msh-4: the transverse cell size, from the NARROWEST conductor, per axis ──────────
-        var (narrowX, narrowY) = MeasureNarrowness(problem);
+        var narrowness = MeasureNarrowness(problem, detailFloor);
+        double narrowX = narrowness.NarrowX, narrowY = narrowness.NarrowY;
         double narrowest = Math.Min(narrowX, narrowY);
+
+        // What the pitch WOULD have been with no floor — the report's own quantity, because a floor
+        // that silently coarsens a mesh is the same failure mode as a control that silently does
+        // nothing, and the only way to see it acted is to be shown both numbers.
+        double unflooredPitch = Math.Min(
+            Math.Min(hWave, narrowness.RawNarrowX / s.MinCellsAcrossConductor),
+            Math.Min(hWave, narrowness.RawNarrowY / s.MinCellsAcrossConductor));
 
         double hx = Math.Min(hWave, narrowX / s.MinCellsAcrossConductor);
         double hy = Math.Min(hWave, narrowY / s.MinCellsAcrossConductor);
@@ -363,7 +436,7 @@ public static class SurfaceMesher
             // hx/hy here are still the per-axis rule's own pitches, and they go in as the FLOOR:
             // the transmission-line mesh may only coarsen.
             pitch = PlanarMeshPitchField.Build(problem, hWave, s.MinCellsAcrossConductor,
-                                               fieldGrowth, hx, hy, ports);
+                                               fieldGrowth, hx, hy, ports, detailFloor);
             if (pitch.Ok)
             {
                 // The scalar pitches become the field's own FINEST value, because everything derived
@@ -402,7 +475,7 @@ public static class SurfaceMesher
         // ── The grid (D8: one tensor-product grid, shared by every layer) ─────────────────────
         control?.BeginStage("building the grid");
         var (hardX, hardY, attractX, attractY, staircased) =
-            CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading);
+            CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor);
 
         long estX = EstimateLineCount(x0, x1, hardX, hx);
         long estY = EstimateLineCount(y0, y1, hardY, hy);
@@ -414,14 +487,23 @@ public static class SurfaceMesher
                 $"This geometry needs on the order of {estX * estY:N0} mesh cells, far past the " +
                 $"{UnknownCeiling:N0}-unknown ceiling this kernel is built for — the grid alone cannot " +
                 "be built, let alone solved. " +
-                (hWave <= Math.Min(narrowX, narrowY) / s.MinCellsAcrossConductor
+                // Same branch, and the same ANT-2 §7 correction, as BuildRefusal's: with the pitch
+                // FIELD on the λ knobs are NOT inert, and this refusal fires on exactly the boards
+                // most likely to have it turned on.
+                (pitch is not null
+                    ? $"The transmission-line mesh is on, so λ_g/{s.CellsPerWavelength} = {fmt(hWave)} " +
+                      "sets the pitch along the current and the metal's width sets it across: lower " +
+                      "Cells per wavelength, size the mesh at a lower Mesh frequency, coarsen the Detail " +
+                      "floor (a SMALLER divisor), or analyse a smaller region."
+                 : hWave <= Math.Min(narrowX, narrowY) / s.MinCellsAcrossConductor
                     ? $"The cell size is set by wavelength (λ_g/{s.CellsPerWavelength} = {fmt(hWave)}): " +
                       "lower Cells per wavelength, size the mesh at a lower Mesh frequency, or analyse " +
                       "a smaller region."
                     : $"The cell size is set by the narrowest metal ({fmt(Math.Min(narrowX, narrowY))}, " +
                       $"meshed {s.MinCellsAcrossConductor} cells across), not by " +
                       "wavelength, so Cells per wavelength will not reduce it — narrow the range of " +
-                      "widths in the analysed region, or analyse a smaller region."));
+                      "widths in the analysed region, coarsen the Detail floor (a SMALLER divisor) if " +
+                      "that metal is import detail, or analyse a smaller region."));
         }
 
         // ── The edge reference, per attractor ────────────────────────────────────────────────
@@ -429,30 +511,112 @@ public static class SurfaceMesher
         // ConductorWidth and CellSize hand every attractor the SAME c0 and are bit-identical to what
         // they always were. LocalConductorWidth gives each edge 3% of the metal at THAT edge,
         // floored at the global c0 so the field can only coarsen — see the enum's own note.
-        var gradedX = Resolve(attractX);
-        var gradedY = Resolve(attractY);
+        //
+        // ── M2 (ANT-2) — THE GRADING RATE IS PER-ATTRACTOR, AND AGAINST THE BULK IT MUST REACH ──
+        //
+        // `ratioX`/`ratioY` above are derived against hx/hy, which with the pitch field on are its
+        // FINEST pitch anywhere. The fan, though, has to climb to the BULK — `hMaxX`/`hMaxY`, the
+        // same number `BuildGridLines` caps at — so the rate was sized for a target the fan had
+        // already passed, and on the measured patch board the climb ran eight cells against the
+        // three requested. Each attractor now derives its own r from its own c0 against the bulk it
+        // actually has to reach.
+        //
+        // THE BULK HERE IS THE AXIS'S COARSEST PITCH, NOT THE FIELD'S VALUE AT THE ATTRACTOR'S OWN
+        // COORDINATE. The latter was written first and is wrong twice over: the pitch field is the
+        // BULK CAP, so at a rim — which is where every attractor is — it sits near its FINEST value,
+        // which is not the bulk any fan climbs to; and it makes a fan's rate read a field that
+        // depends weakly on Cells per wavelength through the direction blend at an end cap, so a
+        // control the transmission-line mesh exists to keep ORTHOGONAL began moving the other axis's
+        // gridline count (measured: 9 → 8 in y on a 50 mm line when cells/λ went 20 → 5).
+        //
+        // Both are FLOORED at the global pair (c0, ratio). h(x) = min_i[c0_i + g_i·|x − a_i|] is
+        // non-decreasing in c0_i, and in g_i wherever the field is the binding one (d ≥ c0), so
+        // flooring both makes the field pointwise ≥ the old one and the cell count bounded above by
+        // it. That is a structural invariant, not a hope, and it is what MeshGradingTests asserts.
+        double hMaxX = pitch is null ? hx : pitch.MaxPitchX;
+        double hMaxY = pitch is null ? hy : pitch.MaxPitchY;
+        var gradedX = Resolve(attractX, ratioX, hMaxX, pitch?.AtX);
+        var gradedY = Resolve(attractY, ratioY, hMaxY, pitch?.AtY);
         double c0Coarsest = c0;
-        foreach (var g in gradedX) c0Coarsest = Math.Max(c0Coarsest, g.C0);
-        foreach (var g in gradedY) c0Coarsest = Math.Max(c0Coarsest, g.C0);
+        int fanCells = 0;
+        Measure(gradedX, hMaxX, pitch?.AtX);
+        Measure(gradedY, hMaxY, pitch?.AtY);
 
-        List<GradedAttractor> Resolve(List<EdgeAttractor> raw)
+        // MEASURED AGAINST THE SAME BULK THE RATE WAS DERIVED FROM, which is the pitch cap where
+        // this fan starts — a fan climbs to the cap it meets, and with a field that is a LOCAL
+        // quantity. Reading every fan against the axis's coarsest pitch instead was tried and
+        // over-reports on exactly the artwork this brief is about: a connector land's fan reaches its
+        // own ~80 µm neighbourhood in three cells and never climbs to the 2.9 mm bulk out on the
+        // patch, but that reading called it eight.
+        void Measure(List<GradedAttractor> g, double hMaxAxis, Func<double, double>? bulkAt)
         {
+            foreach (var a in g)
+            {
+                c0Coarsest = Math.Max(c0Coarsest, a.C0);
+                double bulk = bulkAt is null ? hMaxAxis : Math.Min(hMaxAxis, bulkAt(a.Coord));
+                fanCells = Math.Max(fanCells, EffectiveEdgeCells(a.C0, bulk, 1.0 + a.Growth));
+            }
+        }
+
+        List<GradedAttractor> Resolve(List<EdgeAttractor> raw, double globalRatio, double hMaxAxis,
+                                      Func<double, double>? bulkAt)
+        {
+            double globalGrowth = globalRatio > 1.0 ? globalRatio - 1.0 : 0.0;
             var outList = new List<GradedAttractor>(raw.Count);
+            // c0 IS ZERO WHEN THE EDGE MESH IS OFF, AND THE LOCAL BRANCH MUST NOT REVIVE IT. The
+            // per-edge width is a real number whatever the setting says, so `max(c0, 0.03·w)` is
+            // 0.03·w even at c0 = 0 — which used to be harmless only because the old `growth > 0`
+            // gate was false there and the attractors were never read. With a per-attractor rate
+            // that gate reads the attractors themselves, so an edge mesh the user turned OFF came
+            // back on: measured on the ANT-2 patch fixture, 40,952 unknowns against 11,754 with the
+            // edge mesh ON, which is not merely wrong but the wrong way round.
+            if (!(c0 > 0))
+            {
+                foreach (var a in raw) outList.Add(new GradedAttractor(a.Coord, 0, 0));
+                return outList;
+            }
+
             foreach (var a in raw)
-                outList.Add(new GradedAttractor(
-                    a.Coord,
-                    edgeReference == PlanarEdgeReference.LocalConductorWidth && a.LocalWidthM > 0
-                        ? Math.Max(c0, PlanarMeshSettings.EdgeFractionOfReference * a.LocalWidthM)
-                        : c0));
+            {
+                // M1 reaches the per-edge width here too: an edge bounding metal below the detail
+                // floor asks for a fan sized on the floor, not on the artefact.
+                double w = Math.Max(a.LocalWidthM, detailFloor);
+                double c0i = edgeReference == PlanarEdgeReference.LocalConductorWidth && w > 0
+                    ? Math.Max(c0, PlanarMeshSettings.EdgeFractionOfReference * w)
+                    : c0;
+
+                // §4's two SECONDARY levers were both measured and neither is here. Lever 1, a
+                // λ-relative floor on c0, cannot be sized: the value that closes an imported patch
+                // board is λ_g/540, five times COARSER than the legitimate 6 µm edge cell of a plain
+                // 200 µm × 10 mm line at 10 GHz, whose bit-identity is one of this brief's own
+                // gates — no number does both, because what is wrong is the RATIO bulk/c0 (390 on
+                // the feed rim against 8.3 on the plain line) rather than the size of either. Lever
+                // 2, its backstop, was BUILT as c0 ≥ bulk / r_max^EdgeCells and removed: with the
+                // rate derived against the real bulk it changed not one cell on the board this brief
+                // is about, while it did make c0 depend on Cells per wavelength — which broke the
+                // transmission-line mesh's own orthogonality gate (a 50 mm line's y gridline count
+                // moving 9 → 8 when cells/λ went 20 → 5). A lever that buys nothing and costs a
+                // guarantee is not a backstop, so the overrun is REPORTED instead — see the fan
+                // note in the caller.
+                // THE RATE IS DERIVED AGAINST THE BULK CAP WHERE THE FAN STARTS, and taking the
+                // axis's coarsest pitch instead was tried and is worse twice over: it drives r to its
+                // 3× clamp on any board where the two differ, so the fan stops responding to
+                // MinCellsAcrossConductor at all — `OnAStraightLine_TheTwoAxesAreGovernedByDifferent
+                // Settings` catches that as a y gridline count that will not move when Cells across
+                // does — and it over-states the climb a fan in a fine region actually makes.
+                double bulk = bulkAt is null ? hMaxAxis : Math.Min(hMaxAxis, bulkAt(a.Coord));
+                double ri = GrowthRatioFor(c0i, bulk, s.EdgeCells);
+                double gi = Math.Max(ri > 1.0 ? ri - 1.0 : 0.0, globalGrowth);
+                outList.Add(new GradedAttractor(a.Coord, c0i, gi));
+            }
             return outList;
         }
 
-        double[] gx = BuildGridLines(x0, x1, hardX, gradedX,
-                                     pitch is null ? hx : pitch.MaxPitchX, ratioX - 1.0,
-                                     pitch?.AtX);
-        double[] gy = BuildGridLines(y0, y1, hardY, gradedY,
-                                     pitch is null ? hy : pitch.MaxPitchY, ratioY - 1.0,
-                                     pitch?.AtY);
+        bool anyGrowthX = ratioX > 1.0 || gradedX.Exists(static a => a.Growth > 0);
+        bool anyGrowthY = ratioY > 1.0 || gradedY.Exists(static a => a.Growth > 0);
+
+        double[] gx = BuildGridLines(x0, x1, hardX, gradedX, hMaxX, anyGrowthX, pitch?.AtX);
+        double[] gy = BuildGridLines(y0, y1, hardY, gradedY, hMaxY, anyGrowthY, pitch?.AtY);
 
         // ── Cells ─────────────────────────────────────────────────────────────────────────────
         var cells  = new List<PlanarCell>();
@@ -697,13 +861,24 @@ public static class SurfaceMesher
                       ? "the highest frequency of the sweep. Widening the sweep upward will change " +
                         "this, and with it the unknown count."
                       : "the frequency the mesh is sized at. Changing it changes the unknown count.")
-                : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
-                  $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
-                  $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +
-                  $"{hWave / Math.Min(hx, hy):G3}× finer, everywhere. To coarsen: " +
-                  (s.EdgeMesh && s.EdgeCells > 0
-                      ? "turn the edge mesh off, or narrow the range of widths, or analyse less."
-                      : "narrow the range of widths, or analyse less."));
+                : pitch is not null
+                  // ── §7's defect, in the note that shares its wording (ANT-2). With the pitch
+                  //    FIELD on, "forces this pitch everywhere" is simply false — the field spans a
+                  //    range, the finest value is local to the narrowest neck, and Cells per
+                  //    wavelength sets the ALONG pitch at every point of it. Telling a user the λ
+                  //    knobs are inert here sends them away from the one that works.
+                  ? $"Cells per wavelength sets the pitch ALONG the current ({fmt(hWave)}); the metal's " +
+                    $"own width sets it ACROSS, {s.MinCellsAcrossConductor} cells over " +
+                    $"{fmt(narrowest)} at the narrowest. The field spans {fmt(Math.Min(hx, hy))}–" +
+                    $"{fmt(Math.Max(pitch.MaxPitchX, pitch.MaxPitchY))}, so BOTH knobs move this mesh, " +
+                    "each in its own direction."
+                  : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
+                    $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
+                    $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +
+                    $"{hWave / Math.Min(hx, hy):G3}× finer, everywhere. To coarsen: " +
+                    (s.EdgeMesh && s.EdgeCells > 0
+                        ? "turn the edge mesh off, or narrow the range of widths, or analyse less."
+                        : "narrow the range of widths, or analyse less."));
 
             // The second note quantifies the trade in the unit the user set, and fires ONLY below the
             // sweep's top — at or above it there is nothing under-resolved to report.
@@ -727,6 +902,39 @@ public static class SurfaceMesher
 
         notes.Add($"Narrowest conductor dimension {fmt(narrowest)}, meshed {across} cell(s) across " +
                   $"(target {s.MinCellsAcrossConductor}).");
+
+        // ── M1 — SAY WHAT THE FLOOR DID, AND WHAT THE MESH WOULD HAVE BEEN WITHOUT IT ────────────
+        //
+        // A floor that silently coarsens a mesh is the same failure mode as a control that silently
+        // does nothing: in both cases the number on screen is not the number the geometry asked for
+        // and nothing says so. So this names the floor, how many shapes fell below it, and the pitch
+        // it displaced — and when nothing fell below it, it says THAT, because "the floor is on and
+        // it changed nothing here" is the answer to a question a user reading the count will ask.
+        if (detailFloor > 0)
+        {
+            // …and when the EXTENT CAP is what set it, say the number that is actually in force
+            // rather than the one the divisor asks for. On a part that is itself far below a
+            // wavelength the two differ by orders of magnitude, and a note quoting λ_g/200 beside a
+            // floor of 16 nm is the kind of statement this file keeps having to correct.
+            string what = detailFloorCap < detailFloorAsked
+                ? $"Detail floor {fmt(detailFloor)} — λ_g/{s.DetailFloorDivisor} would be " +
+                  $"{fmt(detailFloorAsked)}, but this artwork is only {fmt(Math.Min(x1 - x0, y1 - y0))} " +
+                  $"across, so the floor is held at {CapMinFractionOfExtent:P0} of that"
+                : $"Detail floor λ_g/{s.DetailFloorDivisor} = {fmt(detailFloor)}";
+
+            notes.Add(narrowness.ShapesBelowFloor > 0
+                ? $"{what}: {narrowness.ShapesBelowFloor} shape(s) are narrower than that and do not " +
+                  "set the pitch — the narrowest is " +
+                  $"{fmt(Math.Min(narrowness.RawNarrowX, narrowness.RawNarrowY))}, which would have " +
+                  $"forced {fmt(unflooredPitch)} over the whole layout. They are still meshed; they " +
+                  "are no longer what the mesh is sized on."
+                : $"{what}: nothing on this artwork is narrower than that, so it changed nothing here.");
+        }
+        else if (s.DetailFloorDivisor > 0)
+        {
+            notes.Add("Detail floor: not applied — it is λ-relative and this mesh has no wavelength " +
+                      "to be relative to.");
+        }
 
         // ── M2 — SAY WHAT IT DID, always. A control that silently does nothing is the defect this
         //    whole thread started from, and this one is worth nothing unless the user can see that
@@ -768,6 +976,36 @@ public static class SurfaceMesher
                   $"{fmt(c0)} (3% of {fmt(edgeRef)}, {DescribeReference(edgeReference)}), growing " +
                   $"{ratioX:G3}× across, {ratioY:G3}× along.");
 
+            // ── M2 — THE FAN'S LENGTH, WHICH IS THE QUANTITY THAT ACTUALLY COSTS ────────────────
+            //
+            // A tensor product turns one graded cell into a gridline across the whole part, so what a
+            // fan costs is its LENGTH IN CELLS and not its finest cell. Reporting the growth ratio
+            // alone leaves that arithmetic to the reader, and it is the number that was eight on the
+            // board this was measured on.
+            //
+            // …AND WHEN IT OVERRUNS WHAT WAS ASKED FOR, SAY SO RATHER THAN COARSENING THE EDGE CELL
+            // TO HIDE IT. The ratio is clamped to MaxGrowthRatio, so a climb steeper than
+            // r_max^EdgeCells cannot be made in EdgeCells cells and the fan simply runs longer — a
+            // 349 µm feed rim beside a λ_g/20 bulk of 2.9 mm is a 276× climb and takes 5. Flooring
+            // c0 to force the requested count back was built, measured to change not one cell on the
+            // board this brief is about, and removed for coupling the edge cell to Cells per
+            // wavelength (see Resolve). So the honest thing is left: the number, and why.
+            if (fanCells > 0)
+            {
+                notes.Add($"Longest edge fan: {fanCells} cell(s) from its finest cell to the bulk " +
+                          "pitch — each one is a gridline across the whole part, so this is what the " +
+                          "edge mesh costs." +
+                          (fanCells > s.EdgeCells
+                              ? $" That is more than the {s.EdgeCells} asked for: the grading ratio is " +
+                                $"bounded to {MinGrowthRatio:G3}–{MaxGrowthRatio:G3}×, and this rim's " +
+                                "finest cell is further below the bulk pitch than that many steps can " +
+                                "cover. What shortens it is a COARSER finest cell — wider metal at " +
+                                "that rim, or a coarser Detail floor if the rim is import detail. " +
+                                "Edge cells does not: lowering it cannot go below this, and raising " +
+                                "it past here only lengthens the fan."
+                              : ""));
+            }
+
             // …and when there is no such edge, SAY SO. "at every axis-parallel conductor edge" is
             // accurate and nobody reads the qualifier, so on an all-curved part the note above
             // reports an edge mesh that does not exist anywhere on the artwork. Same class as the
@@ -790,13 +1028,15 @@ public static class SurfaceMesher
             // Saying so is the difference between "this control does not do what I expected" and
             // "this control did nothing and never told me" (owner report, 2026-08-09: "I set my Edge
             // cells to 10 and expected the mesh to increase near the edges, but it appeared the same").
-            int usedX = EffectiveEdgeCells(c0, hx, ratioX);
-            int usedY = EffectiveEdgeCells(c0, hy, ratioY);
-            int used  = Math.Max(usedX, usedY);
-            if (used > 0 && used != s.EdgeCells)
-                notes.Add($"Edge cells: {used} used, not the {s.EdgeCells} requested — the grading " +
+            //
+            // ANT-2: this is asked of the REALISED fans rather than recomputed from c0 against
+            // hx/hy. Those are the finest pitches the mesh contains, not the bulk any fan climbs to,
+            // so with the pitch field on this note used to state a number no fan on the artwork had.
+            // The OVER-run half moved into the fan-length note above, where the number already is.
+            if (fanCells > 0 && fanCells < s.EdgeCells)
+                notes.Add($"Edge cells: {fanCells} used, not the {s.EdgeCells} requested — the grading " +
                           $"ratio is bounded to {MinGrowthRatio:G3}–{MaxGrowthRatio:G3}×, so any value " +
-                          (used < s.EdgeCells ? "above" : "below") + $" ~{used} meshes the same here. " +
+                          $"above ~{fanCells} meshes the same here. " +
                           "It sets how far the refinement reaches, never how fine the finest cell is.");
         }
         else
@@ -885,7 +1125,9 @@ public static class SurfaceMesher
                                    accelerated: accel,
                                    acceleratedWouldFit: !accel && n <= AcceleratedUnknownCeiling
                                                       && !problem.RequiresGeneralKernel,
-                                   fmt: fmt);
+                                   fmt: fmt,
+                                   coarsestPitch: pitch is null
+                                       ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY));
         else if (verdict == PlanarBudgetVerdict.Warn)
             notes.Add(accel
                 ? $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0}-unknown " +
@@ -921,7 +1163,10 @@ public static class SurfaceMesher
             MergedSliverCount:             conformal.Merged,
             StaircaseFallbackCells:        conformal.Fallback,
             MeshedAreaM2:                  meshedArea,
-            OneDirectionCells:             conformal.OneDirectionOnly);
+            OneDirectionCells:             conformal.OneDirectionOnly,
+            DetailFloorM:                  detailFloor,
+            ShapesBelowDetailFloor:        narrowness.ShapesBelowFloor,
+            LongestEdgeFanCells:           fanCells);
     }
 
     /// <summary>
@@ -955,23 +1200,45 @@ public static class SurfaceMesher
     /// face — it moved, and the mesh is past the new one too — so it is replaced with that ceiling's
     /// own number instead of the dense path's.</para>
     /// </summary>
+    /// <param name="coarsestPitch">
+    /// <b>The coarsest bulk pitch the transmission-line mesh's FIELD asks for, or 0 when no field
+    /// built this mesh</b> — and it is here because the refusal was stale exactly when it was on
+    /// (ANT-2 §7). The text below tells a user, in capitals, that lowering Cells per wavelength or
+    /// Mesh frequency will not reduce the count; on the measured patch board it said that while the
+    /// field it had just built spanned 78 µm to 3.485 mm, and lowering cells/λ was what took the same
+    /// board from 23,416 unknowns to 1,909. The sentence is correct for the per-axis rule and wrong
+    /// for the field — a field's finest pitch is LOCAL to the narrowest neck, and λ still sets the
+    /// pitch along the current everywhere — so it must branch on which rule actually produced this
+    /// mesh rather than on the settings.
+    /// </param>
     private static string BuildRefusal(
         int n, int cellCount, PlanarMeshSettings s,
         double narrowX, double narrowY, double hx, double hy, double hWave,
         double extentX, double extentY, bool accelerated, bool acceleratedWouldFit,
-        PlanarLengthFormat fmt)
+        PlanarLengthFormat fmt, double coarsestPitch = 0)
     {
         double pitch     = Math.Min(hx, hy);
         double narrowest = Math.Min(narrowX, narrowY);
         int    ceiling   = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        bool   field     = coarsestPitch > 0;
 
         // WHICH quantity set the cell size. This is the whole difference between a refusal a user can
         // act on and one they can only argue with: hx/hy are Math.Min(hWave, narrow/MinCells), so the
         // wavelength cap is binding exactly when it is the smaller of the two on at least one axis.
-        bool waveBinds = hWave <= narrowX / s.MinCellsAcrossConductor
-                      || hWave <= narrowY / s.MinCellsAcrossConductor;
+        // With a FIELD, hx/hy are its finest values and the question has a third answer — both bind,
+        // in their own directions — so `waveBinds` is asked only of the per-axis rule.
+        bool waveBinds = !field
+                      && (hWave <= narrowX / s.MinCellsAcrossConductor
+                       || hWave <= narrowY / s.MinCellsAcrossConductor);
 
-        var why = waveBinds
+        var why = field
+            ? $" The transmission-line mesh is on, so the two controls act in DIFFERENT directions " +
+              $"and both of them move this count: λ_g/{s.CellsPerWavelength} = {fmt(hWave)} along the " +
+              $"current, and {s.MinCellsAcrossConductor} cells across metal {fmt(narrowest)} wide at " +
+              $"its narrowest. The pitch field that came out spans {fmt(pitch)} to " +
+              $"{fmt(coarsestPitch)} over {fmt(extentX)} × {fmt(extentY)} of artwork — the finest " +
+              "value is local to the narrowest metal, not the pitch of the whole grid."
+            : waveBinds
             ? $" The cell size is set by wavelength here — λ_g/{s.CellsPerWavelength} = {fmt(hWave)} " +
               $"across {fmt(extentX)} × {fmt(extentY)} of artwork."
             : $" The cell size is set by the NARROWEST metal, not by wavelength: the narrowest " +
@@ -980,7 +1247,12 @@ public static class SurfaceMesher
               $"pitch over all {fmt(extentX)} × {fmt(extentY)} of the artwork — the grid is one " +
               $"tensor product over the whole layout, so the narrow end is paid for everywhere. The " +
               $"λ_g/{s.CellsPerWavelength} cap is {fmt(hWave)}, {hWave / pitch:G3}× coarser, so " +
-              "LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY WILL NOT REDUCE THIS COUNT.";
+              "LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY WILL NOT REDUCE THIS COUNT." +
+              (s.TransmissionLineMesh
+                  ? " (The transmission-line mesh is on but DECLINED on this artwork — see the notes " +
+                    "beside this message for why — so the per-axis rule is what meshed it.)"
+                  : " Turning the transmission-line mesh on makes the two controls orthogonal, and " +
+                    "then Cells per wavelength does reduce it.");
 
         // Short imperatives only. An action carrying its own explanatory clause reads as part of the
         // NEXT action once the list is joined ("…its narrowest, turn the edge mesh off or analyse a
@@ -990,20 +1262,22 @@ public static class SurfaceMesher
         // settings — see the class-level note on AcceleratedUnknownCeiling for the measurement.
         if (acceleratedWouldFit)
             acts.Add("turn on the accelerated solve (Solver options)");
-        if (waveBinds)
+        if (waveBinds || field)
         {
             acts.Add("lower Cells per wavelength");
             acts.Add("size the mesh at a lower Mesh frequency");
         }
-        else
+        if (!waveBinds)
         {
             acts.Add("narrow the range of widths in the analysed region");
+            acts.Add("coarsen the Detail floor — a SMALLER divisor — if the narrowest metal here " +
+                     "is import detail rather than a conductor");
         }
         if (s.EdgeMesh && s.EdgeCells > 0)
             acts.Add("turn the edge mesh off");
         acts.Add("analyse a smaller region");
 
-        string how = waveBinds
+        string how = waveBinds || field
             ? ""
             : " Splitting the structure at a uniform-width plane, analysing the pieces separately and " +
               "cascading them is the usual way through a part whose widest metal is many times its " +
@@ -1492,7 +1766,7 @@ public static class SurfaceMesher
     {
         ArgumentNullException.ThrowIfNull(problem);
         var (x0, y0, x1, y1) = problem.Bounds();
-        var (_, _, attX, attY, _) = CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading);
+        var (_, _, attX, attY, _) = CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, 0);
         // D9's guarantee is about HOW MANY fans the geometry demanded, so the coordinates alone are
         // what this answers with — the per-edge width each one carries is the reference's business.
         return (attX.ConvertAll(a => a.Coord), attY.ConvertAll(a => a.Coord));
@@ -1508,6 +1782,20 @@ public static class SurfaceMesher
     // ── Narrowness ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// <b>What <see cref="MeasureNarrowness(PlanarProblem, double, int)"/> found</b> — the answer, and
+    /// enough of the working for the report to say what the detail floor did.
+    /// </summary>
+    /// <param name="NarrowX">The narrowest conductor dimension in x, floored at the detail floor.</param>
+    /// <param name="NarrowY">The same in y.</param>
+    /// <param name="RawNarrowX">The same, unfloored — what the artwork actually measures.</param>
+    /// <param name="RawNarrowY">The same in y.</param>
+    /// <param name="ShapesBelowFloor">How many drawn shapes measure narrower than the floor in at
+    /// least one axis. <b>Shapes, not runs</b>: "17 shape(s) are below the floor" is the sentence a
+    /// user can go and look at, and a run count is a property of the sampling.</param>
+    public readonly record struct PlanarNarrowness(
+        double NarrowX, double NarrowY, double RawNarrowX, double RawNarrowY, int ShapesBelowFloor);
+
+    /// <summary>
     /// The narrowest conductor dimension along each axis, measured from the geometry <b>before any
     /// grid exists</b>. Scan lines are cast through every polygon and the run lengths collected; the
     /// answer is the 5th percentile rather than the outright minimum, because the outright minimum on
@@ -1517,7 +1805,31 @@ public static class SurfaceMesher
     /// </summary>
     public static (double NarrowX, double NarrowY) MeasureNarrowness(PlanarProblem problem, int samples = 128)
     {
+        var m = MeasureNarrowness(problem, 0.0, samples);
+        return (m.NarrowX, m.NarrowY);
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="MeasureNarrowness(PlanarProblem, int)"/>
+    ///
+    /// <para><b>…with <see cref="PlanarMeshSettings.DetailFloorDivisor"/>'s floor applied per SHAPE,
+    /// not to the finished answer, and the difference is the whole point.</b> Flooring the global
+    /// minimum afterwards would be arithmetic on one number; flooring each shape's own measurement
+    /// first is what lets a 310 µm via land stop driving the pitch while a 349 µm feed beside it goes
+    /// on being measured as it is drawn. A shape narrower than the floor still contributes its floored
+    /// width rather than being dropped, so the mesh still has to cover it — this changes what the
+    /// geometry is allowed to ASK for, never what is drawn (that is the user's decision, and ANT-2 §6
+    /// says so).</para>
+    /// </summary>
+    /// <param name="detailFloorM">λ_g ÷ the divisor, in metres. 0 switches the floor off, which is
+    /// bit-identical to what this measured before the floor existed.</param>
+    public static PlanarNarrowness MeasureNarrowness(
+        PlanarProblem problem, double detailFloorM, int samples = 128)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
         double nx = double.PositiveInfinity, ny = double.PositiveInfinity;
+        double rawX = double.PositiveInfinity, rawY = double.PositiveInfinity;
+        int below = 0;
 
         foreach (var layer in problem.Layers)
             foreach (var poly in layer.Polygons)
@@ -1539,14 +1851,23 @@ public static class SurfaceMesher
                     foreach (var span in Spans(poly, x, horizontal: false)) runsY.Add(span.Hi - span.Lo);
                 }
 
-                nx = Math.Min(nx, Percentile(runsX, 0.05, px1 - px0));
-                ny = Math.Min(ny, Percentile(runsY, 0.05, py1 - py0));
+                double wx = Percentile(runsX, 0.05, px1 - px0);
+                double wy = Percentile(runsY, 0.05, py1 - py0);
+                rawX = Math.Min(rawX, wx);
+                rawY = Math.Min(rawY, wy);
+
+                if (detailFloorM > 0 && (wx < detailFloorM || wy < detailFloorM)) below++;
+                nx = Math.Min(nx, Math.Max(wx, detailFloorM));
+                ny = Math.Min(ny, Math.Max(wy, detailFloorM));
             }
 
         var (bx0, by0, bx1, by1) = problem.Bounds();
-        if (double.IsInfinity(nx) || !(nx > 0)) nx = Math.Max(bx1 - bx0, 1e-12);
-        if (double.IsInfinity(ny) || !(ny > 0)) ny = Math.Max(by1 - by0, 1e-12);
-        return (nx, ny);
+        double fallX = Math.Max(bx1 - bx0, 1e-12), fallY = Math.Max(by1 - by0, 1e-12);
+        if (double.IsInfinity(nx)   || !(nx > 0))   nx   = fallX;
+        if (double.IsInfinity(ny)   || !(ny > 0))   ny   = fallY;
+        if (double.IsInfinity(rawX) || !(rawX > 0)) rawX = fallX;
+        if (double.IsInfinity(rawY) || !(rawY > 0)) rawY = fallY;
+        return new PlanarNarrowness(nx, ny, rawX, rawY, below);
     }
 
     private static double Percentile(List<double> values, double p, double fallback)
@@ -1633,9 +1954,26 @@ public static class SurfaceMesher
     /// own graded fan. A non-axis-parallel edge contributes NEITHER — which is D9's guarantee that a
     /// 96-point smooth outline cannot inflate the grid.</para>
     /// </summary>
+    /// <param name="detailFloorM">
+    /// <b>ANT-2's detail floor — an edge SHORTER than this raises no attractor.</b> 0 is off.
+    ///
+    /// <para>It is the same decision M1 makes about the pitch, applied to the fan, and it has to be
+    /// made in both places or it is only half made: a 310 µm connector via land the mesher has just
+    /// decided is too small to size the mesh on still asked for four graded fans, and on the ANT-2
+    /// patch fixture nine of them accounted for 72 of the 148 x gridlines and 61 of the 122 in y.
+    /// A fan is charged across the WHOLE tensor grid, so a feature not worth resolving is a feature
+    /// not worth a fan.</para>
+    ///
+    /// <para><b>Only the fan goes; the HARD GRIDLINES stay</b>, so R-msh-1's exact tiling is
+    /// untouched and the feature is still meshed. This is the same argument
+    /// <see cref="CapMinFractionOfExtent"/> already makes about an edge the mesh cannot represent,
+    /// stated in wavelengths instead of in fractions of a bounding box — which is the only form of it
+    /// that means the same thing on a 1.7 GHz board and a 40 GHz one.</para>
+    /// </param>
     private static (List<double> HardX, List<double> HardY, List<EdgeAttractor> AttractX, List<EdgeAttractor> AttractY, int Staircased)
         CollectBoundaryLines(PlanarProblem problem, double x0, double y0, double x1, double y1,
-                             PlanarRimGrading rimGrading = PlanarRimGrading.None)
+                             PlanarRimGrading rimGrading = PlanarRimGrading.None,
+                             double detailFloorM = 0)
     {
         var hardX = new List<double> { x0, x1 };
         var hardY = new List<double> { y0, y1 };
@@ -1689,7 +2027,8 @@ public static class SurfaceMesher
                         {
                             double at = 0.5 * (ax + bx);
                             hardX.Add(at);
-                            if (grade && Crowds(Math.Abs(by - ay), extY, cap))
+                            if (grade && Math.Abs(by - ay) >= detailFloorM
+                                      && Crowds(Math.Abs(by - ay), extY, cap))
                                 attX.Add(new EdgeAttractor(
                                     at, LocalWidthAt(poly, at, Math.Min(ay, by), Math.Max(ay, by), vertical: true)));
                         }
@@ -1697,7 +2036,8 @@ public static class SurfaceMesher
                         {
                             double at = 0.5 * (ay + by);
                             hardY.Add(at);
-                            if (grade && Crowds(Math.Abs(bx - ax), extX, cap))
+                            if (grade && Math.Abs(bx - ax) >= detailFloorM
+                                      && Crowds(Math.Abs(bx - ax), extX, cap))
                                 attY.Add(new EdgeAttractor(
                                     at, LocalWidthAt(poly, at, Math.Min(ax, bx), Math.Max(ax, bx), vertical: false)));
                         }
@@ -1711,7 +2051,8 @@ public static class SurfaceMesher
                     // Asked of THIS ring's own oblique flags, not of the polygon's `anyOblique` —
                     // a hole ring must not inherit the outer ring's classification.
                     if (grade && rimGrading != PlanarRimGrading.None)
-                        AddRunAttractors(poly, ring, oblique, extX, extY, rimGrading, attX, attY);
+                        AddRunAttractors(poly, ring, oblique, extX, extY, rimGrading, attX, attY,
+                                         detailFloorM);
                 }
 
                 if (anyOblique && grade) staircased++;
@@ -1874,7 +2215,8 @@ public static class SurfaceMesher
     /// </summary>
     private static void AddRunAttractors(
         PlanarPolygon poly, IReadOnlyList<EmPoint> ring, bool[] oblique, double extX, double extY,
-        PlanarRimGrading mode, List<EdgeAttractor> attX, List<EdgeAttractor> attY)
+        PlanarRimGrading mode, List<EdgeAttractor> attX, List<EdgeAttractor> attY,
+        double detailFloorM = 0)
     {
         int n = ring.Count;
         int count = 0;
@@ -1885,7 +2227,7 @@ public static class SurfaceMesher
         // when EVERY edge is oblique the ring is a single closed run (the 96-point disc's case).
         if (count == n)
         {
-            EmitRun(poly, BuildRun(ring, 0, n), extX, extY, mode, attX, attY);
+            EmitRun(poly, BuildRun(ring, 0, n), extX, extY, mode, attX, attY, detailFloorM);
             return;
         }
 
@@ -1894,7 +2236,7 @@ public static class SurfaceMesher
             if (!oblique[i] || oblique[(i + n - 1) % n]) continue;   // not the START of a run
             int len = 0;
             while (len < n && oblique[(i + len) % n]) len++;
-            EmitRun(poly, BuildRun(ring, i, len), extX, extY, mode, attX, attY);
+            EmitRun(poly, BuildRun(ring, i, len), extX, extY, mode, attX, attY, detailFloorM);
         }
     }
 
@@ -1908,7 +2250,8 @@ public static class SurfaceMesher
     }
 
     private static void EmitRun(PlanarPolygon poly, List<EmPoint> run, double extX, double extY,
-                                PlanarRimGrading mode, List<EdgeAttractor> attX, List<EdgeAttractor> attY)
+                                PlanarRimGrading mode, List<EdgeAttractor> attX, List<EdgeAttractor> attY,
+                                double detailFloorM = 0)
     {
         double xMin = double.PositiveInfinity, xMax = double.NegativeInfinity;
         double yMin = double.PositiveInfinity, yMax = double.NegativeInfinity;
@@ -1918,8 +2261,9 @@ public static class SurfaceMesher
             yMin = Math.Min(yMin, p.Y); yMax = Math.Max(yMax, p.Y);
         }
 
-        bool gradeX = (yMax - yMin) >= 0.2 * extY;   // an x-attractor serves a rim of this y-extent
-        bool gradeY = (xMax - xMin) >= 0.2 * extX;
+        // The rim a fan would serve, against the same detail floor the axis-parallel path uses.
+        bool gradeX = (yMax - yMin) >= 0.2 * extY && (yMax - yMin) >= detailFloorM;
+        bool gradeY = (xMax - xMin) >= 0.2 * extX && (xMax - xMin) >= detailFloorM;
 
         // An oblique run's own extent ACROSS the attractor's axis is the local width here: a disc's
         // left rim bounds metal one diameter wide, and that is (xMax - xMin). Measuring with
@@ -1988,10 +2332,13 @@ public static class SurfaceMesher
     /// <param name="bulkAt">M2 — the transmission-line mesh's per-axis bulk pitch FIELD, or null for
     /// the single scalar cap every mesh had before it. <b>Null is bit-identical</b>: the local
     /// function below returns <paramref name="hMax"/> unchanged, so no arithmetic differs.</param>
+    /// <param name="anyGrowth">Whether ANY grading is asked for at all — the gate that switches the
+    /// graded branch on. The RATE is <see cref="GradedAttractor.Growth"/>, per attractor, since
+    /// ANT-2's M2; this parameter no longer carries one.</param>
     internal static double[] BuildGridLines(
         double lo, double hi,
         List<double> hard, IReadOnlyList<GradedAttractor> attractors,
-        double hMax, double growth,
+        double hMax, bool anyGrowth,
         Func<double, double>? bulkAt = null)
     {
         // The bulk cap at x. With no field this IS hMax, to the bit.
@@ -2011,7 +2358,7 @@ public static class SurfaceMesher
         if (anchors.Count == 0 || anchors[0] > lo + tol) anchors.Insert(0, lo);
         if (anchors[^1] < hi - tol) anchors.Add(hi);
 
-        bool graded = growth > 0 && attractors.Count > 0;
+        bool graded = anyGrowth && attractors.Count > 0;
         IReadOnlyList<GradedAttractor> atts = graded ? attractors : [];
 
         var lines = new List<double> { anchors[0] };
@@ -2059,7 +2406,7 @@ public static class SurfaceMesher
                 continue;
             }
 
-            var fr = PartitionGraded(a, len, atts, growth, hMax, minCells, bulkAt);
+            var fr = PartitionGraded(a, len, atts, hMax, minCells, bulkAt);
             foreach (double f in fr) lines.Add(a + len * f);
         }
 
@@ -2133,7 +2480,7 @@ public static class SurfaceMesher
     /// <see cref="BoundaryMesher.PartitionFractions"/> returns.</returns>
     internal static double[] PartitionGraded(
         double a, double length, IReadOnlyList<GradedAttractor> attractors,
-        double growth, double hMax, int minCells,
+        double hMax, int minCells,
         Func<double, double>? bulkAt = null)
     {
         var xs = new List<double>();
@@ -2142,13 +2489,14 @@ public static class SurfaceMesher
         while (x < length && guard++ < 20_000)
         {
             double cap = bulkAt is null ? hMax : Math.Min(hMax, bulkAt(a + x));
-            double s = SizeAt(a + x, attractors, growth, cap);
+            double s = SizeAt(a + x, attractors, cap);
             for (int i = 0; i < attractors.Count; i++)
             {
                 double c0 = attractors[i].C0;
+                double g  = attractors[i].Growth;
                 double d  = attractors[i].Coord - (a + x);
                 if (d <= 0) continue;
-                double cand = d <= c0 ? c0 : (c0 + growth * d) / (1.0 + growth);
+                double cand = d <= c0 ? c0 : (c0 + g * d) / (1.0 + g);
                 if (cand < s) s = cand;
             }
             if (!(s > 0)) break;
@@ -2181,13 +2529,12 @@ public static class SurfaceMesher
     /// intervals. <b>It is CONTINUOUS, and that matters</b>: see the growth-ratio derivation in
     /// <see cref="Mesh"/> for the knife edge a hard cutoff introduced instead.
     /// </summary>
-    private static double SizeAt(double x, IReadOnlyList<GradedAttractor> attractors,
-                                 double growth, double hMax)
+    private static double SizeAt(double x, IReadOnlyList<GradedAttractor> attractors, double hMax)
     {
         double best = double.IsInfinity(hMax) ? double.MaxValue : hMax;
         for (int i = 0; i < attractors.Count; i++)
         {
-            double h = attractors[i].C0 + growth * Math.Abs(x - attractors[i].Coord);
+            double h = attractors[i].C0 + attractors[i].Growth * Math.Abs(x - attractors[i].Coord);
             if (h < best) best = h;
         }
         return Math.Max(best, 1e-18);

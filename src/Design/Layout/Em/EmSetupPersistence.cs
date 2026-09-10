@@ -74,6 +74,13 @@ public sealed class CemPlanarMesh
     /// added after the first three follows.
     /// </summary>
     public bool? TransmissionLineMesh { get; set; }
+
+    /// <summary>
+    /// ANT-2's detail floor divisor (λ_g ÷ this). <b>Nullable, and omitted at its default</b>, same
+    /// rule as every control added after the first three — a <c>.cem</c> written before it existed
+    /// gains no byte and reads back on the shipped default.
+    /// </summary>
+    public int? DetailFloorDivisor { get; set; }
 }
 
 public sealed class CemFile
@@ -261,6 +268,9 @@ public static class EmSetupPersistence
             TransmissionLineMesh =
                 s.PlanarMesh.TransmissionLineMesh == PlanarMeshSettings.DefaultTransmissionLineMesh
                     ? null : s.PlanarMesh.TransmissionLineMesh,
+            DetailFloorDivisor =
+                s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
+                    ? null : s.PlanarMesh.DetailFloorDivisor,
         },
     };
 
@@ -296,7 +306,9 @@ public static class EmSetupPersistence
                                      pm.MinCellsAcrossConductor
                                          ?? PlanarMeshSettings.DefaultMinCellsAcrossConductor,
                                      pm.TransmissionLineMesh
-                                         ?? PlanarMeshSettings.DefaultTransmissionLineMesh)
+                                         ?? PlanarMeshSettings.DefaultTransmissionLineMesh,
+                                     pm.DetailFloorDivisor
+                                         ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
             : PlanarMeshSettings.Default,
     };
 

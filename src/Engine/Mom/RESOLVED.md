@@ -2953,3 +2953,227 @@ The other two remedies are unchanged and are the ones to reach for when the swee
 negotiable: split the via across intermediate meshed levels, or make the span shorter — for a
 ground-attached port, that means a ground-designated conductor closer to the signal level, since the
 span is the stackup's own.
+
+## ANT-2 — the detail floor, and an edge fan whose grading rate is local (2026-09-10)
+
+`brief-antenna-2-mesh-detail-floor-and-edge-fan.md`. Two changes to `SurfaceMesher`, neither
+antenna-specific: both fix every **imported** board, which is where sub-wavelength artwork comes
+from. The antenna-specific mesh change is ANT-3.
+
+### What was wrong
+
+An imported patch board asked for **704,482 unknowns** on the default mesh. Two of its three causes
+are the general ones:
+
+1. **The narrowest metal was 310 µm of connector via land and aperture-rounded corner** — λ_g/265 on
+   that board, sitting ~9 mm from anything electrically interesting. Every width measurement in the
+   mesher (`MeasureNarrowness`'s global 5th percentile, `PlanarMeshPitchField`'s local across-chord,
+   `LocalConductorWidth`'s per-edge run) answers *how narrow is the metal* and **none of them had any
+   notion of a feature being too small to matter electrically**. Deleting only those features moved
+   the same mesh to 51,031 — a **14×** swing bought by geometry no field responds to.
+2. **The edge fan was 61 % of the mesh on a patch** (12,596 → 4,854 when the edge mesh went off), and
+   on an antenna switching it off is not available: the radiating edges set the resonant frequency.
+   `LocalConductorWidth` had already given each attractor its own `c₀`; its own doc comment named the
+   two things it did not change, and the first of them is the whole of this: *"the grading rate g is
+   unchanged — it is still derived from the global narrowest conductor."*
+
+### M1 — the detail floor
+
+`PlanarMeshSettings.DetailFloorDivisor`, the **eighth** control, **default λ_g/200 and ON**. Metal
+narrower than λ_g ÷ this does not get to drive the cell pitch. It is applied in three places and it
+had to be all three or it is only a third made: the global narrowness measurement (**per SHAPE, before
+the minimum** — which is what lets a 310 µm land stop sizing the mesh while a wider conductor beside
+it goes on being measured as drawn), the pitch field's local across-chord, and each attractor's own
+per-edge width.
+
+**It also suppresses the FAN of an edge shorter than the floor, and that is where nearly all of the
+win is.** A feature the mesher has just decided is not worth sizing the mesh on was still asking for
+four graded fans, and a fan is charged across the whole tensor grid. **Only the fan goes — the hard
+gridlines stay**, so R-msh-1's exact tiling is untouched and the feature is still meshed. This is
+`CapMinFractionOfExtent`'s own argument (an edge the mesh cannot represent earns no fan) restated in
+wavelengths instead of in fractions of a bounding box, which is the only form of it that means the
+same thing on a 1.7 GHz board and a 40 GHz one.
+
+- **λ-relative, never absolute.** An absolute number in µm is a different decision at 1.7 GHz and at
+  40 GHz and would be wrong at one of them. Taken at the same λ_g the cell-size cap uses, at the same
+  `MeshFrequencyHz`. **With no sweep frequency there is no floor at all** and the report says so.
+- **It floors and never refines**, so every field it touches is pointwise ≥ what it was and no
+  configuration gets worse. Same invariant `LocalConductorWidth` already states for its own `c₀`.
+- **It survives `Auto`**: Auto means *choose the resolution for me*, and which geometry is
+  electrically real is not a resolution.
+- **The report names the floor, how many shapes fell below it, and the pitch it displaced** — and
+  says so explicitly when nothing fell below it, because "the floor is on and it changed nothing
+  here" is the question a user reading the count will ask next.
+- **`EmSnpProvenance.MeshHash` carries it UNCONDITIONALLY**, breaking that function's own
+  omit-at-default rule on purpose. That rule is sound for a control whose default reproduces the
+  older behaviour, which is every other one; **this is the first whose default is ON**, so a `.snp`
+  stamped before ANT-2 describes a mesh built with no floor, and on any artwork carrying sub-λ_g/200
+  detail that is a different mesh. Every pre-ANT-2 planar `.snp` reads as stale once, correctly.
+
+#### It is capped at a fraction of the artwork's own extent, and that is not a guard
+
+The floor's premise is that a feature is small **relative to the part**, so it has no meaning at all
+when the part is itself orders of magnitude below a wavelength — and that is an ordinary structure
+here, not a pathology. `MimThinLayerTests`' plates are **0.8 µm square at 10 GHz on GaAs**, where
+λ_g/200 is 41.8 µm: fifty times the whole thing. Uncapped, the floor discarded every width on the
+artwork and the mesh came back **empty** (`'rowCount' must be a positive value` out of the fill).
+`CapMinFractionOfExtent` is already this file's constant for *one cell at the finest mesh this kernel
+can afford*, and the argument carries over unchanged: a floor coarser than one such cell is not
+declining to size on a detail, it is declining to mesh the part.
+
+### M2 — a fan that is short because its grading rate is local
+
+`GradedAttractor` carries its own `Growth`. The fan's length is `log_r(bulk/c₀)`, and `r` was one
+global number derived against `min(hx, hy)` — which, **with the transmission-line mesh on, is the
+FINEST pitch the field asks for anywhere**. So the fan was rated for a target it had already passed
+and then had to climb to the actual bulk at that rate. On the fixture below, at the feed's own rim:
+`c₀` = 10.5 µm against a 4.107 mm along-pitch is a climb of 391×, and at `r` = 2.05 that is **eight
+cells** — eight gridlines each crossing 41 × 49 mm of artwork, for one conductor edge. Exactly the
+"about eight graded steps" the brief predicted.
+
+Each attractor now derives `r` from its **own `c₀`** against the **bulk cap where its own fan
+starts**. Both `c₀` and `g` are floored at the global pair, which makes
+`h(x) = min_i[c₀_i + g_i·|x − a_i|]` pointwise ≥ the old field — `h` is non-decreasing in `c₀_i`, and
+in `g_i` wherever the field binds (`d ≥ c₀`) — so the count is bounded above by today's structurally,
+not by hope. Measured on the same board with the floor off: **14,709 → 11,754 unknowns and a longest
+fan of 6 → 4**, from this alone.
+
+**With no pitch field this changes nothing at all, to the bit**: the local bulk *is* `hMax` there, so
+every attractor derives the ratio the global one already had. Every number in `HISTORY.md` taken on
+the per-axis rule is untouched, and `LocalEdgeReferenceTests`' pinned 198 still reads 198.
+
+#### The bulk a fan is rated against is the cap WHERE IT STARTS, not the axis's coarsest pitch
+
+Both were built and measured. Using the axis's coarsest pitch is worse twice over. It drives `r` to
+its 3× clamp on any board where the two differ, so **the fan stops responding to
+`MinCellsAcrossConductor` at all** — `TransmissionLineMeshTests.OnAStraightLine_TheTwoAxesAreGoverned
+ByDifferentSettings` catches that as a y gridline count that will not move when Cells across does
+(8 → 8). And it over-states the climb: a connector land's fan reaches its own ~80 µm neighbourhood in
+three cells and never climbs to the 2.9 mm bulk out on the patch, but that reading called it eight.
+The two variants mesh within 4 % of each other on the patch (11,754 against 11,305), so this is a
+correctness-of-reporting and orthogonality choice rather than a cell-count one. The **reported** fan
+length uses the same local bulk, for the same reason — a number describing a climb no fan makes is
+the class of note this file keeps having to fix.
+
+#### Neither of §4's secondary levers is here, and both were measured rather than skipped
+
+- **Lever 1 — a λ-relative floor on the finest edge cell — cannot be sized.** The value that closes
+  the patch board is **λ_g/540**, and that is **5× coarser than the legitimate 6 µm edge cell of a
+  plain 200 µm × 10 mm line at 10 GHz**, whose bit-identity is one of this brief's own gates. No
+  number does both, because the quantity that is actually wrong is the **ratio** `bulk/c₀` — 391 on
+  the feed rim against 8.3 on the plain line — and not the absolute size of either.
+- **Lever 2 — a fan-length cap — was BUILT as `c₀ ≥ bulk / MaxGrowthRatio^EdgeCells`, and removed.**
+  Once the rate is derived against the real bulk it changes **not one cell** on the board this brief
+  is about (11,754 / 5,371 / 4,048 across the floor ladder, identical with and without it), while it
+  does couple `c₀` to `CellsPerWavelength` — through the bulk, which varies with cells/λ via the
+  end-cap direction blend — and that is what broke the orthogonality gate. **A lever that buys nothing
+  and costs a guarantee is not a backstop.**
+
+#### So the overrun is REPORTED instead of hidden
+
+`GrowthRatioFor` clamps `r` at 3, so a climb steeper than `3^EdgeCells` cannot be made in `EdgeCells`
+cells and the fan simply runs longer — the 349.3 µm feed rim's own 10.5 µm edge cell against a λ_g/20
+along-pitch of 4.107 mm is a 391× climb and takes 5. The mesher now says the number and why, rather
+than coarsening the edge cell to make it come out right. The old `EffectiveEdgeCells` note is re-pointed at the realised fans for the
+same reason: computed from `c₀` against `hx`/`hy`, it stated a length no fan on the artwork had.
+
+### A regression this brief introduced, found by measurement and now gated
+
+**`c₀` is ZERO when the edge mesh is off, and the per-edge branch computes `max(c₀, 0.03·w)` — which
+is `0.03·w` even at `c₀ = 0`.** That had always been true and had always been harmless, because the
+"is anything graded" gate read a single global growth rate (`ratio − 1` is negative there). A
+**per-attractor** rate makes that gate read the attractors themselves, so **an edge mesh the user had
+turned OFF came back on**: 40,952 unknowns with it off against 11,754 with it on — not merely wrong
+but the wrong way round. Any change that moves a decision from a single scalar onto a list must
+re-ask which of that list's fields are still meaningful when the control is off.
+`DetailFloorTests.WithTheEdgeMeshOff_NoFanIsBuilt_UnderAnyReference`.
+
+**And the gate is stated as "every reference gives the same mesh", not as a count comparison against
+the edge mesh being on**, because that comparison is not an invariant: with the transmission-line
+mesh on, switching the edge mesh OFF drops the pitch field's own Lipschitz rate to `MinGrowthRatio`
+(there is no fan ratio left to borrow), which smooths the field harder and can legitimately produce
+*more* cells. Pre-existing, and the mesher already says so in its own note.
+
+### The defect in §7 — a refusal that named the one knob that works and told the user not to turn it
+
+On the measured board the refusal said, in capitals:
+
+> …the narrowest conductor run is 310.102 µm, and meshing it 4 cells across forces a 77.526 µm pitch
+> over all 55610 µm × 49400 µm of the artwork … **LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY
+> WILL NOT REDUCE THIS COUNT.**
+
+while the pitch **field** it had just built spanned 78 µm to 3.485 mm, and lowering cells/λ was
+exactly what took the same board from 23,416 unknowns to 1,909. The sentence is correct for the
+per-axis rule and **false for the field** — a field's finest pitch is local to the narrowest neck,
+and λ still sets the pitch along the current everywhere. It now branches on **which pitch rule
+actually produced this mesh**, not on the settings, and the per-axis wording is untouched because
+there it is true. The same sentence was live in two other places on the same page — the `capBinds`
+note and the pre-grid `MaxGridCells` refusal — and all three branch the same way now. This is the
+third time this class of defect has been found in this file (owner reports 2026-08-14 and 2026-09-09,
+both recorded above); the rule it keeps breaking is **never name a remedy without asking whether it
+binds**.
+
+### Measured — the fixture, and the numbers
+
+`brief-antenna-0-overview.md`'s board reconstructed from its own description (41.3 × 49.4 mm patch on
+203.2 µm FR-4 εᵣ 4.4 / tanδ 0.02, a 349.3 µm inset feed, a rounded coax pad and eight 310 µm ground
+via lands, 55.61 × 49.4 mm overall). **Not the owner's file** — that was supplied for the
+investigation and is not in the repo — but it reproduces its headline number closely enough to be the
+right thing to measure on: **744,545 unknowns on the default mesh against the reported 704,482.**
+
+λ_g = 82.14 mm at 1.740 GHz, so λ_g/500 = 164 µm and λ_g/200 = 411 µm.
+
+**Unknowns, ANT-2 applied, across the floor ladder:**
+
+| configuration | off | λ_g/1000 | λ_g/500 | **λ_g/200** | λ_g/100 |
+|---|---|---|---|---|---|
+| default (TL off, 4 across, edge on) | 744,545 | 744,545 | 744,545 | **402,525** | 104,469 |
+| **TL on, 4 across, edge on** | 11,754 | 11,754 | 11,754 | **5,371** | 4,048 |
+| TL on, 4 across, edge off | 2,683 | 2,683 | 2,683 | **2,388** | 1,775 |
+
+**What each half is worth, on the row a user actually runs** (TL on, 4 across, edge on):
+**14,709 → 11,754** from M2's per-attractor rate (1.25×, longest fan 6 → 4; the baseline is the same
+code with the rate forced back to the global one), then **11,754 → 5,371** from M1 at the shipped
+λ_g/200 (2.19×, fan → 3). **2.74× together**, and 5,371 unknowns sits under the accelerated ceiling
+of 12,000 where 14,709 did not.
+
+M2 is worth comparatively little here and it is worth saying why: the count is dominated by the
+*number* of fans rather than their length. The nine connector shapes raise **18 of the 23
+x-attractors and 18 of the 24 in y**, and at the floor-off setting they account for **72 of the 150 x
+gridlines and 62 of the 123 in y**. M1's fan suppression is what removes them.
+
+**§3's convergence check — de-embedded |S₁₁| at the 1.740 GHz resonance** (one port, TL on, 4 across,
+edge mesh off so that every rung is under the ceiling and the comparison is like for like;
+accelerated solve, 8 frequencies 1.60-2.00 GHz, ~114 s a rung):
+
+| floor | unknowns | \|S₁₁\| at 1.74 GHz | Zin |
+|---|---|---|---|
+| off | 2,802 | 0.7516 | 315.7 + 106.7j |
+| λ_g/1000 | 2,802 | 0.7516 | 315.7 + 106.7j |
+| λ_g/500 | 2,802 | 0.7516 | 315.7 + 106.7j |
+| **λ_g/200** | **2,691** | **0.7527** | 314.7 + 110.5j |
+| λ_g/100 | 1,858 | 0.7533 | 316.2 + 110.0j |
+
+**The whole ladder moves the answer by 1.7e-3**, which is well inside this kernel's own de-embedding
+residual (~4e-3 at 2 GHz on 1.6 mm FR-4, §5). **The connector detail is not electrically live**, which
+is the answer §3 asked for and the opposite of the surprise it warned might come back. The first three
+rungs are bit-identical because they are the same mesh: at λ_g/500 the floor is 164 µm against 310 µm
+of connector detail and does not reach it.
+
+**So the default is λ_g/200 rather than the λ_g/500 first written.** λ_g/500 is a default that does
+nothing on the board it was written for. **λ_g/100 was measured and NOT taken**: it buys a further
+1.4× and doubles the amount of genuinely drawn metal a floor may coarsen, on the evidence of one
+board. λ_g/200 is 411 µm at 1.74 GHz on FR-4 and 10.4 µm at 40 GHz on GaAs, and floors nothing either
+starter technology draws at a shipped resolution.
+
+**On §4's own target row** — the brief's board with the connector already deleted, TL on, 4 across,
+edge on — this is **2,227 before ANT-2, 2,114 with M2, and 1,164 at the shipped λ_g/200** (the floor
+reaches the 349.3 µm feed there and takes its fan from 5 cells to 3), against **712** with the edge
+mesh off. The brief asked for "near" edge-off and this is **1.63×**, not 1×.
+
+**The remaining factor is not a defect and cannot be removed by shortening fans.** The five surviving
+x-attractors are the feed's own end face, both patch edges and the notch — every one a real conductor
+rim — and at `EdgeCells` = 3 each costs about three gridlines by definition. The base x grid on that
+board is only 15 lines, because the transmission-line mesh makes the along pitch λ_g/20 over 55 mm;
+five three-cell fans on a 15-line grid is the whole of the ratio. Going below it is asking for fewer
+graded cells, which is `EdgeCells` and not a mesher change.

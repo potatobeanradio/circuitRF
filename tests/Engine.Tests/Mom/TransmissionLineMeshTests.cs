@@ -90,6 +90,13 @@ public class TransmissionLineMeshTests
         // else, so the two were inert together and they come back together.
         var p = Bend(20e9);
 
+        // ANT-2 left this equality alone, and that is worth a line because it very nearly did not.
+        // The detail floor is λ-relative and taken at the MESH FREQUENCY, so lowering the mesh
+        // frequency raises it — which is a second, indirect route by which Mesh frequency can move a
+        // mesh the per-axis rule would otherwise pin. It is inert on THIS fixture only because the
+        // floor is also capped at CapMinFractionOfExtent of the artwork's own extent. On artwork
+        // large enough for the λ term to bind, expect this equality to be a strict inequality, and
+        // that is the floor working rather than this test rotting.
         int offTop = SurfaceMesher.Mesh(p, At(20, false)).UnknownCount;
         int offLow = SurfaceMesher.Mesh(p, At(20, false) with { MeshFrequencyHz = 1e9 }).UnknownCount;
         Assert.Equal(offTop, offLow);

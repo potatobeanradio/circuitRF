@@ -605,6 +605,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _planarTransmissionLineMesh;
 
     /// <summary>
+    /// ANT-2's detail floor — the EIGHTH control. Metal narrower than λ_g ÷ this does not set the
+    /// pitch; 0 switches it off.
+    ///
+    /// <para>Staged as text like the other whole-number fields here, and it does NOT clear Auto: Auto
+    /// chooses a resolution, and which drawn geometry is electrically real is not a resolution. It is
+    /// the answer to "my imported board wants 704,482 unknowns" — on the patch board this was measured
+    /// on, the narrowest metal was 310 µm of connector via land, λ_g/265, nine millimetres from
+    /// anything that matters.</para></summary>
+    [ObservableProperty] private string _planarDetailFloorText = "";
+
+    /// <summary>
     /// M0's mesh-frequency control, staged as text like every other dimensioned field in this panel.
     /// <b>Blank means "max sweep"</b> — the model stores <c>null</c>, the mesher sizes at the
     /// sweep's own top, and that is exactly the behaviour every existing <c>.cem</c> already has.
@@ -969,6 +980,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 else error = "Enter a whole number of 1 or more.";
                 break;
 
+            // ANT-2's detail floor. It does NOT clear Auto, for the same reason Mesh frequency does
+            // not: Auto chooses a resolution and this is not one — it says which drawn geometry is
+            // electrically real enough to size a mesh on. 0 is a real value (off), not a blank.
+            case "PlanarDetailFloor":
+                if (TryInt(PlanarDetailFloorText, 0, out int dfd))
+                    updatedPlanar = pm with { DetailFloorDivisor = dfd };
+                else error = "Enter a whole number of 0 or more (0 turns the floor off).";
+                break;
+
             // M0 / R-emp-5 — the mesh frequency. Two things here are deliberate and easy to get
             // wrong: BLANK is a real value (null = max sweep), not "leave it alone"; and this
             // control does NOT clear Auto, unlike the two above it. Auto decides cells/λ and edge
@@ -986,7 +1006,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         }
 
         bool isPlanarField = field is "CellsPerWavelength" or "PlanarEdgeCells" or "MeshFrequency"
-                                   or "PlanarMinCellsAcross";
+                                   or "PlanarMinCellsAcross" or "PlanarDetailFloor";
         if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
 
         // Bug report, 2026-08-14: an invalid commit used to fall through to RefreshMeshText(), which
@@ -1246,6 +1266,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarCellsPerWavelengthText = pm.CellsPerWavelength.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeCellsText          = pm.EdgeCells.ToString(CultureInfo.InvariantCulture);
         PlanarMinCellsAcrossText     = pm.MinCellsAcrossConductor.ToString(CultureInfo.InvariantCulture);
+        PlanarDetailFloorText        = pm.DetailFloorDivisor.ToString(CultureInfo.InvariantCulture);
         PlanarEdgeMesh               = pm.EdgeMesh;
         PlanarTransmissionLineMesh   = pm.TransmissionLineMesh;
         PlanarBoundaryCells          = pm.BoundaryCells;

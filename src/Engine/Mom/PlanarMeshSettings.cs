@@ -31,10 +31,11 @@ public enum PlanarBoundaryCells
 
 /// <summary>
 /// D3 asked for <b>exactly three user controls</b> — <c>Auto</c>, <c>Cells per wavelength</c>,
-/// <c>Edge mesh on/off + cell count</c> — and that is §10.5's own list, verbatim. <b>There are seven
+/// <c>Edge mesh on/off + cell count</c> — and that is §10.5's own list, verbatim. <b>There are eight
 /// now, and every addition past the third was an explicit owner decision recorded at the parameter
 /// it added</b> (<see cref="PlanarBoundaryCells"/>, <see cref="MeshFrequencyHz"/>,
-/// <see cref="MinCellsAcrossConductor"/>, <see cref="TransmissionLineMesh"/>). D3's REASONING still governs what may be added: a control
+/// <see cref="MinCellsAcrossConductor"/>, <see cref="TransmissionLineMesh"/>,
+/// <see cref="DetailFloorDivisor"/>). D3's REASONING still governs what may be added: a control
 /// earns its place by being a modelling or responsibility decision that is the user's to make, never
 /// by being a number that happens to exist in the mesher.
 ///
@@ -114,6 +115,45 @@ public enum PlanarBoundaryCells
 /// halve the unknown count in both directions — do not describe it as quadratic. See this
 /// directory's <c>CLAUDE.md</c> for the measured table.</para>
 /// </param>
+/// <param name="DetailFloorDivisor">
+/// <b>The DETAIL FLOOR — the EIGHTH control. A piece of metal narrower than λ_g/this does not get to
+/// drive the cell pitch.</b> 0 switches it off.
+///
+/// <para><b>Why it exists.</b> Every width measurement in the mesher — <see cref="SurfaceMesher.MeasureNarrowness"/>'s
+/// global 5th percentile, <c>PlanarMeshPitchField</c>'s local across-chord, and
+/// <see cref="PlanarEdgeReference.LocalConductorWidth"/>'s per-edge run — answers <i>how narrow is the
+/// metal</i> and none of them has any notion of a feature being <i>too small to matter
+/// electrically</i>. On an imported board that is not a corner case, it is the normal case: measured
+/// on a 1.74 GHz patch board, the narrowest metal was 310 µm of connector via land and
+/// aperture-rounded corner — λ_g/265, sitting ~9 mm from anything electrically interesting — and
+/// deleting only those features moved the default mesh from 704,482 unknowns to 51,031, a
+/// <b>14×</b> swing bought by geometry no field cares about.</para>
+///
+/// <para><b>It is λ-RELATIVE, not absolute, and that is the whole reason it can have a default at
+/// all.</b> An absolute number in µm is a different decision on a 1.7 GHz board and a 40 GHz one and
+/// would be wrong on one of them. It is derived from the same λ_g the cell-size cap uses, at the same
+/// <see cref="MeshFrequencyHz"/>, so it scales with the analysis exactly as λ_g/N does.</para>
+///
+/// <para><b>It FLOORS, it never refines.</b> Every measured width is raised to the floor and none is
+/// lowered, so the size field is pointwise ≥ what it was and the cell count is bounded above by
+/// today's — the same invariant <see cref="PlanarEdgeReference.LocalConductorWidth"/> already states
+/// for its own per-edge c0. No configuration can get worse by turning it on.</para>
+///
+/// <para><b>The number is a DIVISOR, so a SMALLER one is a COARSER floor.</b> Worth saying out loud
+/// wherever a remedy names it: "raise the detail floor" and "raise this number" are opposite
+/// instructions, and the refusal text says "coarsen the Detail floor — a SMALLER divisor" for exactly
+/// that reason.</para>
+///
+/// <para><b>It SURVIVES <see cref="Auto"/></b>, on the settled taxonomy: Auto means <i>choose the
+/// resolution for me</i>, and which geometry is electrically real is not a resolution. Same reasoning
+/// that carried <see cref="BoundaryCells"/>, <see cref="MeshFrequencyHz"/> and
+/// <see cref="TransmissionLineMesh"/> through <see cref="Resolved"/>.</para>
+///
+/// <para><b>The default is <see cref="DefaultDetailFloorDivisor"/> and it is a MEASURED answer</b> —
+/// see that constant, and this directory's <c>RESOLVED.md</c> for the convergence table (off /
+/// λ_g/1000 / λ_g/500 / λ_g/200 / λ_g/100, cell count and de-embedded S₁₁ at resonance) that chose
+/// it.</para>
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
@@ -122,7 +162,8 @@ public sealed record PlanarMeshSettings(
     PlanarBoundaryCells BoundaryCells = PlanarBoundaryCells.Staircase,
     double? MeshFrequencyHz = null,
     int  MinCellsAcrossConductor = 4,
-    bool TransmissionLineMesh = false)
+    bool TransmissionLineMesh = false,
+    int  DetailFloorDivisor = 200)
 {
     public const int  DefaultCellsPerWavelength = 20;
     public const bool DefaultEdgeMesh           = true;
@@ -159,6 +200,29 @@ public sealed record PlanarMeshSettings(
     public const int DefaultMinCellsAcrossConductor = 4;
 
     public const bool DefaultTransmissionLineMesh = false;
+
+    /// <summary>
+    /// <b>λ_g ÷ this is the detail floor</b> — see <see cref="PlanarMeshSettings.DetailFloorDivisor"/>.
+    ///
+    /// <para><b>200 is a MEASURED answer, not a round number.</b> ANT-2 §3's convergence check, taken
+    /// once in a scratch harness on a reconstruction of the reported patch board (41.3 × 49.4 mm
+    /// patch, 349.3 µm feed, 310 µm connector via lands, 203.2 µm FR-4) and reported in
+    /// <c>RESOLVED.md</c>: de-embedded |S₁₁| at the 1.740 GHz resonance reads <b>0.7516 with the
+    /// floor off, at λ_g/1000 and at λ_g/500 alike — those three are the same mesh — then 0.7527 at
+    /// λ_g/200 and 0.7533 at λ_g/100</b>. The whole ladder moves the answer by 1.7e-3, which is well
+    /// inside this kernel's own de-embedding residual (~4e-3 at 2 GHz on 1.6 mm FR-4), so the
+    /// connector detail is <i>not</i> electrically live and the floor is free to ignore it.</para>
+    ///
+    /// <para><b>λ_g/500 was the first candidate and it is not defensible</b>: on that board it is
+    /// 164 µm against 310 µm of connector detail, so it produces a mesh identical to the floor being
+    /// switched off — a default that does nothing on the board it was written for.</para>
+    ///
+    /// <para><b>λ_g/100 was NOT taken</b> even though the measurement permits it. It buys a further
+    /// 1.4× and doubles the amount of genuinely drawn metal a floor can coarsen, on the evidence of
+    /// one board; λ_g/200 is 10.4 µm at 40 GHz on GaAs and 411 µm at 1.74 GHz on FR-4, which floors
+    /// nothing either starter technology draws at a shipped resolution.</para>
+    /// </summary>
+    public const int DefaultDetailFloorDivisor = 200;
 
     /// <summary>
     /// How far the port direction and the artwork's own principal axis may disagree before
@@ -216,6 +280,12 @@ public sealed record PlanarMeshSettings(
     /// direction of current flow. It is also the control that exists because a setting was being
     /// silently ignored, so having Auto silently ignore it would be a joke at the user's expense.</para>
     ///
+    /// <para><b><see cref="DetailFloorDivisor"/> SURVIVES Auto too</b>, on the taxonomy rather than
+    /// against it: it does not say how finely to discretise anything, it says which drawn geometry is
+    /// electrically real enough to be worth discretising at all. Auto has no opinion about that, and a
+    /// user who raised the floor to get an imported board through the ceiling must not have it thrown
+    /// away because a checkbox is ticked.</para>
+    ///
     /// <para><b><see cref="MinCellsAcrossConductor"/> SURVIVES Auto as well, and here the argument is
     /// the OWNER'S rather than the taxonomy's.</b> It is a resolution, so the taxonomy would have Auto
     /// reset it; but the whole reason it is a control is that the user is responsible for mesh density,
@@ -226,11 +296,13 @@ public sealed record PlanarMeshSettings(
         ? new PlanarMeshSettings(Auto: false, BoundaryCells: BoundaryCells,
                                  MeshFrequencyHz: MeshFrequencyHz,
                                  MinCellsAcrossConductor: MinCellsAcrossConductor,
-                                 TransmissionLineMesh: TransmissionLineMesh)
+                                 TransmissionLineMesh: TransmissionLineMesh,
+                                 DetailFloorDivisor: DetailFloorDivisor)
         : this with
         {
             CellsPerWavelength      = Math.Max(2, CellsPerWavelength),
             EdgeCells               = Math.Max(0, EdgeCells),
             MinCellsAcrossConductor = Math.Max(1, MinCellsAcrossConductor),
+            DetailFloorDivisor      = Math.Max(0, DetailFloorDivisor),
         };
 }

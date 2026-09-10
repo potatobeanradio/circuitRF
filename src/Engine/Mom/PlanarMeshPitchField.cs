@@ -97,10 +97,21 @@ public static class PlanarMeshPitchField
     /// own derived ratio, so the bulk field and the edge fan cannot disagree about how fast a cell
     /// size may change.</param>
     /// <param name="ports">Used only to CHECK the field, never to build it — see the note.</param>
+    /// <param name="detailFloorM">
+    /// <b>ANT-2's detail floor, in metres — a local across-chord below this is read AS this.</b> 0 is
+    /// off, and off is bit-identical to what this built before the floor existed.
+    ///
+    /// <para>It belongs here as much as in <c>SurfaceMesher.MeasureNarrowness</c>, and for the same
+    /// reason: this field measures a width at every metal point and hands it straight to
+    /// <c>minCellsAcross</c>, so with the floor applied only to the global measurement a
+    /// sub-wavelength import artefact would go on setting the pitch of its own column — which, in a
+    /// tensor product, is a gridline across the whole part.</para>
+    /// </param>
     public static PlanarPitchField Build(
         PlanarProblem problem, double hWave, int minCellsAcross, double growth,
         double floorX, double floorY,
-        IReadOnlyList<PlanarPort>? ports = null)
+        IReadOnlyList<PlanarPort>? ports = null,
+        double detailFloorM = 0.0)
     {
         ArgumentNullException.ThrowIfNull(problem);
 
@@ -161,6 +172,7 @@ public static class PlanarMeshPitchField
 
                 double across = chord[(best + perp) % DirectionSamples][idx];
                 if (!(across > 0)) across = bestLen;         // degenerate: treat it as isotropic
+                if (across < detailFloorM) across = detailFloorM;   // ANT-2 M1 — see the parameter
 
                 double theta = Math.PI * best / DirectionSamples;
 

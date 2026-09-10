@@ -294,6 +294,20 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   floored at the global one, so the mode may only COARSEN and a uniform line is bit-identical.
   `RESOLVED.md` §M4. Growth ratio is *derived*, `r = (h_max/c₀)^(1/EdgeCells)`, never fixed
   at 1.7. `EdgeFractionOfReference` = 0.03, `EdgeGrowthRatio` = 1.7.
+  **`g` IS NO LONGER GLOBAL either (ANT-2, 2026-09-10)** — each attractor derives its own `r` from
+  its own `c₀` against the bulk cap **where its own fan starts**, because the global one was derived
+  against `min(hx, hy)`, which with the transmission-line mesh on is the field's FINEST pitch
+  anywhere: every fan on the board was rated for the narrowest neck on it, and the realised climb ran
+  6 cells against the 3 requested (8 at the feed rim of the same board with its connector deleted). Both `c₀_i` and `g_i` are floored at the global pair, so the field
+  is pointwise ≥ the old one and the count is still bounded above by it; **with no pitch field the
+  local bulk IS `hMax`, so the per-axis rule is bit-identical** and `LocalEdgeReferenceTests`' pinned
+  198 still reads 198. Worth 14,709 → 11,754 unknowns and a longest fan of 6 → 4 on the measured patch board.
+  **`EdgeCells` is still not always reachable and the mesher now SAYS so** rather than coarsening the
+  edge cell to make it come out right: `GrowthRatioFor` clamps `r` at 3, so a climb steeper than
+  `3^EdgeCells` simply runs longer. `RESOLVED.md` §ANT-2 records both rejected levers — a λ-relative
+  floor on `c₀` cannot be sized (the number that closes an imported patch is 5× coarser than the
+  legitimate edge cell of a plain 200 µm line), and a fan-length cap was built, measured to change not
+  one cell, and removed for coupling `c₀` to Cells per wavelength.
 - The mesh is **exactly translation-invariant** — anchored to the artwork, not the world origin.
 - **Edge attractor**: an axis-parallel boundary edge earns a graded fan if it is ≥ **0.2 × the
   polygon's own extent** across it **OR** both its corners are convex (it *terminates* the
@@ -500,8 +514,21 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   domain; strips across the wrong axis span a gap in the metal.
 - `MergedSliverCount` counts **absorptions, not hosts** — 32 merges into 28 hosts; the counts should
   not match.
+- **`c₀` IS ZERO WITH THE EDGE MESH OFF, AND `max(c₀, 0.03·w)` IS NOT** (ANT-2, 2026-09-10). The
+  per-edge branch computes `0.03·w` even at `c₀ = 0`, which was harmless only while the "is anything
+  graded at all" gate read one global growth rate (negative there). A **per-attractor** rate makes
+  that gate read the attractors, so **an edge mesh the user had switched OFF came back on** — 40,952
+  unknowns against 11,754 with it ON, i.e. not merely wrong but the wrong way round. Any change that
+  moves a decision from a single scalar onto the attractor list must re-ask which of that list's
+  fields are still meaningful when the control is off.
 - **Naming a remedy in a refusal or a note without asking whether it BINDS** (owner report,
-  2026-08-14). `hx`/`hy` are `Math.Min(hWave, narrow/MinCellsAcrossConductor)`, and on any part with a
+  2026-08-14). **Broken a third time, and by the transmission-line mesh itself** (ANT-2, 2026-09-10):
+  the refusal told a user in capitals that "LOWERING CELLS PER WAVELENGTH OR MESH FREQUENCY WILL NOT
+  REDUCE THIS COUNT" while the pitch FIELD it had just built spanned 78 µm to 3.485 mm, and lowering
+  cells/λ was what took the same board from 23,416 unknowns to 1,909. The sentence is true of the
+  per-axis rule and false of the field, so it must branch on **which pitch rule produced the mesh**
+  and never on the settings. Same fix in all three places that carry it — `BuildRefusal`, the
+  `capBinds` note, and the pre-grid `MaxGridCells` refusal. `hx`/`hy` are `Math.Min(hWave, narrow/MinCellsAcrossConductor)`, and on any part with a
   wide-to-narrow width ratio the second term wins by orders of magnitude — so "lower Cells per
   wavelength" and "lower Mesh frequency" change **nothing**, and a user who follows them halves a knob,
   sees the identical unknown count, and stops. Measured on a 6.9 → 100 Ω Klopfenstein taper: **7,749
@@ -564,6 +591,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | **`PlanarMeshSettings.TransmissionLineMesh`** | **`false` = off** | The seventh control, and the one that makes the other two work on a transmission line. Off, the pitch is the SAME `min` in both axes and both λ controls are INERT wherever the metal is narrower than a λ cell — owner report, 2026-09-09, three times. On, the two are ORTHOGONAL: λ_g/CellsPerWavelength ALONG the current with no narrowness floor, `narrowest/MinCellsAcrossConductor` ACROSS it. The direction is a per-point field measured from the metal's own longest local chord, so **a bend is followed rather than averaged**; the ports only CHECK it (two ports of an L-bend both say 45°, which is the direction of neither arm). **It may only COARSEN** — every pitch is floored at the per-axis rule's own — but the cell COUNT can still rise a few per cent on rim-dominated artwork, because a coarser bulk gives the graded edge fan further to climb; the mesher says so. `RESOLVED.md` §M2. |
 | `PlanarMeshSettings.EdgeCells` | — | reference length = **the metal at each edge** (`PlanarEdgeReference.LocalConductorWidth`, default since 2026-09-09; was the narrowest conductor anywhere). May only coarsen — every per-edge `c₀` is floored at the global one — so the cell count is bounded above by the old rule's, structurally. `RESOLVED.md` §M4. |
 | **`PlanarMeshSettings.PlanarBoundaryCells`** | **`Staircase` — conformal SHIPS OFF** | the fourth control, added on explicit instruction. All four flip gates now pass; it stays off only so every accuracy figure recorded in `HISTORY.md` stays reproducible. **Flipping the default is a separate deliberate act.** |
+| **`PlanarMeshSettings.DetailFloorDivisor`** | **200 — i.e. λ_g/200, and it is ON by default** | ANT-2's eighth control. **Metal narrower than λ_g ÷ this does not set the cell pitch, and an edge shorter than it raises no graded fan** — the hard gridlines stay, so the feature is still meshed exactly and R-msh-1 is untouched; what changes is only what the geometry is allowed to ASK for. It exists because an imported board's narrowest metal is routinely a connector via land or an aperture-rounded corner: on the measured patch board that was 310 µm (λ_g/265, ~9 mm from anything electrically interesting) and deleting only those features was worth **14×** the unknown count. **λ-relative, never absolute** — an absolute µm figure is a different decision at 1.7 GHz and 40 GHz — taken at the same λ_g the cell-size cap uses; with no sweep frequency there is no floor at all. **It may only COARSEN**, so the cell count is bounded above by the floor-off count structurally. **It SURVIVES `Auto`** (Auto chooses a resolution; which geometry is electrically real is not one) and it is hashed by `EmSnpProvenance.MeshHash` **unconditionally**, breaking the omit-at-default rule on purpose — this is the first control whose default is not the pre-existing behaviour, so a `.snp` stamped before it describes a mesh built with no floor. **200 is measured**: de-embedded |S₁₁| at the patch's resonance moves 1.7e-3 across the whole off → λ_g/100 ladder, inside the kernel's own de-embedding residual, while λ_g/500 produces a mesh identical to the floor being off on the board it was written for. `RESOLVED.md` §ANT-2. |
 | **`PlanarMeshSettings.MeshFrequencyHz`** | **`null` = the sweep's top** | bit-identical to prior behaviour. No refusal — the measurement supports a note, not a floor. |
 | **`PlanarSolveSettings.MaxDegreeOfParallelism`** | **`null` = automatic** | M1. ONE number for both levels of parallelism; enters **no** provenance hash (R-emp-7) because it can change no answer (R-emp-8). `1` means strictly in order. |
 | `PlanarSolveSettings.Adaptive` | `null` (off) | OFF is bit-identical |

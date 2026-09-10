@@ -301,4 +301,36 @@ public class MeshFrequencyUiTests
         Assert.NotEqual(EmSnpProvenance.MeshHash(PlanarMeshSettings.Default),
                         EmSnpProvenance.MeshHash(setup.PlanarMesh));
     }
+
+    // ── The detail floor (ANT-2, 2026-09-10) — the eighth control ────────────────────────────
+
+    [Fact]
+    public void DetailFloor_RoundTrips_OmitsAtItsDefault_AndMovesTheStalenessHash()
+    {
+        var setup = new EmSetup { Name = "x", LayoutRef = "a.clay" };
+
+        // Omitted at the default in the FILE, exactly like the six before it — a .cem written before
+        // this control gains no byte and reads back on the shipped floor.
+        Assert.DoesNotContain("DetailFloorDivisor", EmSetupPersistence.Serialize(setup),
+                              StringComparison.Ordinal);
+
+        setup.PlanarMesh = PlanarMeshSettings.Default with { DetailFloorDivisor = 0 };
+        string json = EmSetupPersistence.Serialize(setup);
+        Assert.Contains("DetailFloorDivisor", json, StringComparison.Ordinal);
+        Assert.Equal(0, EmSetupPersistence.Deserialize(json).PlanarMesh.DetailFloorDivisor);
+
+        // Clone drives undo snapshots and would silently lose the field.
+        Assert.Equal(0, setup.Clone().PlanarMesh.DetailFloorDivisor);
+
+        // …but the HASH carries it unconditionally, which is the one place this control deliberately
+        // breaks the pattern. Omit-at-default is right when a control's default reproduces the older
+        // behaviour; this one's default is ON, so a .snp stamped before it describes a mesh built
+        // with no floor. Asserted by showing the hash of the DEFAULT differs from the hash of the
+        // same settings with the floor off — which cannot be true under an omit-at-default rule.
+        Assert.NotEqual(EmSnpProvenance.MeshHash(PlanarMeshSettings.Default),
+                        EmSnpProvenance.MeshHash(setup.PlanarMesh));
+        Assert.NotEqual(EmSnpProvenance.MeshHash(PlanarMeshSettings.Default),
+                        EmSnpProvenance.MeshHash(PlanarMeshSettings.Default with
+                                                 { DetailFloorDivisor = 100 }));
+    }
 }

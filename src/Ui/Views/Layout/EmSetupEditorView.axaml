@@ -765,7 +765,7 @@
                 <Border Classes="group" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
-                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                       ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="CellsPerWavelength"
@@ -816,8 +816,21 @@
                                Content="Follow the direction of current"
                                IsChecked="{Binding ViewModel.PlanarTransmissionLineMesh}"
                                ToolTip.Tip="Makes Cells per wavelength and Cells across conductor orthogonal instead of competing. Off, the cell size is the smaller of the two in BOTH directions, so on artwork with fine features the wavelength settings cannot change the mesh at all. On, the cell is sized by wavelength ALONG the current and by the conductor width ACROSS it. The direction is measured per point from the metal, so a bend is followed rather than averaged, and no cell is ever finer than it would have been with this off."/>
-                    <TextBlock Grid.Row="6" Grid.Column="0" Classes="colhdr" Text="Mesh frequency" VerticalAlignment="Center"/>
+                    <!-- ANT-2's eighth control. Placed with the two settings it modifies rather
+                         than at the end: it does not change the resolution, it changes which drawn
+                         geometry the resolution is measured against, and the question it answers
+                         ("why is my imported board asking for 700,000 unknowns?") is asked while
+                         reading the two rows above it. -->
+                    <TextBlock Grid.Row="6" Grid.Column="0" Classes="colhdr" Text="Detail floor" VerticalAlignment="Center"/>
                     <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                        <TextBlock FontSize="11" VerticalAlignment="Center" Opacity="0.7" Text="&#955;_g /"/>
+                        <TextBox Classes="num" Tag="PlanarDetailFloor" Width="80"
+                                 Text="{Binding ViewModel.PlanarDetailFloorText}"
+                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                 ToolTip.Tip="Metal narrower than this fraction of a guided wavelength does not get to set the cell size. An imported board arrives with connector via lands, aperture-rounded corners and other artefacts far smaller than anything the field responds to, and one of them anywhere sets the pitch of the whole tensor grid — on a measured 1.74 GHz patch board that detail was 310 um and cost 14x the unknown count. It can only COARSEN: nothing below the floor is removed from the mesh, it just stops being what the mesh is sized on. The number is a DIVISOR, so a smaller number is a coarser floor; 0 turns it off. The notes below say how many shapes fell below it and what the pitch would have been without it."/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Mesh frequency" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Row="7" Grid.Column="1" Orientation="Horizontal" Spacing="4">
                         <TextBox Classes="num" Tag="MeshFrequency" Width="110"
                                  Text="{Binding ViewModel.PlanarMeshFrequencyText}"
                                  PlaceholderText="{Binding ViewModel.MeshFrequencyPlaceholder}"

@@ -124,6 +124,15 @@ public class ConformalBoundaryCellsUiTests
         Assert.NotEqual(hStair, EmSnpProvenance.MeshHash(stair with { EdgeMesh = !stair.EdgeMesh }));
         Assert.NotEqual(hStair, EmSnpProvenance.MeshHash(stair with { EdgeCells = 7 }));
         Assert.NotEqual(hStair, EmSnpProvenance.MeshHash(stair with { Auto = !stair.Auto }));
+        Assert.NotEqual(hStair, EmSnpProvenance.MeshHash(stair with { DetailFloorDivisor = 100 }));
+
+        // ANT-2's detail floor is hashed ALWAYS rather than only off its default, and that is a
+        // deliberate break from the omit-at-default rule the other late controls follow. Theirs
+        // defaults to the behaviour that shipped before them, so a pre-existing .snp still describes
+        // the mesh it names; this one defaults to ON, so a file stamped before it describes a mesh
+        // built with NO floor — which on any artwork carrying sub-λ_g/500 detail is a different mesh.
+        // Omitting it at the default would leave such a file reading as current.
+        Assert.NotEqual(EmSnpProvenance.MeshHash(stair with { DetailFloorDivisor = 0 }), hStair);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

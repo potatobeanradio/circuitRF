@@ -179,6 +179,17 @@ public static class EmSnpProvenance
     /// changes both pitches and follows the artwork's bends, so it changes the cells, the unknowns
     /// and the answer more than any other mesh control does. <b>Appended at the END and only when
     /// on</b>, for the same reason.</para>
+    ///
+    /// <para><b><see cref="PlanarMeshSettings.DetailFloorDivisor"/> too</b> (ANT-2, 2026-09-10) — it
+    /// decides which drawn geometry is allowed to set the pitch, so it changes the mesh and therefore
+    /// the answer. <b>Appended at the END and ALWAYS, which breaks the omit-at-default rule above on
+    /// purpose.</b> That rule exists so a <c>.snp</c> stamped before a control existed keeps the hash
+    /// it carries, and it is sound for every control whose default reproduces the older behaviour —
+    /// which is all of them so far. This one's default is ON. A file stamped before ANT-2 describes a
+    /// mesh built with NO detail floor, and on any artwork carrying sub-λ_g/200 detail that is a
+    /// different mesh; omitting the divisor at its default would leave such a file reading as current
+    /// while describing a result the tool can no longer reproduce, which is precisely what this field
+    /// exists to prevent. So every pre-ANT-2 planar <c>.snp</c> reads as stale once, correctly.</para>
     /// </summary>
     public static string MeshHash(PlanarMeshSettings m)
         => Sha($"{m.Auto}|{m.CellsPerWavelength}|{m.EdgeMesh}|{m.EdgeCells}|{m.BoundaryCells}|" +
@@ -186,7 +197,8 @@ public static class EmSnpProvenance
                (m.MinCellsAcrossConductor == PlanarMeshSettings.DefaultMinCellsAcrossConductor
                     ? "" : $"|across={m.MinCellsAcrossConductor}") +
                (m.TransmissionLineMesh == PlanarMeshSettings.DefaultTransmissionLineMesh
-                    ? "" : $"|tline={m.TransmissionLineMesh}"));
+                    ? "" : $"|tline={m.TransmissionLineMesh}")
+             + $"|detail={m.DetailFloorDivisor}");
 
     /// <summary>
     /// A port's identity for staleness purposes is its number, its POSITION, its inferred side and

@@ -86,6 +86,17 @@ public enum PlanarBudgetVerdict
 /// <param name="OneDirectionCells">R-cvx-2 — cells that follow the metal but carry a basis in ONE
 /// current direction only, because the outline crosses them twice along the other axis. A different
 /// event from a staircased cell and reported apart from it.</param>
+/// <param name="DetailFloorM">ANT-2's detail floor in metres — λ_g ÷
+/// <see cref="PlanarMeshSettings.DetailFloorDivisor"/>, at the same λ_g the cell-size cap uses. 0
+/// when the control is off, or when there is no frequency for it to be relative to.</param>
+/// <param name="ShapesBelowDetailFloor">How many drawn shapes measure narrower than
+/// <paramref name="DetailFloorM"/> in at least one axis, and so were not allowed to set the pitch.
+/// They are still meshed — the floor changes what the geometry may ASK for, never what is drawn.</param>
+/// <param name="LongestEdgeFanCells">
+/// <b>The longest edge fan, in cells</b> — the quantity that actually costs, because a tensor product
+/// turns one graded cell into a gridline across the whole part. It is what M2 shortens, and reporting
+/// the growth ratio without it leaves the arithmetic to the reader.
+/// </param>
 /// <param name="MeshedAreaM2">Σ of the cells' areas — <b>the tiling gate's own quantity</b> (R-cut-1).
 /// Against the drawn artwork's area it is the mesh's area error, which L8b measured at 0.47–0.59% on
 /// the shipping tapers and which conformal cells are meant to take to round-off.</param>
@@ -113,7 +124,10 @@ public sealed record PlanarMeshReport(
     int                   MergedSliverCount      = 0,
     int                   StaircaseFallbackCells = 0,
     double                MeshedAreaM2           = 0,
-    int                   OneDirectionCells      = 0)
+    int                   OneDirectionCells      = 0,
+    double                DetailFloorM           = 0,
+    int                   ShapesBelowDetailFloor = 0,
+    int                   LongestEdgeFanCells    = 0)
 {
     /// <summary>True when the problem may be handed to a solver — R17's gate, asked once.</summary>
     public bool CanSolve => Verdict != PlanarBudgetVerdict.Refused;
