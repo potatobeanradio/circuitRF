@@ -3352,3 +3352,158 @@ line. The finest transverse cell is unchanged.
 - **No default was changed**, and no accuracy measurement was taken: this brief's rule is mesher-only,
   and the question of whether a sheet mesh gives a *better* resonant frequency than a directed one is
   ANT-9's (the resonance sweep), on a real solve.
+
+---
+
+## ANT-4 — the far field (brief-antenna-4-far-field.md, 2026-09-10)
+
+The pivot of the antenna series: the first thing in this directory that looks **away** from the
+metal. `PlanarFarField.cs` + `PlanarFarFieldTests.cs`; the sweep, the `PlanarSolveSettings` and one
+new `DataSet` group are the whole of the plumbing.
+
+### The verdict, in one paragraph
+
+**The brief's premise held completely and the phase cost what it said it would.** The far field
+needs the spectral Green's function at exactly one point per direction, which `SpectralGreens` and
+`LayeredSpectralGreens` already return in closed form, and the rooftop's 2-D transform is
+elementary — so the pattern is an **exact sum over N basis coefficients with no quadrature error of
+its own**, and every oracle before the power balance is independent of the MoM solve. All five
+oracle families passed on the first run: the εᵣ = 1 image reduction, the shorted-stub dipole oracle
+over three substrates at every degree, the transform against quadrature at 1e-12, the stratified
+two-section cascade, and the one-slab reduction of the general path. **Nothing on this path touches
+`Dcim` or `SommerfeldIntegral`, and a source scan holds that shut.**
+
+### The derivation, and the two places it could not be written the obvious way
+
+The whole of it is in `PlanarFarField.cs`'s header. Two results are worth repeating here because
+they are what a reader will otherwise re-derive wrongly:
+
+- **The stationary-phase constant was PINNED, not quoted.** Applying the asymptotic operator to
+  `F = 1/(2jk_z0)` must reproduce `e^{−jk₀r}/4πr`, because that is the Sommerfeld/Weyl identity this
+  whole directory rests on. That fixes `C(r,θ) = j k₀cosθ e^{−jk₀r}/(2πr)` with no saddle-point
+  formula transcribed from anywhere.
+- **NEITHER ELEMENT FACTOR MAY BE WRITTEN WITH A 1/cosθ OR A `Z^h = ωµ/k_z` IN IT.** The obvious
+  spelling of `f_TM` carries a 1/cosθ from `Ẽ_θ` and a cosθ from `C`; the obvious spelling of `f_TE`
+  carries `Z^h`. Both are infinite at θ = 90°, which is a point the θ axis **contains**. Written as
+  `f_TM = 2V_i^e e^{jk_z0 z}/η₀` and `f_TE = 2I_i^h e^{jk_z0 z}` every quantity is finite there.
+  `BothElementFactors_AreFiniteAtGrazing` is what keeps the obvious spellings from creeping back.
+
+**The general kernel forces a two-spelling split for `f_TE`, and it is not stylistic.**
+`LineResponse` forms the region's characteristic impedance explicitly on exactly one of its two
+paths: `Z^h` multiplies the SAME-region voltage and divides the CROSS-region current, and it is
+infinite at grazing. So a level on the stack's top surface reads `f_TE` off the **current** (which
+`LineResponse` computes with no impedance at all) and a buried or covered level reads it off the
+**voltage** (whose cross-region path never divides by the top region's Z either). The two are
+algebraically identical and are gated against each other.
+
+**A second consequence of the same asymmetry: the observation height must be STRICTLY above the top
+interface.** The line current is discontinuous at a shunt source, and `I_i(z′|z′)` is its two-sided
+average, not the up-going wave — so evaluating at the interface where the metal sits would read
+`f_TE` off the wrong side of a step. One free-space radian above the stack is used; any height gives
+the same answer because the propagator is removed exactly, so this is a choice of conditioning.
+
+### The θ axis is 0…90°, and the axis is where that is said
+
+With a laterally infinite ground plane the field below is **identically zero by construction**, not
+small. A 0…180° axis half full of those zeros invites a polar plot that reads as a measurement of a
+very good antenna, and nothing in a plot can say otherwise. `PlanarFarFieldGrid.MaxThetaDeg` is the
+one constant a later finite-ground phase moves; the θ values themselves are DATA, so extending the
+axis is not a rewrite. A θ beyond it is refused with its reason rather than filled.
+
+### Refused by name, and why guessing would have been worse
+
+Each is representable in the types and genuinely not computed. All four are `EmSuitability`
+verdicts, so the SWEEP still ships and the reason arrives as a note — present and refused.
+
+- **A CUT (conformal) boundary cell.** A cut cell's metal is not its rectangle, so the rectangle's
+  transform is not its own. Using it would be a smooth, plausible, wrong pattern. `Staircase` (the
+  default) meshes what this can transform.
+- **A VERTICAL (via or ground-attachment) basis.** A z-directed current radiates, but through a
+  SERIES voltage source on the TM line rather than a shunt current one — a different element factor,
+  a different transform, and its own oracle. **This is the one refusal with a real functional cost
+  and it is worth naming: it rules out a probe-fed patch**, which `brief-antenna-0-overview.md` §2
+  calls the cleanest feed this kernel can express, because `PlanarGroundPath.Extend` builds a via for
+  an internal port. Edge-fed and inset-fed patches are unaffected. Dropping the via current silently
+  would have been a pattern right in shape and wrong in level on exactly the structures where it
+  matters.
+- **A stack that is not PEC below.** The θ range rests on it.
+- **A top half-space that is not free space.** The pattern is written in k₀ and η₀.
+
+### Measured cost — reported, not made into a timing test
+
+Scratch harness, Release, 10 cores, the measured board's own stackup (41.3 × 49.4 mm patch on
+203.2 µm FR-4 at 1.74 GHz), a random unit current vector so the timing is the transform's alone:
+
+| N | 1°×1° hemisphere (32,760 directions) | 2°×2° (8,280) |
+|---|---|---|
+| 262 | 0.46 s / 0.83 s | 0.04 s / 0.21 s |
+| 1,237 | 0.68 s / 3.87 s | 0.17 s / 0.98 s |
+| **3,017** | **1.69 s / 9.51 s** | 0.43 s / 2.41 s |
+| 6,110 | 3.42 s / 19.56 s | 0.97 s / 4.93 s |
+
+(parallel / single core). **Exactly linear in N and in direction count**, as an O(N) direct sum must
+be, and the brief's own estimate ("N ≈ 4,000 over a 1°×1° hemisphere is seconds") is confirmed. A
+single de-embedded planar point is tens of seconds, so a pattern is a fraction of one frequency
+point's own solve. **Nothing was optimised**: the exact per-basis closed form is what ships, and the
+gridline-table hoist that would make it ~10× faster was not needed and therefore not written.
+
+### Power balance — reported before it is gated
+
+On a 4 mm FR-4 stub at 5 GHz, port 1 driven at 1 V: **65.11 µW accepted, 718 nW radiated into the
+upper hemisphere (1.1 %), 64.39 µW unaccounted.** The unaccounted term is dielectric loss plus
+surface-wave power together; itemising them is the metrics phase's. **The copper term is identically
+zero in this kernel** — the metal is a perfect conductor and `SigmaSm` is carried through the whole
+pipeline and never read by the fill — so the balance closes *optimistically*, which is expected
+rather than a defect and is exactly why the gate is the inequality `∫U dΩ ≤ P_accepted`.
+
+`PlanarFarFieldPattern.RadiatedPowerW` is the one quantity in the file that is **not** exact: it is a
+trapezoid in θ with the sinθ Jacobian and a periodic rectangle in φ over a sampled grid. Everything
+else is closed form.
+
+### Traps found on the way
+
+- **A grid whose φ list is not ascending is refused**, and it caught a test of mine that wrote
+  `[23, 337, 61, 299]` meaning "these four angles" — the validator is the reason that was a refusal
+  rather than a silently mis-weighted power integral.
+- **A relative tolerance at θ = 90° compares two spellings of nothing.** The εᵣ = 1 oracle produces
+  1e-34 there and the code produces exactly 0; the comparison has to be against the pattern's own
+  peak, not against the local value. The same trap will bite every metric that normalises per
+  direction.
+- **The far-field verdict must be taken at the LOWEST requested frequency, not at the top of the
+  sweep.** The spectral kernel's only frequency-dependent refusal is its electrical-thickness FLOOR,
+  so checking `fHi` passes a run that then throws at its first pattern.
+- **An adaptively sampled sweep may never solve a requested pattern frequency.** A pattern needs
+  basis currents and an interpolated s-parameter has none, so the pattern is taken at the nearest
+  SOLVED point and the substitution is reported. Forcing the sampler to solve the requested points
+  was rejected: it would make the adaptive answer depend on whether a far field was asked for.
+- **The pattern belongs to the structure AS MESHED**, feed lead and all. R-fed-1 grows a uniform lead
+  for the calibration and the s-parameters have it de-embedded away; a pattern cannot, because the
+  lead's current is real current and it really radiates. Said in a note rather than left to be
+  discovered.
+
+### What was built
+
+- `src/Engine/Mom/PlanarFarField.cs` — `PlanarFarFieldGrid`, `PlanarFarFieldPattern`,
+  `RooftopSpectrum` (the closed-form transform), `FarFieldElementFactors` (the layered element
+  factors), `PlanarFarFieldSettings`, `PlanarFarFieldSet`, `PlanarFarField`.
+- `PlanarSolveSettings.FarField` (null = off, so every measured number in §L8c/§L8d/§L9d is
+  reproducible by leaving it null), `PlanarSolveResult.FarField`, and the patterns computed inside
+  both sweep drivers from the solution columns already in hand — **no second fill, no second
+  factorisation.**
+- `PlanarKernel.AddFarField` — group `"farfield"`, cubes `Etheta`/`Ephi`/`U`, axes
+  `[freq, theta, phi, port]`. **R-res-6 for the sixth phase running: no new result type.** The port
+  axis is present from the first commit even though every antenna fixture here is a one-port — it is
+  free at construction and retro-fitting an axis onto a shipped cube is not.
+- `tests/Engine.Tests/Mom/PlanarFarFieldTests.cs` — 32 tests, **638 ms**, all in the routine tier.
+
+### Not done, on purpose
+
+- **Vertical-current radiation** — see the refusal above. It is the one that costs a real
+  capability.
+- **The cut-cell transform** — the brief allowed refusing it for v1 and it is refused.
+- **No far-field `measure` in the TestBench grammar.** An EM run is a `.cem` run producing a
+  `DataSet`, not a TestBench analysis; these are diagnostics cubes in the group pattern kernel B
+  already established.
+- **No optimisation.** See the cost table: the direct sum is exact and fast enough, and an FFT or an
+  interpolation over directions would trade the exactness away for a cost that has not been shown to
+  matter.

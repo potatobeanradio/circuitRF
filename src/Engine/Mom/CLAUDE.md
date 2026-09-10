@@ -44,7 +44,7 @@ the file moved). The Ui half is `src/Ui/Layout/Em/CLAUDE.md`; the user-facing pa
 |---|---|---|
 | Physics | 2D quasi-static per-unit-length RLGC → S | 2.5D full-wave MPIE surface MoM |
 | Input | `EmProblem` (cross-section) | `PlanarProblem` (layout + stackup) — a **sibling type, not a subtype** |
-| Diagnostics group | `"tline"` | `"planar"` |
+| Diagnostics group | `"tline"` | `"planar"`, plus `"farfield"` when a pattern was asked for |
 | Cost | ~1000× cheaper (`EmKernelRegistry.CheaperByRoughly`) | dense fill dominates |
 
 `EmKernelRegistry` is keyed on the **analysis kind** and unifies the **output** (`EmKernelOutcome`
@@ -436,7 +436,52 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   extent` (**`Area / Width`**, not `Height`); `Iz` is a CURRENT in amperes with its own normalisation
   and caption, and `Magnitude` is Jx/Jy only. One excitation, one frequency: no superposition, no sweep.
 
+### 3.6 The far field (`PlanarFarField`, ANT-4)
+
+- **`F_θ = −(jk₀η₀/4π)·f_TM(θ)·(J̃_x cosφ + J̃_y sinφ)`, `F_φ = −(jk₀η₀/4π)·f_TE(θ)·(−J̃_x sinφ +
+  J̃_y cosφ)`**, with `J̃` the 2-D transform of the surface current at `k = k₀sinθ(cosφ, sinφ)` in
+  `SommerfeldIntegral`'s own convention (`J̃(k) = ∫J e^{+jk·r}d²r`). `F = lim r·e^{+jk₀r}·E`, VOLTS —
+  r-normalised with the propagation phase removed, and **not** "E at 1 m".
+- **R-ant-1. Nothing on this path may call `Dcim`, `SommerfeldIntegral` or any spatial-domain
+  kernel.** The far field needs the SPECTRAL function at one k_ρ per direction, in closed form; routing
+  it through DCIM would import a validated-range refusal it does not need. Held by a source scan.
+- **R-ant-2. `PlanarProblem.RequiresGeneralKernel` picks the spectral kernel, not the far field.**
+  That is the single place the FILL makes the same choice; a far field that re-derived it could
+  disagree with the currents it is transforming, silently, and only on a stratified stack.
+- **The θ axis spans 0…90° and the run says why** — the ground plane and every dielectric layer are
+  laterally infinite, so the field below is *identically zero by construction*, and an axis padded
+  with those zeros reads as a measured front-to-back ratio. `PlanarFarFieldGrid.MaxThetaDeg` is the
+  one constant a finite-ground phase moves; the θ values are DATA. Group `"farfield"`, cubes
+  `Etheta`/`Ephi`/`U`, axes `[freq, theta, phi, port]` — **the port axis is there from the first
+  commit** even on a one-port, because retro-fitting an axis onto a shipped cube is not free.
+- **One driven port at 1 V, one frequency, enforced by the signature** — the same rule and the same
+  reason as `PlanarCurrentDensity`. The pattern reads `PlanarPortSolution.Currents` directly, never
+  the per-cell |J| map, which is a DISPLAY reduction that loses the basis structure.
+- **`RooftopSpectrum`**: an x-rooftop is a triangle in x times a rectangle in y. `Ramp(k,w) = ∫₀^w
+  s e^{jks}ds` is a **series** for |kw| ≤ 1 — the elementary antiderivative is two terms of size
+  `w/|k|` and `1/k²` differencing to `w²/2`, so it has lost half its digits by |kw| = 1e-3 and a
+  rooftop is always electrically small. At k = 0 the transform is the rooftop's dipole moment
+  `(w_A+w_B)/2` A·m, which is what pins the LEVEL.
+- **Cost, measured (Release, 10 cores, 1°×1° hemisphere = 32,760 directions): N = 3,017 → 1.69 s
+  (9.51 s on one core), exactly linear in N and in direction count.** The direct sum is exact and
+  nothing is optimised.
+
 ### 3.5 Kernel B traps
+
+**Far field**
+- **Neither element factor may be written with a `1/cosθ` or a `Z^h = ωµ/k_z` in it.** The obvious
+  spelling of each is infinite at θ = 90°, which the axis CONTAINS. Write `f_TM = 2V_i^e e^{jk_z0z}/η₀`
+  and `f_TE = 2I_i^h e^{jk_z0z}`.
+- **`LineResponse` forms `Z^h` on exactly one of its two paths** — it multiplies the SAME-region
+  voltage and divides the CROSS-region current — so `f_TE` reads the CURRENT for a level on the
+  stack's top surface and the VOLTAGE for a buried one. Not stylistic; the other choice is a NaN at
+  grazing.
+- **Observe strictly ABOVE the top interface.** The line current is discontinuous at a shunt source
+  and `I_i(z′|z′)` is its two-sided average, not the up-going wave.
+- **A relative tolerance at θ = 90° compares two spellings of nothing** (0 against 1e-34). Normalise
+  a far-field comparison against the pattern's own PEAK.
+- **Ask the far field's verdict at the LOWEST requested frequency**, not at the sweep's top: the
+  spectral kernel's only frequency-dependent refusal is its electrical-thickness FLOOR.
 
 **Green's function / DCIM**
 - Implement `Γ^q` from the naive difference and every digit is gone by k_ρ = 1e-8·k₀ (0.82 abs
@@ -811,6 +856,15 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 - **A calibration standard containing a via** — the two-line algebra models a uniform matched
   section. A standard also carries **no cut cell** (`BuildLine` never runs the conformal pass).
 - `CanSolve` refuses: a level not on any interface, levels not bottom-to-top, a via skipping a level.
+- **The FAR FIELD refuses four things by name, and each leaves the sweep intact** (an
+  `EmSuitability`, reported as a note — present and refused). A **CUT cell** (its metal is not its
+  rectangle, so the rectangle's transform would be a smooth plausible wrong pattern; `Staircase`
+  meshes what it can transform). A **VERTICAL basis** — a z-directed current excites the TM line as a
+  SERIES voltage source, so it has its own element factor, its own transform and its own oracle;
+  **this is the refusal with a real cost, because it rules out a PROBE-FED patch** (an internal port
+  grows a via) while edge- and inset-fed are unaffected. A stack that is **not PEC below** (the θ
+  range rests on it). A top half-space that is **not free space** (the pattern is written in k₀ and
+  η₀).
 - **Three per-cell conformal configurations fall back to the staircase for that cell**: >1 polygon of
   the layer touches it; a hole ring touches it; flow-simple in **neither** direction (measured at
   zero everywhere).

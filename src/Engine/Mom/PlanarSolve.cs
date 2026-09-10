@@ -742,6 +742,14 @@ public sealed class PlanarSolveResult
     public int           CapturedPortNumber  { get; init; }
 
     /// <summary>
+    /// <b>ANT-4 — every far-field pattern this sweep produced</b>, or null when none was asked for
+    /// or the structure was refused one by name. One pattern per (requested frequency, port); the
+    /// frequency axis carries what was ASKED for and solved, which is why it is a list rather than
+    /// the sweep's own axis.
+    /// </summary>
+    public PlanarFarFieldSet? FarField { get; init; }
+
+    /// <summary>
     /// <b>L9e/R-adf-2 — how many of the published points were actually SOLVED.</b> Equal to
     /// <c>Points.Count</c> when adaptive sampling is off. This is half of what makes an adaptively
     /// sampled sweep honest: a user who cannot tell whether a value was solved or modelled cannot
@@ -791,6 +799,13 @@ public sealed class PlanarSolveResult
 /// R-emp-13's "cap 1 and cap 8 produce bit-identical results" a statement about one implementation
 /// rather than about two that agree.</para>
 /// </param>
+/// <param name="FarField">
+/// <b>ANT-4 — the radiated pattern, and it is a SETTING that defaults to off.</b> Null computes
+/// none, so every measured number in §L8c, §L8d and §L9d is reproducible by leaving it null and the
+/// sweep's arithmetic is untouched. When it is set the pattern rides along with the solve the sweep
+/// already pays for: the basis currents exist at every solved point already, and a pattern is an
+/// exact O(N) sum over them with no second fill and no second factorisation.
+/// </param>
 public sealed record PlanarSolveSettings(
     PlanarFillSettings?        Fill        = null,
     PlanarCalibrationSettings? Calibration = null,
@@ -799,7 +814,8 @@ public sealed record PlanarSolveSettings(
     int                        CurrentDensityPortNumber  = 0,
     double                     CurrentDensityFrequencyHz = 0,
     PlanarAdaptiveSettings?    Adaptive    = null,
-    int?                       MaxDegreeOfParallelism = null)
+    int?                       MaxDegreeOfParallelism = null,
+    PlanarFarFieldSettings?    FarField    = null)
 {
     public static readonly PlanarSolveSettings Default = new();
 }
@@ -1302,6 +1318,44 @@ public static class PlanarSolve
         Vec<Complex>? captured = null;
         double capturedF = 0;
 
+        // ── ANT-4 — which solved points get a pattern ───────────────────────────────────────────
+        //
+        // The far field asks for FREQUENCIES; the sweep owns INDICES. Each requested frequency is
+        // mapped to the nearest point of the grid here, once, so the adaptive and non-adaptive
+        // drivers below cannot disagree about which point a pattern belongs to. A pattern is only
+        // ever produced from a point that was actually SOLVED — an interpolated s-parameter has no
+        // basis currents behind it, and inventing some would be a pattern of nothing.
+        var farSettings = st.FarField;
+        EmSuitability farVerdict = EmSuitability.Yes;
+        var farWanted = new SortedSet<int>();
+        if (farSettings is not null)
+        {
+            var asked = farSettings.FrequenciesHz is { Count: > 0 } list
+                ? list
+                : [st.CurrentDensityFrequencyHz > 0 ? st.CurrentDensityFrequencyHz : freqs[0]];
+            foreach (double want in asked)
+            {
+                int at = 0; double best = double.PositiveInfinity;
+                for (int i = 0; i < freqs.Length; i++)
+                {
+                    double d = Math.Abs(freqs[i] - want);
+                    if (d < best) { best = d; at = i; }
+                }
+                farWanted.Add(at);
+            }
+
+            // Asked at the LOWEST requested point, not at the top of the sweep: the spectral
+            // kernel's only frequency-dependent refusal is its electrical-thickness FLOOR, so the
+            // binding point is the lowest one a pattern was actually asked for. Checking fHi would
+            // pass a run that then threw at its first pattern.
+            double fCheck = double.PositiveInfinity;
+            foreach (int i in farWanted) fCheck = Math.Min(fCheck, freqs[i]);
+            farVerdict = PlanarFarField.CanCompute(problem, mesh, fCheck, farSettings.EffectiveGrid);
+            if (!farVerdict.Ok) farWanted.Clear();
+        }
+        var farPatterns = new Dictionary<int, PlanarFarFieldPattern[]>();
+        var farY         = new Dictionary<int, Mat<Complex>>();
+
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
         //    reaches EXACTLY the same arithmetic. R-adf-1's bit-identity when adaptive is off is a
         //    property of this being one implementation, not of two that agree.
@@ -1323,7 +1377,7 @@ public static class PlanarSolve
         // inside DeembedAt. Their wall clock and the DUT's overlap once the cap allows it, so each is
         // measured on its own Stopwatch and the two no longer sum to the point's elapsed time. Note
         // that `sw` is the driver's SHARED stopwatch and must never be restarted from a work item.
-        (PlanarFrequencyKernel Kernel, Mat<Complex> Raw, Vec<Complex>[] Currents,
+        (PlanarFrequencyKernel Kernel, Mat<Complex> Raw, Vec<Complex>[] Currents, Mat<Complex> Y,
          double KernelMs, double DutMs, double StandardsMs)
         SolveRawAt(double f)
         {
@@ -1383,7 +1437,7 @@ public static class PlanarSolve
             foreach (var w in pending) w.Commit();
 
             var r = PlanarExcitation.RawScattering(sol!.Y, z0);
-            return (k, r, sol.Currents.ToArray(), kMs, dMs, sMs);
+            return (k, r, sol.Currents.ToArray(), sol.Y, kMs, dMs, sMs);
         }
 
         // ── The de-embedding half, likewise shared. `kernelFor` is lazy because a REPLAY (adaptive
@@ -1464,12 +1518,19 @@ public static class PlanarSolve
             // L8d's own loop, untouched.
             foreach (double f in freqs)
             {
-                var (kernel, raw, currents, kernelMs, dutMs, standardsMs) = SolveRawAt(f);
+                var (kernel, raw, currents, y, kernelMs, dutMs, standardsMs) = SolveRawAt(f);
 
                 if (capturePort >= 0 && points.Count == captureAt)
                 {
                     captured  = currents[capturePort];
                     capturedF = f;
+                }
+
+                if (farWanted.Contains(points.Count))
+                {
+                    farPatterns[points.Count] = FarFieldAt(problem, mesh, currents, ports, f,
+                                                           farSettings!, cap, control);
+                    farY[points.Count] = y;
                 }
 
                 var (s, cals, calMs) = DeembedAt(f, raw, () => kernel);
@@ -1487,6 +1548,7 @@ public static class PlanarSolve
             var kernelByIndex = new Dictionary<int, PlanarFrequencyKernel>();
             var timeByIndex  = new Dictionary<int, (double K, double D, double S)>();
             var currentsByIndex = new Dictionary<int, Vec<Complex>[]>();
+            var yByIndex     = new Dictionary<int, Mat<Complex>>();
             var solved = new SortedSet<int>();
 
             void Solve(int i)
@@ -1498,6 +1560,7 @@ public static class PlanarSolve
                 kernelByIndex[i]   = r.Kernel;
                 timeByIndex[i]     = (r.KernelMs, r.DutMs, r.StandardsMs);
                 currentsByIndex[i] = r.Currents;
+                yByIndex[i]        = r.Y;
             }
 
             // R-adf-3 — the calibration is REPLAYED in ascending frequency order from a fresh branch
@@ -1580,6 +1643,36 @@ public static class PlanarSolve
             worstAdaptive = worstStopped;
             solvedList    = solved.Select(i => freqs[i]).ToArray();
 
+            // ANT-4 on the adaptive path. A requested point that the sampler never solved has no
+            // basis currents, so the pattern is taken at the nearest point that WAS solved and the
+            // substitution is reported — never interpolated, which would be a pattern of nothing.
+            if (farWanted.Count > 0)
+            {
+                var moved = new List<int>();
+                var chosen = new SortedSet<int>();
+                foreach (int want in farWanted)
+                {
+                    int near = solved.Min;
+                    foreach (int j in solved)
+                        if (Math.Abs(freqs[j] - freqs[want]) < Math.Abs(freqs[near] - freqs[want])) near = j;
+                    if (near != want) moved.Add(want);
+                    chosen.Add(near);
+                }
+                farWanted.Clear();
+                foreach (int i in chosen)
+                {
+                    farWanted.Add(i);
+                    farPatterns[i] = FarFieldAt(problem, mesh, currentsByIndex[i], ports, freqs[i],
+                                                farSettings!, cap, control);
+                    farY[i] = yByIndex[i];
+                }
+                if (moved.Count > 0)
+                    notes.Add($"{moved.Count} requested far-field frequency point(s) were not solved " +
+                              $"by the adaptive sampler; the pattern was taken at the nearest SOLVED " +
+                              $"point instead. A pattern needs basis currents, and an interpolated " +
+                              $"s-parameter has none.");
+            }
+
             // ── Publish on the USER'S grid (R-adf-2). A solved point carries its own solved matrix
             //    byte for byte; everything else is the interpolant's value.
             var nodeF   = solvedList;
@@ -1654,6 +1747,34 @@ public static class PlanarSolve
         double coreBuildMs = setupMs + dut.CoreBuildMs;
         foreach (var cal in calibrators) coreBuildMs += cal.CoreBuildMs;
 
+        // ── ANT-4 — the patterns, and the sentences that make them readable ─────────────────────
+        PlanarFarFieldSet? farSet = null;
+        if (farSettings is not null && !farVerdict.Ok)
+        {
+            // Present and refused, which is the house shape: the sweep is not thrown away for a
+            // diagnostic it cannot produce, and the reason is the engine's own wording.
+            notes.Add("No far field was computed. " + farVerdict.Reason);
+        }
+        else if (farPatterns.Count > 0)
+        {
+            var idx = farPatterns.Keys.OrderBy(i => i).ToArray();
+            var flat = new List<PlanarFarFieldPattern>(idx.Length * ports.Count);
+            foreach (int i in idx) flat.AddRange(farPatterns[i]);
+            farSet = new PlanarFarFieldSet(
+                farSettings!.EffectiveGrid,
+                idx.Select(i => freqs[i]).ToArray(),
+                ports.Select(pp => pp.Number).ToArray(),
+                flat);
+
+            var first = farSet.At(0, 0);
+            notes.Add(first.ScaleCaption);
+            notes.Add(PlanarFarField.PowerBalanceNote(first, farY[idx[0]][0, 0]));
+            notes.Add("The pattern is the radiation of the structure AS MESHED, which includes any " +
+                      "uniform feed lead R-fed-1 grew for the calibration. The s-parameters beside it " +
+                      "have that lead de-embedded away; a pattern cannot, because the lead's current " +
+                      "is real current and it really radiates.");
+        }
+
         return new PlanarSolveResult
         {
             Points        = points,
@@ -1668,7 +1789,31 @@ public static class PlanarSolve
             SolvedPointCount          = solvedCount,
             WorstAdaptiveDisagreement = worstAdaptive,
             SolvedFrequencies         = solvedList,
+            FarField                  = farSet,
         };
+    }
+
+    /// <summary>
+    /// One solved point's patterns, one per port. <b>Every port, not one</b> — unlike the current
+    /// map, whose whole cost is the extra solve it would need; here the solution columns are already
+    /// in hand and a pattern is an exact sum over them, so the port axis is free at construction and
+    /// is what makes array pattern synthesis possible later. Retro-fitting an axis onto a shipped
+    /// cube is not free.
+    /// </summary>
+    private static PlanarFarFieldPattern[] FarFieldAt(
+        PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> currents,
+        IReadOnlyList<PlanarPortResolution> ports, double fHz,
+        PlanarFarFieldSettings settings, int? cap, RunControl? control)
+    {
+        control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
+        var made = new PlanarFarFieldPattern[ports.Count];
+        for (int j = 0; j < ports.Count; j++)
+        {
+            made[j] = PlanarFarField.Compute(problem, mesh, currents[j], ports[j].Number, fHz,
+                                             settings.EffectiveGrid, cap);
+            control?.TickStage();
+        }
+        return made;
     }
 
     /// <summary>

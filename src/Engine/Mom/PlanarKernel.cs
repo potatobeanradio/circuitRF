@@ -472,7 +472,63 @@ public sealed class PlanarKernel
         ds.AddToGroup(DiagnosticsGroup, "DeembedRejected",    new DataCube(Ax2(), rejct));
         ds.AddToGroup(DiagnosticsGroup, "CalibrationUsable",  new DataCube(Ax1(), usable));
 
+        AddFarField(ds, sweep.FarField);
+
         return ds;
+    }
+
+    /// <summary>
+    /// <b>ANT-4 — the far field is ONE MORE GROUP OF CUBES, not a new result type</b> (R-res-6, for
+    /// the sixth phase running). <c>DataCube</c> is already N-rank with named, unit-bearing axes and
+    /// slicing, so <c>[freq, theta, phi, port]</c> needs nothing new to carry it.
+    ///
+    /// <para><b>The port axis is here from the first commit</b>, even though every antenna fixture in
+    /// this series is a one-port. <c>PlanarPortSolution.Currents</c> is already one vector per driven
+    /// port, so it is free at construction — and it is what makes array pattern synthesis possible
+    /// later. Retro-fitting an axis onto a shipped cube is not free.</para>
+    ///
+    /// <para><b>θ spans 0…90° and the AXIS is where that is said.</b> See
+    /// <see cref="PlanarFarFieldPattern.ThetaRangeNote"/>, which the run also prints: with a
+    /// laterally infinite ground plane there is no field below, so a 0…180° axis would be half full
+    /// of structural zeros that read like a measured front-to-back ratio.</para>
+    /// </summary>
+    private static void AddFarField(DataSet ds, PlanarFarFieldSet? far)
+    {
+        if (far is null || far.Patterns.Count == 0) return;
+
+        int nf = far.FrequenciesHz.Count, nt = far.Grid.ThetaDeg.Count;
+        int np = far.Grid.PhiDeg.Count,   nq = far.PortNumbers.Count;
+
+        Axis[] Ax() =>
+        [
+            new Axis("freq",  far.FrequenciesHz.ToArray(), "Hz"),
+            new Axis("theta", far.Grid.ThetaDeg.ToArray(), "deg"),
+            new Axis("phi",   far.Grid.PhiDeg.ToArray(),   "deg"),
+            new Axis("port",  far.PortNumbers.Select(n => (double)n).ToArray(), ""),
+        ];
+
+        var eth = new Complex[nf * nt * np * nq];
+        var eph = new Complex[nf * nt * np * nq];
+        var u   = new double [nf * nt * np * nq];
+
+        for (int i = 0; i < nf; i++)
+            for (int q = 0; q < nq; q++)
+            {
+                var pat = far.At(i, q);
+                for (int t = 0; t < nt; t++)
+                    for (int f = 0; f < np; f++)
+                    {
+                        int src = far.Grid.IndexOf(t, f);
+                        int dst = ((i * nt + t) * np + f) * nq + q;
+                        eth[dst] = pat.ETheta[src];
+                        eph[dst] = pat.EPhi[src];
+                        u[dst]   = pat.U[src];
+                    }
+            }
+
+        ds.AddToGroup(PlanarFarField.Group, "Etheta", new DataCube(Ax(), eth));
+        ds.AddToGroup(PlanarFarField.Group, "Ephi",   new DataCube(Ax(), eph));
+        ds.AddToGroup(PlanarFarField.Group, "U",      new DataCube(Ax(), u));
     }
 
     private static double[] PortNumbers(IReadOnlyList<PlanarPortResolution> ports)
