@@ -249,12 +249,19 @@ public class RegionViaExtractionTests(ITestOutputHelper output)
     /// note tells the user to bind the layer to a stackup entry — which is exactly the wrong advice
     /// for artwork on a layer that IS bound, and was the whole shape of the MIM-1 defect. A Path is
     /// still ignored (it encloses no area) but now says so in its own words.
+    ///
+    /// <para><b>NARROWED by ANT-1 to a ZERO-width Path, which is the only kind the claim was ever
+    /// true of.</b> This fixture used to draw a 10 µm-wide stroke, and MIM-1's premise — "a Path
+    /// encloses no area" — was false of it: a stroke with a width is a routed slot and is now
+    /// outlined into a via footprint (<c>StrokeIsMetalTests</c> gates that half). What survives, and
+    /// is what this test was really about, is that a via-bound layer never produces the unbound
+    /// sentence.</para>
     /// </summary>
     [Fact]
-    public void APathOnAViaBoundLayer_IsNamedRatherThanFoldedIntoTheUnboundSentence()
+    public void AZeroWidthPathOnAViaBoundLayer_IsNamedRatherThanFoldedIntoTheUnboundSentence()
     {
         var view = TwoLevelMetal();
-        view.Shapes.Add(new PathShape { Layer = Post, Xy = [Um(40), Um(50), Um(80), Um(50)], Width = Um(10) });
+        view.Shapes.Add(new PathShape { Layer = Post, Xy = [Um(40), Um(50), Um(80), Um(50)], Width = 0 });
 
         var r = PlanarExtractor.Extract(view.Shapes, StarterTechnologies.MmicGaAs(), Dbu, 30e9);
         Assert.True(r.Ok, r.Refusal);

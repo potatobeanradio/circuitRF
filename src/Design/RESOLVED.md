@@ -1,5 +1,107 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## ANT-1 — a width-bearing Path is metal, and it never was (2026-09-10)
+
+`brief-antenna-1-stroked-path-is-metal.md`. `PlanarExtractor` discarded **every** `PathShape` on
+every layer, on the premise its own comment stated: a Path "is a centreline … it encloses no area".
+That is true of a zero-width one and false of every other. `PathShape` carries a `Width`, an `End`
+style, optional arc `Edges` and its own flatten tolerance; the Gerber reader keeps an imported track
+as one "primitive-for-primitive", the board reader builds them, the Gerber and DXF writers write them
+back out through an aperture of that width, and DRC outlines them. **Everything in the application
+except that one branch already treated a stroke as copper**, so an imported board was EM-simulated
+with its traces missing and said nothing about it.
+
+### The measurement, and why it excludes every other explanation
+
+Owner-supplied imported patch board, one frequency point:
+
+| what was solved | Zin near 1.7 GHz | power leaving the port |
+|---|---|---|
+| as imported, N = 3,796 | 0.70 − j56.5 Ω | 2.3 % |
+| as imported, N = 7,442, conformal, accelerated | 0.70 − j56.5 Ω | 2.3 % |
+| feed replaced by an equivalent `Rect`, N = 4,854 | 13.6 − j89.4 Ω | 22.6 % |
+
+The first two are a pure 1.6 pF capacitor, flat and monotonic across 1.55-1.90 GHz. **Doubling the
+mesh and switching conformal cells on moved neither digit**, which is what rules out mesh coarseness
+and leaves only "the conductor is not in the model". With the feed present the board resonates at
+1.740 GHz against a cavity-model estimate of 1.734 GHz.
+
+### The fix is a FALL-THROUGH, not a new branch
+
+The classification loop's Path branch now catches `PathShape { Width: <= 0 }` only. A width-bearing
+stroke falls through to the ordinary dispatch and is classified by its layer like any other artwork —
+**which is what keeps the conductor-binding-before-via-binding order intact**. Doing the width test
+ahead of the dispatch (the obvious spelling) would have re-ordered it, and MIM-1's own guarantee is
+that a layer bound to both a conductor entry and a via entry behaves exactly as it did before.
+
+The outlining is `LayoutBooleans.Repair`, reached through the new one-line `RegionsToMesh` helper —
+everything that is not a Path is its own region and is returned unchanged, so every existing
+conversion is bit for bit what it was. **No second offsetter was written**: `LayoutClipper`
+dispatches a Path to `InflatePaths` on the flattened centreline at `Width/2` with the cap taken from
+its `End` style (all four; `Extended` maps to `Square`, the same offset amount), and the NonZero union
+that follows resolves a self-crossing track into clean outer rings and holes. DRC and both writers
+reach the same routine, which is what makes "what the solver meshes" and "what the fab sees" the same
+copper — a second offsetter disagreeing at a mitre would be a defect nobody could localise.
+
+### The via-layer case: converted, by the same rule (§3a)
+
+The brief left this to the owner and recommended conversion; it is taken. A routed, plated slot is
+drawn as a stroke, and the alternative is that one shape means copper on a conductor layer and
+nothing one layer down. `regionViaShapes` therefore takes a width-bearing Path exactly as it takes a
+rectangle, and the run reports the count separately.
+
+**This is the one place a recorded expectation moved.** `RegionViaExtractionTests`'
+`APathOnAViaBoundLayer_IsNamedRatherThanFoldedIntoTheUnboundSentence` drew a **10 µm-wide** stroke
+and asserted an empty `ViaList` — it was asserting MIM-1's premise, which ANT-1 has just shown false.
+It is narrowed to `Width = 0` and renamed; what it was really about (a via-bound layer never produces
+the *unbound* sentence) is untouched. Nothing else in the repository constructed a `PathShape` that
+reached `PlanarExtractor`: of the 88 `new PathShape` sites under `tests/`, the intersection with the
+files that mention `PlanarExtractor` is two, and the other one — `EmRefusalWordingTests`' bent trace —
+goes to `CrossSectionExtractor` (kernel A), which ANT-1 does not touch and which still refuses it.
+
+### A converted stroke is counted as CURVED, deliberately
+
+`flattenedCurves` uses `LayoutBooleans.IsCurved`, which answers true for **every** `PathShape`
+regardless of its `Edges`. That is the repository's single predicate for "this needed the flattener"
+and it is kept rather than second-guessed: a stroke's outline really is built at the layout's flatten
+tolerance, and `JoinType.Round` means any stroke with an interior vertex or a round cap genuinely
+carries approximated arcs. The over-count is the straight two-point flush stroke, which is honest
+about the tolerance it was offset at and wrong about nothing a user would act on. A second predicate
+here would encode `LayoutClipper`'s internal join/cap choice in a second place.
+
+Both counts are per SHAPE, not per resulting region — an outlined stroke may yield several polygons,
+and the flattening note is about the shape whose curves were approximated.
+
+### The report says what was CONVERTED, not only what was ignored
+
+The brief's own diagnosis of why this went unnoticed for as long as it did: the only sentence about
+strokes was an ignored-count among twenty. There are now two conversion notes (conductor artwork,
+with the outlined area in mm²; via footprints), and **both ignored-sentences stopped claiming a
+stroke encloses no area** — after this phase they can only ever be about `Width == 0` and they say
+so. Leaving a refusal standing on a reason that has just been shown wrong is worse than the count
+being silent.
+
+### What moves, and what does not
+
+- **No recorded number moves.** There is no `.clay` file anywhere in the repository, so every EM
+  fixture is constructed in code and none of `HISTORY.md`'s measurements sits on a stroke.
+- **`EmSnpProvenance.GeometryHash` changes for any design containing a stroke** — correctly, since it
+  hashes the extracted `PlanarProblem`'s conductor artwork and there is now metal where there was
+  none. Every `.snp` sitting beside such a design is stale and will be **reported** as stale on the
+  next comparison. That is the right outcome and is stated here so it is not discovered.
+- A zero-width Path is still ignored on both layer kinds, and a stroke on a **ground-designated**
+  conductor is still ignored as ground artwork — the conversion cannot smuggle a finite ground pour
+  into the mesh.
+
+Gate: `tests/Ui.Tests/Em/StrokeIsMetalTests.cs` — 11 tests, 0.5 s including two solves. The decisive
+one is an independently-authored oracle: the same line as a `PathShape` and as a rectangle **written
+by hand from the stroke's endpoints and width**, extracted to the same area and extent and solved
+through `EmRunService` to S-matrices agreeing to 1e-9. The rest are the four end styles asserted as
+extents (`Round`'s cap may only ever fall short of the true semicircle, never past it), an arc-bearing
+stroke counted in the flattening note, the two zero-width sentences, the ground-layer refusal, the
+conversion count and area in the note, and the via-bound footprint.
+
+
 ## RP-2's extraction-side audit, before any of it is built (2026-09-10)
 
 `brief-em-return-plane-2-per-port-reference.md` was measured and then split; the kernel half of the

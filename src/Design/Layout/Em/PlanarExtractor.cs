@@ -217,9 +217,27 @@ public static class PlanarExtractor
                 continue;
             }
 
-            // A Path is a centreline on a via layer for the same reason it is one on a conductor
-            // layer — it encloses no area — but on a via layer it now gets its OWN sentence.
-            if (s is PathShape)
+            // ── ANT-1 — A WIDTH-BEARING PATH IS METAL ────────────────────────────────────────
+            //
+            // Every Path used to be discarded here, on the stated premise that a Path "encloses no
+            // area". That is true of a ZERO-width one and false of every other: a stroke carries a
+            // Width, an end style and optional arcs, and the Gerber and board readers keep an
+            // imported track as exactly that, primitive for primitive. So an imported board was
+            // EM-simulated with its traces missing, and said nothing — one owner-supplied patch
+            // board solved as a pure 1.6 pF capacitor (0.70 - j56.5 Ohm, 2.3 % of the port's power
+            // leaving it) whose Zin did not move a digit when the mesh was doubled and conformal
+            // cells switched on, which is what excludes mesh coarseness and leaves only "the
+            // conductor is not in the model".
+            //
+            // A stroke therefore falls THROUGH to the ordinary dispatch below and is classified by
+            // its layer like any other artwork — conductor binding first, exactly as before — and
+            // is outlined into regions where the geometry is built (search ANT-1 there). Doing the
+            // width test here rather than ahead of the dispatch is what keeps that order intact.
+            //
+            // A zero-width Path still IS a centreline: it is what the DXF reader produces for an
+            // open polyline, it genuinely encloses no area, and meshing it as a hairline would
+            // invent copper. It keeps the branch, and both its sentences now say ZERO-WIDTH.
+            if (s is PathShape { Width: <= 0 })
             {
                 if (viaBinding.ContainsKey(s.Layer)) ignoredViaPath++;
                 else                                 ignoredOther++;
@@ -771,25 +789,42 @@ public static class PlanarExtractor
         for (int i = 0; i < levels.Count; i++) polysByLevel[i] = [];
 
         int flattenedCurves = 0;
+        int strokesOutlined = 0;
+        double strokeAreaM2 = 0.0;
         foreach (var (shape, band) in conductorShapes)
         {
             int li = levels.FindIndex(b => b.Index == band.Index);
             if (li < 0) continue;                                   // a level the setup left out
 
             long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
-            IReadOnlyList<long[]> rings;
-            try { rings = LayoutFlattener.Flatten(shape, tol); }
-            catch (ArgumentOutOfRangeException) { ignoredOther++; continue; }
+            bool isStroke = shape is PathShape;
+            bool anyRegion = false;
 
-            if (rings.Count == 0 || rings[0].Length < 6) continue;
+            foreach (var region in RegionsToMesh(shape, tech))
+            {
+                IReadOnlyList<long[]> rings;
+                try { rings = LayoutFlattener.Flatten(region, tol); }
+                catch (ArgumentOutOfRangeException) { ignoredOther++; continue; }
+
+                if (rings.Count == 0 || rings[0].Length < 6) continue;
+                anyRegion = true;
+
+                var outer = ToPoints(rings[0], perDbu);
+                var holes = new List<IReadOnlyList<EmPoint>>();
+                for (int i = 1; i < rings.Count; i++)
+                    if (rings[i].Length >= 6) holes.Add(ToPoints(rings[i], perDbu));
+
+                var poly = new PlanarPolygon(outer, holes.Count == 0 ? null : holes);
+                polysByLevel[li].Add(poly);
+                if (isStroke) strokeAreaM2 += NetArea(poly);
+            }
+
+            // Counted ONCE per shape, as before — an outlined stroke may yield several regions (a
+            // self-crossing track resolves to one union, a track that doubles back may not) and the
+            // flattening note is about the SHAPE whose curves were approximated, not the pieces.
+            if (!anyRegion) continue;
             if (LayoutBooleans.IsCurved(shape)) flattenedCurves++;
-
-            var outer = ToPoints(rings[0], perDbu);
-            var holes = new List<IReadOnlyList<EmPoint>>();
-            for (int i = 1; i < rings.Count; i++)
-                if (rings[i].Length >= 6) holes.Add(ToPoints(rings[i], perDbu));
-
-            polysByLevel[li].Add(new PlanarPolygon(outer, holes.Count == 0 ? null : holes));
+            if (isStroke) strokesOutlined++;
         }
 
         // ── MIM-1 — the same shape -> PlanarPolygon conversion, for via-bound regions ─────────
@@ -801,22 +836,36 @@ public static class PlanarExtractor
         // different set of cells than the metal it lands on.
         var regionViaPolys = new List<(PlanarPolygon Poly, StackupLayer Entry)>();
         int ignoredViaRegion = 0;
+        int viaStrokesOutlined = 0;
         foreach (var (shape, entry) in regionViaShapes)
         {
             long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
-            IReadOnlyList<long[]> rings;
-            try { rings = LayoutFlattener.Flatten(shape, tol); }
-            catch (ArgumentOutOfRangeException) { ignoredViaRegion++; continue; }
+            bool isStroke = shape is PathShape;
+            bool anyRegion = false;
 
-            if (rings.Count == 0 || rings[0].Length < 6) { ignoredViaRegion++; continue; }
+            // ANT-1 — a width-bearing Path on a VIA-bound layer is outlined by the same rule. A
+            // routed, plated slot is drawn as a stroke, and the alternative is that one shape means
+            // copper on a conductor layer and nothing one layer down.
+            foreach (var region in RegionsToMesh(shape, tech))
+            {
+                IReadOnlyList<long[]> rings;
+                try { rings = LayoutFlattener.Flatten(region, tol); }
+                catch (ArgumentOutOfRangeException) { continue; }
+
+                if (rings.Count == 0 || rings[0].Length < 6) continue;
+                anyRegion = true;
+
+                var viaOuter = ToPoints(rings[0], perDbu);
+                var viaHoles = new List<IReadOnlyList<EmPoint>>();
+                for (int i = 1; i < rings.Count; i++)
+                    if (rings[i].Length >= 6) viaHoles.Add(ToPoints(rings[i], perDbu));
+
+                regionViaPolys.Add((new PlanarPolygon(viaOuter, viaHoles.Count == 0 ? null : viaHoles), entry));
+            }
+
+            if (!anyRegion) { ignoredViaRegion++; continue; }
             if (LayoutBooleans.IsCurved(shape)) flattenedCurves++;
-
-            var viaOuter = ToPoints(rings[0], perDbu);
-            var viaHoles = new List<IReadOnlyList<EmPoint>>();
-            for (int i = 1; i < rings.Count; i++)
-                if (rings[i].Length >= 6) viaHoles.Add(ToPoints(rings[i], perDbu));
-
-            regionViaPolys.Add((new PlanarPolygon(viaOuter, viaHoles.Count == 0 ? null : viaHoles), entry));
+            if (isStroke) viaStrokesOutlined++;
         }
 
         int totalPolys = polysByLevel.Sum(l => l.Count);
@@ -825,6 +874,24 @@ public static class PlanarExtractor
                 "None of the geometry on the analysis levels encloses an area to mesh — a planar " +
                 "solver needs filled regions, not centrelines or markers.", notes);
 
+        // ── ANT-1 — SAY WHAT WAS CONVERTED, not only what was ignored ────────────────────────
+        //
+        // The reason strokes went missing for as long as they did is that the only sentence about
+        // them was an ignored-count among twenty, saying nothing about what had been lost. A user
+        // who imports a board and reads this note can now see that the tracks are in, and how much
+        // metal they are.
+        if (strokesOutlined > 0)
+            notes.Add($"{strokesOutlined} width-bearing Path shape(s) were outlined into conductor " +
+                      $"artwork, contributing {strokeAreaM2 * 1e6:G4} mm² of metal to the mesh. A " +
+                      "stroke with a non-zero width IS copper — it is how an imported track is " +
+                      "drawn — and it is outlined by the same routine DRC and the Gerber/DXF writers " +
+                      "use, at its own end style and at the layout's flatten tolerance.");
+        if (viaStrokesOutlined > 0)
+            notes.Add($"{viaStrokesOutlined} width-bearing Path shape(s) on a via-bound drawing layer " +
+                      "were outlined into via footprints by the same rule — a routed, plated slot is " +
+                      "drawn as a stroke, and one shape cannot mean copper on a conductor layer and " +
+                      "nothing one layer down.");
+
         if (ignoredAnnotation > 0)
             notes.Add($"{ignoredAnnotation} label/bitmap shape(s) ignored — annotation is not artwork.");
         if (ignoredGround > 0)
@@ -832,17 +899,23 @@ public static class PlanarExtractor
                       "The ground plane is the laterally infinite plane the Green's function handles " +
                       "analytically; a finite ground pour is not meshed, and modelling one is not " +
                       "part of L9.");
+        // ANT-1 — this sentence may only ever be about a ZERO-WIDTH Path now. It used to say "a
+        // Path is a centreline", full stop, which is the false premise that discarded every
+        // imported track; leaving a refusal standing on a reason that has been shown wrong is worse
+        // than the count being silent.
         if (ignoredOther > 0)
-            notes.Add($"{ignoredOther} shape(s) were ignored — a Path is a centreline, and anything " +
-                      "not bound to a stackup conductor or via entry is not metal as far as this " +
-                      "technology is concerned.");
+            notes.Add($"{ignoredOther} shape(s) were ignored — a ZERO-WIDTH Path is a centreline " +
+                      "with no area to mesh, and anything not bound to a stackup conductor or via " +
+                      "entry is not metal as far as this technology is concerned. (A Path that " +
+                      "carries a width is outlined and meshed.)");
         // MIM-1 — the two things still ignorable on a via-bound layer, each named rather than
         // folded into the sentence above, which would send the user to re-bind a layer that is
         // already bound.
         if (ignoredViaPath > 0)
-            notes.Add($"{ignoredViaPath} Path shape(s) on a via-bound drawing layer were ignored. A " +
-                      "Path is a centreline with no enclosed area, and a via footprint is a region — " +
-                      "draw the connection as a rectangle or a polygon, or place a via primitive.");
+            notes.Add($"{ignoredViaPath} zero-width Path shape(s) on a via-bound drawing layer were " +
+                      "ignored. A Path with no width is a centreline enclosing no area, and a via " +
+                      "footprint is meshed by the cells it covers — give the path a width, draw the " +
+                      "connection as a rectangle or a polygon, or place a via primitive.");
         if (ignoredViaRegion > 0)
             notes.Add($"{ignoredViaRegion} shape(s) on a via-bound drawing layer enclose no area and " +
                       "were ignored. A via footprint is meshed by the cells it covers, so a shape " +
@@ -912,6 +985,36 @@ public static class PlanarExtractor
 
         return PlanarExtractionResult.Yes(problem, notes,
             new PlanarReturnPlane(groundBand?.Layer.Name, groundTopM, overridden));
+    }
+
+    /// <summary>
+    /// <b>ANT-1 — the meshable REGIONS of one shape.</b> Everything except a <c>PathShape</c> is its
+    /// own region and is returned unchanged, so every existing conversion is bit-for-bit what it was.
+    /// A width-bearing stroke is outlined into filled regions here, and only here.
+    ///
+    /// <para><b>This writes no offsetting of its own.</b> <see cref="LayoutBooleans.Repair"/> is the
+    /// one route — <c>LayoutClipper.ToClipperPaths</c> dispatches a Path to <c>InflatePaths</c> on
+    /// the flattened centreline at <c>Width/2</c> with the cap taken from its <c>End</c> style (all
+    /// four, <c>Extended</c> included), then a NonZero union resolves a self-crossing track into
+    /// clean outer rings and holes. DRC, the Gerber writer and the DXF writer all reach the same
+    /// routine, which is what makes "what the solver meshes" and "what the fab sees" the same
+    /// copper. A second offsetter here would disagree at a mitre and nobody could localise it.</para>
+    ///
+    /// <para>Only reachable with <c>Width &gt; 0</c>: the classification loop keeps a zero-width Path
+    /// out of both shape lists.</para>
+    /// </summary>
+    private static IReadOnlyList<LayoutShape> RegionsToMesh(LayoutShape shape, Technology tech)
+        => shape is PathShape ? LayoutBooleans.Repair(shape, tech).Shapes : [shape];
+
+    /// <summary>ANT-1 — one polygon's own area in m², holes subtracted, for the conversion note. The
+    /// polygons are already in metres by the time this is asked, so the note's number is the metal
+    /// the mesh actually receives rather than a DBU count converted a second way.</summary>
+    private static double NetArea(PlanarPolygon poly)
+    {
+        double a = Polygon2D.Area(poly.Outer);
+        if (poly.Holes is { Count: > 0 } holes)
+            foreach (var h in holes) a -= Polygon2D.Area(h);
+        return Math.Max(a, 0.0);
     }
 
     private static EmPoint[] ToPoints(long[] xy, double perDbu)
