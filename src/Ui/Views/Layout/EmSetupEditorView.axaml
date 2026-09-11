@@ -585,6 +585,19 @@
                     <TextBlock Classes="colhdr" TextWrapping="Wrap"
                                Text="{Binding ViewModel.AdaptiveSamplingDisabledReason}"
                                IsVisible="{Binding ViewModel.AdaptiveSamplingDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                    <!-- ANT-9. Directly under adaptive sampling because it is a MODE OF it, not a
+                         peer: it needs the interpolant refinement builds, and it is the one control
+                         in circuitRF that lets a sweep publish a frequency the user did not ask
+                         for. The label says "add points" in those words for that reason. -->
+                    <CheckBox Name="ResonanceSearchCheck" FontSize="11" Margin="16,4,0,0"
+                              Content="Resonance search (may ADD points between yours)"
+                              IsChecked="{Binding ViewModel.ResonanceSearch}"
+                              IsEnabled="{Binding ViewModel.ResonanceSearchDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                              ToolTip.Tip="Finds resonances narrower than your frequency step, which no amount of refinement on the grid you asked for can see. It looks for Im(Z_in) crossing zero, brackets each one by bisection, and reports f0, Q and the bandwidth as a diagnostic. This is the ONLY setting that lets a sweep publish a frequency you did not ask for: every added point is flagged, every point of your own grid is published exactly as it was, and the number of added solves is capped. It costs real solve time — a full-wave point is tens of seconds — so it is off by default."/>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="16,0,0,0"
+                               Text="{Binding ViewModel.ResonanceSearchDisabledReason}"
+                               IsVisible="{Binding ViewModel.ResonanceSearchDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                   </StackPanel>
                 </Border>
 

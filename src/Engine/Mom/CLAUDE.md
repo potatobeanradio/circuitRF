@@ -432,6 +432,32 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   are shared local functions so OFF is bit-identical. Default interpolant **`CubicSpline`**
   (measured winner); `Rational` (Floater-Hormann, d = 3) reachable. The refinement criterion must be
   an **ERROR** (solved midpoint vs interpolant prediction), never a residual.
+- **The never-add property, as narrowed by ANT-9 (2026-09-10):** *adaptive refinement never adds a
+  frequency the user did not ask for; the **resonance search**, when it is switched on, may — and
+  flags every point it adds.* Refinement still bisects grid INDICES, so it cannot express an off-grid
+  frequency at all, and with `PlanarAdaptiveSettings.Search` null (the default) the sweep is
+  bit-identical to L9e's. The narrowing exists because the old property is exactly what makes a
+  high-Q answer unreachable: a 51-point grid can be 86 % solved, miss its tolerance twenty times over,
+  and never once look where the resonance is.
+- `PlanarResonanceSearch` (**ANT-9**) — pure, no solve; takes a `PlanarResonanceProbe` DELEGATE, which
+  is why its six accuracy gates run in under 4 ms on an analytic RLC instead of on a structure whose
+  true answer nobody has. Seeds on **Im(Z_in) crossing zero** read off the interpolant (no solve);
+  **every reported number comes off SOLVED points**, never the interpolant. **Q = f₀·|dX/df| / 2R in
+  BOTH the series and parallel cases** — they are one formula, and the sign of dX/df is the LABEL, not
+  part of the magnitude. For a one-port it is the resonator's OWN Q, not the loaded Q.
+  - **Bisect with the PLAIN MIDPOINT, never regula falsi.** X(f) through a resonance is nearly linear,
+    so a regula-falsi probe lands on the root at once and then *the bracket never shrinks* — measured
+    at 24 solves (the whole cap) against 15, and, far worse, a 60 MHz final bracket whose secant gave
+    **Q = 281 against a true 214** beside an f₀ exact to ten digits. `RESOLVED.md` §ANT-9.
+  - Stage B (resolving the curve) has **no grid to stop it**, so it carries its own floor at **half the
+    resonance's own bandwidth** over a **±1.5 bandwidth window**, with out-of-window sub-intervals
+    dropped. Without both, the split-both-halves recursion is 2^k and eats the cap every time.
+  - **It needs a sign to bracket**: a resonance whose whole reactance excursion falls between two
+    neighbouring SOLVED points is not found, and the note says so rather than implying there is none.
+- **The adaptive report LEADS with `CONVERGED` / `DID NOT CONVERGE`** (ANT-9 §4), then the counts —
+  never the other way round — and `PlanarSolveResult.AdaptiveConverged` carries the same verdict as a
+  `bool?` so a caller need not parse prose. Above 80 % solved it says the adaptive path saved little;
+  at 100 % that it saved nothing. A non-converged run names the remedy in the same sentence.
 - `PlanarCurrentDensity` — `I_x(cell) = ½·Σ I_b` over covering x-rooftops; `J = I / transverse
   extent` (**`Area / Width`**, not `Height`); `Iz` is a CURRENT in amperes with its own normalisation
   and caption, and `Magnitude` is Jx/Jy only. One excitation, one frequency: no superposition, no sweep.
@@ -795,6 +821,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | **`PlanarMeshSettings.MeshFrequencyHz`** | **`null` = the sweep's top** | bit-identical to prior behaviour. No refusal — the measurement supports a note, not a floor. |
 | **`PlanarSolveSettings.MaxDegreeOfParallelism`** | **`null` = automatic** | M1. ONE number for both levels of parallelism; enters **no** provenance hash (R-emp-7) because it can change no answer (R-emp-8). `1` means strictly in order. |
 | `PlanarSolveSettings.Adaptive` | `null` (off) | OFF is bit-identical |
+| **`PlanarAdaptiveSettings.Search`** | **`null` = OFF** | ANT-9. `EmSetup.ResonanceSearch`, persisted in the `.cem` (nullable, omitted at its default), reachable from the EM panel under the adaptive checkbox. **The only setting in circuitRF that lets a sweep publish a frequency the user did not ask for** — capped (`MaxAddedPoints` 24), every added point flagged on its own `PlanarFrequencyPoint.AddedBySearch` and listed in `PlanarSolveResult.AddedFrequencies`, f₀/Q/BW in `PlanarSolveResult.Resonances` and in the `.npy` diagnostics group on a `resonance` axis. **Nested inside `Adaptive` rather than beside it** because it seeds from the interpolant refinement builds; `ResonanceSearch && !AdaptiveSampling` is a WARNING naming the remedy, never a silent no-op. |
 | `PlanarSolveSettings.CurrentDensityPortNumber` / `…FrequencyHz` | null | captured during the existing sweep, no second factorisation |
 | `PlanarFillSettings.DirectVerticalKernel` | `false` | ẑẑ from `SommerfeldIntegral.EvaluateInterior`; skips the ρ/λ refusal and says so |
 | **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh. **Since P12 a multi-level/via mesh is no longer refused** (`PlanarBorderedAimOperator`) — but the WIDER CEILING is still not applied to one, and **that question is now asked in exactly one place — `SurfaceMesher.UsesAcceleratedCeiling(aimOn, multiLevel)`**, because the pre-solve mesh verdict and `PlanarSolveContext` had been answering it DIFFERENTLY (the report judged a via mesh at 12,000 and the run then refused it at 5,000, quoting the dense ceiling). P12 measured the ladder that would move it (healthy to N = 15,192, past the 12,000) and left the behaviour alone: **owner's decision**, and it is now `=> aimOn;` in one function. See `RESOLVED.md` §P12 for why it was not taken (the border's TIME is set by N_z, not by N). The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |

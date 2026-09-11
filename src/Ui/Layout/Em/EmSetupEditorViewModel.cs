@@ -682,6 +682,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private EmReturnPlaneChoice? _returnPlaneChoice;
     [ObservableProperty] private bool   _dispersionCorrection;
     [ObservableProperty] private bool   _adaptiveSampling = true;
+    [ObservableProperty] private bool   _resonanceSearch;
     [ObservableProperty] private bool   _directVerticalKernel;
     [ObservableProperty] private bool   _acceleratedSolve;
 
@@ -1151,6 +1152,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.AdaptiveSampling = value;
         CommitEdit(before, "Change adaptive frequency sampling");
+        // ANT-9 — the resonance search is only available while this is on, so its own reason has to
+        // be re-asked here or the checkbox below stays enabled after the one it depends on is
+        // cleared.
+        OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
+    }
+
+    partial void OnResonanceSearchChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.ResonanceSearch) return;
+        var before = SnapshotJson();
+        Working.ResonanceSearch = value;
+        CommitEdit(before, "Change resonance search");
     }
 
     partial void OnDirectVerticalKernelChanged(bool value)
@@ -1185,6 +1199,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             ? "Adaptive sampling applies to the planar (full-wave) analysis; a cross-section solve " +
               "is closed-form per frequency and every point is already cheap."
             : null;
+
+    /// <summary>
+    /// ANT-9 — why the resonance search is unavailable, or null when it is. TWO reasons, and the
+    /// second is the one worth having a control say out loud: the search bisects toward a zero
+    /// crossing it finds in the interpolant adaptive refinement builds, so with adaptive sampling
+    /// off there is nothing for it to seed from. Disabling it there rather than letting it be
+    /// ticked and inert is the same rule the vertical kernel follows on a via-less layout.
+    /// </summary>
+    public string? ResonanceSearchDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "The resonance search is part of the planar (full-wave) analysis; a cross-section " +
+              "solve is closed-form per frequency and resolves a resonance from the grid you asked for."
+            : !AdaptiveSampling
+                ? "The resonance search needs adaptive frequency sampling: it seeds itself from the " +
+                  "model that refinement builds, and with every point solved there is nothing to " +
+                  "seed from."
+                : null;
 
     /// <summary>
     /// R13a — why the direct ẑẑ kernel is unavailable, or null when it is. It only ever affects
@@ -1255,6 +1286,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Port2Z0Text = FormatComplexOhms(Working.Port2Z0);
         DispersionCorrection = Working.DispersionCorrection;
         AdaptiveSampling     = Working.AdaptiveSampling;
+        ResonanceSearch      = Working.ResonanceSearch;
         DirectVerticalKernel = Working.DirectVerticalKernel;
         AcceleratedSolve     = Working.AcceleratedSolve;
         AnalysisKind = Working.AnalysisKind;
@@ -1304,6 +1336,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
+        OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
         Readback           = null;
         ExtractionRefusal  = null;
         KernelRefusal      = null;
@@ -1440,6 +1473,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
+        OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
 
         var verdict = new PlanarKernel().CanSolve(planar.Problem!);
         KernelRefusal = verdict.Ok ? null : verdict.Reason;
@@ -1602,6 +1636,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
+        OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
         // R-em-17, and it matters MORE for the heat map than for the mesh: a current map drawn over
         // edited artwork looks like it still matches the artwork underneath it.
         CurrentDensity         = null;

@@ -472,11 +472,61 @@ public sealed class PlanarKernel
         ds.AddToGroup(DiagnosticsGroup, "DeembedRejected",    new DataCube(Ax2(), rejct));
         ds.AddToGroup(DiagnosticsGroup, "CalibrationUsable",  new DataCube(Ax1(), usable));
 
+        // ── ANT-9: which published points the user did not ask for ────────────────────────────
+        //
+        // 1 = FOUND by the resonance search, 0 = a frequency that was requested. All zeros unless
+        // the search ran, which is what makes it free to emit unconditionally — and emitting it
+        // unconditionally is the point: a reader of the file can always ask the question, and gets
+        // "none" rather than a missing cube they have to interpret.
+        var addedBySearch = new double[nf];
+        for (int i = 0; i < nf; i++) addedBySearch[i] = sweep.Points[i].AddedBySearch ? 1 : 0;
+        ds.AddToGroup(DiagnosticsGroup, "PointAddedBySearch", new DataCube(Ax1(), addedBySearch));
+
+        AddResonances(ds, sweep.Resonances);
+
         AddFarField(ds, sweep.FarField);
         AddMetrics(ds, sweep.Metrics);
         AddPolarization(ds, sweep.FarField, sweep.Polarization);
 
         return ds;
+    }
+
+    /// <summary>
+    /// <b>ANT-9 — the resonances the search located, as their own cubes on a <c>resonance</c> axis.</b>
+    ///
+    /// <para>The axis carries f0 itself, so a reader that wants only "where is it" needs no cube at
+    /// all — and the cubes beside it answer "how sharp", "how resistive" and "how wide". Emitted
+    /// ONLY when something was found: a zero-length axis is not a shape the rest of the stack is
+    /// prepared for, and "the group is absent" is unambiguous where an empty one would not be. The
+    /// sweep's notes carry the sentence saying whether the search RAN at all, which is the part an
+    /// absent group cannot express.</para>
+    /// </summary>
+    private static void AddResonances(DataSet ds, IReadOnlyList<PlanarResonance> found)
+    {
+        if (found.Count == 0) return;
+
+        var f0 = found.Select(r => r.FrequencyHz).ToArray();
+        Axis[] Ax() => [new Axis("resonance", f0, "Hz")];
+
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceFrequency",
+                      new DataCube(Ax(), f0));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceQ",
+                      new DataCube(Ax(), found.Select(r => r.Q).ToArray()));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceResistance",
+                      new DataCube(Ax(), found.Select(r => r.ResistanceOhm).ToArray()));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceHalfPowerBandwidth",
+                      new DataCube(Ax(), found.Select(r => r.HalfPowerBandwidthHz).ToArray()));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceMatchedBandwidth",
+                      new DataCube(Ax(), found.Select(r => r.MatchedBandwidthHz).ToArray()));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceReturnLossDb",
+                      new DataCube(Ax(), found.Select(r => r.ReturnLossDb).ToArray()));
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceLocatedTo",
+                      new DataCube(Ax(), found.Select(r => r.LocatedToHz).ToArray()));
+        // 0 = series, 1 = parallel. A number rather than a string because a DataCube is numeric;
+        // the sweep's own note spells both out in words.
+        ds.AddToGroup(DiagnosticsGroup, "ResonanceIsParallel",
+                      new DataCube(Ax(), found.Select(
+                          r => r.Kind == PlanarResonanceKind.Parallel ? 1.0 : 0.0).ToArray()));
     }
 
     /// <summary>

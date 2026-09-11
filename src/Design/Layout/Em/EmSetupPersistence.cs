@@ -164,6 +164,13 @@ public sealed class CemFile
     public bool?   AdaptiveSampling      { get; set; }
 
     /// <summary>
+    /// ANT-9 — <b>null means off</b>, which is what every <c>.cem</c> written before the resonance
+    /// search existed means. Same nullable + omit-at-default rule as <see cref="DirectVerticalKernel"/>,
+    /// so such a file loads AND re-serialises byte-identically.
+    /// </summary>
+    public bool?   ResonanceSearch       { get; set; }
+
+    /// <summary>
     /// M2 — <b>null means off</b>, which is what every <c>.cem</c> written before it means. Nullable
     /// + <c>WhenWritingNull</c> (the document-wide default) so such a file loads AND re-serialises
     /// byte-identically, exactly as <see cref="AnalysisKind"/> and <see cref="PlanarMesh"/> do.
@@ -266,6 +273,7 @@ public static class EmSetupPersistence
         },
         DispersionCorrection  = s.DispersionCorrection,
         AdaptiveSampling      = s.AdaptiveSampling ? null : false,
+        ResonanceSearch       = s.ResonanceSearch ? true : null,
         DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
         AcceleratedSolve      = s.AcceleratedSolve ? true : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
@@ -314,6 +322,7 @@ public static class EmSetupPersistence
             f.Mesh.TruncationTailCells),
         DispersionCorrection  = f.DispersionCorrection,
         AdaptiveSampling      = f.AdaptiveSampling ?? true,
+        ResonanceSearch       = f.ResonanceSearch ?? false,
         DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
         AcceleratedSolve      = f.AcceleratedSolve ?? false,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",

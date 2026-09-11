@@ -16,6 +16,21 @@
 // This file is pure: no solve, no calibrator, no kernel. The refinement loop lives in
 // PlanarSolve.Run because it owns the machinery; everything it needs to DECIDE lives here, so the
 // decisions are testable without a 72-second solve.
+//
+// ── ANT-9 (2026-09-10): THE NEVER-ADD PROPERTY IS NOW NARROWED, IN EXACTLY ONE PLACE ────────────
+//
+// Everything below still bisects INDICES of the requested grid, so this file cannot produce a
+// frequency off it — the property is structural here and stays that way. What changed is that
+// `PlanarAdaptiveSettings.Search` (null by default) turns on `PlanarResonanceSearch`, which MAY add
+// frequencies, and every one it adds is flagged on its own published point.
+//
+// The narrowed statement, in full: **adaptive refinement never adds a frequency you did not ask
+// for; the resonance search, when you switch it on, may — and says which.** With `Search` null the
+// old statement holds word for word and the sweep is bit-identical, which is the gate that made the
+// mode safe to add. The reason it had to be narrowed at all is that the old property, on a high-Q
+// response, is precisely what makes the answer unreachable: refinement can solve 86 % of a 51-point
+// grid, still miss its tolerance by twenty times, and never once look where the resonance is,
+// because every point it is allowed to look at is already solved.
 
 using System.Numerics;
 using NumFlat;
@@ -58,11 +73,25 @@ public enum PlanarInterpolant
 /// than to an unbounded run. Defaults to the grid itself, at which point adaptive sampling has cost
 /// nothing but the comparisons.
 /// </param>
+/// <param name="Search">
+/// <b>ANT-9 — the resonance search, and it is OFF (null) by default.</b> This is the ONE setting
+/// under which the never-add property below is narrowed: with it set, the sampler may publish
+/// frequencies that were not requested, and every one of them is flagged
+/// (<c>PlanarFrequencyPoint.AddedBySearch</c>).
+///
+/// <para><b>Null is bit-identical to L9e.</b> Not a line of <see cref="PlanarResonanceSearch"/> runs,
+/// the published grid is the requested grid, and every frequency and every matrix is what it was —
+/// which is the gate that makes the mode safe to have at all. It is nested INSIDE the adaptive
+/// settings rather than beside them because the search seeds itself from the interpolant this
+/// refinement already built (§3: detecting the crossing costs no solve), so "search on, adaptive
+/// off" would be a mode with nothing to seed from.</para>
+/// </param>
 public sealed record PlanarAdaptiveSettings(
-    double            Tolerance      = 1e-3,
-    PlanarInterpolant Interpolant    = PlanarInterpolant.CubicSpline,
-    int               InitialPoints  = 5,
-    int               MaxSolves      = int.MaxValue)
+    double                   Tolerance     = 1e-3,
+    PlanarInterpolant        Interpolant   = PlanarInterpolant.CubicSpline,
+    int                      InitialPoints = 5,
+    int                      MaxSolves     = int.MaxValue,
+    PlanarResonanceSettings? Search        = null)
 {
     public static readonly PlanarAdaptiveSettings Default = new();
 }
@@ -112,9 +141,14 @@ public static class PlanarAdaptiveSweep
     /// <para><b>A target that coincides with a node returns that node's own matrix, bit for bit</b>
     /// — not the interpolant's value there. Both interpolants pass through their nodes, but "passes
     /// through" is a mathematical statement about exact arithmetic and this is a promise about
-    /// bytes: R-adf-2 says the published grid is the user's grid, and a user must be able to tell a
-    /// solved point from a modelled one by the fact that the solved one is exactly what the solver
-    /// produced.</para>
+    /// bytes: R-adf-2 says every point of the published grid is the user's own, and a user must be
+    /// able to tell a solved point from a modelled one by the fact that the solved one is exactly
+    /// what the solver produced.</para>
+    ///
+    /// <para><b>ANT-9 leaves that untouched.</b> The resonance search adds points to the published
+    /// sweep, never to this call's <paramref name="targets"/>: a found frequency is always also a
+    /// NODE, so it comes back through the bit-for-bit branch above like any other solved point, and
+    /// the user's own grid is modelled from exactly the nodes it always was.</para>
     /// </summary>
     public static Mat<Complex>[] Model(
         IReadOnlyList<double> nodes, IReadOnlyList<Mat<Complex>> values,
@@ -158,6 +192,30 @@ public static class PlanarAdaptiveSweep
                 : Spline(nodes, series, at);
         }
         return result;
+    }
+
+    /// <summary>
+    /// The interpolant's value for ONE matrix entry's series, which is all a scalar question needs.
+    ///
+    /// <para>ANT-9's crossing detection asks about S_pp alone, densely — a few hundred evaluations
+    /// per refinement round — and going through <see cref="PredictAt"/> would build and discard the
+    /// whole N x N matrix each time to read one number out of it. <b>It is the same arithmetic</b>,
+    /// reached one level lower down: the search must never own a second interpolant, or the point it
+    /// probes and the curve it is judged against stop being the same curve.</para>
+    /// </summary>
+    public static Complex PredictSeriesAt(
+        IReadOnlyList<double> nodes, Complex[] series, double at, PlanarInterpolant interpolant)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+        ArgumentNullException.ThrowIfNull(series);
+        if (nodes.Count != series.Length)
+            throw new ArgumentException("one value per node", nameof(series));
+        if (nodes.Count == 0) throw new ArgumentException("at least one node", nameof(nodes));
+        if (nodes.Count == 1) return series[0];
+
+        return interpolant == PlanarInterpolant.Rational
+            ? Barycentric(nodes, series, at)
+            : Spline(nodes, series, at);
     }
 
     /// <summary>

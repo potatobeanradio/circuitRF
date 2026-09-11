@@ -1,0 +1,467 @@
+using System.Numerics;
+using CircuitRF.Engine.Mom;
+using CircuitRF.Engine.Tests.Mom.Support;
+using NumFlat;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace CircuitRF.Engine.Tests.Mom;
+
+/// <summary>
+/// <b>ANT-9 — the resonance search.</b> §5's gates, in two halves.
+///
+/// <para><b>The first half solves nothing.</b> A resonance search must be gated on a response whose
+/// f₀ and Q are known in CLOSED FORM, or the test is comparing one estimate against another and can
+/// only detect that they disagree, never which is wrong. So the probe delegate here evaluates an
+/// analytic RLC one-port: the whole search runs in microseconds and every assertion is against an
+/// exact number. This is the same reason <c>PlanarAdaptiveSweep</c> is a pure file — the decisions
+/// are testable without a 72-second solve.</para>
+///
+/// <para>The second half is on the real driver, and its subject is not physics but the INVARIANT:
+/// with the search off nothing changed, and with it on nothing of the user's own grid moved.</para>
+/// </summary>
+public sealed class ResonanceSearchTests
+{
+    private readonly ITestOutputHelper _out;
+    public ResonanceSearchTests(ITestOutputHelper output) => _out = output;
+
+    private const double Z0 = 50.0;
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // Analytic one-ports. Every f₀ and Q below is exact by construction.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Series RLC: X rises through zero at f₀, Q = 2πf₀L/R.</summary>
+    private static Func<double, Complex> SeriesRlc(double f0, double q, double r)
+    {
+        double l = q * r / (2 * Math.PI * f0);
+        double c = 1 / (Math.Pow(2 * Math.PI * f0, 2) * l);
+        return f => new Complex(r, 2 * Math.PI * f * l - 1 / (2 * Math.PI * f * c));
+    }
+
+    /// <summary>Parallel RLC: X FALLS through zero at f₀, and Z peaks real at R.</summary>
+    private static Func<double, Complex> ParallelRlc(double f0, double q, double r)
+    {
+        double c = q / (2 * Math.PI * f0 * r);
+        double l = 1 / (Math.Pow(2 * Math.PI * f0, 2) * c);
+        return f => Complex.One /
+                    new Complex(1 / r, 2 * Math.PI * f * c - 1 / (2 * Math.PI * f * l));
+    }
+
+    private static Mat<Complex> S11Of(Complex z)
+    {
+        var m = new Mat<Complex>(1, 1);
+        m[0, 0] = (z - Z0) / (z + Z0);
+        return m;
+    }
+
+    /// <summary>
+    /// The probe: a node set that grows. It is the ONLY thing standing where a full
+    /// fill-factor-excite-de-embed cycle stands in <c>PlanarSolve.Run</c>, and the search cannot
+    /// tell the difference — which is the property that makes this file run in milliseconds.
+    /// </summary>
+    private sealed class AnalyticProbe
+    {
+        private readonly Func<double, Complex> _z;
+        private readonly SortedDictionary<double, Mat<Complex>> _solved = new();
+        public int Calls { get; private set; }
+
+        public AnalyticProbe(Func<double, Complex> z, IEnumerable<double> seed)
+        {
+            _z = z;
+            foreach (double f in seed) _solved[f] = S11Of(_z(f));
+        }
+
+        public PlanarResonanceNodes Nodes =>
+            new([.. _solved.Keys], [.. _solved.Values]);
+
+        public PlanarResonanceNodes Probe(double f)
+        {
+            if (!_solved.ContainsKey(f)) { _solved[f] = S11Of(_z(f)); Calls++; }
+            return Nodes;
+        }
+    }
+
+    private static double[] Grid(double f0, double f1, int n)
+    {
+        var f = new double[n];
+        for (int i = 0; i < n; i++) f[i] = f0 + (f1 - f0) * i / (n - 1);
+        return f;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // §5 — a synthetic high-Q response is found, to a STATED accuracy in f0 and Q.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void A1_AHighQResonanceNarrowerThanTheGridIsFound_WithF0AndQToAStatedAccuracy()
+    {
+        // ANT-9 §1's own numbers: 1.50-2.00 GHz asked for at 10 MHz spacing, and a resonance
+        // narrower than that spacing. Q = 214 gives a half-power bandwidth of 8.6 MHz — the feature
+        // is genuinely invisible to the requested grid, which is the whole premise of the phase.
+        const double f0 = 1.8412e9, q = 214, r = 50;
+        var probe = new AnalyticProbe(SeriesRlc(f0, q, r), Grid(1.5e9, 2.0e9, 9));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1.5e9, 2.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default, probe.Probe);
+
+        var found = Assert.Single(outcome.Resonances);
+
+        double fErr = Math.Abs(found.FrequencyHz - f0) / f0;
+        double qErr = Math.Abs(found.Q - q) / q;
+        _out.WriteLine($"true f0 = {f0 / 1e9:F6} GHz, Q = {q}");
+        _out.WriteLine($"found    = {found.FrequencyHz / 1e9:F6} GHz, Q = {found.Q:F2}, " +
+                       $"R = {found.ResistanceOhm:F2} ohm, {found.Kind}");
+        _out.WriteLine($"relative error: f0 {fErr:E2}, Q {qErr:E2}");
+        _out.WriteLine($"bracketed to {found.LocatedToHz / 1e3:F1} kHz in " +
+                       $"{outcome.AddedFrequencies.Count} added solve(s)");
+        _out.WriteLine($"half-power BW = {found.HalfPowerBandwidthHz / 1e6:F3} MHz, " +
+                       $"-10 dB BW = {found.MatchedBandwidthHz / 1e6:F3} MHz, " +
+                       $"|S| at f0 = {found.ReturnLossDb:F1} dB");
+
+        // THE STATED ACCURACY. f0 lands inside its own reported bracket, which is the claim the
+        // search actually makes; 1e-5 relative is what that bracket is worth at the default
+        // tolerance. Q comes off a secant across that bracket and is a derivative, so it is held
+        // an order looser — deliberately, rather than by tuning the number until it passed.
+        Assert.True(fErr < 1e-5, $"f0 relative error {fErr:E2}");
+        Assert.True(qErr < 1e-3, $"Q relative error {qErr:E2}");
+        Assert.True(Math.Abs(found.FrequencyHz - f0) <= found.LocatedToHz,
+                    "f0 must lie inside the bracket the search reports it to");
+        Assert.Equal(PlanarResonanceKind.Series, found.Kind);
+
+        // The half-power bandwidth is f0/Q by definition, so it inherits the Q error and nothing
+        // more — a tighter check here would be checking the same number twice.
+        Assert.Equal(f0 / q, found.HalfPowerBandwidthHz, f0 / q * 1e-4);
+
+        // The -10 dB bandwidth is MEASURED off the curve. Its closed form holds only for the
+        // LINEARISED reactance (|S| = -10 dB at X = (2/3)Z0, with X = 2QR(f-f0)/f0), and the true
+        // series reactance carries a 1/f term the linearisation drops — so the two agree to a few
+        // parts in a thousand and not better. That gap is the LINEARISATION's, not the search's, and
+        // the tolerance says so rather than being tightened until something passed.
+        double expectedMatched = 2 * (2.0 / 3.0) * Z0 / (2 * q * r) * f0;
+        double bwErr = Math.Abs(found.MatchedBandwidthHz - expectedMatched) / expectedMatched;
+        _out.WriteLine($"-10 dB BW vs linearised closed form: {bwErr:E2} relative");
+        Assert.True(bwErr < 1e-2,
+                    $"-10 dB bandwidth {found.MatchedBandwidthHz / 1e6:F4} MHz vs closed form " +
+                    $"{expectedMatched / 1e6:F4} MHz");
+
+        Assert.False(outcome.CapBound);
+    }
+
+    [Fact]
+    public void A2_AParallelResonanceIsLabELLEDParallel_AndTheSameOneFormulaGivesItsQ()
+    {
+        // The header's claim that Q needs no branch: the parallel form reduces to the series form
+        // with the sign the falling slope supplies. If that reduction were wrong this Q would be
+        // out by the factor the two textbook expressions differ by, which is exactly the kind of
+        // error a single worked case catches and no amount of reading does.
+        const double f0 = 2.4e9, q = 80, r = 220;
+        var probe = new AnalyticProbe(ParallelRlc(f0, q, r), Grid(2.0e9, 3.0e9, 9));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 2.0e9, 3.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default, probe.Probe);
+
+        var found = Assert.Single(outcome.Resonances);
+        _out.WriteLine($"found {found.FrequencyHz / 1e9:F6} GHz, Q = {found.Q:F3} (true {q}), " +
+                       $"R = {found.ResistanceOhm:F1} ohm (true {r}), {found.Kind}");
+        _out.WriteLine($"|S| at f0 = {found.ReturnLossDb:F2} dB; matched BW refusal: " +
+                       $"{found.MatchedBandwidthRefusal ?? "(none)"}");
+
+        Assert.Equal(PlanarResonanceKind.Parallel, found.Kind);
+        Assert.True(Math.Abs(found.Q - q) / q < 1e-3, $"Q = {found.Q}");
+        Assert.True(Math.Abs(found.ResistanceOhm - r) / r < 1e-3, $"R = {found.ResistanceOhm}");
+
+        // 220 ohm into 50 never reaches -10 dB. That is an ordinary edge-fed patch, and the answer
+        // is a REFUSAL naming the reason, not a zero and not an omitted field.
+        Assert.True(double.IsNaN(found.MatchedBandwidthHz));
+        Assert.NotNull(found.MatchedBandwidthRefusal);
+        Assert.Contains("MATCH", found.MatchedBandwidthRefusal!, StringComparison.Ordinal);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // §5 — a two-resonance span returns BOTH.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void A3_ATwoResonanceSpanReturnsBOTH_NotTheFirstAndNotTheStrongest()
+    {
+        // Two parallel tanks in series — the ordinary equivalent circuit of a patch with a
+        // higher-order mode, and the case ANT-9 §3 calls normal rather than an edge case.
+        var t1 = ParallelRlc(1.85e9, 120, 180);
+        var t2 = ParallelRlc(2.45e9, 90, 150);
+        var probe = new AnalyticProbe(f => t1(f) + t2(f), Grid(1.6e9, 2.7e9, 13));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1.6e9, 2.7e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default with { MaxAddedPoints = 40 }, probe.Probe);
+
+        foreach (var r in outcome.Resonances)
+            _out.WriteLine($"  {r.FrequencyHz / 1e9:F5} GHz  Q = {r.Q:F1}  R = {r.ResistanceOhm:F1} " +
+                           $"ohm  {r.Kind}  (bracketed to {r.LocatedToHz / 1e3:F1} kHz)");
+        _out.WriteLine($"added {outcome.AddedFrequencies.Count}, discarded " +
+                       $"{outcome.DiscardedCrossings}, cap bound {outcome.CapBound}");
+
+        Assert.True(outcome.Resonances.Count >= 2,
+                    $"both tanks must be reported; got {outcome.Resonances.Count}");
+
+        // Each tank is pulled off its own f0 by the OTHER tank's reactance, so the gate is that both
+        // are located near where they belong and are ordered — not that they sit on the nominal
+        // numbers, which for coupled resonators they do not.
+        Assert.Contains(outcome.Resonances, r => Math.Abs(r.FrequencyHz - 1.85e9) / 1.85e9 < 0.05);
+        Assert.Contains(outcome.Resonances, r => Math.Abs(r.FrequencyHz - 2.45e9) / 2.45e9 < 0.05);
+        Assert.Equal(outcome.Resonances.OrderBy(r => r.FrequencyHz).ToList(), outcome.Resonances);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // §5 — a structure with NO resonance terminates and SAYS SO.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void A4_AStructureWithNoResonanceTerminatesWithinTheCap_AndSaysSo()
+    {
+        // A 6 dB attenuator: Z is real and constant, so Im(Z_in) is identically zero. The strict
+        // sign test is what makes this produce NO candidate rather than one per sample — an
+        // identically-zero reactance is a matched port, and a search that reported a resonance at
+        // every frequency of a matched port would be worse than useless.
+        var probe = new AnalyticProbe(_ => new Complex(100.0, 0.0), Grid(1e9, 5e9, 11));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1e9, 5e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default, probe.Probe);
+
+        _out.WriteLine(outcome.Note);
+        _out.WriteLine($"added {outcome.AddedFrequencies.Count} (cap " +
+                       $"{PlanarResonanceSettings.Default.MaxAddedPoints}), " +
+                       $"discarded {outcome.DiscardedCrossings}, cap bound {outcome.CapBound}");
+
+        Assert.Empty(outcome.Resonances);
+        Assert.True(outcome.AddedFrequencies.Count <= PlanarResonanceSettings.Default.MaxAddedPoints,
+                    "the cap is a ceiling on added solves and must hold");
+        Assert.Contains("NO RESONANCE", outcome.Note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A5_TheCapBindsAndIsREPORTED_RatherThanTheSearchQuietlyStoppingShort()
+    {
+        // A cap of two cannot bracket a Q = 500 resonance to 1e-4. The answer is not "nothing found"
+        // and not a silently coarse number: it is the cap, named, with what would lift it.
+        var probe = new AnalyticProbe(SeriesRlc(1.8412e9, 500, 50), Grid(1.5e9, 2.0e9, 5));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1.5e9, 2.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default with { MaxAddedPoints = 2 }, probe.Probe);
+
+        _out.WriteLine(outcome.Note);
+        Assert.True(outcome.CapBound);
+        Assert.Equal(2, outcome.AddedFrequencies.Count);
+        Assert.Contains("cap", outcome.Note, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A6_TheSearchNeverPublishesAFrequencyOutsideTheSpanItWasGiven()
+    {
+        // The narrowed property is "may add points BETWEEN the ones you asked for", not "may sweep
+        // wherever it likes". Extrapolating past the ends would be a different and much larger
+        // claim — the interpolant has no information out there at all.
+        var probe = new AnalyticProbe(SeriesRlc(1.8412e9, 214, 50), Grid(1.5e9, 2.0e9, 9));
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1.5e9, 2.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default, probe.Probe);
+
+        Assert.All(outcome.AddedFrequencies, f => Assert.InRange(f, 1.5e9, 2.0e9));
+        Assert.Equal(outcome.AddedFrequencies.OrderBy(f => f).ToList(), outcome.AddedFrequencies);
+        _out.WriteLine($"added, ascending: " +
+                       string.Join(", ", outcome.AddedFrequencies.Select(f => $"{f / 1e9:F6}")));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // The driver. Structural, on the real sweep.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    private static (PlanarProblem P, PlanarMesh M, IReadOnlyList<PlanarPortResolution> Ports) Fixture()
+    {
+        var line = PlanarLineFixtures.Fr4Line(8e-3, 6e9);
+        var (mesh, ports) = PlanarLineFixtures.MeshAndPorts(line, PlanarLineFixtures.Coarse);
+        return (line, mesh, ports);
+    }
+
+    /// <summary>
+    /// <b>A fixture the search actually finds something in, and it is a line.</b>
+    ///
+    /// <para>The 50 ohm fixture above, referenced to 50 ohm, is the WRONG subject for a flagging
+    /// test: it is matched, so Im(Z_in) sits at zero without ever changing sign, the search
+    /// correctly finds nothing, adds nothing, and a test of "added points are flagged" passes
+    /// vacuously with no added point in it.</para>
+    ///
+    /// <para>A MISMATCHED line is a resonator — Z_in rotates around the Smith chart and Im(Z_in)
+    /// crosses zero every quarter wavelength, with Re(Z_in) swinging between Zc²/Z0 and Z0. Half a
+    /// metre of nothing: the same geometry, referenced to 15 ohm instead, and long enough that the
+    /// band covers a crossing.</para>
+    /// </summary>
+    private static (PlanarProblem P, PlanarMesh M, IReadOnlyList<PlanarPortResolution> Ports)
+        ResonantFixture()
+    {
+        var line = PlanarLineFixtures.Fr4Line(22e-3, 6e9);
+        var (mesh, ports) = PlanarLineFixtures.MeshAndPorts(line, PlanarLineFixtures.Coarse, z0: 15.0);
+        return (line, mesh, ports);
+    }
+
+    [Fact]
+    public void B1_WithTheSearchOFF_NothingIsAddedAndNothingIsFlagged()
+    {
+        // §5's first gate, and the one that makes the mode safe to have: an existing .cem re-run
+        // must produce the same frequency list and the same s-parameters. The search defaults to
+        // null, so this is the path every file on disk takes.
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 9);
+        var st = new PlanarSolveSettings(
+            Deembed: false, Adaptive: new PlanarAdaptiveSettings(Tolerance: 1e-2));
+
+        var a = PlanarSolve.Run(p, m, ports, freqs, st);
+        var b = PlanarSolve.Run(p, m, ports, freqs, st);
+
+        Assert.Equal(freqs.Length, a.Points.Count);
+        Assert.Empty(a.AddedFrequencies);
+        Assert.Empty(a.Resonances);
+        Assert.All(a.Points, pt => Assert.False(pt.AddedBySearch));
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            Assert.Equal(freqs[i], a.Points[i].FrequencyHz);
+            for (int r = 0; r < a.Points[i].S.RowCount; r++)
+            for (int c = 0; c < a.Points[i].S.ColCount; c++)
+            {
+                Assert.True(a.Points[i].S[r, c].Real      == b.Points[i].S[r, c].Real);
+                Assert.True(a.Points[i].S[r, c].Imaginary == b.Points[i].S[r, c].Imaginary);
+                Assert.True(a.Points[i].RawS[r, c].Real   == b.Points[i].RawS[r, c].Real);
+            }
+        }
+        _out.WriteLine($"{a.Points.Count} published, {a.SolvedPointCount} solved, " +
+                       $"converged = {a.AdaptiveConverged}");
+    }
+
+    [Fact]
+    public void B2_WithTheSearchON_TheUsersOwnGridIsUntouchedAndEveryAddedPointIsFLAGGED()
+    {
+        // The narrowed property in the exact form a user experiences it. Turning the search on may
+        // add points; it may NOT move a point the user asked for that was actually solved. A found
+        // point that could not be told apart from a requested one would be the never-add property
+        // broken quietly, which is worse than not having the mode.
+        var (p, m, ports) = ResonantFixture();
+
+        // THIRTEEN points, not nine, and the difference is the whole of ANT-9 §1. On a 500 MHz grid
+        // Im(Z_in) of this line is negative at every single point — the crossing near 3.6 GHz lives
+        // entirely between two of them — so the search correctly finds nothing and this test would
+        // be vacuous again for a second, more interesting reason. A 400 MHz grid straddles it.
+        double[] freqs = Grid(2e9, 6e9, 11);
+        var off = new PlanarAdaptiveSettings(Tolerance: 1e-2);
+        var on  = off with { Search = PlanarResonanceSettings.Default with { MaxAddedPoints = 4 } };
+
+        var a = PlanarSolve.Run(p, m, ports, freqs, new PlanarSolveSettings(Deembed: false, Adaptive: off));
+        var b = PlanarSolve.Run(p, m, ports, freqs, new PlanarSolveSettings(Deembed: false, Adaptive: on));
+
+        // Every requested frequency is still published, in order, and still labelled as the user's.
+        var requested = b.Points.Where(pt => !pt.AddedBySearch).Select(pt => pt.FrequencyHz).ToArray();
+        Assert.Equal(freqs, requested);
+        Assert.Equal(b.Points.OrderBy(pt => pt.FrequencyHz).Select(pt => pt.FrequencyHz),
+                     b.Points.Select(pt => pt.FrequencyHz));
+
+        // Added points are enumerated AND flagged, and the two agree.
+        var flagged = b.Points.Where(pt => pt.AddedBySearch).Select(pt => pt.FrequencyHz).ToArray();
+        Assert.Equal(b.AddedFrequencies, flagged);
+        Assert.DoesNotContain(flagged, f => freqs.Contains(f));
+        Assert.True(flagged.Length <= 4, "the cap must hold on the real driver too");
+
+        // NOT VACUOUS. Without this the whole test passes on a sweep that added nothing, which is
+        // exactly what it did on the matched fixture and exactly what it must not be allowed to do.
+        Assert.NotEmpty(flagged);
+
+        // A point SOLVED in the search-off run is published with the identical matrix in the
+        // search-on run. Modelled points legitimately move — they are modelled from a richer node
+        // set — and asserting otherwise would be asserting that the added points changed nothing,
+        // which would mean they were not worth adding.
+        var solvedOff = a.SolvedFrequencies.ToHashSet();
+        int checkedCount = 0;
+        foreach (var pt in b.Points.Where(pt => solvedOff.Contains(pt.FrequencyHz)))
+        {
+            var was = a.Points.Single(q => q.FrequencyHz == pt.FrequencyHz);
+            for (int r = 0; r < was.S.RowCount; r++)
+            for (int c = 0; c < was.S.ColCount; c++)
+            {
+                Assert.True(was.S[r, c].Real      == pt.S[r, c].Real,
+                            $"solved point {pt.FrequencyHz:E6} moved when the search was turned on");
+                Assert.True(was.S[r, c].Imaginary == pt.S[r, c].Imaginary);
+            }
+            checkedCount++;
+        }
+        _out.WriteLine($"off: {a.Points.Count} published / {a.SolvedPointCount} solved; " +
+                       $"on: {b.Points.Count} published / {b.SolvedPointCount} solved, " +
+                       $"{flagged.Length} added, {checkedCount} solved points compared unchanged");
+        foreach (var r in b.Resonances)
+            _out.WriteLine($"  resonance {r.FrequencyHz / 1e9:F5} GHz Q = {r.Q:F2} {r.Kind}");
+        _out.WriteLine(b.Notes.First(n => n.StartsWith("Adaptive frequency sampling", StringComparison.Ordinal)));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // §4 — the report leads with convergence.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(1e-1)]   // loose: converges after a handful of points
+    [InlineData(0.0)]    // impossible: cannot converge, and must say so FIRST
+    public void C1_TheAdaptiveReportLeadsWithConvergedOrNotConverged(double tolerance)
+    {
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 9);
+
+        var run = PlanarSolve.Run(p, m, ports, freqs,
+            new PlanarSolveSettings(Deembed: false,
+                                    Adaptive: new PlanarAdaptiveSettings(Tolerance: tolerance)));
+
+        string note = run.Notes.First(n => n.StartsWith("Adaptive frequency sampling", StringComparison.Ordinal));
+        _out.WriteLine(note);
+
+        // §4's requirement literally: the verdict is the LEAD, not the last clause. Asserted as a
+        // prefix rather than by splitting on the first full stop — the very next thing the note says
+        // is a |ΔS| with a decimal point in it, and a sentence-splitter would cut the number in half.
+        Assert.StartsWith(
+            tolerance > 0
+                ? "Adaptive frequency sampling CONVERGED:"
+                : "Adaptive frequency sampling DID NOT CONVERGE:",
+            note, StringComparison.Ordinal);
+        Assert.Equal(tolerance > 0, run.AdaptiveConverged);
+
+        // And the point COUNT — the thing that used to lead — comes after it.
+        Assert.True(note.IndexOf("CONVERGE", StringComparison.Ordinal)
+                    < note.IndexOf("requested point(s) were solved", StringComparison.Ordinal),
+                    "the verdict must precede the point count, which is what ANT-9 §4 reverses");
+
+        if (run.AdaptiveConverged == false)
+        {
+            // §4: say what would help, in the same sentence, rather than leaving the remedy to be
+            // worked out. With the search off, that includes naming the search.
+            Assert.Contains("What would help", note, StringComparison.Ordinal);
+            Assert.Contains("resonance search", note, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void C2_APercentageIsNotPresentedAsASavingWhenItIsNotOne()
+    {
+        // §4's third rule and §6's fourth prohibition. At tolerance 0 every point is solved, so the
+        // adaptive path saved exactly nothing, and the note has to say that rather than reporting
+        // "9 of 9 solved" in the tone of an achievement.
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 9);
+
+        var run = PlanarSolve.Run(p, m, ports, freqs,
+            new PlanarSolveSettings(Deembed: false, Adaptive: new PlanarAdaptiveSettings(Tolerance: 0.0)));
+
+        string note = run.Notes.First(n => n.StartsWith("Adaptive frequency sampling", StringComparison.Ordinal));
+        _out.WriteLine(note);
+        Assert.Equal(freqs.Length, run.SolvedPointCount);
+        Assert.Contains("saved nothing here", note, StringComparison.Ordinal);
+    }
+}

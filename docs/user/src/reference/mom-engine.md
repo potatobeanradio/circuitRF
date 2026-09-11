@@ -16,6 +16,7 @@ keywords: EM, electromagnetic, method of moments, MoM, planar solver, full wave,
 <li><a href="#ports">Ports</a></li>
 <li><a href="#deembedding">De-embedding</a></li>
 <li><a href="#adaptive">Adaptive frequency sampling</a></li>
+<li><a href="#resonance-search">The resonance search</a></li>
 <li><a href="#conformal">Conformal boundary cells</a></li>
 <li><a href="#mesh-convergence">Mesh convergence, and how to check it</a></li>
 <li><a href="#budget">What makes a run infeasible</a></li>
@@ -642,6 +643,8 @@ The tolerance is agreement to 10<sup>-3</sup> in |S|. Three properties are worth
 - **It never adds a frequency you did not ask for.** So it cannot rescue a feature that falls *between*
   two of your requested points — a resonance narrower than your frequency step is lost with the setting
   on or off. Resolving a feature is the grid's job; adaptive sampling only makes a fine grid affordable.
+  The one exception is the [resonance search](#resonance-search), which is off by default and which
+  flags every point it adds.
 
 ### What the tolerance trades
 
@@ -670,11 +673,68 @@ The run reports how many points it solved out of how many you requested. Two che
   it costs one full sweep; it is worth doing once per new class of structure, not once per run.
 
 If it will not settle, the usual cause is a genuine sharp resonance. Narrow the band around it and sweep
-that region on its own rather than fighting the whole span.
+that region on its own rather than fighting the whole span — or turn on the
+[resonance search](#resonance-search), which is built for exactly this case.
 
 Adaptive sampling applies to the full-wave kernel only. The quasi-static kernel evaluates in closed form
 after one solve, so there is nothing to sample adaptively, and the control says so rather than sitting
 there greyed out with no explanation.
+
+## The resonance search {#resonance-search}
+
+### The problem it solves
+
+Adaptive sampling bisects *the grid you gave it*. That is what makes every published point yours, and
+on a high-Q structure it is also what puts the answer out of reach: if the resonance is narrower than
+your frequency step, there is no point refinement is allowed to look at that is near it. The symptom is
+a sweep that solves nearly every point you asked for and still reports that it did not converge — all
+of the cost, none of the saving, and the feature still invisible.
+
+You cannot fix that by refining harder. Either the grid gets finer, or something is allowed to look
+between its points.
+
+### What it does
+
+**The resonance search is the one setting in circuitRF that lets a sweep publish a frequency you did
+not ask for.** It is off by default. With it on:
+
+1. It looks for **Im(Z<sub>in</sub>) crossing zero** — which costs no solve, because it reads the same
+   model adaptive sampling already built.
+2. It **brackets each crossing by bisection**, solving as it goes, until f₀ is pinned to 1 part in
+   10<sup>4</sup>.
+3. It reports **f₀, Q, the resistance at resonance, the half-power bandwidth and the measured −10 dB
+   bandwidth** as a diagnostic — so "where is it" comes back as a number rather than a curve you have
+   to read off.
+4. It then spends what is left of its budget **resolving the shape** of the curve around each
+   resonance, on the same |ΔS| criterion adaptive sampling uses.
+
+Three properties are worth knowing:
+
+- **Every added point is flagged.** Your own grid is published exactly as it was — same frequencies,
+  same values — with the found points spliced in between, each marked as found rather than requested.
+- **It finds all of them.** A patch has higher-order modes; the search reports every resonance in the
+  span, not the first or the strongest.
+- **The number of added solves is capped, and the cap is reported when it binds.** A full-wave point
+  costs tens of seconds, so this is a budget you are spending deliberately.
+
+Q here is the **resonator's own Q** at that port — radiation and loss, everything inside
+Z<sub>in</sub> — not the loaded Q of a matched system. It is the number that sets the bandwidth you can
+achieve before any matching network is designed.
+
+### What it cannot do
+
+**It needs a sign to bracket.** The search finds a resonance your *solved* points straddle in sign; a
+resonance whose entire reactance swing falls between two neighbouring solved points leaves nothing for
+it to notice. When it finds nothing it says so in those words, rather than implying there is nothing
+there.
+
+So the search does not remove the need for a sensible grid — it removes the need for that grid to
+**resolve** the resonance. Asking for a few hundred points across the band you care about, with both
+adaptive sampling and the search on, is the combination this is built for: the grid notices the
+feature, the search pins it, and adaptive sampling keeps you from paying for the rest of the band.
+
+It needs adaptive sampling on, because it seeds itself from the model refinement builds. With adaptive
+sampling off, the control is disabled and says why.
 
 ## Conformal boundary cells {#conformal}
 

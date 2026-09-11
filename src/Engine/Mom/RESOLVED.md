@@ -3965,3 +3965,168 @@ does NOT flip `PlanarBoundaryCells.Staircase`, per §6.
 - **Nothing reaches the CLI or the GUI**, because ANT-4's far field and ANT-5's metrics do not either.
   `PlanarPolarization.Cubes` is what makes a picker, a listing and an exporter cheap when ANT-7
   arrives: the note a panel must say in words is already written next to the name.
+
+---
+
+## ANT-9 — finding a high-Q resonance, and the never-add property narrowed (2026-09-10)
+
+`brief-antenna-9-resonance-sweep.md`. **§2 was an explicit owner decision and it was taken: build the
+opt-in search.** The alternative the brief offered — publish an *estimated* f₀ from a coarse pass and
+make the user re-run with a seeded grid — was declined, and is not built.
+
+### The two problems, still separate
+
+1. **The criterion was fine and the grid was wrong.** Nothing here touches the refinement criterion.
+   It is still an ERROR — a freshly solved point against the interpolant's prediction there — and
+   never a fit residual; L7b-b and L8a each measured why, and a search that quietly moved it onto
+   "how well does the model fit its own nodes" would have been that mistake a third time.
+2. **The report was reading as a success.** Fixed independently of the search, per §4.
+
+### What the search actually does
+
+`src/Engine/Mom/PlanarResonanceSearch.cs`, pure — no solve, no kernel, no calibrator, the same rule
+`PlanarAdaptiveSweep` follows. `PlanarAdaptiveSettings.Search` is **null by default**, and with it
+null not a line of it runs.
+
+- **Seeding costs no solve.** Im(Z_in) is read off the interpolant refinement already built and its
+  sign changes are the candidates.
+- **Every reported number comes off SOLVED points.** f₀ is the root between the two solved bracket
+  ends, dX/df is that bracket's own secant, R is Re(Z) interpolated across it. The interpolant
+  proposes; it never disposes. A reported f₀ that was really a spline's opinion about a region it had
+  no samples in would be invisible — a plausible number, to four figures, wrong.
+- **Two stages, in this order and not interleaved.** Stage A locates every resonance; stage B spends
+  what is left resolving the curve around them on the sampler's own |ΔS| criterion. Locating is what
+  the mode is FOR, so it takes the budget first — a cap that binds then leaves a full resonance list
+  with a coarse curve, rather than a partial list.
+
+### Q is ONE formula, and the sign is the label
+
+At a crossing Z is real. The textbook writes series and parallel differently — `Q = ω₀(dX/dω)/2R` and
+`Q = ω₀(dB/dω)/2G` — but at the crossing `Y = 1/R` exactly and `dB/dω = −(1/R²)·dX/dω`, so the second
+reduces to the first with the sign the falling slope supplies. Therefore
+
+> **Q = ω₀·|dX/dω| / 2R = f₀·|dX/df| / 2R in BOTH cases**, and the sign of dX/df is not part of the
+> magnitude at all — it is the *label*, series or parallel.
+
+One formula, no branch, and the branch that would have existed is exactly the thing most likely to be
+written backwards. Verified against an analytic parallel tank: Q = 79.999 against a true 80, R exact.
+
+For a one-port this is the resonator's **own** Q — radiation plus loss, everything inside Z_in — and
+not the loaded Q of a matched system. The run's note says that in those words rather than leaving it
+to be guessed from the letter Q.
+
+### THE FINDING: regula falsi is the wrong bisection here, and it gives a WRONG Q
+
+§3 says "bisect toward the crossing", which invites probing at the interpolant's own root estimate.
+That was written first and it is wrong, for a reason specific to a resonance.
+
+**X(f) through a resonance is very nearly linear**, so the first regula-falsi probe lands on the root
+immediately and to many digits. That sounds ideal. It is not: it moves ONE bracket end onto the root
+and leaves the other where it started, so **the bracket never shrinks**. Measured on the analytic
+Q = 214 case:
+
+| probe rule | added solves | final bracket | f₀ error | **Q reported** |
+|---|---|---|---|---|
+| regula falsi + midpoint safeguard | **24 — the whole cap** | ~60 MHz | exact | **281 vs a true 214, +31 %** |
+| plain midpoint bisection | **15** | 122 kHz | 2.2e-10 | **213.99, 2.6e-5** |
+
+Two separate costs, and the second is the dangerous one. The safeguard (any step that fails to halve
+the bracket forces the next probe to the midpoint) meant two probes per halving, so the run burned its
+whole 24-point cap — but worse, it *terminated* on a bracket 60 MHz wide, and **the secant of a 60 MHz
+bracket is not dX/df at f₀**. It reported Q = 281 beside an f₀ that was exact to ten digits. A wrong Q
+next to a right f₀ is the most credible-looking wrong answer this phase could have produced.
+
+Plain midpoint halves the bracket every time: cost is exactly `ceil(log2(width/tolerance))` probes —
+six from a 10 MHz grid at the default 1e-4 — which is both predictable and *cheaper* than the
+safeguarded version, and it ends on a bracket tight enough that its secant IS the local derivative and
+its endpoints ARE a proven interval. The interpolant still chooses which interval to open in; it just
+no longer chooses where inside it to land.
+
+### The second runaway: stage B has no grid to stop it
+
+Phase 1's refinement terminates because it runs out of GRID — there is always a point it cannot bisect
+past. Stage B has no grid, and the split-both-halves recursion is 2^k, so it consumed the entire
+remaining cap on every sharp resonance and made "cap bound" mean nothing. Two bounds fixed it:
+
+- a floor at **half the resonance's own half-power bandwidth** — scaling it to f₀ instead would spend
+  the whole budget on a high-Q feature and almost nothing on a broad one, which is backwards;
+- a **window of ±1.5 bandwidths**, with sub-intervals that fall outside it dropped rather than
+  subdivided. Without that filter one grid interval straddling the window edge refines its far half to
+  the floor as well.
+
+At most six intervals, so stage B cannot swallow the cap. It can afford to be that thrifty because
+stage A has already paid for dense coverage of the core: bisection leaves every probe it took inside
+the original bracket, clustering geometrically on f₀. What stage B adds is the **flanks**.
+
+### THE LIMIT, and it is the brief's own premise returning
+
+**The search can resolve a resonance the solved points straddle in SIGN. It cannot conjure one whose
+entire reactance excursion falls between two neighbouring solved points.** Measured while building the
+driver gate: a 22 mm FR-4 line referenced to 15 Ω, swept 2–6 GHz in 9 points, has Im(Z_in) *negative at
+all nine* — the crossing near 3.6 GHz lives entirely inside one 500 MHz step, and the spline through
+nine negative values stays negative. Thirteen points straddle it and the search finds it at once.
+
+This is ANT-9 §1's own diagnosis reappearing one level down, and it is not a defect to be tuned away:
+detection needs a sign to bracket. The "no resonance found" note therefore says outright that it is
+**not proof there is none**, and names the same remedy a non-converged sweep gets — a finer requested
+grid. What the mode removes is the need for that grid to resolve the resonance; what it still needs is
+for the grid to *notice* it.
+
+### The report (§4), which happens whether or not the search is on
+
+- **Leads with CONVERGED / DID NOT CONVERGE**, then the counts. It used to lead with the saving and
+  bury the tolerance failure in the last clause — which is exactly how "44 of 51 point(s) were SOLVED"
+  came to read as success next to a |ΔS| twenty times its tolerance.
+- **`PlanarSolveResult.AdaptiveConverged`** carries the same verdict as a `bool?`, so a caller does not
+  have to parse prose. `worstStopped > Tolerance` is the whole test: an interval that stopped inside
+  the tolerance converged, one that stopped above it ran out of grid or budget.
+- **Above 80 % solved the note says the adaptive path saved little here**, and at 100 % that it saved
+  nothing. A percentage presented as a saving when it is not one is the same failure as a control that
+  silently does nothing.
+- **A non-converged run names what would help in the same sentence** — a finer requested grid, and, if
+  the search is off, the search.
+
+### Gates
+
+`tests/Engine.Tests/Mom/ResonanceSearchTests.cs`, 11 tests. **Six are analytic and run in under 4 ms
+in total**, which is the whole reason the search takes a `PlanarResonanceProbe` delegate: in
+`PlanarSolve.Run` it is a fill-factor-excite-de-embed cycle costing a minute, in a test it is an RLC
+evaluated in nanoseconds, and the search cannot tell the difference. A resonance search gated only on
+solved structures compares one estimate against another and can tell they disagree but never which is
+wrong.
+
+| gate | result |
+|---|---|
+| high-Q found, f₀ and Q to a stated accuracy | f₀ 2.2e-10, Q 2.6e-5, 15 added solves |
+| parallel resonance labelled, one formula | Q 79.999 / 80, R exact |
+| two-resonance span returns both | **three** found — both tanks to 0.05 %, plus the genuine series antiresonance between them at R = 0.4 Ω |
+| no resonance terminates and says so | 0 added, note leads "NO RESONANCE was found" |
+| cap binds and is reported | 2 of 2, named, with what would lift it |
+| added points inside the span, ascending | held |
+| search OFF adds nothing, flags nothing, deterministic | held |
+| search ON leaves the user's grid untouched | 11 requested + 4 added, all 11 solved points bit-identical to the search-off run |
+| report leads with convergence | asserted as a PREFIX, not by splitting on the first full stop — the next thing the note says is a |ΔS| with a decimal point in it |
+
+The driver gates are 3.0–4.6 s and are **deliberately untagged**: they are under the ~5 s `Benchmark`
+threshold, they assert no timing, and they are the central invariant of the phase, so they belong in
+the routine gate. B2 was trimmed from a 13-point grid to 11 to keep it there (5.3 s → 4.6 s).
+
+**B2 was vacuous twice before it was right**, and both reasons are worth knowing. First it used the
+matched 50 Ω fixture referenced to 50 Ω: Im(Z_in) is identically ~0, the search correctly finds
+nothing, adds nothing, and a test of "added points are flagged" passed with no added point in it.
+Then it used a mismatched line on too coarse a grid — the limit above. `Assert.NotEmpty(flagged)` is
+what now stops it passing empty.
+
+### Not done, on purpose
+
+- **The real-board measurement from §1 has NOT been re-taken.** The imported patch board is not in
+  this repository — it arrived through an owner report — so the 44-of-51 figure cannot be reproduced
+  here. Everything the phase claims is gated on the analytic resonator and on the mismatched-line
+  driver case instead. Pointing this at the board's `.cws` is one CLI run.
+- **No far-field pattern at a found frequency.** `farWanted` is keyed on requested-grid indices and
+  is untouched by the search, so a pattern is still only produced where one was asked for. Computing
+  one at f₀ would be genuinely useful and is a different phase's decision.
+- **The search reads ONE port.** Im(Z_in) of two ports crosses zero in two different places, and
+  reporting the union as though it were a mode list would be inventing structure.
+- **No mesh or physics change.** §6. The mesh is still sized at `MeshFrequencyHz`, not at the
+  frequencies the search visits.

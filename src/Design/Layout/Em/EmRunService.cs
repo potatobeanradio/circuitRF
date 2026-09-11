@@ -452,12 +452,32 @@ public static class EmRunService
 
             var solveSettings = PlanarSolveSettings.Default with
             {
-                Adaptive = setup.AdaptiveSampling ? PlanarAdaptiveSettings.Default : null,
+                Adaptive = setup.AdaptiveSampling
+                    ? PlanarAdaptiveSettings.Default with
+                      {
+                          // ANT-9. Nested inside the adaptive settings because the search seeds
+                          // itself from the interpolant refinement already built — see the combo
+                          // note below for what happens when the panel asks for one without the
+                          // other.
+                          Search = setup.ResonanceSearch ? PlanarResonanceSettings.Default : null,
+                      }
+                    : null,
                 MaxDegreeOfParallelism = EmSolveCores.Sanitise(maxCores),
                 Fill = setup.DirectVerticalKernel || setup.AcceleratedSolve
                     ? fill
                     : PlanarSolveSettings.Default.Fill,
             };
+            // ANT-9 — the one combination the panel can express and the engine cannot honour. The
+            // search bisects toward a zero crossing of Im(Z_in) that it finds in the interpolant
+            // adaptive refinement builds; with adaptive sampling off there is no interpolant and
+            // nothing to seed from. Left off, and SAID, rather than quietly doing nothing — which
+            // is the failure mode this repository has been bitten by more than once.
+            if (setup.ResonanceSearch && !setup.AdaptiveSampling)
+                warnings.Add("The resonance search is on but adaptive frequency sampling is off, so " +
+                             "the search has been left off too: it seeds itself from the interpolant " +
+                             "adaptive sampling builds, and with every point solved there is nothing " +
+                             "for it to seed from. Turn adaptive sampling on to use it.");
+
             var lengthFormat = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
             solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct, control,
                                   lengthFormat);

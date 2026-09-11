@@ -224,6 +224,29 @@ public sealed class EmSetup
     public bool AdaptiveSampling { get; set; } = true;
 
     /// <summary>
+    /// <b>ANT-9 — the resonance search, OFF by default, and the only setting in circuitRF that lets
+    /// a sweep publish a frequency you did not ask for.</b>
+    ///
+    /// <para>Adaptive sampling never adds a point: it bisects the grid it was GIVEN, so a resonance
+    /// narrower than your frequency step is invisible to it however hard it refines. That is a
+    /// deliberate property and it is what makes every published point yours. It is also, on a
+    /// high-Q structure, the reason a sweep can solve 86 % of its grid and still miss its tolerance
+    /// by a factor of twenty — measured on a patch board at 10 MHz spacing.</para>
+    ///
+    /// <para>With this on, the sampler may INSERT frequencies where Im(Z_in) crosses zero, bracket
+    /// each one by bisection, and publish f₀, Q and the bandwidth as a diagnostic. <b>Every inserted
+    /// frequency is flagged</b>, and every point of the requested grid is still published exactly as
+    /// it was, so nothing you asked for moves. It costs real solves — a de-embedded full-wave point
+    /// is 48-72 s — which is why it is opt-in and capped rather than simply always on.</para>
+    ///
+    /// <para><b>It needs adaptive sampling</b>, because it seeds itself from the interpolant that
+    /// refinement builds; with adaptive sampling off it is left off and the run SAYS so rather than
+    /// silently doing nothing. Nullable + omitted at its default in the <c>.cem</c>, so a file
+    /// written before it existed loads and re-serialises byte-identically.</para>
+    /// </summary>
+    public bool ResonanceSearch { get; set; }
+
+    /// <summary>
     /// <b>M2 (brief-gazz-accuracy-ceiling) — take the ẑẑ Green's function from direct Sommerfeld
     /// integration instead of from the DCIM fit.</b> Planar kernel only, and only meaningful when the
     /// layout carries vias: it is the one block G_A^zz is ever evaluated in.
@@ -280,6 +303,7 @@ public sealed class EmSetup
         Mesh                   = Mesh,           // record, immutable
         DispersionCorrection   = DispersionCorrection,
         AdaptiveSampling       = AdaptiveSampling,
+        ResonanceSearch        = ResonanceSearch,
         DirectVerticalKernel   = DirectVerticalKernel,
         AcceleratedSolve       = AcceleratedSolve,
         SnpOutputPathOverride  = SnpOutputPathOverride,

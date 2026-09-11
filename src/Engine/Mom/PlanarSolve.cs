@@ -711,7 +711,19 @@ public sealed record PlanarFrequencyPoint(
     IReadOnlyList<PlanarPortCalibration> Calibrations,
     double                               KernelFitMs,
     double                               DutMs,
-    double                               CalibrationMs);
+    double                               CalibrationMs)
+{
+    /// <summary>
+    /// <b>ANT-9 — this frequency was FOUND, not requested.</b> True only under the opt-in resonance
+    /// search (<c>PlanarAdaptiveSettings.Search</c>); false for every point of the user's own grid
+    /// and, with the search off, for every point there is.
+    ///
+    /// <para>An init-only member rather than a positional parameter on purpose: every existing
+    /// construction site keeps compiling and keeps meaning exactly what it meant, which is half of
+    /// why the search-off path is bit-identical by construction rather than by assertion.</para>
+    /// </summary>
+    public bool AddedBySearch { get; init; }
+}
 
 /// <summary>
 /// A de-embedded sweep. <b><see cref="CoreFillCount"/> is R-prt-11's counter</b> and generalises
@@ -782,6 +794,33 @@ public sealed class PlanarSolveResult
 
     /// <summary>Which frequencies were solved, ascending. Empty when adaptive sampling is off.</summary>
     public IReadOnlyList<double> SolvedFrequencies { get; init; } = [];
+
+    /// <summary>
+    /// <b>ANT-9 — did refinement actually converge?</b> True when every interval that stopped did so
+    /// INSIDE the tolerance; false when at least one ran out of grid or budget while still
+    /// disagreeing. Null when adaptive sampling is off and the question does not arise.
+    ///
+    /// <para>This exists because a solved-point count is not a verdict. The measurement that opened
+    /// ANT-9 solved 44 of 51 — 86 %, which reads like success — and missed its tolerance by a factor
+    /// of twenty. The two facts have to be separable by a caller, not just by a reader of the
+    /// prose.</para>
+    /// </summary>
+    public bool? AdaptiveConverged { get; init; }
+
+    /// <summary>
+    /// <b>ANT-9 — the frequencies the resonance search ADDED</b>, ascending, none of which the user
+    /// asked for. Always empty unless <c>PlanarAdaptiveSettings.Search</c> was set. Each is also
+    /// flagged on its own point (<see cref="PlanarFrequencyPoint.AddedBySearch"/>); this list is the
+    /// same fact in the form a caller wants when it is drawing the sweep rather than walking it.
+    /// </summary>
+    public IReadOnlyList<double> AddedFrequencies { get; init; } = [];
+
+    /// <summary>
+    /// <b>ANT-9 — every resonance the search located</b>, ascending in frequency. Empty when the
+    /// search was off, and ALSO empty when it ran and found none, which is an answer rather than an
+    /// absence — <see cref="Notes"/> carries the sentence that says which of the two it was.
+    /// </summary>
+    public IReadOnlyList<PlanarResonance> Resonances { get; init; } = [];
 
     public double TotalKernelMs      { get { double s = 0; foreach (var p in Points) s += p.KernelFitMs;    return s; } }
     public double TotalDutMs         { get { double s = 0; foreach (var p in Points) s += p.DutMs;          return s; } }
@@ -1529,6 +1568,9 @@ public static class PlanarSolve
         int    solvedCount = freqs.Length;
         double worstAdaptive = double.NaN;
         var    solvedList = Array.Empty<double>();
+        bool?  converged  = null;
+        var    addedList  = Array.Empty<double>();
+        IReadOnlyList<PlanarResonance> resonances = [];
 
         if (st.Adaptive is null)
         {
@@ -1571,6 +1613,18 @@ public static class PlanarSolve
             var yByIndex     = new Dictionary<int, Mat<Complex>>();
             var solved = new SortedSet<int>();
 
+            // ── ANT-9's storage, empty and untouched unless the search runs ────────────────────
+            //
+            // Keyed by FREQUENCY, because a found point is by definition not on the grid and has no
+            // index to be keyed by. The two stores stay separate rather than being merged into one:
+            // phase 1's refinement is index arithmetic over the requested grid and must keep being
+            // exactly that, or "the search is off and nothing changed" stops being structural.
+            var extraRaw    = new SortedDictionary<double, Mat<Complex>>();
+            var extraKernel = new Dictionary<double, PlanarFrequencyKernel>();
+            var extraTime   = new Dictionary<double, (double K, double D, double S)>();
+            var gridIndexOf = new Dictionary<double, int>();
+            for (int i = 0; i < freqs.Length; i++) gridIndexOf.TryAdd(freqs[i], i);
+
             void Solve(int i)
             {
                 if (!solved.Add(i)) return;
@@ -1598,6 +1652,39 @@ public static class PlanarSolve
                 foreach (int i in solved)
                 {
                     outp[i] = DeembedAt(freqs[i], rawByIndex[i], () => kernelByIndex[i], ownStage: false);
+                    control?.TickStage();
+                }
+                return outp;
+            }
+
+            // ── ANT-9's replay: the same walk, over the UNION of grid points and found ones ────
+            //
+            // Keyed by frequency because that is the only key both halves share. It exists rather
+            // than `Replay` being generalised in place because `Replay` is what the search-off path
+            // runs and must keep running: R-adf-3's "ascending order from a fresh branch state" is a
+            // property of ONE loop, and two loops that agree about it today are two loops that can
+            // stop agreeing.
+            List<double> UnionAscending()
+            {
+                var all = new List<double>(solved.Count + extraRaw.Count);
+                foreach (int i in solved) all.Add(freqs[i]);
+                all.AddRange(extraRaw.Keys);
+                all.Sort();
+                return all;
+            }
+
+            Dictionary<double, (Mat<Complex> S, List<PlanarPortCalibration> Cals, double CalMs)>
+                ReplayAll(List<double> all)
+            {
+                foreach (var c in calibrators) c.RestartBranchContinuation();
+                flaggedBand.Clear();
+                var outp = new Dictionary<double, (Mat<Complex>, List<PlanarPortCalibration>, double)>();
+                control?.BeginStage("replaying calibration", all.Count);
+                foreach (double f in all)
+                {
+                    outp[f] = gridIndexOf.TryGetValue(f, out int gi)
+                        ? DeembedAt(f, rawByIndex[gi], () => kernelByIndex[gi], ownStage: false)
+                        : DeembedAt(f, extraRaw[f], () => extraKernel[f], ownStage: false);
                     control?.TickStage();
                 }
                 return outp;
@@ -1663,6 +1750,12 @@ public static class PlanarSolve
             worstAdaptive = worstStopped;
             solvedList    = solved.Select(i => freqs[i]).ToArray();
 
+            // An interval that stopped INSIDE the tolerance converged; one that stopped above it ran
+            // out of grid or budget. `worstStopped` is the max over both, so this one comparison is
+            // the verdict — and it is computed here rather than inferred from the note, because
+            // ANT-9 §4's whole complaint is that a reader was left to infer it.
+            converged = !(worstStopped > ad.Tolerance);
+
             // ANT-4 on the adaptive path. A requested point that the sampler never solved has no
             // basis currents, so the pattern is taken at the nearest point that WAS solved and the
             // substitution is reported — never interpolated, which would be a pattern of nothing.
@@ -1697,15 +1790,85 @@ public static class PlanarSolve
                               $"s-parameter has none.");
             }
 
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // ANT-9 — THE RESONANCE SEARCH. Everything above this point ran identically whether or
+            // not the mode is on; everything below branches on it. Null does nothing at all.
+            // ══════════════════════════════════════════════════════════════════════════════════
+            PlanarResonanceOutcome? searchOutcome = null;
+            Dictionary<double, (Mat<Complex> S, List<PlanarPortCalibration> Cals, double CalMs)>? byFreq
+                = null;
+
+            if (ad.Search is { } rs && freqs.Length >= 2 && solved.Count >= 2)
+            {
+                // The probe: one real solve, then the WHOLE calibration replayed in ascending
+                // frequency order from a fresh branch state. The replay is not optional and is not
+                // an optimisation left out — a found point lands BETWEEN two already-calibrated
+                // frequencies, and `PlanarPortCalibrator` is stateful in frequency (§3.5: predicting
+                // βΔℓ instead runs 15-20 % low and coin-flips the 2π branch). Most of a replay is
+                // cache hits; what it re-derives is the branch continuation, which is the part that
+                // has to see the new point in its right place.
+                PlanarResonanceNodes Probe(double f)
+                {
+                    if (!extraRaw.ContainsKey(f) && !gridIndexOf.ContainsKey(f))
+                    {
+                        var r = SolveRawAt(f);
+                        control?.Tick();
+                        extraRaw[f]    = r.Raw;
+                        extraKernel[f] = r.Kernel;
+                        extraTime[f]   = (r.KernelMs, r.DutMs, r.StandardsMs);
+                    }
+                    var all = UnionAscending();
+                    byFreq = ReplayAll(all);
+                    return new PlanarResonanceNodes(all, all.Select(x => byFreq[x].S).ToArray());
+                }
+
+                var all0 = UnionAscending();
+                byFreq = ReplayAll(all0);
+                var start = new PlanarResonanceNodes(all0, all0.Select(x => byFreq[x].S).ToArray());
+
+                int port = Math.Clamp(rs.PortNumber - 1, 0, ports.Count - 1);
+                searchOutcome = PlanarResonanceSearch.Search(
+                    start, freqs[0], freqs[^1], z0[port], ad.Interpolant, ad.Tolerance,
+                    rs with { PortNumber = port + 1 }, Probe);
+
+                resonances = searchOutcome.Resonances;
+                notes.Add(searchOutcome.Note);
+            }
+
             // ── Publish on the USER'S grid (R-adf-2). A solved point carries its own solved matrix
             //    byte for byte; everything else is the interpolant's value.
-            var nodeF   = solvedList;
-            var nodeS   = solved.Select(i => byIndex[i].S).ToArray();
-            var nodeRaw = solved.Select(i => rawByIndex[i]).ToArray();
+            //
+            // ANT-9: when the search added points, EVERYTHING here is published out of the ONE union
+            // replay, not just the found points. Two things follow from that, and both are the
+            // reason it is written this way rather than as a splice onto the pre-search result:
+            //
+            //   * the found points become interpolation NODES for the requested grid. They are the
+            //     best information the run has about exactly the region the interpolant was worst
+            //     in, and modelling a requested point near a resonance from a node set that excludes
+            //     the points found AT that resonance would be throwing away the whole benefit;
+            //   * one sweep is one calibration replay. `byIndex` was resolved before the found
+            //     points existed, and a published sweep half from each would carry two different
+            //     branch continuations with nothing saying where the seam was.
+            bool searched = extraRaw.Count > 0 && byFreq is not null;
+            var  solvedIdx = solved.ToList();
+
+            // The SEARCH-OFF path below is byte for byte the one L9e shipped — indexed by grid
+            // position throughout. It is not re-expressed in terms of frequency keys "for
+            // symmetry": `freqs` is sorted but NOT de-duplicated, so a frequency key can name two
+            // grid positions and the one a lookup returns need not be the one that was solved. The
+            // duplication is the price of the bit-identity gate being structural.
+            Mat<Complex> RawAt(double f) =>
+                gridIndexOf.TryGetValue(f, out int gi) && rawByIndex.TryGetValue(gi, out var m)
+                    ? m : extraRaw[f];
+
+            var nodeF   = searched ? UnionAscending().ToArray() : solvedList;
+            var nodeS   = searched ? nodeF.Select(f => byFreq![f].S).ToArray()
+                                   : solvedIdx.Select(i => byIndex[i].S).ToArray();
+            var nodeRaw = searched ? nodeF.Select(RawAt).ToArray()
+                                   : solvedIdx.Select(i => rawByIndex[i]).ToArray();
             var modelS   = PlanarAdaptiveSweep.Model(nodeF, nodeS,   freqs, ad.Interpolant);
             var modelRaw = PlanarAdaptiveSweep.Model(nodeF, nodeRaw, freqs, ad.Interpolant);
 
-            var solvedIdx = solved.ToList();
             for (int i = 0; i < freqs.Length; i++)
             {
                 bool isSolved = solved.Contains(i);
@@ -1717,42 +1880,131 @@ public static class PlanarSolve
                 foreach (int j in solvedIdx)
                     if (Math.Abs(freqs[j] - freqs[i]) < Math.Abs(freqs[near] - freqs[i])) near = j;
 
+                var cals  = byIndex[near].Cals;
+                double calMs = isSolved ? byIndex[i].CalMs : 0.0;
+                if (searched)
+                {
+                    // Same rule, over the union — a found point can be the nearest solved frequency
+                    // to a requested one, and it is the honest source when it is.
+                    double nf = nodeF[0];
+                    foreach (double f in nodeF)
+                        if (Math.Abs(f - freqs[i]) < Math.Abs(nf - freqs[i])) nf = f;
+                    cals  = byFreq![nf].Cals;
+                    calMs = isSolved ? byFreq[freqs[i]].CalMs : 0.0;
+                }
+
                 var (kMs, dMs, sMs) = isSolved ? timeByIndex[i] : (0.0, 0.0, 0.0);
                 points.Add(new PlanarFrequencyPoint(
-                    freqs[i], modelS[i], modelRaw[i], byIndex[near].Cals,
-                    kMs, dMs, sMs + (isSolved ? byIndex[i].CalMs : 0.0)));
+                    freqs[i], modelS[i], modelRaw[i], cals, kMs, dMs, sMs + calMs));
             }
 
+            // ── ANT-9: splice the found points in, ascending, each one FLAGGED ────────────────
+            //
+            // The requested grid above is untouched in the sense that matters — every frequency the
+            // user asked for is still published, still in order, and every one of them that was
+            // SOLVED still carries the solver's own matrix byte for byte. The found points are
+            // inserted between them, announcing themselves as not part of that grid.
+            if (searched)
+            {
+                foreach (var (f, raw) in extraRaw)
+                {
+                    var (sMat, cals, calMs) = byFreq![f];
+                    var (kMs, dMs, stdMs)   = extraTime[f];
+                    points.Add(new PlanarFrequencyPoint(f, sMat, raw, cals, kMs, dMs, stdMs + calMs)
+                    {
+                        AddedBySearch = true,
+                    });
+                }
+                points.Sort(static (a, b) => a.FrequencyHz.CompareTo(b.FrequencyHz));
+
+                addedList   = [.. extraRaw.Keys];
+                solvedList  = nodeF;
+                solvedCount = solvedList.Length;
+            }
+
+            // D5's capture stays on the REQUESTED grid's solved points. A found point has basis
+            // currents too, but the heat map was asked for at a frequency the user named, and
+            // silently moving it onto a frequency the search chose would be a map of somewhere else.
             if (capturePort >= 0 && captureAt >= 0)
             {
-                int near = solvedIdx[0];
-                foreach (int j in solvedIdx)
+                int near = solved.Min;
+                foreach (int j in solved)
                     if (Math.Abs(freqs[j] - freqs[captureAt]) < Math.Abs(freqs[near] - freqs[captureAt]))
                         near = j;
                 captured  = currentsByIndex[near][capturePort];
                 capturedF = freqs[near];
             }
 
-            // The "rest" clause is CONDITIONAL: refinement runs to the grid floor whenever adjacent
-            // requested points differ by more than the tolerance, and then there is no remainder to
-            // model. Saying there is one sends a user looking for interpolated values that the file
-            // does not contain (owner report, 2026-08-29).
-            notes.Add($"Adaptive frequency sampling: {solved.Count} of {freqs.Length} point(s) were " +
-                      (solved.Count >= freqs.Length
-                          ? "SOLVED — every requested point, because no interval agreed with the " +
-                            "interpolant closely enough to be skipped, so nothing is modelled. "
-                          : "SOLVED; the rest are modelled by a " +
-                            $"{(ad.Interpolant == PlanarInterpolant.Rational ? "barycentric rational" : "complex cubic spline")} " +
-                            "interpolant through them. ") +
-                      $"The worst disagreement refinement stopped at is " +
-                      $"|ΔS| = {worstStopped:G3} against a tolerance of {ad.Tolerance:G3}" +
-                      (solved.Count >= budget && budget < freqs.Length
-                          ? ", and the solve budget was reached before every interval converged — " +
-                            "treat the modelled points with that in mind."
-                          : ".") +
-                      " Every published frequency is the one you asked for; a solved point carries " +
-                      "the solver's own matrix exactly, and its per-port calibration diagnostics are " +
-                      "carried from the nearest solved frequency rather than interpolated.");
+            // ── ANT-9 §4 — THE REPORT LEADS WITH THE VERDICT ─────────────────────────────────
+            //
+            // It used to lead with the saving and put the tolerance failure in its last clause. The
+            // measurement that opened ANT-9 is what that costs: "44 of 51 point(s) were SOLVED" is
+            // read as success, and the |ΔS| = 0.02 against a tolerance of 0.001 twenty words later
+            // is read as a footnote. They are the wrong way round — the tolerance IS the result and
+            // the point count is the price.
+            //
+            // Two further rules from the same section. A percentage is not a saving unless it is one,
+            // so above 80 % solved the note says outright that the adaptive path did not help here —
+            // a control presented as doing something while doing nothing is the same failure as a
+            // control that silently does nothing. And a run that did not converge NAMES WHAT WOULD
+            // HELP in the same sentence, the way the mesher's refusals name the settings that act on
+            // the count, rather than leaving a user to work out that the remedy is theirs to apply.
+            double solvedFraction = (double)solved.Count / freqs.Length;
+            bool   didConverge    = converged == true;
+            bool   budgetBound    = solved.Count >= budget && budget < freqs.Length;
+            string modelName = ad.Interpolant == PlanarInterpolant.Rational
+                ? "barycentric rational" : "complex cubic spline";
+
+            var adaptiveNote = new System.Text.StringBuilder();
+            adaptiveNote.Append("Adaptive frequency sampling ")
+                        .Append(didConverge ? "CONVERGED" : "DID NOT CONVERGE")
+                        .Append(": the worst disagreement refinement stopped at is |ΔS| = ")
+                        .Append(worstStopped.ToString("G3"))
+                        .Append(didConverge ? ", inside " : ", against ")
+                        .Append("a tolerance of ").Append(ad.Tolerance.ToString("G3")).Append(". ");
+
+            adaptiveNote.Append(solved.Count).Append(" of ").Append(freqs.Length)
+                        .Append(" requested point(s) were solved (")
+                        .Append((solvedFraction * 100).ToString("F0")).Append(" %)");
+
+            if (solved.Count >= freqs.Length)
+                adaptiveNote.Append(" — every one of them, because no interval agreed with the " +
+                                    "interpolant closely enough to be skipped, so nothing is modelled " +
+                                    "and adaptive sampling saved nothing here. ");
+            else if (solvedFraction > 0.8)
+                adaptiveNote.Append(", so the adaptive path saved little here — the response is not " +
+                                    "smooth on the grid you asked for. The rest are modelled by a ")
+                            .Append(modelName).Append(" interpolant through them. ");
+            else
+                adaptiveNote.Append("; the rest are modelled by a ").Append(modelName)
+                            .Append(" interpolant through them. ");
+
+            if (!didConverge)
+            {
+                adaptiveNote.Append("What would help: a FINER requested grid, because the feature " +
+                                    "refinement could not resolve is narrower than the spacing of " +
+                                    "this one and every point it is allowed to reach is already " +
+                                    "solved");
+                adaptiveNote.Append(ad.Search is null
+                    ? "; or, if that feature is a resonance, the resonance search, which is the one " +
+                      "mode allowed to add frequencies between the ones you asked for. "
+                    : ". The resonance search is already on, and it reports separately what it found. ");
+            }
+
+            if (budgetBound)
+                adaptiveNote.Append("The solve budget was reached before every interval converged — " +
+                                    "treat the modelled points with that in mind. ");
+
+            adaptiveNote.Append(extraRaw.Count > 0
+                ? $"{extraRaw.Count} further frequency(ies) were ADDED by the resonance search and " +
+                  "are flagged as such; every point of your own grid is published exactly as it was. "
+                : "Every published frequency is the one you asked for. ");
+
+            adaptiveNote.Append("A solved point carries the solver's own matrix exactly, and its " +
+                                "per-port calibration diagnostics are carried from the nearest solved " +
+                                "frequency rather than interpolated.");
+
+            notes.Add(adaptiveNote.ToString());
         }
 
         if (st.Deembed && PassivityNote(points, z0) is { } passivity) notes.Add(passivity);
@@ -1847,6 +2099,9 @@ public static class PlanarSolve
             SolvedPointCount          = solvedCount,
             WorstAdaptiveDisagreement = worstAdaptive,
             SolvedFrequencies         = solvedList,
+            AdaptiveConverged         = converged,
+            AddedFrequencies          = addedList,
+            Resonances                = resonances,
             FarField                  = farSet,
         };
     }
