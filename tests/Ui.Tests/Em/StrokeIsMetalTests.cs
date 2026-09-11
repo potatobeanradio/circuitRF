@@ -253,9 +253,17 @@ public class StrokeIsMetalTests : IDisposable
     /// <summary>The conversion must not smuggle a ground pour into the mesh. A stroke on a
     /// ground-designated conductor is ground artwork exactly as a rectangle there is, and the
     /// extractor refuses to mesh either — the ground plane is the laterally infinite return the
-    /// Green's function handles analytically.</summary>
+    /// Green's function handles analytically.
+    ///
+    /// <para><b>ANT-11 changed what "ignored" means here, and the distinction is the point.</b> The
+    /// pour is still not MESHED — the metal area is the signal line's alone, which is what this test
+    /// exists to hold — but its outline is now READ and carried as a described boundary so the run can
+    /// report how large the real plane is. A width-bearing stroke is part of that outline like any
+    /// other artwork on the plane: a plane is routinely stitched with thick tracks, and one shape
+    /// cannot be copper for the purpose of measuring the plane and not copper for the purpose of
+    /// drawing it.</para></summary>
     [Fact]
-    public void AStrokeOnAGroundDesignatedConductor_IsStillIgnoredAsGroundArtwork()
+    public void AStrokeOnAGroundDesignatedConductor_IsNotMeshed_ButIsReadAsTheGroundOutline()
     {
         var r = Extract(
             new RectShape { Layer = TopCopper, X1 = 0, Y1 = 0, X2 = Mm(4), Y2 = Mm(2.9) },
@@ -267,11 +275,18 @@ public class StrokeIsMetalTests : IDisposable
             });
 
         Assert.True(r.Ok, r.Refusal);
-        Assert.Equal(11.6e-6, MetalAreaM2(r.Problem!), 12);   // the signal line only
-        Assert.Contains(r.Notes, n => n.Contains("on the ground-designated conductor layer were ignored",
-                                                 StringComparison.Ordinal));
+        Assert.Equal(11.6e-6, MetalAreaM2(r.Problem!), 12);   // the signal line only — NOT meshed
+        Assert.Contains(r.Notes, n => n.Contains("ground-designated conductor layer and none of them " +
+                                                 "is meshed", StringComparison.Ordinal));
         Assert.DoesNotContain(r.Notes, n => n.Contains("were outlined into conductor artwork",
                                                        StringComparison.Ordinal));
+
+        // …and the same stroke IS the plane's outline, at its stroked extent.
+        var outline = r.Problem!.GroundOutline;
+        Assert.NotNull(outline);
+        var (w, h) = outline.BoxSize();
+        Assert.Equal(4e-3, w, 9);
+        Assert.Equal(2.9e-3, h, 9);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

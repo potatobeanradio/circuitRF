@@ -500,7 +500,13 @@ Two consequences of it being the stackup's plane:
 
 - **It is modelled as laterally infinite.** A finite ground pour is not that, and a via to a
   ground-designated conductor that is *not* the resolved reference is dropped by name rather than
-  treated as the plane.
+  treated as the plane. **If you have drawn the pour, the run now measures it and tells you how big it
+  is in wavelengths** — its size, its area, and, the number that actually matters, how far it extends
+  *beyond* your own metal. The pour is still not meshed and reading it changes none of the numbers
+  beside the note; what it buys you is knowing whether "laterally infinite" was a fair description of
+  your board before you trust a result that assumed it. On a plane that is a fraction of a wavelength
+  across it is not, and the errors all run the same way: no back radiation at all, and a gain and
+  directivity that read high.
 - **Any other reference is refused, not approximated** — a coplanar ground, a second signal conductor,
   a differential pair, or a port driven between two levels at a via. Each is named in the refusal.
 

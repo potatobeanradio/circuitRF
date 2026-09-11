@@ -43,11 +43,18 @@
 // FRONT-TO-BACK IS THE STAGED ONE. With an analytically infinite ground plane the field at θ > 90°
 // is identically zero, so F/B is infinite; reporting ∞, or a large finite number, or omitting the
 // metric are all worse than refusing it. So `FrontToBackDb` is in this registry from this phase, it
-// refuses with its own sentence naming the phase that supplies it, and **its Evaluate is written and
-// correct already** — which is what makes the activation ONE PREDICATE rather than a re-plumb of the
-// picker, the exporter and the CLI. `LayeredMedium.CanHost` states the rule being followed: deleting
-// a refusal instead of narrowing it is how a kernel starts silently answering questions it cannot
-// answer.
+// refuses with its own sentence, and **its Evaluate is written and correct already** — which is what
+// makes the activation ONE PREDICATE rather than a re-plumb of the picker, the exporter and the CLI.
+// `LayeredMedium.CanHost` states the rule being followed: deleting a refusal instead of narrowing it
+// is how a kernel starts silently answering questions it cannot answer.
+//
+// **ANT-11 NARROWED IT, AND THE STAGING HELD.** The sentence used to end by naming the finite-ground
+// phase as the thing that would supply the metric, which was a promise; that phase measured why it
+// cannot be kept as written (`PlanarFiniteGround`, R-fg-4/R-fg-5) and the tail now comes from
+// `PlanarFiniteGround.CanCorrect` — a function of the PROBLEM, giving different sentences for an
+// outline present and an outline absent and quoting the outline's own size in λ₀. One predicate, one
+// call site, and not one line changed in the registry's shape, the cube list, the exporter or the
+// Data Display. That is what the staging bought.
 //
 // BEAMWIDTH IS THE OTHER ONE, AND IT REFUSES FOR A DIFFERENT REASON. A 3 dB beamwidth is meaningless
 // without saying in which plane. The E- and H-planes of a patch follow from its polarization, which
@@ -319,16 +326,28 @@ public static class PlanarMetrics
     /// available and its <c>Evaluate</c>, which is already written and already correct, starts
     /// answering. Nothing downstream is re-plumbed.
     /// </summary>
-    internal const string FrontToBackRefusal =
+    internal const string FrontToBackPreamble =
         "Front-to-back cannot be computed: the θ axis of this pattern stops at 90°, because the " +
         "ground plane and every dielectric layer are LATERALLY INFINITE in this analysis. The field " +
         "below the plane is not small — it is identically zero by construction — so the true F/B is " +
         "infinite, and ∞, a large finite number and a missing metric are all worse than this " +
-        "sentence. What it would take is a FINITE GROUND OUTLINE and with it a θ axis to 180°, which " +
-        "is the finite-ground phase; after that this metric is available when an outline is present " +
-        "and still refused when it is not. The refusal is NARROWED there, never deleted — deleting a " +
-        "refusal instead of narrowing it is how a kernel starts silently answering questions it " +
-        "cannot answer.";
+        "sentence. ";
+
+    /// <summary>
+    /// <b>ANT-11 — the NARROWED refusal, and the narrowing is that it is a function of the PROBLEM.</b>
+    ///
+    /// <para>ANT-5 shipped this as a constant whose tail named "the finite-ground phase" as the thing
+    /// that would supply the metric. That was a promise, and ANT-11 measured why it cannot be kept as
+    /// written, so the tail now comes from <see cref="PlanarFiniteGround.CanCorrect"/> — which gives a
+    /// DIFFERENT sentence for an outline present and an outline absent, quotes the outline's own size
+    /// in wavelengths when there is one, and names a measured reason rather than a phase. It is not
+    /// deleted and it is not weaker: <c>LayeredMedium.CanHost</c>'s rule holds, and the one predicate
+    /// ANT-5 staged is still one predicate.</para>
+    /// </summary>
+    internal static string FrontToBackRefusalFor(PlanarMetricContext c) =>
+        FrontToBackPreamble +
+        PlanarFiniteGround.CanCorrect(c.Problem, c.Pattern.FrequencyHz,
+                                      c.Problem.MetalBounds()).Reason;
 
     private static EmSuitability PositivePower(double w, string what) =>
         w > 0 ? EmSuitability.Yes
@@ -501,9 +520,16 @@ public static class PlanarMetrics
         new(PlanarMetric.FrontToBackDb, "FrontToBackDb", "dB", PlanarMetricAxis.PerPoint,
             "10·log₁₀ of the peak intensity over the intensity in the antipodal direction " +
             "(180° − θ_peak, φ_peak + 180°). **Present and REFUSED in this kernel** — see the " +
-            "verdict's own sentence, which names the reason and the phase that supplies it.",
+            "verdict's own sentence, which names the measured reason and what would lift it, and " +
+            "which differs according to whether a finite ground outline was found.",
+            // ── ANT-11 §4 — THE ONE PREDICATE, AND IT IS STILL ONE ────────────────────────
+            // A pattern whose θ axis reaches past the upper hemisphere can only have come from a
+            // finite-ground correction, and PlanarFiniteGround.CanCorrect is the single place that
+            // says whether one exists. Both halves are asked, in that order, so the sentence a user
+            // reads is the SPECIFIC one: an axis that stopped at 90° is told why the correction was
+            // refused for THIS problem (outline or no outline), rather than being told a generality.
             c => c.Pattern.Grid.ThetaDeg[^1] <= PlanarFarFieldGrid.MaxThetaDeg
-                 ? EmSuitability.No(FrontToBackRefusal)
+                 ? EmSuitability.No(FrontToBackRefusalFor(c))
                  : AntipodalIntensity(c) > 0
                    ? EmSuitability.Yes
                    : EmSuitability.No(

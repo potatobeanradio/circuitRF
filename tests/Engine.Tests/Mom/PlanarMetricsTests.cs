@@ -168,13 +168,19 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     /// <summary>
-    /// <b>§2a — front-to-back is PRESENT and REFUSED</b>, and the sentence names both the reason (the
-    /// ground plane is laterally infinite, so there is no lower hemisphere) and the phase that
-    /// supplies it. Asserted so that deleting the refusal later is a test failure rather than a quiet
-    /// change.
+    /// <b>§2a — front-to-back is PRESENT and REFUSED</b>, and the sentence names the reason: the ground
+    /// plane is laterally infinite, so there is no lower hemisphere. Asserted so that deleting the
+    /// refusal later is a test failure rather than a quiet change.
+    ///
+    /// <para><b>ANT-11 narrowed the tail of this sentence and this test changed with it.</b> ANT-5 ended
+    /// it by naming "the finite-ground phase" as the thing that would supply the metric — a promise, and
+    /// that phase measured why it cannot be kept as written (<c>PlanarFiniteGround</c>, R-fg-4/R-fg-5).
+    /// The preamble asserted here is ANT-5's own and is unchanged; the problem-dependent tail is
+    /// asserted in <c>PlanarFiniteGroundTests</c>, which owns both branches of it. What must NOT change
+    /// is the shape: present in the registry, refused, values empty, never ∞.</para>
     /// </summary>
     [Fact]
-    public void FrontToBackIsPresentInTheRegistry_AndRefusesNamingTheFiniteGroundPhase()
+    public void FrontToBackIsPresentInTheRegistry_AndRefusesNamingTheReason()
     {
         var report = PlanarMetrics.Evaluate(HandContext(
             HandPattern(PlanarFarFieldGrid.Hemisphere(10, 30), (t, _) => Math.Cos(t * Math.PI / 180))));
@@ -184,8 +190,9 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Empty(outcome.Values);
         string why = outcome.Verdict.Reason!;
         Assert.Contains("LATERALLY INFINITE", why);
-        Assert.Contains("FINITE GROUND OUTLINE", why);
-        Assert.Contains("NARROWED", why);
+        Assert.Contains("identically zero by construction", why);
+        // The fixture problem carries no ground outline, so the narrowed tail is the no-outline branch.
+        Assert.Contains("no finite ground outline", why);
         // Not ∞, not a large finite number, and not missing from the registry.
         Assert.Contains(PlanarMetric.FrontToBackDb, PlanarMetrics.Registry.Select(d => d.Metric));
         _out.WriteLine(why);
@@ -868,7 +875,9 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
 
         // Front-to-back is the refused one, and its sentence is in the run's notes.
         Assert.False(result.Data.Contains($"{PlanarFarField.Group}.FrontToBackDb"));
-        Assert.Contains(result.Notes, n => n.Contains("FINITE GROUND OUTLINE"));
+        // ANT-11: the sentence narrowed. This fixture's problem carries no ground outline (nothing in
+        // the fixture draws one), so the tail is the no-outline branch and it names the action.
+        Assert.Contains(result.Notes, n => n.Contains("no finite ground outline"));
         Assert.Contains(result.Notes, n => n.Contains("Power budget at"));
         Assert.Contains(result.Notes, n => n.StartsWith("Two corrections to read this efficiency by"));
 

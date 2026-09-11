@@ -186,14 +186,48 @@ public sealed record PlanarAnalyticAlternative(string Subject, string ModelName,
 /// what lets the Ui-side extractor go on producing the old shape until L9d adapts it.
 /// </param>
 /// <param name="Vias">L9c — vertical connections between levels, may be empty.</param>
+/// <param name="GroundOutline">
+/// <b>ANT-11 §2 — the real ground pour's outline, OPTIONAL, and a DESCRIBED BOUNDARY rather than
+/// artwork.</b> Null means none was drawn or none was found, which is not the same as a zero-sized
+/// one. <b>Nothing in the engine meshes it, stamps it or solves with it</b> — the ground plane is
+/// still the laterally infinite PEC the Green's function terminates on, and
+/// <see cref="RequiresGeneralKernel"/> deliberately does not read this field, so adding an outline to
+/// a problem cannot move a single matrix entry. It exists so a run can say how big the plane actually
+/// is, in wavelengths, which is the number that predicts whether the infinite assumption is
+/// defensible. See <see cref="PlanarGroundOutline"/> and <see cref="PlanarFiniteGround"/>.
+/// </param>
 public sealed record PlanarProblem(
     IReadOnlyList<PlanarConductorLayer>       Layers,
     GroundedSlab                              Slab,
     double                                    MaxFrequencyHz,
     IReadOnlyList<PlanarAnalyticAlternative>? AnalyticAlternatives = null,
     LayerStack?                               MediumStack = null,
-    IReadOnlyList<PlanarVia>?                 Vias = null)
+    IReadOnlyList<PlanarVia>?                 Vias = null,
+    PlanarGroundOutline?                      GroundOutline = null)
 {
+    /// <summary>
+    /// Bounds of every analysed conductor polygon, metres — the metal the mesh actually covers, which
+    /// is what <see cref="PlanarGroundExtent"/>'s margin is measured against. Null when no level
+    /// carries a polygon.
+    /// </summary>
+    public (double MinX, double MinY, double MaxX, double MaxY)? MetalBounds()
+    {
+        double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
+        double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
+        bool any = false;
+        foreach (var layer in Layers)
+            foreach (var poly in layer.Polygons)
+            {
+                var (a, b, c, d) = poly.Bounds();
+                if (a < x0) x0 = a;
+                if (b < y0) y0 = b;
+                if (c > x1) x1 = c;
+                if (d > y1) y1 = d;
+                any = true;
+            }
+        return any ? (x0, y0, x1, y1) : null;
+    }
+
     public IReadOnlyList<PlanarAnalyticAlternative> Alternatives => AnalyticAlternatives ?? [];
     public IReadOnlyList<PlanarVia> ViaList => Vias ?? [];
 

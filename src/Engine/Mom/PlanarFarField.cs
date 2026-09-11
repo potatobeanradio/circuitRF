@@ -98,9 +98,19 @@
 // a stated reason cannot be misread; a zero can.
 //
 // **This is the first half of the staged front-to-back refusal.** ANT-5 creates the metric entry,
-// present and refused; ANT-11 extends this axis to 180° and NARROWS the refusal. Nothing here is
-// written in a way that makes that a rewrite: PlanarFarFieldGrid.ThetaDeg is DATA, and
+// present and refused; a finite-ground phase would extend this axis to 180° and NARROW the refusal.
+// Nothing here is written in a way that makes that a rewrite: PlanarFarFieldGrid.ThetaDeg is DATA, and
 // MaxThetaDeg is the one constant that moves.
+//
+// **ANT-11 NARROWED THE REFUSAL AND DID NOT MOVE THE AXIS, AND THAT IS THE MEASURED OUTCOME RATHER
+// THAN UNFINISHED WORK.** It measured the estimate that would have filled the lower hemisphere and
+// found it INERT on every structure this kernel can produce a pattern for: the estimate's input is the
+// pattern at grazing, and both element factors are identically zero there (PlanarFiniteGround, R-fg-4 —
+// and see FarFieldElementFactors.At, which now states that limit explicitly because one spelling of it
+// was a NaN). So MaxThetaDeg is still 90: extending the axis with nothing to fill it would restore
+// exactly the half-plot of structural zeros §4 exists to prevent. **The staging is intact and it HELD**
+// — the narrowing moved one predicate in ANT-5's registry and touched nothing in the picker, the
+// exporter, the CLI or the two hemisphere notes ANT-7 and ANT-10 derive from this axis.
 //
 // ── 5. WHAT IS REFUSED BY NAME, AND WHY GUESSING WOULD BE WORSE THAN REFUSING ─────────────────
 //
@@ -139,8 +149,16 @@ namespace CircuitRF.Engine.Mom;
 /// double-counted sample in the hemisphere integral and a doubled point in a cut.</param>
 public sealed record PlanarFarFieldGrid(IReadOnlyList<double> ThetaDeg, IReadOnlyList<double> PhiDeg)
 {
-    /// <summary><b>90°, and this is the whole of §4's decision expressed as a number.</b> ANT-11
-    /// moves it to 180 when a finite ground outline can be estimated; nothing else changes.</summary>
+    /// <summary>
+    /// <b>90°, and this is the whole of §4's decision expressed as a number.</b> A finite-ground phase
+    /// moves it to 180 when a lower hemisphere can actually be computed; nothing else changes.
+    ///
+    /// <para><b>ANT-11 deliberately left it at 90.</b> It is the phase that was to move it, and it
+    /// measured its own estimate to be identically zero (<see cref="PlanarFiniteGround"/>, R-fg-4), so
+    /// moving the constant would have padded the axis with the structural zeros §4 exists to keep out
+    /// of a plot. Whoever computes a lower hemisphere moves this and narrows
+    /// <see cref="PlanarFiniteGround.CanCorrect"/>; nothing else.</para>
+    /// </summary>
     public const double MaxThetaDeg = 90.0;
 
     /// <summary>The upper hemisphere at a stated step, θ inclusive of both ends, φ over [0, 360).</summary>
@@ -536,11 +554,49 @@ public sealed class FarFieldElementFactors
     /// region's Z either. The two spellings are algebraically identical and are gated against each
     /// other away from grazing.</para>
     /// </summary>
+    /// <summary>
+    /// <b>ANT-11 / R-fg-4 — EXACT GRAZING, WHERE BOTH FACTORS ARE ZERO AND ONE SPELLING WAS A NaN.</b>
+    ///
+    /// <para>At θ = 90° the upper half-space's TM characteristic IMPEDANCE vanishes (Z^e = k_z0/ωε) and
+    /// its TE characteristic ADMITTANCE vanishes (Y^h = k_z0/ωµ), so a HORIZONTAL current at any height
+    /// drives zero voltage into the first and zero current into the second: <b>both element factors are
+    /// identically zero there, in all four combinations of kernel and level position.</b> In the
+    /// one-slab spelling that reads as cos θ·(1 + Γ^e) = 0·2 and (1 + Γ^h) = 1 + (−1); in the general
+    /// spelling it is the same statement about the cascade's terminating region. It is a theorem about
+    /// the geometry rather than a numerical accident, and it is why ANT-11's edge-diffraction estimate
+    /// was refused — see <see cref="PlanarFiniteGround"/>.</para>
+    ///
+    /// <para><b>It is written as an explicit limit because one of those four combinations produced a
+    /// NaN.</b> A BURIED level over a stratified stack reads f_TM off the CROSS-REGION voltage, whose
+    /// generalised transmission factor is <c>2/((1+Γ) + (Z_a/Z_b)(1−Γ))</c> — and at grazing Z_b is the
+    /// top region's vanishing TM impedance, so the ratio is a division by exact zero. <c>ZRatio</c> is
+    /// cross-multiplied precisely so a vanishing or diverging Z cannot produce a NaN, but the
+    /// transmission factor then divides by it again and the guard is lost. The limit is zero, the
+    /// arithmetic said NaN, and <b>θ = 90° is the last row of the DEFAULT hemisphere grid</b>: it
+    /// poisoned <c>U</c>, then <c>RadiatedPowerW</c>, then every metric built on either — directivity,
+    /// both gains, efficiency and beamwidth all read NaN, with only the scale caption's "integrates to
+    /// NaNW" to say so. Measured on a 203.2 µm + 500 µm stack at 1.74 GHz (ANT-11's own harness).</para>
+    ///
+    /// <para><b>THE TEST IS ON THE SINE, NOT ON THE COSINE, AND THAT IS THE TRAP.</b> The obvious
+    /// guard — cos θ being exactly zero — never fires: θ = 90° arrives as <c>90 * Math.PI / 180</c>,
+    /// which is <c>Math.PI / 2</c> exactly, and <c>Math.Cos(Math.PI / 2)</c> is <b>6.1e-17</b>, because
+    /// π/2 is not representable. <c>Math.Sin(Math.PI / 2)</c> IS exactly 1.0, so the degeneracy has to
+    /// be detected in the SPECTRAL variable it actually lives in: k_ρ reaching k₀, which is what makes
+    /// the top region's k_z0 exactly zero and is the only condition either kernel is singular at.
+    /// A first attempt used the cosine, changed nothing at all, and the NaN survived it — which is why
+    /// §B's regression test asserts the whole chain is finite rather than only that the guard exists.</para>
+    ///
+    /// <para>Every other angle takes the arithmetic unchanged, bit for bit. Nothing is clamped and
+    /// nothing is approximated — off grazing the values are finite and correct, and they approach this
+    /// zero linearly in cos θ (measured 3.49e-3 at 89.9° against 3.49e-4 at 89.99°).</para>
+    /// </summary>
     public (Complex Tm, Complex Te) At(double thetaRad, int layerIndex)
     {
         double sin = Math.Sin(thetaRad), cos = Math.Cos(thetaRad);
         double kRho = K0 * sin, kz0 = K0 * cos;
         double zp = _levelZ[layerIndex];
+
+        if (sin >= 1.0) return (Complex.Zero, Complex.Zero);
 
         if (_slab is { } s)
         {

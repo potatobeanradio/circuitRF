@@ -185,7 +185,11 @@ public static class PlanarExtractor
                       "not extracted as conductors — a non-plated hole is a hole, not metal. Their " +
                       "artwork is unchanged; only the vertical conductor is absent.");
         var conductorShapes = new List<(LayoutShape Shape, Band Band)>();
-        int ignoredAnnotation = 0, ignoredGround = 0, ignoredOther = 0;
+        int ignoredAnnotation = 0, ignoredOther = 0;
+
+        // ANT-11 §2 — artwork on a ground-designated conductor, kept with every ground band its layer
+        // binds to so R-fg-2's selection can be made once the return plane is known.
+        var groundShapes = new List<(LayoutShape Shape, List<Band> Bands)>();
 
         var viaShapes = new List<(ViaShape Shape, StackupLayer Entry)>();
 
@@ -252,8 +256,20 @@ public static class PlanarExtractor
                     b.Layer.Kind == StackupKind.Conductor && !b.Layer.IsGroundReference);
                 if (signalBand is not null) { conductorShapes.Add((s, signalBand)); continue; }
 
-                if (bands.Any(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference))
-                { ignoredGround++; continue; }
+                // ── ANT-11 §2 — THE GROUND POUR IS READ NOW, NOT ONLY COUNTED ─────────────
+                //
+                // This branch used to increment a counter and drop the geometry, and the note it
+                // produced said so in a way that read as final: "a finite ground pour is not meshed,
+                // and modelling one is not part of L9". The first half is still true and is R-fg-1 —
+                // nothing below meshes this. The second half was the whole of it, and it threw away
+                // the one thing that lets a run say how big the plane actually is in wavelengths,
+                // which is the number that decides whether the infinite-plane assumption is
+                // defensible at all. The shapes are kept WITH their bands, because R-fg-2 needs the
+                // return plane's OWN pour and not the artwork on any ground layer — which band that
+                // is is not known until R-em-4 has run, below.
+                var groundBands = bands.Where(b =>
+                    b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference).ToList();
+                if (groundBands.Count > 0) { groundShapes.Add((s, groundBands)); continue; }
             }
 
             if (viaBinding.TryGetValue(s.Layer, out var regionEntry))
@@ -269,9 +285,10 @@ public static class PlanarExtractor
             // plane (a 4-layer board where the only artwork so far is an inner pour), so it is named
             // separately. User-reported, 2026-08-30.
             return PlanarExtractionResult.No(
-                ignoredGround > 0
+                groundShapes.Count > 0
                     ? $"This EM setup's geometry is entirely on ground-designated conductor layers of " +
-                      $"technology '{tech.Name}', so there is no signal conductor to solve for. A " +
+                      $"technology '{tech.Name}' ({groundShapes.Count} shape(s)), so there is no " +
+                      "signal conductor to solve for. A " +
                       "ground plane is not meshed — it is the laterally infinite return the Green's " +
                       "function handles analytically — so a run needs at least one shape on a " +
                       "conductor that is NOT marked as a ground reference. Draw the trace, or untick " +
@@ -868,6 +885,43 @@ public static class PlanarExtractor
             if (isStroke) viaStrokesOutlined++;
         }
 
+        // ── ANT-11 §2 — the ground pour, through the CONDUCTOR PATH'S OWN conversion ─────────
+        //
+        // Deliberately the same `RegionsToMesh` -> `LayoutFlattener.Flatten` -> `ToPoints` chain the
+        // conductor levels take, and for MIM-1's reason restated: a second conversion could drift,
+        // and a pour whose measured area disagreed with the artwork by a few per cent would be
+        // invisible. R-fg-2's selection is made HERE and not in the shape loop, because which band is
+        // the return plane is R-em-4's answer and is not known until it has run.
+        //
+        // A width-bearing Path is outlined like any other stroke (ANT-1) — a plane is routinely
+        // stitched with thick tracks — and a zero-width one never reached this list at all.
+        var groundOutlinePolys = new List<PlanarPolygon>();
+        int groundOutlineShapes = 0;
+        if (groundBand is not null)
+            foreach (var (shape, gbands) in groundShapes)
+            {
+                if (!gbands.Any(b => b.Index == groundBand.Index)) continue;
+
+                long gtol = LayoutFlattener.ResolveTolDbu(shape, tech);
+                bool anyGroundRegion = false;
+                foreach (var region in RegionsToMesh(shape, tech))
+                {
+                    IReadOnlyList<long[]> rings;
+                    try { rings = LayoutFlattener.Flatten(region, gtol); }
+                    catch (ArgumentOutOfRangeException) { continue; }
+                    if (rings.Count == 0 || rings[0].Length < 6) continue;
+
+                    var gOuter = ToPoints(rings[0], perDbu);
+                    var gHoles = new List<IReadOnlyList<EmPoint>>();
+                    for (int i = 1; i < rings.Count; i++)
+                        if (rings[i].Length >= 6) gHoles.Add(ToPoints(rings[i], perDbu));
+
+                    groundOutlinePolys.Add(new PlanarPolygon(gOuter, gHoles.Count == 0 ? null : gHoles));
+                    anyGroundRegion = true;
+                }
+                if (anyGroundRegion) groundOutlineShapes++;
+            }
+
         int totalPolys = polysByLevel.Sum(l => l.Count);
         if (totalPolys == 0)
             return PlanarExtractionResult.No(
@@ -894,11 +948,36 @@ public static class PlanarExtractor
 
         if (ignoredAnnotation > 0)
             notes.Add($"{ignoredAnnotation} label/bitmap shape(s) ignored — annotation is not artwork.");
-        if (ignoredGround > 0)
-            notes.Add($"{ignoredGround} shape(s) on the ground-designated conductor layer were ignored. " +
-                      "The ground plane is the laterally infinite plane the Green's function handles " +
-                      "analytically; a finite ground pour is not meshed, and modelling one is not " +
-                      "part of L9.");
+        // ── ANT-11 §2 — SAY WHAT WAS READ, AND FROM WHICH PLANE ──────────────────────────────
+        //
+        // The old sentence here counted the shapes and ended "modelling one is not part of L9",
+        // which was accurate about the mesh and wrong about the outline: the geometry is now carried
+        // as a DESCRIBED BOUNDARY (R-fg-1 — still not meshed, still not stamped, still changes no
+        // matrix entry) so the run can state the plane's size in wavelengths. Two counts, because
+        // they mean different things: the pour on the RETURN plane is the one measured (R-fg-2), and
+        // artwork on any OTHER ground-designated conductor is metal that is in the way rather than in
+        // the structure — reporting them together would put a bottom-layer pour's size on a plane the
+        // fields never see.
+        if (groundShapes.Count > 0)
+        {
+            string measured = groundOutlinePolys.Count > 0
+                ? $"{groundOutlineShapes} of them are on '{groundBand?.Layer.Name}', THIS run's return " +
+                  $"plane, and their outline is read and carried so the run can report how large the " +
+                  $"real plane is in wavelengths — see the ground-plane note beside the results. " +
+                  $"It is still NOT MESHED: the plane in the analysis is the laterally infinite PEC " +
+                  $"the Green's function terminates on, and reading the outline changed no matrix " +
+                  $"entry and no published number."
+                : "None of them is on this run's own return plane, so there is no outline to measure — " +
+                  "a plane's size can only be reported for the conductor the fields actually return " +
+                  "through.";
+            notes.Add($"{groundShapes.Count} shape(s) are on a ground-designated conductor layer and " +
+                      $"none of them is meshed. {measured}" +
+                      (groundShapes.Count > groundOutlineShapes
+                          ? $" The other {groundShapes.Count - groundOutlineShapes} are on a different " +
+                            "ground-designated conductor — metal that is in the way rather than in the " +
+                            "structure, and its extent says nothing about this run's return plane."
+                          : ""));
+        }
         // ANT-1 — this sentence may only ever be about a ZERO-WIDTH Path now. It used to say "a
         // Path is a centreline", full stop, which is the false premise that discarded every
         // imported track; leaving a refusal standing on a reason that has been shown wrong is worse
@@ -967,7 +1046,10 @@ public static class PlanarExtractor
             maxFrequencyHz,
             alternatives,
             generalMedium ? mediumStack : null,
-            vias.Count > 0 ? vias : null);
+            vias.Count > 0 ? vias : null,
+            groundOutlinePolys.Count > 0
+                ? new PlanarGroundOutline(groundBand?.Layer.Name, groundOutlinePolys)
+                : null);
 
         if (levels.Count > 1)
             // MIM-6 — the z is printed WITH the surface of the band it sits on. A level's z is

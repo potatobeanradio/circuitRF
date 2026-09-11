@@ -4130,3 +4130,202 @@ what now stops it passing empty.
   reporting the union as though it were a mode list would be inventing structure.
 - **No mesh or physics change.** §6. The mesh is still sized at `MeshFrequencyHz`, not at the
   frequencies the search visits.
+
+## ANT-11: a finite ground plane — the outline is read, and the estimate is REFUSED (2026-09-10)
+
+`brief-antenna-11-finite-ground-and-front-to-back.md`, the last brief in the antenna series and the
+most research-shaped. **Its §2 was built. Its §3 (the UTD edge-diffraction estimate) was measured and
+refused. Its §4 (extending the θ axis to 180°) therefore did not happen, and the front-to-back refusal
+was NARROWED instead of activated.** The brief's own §7 sanctions that outcome and names the one thing
+that had to happen either way — §2's ground-size note — which did.
+
+Gates: `tests/Engine.Tests/Mom/PlanarFiniteGroundTests.cs` (12 tests, 158 ms),
+`tests/Engine.Tests/Mom/UtdHalfPlaneMeasurementTests.cs` (3 tests, 5 s),
+`tests/Ui.Tests/Em/FiniteGroundOutlineTests.cs` (6 tests, 75 ms).
+
+### 1. The measurement that refused §3, and it is the whole phase
+
+§3's model is "the infinite-ground pattern illuminates the edge, the edge re-radiates". Its input is
+therefore the primary pattern **at grazing** — `F(θ = 90°, φ_rim)`, the direction the rim lies in from
+the source. **That quantity is not small. It is zero, exactly.** Measured on the element factors
+directly, at θ = 90°, one conductor level on the slab's top surface:
+
+| stack | kernel | \|f_TM\| | \|f_TE\| |
+|---|---|---|---|
+| FR-4 1.6 mm @ 5 GHz | one-slab | 1.22e-16 | 0 |
+| FR-4 1.6 mm @ 5 GHz | general | 0 | 0 |
+| FR-4 1.6 mm @ 1.74 GHz | both | 1.22e-16 / 0 | 0 |
+| FR-4 203 µm @ 1.74 GHz | both | 1.22e-16 / 0 | 0 |
+| GaAs 100 µm @ 30 GHz | both | 1.22e-16 / 0 | 0 |
+
+The 1.22e-16 is `cos(π/2)` in floating point, not a physical value — it is now exactly zero in both
+kernels (see §3 below). **Two independent routes to the same zero**: the TM factor carries a `cos θ`,
+and the TE factor carries `(1 + Γ^h)`, which vanishes at `k_ρ = k₀` — L8a's own theorem, the same
+identity that made DCIM's far-field failure structural. Stated without reference to either spelling:
+**at grazing the top half-space's TM characteristic impedance vanishes and its TE characteristic
+admittance vanishes, so a horizontal current at any height launches nothing along the surface.** That
+form is why it also holds in the GENERAL stratified kernel, whose element factors come from a cascade
+traversal and share no algebra with the one-slab expressions.
+
+End to end on a real pattern, 203 µm FR-4 at 1.74 GHz, 5° × 15° grid, per-row peak relative to the
+pattern peak:
+
+| θ | max_φ U | dB rel peak |
+|---|---|---|
+| 0° | 3.485e-7 W/sr | 0.00 |
+| 45° | 2.737e-7 | −1.05 |
+| 80° | 2.115e-7 | −2.17 |
+| 85° | 2.080e-7 | −2.24 |
+| **90°** | **2.379e-35** | **−281.66** |
+
+**The pattern is alive to within 2.2 dB of broadside one row in from the horizon, and is a hard
+structural zero at it.** So the illumination is not "weak" or "under-resolved"; there is nothing there.
+
+**And the one current direction whose grazing field does not vanish is the VERTICAL one** — a probe, a
+monopole, an IFA — which `PlanarFarField.VerticalBasisRefusal` refuses by name. So the set of
+structures whose pattern this kernel will compute and the set whose rim illumination is non-zero **do
+not intersect**. That is a statement about the two refusals, not about any board, and it is why this is
+not a "the measured example is a hard case" result.
+
+**Why that is worse than inaccuracy, and why building it anyway would have been the wrong call.** An
+estimate that is identically zero PASSES the brief's own strongest self-test — §5's "as the ground
+outline grows, the corrected pattern must converge to the primary one and the F/B must grow without
+bound" — **vacuously, at every ground size**, because corrected ≡ primary and F/B ≡ ∞ always. It would
+have shipped as a capability that answers nothing, with a gate that cannot tell.
+
+### 2. R-fg-5 — UTD is NOT the asymptotic method the brief budgeted its validity range for
+
+§3.2 expected the validity range to come from UTD's high-frequency asymptotics: "on a ground plane of
+a fraction of a wavelength it degrades… find where it breaks and refuse past it." **That premise is
+false for the diffraction coefficient, and this is a correction to the brief rather than a
+confirmation of it.** For a straight PEC edge — exterior wedge angle 2π, which is what the rim of a
+thin plane is — the Kouyoumjian-Pathak coefficient WITH its transition function is not an
+approximation to Sommerfeld's exact half-plane solution; it **is** that solution, rewritten:
+
+| k·ρ | ρ/λ | soft worst | hard worst |
+|---|---|---|---|
+| 0.2 | 0.032 | 7.2e-15 | 7.1e-15 |
+| 1.28 | 0.204 | 7.2e-15 | 7.2e-15 |
+| 10 | 1.592 | 7.4e-15 | 7.2e-15 |
+| 120 | 19.10 | 1.5e-14 | 1.5e-14 |
+
+719 observation angles × 5 incidences × 18 distances × both polarizations, absolute against unit
+incident amplitude (the diffracted field passes through zero, so a relative measure would divide by
+it). Worst anywhere, in the C# gate: **1.59e-14** — `PlanarFiniteGround.MeasuredUtdHalfPlaneAgreement`
+is 2e-14 and the test also asserts < 1e-12, so a tolerance loose enough to admit a genuinely asymptotic
+coefficient cannot pass it.
+
+**Recorded because it redirects a future taker's budget.** A refusal written against k·ρ for the
+coefficient would be a refusal against nothing. What does bound a finite plane is elsewhere — see §6.
+
+### 3. A live ANT-4 defect the same measurement turned up: NaN in the grazing row
+
+**A buried conductor level over a stratified stack returned NaN at exactly θ = 90°, which is the last
+row of the DEFAULT hemisphere grid.** `CanCompute` said Ok. The NaN reached `U`, then
+`RadiatedPowerW`, then every metric built on either — directivity, both gains, radiation efficiency and
+beamwidth all read NaN — and the only visible symptom was the scale caption reading *"integrates to
+NaNW over the hemisphere"*. Measured on a 203.2 µm + 500 µm stack at 1.74 GHz.
+
+Cause: that configuration reads `f_TM` off the CROSS-REGION voltage, whose generalised transmission
+factor is `2/((1+Γ) + (Z_a/Z_b)(1−Γ))`. At grazing `Z_b` is the top region's TM characteristic
+impedance, which is exactly zero. `SpectralGreens.ZRatio` is cross-multiplied *precisely* so that a
+vanishing or diverging Z cannot produce a NaN — and the transmission factor then divides by the ratio
+again and loses the guard. CLAUDE.md's existing trap ("`LineResponse` forms `Z^h` on exactly one of its
+two paths… the other choice is a NaN at grazing") had the right shape and covered `f_TE` only; the TM
+cross-region path was the case nobody asked.
+
+Fixed as an **explicit limit in `FarFieldElementFactors.At`** — both factors return exactly zero at
+grazing — rather than in `LineResponse`, because that is where the answer is known (§1's theorem), it
+covers all four combinations of kernel and level position at once, it makes the one-slab and general
+kernels agree exactly instead of 1.2e-16 apart, and it leaves L9a's pinned bit-identity untouched.
+
+**THE GUARD HAS TO BE ON THE SINE, AND THE FIRST ATTEMPT ON THE COSINE CHANGED NOTHING AT ALL.**
+θ = 90° arrives as `90 * Math.PI / 180`, which is `Math.PI / 2` exactly — and `Math.Cos(Math.PI / 2)`
+is **6.1e-17**, not 0, because π/2 is not representable. `Math.Sin(Math.PI / 2)` IS exactly 1.0. So the
+degeneracy must be detected in the spectral variable it lives in (`k_ρ` reaching `k₀`, which is what
+makes `k_z0` exactly zero), never in the cosine. The test that caught it asserts the whole chain is
+finite, not merely that a guard exists.
+
+### 4. What WAS built — §2's outline, and the note
+
+`PlanarGroundOutline` + `PlanarGroundExtent` (`src/Engine/Mom/PlanarGroundOutline.cs`), carried on
+`PlanarProblem.GroundOutline` as an optional field, populated by `PlanarExtractor`.
+
+- **R-fg-1 — a DESCRIBED BOUNDARY, never artwork.** Nothing meshes it, stamps it or solves with it;
+  `RequiresGeneralKernel` deliberately does not read it. Gated as bit-identity: the same problem with
+  and without an outline gives an identical pattern (every direction, exact equality) and identical
+  values for every metric but front-to-back, whose SENTENCE is the one thing an outline may change.
+- **R-fg-2 — it is the RETURN PLANE's own pour, not "artwork on any ground layer".** On the 4-layer
+  starter, which has two designated planes, pooling them would report a 140 mm bottom pour's size for a
+  run whose fields return through a 70 mm inner one — nearly 2× wrong, and it is the easy mistake
+  because both are "the ground layer" in the technology. Selection is by band identity, made after
+  R-em-4 has resolved the plane, and the note reports the two counts separately.
+- **R-fg-3 — three measures, each named, and none called "the size."** On the measured board at
+  1.74 GHz: bounding box **0.4063 λ₀** a side, equal-area diameter **0.4585 λ₀** (13% larger), margin
+  beyond the patch **0.0599 λ₀**. **The box reads SEVEN times the margin**, and the margin is the
+  electrically meaningful one — edge effects are set by how far the plane reaches beyond the currents,
+  not by its absolute size. A negative margin (metal overhanging the pour) is reported as negative, not
+  clamped: it means the artwork claims a return that is not under it.
+- **The note is on every run that has an outline, not only a far-field one.** The analysis terminates
+  on an infinite plane whatever was asked for, so a user reading Z_in off a 0.4 λ₀ plane is as entitled
+  to the sentence as one reading a directivity. It states the physical size, the electrical size at
+  BOTH ends of the sweep (a 1–20 GHz sweep spans a factor of twenty in every one of these numbers), the
+  margin, and the three one-directional ways the published numbers are optimistic.
+- **There is deliberately NO "your ground plane is big enough" verdict.** Neither measurement here
+  yields a size threshold, so printing one would be a rule of thumb wearing a measurement's clothes.
+
+### 5. R-fg-6 — the refusal narrowed, and the ANT-5 staging held
+
+ANT-5 shipped `FrontToBackDb` present-and-refused with a sentence whose tail named "the finite-ground
+phase" as the thing that would supply it. **That was a promise and it cannot be kept as written.** It
+narrows twice over: the tail is now a function of the PROBLEM (`PlanarFiniteGround.CanCorrect`), so an
+outline present and an outline absent get different sentences and the present one quotes the outline's
+own size in λ₀; and it names a measured reason plus what would lift it, instead of a phase.
+
+**The staging paid off exactly as designed.** The narrowing moved **one predicate** in ANT-5's registry
+entry. Nothing changed in the metric's `Evaluate`, the registry's shape, the cube list, the exporter,
+the CLI, the Data Display picker — or in `PolarPatternAngle.HemisphereNote` and
+`PatternSurfaceGrid.ThetaAxisName`, ANT-7's and ANT-10's hemisphere notes, which derive from the axis
+and were **not edited at all** (`src/Render` is untouched by this phase; their comments still name a
+finite-ground phase as the thing that would move the axis, which remains true of whoever takes it).
+
+`PlanarFarFieldGrid.MaxThetaDeg` is **still 90**, deliberately: extending the axis with nothing to fill
+it would restore precisely the half-plot of structural zeros ANT-4 §4 exists to prevent.
+
+### 6. What a future taker must measure — the two limits that DO bind, and neither is measured here
+
+1. **The illumination.** It has to come from the **surface field at the rim** — a spatial-domain
+   quantity (DCIM / `SommerfeldIntegral`), not a far-field one, which means importing a validated-range
+   refusal ANT-4's R-ant-1 was built to avoid. At the measured board's rim, ρ_e ≈ 0.2 λ, that is inside
+   `Dcim.ValidatedRhoOverLambda` = 1.0.
+2. **The diffraction coefficient for the rim of a GROUNDED DIELECTRIC SLAB**, not of a bare conductor.
+   The PEC half-plane coefficient (§2, exact) is the wrong canonical problem for the part of the
+   illumination the surface wave carries, and using it would be the smooth-plausible-wrong failure this
+   directory keeps refusing.
+3. **Multiple (rim-to-rim) diffraction across the plane.** The neglected second-order term scales as
+   `|D|/√w ~ 1/√(2π k w)`, which at the measured board's `k·w = 2.56` is of order **0.25** — the same
+   order as the term that would be kept, i.e. ~2 dB. **That is an analytic estimate and it is labelled
+   one.** The direct measurement was attempted and is DEGENERATE exactly where it matters: the
+   rim-to-rim direction lies ON both of the far edge's shadow boundaries, where an individual cotangent
+   is infinite and KP's own small-argument transition limits are needed — machinery only a shipped
+   estimate would require. The attempt returned identically zero through a null-guard, which is worth
+   knowing about before anyone repeats it.
+4. **And the mechanism that actually dominates on a thin substrate is not representable at all**: the
+   surface wave reaching a BOARD edge and diffracting. Every dielectric layer here is laterally
+   infinite (`PatternedDielectric.Deactivate`'s own sentence, the overview's §2), so there is no board
+   edge for it to reach, and meshing the ground plane does not create one — which is the brief's §1
+   argument that the expensive path fixes the secondary mechanism and leaves the primary one exactly as
+   absent as it is today.
+
+### 7. Not done, on purpose
+
+- **The ground plane is not meshed.** §6 of the brief, and §1's own argument for why taking it would be
+  a different-size project that buys part of one mechanism.
+- **No corrected pattern, no corrected metric set, no `FiniteGround*` cubes.** There is nothing to put
+  in them; a labelled trace of zeros is worse than none.
+- **§5's "known analytic case" gate (published UTD results for a source over a finite circular ground
+  plane) was NOT run**, and no number was invented for it. That reference data is not in this
+  repository, and the gate that replaced it — the KP coefficient against Sommerfeld's **exact** closed
+  form — is strictly stronger about the thing it can reach, while saying nothing about the assembly.
+- **The real imported patch board is still not in this repository**, so every number above is on
+  hand-built fixtures or on the 4-layer starter, as ANT-9's own §"Not done" records for the same reason.

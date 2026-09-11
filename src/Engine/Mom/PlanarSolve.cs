@@ -963,6 +963,19 @@ public static class PlanarSolve
         bool general = problem.RequiresGeneralKernel;
         var  levels  = general ? PlanarLevels.From(problem) : null;
 
+        // ── ANT-11 §2 — HOW BIG THE REAL GROUND PLANE IS, ON EVERY RUN THAT HAS ONE ──────────
+        //
+        // Not gated on a far field, a metric or an estimate. The analysis terminates on a laterally
+        // INFINITE plane whatever the board looks like, so this sentence is about the same three
+        // published numbers (Zin, S, directivity) whether or not anyone asked for a pattern — and a
+        // user reading an S-parameter off a 0.4 λ₀ plane is entitled to it as much as one reading a
+        // directivity. `SweepNote` returns null when no outline was read, which is the only case
+        // where a run says nothing: an absent pour is not a measurement of a small one.
+        if (problem.GroundOutline is { } pour &&
+            PlanarGroundExtent.SweepNote(pour, problem.MetalBounds(), freqs[0], freqs[^1])
+                is { } groundNote)
+            notes.Add(groundNote);
+
         // ── L9e/D8 — the low-frequency guard, asked of the LOWEST requested point ────────────────
         //
         // L8e recorded a 6 Hz point spending 50 s and ending in a raw framework exception with no

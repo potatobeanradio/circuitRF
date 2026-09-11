@@ -480,6 +480,18 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   one constant a finite-ground phase moves; the θ values are DATA. Group `"farfield"`, cubes
   `Etheta`/`Ephi`/`U`, axes `[freq, theta, phi, port]` — **the port axis is there from the first
   commit** even on a one-port, because retro-fitting an axis onto a shipped cube is not free.
+  **ANT-11 was that phase and it left the constant at 90, on purpose** — see §3.9.
+- **BOTH ELEMENT FACTORS ARE EXACTLY ZERO AT θ = 90°, AND THAT IS NOW AN EXPLICIT LIMIT** in
+  `FarFieldElementFactors.At` (ANT-11, R-fg-4). At grazing the top half-space's TM characteristic
+  IMPEDANCE vanishes and its TE characteristic ADMITTANCE vanishes, so a horizontal current at any
+  height launches nothing along the surface — `cos θ·(1 + Γ^e) = 0·2` and `(1 + Γ^h) = 1 + (−1)` in the
+  one-slab spelling, the same statement about the terminating region in the general one. It is written
+  out because **one of the four kernel × level-position combinations was a NaN**: a BURIED level over a
+  stratified stack reads `f_TM` off the cross-region voltage, whose generalised transmission factor
+  divides by that vanishing TM impedance, and θ = 90° is the last row of the DEFAULT grid — so `U`,
+  `RadiatedPowerW` and every metric read NaN with only "integrates to NaNW" to say so. **The guard is
+  on the SINE**: θ = 90° arrives as `Math.PI / 2`, whose `Math.Cos` is 6.1e-17 rather than 0, so a
+  cosine test never fires (it was tried, and changed nothing). `RESOLVED.md` §ANT-11.
 - **One driven port at 1 V, one frequency, enforced by the signature** — the same rule and the same
   reason as `PlanarCurrentDensity`. The pattern reads `PlanarPortSolution.Currents` directly, never
   the per-cell |J| map, which is a DISPLAY reduction that loses the basis structure.
@@ -531,8 +543,12 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   84° H-plane on one measured patch.
 - **`FrontToBackDb` is PRESENT AND REFUSED**, its `Evaluate` already written and already correct, so
   the finite-ground phase flips ONE predicate (`Grid.ThetaDeg[^1] > MaxThetaDeg`) and re-plumbs
-  nothing. `DirectivityPeakPhiDeg` refuses at a broadside peak, where every azimuth names the same
-  direction.
+  nothing. **ANT-11 NARROWED it and the staging held**: the tail of the sentence now comes from
+  `PlanarFiniteGround.CanCorrect`, a function of the PROBLEM, so an outline present and an outline
+  absent get different sentences and the present one quotes the outline's own size in λ₀ — one
+  predicate, one call site, and not one line changed in the registry's shape, the cube list, the
+  exporter, the CLI or the Data Display. §3.9. `DirectivityPeakPhiDeg` refuses at a broadside peak,
+  where every azimuth names the same direction.
 - **Cost, measured (Release, 10 cores, 1°×1° hemisphere):** the whole registry is **20-40 ms** against
   a 287-2,429 ms pattern and a 58-1,961 ms solve, from N = 237 to N = 3,831 — about **1 %** of the
   pattern. Which is why there is no switch to turn the metrics off.
@@ -593,6 +609,47 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   (re 1 V of the r-normalised pattern)**, never normalised to peak co-pol — a self-normalising cube
   hides its own level and means something different at every frequency; the caption states the
   "X dB below peak co-pol" figure so the headline number is not left as an exercise.
+
+### 3.9 The finite ground plane (`PlanarGroundOutline`, `PlanarFiniteGround`, ANT-11)
+
+- **The ground pour's OUTLINE is read and carried; the ground PLANE is still laterally infinite.**
+  `PlanarProblem.GroundOutline` is a **DESCRIBED BOUNDARY** (R-fg-1) — nothing meshes it, stamps it or
+  solves with it, and `RequiresGeneralKernel` deliberately does not read it, so adding one cannot move a
+  matrix entry. Gated as bit-identity of the pattern and of every metric but front-to-back. It exists so
+  a run can say **how big the plane is in wavelengths**, which is the number that decides whether the
+  infinite assumption was a fair description of the board.
+- **R-fg-2. It is the RETURN PLANE's own pour, not "artwork on any ground layer."** On a stackup with
+  two designated planes exactly one is this run's return; measuring the other reports a size for a plane
+  the fields never see, and it is the easy mistake because both are "the ground layer" in the
+  technology. `PlanarExtractor` selects by band identity AFTER R-em-4 resolves the plane, and counts the
+  two populations separately in its note.
+- **R-fg-3. Three measures, each named, and none of them is called "the size"** — the bounding box
+  (what a datasheet means), the equal-area diameter (shape-independent), and the **MARGIN**, how far the
+  plane reaches beyond the analysed metal. The margin is the electrically meaningful one and on the
+  measured board it is **0.060 λ₀ against a 0.406 λ₀ box — a factor of seven, in the optimistic
+  direction.** It is a BOUNDING-BOX measure and says so; a negative value (metal overhanging the pour)
+  is reported as negative, never clamped.
+- **The note is on every run that has an outline, not only a far-field one**, because the analysis
+  terminates on an infinite plane whatever was asked for. It quotes both ends of the sweep (a 1–20 GHz
+  sweep spans 20× in every one of these numbers) and states the three one-directional ways the
+  published numbers are optimistic. **There is deliberately no "big enough" verdict** — nothing measured
+  yields a size threshold, and printing one would be a rule of thumb wearing a measurement's clothes.
+- **The UTD EDGE-DIFFRACTION ESTIMATE WAS MEASURED AND REFUSED, and `PlanarFiniteGround.CanCorrect` is
+  the one predicate a future phase flips.** R-fg-4: the estimate's input is the pattern AT GRAZING,
+  which is identically zero (§3.6), so it would be zero at every ground size and would pass its own
+  converge-to-the-infinite-limit self-test **vacuously**. The one current direction whose grazing field
+  does not vanish is the VERTICAL one, which `PlanarFarField.VerticalBasisRefusal` refuses by name — so
+  the structures this kernel will pattern and the structures with a non-zero rim illumination **do not
+  intersect**.
+- **R-fg-5. UTD IS EXACT FOR A HALF-PLANE — DO NOT WRITE A k·ρ VALIDITY REFUSAL FOR THE COEFFICIENT.**
+  The Kouyoumjian-Pathak coefficient with its transition function reproduces Sommerfeld's exact solution
+  to **1.6e-14 at every k·ρ from 0.2 to 120**, both polarizations
+  (`PlanarFiniteGround.MeasuredUtdHalfPlaneAgreement`, gated by `UtdHalfPlaneMeasurementTests`). It is
+  not an asymptotic approximation that degrades on a small ground plane; the brief that assumed
+  otherwise was wrong. What DOES bound a finite plane is the illumination (a spatial-domain surface
+  field, not a far-field one), the coefficient for a GROUNDED DIELECTRIC SLAB rim rather than a bare
+  conductor, and multiple rim-to-rim diffraction — **none of them measured**, and `RESOLVED.md` §ANT-11
+  §6 says what a taker owes.
 
 ### 3.5 Kernel B traps
 
@@ -919,6 +976,18 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   (then there is still nothing to overlap), or a fill that turns out to be limited by a genuine
   serial PHASE (then fix that phase — it is a smaller change and it helps every run, including
   single-frequency ones). Neither is this box.
+- **THE UTD EDGE-DIFFRACTION ESTIMATE FOR A FINITE GROUND PLANE** (ANT-11). Refused on a measurement,
+  not deferred on cost. Its input is the primary pattern at grazing, which is **identically zero** —
+  measured at −281.66 dB below the peak where θ = 85° is 2.24 dB down, on both kernels and four stacks —
+  and the one current direction whose grazing field survives (vertical) is separately refused, so the
+  two sets do not intersect. An estimate built on it would be zero at every ground size and would pass
+  its own converge-to-the-infinite-limit gate vacuously. **Two further things that would have to be true
+  and are not**: UTD's coefficient is not where the accuracy is lost (it is exact for a half-plane, to
+  1.6e-14), and the mechanism that actually carries back radiation on a thin substrate — the surface wave
+  reaching a BOARD edge — needs a board edge the 2.5-D premise cannot express at all, which meshing the
+  ground plane would not create. **What would change the answer:** an illumination taken from the
+  spatial-domain surface field at the rim, together with a diffraction coefficient for a grounded
+  dielectric slab's rim. §3.9 and `RESOLVED.md` §ANT-11 §6.
 - **Rim / edge grading on curved geometry.** A graded fan on a **staircased** rim cannot help:
   quantisation error depends on how the grid *aligns* with an oblique edge, not only on fineness, and
   that artifact (0.669% band) is larger than anything the fan changes. `PerRunSampled` is measurably
@@ -1022,8 +1091,10 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 - **The ANTENNA METRICS refuse five things by name, each leaving the sweep and the other metrics
   intact** (ANT-5, §3.7). `FrontToBackDb` **always, in this kernel** — the field below a laterally
   infinite ground plane is identically zero so the true ratio is infinite, and ∞, a large finite
-  number and a missing metric are all worse than the sentence; the finite-ground phase NARROWS it by
-  one predicate. `DirectivityPeakPhiDeg` **at a broadside peak**, where every azimuth names the same
+  number and a missing metric are all worse than the sentence. **ANT-11 narrowed it by the one
+  predicate it was staged for** (`PlanarFiniteGround.CanCorrect`): it is now a function of the problem,
+  refusing differently according to whether a ground outline was found, and naming a MEASURED reason
+  instead of a future phase. It still refuses in both branches — §3.9 and `RESOLVED.md` §ANT-11. `DirectivityPeakPhiDeg` **at a broadside peak**, where every azimuth names the same
   direction. `PowerSurfaceWave` on a substrate whose pole is too far off the real axis for a
   simple-pole residue (|Im k_ρ|/Re k_ρ past 0.05), or whose mode is too close to cutoff to be
   separable from the continuum — and `PowerDielectric` goes with it, because the residual's meaning
