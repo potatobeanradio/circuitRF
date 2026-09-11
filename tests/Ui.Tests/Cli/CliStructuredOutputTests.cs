@@ -633,6 +633,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.views.unknown",
         // AUT-11 R-aut11-2: `plot`. One picture from one result, building the same document
         // `render --data` consumes — so there is one plotting path rather than two.
+        "plot.angle-labels.needs-polar",
         "plot.args.multiple-results",
         "plot.args.output-required",
         "plot.args.result-required",
@@ -671,6 +672,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "plot.trace.no-such-cube",
         "plot.trace.port-malformed",
         "plot.trace.ports-with-slice",
+        "plot.trace.ref-malformed",
         "plot.trace.unknown-key",
         "plot.trace.unresolved",
         "plot.trace.wsp-metric-required",
@@ -682,6 +684,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "plot.variant.unknown",
         "plot.view.needs-surface",
         "plot.view.unknown",
+        "plot.whole-plane.needs-pattern",
         "plot.window.on-complex",
         "plot.zoom.malformed",
         "read.args.multiple-paths",

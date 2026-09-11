@@ -206,6 +206,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsSurfacePlot));
         OnPropertyChanged(nameof(HasPatternScale));
+        OnPropertyChanged(nameof(HasPatternControls));
+        OnPropertyChanged(nameof(PolarAngleLabels));
         NotifySurfaceCameraChanged();
         OnPropertyChanged(nameof(IsSummaryTable));
         OnPropertyChanged(nameof(AddLoadpullTraceLabel));
@@ -253,6 +255,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsPolarDbPlot));
             OnPropertyChanged(nameof(HasPatternScale));
+            OnPropertyChanged(nameof(HasPatternControls));
+            // The picker's enable gate is a function of this mode — a dB polar plot is a PATTERN and
+            // takes REAL cubes, a linear one is a locus and does not. Alone among the six radial
+            // properties this one changes what may be OFFERED, so it is the only one that rebuilds.
+            foreach (var vm in Traces) vm.OnPlotPatternModeChanged();
             ApplyRadialChange();
         }
     }
@@ -342,6 +349,36 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     /// <summary>The dB scale controls apply on a polar plot IN dB MODE, and on a surface always.</summary>
     public bool HasPatternScale => IsPolarDbPlot || IsSurfacePlot;
+
+    /// <summary>
+    /// <b>Whether the pattern ROW is shown at all</b>, which is a wider question than whether the
+    /// dB SCALE controls inside it apply.
+    ///
+    /// <para><b>The row used to be gated on <see cref="HasPatternScale"/>, which made the dB-radial
+    /// switch unreachable</b> (found 2026-09-11): that switch is the only way INTO dB mode, it
+    /// lives in this row, and on a linear polar plot — the state every polar plot is created in —
+    /// the row was hidden, so a polar plot could never be turned into a pattern plot from the GUI
+    /// at all. The `.cdd` files that had pattern plots in them had been authored by the CLI. A
+    /// control that enters a mode cannot be gated on already being in it.</para>
+    /// </summary>
+    public bool HasPatternControls => IsPolarPlot || IsSurfacePlot;
+
+    /// <summary>
+    /// Bearings printed around the rim — <see cref="Plot.ShowPolarAngleLabels"/>. Turning it on
+    /// shrinks the disc to make room, so it goes through <see cref="ApplyRadialChange"/> like every
+    /// other control that moves the framing rather than only the ink.
+    /// </summary>
+    public bool PolarAngleLabels
+    {
+        get => _plot.ShowPolarAngleLabels;
+        set
+        {
+            if (_plot.ShowPolarAngleLabels == value) return;
+            _plot.ShowPolarAngleLabels = value;
+            OnPropertyChanged();
+            ApplyRadialChange();
+        }
+    }
 
     /// <summary>
     /// <b>§3's named views, because "which way am I looking" is the question a 3D picture always

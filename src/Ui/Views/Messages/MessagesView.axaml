@@ -104,6 +104,17 @@
                                          ordinary message's menu is exactly the two Copy items it has
                                          always been. Disabled WITH THE REASON IN ITS TOOLTIP once the
                                          stop has been asked for or the run has settled. -->
+                                    <!-- Stop ABOVE Cancel, and only where one exists (owner request,
+                                         2026-09-11). The two are not alternatives: Stop finishes now
+                                         and KEEPS what has been solved; Cancel abandons the run and
+                                         writes nothing. Only the EM run offers a Stop today, so the
+                                         item is hidden rather than greyed everywhere else — a
+                                         permanently-disabled item teaches nothing. -->
+                                    <MenuItem Header="Stop"
+                                              Click="OnStopRunClick"
+                                              IsVisible="{Binding ShowStopRun}"
+                                              IsEnabled="{Binding CanStopRun}"
+                                              ToolTip.Tip="{Binding StopTooltip}"/>
                                     <MenuItem Header="Cancel"
                                               Click="OnCancelRunClick"
                                               IsVisible="{Binding HasProgress}"

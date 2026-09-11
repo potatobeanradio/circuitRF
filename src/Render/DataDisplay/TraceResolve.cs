@@ -334,6 +334,12 @@ public static class TraceResolve
     private static void SetCubeDataFromCore(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
                                             DataSet? xDs, ResolveProbe probe)
     {
+        // BEFORE the guard, and before any data is bound. Before the guard because a trace that has
+        // just STOPPED being cube-bound must not keep the previous cube's reference; before the bind
+        // because the reference shifts the displayed VALUE, and SetCubeData builds the path — a
+        // reference stamped afterwards would not be in the geometry until the next rebuild.
+        ApplyReferenceLevel(t, ds);
+
         if (!t.IsCubeBound) return;
 
         // Derived from the cube, so it cannot outlive the resolve that produced it — the same
@@ -408,7 +414,7 @@ public static class TraceResolve
                 if (!t.IsVersus)
                 {
                     ApplyPinnedSpectral(t, ds);
-                    ApplyPinnedAxisDisplay(t, ds);
+                    ApplyPinnedAxisDisplay(t, ds, freqUnit);
                 }
             }
             else
@@ -519,7 +525,7 @@ public static class TraceResolve
             SurfaceResolve.Resolve(t, cube, slice);
             t.Points.Clear();
             t.FamilyCurves.Clear();
-            ApplyPinnedAxisDisplay(t, ds);
+            ApplyPinnedAxisDisplay(t, ds, freqUnit);
             return;
         }
 
@@ -607,17 +613,128 @@ public static class TraceResolve
             // No unit: cube VALUES carry none anywhere in the data model (only axes do), so a versus
             // X axis is labelled by its spec text alone — same as every Y label already is.
             t.SetCubeData(vx, complexValues, realValues, t.XSpec!, null, plotType, freqUnit);
-            ApplyPinnedAxisDisplay(t, ds);
+            ApplyPinnedAxisDisplay(t, ds, freqUnit);
             return;
+        }
+
+        // ── THE WHOLE PLANE, GATHERED AS ONE TRACE (owner, 2026-09-11) ────────────────────────
+        //
+        //  A cut is a PLANE and a plane crosses the disc, so the picture wants both azimuths. The
+        //  companion is an ordinary second rank-1 read of the SAME cube with one index moved, and
+        //  it is taken here — beside the gather it belongs to — rather than by a second resolve
+        //  path (ANT-7 §3's rule, which this does not break: there is still no single slice that
+        //  carries both, and there is still no derived cube).
+        Complex[]? backComplex = null;
+        double[]?  backReal    = null;
+        double     backPhi     = double.NaN;
+        if (t.PatternWholePlane && plotType == PlotType.Polar)
+        {
+            if (TryWholePlaneCompanion(cube, args, xDim, probe, out backComplex, out backReal,
+                                       out backPhi, out string? wpErr))
+            {
+                // Nothing to do — the values are out.
+            }
+            else
+            {
+                t.ExpressionError = wpErr;
+                t.InvalidSpecText = t.Expression ?? t.CubeName;
+                t.Points.Clear();
+                t.FamilyCurves.Clear();
+                return;
+            }
         }
 
         var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length, probe));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
-                      xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
+                      xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels,
+                      backComplex: backComplex, backReal: backReal, backPhiDeg: backPhi);
         ApplyPinnedSpectral(t, ds);
-        ApplyPinnedAxisDisplay(t, ds);
+        ApplyPinnedAxisDisplay(t, ds, freqUnit);
     }
+
+    /// <summary>
+    /// The &#966;&#160;+&#160;180&#176; half of a whole-plane cut: the same indexer args with the
+    /// pinned azimuth moved to the antipodal grid index.
+    ///
+    /// <para><b>The azimuth is found by NAME and its companion by VALUE</b>, never by index
+    /// arithmetic. A &#966; axis is not obliged to be uniform, to start at zero or to be 360 long —
+    /// the far-field grid is all three today and none of that is a property the data model
+    /// promises — so the companion is the index whose &#966; is nearest &#966;&#160;+&#160;180
+    /// modulo 360, and it is refused when the nearest is not actually within half a grid step. A
+    /// silently-wrong companion here draws a smooth, plausible, wrong pattern.</para>
+    /// </summary>
+    private static bool TryWholePlaneCompanion(
+        DataCube cube, object[] args, int xDim, ResolveProbe probe,
+        out Complex[]? backComplex, out double[]? backReal, out double backPhiDeg, out string? error)
+    {
+        backComplex = null; backReal = null; backPhiDeg = double.NaN; error = null;
+
+        int phiDim = -1;
+        for (int d = 0; d < cube.Rank; d++)
+            if (d != xDim && cube.Axes[d].Name is "phi" or "az") { phiDim = d; break; }
+
+        if (phiDim < 0 || args[phiDim] is not int phiIdx)
+        {
+            error = WholePlaneNoAzimuthRefusal(cube, xDim);
+            return false;
+        }
+
+        var phi = cube.Axes[phiDim];
+        if (phi.Length < 2) { error = WholePlaneNoAzimuthRefusal(cube, xDim); return false; }
+
+        double want = Mod360(phi.Values[phiIdx] + 180.0);
+        int    best = -1;
+        double bestGap = double.MaxValue;
+        for (int k = 0; k < phi.Length; k++)
+        {
+            double gap = Math.Abs(Mod360(phi.Values[k] - want + 180.0) - 180.0);
+            if (gap < bestGap) { bestGap = gap; best = k; }
+        }
+
+        // Half a grid step: the widest miss that is still "this IS the antipodal sample, quantised".
+        double step = Math.Abs(phi.Values[^1] - phi.Values[0]) / Math.Max(1, phi.Length - 1);
+        if (best < 0 || bestGap > Math.Max(step * 0.5, 1e-9))
+        {
+            error =
+                $"The whole-plane cut cannot be drawn: this trace is pinned to {phi.Name} = "
+              + $"{phi.Values[phiIdx].ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}, and the other "
+              + $"half of that plane is at {want.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}, "
+              + $"which the cube's own '{phi.Name}' axis does not sample — the nearest it has is "
+              + $"{(best >= 0 ? phi.Values[best].ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : "none")}"
+              + $", {bestGap.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)}° away against a "
+              + $"{step.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)}° grid. Drawing the nearest "
+              + "sample instead would put a smooth and entirely plausible curve on the wrong half "
+              + "of the disc. Turn the whole-plane option off and the front half draws on its own, "
+              + "or take the pattern on a grid that covers the full azimuth.";
+            return false;
+        }
+
+        var backArgs = (object[])args.Clone();
+        backArgs[phiDim] = best;
+        probe.Reading("whole-plane-back", cube, backArgs);
+        var r = cube[backArgs];
+        if (!r.IsCube || r.Cube!.Rank != 1)
+        {
+            error = WholePlaneNoAzimuthRefusal(cube, xDim);
+            return false;
+        }
+
+        backComplex = r.Cube.DataKind == DataKind.Complex ? r.Cube.ComplexValues : null;
+        backReal    = r.Cube.DataKind == DataKind.Real    ? r.Cube.RealValues    : null;
+        backPhiDeg  = phi.Values[best];
+        return true;
+    }
+
+    private static double Mod360(double d) => ((d % 360.0) + 360.0) % 360.0;
+
+    private static string WholePlaneNoAzimuthRefusal(DataCube cube, int xDim) =>
+        "The whole-plane cut needs an AZIMUTH axis pinned to one value, and this trace has none: "
+      + "the other half of a cut is the same sweep taken at φ + 180°, so there has to be a φ to "
+      + "move. This cube's axes are "
+      + string.Join(", ", cube.Axes.Select((a, d) => d == xDim ? $"{a.Name} (the swept one)" : a.Name))
+      + ". A cut through a pattern is θ swept with φ pinned; turn the whole-plane option off for "
+      + "any other shape of trace.";
 
     /// <summary>
     /// Resolves the X side of a versus trace and gates it on the point count — the rule that makes a
@@ -842,7 +959,7 @@ public static class TraceResolve
                         perCurveX: perCurveX);
         // A family trace has no pinned SPECTRAL line (each curve carries its own tag), but it can
         // still carry ordinary pinned axes, and those appear in its label like any other trace's.
-        ApplyPinnedAxisDisplay(t, ds);
+        ApplyPinnedAxisDisplay(t, ds, freqUnit);
     }
 
     private static DataCube? GetToneFreqsCube(DataSet? ds, string? cubeName)
@@ -905,7 +1022,34 @@ public static class TraceResolve
     // because the label already names the quantity, while a swept axis keeps its name and gains its
     // value and unit ("VDS=3.5 V"). The S/Y/Z port axes are excluded — they are written positionally
     // as "S(1,2)" by TraceLabeler and must stay that way.
-    public static void ApplyPinnedAxisDisplay(Trace t, DataSet? ds)
+    /// <param name="freqUnit">
+    /// <b>The PLOT's frequency unit, which a pinned frequency axis is read in.</b> Reported
+    /// 2026-09-11: a far-field cut plot set to GHz labelled its traces <c>freq=1.74e+09 Hz</c>,
+    /// because this resolver formatted every pinned axis out of the cube's own raw values and
+    /// nothing here had ever needed to know what the plot displayed frequencies in. Null keeps the
+    /// raw-Hz form, which is what a caller with no plot in hand should get.
+    /// </param>
+    /// <summary>
+    /// <b>The reference a dBm LEVEL was published at</b> — read from the cube's own group and handed
+    /// to the trace, because a <c>Trace</c> deliberately never holds a <see cref="DataSet"/>. The
+    /// same owner-resolves-it contract <see cref="ApplyPinnedAxisDisplay"/> and
+    /// <c>ApplyPinnedSpectral</c> follow, including clearing first: a reference left over from a
+    /// previous cube would silently re-reference the new one.
+    ///
+    /// <para>This is what makes <see cref="Trace.ReferenceInputPowerDbmOverride"/> EXACT rather than
+    /// a guess. The override says what reference to read the level against; this says what it is
+    /// currently against, and the difference is the shift. Without the run publishing its own
+    /// reference there would be nothing to subtract.</para>
+    /// </summary>
+    public static void ApplyReferenceLevel(Trace t, DataSet? ds)
+    {
+        t.SetBakedReferenceInputPowerDbm(null);
+        if (!t.IsCubeBound || t.CubeName is null) return;
+        if (LevelReference.IsReferencedLevel(ds, t.CubeName, out double refDbm))
+            t.SetBakedReferenceInputPowerDbm(refDbm);
+    }
+
+    public static void ApplyPinnedAxisDisplay(Trace t, DataSet? ds, FreqUnit? freqUnit = null)
     {
         t.SetPinnedAxisDisplay(null);
         if (ds is null || t.CubeName is null || t.Slice is null || !ds.Contains(t.CubeName)) return;
@@ -932,6 +1076,23 @@ public static class TraceResolve
             {
                 token = axis.Labels[idx];
             }
+            else if (freqUnit is { } fu && IsHzAxis(axis))
+            {
+                // A FREQUENCY reads in the plot's own unit, and the ONE axis actually named "freq"
+                // drops the prefix entirely (owner, 2026-09-11): "1.74 GHz" already says it is a
+                // frequency, so "freq=" is a word that carries nothing. A second Hz-unit axis — an
+                // LO beside an RF — keeps its name, because there the name is the only thing
+                // separating two tokens that would otherwise read identically.
+                // A PLAIN decimal, not "G6": G6 turns 5e9 Hz into "5E+09 Hz", which is the same
+                // unreadable thing the report was about, one unit further along. A frequency in its
+                // own display unit is O(1) to O(1000) by construction, so a fixed-point form with a
+                // trailing-zero trim reads correctly in every unit the plot offers.
+                string val = (axis.Values[idx] * fu.Scale())
+                    .ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+                token = axis.Name == "freq"
+                    ? $"{val} {fu.Description()}"
+                    : $"{axis.Name}={val} {fu.Description()}";
+            }
             else
             {
                 string val = axis.Values[idx].ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
@@ -940,11 +1101,32 @@ public static class TraceResolve
                     : $"{axis.Name}={val} {axis.Unit}";
             }
 
+            // A whole-plane cut carries BOTH azimuths, so its azimuth token says both — "phi=0/180
+            // deg". Written here rather than in the labeller because this is where the axis, its
+            // unit and the resolved companion are all in hand at once, and because the labeller
+            // deliberately holds no DataSet.
+            if (t.HasPatternBackBranch && double.IsFinite(t.PatternBackPhiDeg)
+                && s.AxisName == axis.Name && axis.Name is "phi" or "az")
+            {
+                string back = t.PatternBackPhiDeg.ToString(
+                    "G6", System.Globalization.CultureInfo.InvariantCulture);
+                string fwd = axis.Values[idx].ToString(
+                    "G6", System.Globalization.CultureInfo.InvariantCulture);
+                token = string.IsNullOrWhiteSpace(axis.Unit)
+                    ? $"{axis.Name}={fwd}/{back}"
+                    : $"{axis.Name}={fwd}/{back} {axis.Unit}";
+            }
+
             (map ??= new Dictionary<string, string>(StringComparer.Ordinal))[s.AxisName] = token;
         }
 
         t.SetPinnedAxisDisplay(map);
     }
+
+    /// <summary>Whether an axis carries frequency, by its UNIT — the same test the rest of the
+    /// resolve uses, so an axis named something other than "freq" is still a frequency.</summary>
+    private static bool IsHzAxis(Axis axis) =>
+        string.Equals(axis.Unit, "Hz", StringComparison.OrdinalIgnoreCase);
 
     private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice,
                                                    int xAxisLength, ResolveProbe? probe = null)

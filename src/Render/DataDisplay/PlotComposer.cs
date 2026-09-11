@@ -46,7 +46,20 @@ public readonly record struct PagePlacement(float Width, float Height, float Mar
 }
 
 /// <summary>One trace's Y-axis label strip, as the composition needs it.</summary>
-public sealed record PlacedLabelStrip(Trace Trace, string? CustomLabel, bool ShowFilePrefix);
+/// <param name="AutoLabel">
+/// <b>The plot-level MINIMAL label</b> (<see cref="TraceLabeler.ComputeMinimalLabels"/>) — what the
+/// window's own strip shows. Null falls back to the trace's own description, which is what every
+/// caller written before this passed.
+///
+/// <para><b>It is here because the headless strip did not have it, and the two diverged.</b> RND-4's
+/// rule is that a headless render produces what the window produces; the strip text did not, because
+/// the window read its AutoLabel and the composer read <see cref="Trace.Description"/> — which for a
+/// cube trace is <c>Expression ?? CubeName</c> and nothing else. Two cuts of one pattern, differing
+/// only in their pinned φ, therefore printed the SAME strip ("farfield.U" twice) in every exported
+/// and CLI-drawn picture while the window told them apart correctly.</para>
+/// </param>
+public sealed record PlacedLabelStrip(Trace Trace, string? CustomLabel, bool ShowFilePrefix,
+                                      string? AutoLabel = null);
 
 /// <summary>One marker info box, positioned in the same screen space as the plots.</summary>
 public sealed record PlacedMarkerBox(
@@ -190,13 +203,15 @@ public static class PlotComposer
                 {
                     var s = c.LeftLabelStrips[i];
                     DrawAxisLabelStrip(canvas, plotX - (i + 1) * stripW, chartY,
-                        stripW, chartH, s.Trace, false, theme, s.CustomLabel, s.ShowFilePrefix);
+                        stripW, chartH, s.Trace, false, theme, s.CustomLabel, s.ShowFilePrefix,
+                        s.AutoLabel);
                 }
                 for (int i = 0; i < nRight; i++)
                 {
                     var s = c.RightLabelStrips[i];
                     DrawAxisLabelStrip(canvas, plotX + plotW + i * stripW, chartY,
-                        stripW, chartH, s.Trace, true, theme, s.CustomLabel, s.ShowFilePrefix);
+                        stripW, chartH, s.Trace, true, theme, s.CustomLabel, s.ShowFilePrefix,
+                        s.AutoLabel);
                 }
             }
 
@@ -246,13 +261,15 @@ public static class PlotComposer
         bool        isRight,
         RenderTheme theme,
         string?     customLabel,
-        bool        showFilePrefix)
+        bool        showFilePrefix,
+        string?     autoLabel)
     {
         float cap        = w * 0.85f;
         float fontSizePx = MathF.Min(MathF.Max(h * 0.04f, MathF.Min(6f, cap)), cap);
 
         bool    useCustom   = !string.IsNullOrEmpty(customLabel);
         string  displayText = useCustom ? customLabel!
+                            : !string.IsNullOrEmpty(autoLabel) ? autoLabel!
                             : (showFilePrefix ? trace.Description : trace.ShortDescription);
         SKColor textColor   = useCustom ? theme.TextColor
                             : RenderTheme.ToSKColor(trace.Properties.LineColor);

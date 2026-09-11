@@ -181,6 +181,9 @@ public sealed partial class MessageEntry : ObservableObject
     {
         OnPropertyChanged(nameof(CanCancelRun));
         OnPropertyChanged(nameof(CancelTooltip));
+        OnPropertyChanged(nameof(CanStopRun));
+        OnPropertyChanged(nameof(ShowStopRun));
+        OnPropertyChanged(nameof(StopTooltip));
     }
 
     /// <summary>Whether the bar's Cancel would do anything right now — false for a row with no
@@ -198,6 +201,26 @@ public sealed partial class MessageEntry : ObservableObject
         { IsFinished: true }                     => "This operation has already finished.",
         { IsCancellationRequested: true } c      => $"Already stopping {c.What} — it ends at the next work boundary.",
         { } c                                    => $"Stop {c.What}. It ends at the next work boundary and writes nothing.",
+    };
+
+    /// <summary>Whether this row's operation offers a Stop AT ALL — which is what the menu item's
+    /// VISIBILITY is bound to. An item that is permanently greyed on every run but one says nothing;
+    /// an item that appears only where it means something says exactly what it means.</summary>
+    public bool ShowStopRun => _cancellation?.CanOfferStop == true;
+
+    /// <summary>Whether the bar's Stop would do anything right now.</summary>
+    public bool CanStopRun => _cancellation?.CanStop == true;
+
+    /// <summary>Why Stop is enabled or not, and — the part that matters — how it differs from
+    /// Cancel, since the two sit next to each other and only one of them keeps the results.</summary>
+    public string StopTooltip => _cancellation switch
+    {
+        null                                => "This operation cannot be stopped once it has started.",
+        { CanOfferStop: false }             => "This operation has no early finish — it either completes or is cancelled.",
+        { IsFinished: true }                => "This operation has already finished.",
+        { IsCancellationRequested: true } c => $"{c.What} is being CANCELLED, which keeps nothing — a stop can no longer apply.",
+        { IsStopRequested: true } c         => $"Already stopping {c.What} — it finishes at the next work boundary and keeps what it has solved.",
+        { } c                               => $"Finish {c.What} at the next work boundary and KEEP everything solved so far — the results are packaged and written exactly as a completed run's are. Cancel, below, throws them away instead.",
     };
 
     public string TimeText => MessageDisplay.Mode switch

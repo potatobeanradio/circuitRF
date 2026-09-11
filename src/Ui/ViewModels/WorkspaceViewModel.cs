@@ -7244,9 +7244,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Owner request: pressing Cancel says so IMMEDIATELY, and says what "cancel" means
                 // here — cancellation lands at a work boundary, so a run mid-solve does not stop the
                 // instant the button is pressed and silence would read as the button doing nothing.
-                Messages.Info("Stopping the EM analysis. It stops at the next work boundary.");
+                Messages.Info("Cancelling the EM analysis. It stops at the next work boundary and " +
+                              "writes nothing — use Stop instead to finish now and keep the points " +
+                              "already solved.");
                 vm.IsCancelling = true;
                 cts.Cancel();
+            },
+            // ── STOP — the EM run's own, and the only one in the application (owner request,
+            //    2026-09-11). An EM sweep is the one place where "I have seen enough" is a normal
+            //    thing to want: a resonance search keeps adding full-wave points after the resonance
+            //    is on screen, and each of those is tens of seconds. It says what it will do rather
+            //    than only that it heard, for the reason Cancel does.
+            stop: () =>
+            {
+                Messages.Info(adaptive
+                    ? "Stopping the EM analysis at the next work boundary. Everything solved so far " +
+                      "is KEPT — the requested frequency grid is published from the points already " +
+                      "solved, exactly as adaptive sampling always publishes it, and the run's notes " +
+                      "say how far the refinement actually got."
+                    : "Stopping the EM analysis at the next work boundary. Everything solved so far " +
+                      "is KEPT — the sweep is published over the frequency points already solved, " +
+                      "and the run's notes name the ones that are not in it.");
+                control!.RequestStop();
             });
             sweepLive.BindCancellation(cancellation);
             stageLive.BindCancellation(cancellation);

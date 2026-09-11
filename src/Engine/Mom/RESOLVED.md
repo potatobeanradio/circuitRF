@@ -3,6 +3,154 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md` and `src/Ui/Layout/Em/RESOLVED.md`.
 
+## TRP, peak EIRP, and Stop — antenna feedback, 2026-09-11
+
+User feedback relayed by the owner: "do we have TRP, peak EIRP?", and — separately — an EM run that
+should be able to finish early without losing what it has solved.
+
+---
+
+### 1. TRP and peak EIRP: two metrics, and one SETTING the registry had never needed
+
+**Why they could not simply be added.** Every other entry in `PlanarMetrics.Registry` is a RATIO — a
+directivity, an efficiency, a gain — and a ratio is invariant in the excitation, which is why the
+1 V delta gap this kernel drives with has never had to mean anything. TRP and peak EIRP are absolute
+powers. There is nothing in a delta-gap solve to derive a watt from, and publishing them against the
+gap's own accepted power would put a number in dBm that is an artefact of the excitation.
+
+So the reference is an INPUT: `PlanarMetricSettings.ReferenceInputPowerDbm`, reaching the engine from
+`EmSetup.ReferenceInputPowerDbm` (nullable + omitted at default in the `.cem`, so a file written
+before it existed loads and re-serialises byte-identically) via `EmRunService`, with a box on the EM
+panel gated on the pattern being on.
+
+```
+TrpDbm      = P_ref + 10·log10(η_rad · (1 − |Γ|²))
+PeakEirpDbm = P_ref + 10·log10(4π·U_peak / P_accepted · (1 − |Γ|²))
+            = TrpDbm + DirectivityDbi          ← an identity, not a coincidence
+```
+
+The identity holds because TRP·D expands to `P_ref·m·(P_rad/P_acc)·(4π·U_peak/P_rad)`, whose radiated
+power cancels. Two separate registry entries compute it from two different intermediates, so an
+arithmetic slip in either breaks the gate.
+
+**0 dBm is the default, and it is doing real work.** At 1 mW conducted, peak EIRP in dBm is
+numerically the realized gain in dBi and TRP in dBm is the total efficiency in dB — so the two cubes
+read as quantities an antenna engineer already has before anybody sets anything, which is also the
+convention the over-the-air report this request came from is written in. Set it to a radio's own
+conducted power and both become directly comparable against that radio's measured report.
+
+**They refuse on exactly `RealizedGainDbi`'s predicate, and that is structural.** What a transmitter
+delivers into an antenna is its AVAILABLE power less the mismatch, so the mismatch factor is in both
+of them — and it is the one quantity here that needs the port's own published Γ rather than the raw
+delta-gap self-admittance (ANT-12's finding: the raw one reads a matched antenna 15 dB low). The
+range check that was inline in `RealizedGainDbi` is now `MismatchUsable`, shared by all three; three
+copies of one range test is three places for one of them to drift.
+
+`ReferenceInputPowerDbm` is published as its own cube for `PowerAccepted`'s reason: **a dBm whose
+reference is not in the file cannot be reproduced from the file.** It publishes even when the two
+that use it refuse.
+
+Gate: five tests in `PlanarMetricsTests` — the identity, the 0 dBm reading, that the reference shifts
+BOTH absolutes by exactly itself and moves NOTHING else (invisible on a plot, since every curve keeps
+its shape), the staged refusal, and the reference publishing on its own.
+
+#### 1a. Where the reference LIVES — the setting is not the only place it can be set
+
+Owner, immediately after: *"should we put the Reference input power on the trace card, not in the EM
+setup? It's a post-processor number."* Correct, and the re-run cost is the whole argument — nothing in
+the solve depends on the reference, and the correction from one to another is a subtraction and an
+addition, both exact, so charging a user an hours-long sweep for a dB offset charges the price of a
+simulation for a shift.
+
+**It is in both places, and they are not duplicates:**
+
+| | |
+|---|---|
+| `EmSetup.ReferenceInputPowerDbm` | what the RUN bakes in — the `.npy`'s value and what a headless run reports in its notes. |
+| `Trace.ReferenceInputPowerDbmOverride` | reads the SAME solved data against another reference, with no re-run. |
+
+**Publishing the reference as a cube is what makes the second one exact**, which is the second thing
+that cube has now bought. The display reads what the level is currently against, subtracts it and adds
+the override; without it the shift could only be a guess.
+
+**Detection is a RELATIONSHIP, not a name list** — `RfCore.Data.LevelReference`, mirroring
+`NetworkMetrics.IsNetworkParamCubeSpec`: a cube is a re-referenceable level when its own unit is `dBm`
+AND its group publishes `ReferenceInputPowerDbm`. So the generic Data Display needs to know nothing
+about this kernel's metric names, and anything that later opts in by carrying the unit and the sibling
+cube gets the control for free. It cost the fix ANT-7 §8 had already recorded as missing: **the metric
+registry has carried a `Unit` per metric since ANT-5 and the publish threw it away.** `AddMetrics` now
+sets it, and `AddFarField` sets `V` / `W/sr` on the three pattern cubes.
+
+Two placement decisions worth keeping:
+
+- **The offset is applied in `Trace.RectY`**, the one funnel every displayed value passes through —
+  curve, table cell, marker readout, pattern radius — so a re-referenced trace cannot be one number on
+  the plot and another in its own info box.
+- **The reference is stamped BEFORE the bind**, at the top of `SetCubeDataFromCore` and before its
+  `IsCubeBound` guard: it shifts the VALUE, and `SetCubeData` builds the path, so a reference handed
+  over afterwards would not be in the geometry until the next rebuild — the same trap the whole-plane
+  back branch hit.
+
+**The label states the reference ALWAYS, not only when overridden**, and in `TraceLabeler` rather than
+`RectYLabel` so the rectangular Y axis and the polar label strip cannot say different things. A picture
+of a level carries no file; without the suffix there is no way to tell an overridden trace from an
+un-overridden one.
+
+### 2. Stop: finish now and keep what is solved
+
+`RunControl` has always documented that **cancelling abandons the run** — a sweep's per-point results
+stack along an axis of known length, so a half-finished one has no shape to publish in. That is right
+for "I did not mean to start this" and wrong for "this has found what I needed": on an EM run the
+resonance search keeps adding full-wave points long after the resonance is on screen, and nothing
+outside it can see how many more it intends to take.
+
+`RunControl.StopRequested` / `RequestStop()`, beside the token and read at the same boundaries.
+**Advisory** — nothing throws, nothing is checked automatically, and an engine that ignores it is
+correct — which is what makes it safe to hang on the one control object every engine already takes.
+**A `Child()` does not inherit it**: the outer loop stops adding POINTS, the inner one always finishes
+the point it was given, or a sweep would end up with a shorter axis inside a longer one.
+
+Three places read it in `PlanarSolve`, and what each publishes is forced by what it can honestly
+publish:
+
+| path | on stop |
+|---|---|
+| fixed grid | the frequency axis is the PREFIX that was solved. A shorter sweep is a sweep; inventing the rest would publish an interpolation nobody asked for. |
+| adaptive | the full REQUESTED grid, modelled from the solved nodes — which is what that path does at every budget. The note gives the disagreement actually reached rather than the tolerance asked for. |
+| resonance search | `PlanarResonanceSearch.Search(…, stopped:)`, checked where the point budget already is, because they are the same kind of limit. Reported through `StoppedEarly`, SEPARATE from `CapBound`: "you set the cap too low" and "you pressed Stop" are different things to tell someone. |
+
+**The note is mandatory and that is the point.** A stopped run is a complete, ordinary result
+downstream — same DataSet, same cubes, same `.snp` — so nothing else distinguishes it. A stop inside
+`Locate` keeps the bracket it reached, whose ends are SOLVED points, so the resonance reported from it
+is real and its `LocatedToHz` says how tightly it was pinned (measured: 3.9 MHz against a converged
+sub-kHz).
+
+UI: `RunCancellation` gained an optional `stop` action, and the progress row's context menu a **Stop**
+item ABOVE Cancel — hidden rather than greyed where none exists, since only the EM run offers one and
+a permanently-disabled item teaches nothing.
+
+Gate: three tests in `ResonanceSearchTests` — that a stop ceases probing within one probe, keeps what
+it found and says so; that a stop which never fires is byte-identical to no stop predicate at all
+(the property that makes the parameter safe to have added to every caller); and that a stopped
+fixed-grid sweep publishes its prefix and names what is missing.
+
+### 3. The far-field block's progress bar completed every time it was looked at
+
+Reported alongside: with the resonance search on, the sweep row's point count "sat still for a VERY
+long number of work cycles" and then climbed again.
+
+The count was telling the truth — no new POINT is solved in the far-field block — but the stage row
+beside it was no help either. `FarFieldAt` began a stage PER PATTERN with a total of the PORT count,
+so on a one-port it read 1 of 1, finished, and began again, over and over, for however many minutes
+the block took. **A bar that completes every time it is looked at says nothing about a block that is
+running for minutes.**
+
+The adaptive path's far-field block is now ONE stage counted in PATTERNS, which is the honest
+denominator — it is the one part of a sweep whose cost is a known number of equal pieces.
+`FarFieldAt` takes `ownStage`, false when the caller is counting. The outer counter is deliberately
+left alone: it counts points solved, and none are. (The climb the reporter saw afterwards was the
+search's own probes, which do solve.)
+
 ## RP-2c: de-embedding a coplanar edge port — the STANDARD changed, the algebra did not (2026-09-10)
 
 `brief-em-return-plane-2c-coplanar-deembedding.md`, the arrival of the refusal RP-2a left behind.

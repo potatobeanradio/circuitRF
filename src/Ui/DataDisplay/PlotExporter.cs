@@ -290,11 +290,13 @@ namespace CircuitRF.Ui.DataDisplay
                 ViewHeight          = c.ViewHeight,
                 LogicalWidth        = c.Width,
                 LabelStripViewWidth = c.LabelStripViewWidth,
+                // AutoLabel carried through: it is what the on-screen strip is SHOWING, and an
+                // export that dropped it fell back to Trace.Description — a different string.
                 LeftLabelStrips     = c.LeftLabelStrips
-                                       .Select(s => new PlacedLabelStrip(s.Trace, s.CustomLabel, s.ShowFilePrefix))
+                                       .Select(s => new PlacedLabelStrip(s.Trace, s.CustomLabel, s.ShowFilePrefix, s.AutoLabel))
                                        .ToList(),
                 RightLabelStrips    = c.RightLabelStrips
-                                       .Select(s => new PlacedLabelStrip(s.Trace, s.CustomLabel, s.ShowFilePrefix))
+                                       .Select(s => new PlacedLabelStrip(s.Trace, s.CustomLabel, s.ShowFilePrefix, s.AutoLabel))
                                        .ToList(),
                 MarkerBoxes         = c.GetMarkerInfoBoxes()
                                        .Select(b => new PlacedMarkerBox(

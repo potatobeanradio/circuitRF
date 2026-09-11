@@ -62,6 +62,7 @@ public static class PlotConfigLoader
         plot.PolarDbReference            = pc.PolarDbReference;
         plot.PolarDbReferenceValue       = pc.PolarDbReferenceValue;
         plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
+        plot.ShowPolarAngleLabels        = pc.PolarAngleLabels;
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
         plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
@@ -204,6 +205,8 @@ public static class PlotConfigLoader
                 trace.CubeName   = traceConfig.CubeName;
                 trace.Transform  = traceConfig.CubeTransform;
                 trace.MirrorPatternAngle = traceConfig.MirrorPatternAngle;
+                trace.PatternWholePlane  = traceConfig.PatternWholePlane;
+                trace.ReferenceInputPowerDbmOverride = traceConfig.ReferenceInputPowerDbmOverride;
                 trace.Slice      = traceConfig.CubeSlice.Count > 0
                     ? traceConfig.CubeSlice.Select(s => s.ToSlice()).ToArray()
                     : null;

@@ -289,7 +289,7 @@ public static class PatternCaption
         // the hemisphere line reports; what spans −90…90° is the COMPASS, because the negative half
         // is the same θ at the opposite azimuth.
         foreach (var t in plot.Traces)
-            if (t.MirrorPatternAngle)
+            if (t.MirrorPatternAngle || t.HasPatternBackBranch)
             {
                 lines.Add("the cut is a PLANE: the negative half is the φ + 180° branch");
                 break;

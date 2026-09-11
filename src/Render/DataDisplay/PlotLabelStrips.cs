@@ -40,17 +40,25 @@ public static class PlotLabelStrips
     /// branch with no front branch is an odd document, but it is one the reader must still be able
     /// to read an axis name off.</para>
     /// </summary>
+    /// <param name="aliasFor">The source alias resolver the minimal labeller takes; null falls back
+    /// to the file-name stem, exactly as <see cref="TraceLabeler.ComputeMinimalLabels"/> does.</param>
     public static (IReadOnlyList<PlacedLabelStrip> Left, IReadOnlyList<PlacedLabelStrip> Right)
-        For(Plot plot, bool showFilePrefix)
+        For(Plot plot, bool showFilePrefix, Func<Trace, string?>? aliasFor = null)
     {
         if (!plot.PlotType.IsComplex())
             return (Array.Empty<PlacedLabelStrip>(), Array.Empty<PlacedLabelStrip>());
 
+        // The MINIMAL label, over every trace on the plot — the same call the window makes, from
+        // the same place the strip set is decided, so the two can no longer answer differently.
+        var labels = TraceLabeler.ComputeMinimalLabels(plot.Traces, showFilePrefix, aliasFor);
+        var map    = new Dictionary<Trace, string>();
+        for (int i = 0; i < plot.Traces.Count && i < labels.Count; i++) map[plot.Traces[i]] = labels[i];
+
         var leftTraces  = Labelled(plot.LeftAxisTraces);
         var rightTraces = Labelled(plot.RightAxisTraces);
 
-        return (Side(leftTraces,  plot.CustomYLabelOn,  plot.CustomYLabel,  showFilePrefix),
-                Side(rightTraces, plot.CustomY2LabelOn, plot.CustomY2Label, showFilePrefix));
+        return (Side(leftTraces,  plot.CustomYLabelOn,  plot.CustomYLabel,  showFilePrefix, map),
+                Side(rightTraces, plot.CustomY2LabelOn, plot.CustomY2Label, showFilePrefix, map));
     }
 
     /// <summary>The traces on one side that name the axis — see <see cref="For"/>.</summary>
@@ -62,13 +70,16 @@ public static class PlotLabelStrips
     }
 
     private static IReadOnlyList<PlacedLabelStrip> Side(
-        IReadOnlyList<Trace> traces, bool hasCustom, string? customLabel, bool showFilePrefix)
+        IReadOnlyList<Trace> traces, bool hasCustom, string? customLabel, bool showFilePrefix,
+        IReadOnlyDictionary<Trace, string> labels)
     {
         if (hasCustom)
             return traces.Count > 0
-                ? [new PlacedLabelStrip(traces[0], customLabel, showFilePrefix)]
+                ? [new PlacedLabelStrip(traces[0], customLabel, showFilePrefix, Auto(traces[0]))]
                 : Array.Empty<PlacedLabelStrip>();
 
-        return traces.Select(t => new PlacedLabelStrip(t, null, showFilePrefix)).ToList();
+        return traces.Select(t => new PlacedLabelStrip(t, null, showFilePrefix, Auto(t))).ToList();
+
+        string? Auto(Trace t) => labels.TryGetValue(t, out var l) ? l : null;
     }
 }

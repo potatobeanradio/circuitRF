@@ -308,6 +308,22 @@ public sealed class EmSetup
     /// </summary>
     public bool RadiationPattern { get; set; }
 
+    /// <summary>
+    /// <b>The conducted power TRP and peak EIRP are referenced to, in dBm</b> (owner request,
+    /// 2026-09-11). Read only when <see cref="RadiationPattern"/> is on; 0 dBm by default, which is
+    /// what an over-the-air report is written against.
+    ///
+    /// <para>It is a SETTING rather than a derived number because those two metrics are the only
+    /// absolute powers in the registry and this analysis drives a 1 V delta gap — see
+    /// <c>PlanarMetricSettings.ReferenceInputPowerDbm</c> for the whole of why. It changes no
+    /// s-parameter and is not in <c>EmSnpProvenance</c>'s hash, for the same reason
+    /// <see cref="RadiationPattern"/> is not.</para>
+    ///
+    /// <para>Omitted from the <c>.cem</c> at its default, so a file written before it existed loads
+    /// and re-serialises byte-identically.</para>
+    /// </summary>
+    public double ReferenceInputPowerDbm { get; set; }
+
     /// <summary>Workspace-relative override for the written <c>.snp</c>. Empty = the predictable
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
     public string SnpOutputPathOverride { get; set; } = "";
@@ -333,6 +349,7 @@ public sealed class EmSetup
         DirectVerticalKernel   = DirectVerticalKernel,
         AcceleratedSolve       = AcceleratedSolve,
         RadiationPattern       = RadiationPattern,
+        ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
     };
 

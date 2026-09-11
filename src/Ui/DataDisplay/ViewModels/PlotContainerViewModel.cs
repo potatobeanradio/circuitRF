@@ -505,7 +505,8 @@ public partial class PlotContainerViewModel : ViewModelBase
                 // on screen and another in the file. What is added here is what only the on-screen
                 // control uses: the strip width, the live theme, and the AutoLabel (the export
                 // renders the trace's own description instead, which is what it always did).
-                var (left, right) = PlotLabelStrips.For(plot, showFilePrefix);
+                var (left, right) = PlotLabelStrips.For(plot, showFilePrefix,
+                    aliasFor: t => Library?.AliasFor(t.EffectiveSourcePath));
 
                 foreach (var s in left)
                     LeftLabelStrips.Add(new LabelStripViewModel(s.Trace, false, sw, th)

@@ -226,6 +226,26 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public string PolarDbUnit { get; set; } = "";
 
+        /// <summary>
+        /// <b>Bearings around the rim — the numbers a measured pattern plot is read against</b>
+        /// (owner request, 2026-09-11). Spokes every 30&#176; with the angle printed OUTSIDE the
+        /// boundary ring, which is where an antenna-range plot puts them.
+        ///
+        /// <para><b>Off by default</b>, so every <c>.cdd</c> written before this draws the picture
+        /// it always drew; and it is one switch for BOTH kinds of polar plot, because a locus has a
+        /// bearing too — it is just a different one. The label ring follows the plot's own angular
+        /// convention rather than imposing one: a PATTERN reads 0&#176; at the top increasing
+        /// clockwise (<see cref="PolarPatternAngle.Point"/>'s compass), and a LOCUS reads 0&#176; at
+        /// the right increasing counter-clockwise, because there the angle is the PHASE of a complex
+        /// number and the plane is the complex plane. Printing one convention's numbers around the
+        /// other's plot would be worse than printing none.</para>
+        ///
+        /// <para>Turning it on shrinks the disc rather than overprinting it —
+        /// <see cref="PlotRenderer.ComplexAngleLabelMargin"/> — so the numbers live in a gap that is
+        /// part of the layout and a trace at the outer ring still reads cleanly.</para>
+        /// </summary>
+        public bool ShowPolarAngleLabels { get; set; }
+
         /// <summary>True when this plot is drawing a pattern rather than a locus.</summary>
         public bool IsPolarPattern => PlotType == PlotType.Polar && PolarRadial == PolarRadialMode.Db;
 

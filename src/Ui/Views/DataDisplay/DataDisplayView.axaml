@@ -112,6 +112,18 @@
                     <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                 </Button>
 
+                <!-- ANT-10's 3D pattern. LAST, and with the same tooltip the inspector's own
+                     plot-type button carries, because the cuts beside it tell an engineer more
+                     about an antenna and this must not read as the better one. It is here at all
+                     because the inspector needs a plot SELECTED before it shows a type row, so
+                     without a toolbar button the only route to a 3D pattern was to add a polar
+                     plot and convert it. -->
+                <Button Command="{Binding ViewModel.Window.AddSurfacePlotCommand}"
+                        ToolTip.Tip="Add 3D Pattern — for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna."
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Sphere" Width="16" Height="16"/>
+                </Button>
+
                 <!-- Separator -->
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

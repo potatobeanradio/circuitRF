@@ -1,4 +1,5 @@
 using System.Numerics;
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
@@ -463,5 +464,127 @@ public sealed class ResonanceSearchTests
         _out.WriteLine(note);
         Assert.Equal(freqs.Length, run.SolvedPointCount);
         Assert.Contains("saved nothing here", note, StringComparison.Ordinal);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // STOP — finish now and keep what is found (owner request, 2026-09-11)
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>A stop takes no further probe and reports what it had.</b> This search is the long tail of
+    /// an EM run — every probe is a full-wave frequency point, and nothing outside it can see how
+    /// many more it intends to take — which is what the Stop was asked for.
+    ///
+    /// <para>Three separate claims, because a stop that only did the first would be a stop that
+    /// throws work away: it STOPS (probes cease within one of the request), it KEEPS (whatever was
+    /// located is still in the outcome), and it SAYS SO in its own note and in a flag distinct from
+    /// the point cap — "you set the cap too low" and "you pressed Stop" are different things to tell
+    /// someone.</para>
+    /// </summary>
+    [Fact]
+    public void AStop_TakesNoFurtherProbe_KeepsWhatWasFound_AndSaysSo()
+    {
+        const double f0 = 1.8412e9, q = 214, r = 50;
+        var probe = new AnalyticProbe(SeriesRlc(f0, q, r), Grid(1.5e9, 2.0e9, 9));
+
+        // Stop after the fourth probe: enough to have bracketed the resonance, nowhere near enough
+        // to have converged on it at the default tolerance.
+        int probes = 0;
+        const int stopAfter = 4;
+        PlanarResonanceNodes Counting(double f)
+        {
+            probes++;
+            return probe.Probe(f);
+        }
+
+        var outcome = PlanarResonanceSearch.Search(
+            probe.Nodes, 1.5e9, 2.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+            PlanarResonanceSettings.Default, Counting, stopped: () => probes >= stopAfter);
+
+        _out.WriteLine($"{probes} probe(s) taken, stop asked for at {stopAfter}");
+        _out.WriteLine(outcome.Note);
+
+        // It STOPPED. The check is at a probe boundary, so one more may be in flight when the stop
+        // is read — never more than that, which is the granularity cancellation already has.
+        Assert.InRange(probes, stopAfter, stopAfter + 1);
+
+        // It KEPT what it had: the bracket at the moment of the stop is made of SOLVED ends, so the
+        // resonance reported from it is real — just not pinned as tightly as the tolerance asked.
+        var found = Assert.Single(outcome.Resonances);
+        Assert.InRange(found.FrequencyHz, 1.5e9, 2.0e9);
+        Assert.True(found.LocatedToHz > 0);
+        _out.WriteLine($"kept f0 = {found.FrequencyHz / 1e9:F6} GHz, located to " +
+                       $"{found.LocatedToHz / 1e6:F3} MHz (true {f0 / 1e9:F6})");
+
+        // And it SAID SO, in its own words and in a flag that is not the cap's.
+        Assert.True(outcome.StoppedEarly);
+        Assert.Contains("STOPPED at the user's request", outcome.Note, StringComparison.Ordinal);
+    }
+
+    /// <summary>A search never asked to stop is BYTE-IDENTICAL to one with no stop predicate at
+    /// all — the property that makes the parameter safe to have added to every caller.</summary>
+    [Fact]
+    public void AStopThatNeverFires_ChangesNothing()
+    {
+        const double f0 = 1.8412e9, q = 214, r = 50;
+
+        PlanarResonanceOutcome Run(Func<bool>? stopped)
+        {
+            var probe = new AnalyticProbe(SeriesRlc(f0, q, r), Grid(1.5e9, 2.0e9, 9));
+            return PlanarResonanceSearch.Search(
+                probe.Nodes, 1.5e9, 2.0e9, Z0, PlanarInterpolant.CubicSpline, 1e-3,
+                PlanarResonanceSettings.Default, probe.Probe, stopped);
+        }
+
+        var without = Run(null);
+        var never   = Run(() => false);
+
+        Assert.False(without.StoppedEarly);
+        Assert.False(never.StoppedEarly);
+        Assert.Equal(without.Note, never.Note);
+        Assert.Equal(without.AddedFrequencies, never.AddedFrequencies);
+        Assert.Equal(without.Resonances.Count, never.Resonances.Count);
+        for (int i = 0; i < without.Resonances.Count; i++)
+        {
+            Assert.Equal(without.Resonances[i].FrequencyHz, never.Resonances[i].FrequencyHz);
+            Assert.Equal(without.Resonances[i].Q,           never.Resonances[i].Q);
+        }
+    }
+
+    /// <summary>
+    /// <b>A stopped SWEEP publishes the prefix it solved and names what is missing.</b> The fixed-grid
+    /// half of the same request: nothing downstream distinguishes a stopped result from a completed
+    /// one — same DataSet, same cubes, same `.snp` — which is exactly why the note is mandatory.
+    /// </summary>
+    [Fact]
+    public void AStoppedFixedGridSweep_PublishesThePrefix_AndNamesWhatIsNotInIt()
+    {
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 9);
+
+        // The point loop reads the stop at the TOP of each point, and a progress tick is the only
+        // seam a test has into it — so the stop is armed from inside the sink, after two points.
+        RunControl? control = null;
+        int ticks = 0;
+        control = new RunControl
+        {
+            Progress = new Progress<RunProgress>(_ => { if (++ticks >= 2) control!.RequestStop(); }),
+        };
+
+        var run = PlanarSolve.Run(p, m, ports, freqs,
+                                  new PlanarSolveSettings(Deembed: false), control);
+
+        var note = run.Notes.FirstOrDefault(n => n.StartsWith("STOPPED EARLY", StringComparison.Ordinal));
+        _out.WriteLine($"{run.Points.Count} of {freqs.Length} point(s) published");
+        _out.WriteLine(note ?? "(no stop note)");
+
+        // The PREFIX, and it is a real sweep: fewer points than asked for, every one of them solved
+        // rather than modelled, and in ascending order like any other.
+        Assert.NotNull(note);
+        Assert.InRange(run.Points.Count, 1, freqs.Length - 1);
+        Assert.Contains("PREFIX", note, StringComparison.Ordinal);
+        Assert.Contains($"of {freqs.Length} requested", note, StringComparison.Ordinal);
+        for (int i = 0; i < run.Points.Count; i++)
+            Assert.Equal(freqs[i], run.Points[i].FrequencyHz);
     }
 }

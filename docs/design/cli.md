@@ -1754,6 +1754,8 @@ circuitrf plot run.npy -o pattern.svg --type polar --radial db --db-floor -30 --
 | `--db-ring` | ring spacing in dB. Default 10. |
 | `--db-ref peak\|<dB>` | the outer ring: the data's own peak (normalised, the default) or an absolute level. |
 | `--db-unit` | what the radial numbers are in — `dBi`, `dB(W/sr)`. Blank takes the cube's own `Unit`, which ANT-4's and ANT-5's cubes do not yet carry. |
+| `--whole-plane` | each `cut=` becomes **ONE** trace spanning −θ_max … +θ_max, fetching the φ + 180° half alongside its own, instead of the two traces below. Needs a pattern scale, like the flags above it. |
+| `--angle-labels` | bearings every 30° outside the disc, with a spoke to each. **Not a dB option** — a LOCUS has a bearing too — so it is not in `DbOptions` and is refused on its own terms: polar only, either radial mode. |
 
 Every one of those is refused when the plot has **no pattern scale at all**, rather than doing nothing.
 `--radial db` gives a polar plot one; `--type surface` (§15.2) has one by construction, so the floor,

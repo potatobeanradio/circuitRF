@@ -614,7 +614,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         // display (and every Add Plot) opened off-ratio until the user happened to resize it.
         double h;
         if (height > 0)                    h = height;      // explicit (e.g. restoring a .cdd)
-        else if (plotType == PlotType.Rect)
+        // ANT-10's surface takes the RECTANGULAR aspect, not the square one, and for the reason
+        // PlotContainerViewModel.CoerceAspectForPlotType gives: the scene is square but the colour
+        // bar beside it and the caption block under it are not. Added here as well as there so an
+        // ADDED 3D pattern opens at the same size a CONVERTED one lands at.
+        else if (plotType is PlotType.Rect or PlotType.Surface3D)
         {
             double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
             h = ratio > 0 ? w / ratio : 360;
@@ -1446,6 +1450,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             PolarDbReference            = plot.PolarDbReference,
             PolarDbReferenceValue       = plot.PolarDbReferenceValue,
             PolarDbUnit                 = plot.PolarDbUnit,
+            PolarAngleLabels            = plot.ShowPolarAngleLabels,
             SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
             SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,
             SurfaceZoom                 = plot.SurfaceCamera.Zoom,
@@ -1563,6 +1568,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             // than one it cannot draw: the picture is right until someone saves, and then it is
             // silently a quarter-disc again.
             MirrorPatternAngle = t.MirrorPatternAngle,
+            PatternWholePlane  = t.PatternWholePlane,
+            ReferenceInputPowerDbmOverride = t.ReferenceInputPowerDbmOverride,
             CubeSlice     = t.Slice is null
                 ? new()
                 : t.Slice.Select(AxisSliceConfig.From).ToList(),

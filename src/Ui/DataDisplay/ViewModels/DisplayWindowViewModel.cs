@@ -462,6 +462,16 @@ public partial class DisplayWindowViewModel : ViewModelBase
     [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
     [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
 
+    /// <summary>
+    /// <b>ANT-10's 3D pattern, ADDABLE.</b> Reported 2026-09-11: the 3D pattern is only reachable
+    /// after adding a polar plot, because the plot-type row that carries its icon lives on the
+    /// INSPECTOR — which needs a plot selected before it shows anything. Every other plot kind the
+    /// inspector can switch to has a matching Add button on the toolbar; this one did not, so the
+    /// only route to it was "add a polar plot, then convert it", which is not a route anybody
+    /// finds. One more button, the same <c>AddPlot</c>, no new placement or sizing rule.
+    /// </summary>
+    [RelayCommand] private void AddSurfacePlot() => DataDisplay?.AddPlot(PlotType.Surface3D);
+
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
 

@@ -224,16 +224,28 @@
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Center"
                         Spacing="6"
-                        IsVisible="{Binding HasPatternScale}">
+                        IsVisible="{Binding HasPatternControls}">
 
                 <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and
                      has no linear reading to offer, so the checkbox is not shown for it. Everything
-                     after it is the SCALE, which both kinds have and both read the same way. -->
+                     after it is the SCALE, which both kinds have and both read the same way.
+                     The ROW is gated on HasPatternControls, not HasPatternScale: this switch is the
+                     only way INTO dB mode, so gating it on already being in dB mode hid it on every
+                     polar plot that had not been authored as a pattern elsewhere. -->
                 <CheckBox Content="dB radial"
                           IsChecked="{Binding PolarRadialIsDb, Mode=TwoWay}"
                           IsVisible="{Binding IsPolarPlot}"
                           FontSize="11"
                           ToolTip.Tip="Read the radius in decibels — an antenna pattern"/>
+
+                <!-- Bearings around the rim. A POLAR plot's, either radial mode: a locus has a
+                     bearing too, it is just the phase rather than a direction, and the grid prints
+                     whichever convention the plot is actually drawn in. -->
+                <CheckBox Content="Angles"
+                          IsChecked="{Binding PolarAngleLabels, Mode=TwoWay}"
+                          IsVisible="{Binding IsPolarPlot}"
+                          FontSize="11"
+                          ToolTip.Tip="Print the bearing every 30° around the outside of the disc, with a spoke to each. The disc shrinks to make room rather than the numbers overprinting the outer ring."/>
 
                 <CheckBox Content="Normalise"
                           IsChecked="{Binding PolarDbNormalised, Mode=TwoWay}"
@@ -1557,6 +1569,53 @@
                                                   Margin="0,2,0,0"
                                                   Content="Back half of the cut (draw at -theta)"
                                                   ToolTip.Tip="A cut runs from -theta_max through broadside to +theta_max, and the negative half is the phi + 180 branch. Pin this trace at phi + 180 and tick this to draw the whole plane."/>
+
+                                        <!-- The one-trace form of the same picture: this trace
+                                             fetches the phi + 180 half itself and draws the plane
+                                             as one curve. Hides the back-half checkbox while it is
+                                             on, because mirroring a whole plane folds it onto
+                                             itself. -->
+                                        <CheckBox Name="PatternWholePlaneCheck"
+                                                  IsVisible="{Binding ShowPatternWholePlane}"
+                                                  IsChecked="{Binding PatternWholePlane, Mode=TwoWay}"
+                                                  FontSize="11"
+                                                  Margin="0,2,0,0"
+                                                  Content="Whole plane in one trace"
+                                                  ToolTip.Tip="Draw both halves of this cut as one curve, -theta_max through broadside to +theta_max, by fetching the phi + 180 slice alongside this one. An E-plane and an H-plane cut is then two traces instead of four. Use the back-half checkbox above instead when the two halves want different colours."/>
+
+                                        <!-- A dBm LEVEL's reference power. Shown only on a cube
+                                             that says it is one (unit dBm, with the run's own
+                                             reference published beside it) - today TrpDbm and
+                                             PeakEirpDbm. It is HERE rather than only on the EM
+                                             panel because re-referencing is an exact dB shift on
+                                             numbers already in hand: making a user re-run an
+                                             hours-long sweep for it would charge the price of a
+                                             simulation for an offset. -->
+                                        <Grid ColumnDefinitions="*,Auto,Auto"
+                                              Margin="0,4,0,0"
+                                              IsVisible="{Binding ShowReferenceInputPower}">
+                                            <TextBlock Grid.Column="0"
+                                                       Classes="label"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding ReferenceInputPowerCaption}"
+                                                       ToolTip.Tip="{Binding ReferenceInputPowerCaption}"/>
+                                            <NumericUpDown Grid.Column="1"
+                                                           Width="86" FontSize="11" Padding="5,2"
+                                                           Minimum="-100" Maximum="100" Increment="1"
+                                                           FormatString="0.##"
+                                                           ShowButtonSpinner="False"
+                                                           Value="{Binding ReferenceInputPowerDbm, Mode=TwoWay}"
+                                                           ToolTip.Tip="dBm. The conducted power this level is read against. It opens on the reference the RUN published and changing it re-reads the same solved data - no re-run, because the correction is an exact dB shift. The trace's label always states the reference it is drawn at."/>
+                                            <Button Grid.Column="2"
+                                                    Classes="seg-btn"
+                                                    Margin="4,0,0,0"
+                                                    Command="{Binding ResetReferenceInputPowerCommand}"
+                                                    IsVisible="{Binding IsReferenceInputPowerOverridden}"
+                                                    ToolTip.Tip="Back to the reference the run published. Not the same as typing that number in: this clears the override, so a later re-run at a different reference is followed.">
+                                                <mi:MaterialIcon Kind="Restore" Width="13" Height="13"/>
+                                            </Button>
+                                        </Grid>
 
                                         <!-- ── Line row ──────────────────────────────────────────
                                              Cols: 34 (ISB) | * (NUD+slider nested) | 95 (color) | 26 (blank)

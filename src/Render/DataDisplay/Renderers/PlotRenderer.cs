@@ -91,6 +91,16 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>Fractional top margin above the chart circle.</summary>
         public const double ComplexTopMarginBase = 0.01;
 
+        /// <summary>
+        /// <b>Extra fractional margin on every side when a polar plot prints its bearings</b>
+        /// (<see cref="Plot.ShowPolarAngleLabels"/>). The disc SHRINKS to make room rather than the
+        /// numbers being drawn over the outermost ring: on a pattern plot the outer ring is the
+        /// reference and a trace sits ON it at the peak, so an overprinted "90" would land on the
+        /// one sample the reader is looking for. 0.055 is what a three-digit bearing needs at the
+        /// tick font's own size, measured at the 420-point default box.
+        /// </summary>
+        public const double ComplexAngleLabelMargin = 0.055;
+
         // ---- WorldToCanvasParams ----------------------------------------
 
         public static (double XScale, double YScale, double XOffset, double YOffset)
@@ -129,8 +139,15 @@ namespace CircuitRF.Render.DataDisplay
             {
                 double effectiveH = Math.Min(canvasSize.W, canvasSize.H);
 
-                double availW = canvasSize.W * (1 - 2 * ComplexSideMargin);
-                double availH = effectiveH   * (1 - ComplexTopMarginBase - ComplexBottomMargin);
+                // The bearings live OUTSIDE the boundary ring, so the room for them comes out of
+                // the viewport — which is the one place that makes the clip, the transform, the
+                // ring lattice and the autoscale all agree about where the disc's edge is.
+                double bearings = plot.PlotType == PlotType.Polar && plot.ShowPolarAngleLabels
+                    ? ComplexAngleLabelMargin : 0.0;
+
+                double availW = canvasSize.W * (1 - 2 * ComplexSideMargin - 2 * bearings);
+                double availH = effectiveH   * (1 - ComplexTopMarginBase - ComplexBottomMargin
+                                                  - 2 * bearings);
                 double side   = Math.Min(availW, availH);
                 double fracW  = side / canvasSize.W;
                 double fracH  = side / canvasSize.H;
@@ -143,7 +160,8 @@ namespace CircuitRF.Render.DataDisplay
                     topExtra = Math.Max(0, titleSz * 1.3 - vpTopBase);
                 }
 
-                double viewportY = (ComplexTopMarginBase * effectiveH + topExtra) / canvasSize.H;
+                double viewportY = ((ComplexTopMarginBase + bearings) * effectiveH + topExtra)
+                                   / canvasSize.H;
 
                 return new PlotRect(
                     0.5 - fracW / 2,
@@ -219,7 +237,8 @@ namespace CircuitRF.Render.DataDisplay
                     AxesRenderer.DrawRectGrid(canvas, canvasSize, plot.Axes, tf, detail, theme);
                     break;
                 case PlotType.Polar:
-                    AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme, plot.PatternScale);
+                    AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme, plot.PatternScale,
+                                               plot.ShowPolarAngleLabels);
                     break;
                 case PlotType.Smith:
                     AxesRenderer.DrawSmithGrid(canvas, canvasSize, plot.Axes, tf, theme);

@@ -83,6 +83,9 @@ public enum PlanarMetric
     DirectivityPeakPhiDeg,
     GainDbi,
     RealizedGainDbi,
+    ReferenceInputPowerDbm,
+    TrpDbm,
+    PeakEirpDbm,
     BeamwidthDeg,
     FrontToBackDb,
 }
@@ -124,10 +127,33 @@ public enum PlanarMetricAxis
 /// <b>This does not change what any cube MEANS</b>: it names the reference direction, and a second
 /// DEFINITION of cross-pol would be a second cube (R-ant-8).
 /// </param>
+/// <param name="ReferenceInputPowerDbm">
+/// <b>The conducted power TRP and peak EIRP are referenced to, in dBm.</b> Owner request,
+/// 2026-09-11.
+///
+/// <para><b>It exists because those two metrics are ABSOLUTE POWERS and this analysis has no
+/// absolute excitation.</b> Every other metric here is a RATIO — a directivity, an efficiency, a
+/// gain — and is therefore invariant in the excitation, which is why the 1 V delta gap the solve
+/// drives with has never had to mean anything. TRP and EIRP are not ratios: they are what an
+/// antenna radiates when a transmitter of a stated power is connected to it, so the stated power is
+/// an input and there is no way to derive one. Publishing them against the delta gap's own accepted
+/// power would put a number in dBm that is an artefact of the excitation.</para>
+///
+/// <para><b>0 dBm is the default, and it is the convention an over-the-air report is written in</b>
+/// — at 1 mW conducted, peak EIRP in dBm is numerically the realized gain in dBi and TRP in dBm is
+/// the total efficiency in dB, so the two new cubes read as the quantities an antenna engineer
+/// already knows before anybody sets anything. Set it to a radio's own conducted power and the same
+/// two cubes become directly comparable against that radio's measured report.</para>
+///
+/// <para>It is <b>published as its own cube</b> (<see cref="PlanarMetric.ReferenceInputPowerDbm"/>)
+/// for the reason <see cref="PlanarMetric.PowerAccepted"/> is: a dBm whose reference is not in the
+/// file cannot be reproduced from the file.</para>
+/// </param>
 public sealed record PlanarMetricSettings(
     IReadOnlyList<double>? BeamwidthCutsPhiDeg = null,
     int                    AzimuthSamples = PlanarSurfaceWaveLaunch.DefaultAzimuthSamples,
-    double?                PolarizationReferencePhiDeg = null)
+    double?                PolarizationReferencePhiDeg = null,
+    double                 ReferenceInputPowerDbm = 0.0)
 {
     public static readonly PlanarMetricSettings Default = new();
 
@@ -527,16 +553,81 @@ public static class PlanarMetrics
                 var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
                 if (!ok.Ok) return ok;
                 if (c.PortReflection is null) return EmSuitability.No(RealizedGainRefusal);
-                double m = c.MismatchFactor;
-                return m > 0 && m <= 1.0 + 1e-12
-                    ? EmSuitability.Yes
-                    : EmSuitability.No(
-                        $"The mismatch factor came out as {m:E6}, which is not in (0, 1]. It is " +
-                        $"1 − |Γ|² at the port, with Γ = {c.PortReflection} and Z₀ = {c.PortZ0} Ω; a " +
-                        $"value outside that range means the port is not a passive one-port seen " +
-                        $"from a source of positive resistance. Refused rather than turned into a dB.");
+                return MismatchUsable(c);
             },
             c => [PlanarMetricContext.Db(c.FourPiPeakOver(c.Budget.AcceptedW) * c.MismatchFactor)]),
+
+        // ════════════════════════════════════════════════════════════════════════════════════════
+        // THE TWO ABSOLUTE POWERS, AND THE REFERENCE THEY ARE ABSOLUTE AGAINST
+        // ════════════════════════════════════════════════════════════════════════════════════════
+        //
+        // Owner request, 2026-09-11: "do we have TRP, peak EIRP?" — the two numbers an over-the-air
+        // report leads with, and the two this registry could not express, because everything else
+        // in it is a RATIO and a ratio needs no excitation to be absolute against. See
+        // PlanarMetricSettings.ReferenceInputPowerDbm for why the reference is an input rather than
+        // something derivable, and why its default is 0 dBm.
+        //
+        // Both refuse on exactly the predicate RealizedGainDbi refuses on, and that is structural
+        // rather than a shared precaution: what a transmitter delivers into an antenna is its
+        // AVAILABLE power less the mismatch, so the mismatch factor is in both of them and it is
+        // the one quantity here that needs the port's own published Γ.
+        //
+        // PeakEirpDbm = TrpDbm + DirectivityDbi is then an identity rather than a coincidence, and
+        // it is the check to read them by: TRP · D = P_ref·m·(P_rad/P_acc) · (4π·U_peak/P_rad),
+        // whose P_rad cancels.
+
+        new(PlanarMetric.ReferenceInputPowerDbm, "ReferenceInputPowerDbm", "dBm",
+            PlanarMetricAxis.PerPoint,
+            "The conducted power TRP and peak EIRP are referenced to — an INPUT to the analysis, " +
+            "not a result of it. Every other metric here is a ratio and needs no absolute " +
+            "excitation; those two are absolute powers and there is nothing in a solve driven by a " +
+            "1 V delta gap to derive one from. It is published as a cube because a dBm whose " +
+            "reference is not in the file cannot be reproduced from the file. At the 0 dBm default " +
+            "peak EIRP in dBm reads as the realized gain in dBi and TRP in dBm as the total " +
+            "efficiency in dB.",
+            _ => EmSuitability.Yes,
+            c => [c.Settings.ReferenceInputPowerDbm]),
+
+        new(PlanarMetric.TrpDbm, "TrpDbm", "dBm", PlanarMetricAxis.PerPoint,
+            "TOTAL RADIATED POWER — what the antenna radiates in every direction when a source of " +
+            "ReferenceInputPowerDbm is connected at the port. P_ref + 10·log₁₀(η_rad · (1 − |Γ|²)): " +
+            "the mismatch factor takes the source's available power down to what the port accepts, " +
+            "and the radiation efficiency takes THAT down to what leaves the structure. " +
+            "**A full-sphere integral is what TRP means, and here the sphere and the upper " +
+            "hemisphere are the same integral** — the ground plane is laterally infinite, so the " +
+            "field below it is identically zero by construction rather than small. On a real board " +
+            "with a finite plane there is power behind the antenna that this model cannot see, so " +
+            "this reads LOW against a measured TRP by however much that is, and the surface-wave " +
+            "term (which a finite board radiates from its edges and this one books as loss " +
+            "permanently) pushes the same way.",
+            c =>
+            {
+                var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
+                if (!ok.Ok) return ok;
+                if (c.PortReflection is null) return EmSuitability.No(AbsolutePowerRefusal("TRP"));
+                return MismatchUsable(c);
+            },
+            c => [c.Settings.ReferenceInputPowerDbm
+                  + PlanarMetricContext.Db(c.Budget.RadiationEfficiency * c.MismatchFactor)]),
+
+        new(PlanarMetric.PeakEirpDbm, "PeakEirpDbm", "dBm", PlanarMetricAxis.PerPoint,
+            "PEAK EIRP — the equivalent isotropically radiated power in the pattern's strongest " +
+            "direction, when a source of ReferenceInputPowerDbm is connected at the port. It is " +
+            "P_ref + RealizedGainDbi exactly, and equivalently TrpDbm + DirectivityDbi; the " +
+            "direction it is the peak IN is DirectivityPeakThetaDeg/PhiDeg. **It is the REALIZED " +
+            "gain that is in it, so mismatch is included** — an antenna detuned off the band reads " +
+            "low here and unchanged in DirectivityDbi, which is the difference the two are for. " +
+            "With a laterally infinite ground plane the directivity reads optimistic against a real " +
+            "board, and this carries that optimism with it.",
+            c =>
+            {
+                var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
+                if (!ok.Ok) return ok;
+                if (c.PortReflection is null) return EmSuitability.No(AbsolutePowerRefusal("Peak EIRP"));
+                return MismatchUsable(c);
+            },
+            c => [c.Settings.ReferenceInputPowerDbm
+                  + PlanarMetricContext.Db(c.FourPiPeakOver(c.Budget.AcceptedW) * c.MismatchFactor)]),
 
         new(PlanarMetric.BeamwidthDeg, "BeamwidthDeg", "deg", PlanarMetricAxis.PerCut,
             "The 3 dB beamwidth, PER NAMED CUT — and a cut is either named by the caller or DERIVED " +
@@ -600,6 +691,42 @@ public static class PlanarMetrics
         "publishes this cube and does not reach this sentence — it de-embeds each point before " +
         "taking that point's pattern and hands the reflection over; only a caller that built a " +
         "metric context by hand, with no s-matrix to give, sees this.";
+
+    /// <summary>
+    /// <b>The shared half of the mismatch check</b> — the same range test
+    /// <see cref="PlanarMetric.RealizedGainDbi"/> applies, said once because three metrics now read
+    /// the same factor and three copies of a range test is three places for one of them to drift.
+    /// </summary>
+    private static EmSuitability MismatchUsable(PlanarMetricContext c)
+    {
+        double m = c.MismatchFactor;
+        return m > 0 && m <= 1.0 + 1e-12
+            ? EmSuitability.Yes
+            : EmSuitability.No(
+                $"The mismatch factor came out as {m:E6}, which is not in (0, 1]. It is 1 − |Γ|² at " +
+                $"the port, with Γ = {c.PortReflection} and Z₀ = {c.PortZ0} Ω; a value outside that " +
+                $"range means the port is not a passive one-port seen from a source of positive " +
+                $"resistance. Refused rather than turned into a dBm.");
+    }
+
+    /// <summary>
+    /// <b>Why an absolute power is refused when the port's own Γ is not in hand</b>, with the exact
+    /// arithmetic to do instead — the shape <see cref="RealizedGainRefusal"/> established, because a
+    /// refusal that leaves the caller unable to get the number is worse than one that does not.
+    /// </summary>
+    internal static string AbsolutePowerRefusal(string what) =>
+        $"{what} is not published, because the reflection coefficient it needs is not the one this " +
+        "analysis has in hand where the pattern is taken. An absolute radiated power is the " +
+        "source's AVAILABLE power less the mismatch less the loss, so it carries the same " +
+        "1 − |Γ|² that realized gain does — and the raw self-admittance beside the pattern is the " +
+        "delta gap's, which at a de-embedded edge port is the feed parasitic the error box exists " +
+        "to remove rather than the antenna's input. DO THIS INSTEAD, and it is exact: " +
+        "TRP(dBm) = ReferenceInputPowerDbm + 10·log₁₀(RadiationEfficiency) + 10·log₁₀(1 − |S₁₁|²) " +
+        "and peak EIRP(dBm) = TRP(dBm) + DirectivityDbi, with S₁₁ read from the published, " +
+        "de-embedded S cube at the same frequency and port. A SWEEP publishes both cubes and does " +
+        "not reach this sentence — it de-embeds each point before taking that point's pattern and " +
+        "hands the reflection over; only a caller that built a metric context by hand, with no " +
+        "s-matrix to give, sees this.";
 
     public static PlanarMetricDefinition Of(PlanarMetric metric) =>
         Registry.First(d => d.Metric == metric);

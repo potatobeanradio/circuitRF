@@ -126,6 +126,10 @@ public sealed class PlotContainerConfig
     public double               PolarDbReferenceValue { get; set; }
     public string               PolarDbUnit           { get; set; } = "";
 
+    /// <summary>Bearings around the rim. <b>False by default</b>, so a `.cdd` written before
+    /// 2026-09-11 draws the picture it always drew.</summary>
+    public bool                 PolarAngleLabels      { get; set; }
+
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //
     //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are
@@ -290,6 +294,17 @@ public sealed class TraceConfig
     /// files already drew.
     /// </summary>
     public bool MirrorPatternAngle { get; set; }
+
+    /// <summary>One trace drawing BOTH halves of a cut — see <see cref="Trace.PatternWholePlane"/>.
+    /// <b>False by default</b>, so every `.cdd` written before 2026-09-11 keeps the two-trace form
+    /// it was authored in.</summary>
+    public bool PatternWholePlane { get; set; }
+
+    /// <summary>Read this trace's dBm level against a different reference power than the run
+    /// published — see <see cref="Trace.ReferenceInputPowerDbmOverride"/>. <b>Null is "the run's
+    /// own"</b>, which is every `.cdd` written before 2026-09-11 and every trace that is not a
+    /// referenced level.</summary>
+    public double? ReferenceInputPowerDbmOverride { get; set; }
 
     // Expression-mode field. When non-null, supersedes CubeName/CubeSlice/CubeTransform for value production.
     public string?               Expression    { get; set; }

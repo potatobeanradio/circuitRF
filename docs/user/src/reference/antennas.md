@@ -48,7 +48,10 @@ The results land in the `farfield` group of the same result the s-parameters do.
 | `Etheta`, `Ephi` | freq, θ, φ, port | V, r-normalised (r·E with e<sup>−jk₀r</sup> removed) |
 | `DirectivityDbi`, `GainDbi` | freq, port | dBi |
 | `DirectivityPeakThetaDeg`, `…PhiDeg` | freq, port | deg — where the peak is |
+| `RealizedGainDbi` | freq, port | dBi — gain including mismatch |
 | `RadiationEfficiency` | freq, port | fraction, not dB |
+| `TrpDbm`, `PeakEirpDbm` | freq, port | dBm — see [TRP and EIRP](#trp) |
+| `ReferenceInputPowerDbm` | freq, port | dBm — what those two are referenced to |
 | `PowerAccepted`, `PowerRadiated`, `PowerSurfaceWave`, `PowerDielectric`, `PowerConductor` | freq, port | W |
 | `BeamwidthDeg` | freq, **cut**, port | deg — the `cut` axis carries each plane's φ |
 | `AxialRatioDb`, `PolarizationSense` | freq, θ, φ, port | dB, and signed Stokes *V* |
@@ -115,6 +118,27 @@ Two things to do, in order:
   every point of your own grid is published exactly as it was. It needs adaptive sampling on, because it
   seeds itself from the model refinement builds.
 
+### Stopping without losing the run
+
+The resonance search keeps adding **solved** points after the resonance is on screen, and each one is a
+full-wave frequency point. There is no way to see from outside how many more it intends to take, so the
+EM run's progress bar offers a **Stop** above its Cancel:
+
+| | |
+|---|---|
+| **Stop** | finish at the next work boundary and **keep everything solved**. The results are packaged and written exactly as a completed run's are. |
+| **Cancel** | abandon the run and write nothing. |
+
+Right-click either of the EM run's two progress rows. A stopped run is a complete, ordinary result —
+same cubes, same `.snp` — which is why it always carries a note saying so, and saying what is therefore
+not in it:
+
+- with adaptive sampling on, **the full requested grid is still published**, modelled from the points
+  that were solved (which is what adaptive sampling does at every budget); the note gives the
+  disagreement actually reached rather than the tolerance you asked for;
+- on a fixed grid, the sweep is **the prefix that was solved** and the note names the frequencies that
+  are not in it. Nothing is interpolated and nothing is approximate.
+
 ## Reading the pattern {#pattern}
 
 **θ spans 0…90° only, and the axis stops there rather than being padded.** With an infinite ground plane
@@ -126,11 +150,24 @@ In the Data Display:
 - **A cut** is one plane, swept over θ. Plot `farfield.U` on a **Polar** plot and set the radial axis
   to **dB**: the outer ring is the reference and each ring is a step down. The plot states which
   reference it is using, so a normalised pattern cannot be mistaken for an absolute one.
-- **A cut is a plane, so it is two traces.** It runs from −θ<sub>max</sub> through broadside to
+- **A cut is a plane, so it crosses the disc.** It runs from −θ<sub>max</sub> through broadside to
   +θ<sub>max</sub>, and the negative half is the φ + 180° branch — which is also what the beamwidth
-  metric measures, so the picture and the number agree. `circuitrf plot … --type polar --radial db
-  --trace cube=farfield.U,cut=0,…` adds the second branch for you. In the Data Display, add a trace
-  pinned at φ + 180° and tick **Back half of the cut** on its card.
+  metric measures, so the picture and the number agree. There are **two ways to draw it, and the
+  simple one is the default choice**:
+  - **One trace.** Tick **Whole plane in one trace** on the trace's card and it fetches the φ + 180°
+    half itself. An E-plane and an H-plane plot is then two traces rather than four, with one
+    colour, one label and one marker set each. Headless: `--whole-plane`.
+  - **Two traces**, which is what every `.cdd` written before 2026-09 carries and still the one to
+    reach for when the halves want telling apart — a different colour per half, or the back half
+    hidden. Add a trace pinned at φ + 180° and tick **Back half of the cut** on its card; headless,
+    `--trace cube=farfield.U,cut=0,…` adds that second branch for you.
+
+  Either way the trace's label names both azimuths (`phi=0/180 deg`), so a half-disc can never be
+  mistaken for a whole one.
+- **Bearings around the rim** — tick **Angles** beside the dB-radial switch (headless:
+  `--angle-labels`) to print the angle every 30° outside the disc, with a spoke to each, the way an
+  antenna-range plot is drawn. The disc shrinks to make room rather than the numbers landing on the
+  outer ring, which on a normalised pattern is exactly where the peak is.
 - **Normalised** means the peak of *this* trace is the outer ring — right for comparing shapes, useless
   for comparing two antennas. **Absolute** pins the outer ring to a dB value you choose, which is what
   you want when the levels are the point.
@@ -163,6 +200,48 @@ RealizedGainDbi = GainDbi + 10·log10(1 − |S11|²)
 It is *not* read from the raw admittance of the port's delta-gap excitation, which at a de-embedded
 edge port is the gap's own parasitic rather than the antenna's input — that reads a matched antenna as
 badly mismatched.
+
+### TRP and peak EIRP {#trp}
+
+These are the two numbers an **over-the-air report** leads with, and they are the only *absolute*
+quantities here — everything else on this page is a ratio.
+
+| | |
+|---|---|
+| `TrpDbm` | total radiated power: what the antenna radiates in **every** direction |
+| `PeakEirpDbm` | equivalent isotropically radiated power in the pattern's strongest direction |
+
+A ratio needs no excitation to be absolute against; a watt does. This analysis drives a 1 V delta gap,
+which means nothing in watts, so **you supply the reference** — in either of two places, and the second
+one is the one you will normally touch:
+
+| | |
+|---|---|
+| *EM Setup ▸ Radiation pattern ▸ Reference input power* | what the **run records**: the value baked into the `.npy` and reported by `circuitrf em`. |
+| *Trace card ▸ Reference input power* | reads the **same solved data** against any other reference — **no re-run**. Headless: `ref=<dBm>` on a `--trace`. |
+
+**Changing the reference never needs a re-run.** A level is linear in its reference, so re-referencing
+is a subtraction and an addition, both exact. The run publishes its own reference as
+`ReferenceInputPowerDbm` beside the two levels — a dBm whose reference is not in the file cannot be
+reproduced from it, and it is also what makes the trace-card version exact rather than a guess. The
+trace's label **always** states the reference it is drawn at (`@ 20 dBm in`), because a picture carries
+no file and there would otherwise be no way to tell one reference from another.
+
+```
+TrpDbm      = ReferenceInputPowerDbm + 10·log10(RadiationEfficiency · (1 − |S11|²))
+PeakEirpDbm = ReferenceInputPowerDbm + RealizedGainDbi
+            = TrpDbm + DirectivityDbi
+```
+
+**The default is 0 dBm**, and at 0 dBm the two read as quantities you already have: peak EIRP in dBm
+*is* the realized gain in dBi, and TRP in dBm *is* the total efficiency in dB. Set it to a radio's own
+conducted power and both become directly comparable against that radio's measured report. It changes
+nothing else — a directivity, a gain and an efficiency are ratios and do not move.
+
+**Read TRP as a lower bound.** Full-sphere is what TRP means, and here the sphere and the upper
+hemisphere are the same integral because the ground plane is infinite. A real board puts power behind
+the antenna that this model cannot see, and the surface-wave term — which a finite board radiates from
+its edges and this one books as loss permanently — pushes the same way.
 
 ### The loss itemisation, and what to change for each term
 

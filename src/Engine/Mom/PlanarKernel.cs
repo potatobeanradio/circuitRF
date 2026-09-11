@@ -578,9 +578,12 @@ public sealed class PlanarKernel
                     }
             }
 
-        ds.AddToGroup(PlanarFarField.Group, "Etheta", new DataCube(Ax(), eth));
-        ds.AddToGroup(PlanarFarField.Group, "Ephi",   new DataCube(Ax(), eph));
-        ds.AddToGroup(PlanarFarField.Group, "U",      new DataCube(Ax(), u));
+        // Units, for the reason AddMetrics gives: a pattern plot's radial numbers are in SOMETHING,
+        // and "dB" alone does not say what of. E is r-normalised (r·E with e^{-jk₀r} removed), so it
+        // is volts; U is a radiation intensity.
+        ds.AddToGroup(PlanarFarField.Group, "Etheta", new DataCube(Ax(), eth) { Unit = "V" });
+        ds.AddToGroup(PlanarFarField.Group, "Ephi",   new DataCube(Ax(), eph) { Unit = "V" });
+        ds.AddToGroup(PlanarFarField.Group, "U",      new DataCube(Ax(), u)   { Unit = "W/sr" });
     }
 
     /// <summary>
@@ -624,8 +627,15 @@ public sealed class PlanarKernel
                         values[(i * stride + k) * nq + q] = outcome.Values[k];
                 }
 
+            // THE UNIT TRAVELS WITH THE CUBE. The registry has carried one per metric since ANT-5
+            // and this publish threw it away, which ANT-7 §8 recorded as the reason a pattern plot
+            // could not say what its radial numbers were in. It matters more than presentation now:
+            // a dBm LEVEL is only meaningful against a reference, and the unit is what tells a
+            // reader — and `LevelReference` — that this cube has one (`ReferenceInputPowerDbm`,
+            // published beside it) rather than being an absolute nobody can reproduce.
             Axis[] axes = perCut ? [Freq(), Cut(), Port()] : [Freq(), Port()];
-            ds.AddToGroup(PlanarFarField.Group, def.CubeName, new DataCube(axes, values));
+            ds.AddToGroup(PlanarFarField.Group, def.CubeName,
+                          new DataCube(axes, values) { Unit = def.Unit });
         }
     }
 

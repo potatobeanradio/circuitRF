@@ -28,9 +28,11 @@ namespace CircuitRF.Ui.Messages;
 /// </summary>
 public sealed class RunCancellation
 {
-    private readonly Action _cancel;
+    private readonly Action  _cancel;
+    private readonly Action? _stop;
     private readonly object _gate = new();
     private bool _requested;
+    private bool _stopRequested;
     private bool _finished;
 
     /// <param name="what">
@@ -41,10 +43,15 @@ public sealed class RunCancellation
     /// What actually stops it. Called at most once, on the UI thread. Typically
     /// <c>CancellationTokenSource.Cancel</c> plus whatever the host wants to say about it.
     /// </param>
-    public RunCancellation(string what, Action cancel)
+    /// <param name="stop">
+    /// <b>What FINISHES it early and keeps the results</b>, or null when the operation has no such
+    /// thing — which is every operation but the EM run. See <see cref="Stop"/>.
+    /// </param>
+    public RunCancellation(string what, Action cancel, Action? stop = null)
     {
         What    = what ?? "";
         _cancel = cancel ?? throw new ArgumentNullException(nameof(cancel));
+        _stop   = stop;
     }
 
     /// <summary>What is being stopped — "the EM run".</summary>
@@ -78,6 +85,48 @@ public sealed class RunCancellation
         }
 
         _cancel();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// <b>Whether this operation can be STOPPED — finished early with its results kept</b> (owner
+    /// request, 2026-09-11). False for everything that was only ever given a Cancel.
+    ///
+    /// <para>The distinction is not cosmetic and the two are not alternatives: Cancel THROWS THE RUN
+    /// AWAY, which is right when it should not have been started, and Stop finishes it now and
+    /// publishes everything solved so far, which is right when it has already produced what was
+    /// wanted. An EM run is where that second case lives — a resonance search can go on adding
+    /// full-wave points long after the resonance a user came for is on screen.</para>
+    /// </summary>
+    public bool CanOfferStop => _stop is not null;
+
+    /// <summary>True once somebody has asked to stop. Like a cancel, the work keeps running for a
+    /// while after: the engine answers at its next work boundary.</summary>
+    public bool IsStopRequested { get { lock (_gate) return _stopRequested; } }
+
+    /// <summary>Whether asking to stop now would do anything: this operation offers one, nobody has
+    /// asked yet — for either kind of halt — and the run is still going.</summary>
+    public bool CanStop
+    {
+        get { lock (_gate) return _stop is not null && !_stopRequested && !_requested && !_finished; }
+    }
+
+    /// <summary>
+    /// Asks the operation to finish early and keep what it has. Idempotent, a no-op once the run has
+    /// settled or a CANCEL has already been asked for — a cancel is the stronger request and a stop
+    /// after it would be asking for a result that is already being thrown away.
+    /// </summary>
+    public void Stop()
+    {
+        Action? stop;
+        lock (_gate)
+        {
+            if (_stop is null || _stopRequested || _requested || _finished) return;
+            _stopRequested = true;
+            stop = _stop;
+        }
+
+        stop!();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 

@@ -2068,7 +2068,92 @@ public partial class TraceRowViewModel : ViewModelBase
     /// is not the trace's own swept axis: a dB-radial POLAR plot and nowhere else. Same rule the dB
     /// sub-controls follow, and the same reason <c>PlotVerb</c> adds no back branch off one.
     /// </summary>
-    public bool ShowPatternMirror => _parent.IsPolarDbPlot && IsCubeBoundTrace;
+    public bool ShowPatternMirror => _parent.IsPolarDbPlot && IsCubeBoundTrace && !PatternWholePlane;
+
+    /// <summary>
+    /// <b>One trace, both halves of the plane</b> — <see cref="Trace.PatternWholePlane"/>. The
+    /// simple form of the picture the checkbox above builds by hand; both ship, and this one is off
+    /// by default because it is the one that did not exist before.
+    /// </summary>
+    [ObservableProperty]
+    private bool _patternWholePlane;
+
+    partial void OnPatternWholePlaneChanged(bool value)
+    {
+        _trace.PatternWholePlane = value;
+        OnPropertyChanged(nameof(ShowPatternMirror));
+        // The companion slice is fetched by the RESOLVE, not by the path build, so this needs a
+        // full re-resolve rather than the mirror's cheap re-frame — the trace has no back-branch
+        // values in hand until the gather runs again.
+        _parent.RebuildAndNotify();
+        _parent.OnTracePatternMirrorChanged();
+    }
+
+    /// <summary>Gates the whole-plane checkbox — the same rule the mirror follows. <b>The two are
+    /// mutually exclusive in practice</b> and the mirror hides while this is on: mirroring a trace
+    /// that already draws both halves would reflect the whole plane onto itself.</summary>
+    public bool ShowPatternWholePlane => _parent.IsPolarDbPlot && IsCubeBoundTrace;
+
+    // ---- A dBm level's reference power (owner, 2026-09-11) ------------------
+    //
+    //  It lives HERE, on the card, because it is a post-processing choice: nothing in the solve
+    //  depends on it and the correction is an exact dB shift, so charging a user a re-run of an
+    //  hours-long EM sweep to ask "what would that be at 20 dBm?" is charging the price of a
+    //  simulation for an offset. The EM panel's own field still decides what the RUN bakes in and
+    //  what a headless run reports; this reads it against something else, with no re-run.
+
+    /// <summary>Whether this trace is on a dBm level at all — which decides whether the control is
+    /// SHOWN. A box offered on a trace that cannot use one is a control that silently does nothing,
+    /// so it appears only where it means something.</summary>
+    public bool ShowReferenceInputPower => _trace.IsReferencedLevel;
+
+    /// <summary>The run's own reference, for the caption beside the box — what "default" means here
+    /// is data rather than a constant, so it is shown rather than assumed.</summary>
+    public string ReferenceInputPowerCaption =>
+        _trace.IsReferencedLevel
+            ? $"Reference input power (run: {_trace.BakedReferenceInputPowerDbm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} dBm)"
+            : "Reference input power";
+
+    /// <summary>
+    /// The reference this trace is read at. <b>Never null to the control</b> — a NumericUpDown with
+    /// no value reads as "unset" rather than "the run's own", so the box opens on the run's own
+    /// value and clearing the override is the RESET button beside it.
+    /// </summary>
+    public double ReferenceInputPowerDbm
+    {
+        get => _trace.IsReferencedLevel ? _trace.EffectiveReferenceInputPowerDbm : 0.0;
+        set
+        {
+            if (!_trace.IsReferencedLevel) return;
+            if (_trace.ReferenceInputPowerDbmOverride is { } cur && cur == value) return;
+            if (_trace.ReferenceInputPowerDbmOverride is null
+                && value == _trace.BakedReferenceInputPowerDbm) return;
+
+            Gesture.Note("row.refPower", $"{Spec} -> {value} dBm");
+            _trace.ReferenceInputPowerDbmOverride = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsReferenceInputPowerOverridden));
+            // A re-reference is an exact dB shift on values already in hand, so this needs no
+            // re-gather — but it DOES need the path rebuilt, and the label with it.
+            _parent.RebuildAndNotify();
+        }
+    }
+
+    /// <summary>True when this trace is read at something other than the run's own reference —
+    /// gates the reset button, and is the state the trace's label is stating either way.</summary>
+    public bool IsReferenceInputPowerOverridden => _trace.ReferenceInputPowerDbmOverride is not null;
+
+    /// <summary>Back to the reference the run published. Not the same as typing that number in:
+    /// this CLEARS the override, so a later re-run at a different reference is followed.</summary>
+    [RelayCommand]
+    private void ResetReferenceInputPower()
+    {
+        if (_trace.ReferenceInputPowerDbmOverride is null) return;
+        _trace.ReferenceInputPowerDbmOverride = null;
+        OnPropertyChanged(nameof(ReferenceInputPowerDbm));
+        OnPropertyChanged(nameof(IsReferenceInputPowerOverridden));
+        _parent.RebuildAndNotify();
+    }
 
     // ---- Secondary axis -----------------------------------------------------
 
@@ -2506,6 +2591,7 @@ public partial class TraceRowViewModel : ViewModelBase
         _matrixType       = trace.MatrixType;
         _useSecondaryAxis = trace.UseSecondaryAxis;
         _mirrorPatternAngle = trace.MirrorPatternAngle;
+        _patternWholePlane  = trace.PatternWholePlane;
 
         _lineEnabled    = trace.Properties.LineEnabled;
         _lineWidth      = trace.Properties.LineWidth;
@@ -2700,13 +2786,35 @@ public partial class TraceRowViewModel : ViewModelBase
         finally { _suppressDataCallback = saved; }
     }
 
+    /// <summary>
+    /// The polar plot's radial mode moved between LINEAR and dB, which changes which cubes this
+    /// picker may offer: a linear polar plot draws a locus and takes complex cubes only, while the
+    /// dB mode draws a PATTERN and takes real ones as its normal case. Called by the inspector for
+    /// every row, because the gate is the plot's and the list is the row's.
+    /// </summary>
+    public void OnPlotPatternModeChanged() => RebuildSignals();
+
     private void RebuildSignalsCore()
     {
         _allSignals.Clear();
         AvailableGroups.Clear();
         AvailableSignals.Clear();
 
-        bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar;
+        // ── A PATTERN PLOT IS NOT A COMPLEX PLOT, AND THAT IS THE WHOLE OF THIS PREDICATE ──────
+        //
+        // Smith and linear-polar draw a LOCUS in a complex plane, so a real cube has nothing to
+        // draw there and is offered greyed. A polar plot in its dB radial mode (ANT-7 §2) draws a
+        // PATTERN: the angle is the trace's own swept axis and the radius is its value in dB, so a
+        // REAL cube is not merely allowed there, it is the normal case — U, GainDbi and the
+        // Ludwig-3 pair are every quantity an antenna pattern is actually plotted from, and all of
+        // them are real.
+        //
+        // Reported, 2026-09-11: `U` greyed out in the picker on a pattern plot, and a user
+        // concluded from it that the run had not produced a U cube at all. It always had —
+        // PlanarKernel.AddFarField publishes Etheta, Ephi and U together, unconditionally — and
+        // the two complex ones being the only enabled rows is exactly what that reads as.
+        bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar
+                             && !_parent.IsPolarDbPlot;
 
         // R-dd-2: with one dataset loaded, the picker browses the toolbar's globally-selected
         // entry exactly as before (structurally guarantees R-dd-1's single-dataset case is
@@ -2845,7 +2953,7 @@ public partial class TraceRowViewModel : ViewModelBase
                     AxisSlice[] defaultSlice = BuildDefaultSlice(cube);
 
                     _allSignals.Add(new TraceDataItem(entry, qualified, defaultSlice, bareName, isEnabled)
-                                    { Group = cubeGroup });
+                                    { Group = cubeGroup, DisabledReason = RealOnComplexPlotReason(isEnabled) });
                 }
             }
         }
@@ -3414,9 +3522,24 @@ public partial class TraceRowViewModel : ViewModelBase
 
             string label = $"{bareName}({i + 1},{j + 1})";
             _allSignals.Add(new TraceDataItem(entry, qualified, slice, label, isEnabled)
-                            { Group = cubeGroup });
+                            { Group = cubeGroup, DisabledReason = RealOnComplexPlotReason(isEnabled) });
         }
     }
+
+    /// <summary>
+    /// Why a cube item is greyed on a Smith or linear-polar plot, or null when it is not greyed.
+    ///
+    /// <para><b>A greyed row with no reason is what produced the 2026-09-11 report</b> — the reader
+    /// has no way to tell "this cube is missing" from "this cube cannot be drawn HERE", and they
+    /// are very different facts. It names the plot kinds that can draw it, which for every real
+    /// far-field quantity is a rectangular plot, a table, or the polar plot's own dB pattern
+    /// mode.</para>
+    /// </summary>
+    private static string? RealOnComplexPlotReason(bool isEnabled) => isEnabled ? null
+        : "This cube is REAL, and a Smith or linear-polar plot draws a locus in the complex plane. "
+        + "The cube is present and perfectly plottable — put it on a rectangular plot or a table, "
+        + "or switch this polar plot's radial mode to dB, which reads the radius as a pattern and "
+        + "takes a real cube (U, GainDbi, the Ludwig-3 pair) as its normal case.";
 
     /// <summary>True when both slices pin the SAME "i" and "j" axis index — the disambiguator for
     /// network-parameter picker items, which all share one CubeName across N² port pairs.</summary>
@@ -3550,6 +3673,13 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsRectOrTablePlot));
         OnPropertyChanged(nameof(ShowPatternMirror));
+        OnPropertyChanged(nameof(ShowPatternWholePlane));
+        // Whether this trace IS a referenced level is resolved from the cube, so it changes with the
+        // binding — the control has to appear and disappear with the signal, not only with the plot.
+        OnPropertyChanged(nameof(ShowReferenceInputPower));
+        OnPropertyChanged(nameof(ReferenceInputPowerCaption));
+        OnPropertyChanged(nameof(ReferenceInputPowerDbm));
+        OnPropertyChanged(nameof(IsReferenceInputPowerOverridden));
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsNotTablePlot));
         OnPropertyChanged(nameof(IsCubeBoundTrace));

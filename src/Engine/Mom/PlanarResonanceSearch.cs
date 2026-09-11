@@ -276,10 +276,23 @@ public static class PlanarResonanceSearch
     /// between the points. The second is a far better place to run out, and this ordering is what
     /// guarantees it is the one that happens.</para>
     /// </summary>
+    /// <param name="stopped">
+    /// <b>Asked before every probe; true means take no more and report what is found</b> (owner
+    /// request, 2026-09-11 — see <c>RunControl.StopRequested</c>). This search is the long tail of
+    /// an EM run: it keeps adding SOLVED points after the requested grid is covered, each one a
+    /// full-wave frequency point, and there is no way for a user to see from outside how many more
+    /// it intends to take. Null never stops, which is every caller written before this.
+    ///
+    /// <para>It is checked at the same places the point budget is, because they are the same kind of
+    /// limit — "no more probes" — and folding them into one check is what keeps every early exit on
+    /// one path. They are reported SEPARATELY (<see cref="PlanarResonanceOutcome.StoppedEarly"/> vs
+    /// <see cref="PlanarResonanceOutcome.CapBound"/>) because "you set the cap too low" and "you
+    /// pressed Stop" are different things to tell someone.</para>
+    /// </param>
     public static PlanarResonanceOutcome Search(
         PlanarResonanceNodes start, double spanLoHz, double spanHiHz, Complex z0,
         PlanarInterpolant interpolant, double sTolerance,
-        PlanarResonanceSettings st, PlanarResonanceProbe probe)
+        PlanarResonanceSettings st, PlanarResonanceProbe probe, Func<bool>? stopped = null)
     {
         ArgumentNullException.ThrowIfNull(start);
         ArgumentNullException.ThrowIfNull(st);
@@ -289,6 +302,8 @@ public static class PlanarResonanceSearch
         if (start.Frequencies.Count < 2 || start.Values[0].RowCount <= port)
             return new PlanarResonanceOutcome([], [], 0, false, false,
                 "The resonance search needs at least two solved points and a port to read them at.");
+
+        bool Stop() => stopped?.Invoke() == true;
 
         var nodes   = start;
         var added   = new List<double>();
@@ -312,9 +327,11 @@ public static class PlanarResonanceSearch
                 break;
             }
             if (next is null) break;
+            if (Stop()) break;
             if (added.Count >= budget) { capBound = true; break; }
 
-            var located = Locate(nodes, next.Value, z0, port, interpolant, st, budget - added.Count, probe);
+            var located = Locate(nodes, next.Value, z0, port, interpolant, st, budget - added.Count,
+                                 probe, Stop);
             nodes = located.Nodes;
             added.AddRange(located.Added);
             done.Add(located.At);
@@ -331,6 +348,7 @@ public static class PlanarResonanceSearch
         // ── Stage B: resolve. The sampler's own criterion, on the intervals around each resonance.
         foreach (var r in results)
         {
+            if (Stop()) break;
             if (added.Count >= budget) { capBound = true; break; }
             double half = double.IsFinite(r.HalfPowerBandwidthHz) && r.HalfPowerBandwidthHz > 0
                 ? r.HalfPowerBandwidthHz : (spanHiHz - spanLoHz) / 100;
@@ -357,7 +375,7 @@ public static class PlanarResonanceSearch
                 // the core: bisection leaves every probe it took inside the original bracket,
                 // clustering geometrically on f0. What stage B adds is the FLANKS.
                 Math.Max(half / 2, r.FrequencyHz * st.FrequencyTolerance),
-                probe);
+                probe, Stop);
             nodes = n2;
             added.AddRange(a2);
             if (bound) { capBound = true; break; }
@@ -366,7 +384,8 @@ public static class PlanarResonanceSearch
         added.Sort();
         return new PlanarResonanceOutcome(results, added, dropped, capBound, true,
                                           Describe(results, added.Count, dropped, capBound, st,
-                                                   spanLoHz, spanHiHz));
+                                                   spanLoHz, spanHiHz, Stop()),
+                                          StoppedEarly: Stop());
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════
@@ -380,8 +399,9 @@ public static class PlanarResonanceSearch
     private static Located Locate(
         PlanarResonanceNodes nodes, double candidate, Complex z0, int port,
         PlanarInterpolant interpolant, PlanarResonanceSettings st, int budget,
-        PlanarResonanceProbe probe)
+        PlanarResonanceProbe probe, Func<bool>? stopped = null)
     {
+        bool Stop() => stopped?.Invoke() == true;
         var added = new List<double>();
 
         // The two solved nodes the candidate sits between. If their reactances already straddle
@@ -431,7 +451,11 @@ public static class PlanarResonanceSearch
         double want = st.FrequencyTolerance * Math.Max(1.0, Math.Abs(candidate));
         while (fHi - fLo > want)
         {
-            if (added.Count >= budget)
+            // A stop here keeps the bracket it has reached: Characterise reads the two SOLVED ends,
+            // so the resonance it reports is real and its LocatedTo says how tightly it was pinned.
+            // Reported as cap-bound to the caller's control flow and as stopped in the note — the
+            // outcome's two flags are what tell them apart.
+            if (added.Count >= budget || Stop())
                 return new Located(nodes, added, 0.5 * (fLo + fHi),
                                    Characterise(nodes, fLo, xLo, fHi, xHi, z0, port, interpolant, st,
                                                 added.Count), true);
@@ -575,8 +599,10 @@ public static class PlanarResonanceSearch
     /// </summary>
     private static (PlanarResonanceNodes Nodes, IReadOnlyList<double> Added, bool CapBound) Resolve(
         PlanarResonanceNodes nodes, double lo, double hi, PlanarInterpolant interpolant,
-        double sTolerance, int budget, double minWidth, PlanarResonanceProbe probe)
+        double sTolerance, int budget, double minWidth, PlanarResonanceProbe probe,
+        Func<bool>? stopped = null)
     {
+        bool Stop() => stopped?.Invoke() == true;
         var added = new List<double>();
         if (hi <= lo || budget <= 0) return (nodes, added, budget <= 0);
 
@@ -592,7 +618,7 @@ public static class PlanarResonanceSearch
             var next = new List<(double, double)>();
             foreach (var (a, b) in work)
             {
-                if (added.Count >= budget) return (nodes, added, true);
+                if (added.Count >= budget || Stop()) return (nodes, added, true);
                 if (b - a <= minWidth) continue;
                 // Only what actually overlaps the window. Without this, ONE grid interval straddling
                 // the window edge subdivides its far half all the way to the floor as well, and the
@@ -626,9 +652,14 @@ public static class PlanarResonanceSearch
 
     private static string Describe(
         IReadOnlyList<PlanarResonance> found, int addedCount, int dropped, bool capBound,
-        PlanarResonanceSettings st, double spanLo, double spanHi)
+        PlanarResonanceSettings st, double spanLo, double spanHi, bool stoppedEarly = false)
     {
         var sb = new System.Text.StringBuilder();
+        if (stoppedEarly)
+            sb.Append("Resonance search: STOPPED at the user's request. Everything below is what it " +
+                      "had found by then; a resonance it had not yet reached is simply absent, and " +
+                      "one it was still bracketing is reported as tightly as it got — read each " +
+                      "one's located-to width rather than assuming the search converged. ");
 
         if (found.Count == 0)
         {
@@ -769,10 +800,17 @@ public static class PlanarResonanceSearch
 /// <param name="DiscardedCrossings">Zero crossings probed and rejected as too shallow (ANT-9 §3).</param>
 /// <param name="CapBound">Whether <c>MaxAddedPoints</c> stopped the search, which is REPORTED.</param>
 /// <param name="Ran">False when the search declined outright — too few nodes, or no such port.</param>
+/// <param name="StoppedEarly">
+/// <b>The user pressed Stop, not "the cap was too low"</b> — kept separate from
+/// <paramref name="CapBound"/> because they mean different things to whoever reads the note: a cap
+/// is a setting to raise, a stop is a thing that was asked for. Every resonance reported is still
+/// real; what a stop costs is the ones it had not reached yet, and the tightness of the ones it had.
+/// </param>
 public sealed record PlanarResonanceOutcome(
     IReadOnlyList<PlanarResonance> Resonances,
     IReadOnlyList<double>          AddedFrequencies,
     int                            DiscardedCrossings,
     bool                           CapBound,
     bool                           Ran,
-    string                         Note);
+    string                         Note,
+    bool                           StoppedEarly = false);

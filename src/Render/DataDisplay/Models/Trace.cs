@@ -982,6 +982,106 @@ namespace CircuitRF.Render.DataDisplay
         public bool MirrorPatternAngle { get; set; }
 
         /// <summary>
+        /// <b>ONE trace that draws the WHOLE plane</b> — owner request, 2026-09-11: "why do we
+        /// force the user to have two traces?"
+        ///
+        /// <para>With this set, a pattern cut fetches the &#966;&#160;+&#160;180&#176; slice
+        /// ALONGSIDE its own pinned &#966; and draws the two as one continuous curve running
+        /// &#8722;&#952;_max through broadside to +&#952;_max. An E-plane and an H-plane cut is then
+        /// two traces on the plot rather than four, and the pair can never be half-configured — one
+        /// colour, one label, one marker set, one entry in the label strip.</para>
+        ///
+        /// <para><b>It does not replace <see cref="MirrorPatternAngle"/>, and both ship.</b> The
+        /// two-trace form is still the one to reach for when the halves want to be told apart — a
+        /// different colour or line type per half, or a back half hidden — and it is what every
+        /// `.cdd` written before this carries. This is the simple form of the same picture, and the
+        /// default for neither: a trace gains it when asked.</para>
+        ///
+        /// <para><b>The companion is a second GATHER, not a synthesised axis.</b> The two halves are
+        /// genuinely different slices of the cube and there is no one slice a single trace could
+        /// carry — which is what ANT-7 §3 says, and it is still true. What changed is only that one
+        /// trace may now hold two gathers of the same cube, which costs a second rank-1 read and no
+        /// new resolve path.</para>
+        /// </summary>
+        public bool PatternWholePlane { get; set; }
+
+        // ---- A dBm level's reference, re-read without a re-run ------------------
+
+        /// <summary>
+        /// <b>Read this trace's dBm level against a DIFFERENT reference power</b> — null to read it
+        /// against the one the run itself published (owner, 2026-09-11).
+        ///
+        /// <para><b>Why it is here and not only on the run.</b> TRP and peak EIRP are referenced to
+        /// a conducted input power, and that reference is a POST-PROCESSING choice: nothing in the
+        /// solve depends on it, and the correction from one reference to another is a subtraction
+        /// and an addition, both exact. An EM sweep is minutes to hours, so making a user re-run one
+        /// to ask "and what would that be at 20 dBm?" is charging the price of a simulation for a
+        /// dB offset. The run still records its own reference — that is what makes this exact
+        /// rather than a guess — and this reads it against another.</para>
+        ///
+        /// <para><b>It applies only to a cube that says it is a referenced level</b>
+        /// (<see cref="RfCore.Data.LevelReference"/>: unit dBm, with the reference published beside
+        /// it), and is inert on every other trace. <see cref="BakedReferenceInputPowerDbm"/> is the
+        /// run's own, resolved from the cube; the displayed value is shifted by the difference.</para>
+        /// </summary>
+        public double? ReferenceInputPowerDbmOverride { get; set; }
+
+        /// <summary>The reference the RUN published for this cube, or NaN when the trace is not
+        /// bound to a referenced level. Resolved from the DataSet — a <c>Trace</c> holds none — so it
+        /// follows the same clear-first contract the pinned-axis tokens do.</summary>
+        public double BakedReferenceInputPowerDbm { get; private set; } = double.NaN;
+
+        /// <summary>True when this trace is on a referenced level at all, which is what gates the
+        /// card's control: an override offered on a trace that cannot use one is a control that
+        /// silently does nothing.</summary>
+        public bool IsReferencedLevel => double.IsFinite(BakedReferenceInputPowerDbm);
+
+        /// <summary>The reference this trace is actually DRAWN at — the override when one is set,
+        /// the run's own otherwise. NaN on any other trace.</summary>
+        public double EffectiveReferenceInputPowerDbm =>
+            !IsReferencedLevel ? double.NaN
+            : ReferenceInputPowerDbmOverride ?? BakedReferenceInputPowerDbm;
+
+        /// <summary>
+        /// The dB the displayed value is shifted by — zero unless this is a referenced level with an
+        /// override that differs from the run's own. <b>Exact</b>: a level is linear in its
+        /// reference, so re-referencing is arithmetic on the decibel value and not a re-derivation.
+        /// </summary>
+        internal double ReferenceLevelOffsetDb =>
+            IsReferencedLevel && ReferenceInputPowerDbmOverride is { } o
+                ? o - BakedReferenceInputPowerDbm : 0.0;
+
+        /// <summary>Hands the trace the reference its cube was published at. Null clears, which
+        /// every path that binds data does on its own behalf so a stale reference from a previous
+        /// cube cannot outlive the gather that produced it.</summary>
+        public void SetBakedReferenceInputPowerDbm(double? dbm)
+            => BakedReferenceInputPowerDbm = dbm ?? double.NaN;
+
+        /// <summary>The &#966; of the back branch, in degrees, or NaN when this trace has none.
+        /// Set by the resolve; read by the label so the trace says it carries both halves.</summary>
+        public double PatternBackPhiDeg { get; private set; } = double.NaN;
+
+        private Complex[]? _backComplexValues;
+        private double[]?  _backRealValues;
+
+        /// <summary>True when a whole-plane gather actually found its companion slice.</summary>
+        public bool HasPatternBackBranch => _backComplexValues is not null || _backRealValues is not null;
+
+        /// <summary>
+        /// Hands the trace the &#966;&#160;+&#160;180&#176; half of its own cut. <b>The values are
+        /// the companion slice's own</b>, on the SAME X axis — a cut is one &#952; sweep at two
+        /// azimuths, so the two halves share the angle axis exactly and no resampling is involved.
+        /// Null clears, which every other <c>SetCubeData</c> path does on its own behalf so a stale
+        /// back branch cannot outlive the gather that produced it.
+        /// </summary>
+        public void SetPatternBackBranch(Complex[]? cz, double[]? rv, double phiDeg)
+        {
+            _backComplexValues = cz;
+            _backRealValues    = rv;
+            PatternBackPhiDeg  = cz is null && rv is null ? double.NaN : phiDeg;
+        }
+
+        /// <summary>
         /// <b>ANT-10 — this trace's pattern over two angle axes</b>, filled by
         /// <see cref="SurfaceResolve"/> when the parent plot is a <see cref="PlotType.Surface3D"/>
         /// and null on every other plot kind. Values are in the trace's own displayed dB quantity,
@@ -1121,6 +1221,17 @@ namespace CircuitRF.Render.DataDisplay
                                   _cubeComplexValues is null && _cubeRealValues is { } r ? r[i] : (double?)null);
                 if (y is double v && double.IsFinite(v)) yield return v;
             }
+
+            // The back branch is part of THIS trace's data, so the plot's shared reference has to
+            // see it: a whole-plane cut whose peak is behind broadside would otherwise be normalised
+            // against its front half alone and drawn clipping through the outer ring.
+            int bm = _backComplexValues?.Length ?? _backRealValues?.Length ?? 0;
+            for (int i = 0; i < bm; i++)
+            {
+                double? y = RectY(_backComplexValues is { } bc ? bc[i] : (Complex?)null,
+                                  _backComplexValues is null && _backRealValues is { } br ? br[i] : (double?)null);
+                if (y is double v && double.IsFinite(v)) yield return v;
+            }
         }
 
         /// <summary>
@@ -1257,6 +1368,8 @@ namespace CircuitRF.Render.DataDisplay
                 baseLabel += " <invalid: a pattern radius is dB — set dB20 (field) or dB10 (power)>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
             if (IsZ0ReReferenced) baseLabel += " @ Z0=" + ComplexStringHelper.Format(_z0) + "Ω";
+            // NOT the reference-level suffix: this method appends to the caller's MINIMAL label,
+            // which TraceLabeler has already put it on. Added here too it would read twice.
             return baseLabel;
         }
 
@@ -1273,6 +1386,25 @@ namespace CircuitRF.Render.DataDisplay
         /// renormalized at all, so the data IS at the source's own reference and the token would be
         /// a lie — including for an "unusual" (non-uniform) source, which is now rendered raw.</para>
         /// </summary>
+        /// <summary>
+        /// <b>What reference a dBm level is drawn at, ALWAYS stated</b> — not only when it is
+        /// overridden. The number on the plot is a level, and a level without its reference is not
+        /// reproducible: the run's own is in the file, but a PICTURE of the trace carries no file,
+        /// and a reader has no way to tell an overridden trace from an un-overridden one. This is
+        /// the same rule the pattern plot follows when it refuses to draw an unlabelled normalised
+        /// pattern. Null on every trace that is not a referenced level.
+        /// </summary>
+        internal string? ReferenceLevelSuffix
+        {
+            get
+            {
+                if (!IsReferencedLevel) return null;
+                double r = EffectiveReferenceInputPowerDbm;
+                return " @ " + r.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                     + " dBm in";
+            }
+        }
+
         private bool IsZ0ReReferenced
         {
             get
@@ -1462,6 +1594,15 @@ namespace CircuitRF.Render.DataDisplay
             CubeValueUnit      = src.CubeValueUnit;
             PatternScale       = src.PatternScale;
             SurfaceGrid        = src.SurfaceGrid;
+            // The two pattern-cut authoring flags. MirrorPatternAngle was not copied before, so a
+            // copied or pasted back-branch trace silently became a second FRONT branch drawn over
+            // the first — invisible on a symmetric pattern, which is every pattern anybody tests a
+            // copy/paste on. The back-branch VALUES are not copied: they belong to a gather, and
+            // the copy re-resolves like every other cube field above.
+            MirrorPatternAngle = src.MirrorPatternAngle;
+            PatternWholePlane  = src.PatternWholePlane;
+            ReferenceInputPowerDbmOverride = src.ReferenceInputPowerDbmOverride;
+            BakedReferenceInputPowerDbm    = src.BakedReferenceInputPowerDbm;
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
@@ -1620,13 +1761,23 @@ namespace CircuitRF.Render.DataDisplay
         /// Injects the 1-D slice arrays produced by the owner (PlotInspectorViewModel)
         /// and immediately rebuilds Points.  Trace never holds a DataSet reference.
         /// </summary>
+        /// <param name="backComplex">The &#966;&#160;+&#160;180&#176; half of a whole-plane cut, or
+        /// null. <b>Taken here rather than through a separate setter</b> because this method BUILDS
+        /// the path: a back branch handed over afterwards would not be in the geometry until the
+        /// next rebuild, and one handed over before would be cleared by this call. Null on every
+        /// other call site, which is what clears a stale branch from a previous gather.</param>
+        /// <param name="backReal">The real form of the same, for a real cube.</param>
+        /// <param name="backPhiDeg">That half's own &#966;, for the label.</param>
         public void SetCubeData(double[] xValues, Complex[]? complexValues, double[]? realValues,
                                 string xAxisName, string? xUnit,
                                 PlotType plotType, FreqUnit freqUnit, string[]? xLabels = null,
-                                bool transformBaked = false)
+                                bool transformBaked = false,
+                                Complex[]? backComplex = null, double[]? backReal = null,
+                                double backPhiDeg = double.NaN)
         {
             _cubeIsScalar      = false;
             _transformBaked    = transformBaked;
+            SetPatternBackBranch(backComplex, backReal, backPhiDeg);
             SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
                                                          // re-applies it for a single-curve pinned trace)
             SetPinnedAxisDisplay(null);                  // same contract: resolved from the cube, so it
@@ -1653,6 +1804,7 @@ namespace CircuitRF.Render.DataDisplay
         {
             _cubeIsScalar      = true;
             _transformBaked    = false;
+            SetPatternBackBranch(null, null, double.NaN);
             SetPinnedSpectral(null, null, double.NaN);                           // reset derived state
             _cubeXValues       = new[] { 0.0 };                                  // synthetic 1-row anchor
             _cubeComplexValues = complexValue is Complex c ? new[] { c } : null;
@@ -1690,6 +1842,12 @@ namespace CircuitRF.Render.DataDisplay
                 CubeTransform.Mag  => Math.Abs(v),
                 _                  => v,
             };
+            // Re-referencing a dBm LEVEL, and it is applied HERE because this is the one funnel
+            // every displayed value goes through — the curve, the table cell, the marker readout and
+            // the pattern radius all read it, so a re-referenced trace cannot be one number on the
+            // plot and another in its own info box. Zero on every trace that is not a referenced
+            // level, which is every trace that existed before this.
+            yr += ReferenceLevelOffsetDb;
             return double.IsFinite(yr) ? yr : (double?)null;
         }
 
@@ -1706,6 +1864,7 @@ namespace CircuitRF.Render.DataDisplay
         {
             _cubeIsScalar = false;
             _transformBaked = false;
+            SetPatternBackBranch(null, null, double.NaN);
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context
             SetPinnedAxisDisplay(null);                  // resolved from the cube — cannot outlive it
@@ -1849,6 +2008,32 @@ namespace CircuitRF.Render.DataDisplay
                     // which on a peak-referenced scale pins every angle to the outer ring — a circle,
                     // which is exactly what a very good antenna looks like.
                     if (!PatternValuesCanBeDb) { PatternValueInvalid = true; return; }
+
+                    // ── THE WHOLE PLANE, AS ONE CURVE ────────────────────────────────────────
+                    //
+                    //  The back branch is walked OUTWARDS-IN (θ_max down to broadside) at negative
+                    //  angles, then the front branch broadside-out, so the single point list runs
+                    //  −θ_max → 0 → +θ_max in drawing order. Any other order joins the two halves
+                    //  across the disc with a chord that is not in the data.
+                    //
+                    //  The broadside sample appears in BOTH halves and is drawn twice, at the same
+                    //  place: θ = 0 is one direction whichever azimuth names it, and the two gathers
+                    //  agree there to the last bit. Dropping one would be a special case that earns
+                    //  nothing.
+                    if (HasPatternBackBranch)
+                    {
+                        bool backComplex = _backComplexValues is not null;
+                        int  bn = Math.Min(n, backComplex ? _backComplexValues!.Length
+                                                          : _backRealValues!.Length);
+                        for (int i = bn - 1; i >= 0; i--)
+                        {
+                            var bp = PatternPoint(-_cubeXValues[i], dpu,
+                                                  backComplex ? _backComplexValues![i] : (Complex?)null,
+                                                  backComplex ? (double?)null : _backRealValues![i],
+                                                  scale);
+                            if (bp is { } bpt) Points.Add(bpt);
+                        }
+                    }
 
                     for (int i = 0; i < n; i++)
                     {

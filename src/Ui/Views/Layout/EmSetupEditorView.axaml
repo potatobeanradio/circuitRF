@@ -968,6 +968,28 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.RadiationPatternDisabledReason}"
                            IsVisible="{Binding ViewModel.RadiationPatternDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                <!-- The reference for the only two ABSOLUTE quantities the pattern produces. Every
+                     other metric is a ratio and needs no excitation to be absolute against; TRP and
+                     peak EIRP are watts, and a solve driven by a 1 V delta gap has no watts of its
+                     own to offer. 0 dBm is what an over-the-air report is written against.
+
+                     This field decides what the RUN bakes in - what the .npy carries and what a
+                     headless run reports. It is NOT the only place it can be changed: the value is
+                     published as its own cube, so the Data Display's trace card re-references a
+                     level exactly, with no re-run. Nobody should have to repeat an hours-long sweep
+                     for a dB offset, and the tooltip says so rather than leaving it to be found. -->
+                <Grid ColumnDefinitions="Auto,Auto" Margin="22,4,0,0"
+                      IsEnabled="{Binding ViewModel.ReferenceInputPowerEnabled}">
+                    <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center"
+                               Margin="0,0,6,0" Text="Reference input power"/>
+                    <NumericUpDown Grid.Column="1" Width="110" FontSize="11" Padding="5,2"
+                                   Minimum="-100" Maximum="100" Increment="1"
+                                   FormatString="0.##"
+                                   ShowButtonSpinner="False"
+                                   Value="{Binding ViewModel.ReferenceInputPowerDbm}"
+                                   ToolTip.Tip="dBm. The conducted power TRP and peak EIRP are referenced to - it is an INPUT, because those two are absolute powers and this solve drives a 1 V delta gap that means nothing in watts. At the 0 dBm default, peak EIRP in dBm reads as the realized gain in dBi and TRP in dBm as the total efficiency in dB. Set it to a radio's own conducted power to compare against that radio's measured report. It changes no other metric and no s-parameter. YOU DO NOT NEED TO RE-RUN TO CHANGE IT: this sets what the run records, and the Data Display's trace card reads the same solved data against any other reference exactly."/>
+                </Grid>
                   </StackPanel>
                 </Border>
 

@@ -57,6 +57,34 @@ public sealed class RunControl
     /// <c>RunControl</c> created purely for progress never cancels.</summary>
     public CancellationToken Token { get; init; } = CancellationToken.None;
 
+    private int _stop;
+
+    /// <summary>
+    /// <b>STOP is not CANCEL, and the difference is what happens to the work already done</b>
+    /// (owner request, 2026-09-11).
+    ///
+    /// <para>Cancel abandons the run: the class remark above says a half-finished sweep has no shape
+    /// to be published in, callers catch <see cref="OperationCanceledException"/> and nothing is
+    /// written. That is right for "I did not mean to start this". It is the wrong answer for "this
+    /// has found what I needed and I do not want to wait for the rest", which on an EM run — where a
+    /// resonance search can keep adding points for a long time after the interesting part is solved
+    /// — is the common case. So: STOP asks the engine to take no more work and FINISH, and every
+    /// result the run has is packaged and returned exactly as a completed run's is.</para>
+    ///
+    /// <para><b>It is advisory, and an engine that ignores it is correct</b> — nothing here throws
+    /// and nothing here is checked automatically. An engine that supports stopping reads this at the
+    /// same boundaries it reads the token at, stops taking new work, and SAYS SO in its own notes;
+    /// one that does not simply runs to completion. That is what makes it safe to hang on the one
+    /// control object every engine already takes.</para>
+    ///
+    /// <para>One-way and idempotent, like cancellation: once asked, it stays asked.</para>
+    /// </summary>
+    public bool StopRequested => Volatile.Read(ref _stop) != 0;
+
+    /// <summary>Asks the run to finish early and keep what it has. See <see cref="StopRequested"/>
+    /// for how that differs from cancelling. Idempotent; safe from any thread.</summary>
+    public void RequestStop() => Interlocked.Exchange(ref _stop, 1);
+
     /// <summary>Where progress observations go. Null makes <see cref="Tick"/> a cancellation check
     /// and nothing else — which is exactly what <see cref="Child"/> produces.</summary>
     public IProgress<RunProgress>? Progress { get; init; }
@@ -162,6 +190,11 @@ public sealed class RunControl
     /// hands this to an inner analysis whose own loop would otherwise count work units that the
     /// enclosing level is already counting — see the class remark on leaf counting.
     /// </summary>
+    /// <para><b>A child does NOT share the stop.</b> Stopping is answered by the engine that owns
+    /// the loop, and a child is handed to an INNER analysis whose own early finish would leave the
+    /// enclosing sweep with a point that is not the point it asked for — a shorter axis inside a
+    /// longer one. The outer loop reads the stop and stops adding POINTS; the inner one always runs
+    /// the point it was given to completion.</para>
     public RunControl Child() => new() { Token = Token, Total = Total };
 
     private void ReportNow() => ReportNow(Completed);

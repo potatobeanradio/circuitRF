@@ -687,6 +687,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _acceleratedSolve;
     [ObservableProperty] private bool   _radiationPattern;
 
+    /// <summary>The dBm TRP and peak EIRP are referenced to — see
+    /// <c>EmSetup.ReferenceInputPowerDbm</c>. Live only while the pattern is on, because it is read
+    /// by nothing else.</summary>
+    [ObservableProperty] private double _referenceInputPowerDbm;
+
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
     /// condition (R-em-11).</summary>
@@ -1184,9 +1189,25 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.RadiationPattern = value;
         CommitEdit(before, "Change radiation pattern");
+        OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
         // Deliberately NO InvalidateMesh(): the pattern is a post-process of the currents the solve
         // already produced on the SAME mesh, so no cell moves and no s-parameter changes.
     }
+
+    partial void OnReferenceInputPowerDbmChanged(double value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.ReferenceInputPowerDbm) return;
+        var before = SnapshotJson();
+        Working.ReferenceInputPowerDbm = value;
+        CommitEdit(before, "Change reference input power");
+        // No InvalidateMesh, and nothing beyond the two absolute-power cubes changes: it is the
+        // reference a dBm is a dBm ABOVE, and every other metric here is a ratio.
+    }
+
+    /// <summary>Gates the reference-power box: nothing reads it with the pattern off.</summary>
+    public bool ReferenceInputPowerEnabled
+        => RadiationPattern && RadiationPatternDisabledReason is null;
 
     partial void OnAcceleratedSolveChanged(bool value)
     {
@@ -1319,6 +1340,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DirectVerticalKernel = Working.DirectVerticalKernel;
         AcceleratedSolve     = Working.AcceleratedSolve;
         RadiationPattern     = Working.RadiationPattern;
+        ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
         AnalysisKind = Working.AnalysisKind;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
         SyncReturnPlaneChoice();
@@ -1368,6 +1390,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
+        OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
         Readback           = null;
         ExtractionRefusal  = null;
         KernelRefusal      = null;
@@ -1506,6 +1529,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
+        OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
 
         var verdict = new PlanarKernel().CanSolve(planar.Problem!);
         KernelRefusal = verdict.Ok ? null : verdict.Reason;

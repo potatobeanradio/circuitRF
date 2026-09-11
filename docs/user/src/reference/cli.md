@@ -1474,11 +1474,19 @@ from. A cube the file does not hold is refused, listing the ones it does.
 | `--db-ring <dB>` | Ring spacing. Default 10. |
 | `--db-ref peak\|<dB>` | The outer ring: the data's own peak (normalised, the default) or an absolute level. |
 | `--db-unit <text>` | What the radial numbers are in — `dBi`, `dB(W/sr)`. |
+| `--trace …,ref=<dBm>` | Read a dBm **level** (`TrpDbm`, `PeakEirpDbm`) against this conducted input power instead of the one the run published. An exact dB shift — no re-run. Inert on anything that is not a level. |
+| `--whole-plane` | Draw each `cut=` as **one** trace spanning −θ<sub>max</sub> … +θ<sub>max</sub>, by fetching the φ + 180° half alongside it — instead of the default two traces per cut. Needs `--type polar --radial db`. |
+| `--angle-labels` | Print the bearing every 30° outside the disc, with a spoke to each, the way an antenna-range plot is drawn. Polar only, either radial mode. The disc shrinks to make room rather than the numbers overprinting the outer ring. |
 | `--write-cdd <path>` | Also write the data display this drew. |
 
 ```text
 circuitrf plot run.npy -o eplane.svg --type polar --radial db --db-unit "dB(W/sr)" \
   --trace cube=farfield.U,cut=0,port=1,y=db10
+
+# both principal planes, one trace each, with bearings around the rim
+circuitrf plot run.npy -o cuts.svg --type polar --radial db --whole-plane --angle-labels \
+  --trace cube=farfield.U,freq=5.8e9,cut=0,port=1,y=db10 \
+  --trace cube=farfield.U,freq=5.8e9,cut=90,port=1,y=db10
 ```
 
 <div class="callout">

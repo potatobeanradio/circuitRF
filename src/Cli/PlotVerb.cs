@@ -59,6 +59,11 @@ internal static class PlotVerb
         public string? Probe;
         public string? With;
 
+        /// <summary>`ref=<dBm>` — read a dBm LEVEL against this reference instead of the one the run
+        /// published. Per TRACE rather than per plot: two traces on one plot can be two runs at two
+        /// references, which is exactly the comparison the flag is for.</summary>
+        public double? RefPowerDbm;
+
         /// <summary>
         /// The azimuth of this cut's OTHER half, or null when this spec does not name one cut —
         /// no <c>cut=</c>, <c>cut=all</c> (a family already carries every azimuth), or a
@@ -78,6 +83,7 @@ internal static class PlotVerb
         /// frequency, is the same question asked at the opposite azimuth.</summary>
         public TraceSpec WithCut(string cut) => new()
         {
+            RefPowerDbm = RefPowerDbm,
             Text = Text, I = I, J = J, YText = YText, Secondary = Secondary, Raw = Raw,
             Cut = cut, Port = Port, FreqHz = FreqHz,
             Probe = Probe, With = With,
@@ -124,6 +130,16 @@ internal static class PlotVerb
         public PolarDbReferenceMode DbRef      = PolarDbReferenceMode.Peak;
         public double               DbRefValue;
         public string               DbUnit     = "";
+
+        // Bearings around the rim (owner request, 2026-09-11). Not a dB option — a LOCUS plot has a
+        // bearing too — so it is not in DbOptions and is not refused on a non-polar type alongside
+        // them; it is refused on its own terms below.
+        public bool                 AngleLabels;
+
+        // One trace per cut instead of two (owner request, 2026-09-11). Plot-level rather than
+        // per-trace because it is a statement about how every cut on this plot is DRAWN, and a plot
+        // with one cut drawn each way would be a picture nobody asked for.
+        public bool                 WholePlane;
 
         // ANT-10 — the 3D pattern surface. Null means "the default view", which is the isometric
         // one; --view and --rotate are the two spellings of the same state and the last one wins.
@@ -189,6 +205,15 @@ internal static class PlotVerb
         // a picture it cannot tell from the one it asked for — `render`'s own rule, applied here.
         if (o.Radial == PolarRadialMode.Db && o.Type != PlotType.Polar)
             return JsonRun.Fail(CliDiagnostics.PlotRadialNeedsPolar(o.Type.ToString().ToLowerInvariant()));
+        // --whole-plane is the pattern CUT's, so it needs what a cut needs: a polar plot in dB.
+        if (o.WholePlane && !(o.Type == PlotType.Polar && o.Radial == PolarRadialMode.Db))
+            return JsonRun.Fail(CliDiagnostics.PlotWholePlaneNeedsPattern(o.Type.ToString().ToLowerInvariant()));
+
+        // The bearings are a POLAR disc's, either radial mode — unlike the dB options, which are the
+        // pattern SCALE's and are live on a surface too.
+        if (o.AngleLabels && o.Type != PlotType.Polar)
+            return JsonRun.Fail(CliDiagnostics.PlotAngleLabelsNeedPolar(o.Type.ToString().ToLowerInvariant()));
+
         // The same rule for the surface's own view flags: on any other plot type there is no camera
         // for them to be, and a flag that did nothing leaves a caller with a picture it cannot tell
         // from the one it asked for.
@@ -240,14 +265,24 @@ internal static class PlotVerb
             //  on top of the first, and on a rect plot the negative half is an x-axis question
             //  rather than an angle one. `cut=all` is excluded because a family already carries
             //  every azimuth, the back branch among them.
+            //  --whole-plane asks for the SAME picture out of ONE trace: the resolve fetches the
+            //  phi + 180 slice itself and draws the plane as one curve. Two cuts are then two
+            //  traces rather than four, with one colour, one label and one marker set each.
             if (o.Type == PlotType.Polar && o.Radial == PolarRadialMode.Db
                 && o.Traces[i].BackBranchCut() is { } backCut)
             {
-                var (btc, brefusal) = BuildTrace(o.Traces[i].WithCut(backCut), data,
-                                                 Path.GetFileName(o.Result), i, o.Type);
-                if (brefusal is { } br) return br;
-                btc!.MirrorPatternAngle = true;
-                traces.Add(btc);
+                if (o.WholePlane)
+                {
+                    tc!.PatternWholePlane = true;
+                }
+                else
+                {
+                    var (btc, brefusal) = BuildTrace(o.Traces[i].WithCut(backCut), data,
+                                                     Path.GetFileName(o.Result), i, o.Type);
+                    if (brefusal is { } br) return br;
+                    btc!.MirrorPatternAngle = true;
+                    traces.Add(btc);
+                }
             }
         }
 
@@ -460,6 +495,12 @@ internal static class PlotVerb
                 case "--db-unit" when i + 1 < args.Length:
                     o.DbOptions.Add(a); o.DbUnit = args[++i]; continue;
 
+                case "--angle-labels":
+                    o.AngleLabels = true; continue;
+
+                case "--whole-plane":
+                    o.WholePlane = true; continue;
+
                 case "--view" when i + 1 < args.Length:
                 {
                     o.ViewOptions.Add("--view");
@@ -573,6 +614,14 @@ internal static class PlotVerb
                     }
                     break;
                 case "cut":    spec.Cut    = value; break;
+                case "ref":
+                {
+                    if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                         out double rp))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceRefMalformed(raw, value)));
+                    spec.RefPowerDbm = rp;
+                    break;
+                }
                 case "port":
                 {
                     if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int pn))
@@ -942,6 +991,11 @@ internal static class PlotVerb
             CubeSlice        = [.. slice.Select(AxisSliceConfig.From)],
             CubeTransform    = transform,
             UseSecondaryAxis = spec.Secondary,
+            // `ref=` is carried WITHOUT checking that the cube is a referenced level: the resolve
+            // decides that from the DataSet (unit dBm + a published reference) and an override on
+            // anything else is inert, exactly as it is in the window. Refusing here would mean a
+            // second copy of that rule in the one place it could disagree with the first.
+            ReferenceInputPowerDbmOverride = spec.RefPowerDbm,
             // The colour wheel the window walks, in its own order — TraceProperties.LineColorOrder,
             // whose first entry is 12 (red) rather than 0. Using the trace's ordinal directly would
             // have given the first trace colour 0, which is black: invisible on a dark variant, and
@@ -1066,6 +1120,7 @@ internal static class PlotVerb
         container.PolarDbReference      = o.DbRef;
         container.PolarDbReferenceValue = o.DbRefValue;
         container.PolarDbUnit           = o.DbUnit;
+        container.PolarAngleLabels      = o.AngleLabels;
 
         var cam = o.Camera ?? PatternCamera.Default;
         container.SurfaceAzimuthDeg   = cam.AzimuthDeg;

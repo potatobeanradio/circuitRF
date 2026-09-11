@@ -2017,6 +2017,22 @@ internal static class CliDiagnostics
       + "neither.",
         ("type", type));
 
+    public static Diagnostic PlotWholePlaneNeedsPattern(string type) => Diagnostic.Create(
+        "plot.whole-plane.needs-pattern", DiagnosticSeverity.Error,
+        "plot: --whole-plane draws both halves of a pattern CUT as one curve, which needs "
+      + "--type polar --radial db; --type is '{type}'. On a linear polar plot the negative half of "
+      + "an angle is not a place on the disc, and on a rectangular plot the whole plane is an "
+      + "x-range rather than a second slice.",
+        ("type", type));
+
+    public static Diagnostic PlotAngleLabelsNeedPolar(string type) => Diagnostic.Create(
+        "plot.angle-labels.needs-polar", DiagnosticSeverity.Error,
+        "plot: --angle-labels prints the bearing around the rim of a POLAR disc, and --type is "
+      + "'{type}'. It applies to either radial mode — a locus has a bearing too — but only to a "
+      + "polar plot; a Smith chart carries its own angle scale already, and the 3D surface states "
+      + "its orientation with the drawn axes in the scene.",
+        ("type", type));
+
     // ── ANT-10 §2/§3 — the 3D pattern surface ───────────────────────────────────────────────────
 
     public static Diagnostic PlotUnknownView(string name) => Diagnostic.Create(
@@ -2133,8 +2149,16 @@ internal static class CliDiagnostics
     public static Diagnostic PlotTraceUnknownKey(string trace, string key) => Diagnostic.Create(
         "plot.trace.unknown-key", DiagnosticSeverity.Error,
         "plot: in --trace '{trace}', '{key}' is not one of cube, i, j, y, axis, probe, with, set, "
-      + "metric, z0, side, gi.",
+      + "metric, z0, side, gi, ref.",
         ("trace", trace), ("key", key));
+
+    public static Diagnostic PlotTraceRefMalformed(string trace, string value) => Diagnostic.Create(
+        "plot.trace.ref-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', ref='{value}' is not a number. It is the conducted power in "
+      + "dBm that a dBm LEVEL — an antenna's TrpDbm or PeakEirpDbm — is read against, and it "
+      + "replaces the reference the run itself published. The correction is an exact dB shift, so "
+      + "it needs no re-run.",
+        ("trace", trace), ("value", value));
 
     public static Diagnostic PlotTraceCubeRequired(string trace) => Diagnostic.Create(
         "plot.trace.cube-required", DiagnosticSeverity.Error,

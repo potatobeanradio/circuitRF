@@ -192,6 +192,11 @@ public sealed class CemFile
     /// byte-identically.
     /// </summary>
     public bool?   RadiationPattern      { get; set; }
+
+    /// <summary>The dBm TRP and peak EIRP are referenced to. Same nullable + omit-at-default rule
+    /// as <see cref="RadiationPattern"/> above: 0 dBm is the default and writes nothing, so a
+    /// `.cem` from before this existed loads AND re-serialises byte-identically.</summary>
+    public double? ReferenceInputPowerDbm { get; set; }
     public string? SnpOutputPathOverride { get; set; }
 
     /// <summary>
@@ -285,6 +290,7 @@ public static class EmSetupPersistence
         DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
         AcceleratedSolve      = s.AcceleratedSolve ? true : null,
         RadiationPattern      = s.RadiationPattern ? true : null,
+        ReferenceInputPowerDbm = s.ReferenceInputPowerDbm != 0.0 ? s.ReferenceInputPowerDbm : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
@@ -335,6 +341,7 @@ public static class EmSetupPersistence
         DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
         AcceleratedSolve      = f.AcceleratedSolve ?? false,
         RadiationPattern      = f.RadiationPattern ?? false,
+        ReferenceInputPowerDbm = f.ReferenceInputPowerDbm ?? 0.0,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm

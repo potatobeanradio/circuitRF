@@ -1,5 +1,130 @@
 # src/Render/DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Antenna display feedback, 2026-09-11 — six reports, and three of them were the same bug
+
+User feedback on the antenna work, relayed by the owner. Written up together because the causes
+overlap: two of the six reports are one gate, and two more are the same missing information in two
+places.
+
+---
+
+### 1. "I didn't get a U output from the simulation, only Etheta and Ephi"
+
+**`U` was there the whole time.** `PlanarKernel.AddFarField` publishes `Etheta`, `Ephi` and `U`
+together, unconditionally — verified directly against the reporter's own `.npy`, which carries all
+three at `[51, 91, 360, 1]`.
+
+What they saw was the **trace-card picker**, on a polar plot, with `U` greyed out and the two complex
+cubes enabled. `TraceRowViewModel.RebuildSignalsCore`:
+
+```csharp
+bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar;
+bool isEnabled     = !isComplexPlot || cube.DataKind == DataKind.Complex;
+```
+
+Right for a Smith chart and for a LINEAR polar plot, both of which draw a locus in a complex plane.
+Wrong for the polar plot's **dB radial mode**, which draws a PATTERN: the angle is the trace's own
+swept axis and the radius is its value in dB, so a real cube is not merely allowed there, it is every
+quantity an antenna pattern is actually plotted from — `U`, `GainDbi`, the Ludwig-3 pair. The gate is
+now `… && !_parent.IsPolarDbPlot`, and the picker rebuilds when that mode flips (the six radial
+properties all end in `ApplyRadialChange`, which re-frames; only this one changes what may be
+OFFERED, so only this one rebuilds).
+
+**A greyed row with no reason is what turned a gate into a wrong conclusion.** The reader had no way
+to tell "this cube is missing" from "this cube cannot be drawn HERE". Every cube item now carries a
+`DisabledReason` naming the plot kinds that CAN draw it.
+
+### 2. The dB-radial switch was unreachable, which is why the picker gate mattered at all
+
+Found while fixing §1, and it is the more serious half. The inspector row holding **dB radial** was
+gated on `HasPatternScale`, which is `IsPolarDbPlot || IsSurfacePlot` — so on a LINEAR polar plot, the
+state every polar plot is created in, the row was hidden **including the switch that leaves that
+state**. A polar plot could not be turned into a pattern plot from the GUI at all. Every `.cdd` in
+the wild carrying a pattern plot had been authored by the CLI.
+
+**A control that ENTERS a mode cannot be gated on already being in it.** The row is now gated on
+`HasPatternControls` (`IsPolarPlot || IsSurfacePlot`); the dB sub-controls inside it keep their own
+tighter `HasPatternScale`.
+
+### 3. "The 3D pattern icon is only visible after you add a polar plot"
+
+Exactly right, and the cause is that the plot-type row carrying that icon lives on the **inspector**,
+which needs a plot selected before it shows anything. Every other plot kind the inspector can switch
+to has a matching **Add** button on the Data Display toolbar; the 3D pattern did not, so the only
+route to one was "add a polar plot, then convert it" — which is not a route anybody finds.
+
+One more toolbar button (`AddSurfacePlotCommand`, the same `AddPlot`), plus the sizing rule the
+converted case already had: a surface takes the RECTANGULAR aspect, not the square one, because the
+scene is square but the colour bar beside it and the caption under it are not. Added in
+`DataDisplayViewModel.AddPlot` as well as in `PlotContainerViewModel.CoerceAspectForPlotType` so an
+ADDED 3D pattern opens at the size a CONVERTED one lands at.
+
+### 4. "Why do we force the user to have two traces?"
+
+ANT-7's own note said a cut is two traces and that it was "forced": the two halves are different
+SLICES of the cube (φ and φ + 180°), so there is no one slice a single trace could carry, and
+synthesising a signed-θ axis would mean a derived cube and a second resolve path.
+
+**That reasoning is still correct and the conclusion did not follow.** What was actually needed is
+for ONE trace to hold TWO gathers of the same cube — an ordinary second rank-1 read with one index
+moved, taken beside the first, in the same resolve. No derived cube, no second path.
+
+`Trace.PatternWholePlane` (off by default, persisted, in the copy constructor). When set on a polar
+pattern plot, `TraceResolve.TryWholePlaneCompanion` finds the pinned azimuth **by name** and its
+companion **by value** — nearest to φ + 180° modulo 360, refused when the nearest is more than half a
+grid step away, because a silently-wrong companion draws a smooth, plausible, wrong pattern. The path
+build walks the back branch OUTWARDS-IN at negative angles and then the front branch outwards, so the
+single point list runs −θ_max → 0 → +θ_max in drawing order; any other order joins the halves with a
+chord that is not in the data. `PatternDbValues` yields the back branch too, or a whole-plane cut
+whose peak is behind broadside would be normalised against its front half alone.
+
+Gated as EXACT equality against the two-trace pair's own points (`AntennaFeedbackTests`), so the
+simple spelling can never quietly become a different curve from the one every older `.cdd` carries.
+**Both ship**: the two-trace form is still the one for halves that want telling apart.
+
+CLI: `--whole-plane` on `plot`, which turns the back-branch trace it already synthesised into a flag
+on the front one.
+
+### 5. "The y-axis label freq= does not respect the plot's frequency units"
+
+`TraceResolve.ApplyPinnedAxisDisplay` formatted every pinned axis from the cube's own raw values and
+had never needed to know what the plot displayed frequencies in, so a GHz cut plot labelled its
+traces `freq=1.74e+09 Hz`. It now takes the plot's `FreqUnit` — and, per the owner, an axis actually
+named `freq` drops the prefix entirely, because "1.74 GHz" already says it is a frequency. A SECOND
+Hz-unit axis (an LO beside an RF) keeps its name, since there the name is the only thing separating
+two tokens that would otherwise read identically.
+
+Formatted `0.######`, not `G6`: G6 turns 5e9 Hz into `5E+09 Hz`, which is the same unreadable thing
+one unit further along.
+
+**Found while verifying it: the headless strips were showing something else entirely.** The window's
+label strip reads its `AutoLabel` (`TraceLabeler.ComputeMinimalLabels`); `PlotComposer` read
+`Trace.Description`, which for a cube trace is `Expression ?? CubeName` and nothing else. Two cuts of
+one pattern, differing only in pinned φ, therefore printed the SAME strip — "farfield.U" twice — in
+every exported and CLI-drawn picture, while the window told them apart correctly. RND-4's rule is
+that a headless render produces what the window produces. `PlacedLabelStrip` now carries the
+`AutoLabel`, computed in `PlotLabelStrips.For` — the same call, from the same place the strip SET is
+decided, so the two can no longer answer differently.
+
+### 6. "Add the angle around the circle's edge"
+
+`Plot.ShowPolarAngleLabels`, off by default. Spokes every 30° inside the disc (skipping 0/90/180/270,
+which the two diameters already draw at axis weight) and the bearing printed outside it.
+
+**Two things worth keeping.** The label ring follows the plot's OWN angular convention rather than
+imposing one — a PATTERN reads 0° at the top increasing clockwise, a LOCUS reads 0° at the right
+increasing counter-clockwise, because there the angle is the phase of a complex number, and printing
+one convention's numbers around the other's plot would be worse than printing none. And turning it on
+**shrinks the disc** rather than overprinting it: the room comes out of `PlotRenderer.ComputeViewport`
+(`ComplexAngleLabelMargin`), which is the one place that makes the clip, the transform, the ring
+lattice and the boundary ring all agree about where the edge is. On a normalised pattern the outer
+ring is exactly where the peak sits, so an overprinted bearing lands on the one sample the reader came
+for.
+
+CLI: `--angle-labels`. **Not a dB option** — a locus has a bearing too — so it is refused on its own
+terms rather than with `DbOptions`.
+
+
 ## ANT-7, 2026-09-10 — the dB polar mode, and the cuts
 
 `brief-antenna-7-pattern-plots.md`. Presentation of ANT-4's patterns and ANT-5's metrics in the Data

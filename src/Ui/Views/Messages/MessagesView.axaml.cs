@@ -140,6 +140,18 @@ public partial class MessagesView : UserControl
             cancellation.Cancel();
     }
 
+    /// <summary>
+    /// Right-click ▸ Stop — finish the run now and KEEP what it has solved, as against Cancel
+    /// directly below it, which abandons it. Same handle, same two-rows-one-run rule, same
+    /// idempotence; see <see cref="RunCancellation.Stop"/> for why the two are separate requests
+    /// rather than one with a flag.
+    /// </summary>
+    private void OnStopRunClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is MessageEntry { Cancellation: { } cancellation })
+            cancellation.Stop();
+    }
+
     private void OnCopyAllMessagesClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MessagesTool tool)

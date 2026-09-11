@@ -1584,11 +1584,29 @@ public static class PlanarSolve
         var    addedList  = Array.Empty<double>();
         IReadOnlyList<PlanarResonance> resonances = [];
 
+        // ── STOP: FINISH NOW AND KEEP WHAT IS SOLVED (owner request, 2026-09-11) ────────────────
+        //
+        // Read at the same boundaries the cancellation token is read at, and answered by taking no
+        // MORE work rather than by throwing. What each path does with it differs, and the difference
+        // is forced by what each path can honestly publish:
+        //
+        //   fixed grid — every point is solved in order, so a stop truncates the frequency axis to
+        //                the prefix that WAS solved. A shorter sweep is a sweep; inventing the rest
+        //                would be publishing an interpolation nobody asked for.
+        //   adaptive   — the published grid is the REQUESTED grid, modelled from the solved nodes,
+        //                which is what the path does at every budget too. So a stop publishes the
+        //                whole grid off fewer nodes, and the note says the tolerance was not met.
+        //
+        // Either way the run is a completed run downstream: the same DataSet, the same cubes, the
+        // same `.snp`. What it is not is SILENT — every branch adds its own sentence.
+        bool stoppedEarly = false;
+
         if (st.Adaptive is null)
         {
-            // L8d's own loop, untouched.
+            // L8d's own loop, untouched but for the stop check at its own point boundary.
             foreach (double f in freqs)
             {
+                if (control?.StopRequested == true) { stoppedEarly = true; break; }
                 var (kernel, raw, currents, y, kernelMs, dutMs, standardsMs) = SolveRawAt(f);
 
                 if (capturePort >= 0 && points.Count == captureAt)
@@ -1723,7 +1741,7 @@ public static class PlanarSolve
             }
 
             double worstStopped = 0;
-            while (work.Count > 0 && solved.Count < budget)
+            while (work.Count > 0 && solved.Count < budget && control?.StopRequested != true)
             {
                 var nodes  = solved.Select(i => freqs[i]).ToList();
                 var values = solved.Select(i => byIndex[i].S).ToList();
@@ -1769,6 +1787,8 @@ public static class PlanarSolve
                 work = next;
             }
 
+            if (control?.StopRequested == true) stoppedEarly = true;
+
             solvedCount   = solved.Count;
             worstAdaptive = worstStopped;
             solvedList    = solved.Select(i => freqs[i]).ToArray();
@@ -1795,6 +1815,22 @@ public static class PlanarSolve
                     chosen.Add(near);
                 }
                 farWanted.Clear();
+
+                // ── THE FAR-FIELD BLOCK IS ITS OWN STAGE, WITH ITS OWN DENOMINATOR ────────────
+                //
+                // Reported 2026-09-11: with the resonance search on, the sweep row's point count
+                // sat still "for a VERY long number of work cycles" and then started climbing
+                // again. It was telling the truth — no new POINT is solved here — but the stage row
+                // beside it was no help either: the stage was begun PER PATTERN with a total of the
+                // PORT count, so on a one-port it read 1 of 1, finished, and was begun again, over
+                // and over, for however many minutes the block took. A bar that completes every
+                // time it is looked at says nothing about a block that is running for minutes.
+                //
+                // One stage for the whole block, counted in PATTERNS, is the honest denominator:
+                // this is the one part of a sweep whose cost is a known number of equal pieces. The
+                // outer counter is deliberately left alone — it counts points SOLVED, and none are.
+                // (The climb the reporter saw afterwards is the search's own probes, which do solve.)
+                control?.BeginStage($"far field ({chosen.Count} pattern(s))", chosen.Count);
                 foreach (int i in chosen)
                 {
                     farWanted.Add(i);
@@ -1804,10 +1840,12 @@ public static class PlanarSolve
                     // loop above for why the RAW admittance is not.
                     var (pats, mets, pols) = FarFieldAt(problem, mesh, currentsByIndex[i],
                                                         yByIndex[i], byIndex[i].S, ports, freqs[i],
-                                                        farSettings!, cap, control);
+                                                        farSettings!, cap, control, ownStage: false);
                     farPatterns[i] = pats;
                     farMetrics[i]  = mets;
                     farPol[i]      = pols;
+                    control?.TickStage(nextLabel:
+                        $"far field ({chosen.Count} pattern(s)) — {FormatHz(freqs[i])}");
                 }
                 if (moved.Count > 0)
                     notes.Add($"{moved.Count} requested far-field frequency point(s) were not solved " +
@@ -1824,7 +1862,8 @@ public static class PlanarSolve
             Dictionary<double, (Mat<Complex> S, List<PlanarPortCalibration> Cals, double CalMs)>? byFreq
                 = null;
 
-            if (ad.Search is { } rs && freqs.Length >= 2 && solved.Count >= 2)
+            if (ad.Search is { } rs && freqs.Length >= 2 && solved.Count >= 2
+                && control?.StopRequested != true)
             {
                 // The probe: one real solve, then the WHOLE calibration replayed in ascending
                 // frequency order from a fresh branch state. The replay is not optional and is not
@@ -1853,12 +1892,17 @@ public static class PlanarSolve
                 var start = new PlanarResonanceNodes(all0, all0.Select(x => byFreq[x].S).ToArray());
 
                 int port = Math.Clamp(rs.PortNumber - 1, 0, ports.Count - 1);
+                // The stop reaches INTO the search, because the search is the long part: it is the
+                // one stage that keeps adding solved points after the grid is covered, and it is
+                // exactly what the owner was waiting on when they asked for a Stop.
                 searchOutcome = PlanarResonanceSearch.Search(
                     start, freqs[0], freqs[^1], z0[port], ad.Interpolant, ad.Tolerance,
-                    rs with { PortNumber = port + 1 }, Probe);
+                    rs with { PortNumber = port + 1 }, Probe,
+                    stopped: control is null ? null : () => control.StopRequested);
 
                 resonances = searchOutcome.Resonances;
                 notes.Add(searchOutcome.Note);
+                if (searchOutcome.StoppedEarly) stoppedEarly = true;
             }
 
             // ── Publish on the USER'S grid (R-adf-2). A solved point carries its own solved matrix
@@ -2033,6 +2077,28 @@ public static class PlanarSolve
             notes.Add(adaptiveNote.ToString());
         }
 
+        // ── STOP — the sentence, and it is never left out ──────────────────────────────────────
+        //
+        // A stopped run publishes a complete, ordinary result, which is exactly what makes saying so
+        // mandatory: nothing in the DataSet, the `.snp` or the plot distinguishes it from a run that
+        // finished. The note says which of the two shapes it took, and what is therefore NOT in the
+        // answer, so a number read off it is read knowing that.
+        if (stoppedEarly)
+            notes.Add(st.Adaptive is null
+                ? $"STOPPED EARLY at the user's request: {points.Count} of {freqs.Length} requested " +
+                  $"frequency point(s) were solved, and the sweep published here is that PREFIX — " +
+                  $"the frequencies above " +
+                  $"{(points.Count > 0 ? SurfaceMesher.Eng(points[^1].FrequencyHz) + "Hz" : "the start")} " +
+                  $"are not in it and were not estimated. Everything that IS here is the same " +
+                  $"answer a completed run would have given for those points; nothing is " +
+                  $"interpolated and nothing is approximate."
+                : $"STOPPED EARLY at the user's request after {solvedCount} solved point(s). The " +
+                  $"full requested grid IS published — that is what adaptive sampling does at every " +
+                  $"budget, modelling the points it did not solve from the ones it did — but it is " +
+                  $"modelled from FEWER nodes than the tolerance asked for, so read the adaptive " +
+                  $"note beside this one for the disagreement that was actually reached rather than " +
+                  $"assuming the requested tolerance was met.");
+
         if (st.Deembed && PassivityNote(points, z0) is { } passivity) notes.Add(passivity);
 
         if (flaggedBand.Count > 0)
@@ -2165,9 +2231,13 @@ public static class PlanarSolve
                     PlanarPolarizationPattern[] Polarization) FarFieldAt(
         PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> currents,
         Mat<Complex> rawY, Mat<Complex>? deembeddedS, IReadOnlyList<PlanarPortResolution> ports,
-        double fHz, PlanarFarFieldSettings settings, int? cap, RunControl? control)
+        double fHz, PlanarFarFieldSettings settings, int? cap, RunControl? control,
+        bool ownStage = true)
     {
-        control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
+        // ownStage false when the CALLER is running a block of these and counting them itself — the
+        // adaptive path's far-field block. Beginning a stage per pattern there resets a bar that is
+        // measuring the whole block, and on a one-port it reset it to "1 of 1" every time.
+        if (ownStage) control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
         var made    = new PlanarFarFieldPattern[ports.Count];
         var metrics = new PlanarMetricReport[ports.Count];
         var pol     = new PlanarPolarizationPattern[ports.Count];
@@ -2183,7 +2253,7 @@ public static class PlanarSolve
                 deembeddedS is { } sm ? sm[j, j] : null);
             metrics[j] = PlanarMetrics.Evaluate(context);
             pol[j]     = PlanarPolarization.For(context);
-            control?.TickStage();
+            if (ownStage) control?.TickStage();
         }
         return (made, metrics, pol);
     }

@@ -1020,4 +1020,122 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal("deg", cube.Axes[1].Unit);
         _out.WriteLine($"cut axis = [{string.Join(", ", cube.Axes[1].Values)}] deg");
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // TRP and peak EIRP — the two ABSOLUTE powers (owner request, 2026-09-11)
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>Peak EIRP = TRP + directivity, exactly.</b> The identity is what makes the pair
+    /// trustworthy rather than two estimates that happen to be near each other: TRP·D expands to
+    /// P_ref·m·(P_rad/P_acc)·(4π·U_peak/P_rad), whose radiated power cancels. Computed by two
+    /// separate registry entries from two different intermediates, so an arithmetic slip in either
+    /// breaks it.
+    /// </summary>
+    [Fact]
+    public void PeakEirp_IsTrpPlusDirectivity_Exactly()
+    {
+        var gamma = new System.Numerics.Complex(0.2, -0.1);
+        var (report, _) = CheapSolve(portReflection: gamma);
+
+        double trp  = report[PlanarMetric.TrpDbm].Value;
+        double eirp = report[PlanarMetric.PeakEirpDbm].Value;
+        double d    = report[PlanarMetric.DirectivityDbi].Value;
+
+        Assert.Equal(trp + d, eirp, 10);
+        _out.WriteLine($"TRP {trp:F4} dBm + D {d:F4} dBi = {trp + d:F4}; peak EIRP {eirp:F4} dBm");
+    }
+
+    /// <summary>
+    /// <b>At the 0 dBm default, peak EIRP in dBm IS the realized gain in dBi and TRP in dBm is the
+    /// total efficiency in dB.</b> That is the whole reason the default is 0 dBm rather than 30 —
+    /// the two new cubes read as quantities an antenna engineer already has, before anybody sets
+    /// anything, and the over-the-air report they come from is written the same way.
+    /// </summary>
+    [Fact]
+    public void AtZeroDbmReference_TheyReadAsRealizedGainAndTotalEfficiency()
+    {
+        var gamma = new System.Numerics.Complex(0.3, 0.0);
+        var (report, mc) = CheapSolve(portReflection: gamma);
+
+        Assert.Equal(0.0, report[PlanarMetric.ReferenceInputPowerDbm].Value);
+        Assert.Equal(report[PlanarMetric.RealizedGainDbi].Value,
+                     report[PlanarMetric.PeakEirpDbm].Value, 10);
+
+        double etaTotal = report[PlanarMetric.RadiationEfficiency].Value * mc.MismatchFactor;
+        Assert.Equal(10.0 * Math.Log10(etaTotal), report[PlanarMetric.TrpDbm].Value, 10);
+        _out.WriteLine($"eta_total {etaTotal:E4} -> TRP {report[PlanarMetric.TrpDbm].Value:F4} dBm; " +
+                       $"realized gain {report[PlanarMetric.RealizedGainDbi].Value:F4} dBi");
+    }
+
+    /// <summary>
+    /// <b>The reference power shifts BOTH by exactly itself and NOTHING else at all.</b> It is a
+    /// reference, not a physical change: a directivity, a gain and an efficiency are ratios and must
+    /// not move. This is the assertion that catches it being multiplied in somewhere it does not
+    /// belong — which is invisible on a plot, since every curve keeps its shape.
+    /// </summary>
+    [Theory]
+    [InlineData(30.0)]
+    [InlineData(-20.0)]
+    public void TheReferencePower_ShiftsTheTwoAbsolutesAndNothingElse(double refDbm)
+    {
+        var gamma = new System.Numerics.Complex(0.15, 0.05);
+        var (baseline, _) = CheapSolve(portReflection: gamma);
+        var (shifted, _)  = CheapSolve(
+            settings: PlanarMetricSettings.Default with { ReferenceInputPowerDbm = refDbm },
+            portReflection: gamma);
+
+        Assert.Equal(refDbm, shifted[PlanarMetric.ReferenceInputPowerDbm].Value);
+        Assert.Equal(baseline[PlanarMetric.TrpDbm].Value + refDbm,
+                     shifted[PlanarMetric.TrpDbm].Value, 10);
+        Assert.Equal(baseline[PlanarMetric.PeakEirpDbm].Value + refDbm,
+                     shifted[PlanarMetric.PeakEirpDbm].Value, 10);
+
+        foreach (var m in new[] { PlanarMetric.DirectivityDbi, PlanarMetric.GainDbi,
+                                  PlanarMetric.RealizedGainDbi, PlanarMetric.RadiationEfficiency,
+                                  PlanarMetric.PowerAccepted, PlanarMetric.PowerRadiated })
+            Assert.Equal(baseline[m].Value, shifted[m].Value, 12);
+
+        _out.WriteLine($"+{refDbm} dBm: TRP {baseline[PlanarMetric.TrpDbm].Value:F3} -> " +
+                       $"{shifted[PlanarMetric.TrpDbm].Value:F3} dBm, everything else unmoved");
+    }
+
+    /// <summary>
+    /// <b>Both are PRESENT and REFUSED with no port reflection</b>, on the same predicate realized
+    /// gain refuses on and for the same reason: an absolute radiated power carries the mismatch, and
+    /// the raw delta-gap admittance beside the pattern is not the port's own Γ. The refusal carries
+    /// the exact substitute arithmetic, because a refusal that leaves a caller unable to get the
+    /// number is worse than one that does not.
+    /// </summary>
+    [Fact]
+    public void TrpAndEirp_AreRefusedWithNoPortReflection_AndCarryTheArithmetic()
+    {
+        var (report, _) = CheapSolve();
+
+        foreach (var m in new[] { PlanarMetric.TrpDbm, PlanarMetric.PeakEirpDbm })
+        {
+            var outcome = report[m];
+            Assert.False(outcome.Ok);
+            Assert.Contains("ReferenceInputPowerDbm", outcome.Verdict.Reason);
+            Assert.Contains("1 − |S₁₁|²", outcome.Verdict.Reason);
+            _out.WriteLine($"{outcome.Definition.CubeName}: {outcome.Verdict.Reason}");
+        }
+
+        // Present in the registry either way — the FrontToBackDb staging, reused a third time, so
+        // the picker, the exporter and the CLI are plumbed for them whether or not they publish.
+        var names = PlanarMetrics.Registry.Select(d => d.CubeName).ToArray();
+        Assert.Contains("TrpDbm", names);
+        Assert.Contains("PeakEirpDbm", names);
+        Assert.Contains("ReferenceInputPowerDbm", names);
+    }
+
+    /// <summary>The reference itself is published whether or not the two that use it are — a dBm
+    /// whose reference is not in the file cannot be reproduced from the file.</summary>
+    [Fact]
+    public void TheReference_IsPublishedEvenWhenTheAbsolutesAreRefused()
+    {
+        var (report, _) = CheapSolve();
+        Assert.True(report[PlanarMetric.ReferenceInputPowerDbm].Ok);
+        Assert.Equal(0.0, report[PlanarMetric.ReferenceInputPowerDbm].Value);
+    }
 }

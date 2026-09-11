@@ -9,6 +9,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using SkiaSharp;
@@ -253,13 +254,21 @@ namespace CircuitRF.Render.DataDisplay
         /// <see cref="PolarPatternScale.RingsDb"/> and are labelled in dB. Null is every polar plot
         /// that existed before, unchanged.
         /// </param>
+        /// <param name="bearings">
+        /// <b>Draw the 30&#176; spokes and print the angle outside the boundary ring</b>
+        /// (<see cref="Plot.ShowPolarAngleLabels"/>). Requires the caller to have reserved
+        /// <see cref="PlotRenderer.ComplexAngleLabelMargin"/> in the viewport; nothing here checks,
+        /// because the same predicate drives both and a plot with one and not the other is not a
+        /// state this code can be in.
+        /// </param>
         public static void DrawPolarGrid(
             SKCanvas             canvas,
             (double W, double H) canvasSize,
             Axes                 axes,
             TransformSet         tf,
             RenderTheme          theme,
-            PolarPatternScale?   pattern = null)
+            PolarPatternScale?   pattern = null,
+            bool                 bearings = false)
         {
             float lw     = LineWidth(canvasSize);
             float gridSw = lw * (float)axes.GridThicknessFactor;
@@ -344,6 +353,25 @@ namespace CircuitRF.Render.DataDisplay
             for (int i = 0; i < rings.Count - 1; i++)
                 canvas.DrawCircle(ctr.X, ctr.Y, (float)rings[i] * pxPerWorld, ringPaint);
 
+            // ── The bearing SPOKES (owner request, 2026-09-11) ─────────────────────────────────
+            //
+            // Drawn at the same weight as the rings, and only where the two diameters have not
+            // already drawn one — the 0/90/180/270 spokes ARE the cross above, at axis weight, and
+            // a second line over them reads as a thicker one of a different colour.
+            if (bearings)
+            {
+                float rPx = pattern is null ? pxMax : (float)rings[^1] * pxPerWorld;
+                using var spokes = new SKPath();
+                for (int a = 0; a < 360; a += BearingStepDeg)
+                {
+                    if (a % 90 == 0) continue;
+                    var (ux, uy) = BearingUnit(a, pattern is not null);
+                    spokes.MoveTo(ctr.X, ctr.Y);
+                    spokes.LineTo(ctr.X + (float)ux * rPx, ctr.Y + (float)uy * rPx);
+                }
+                canvas.DrawPath(spokes, ringPaint);
+            }
+
             // Minor radii are marked as short ticks ACROSS the two diameters rather than as rings
             // of their own. Five subdivisions of five rings is twenty-five circles, which stops
             // reading as a grid and starts reading as shading; on the axes they give the same fine
@@ -399,7 +427,16 @@ namespace CircuitRF.Render.DataDisplay
             canvas.Save();
             canvas.ClipRect(SKRect.Inflate(exactClip, gridSw, gridSw));
             canvas.DrawCircle(ctr.X, ctr.Y, boundaryPx, axisPaint);
+
             canvas.Restore();
+
+            // The bearings themselves, in the margin PlotRenderer.ComputeViewport reserved for
+            // them — so they are drawn UNCLIPPED by the viewport box, and never over the disc.
+            // Without that reserved margin this would clip to nothing rather than overprint, which
+            // is why the two are written as one feature.
+            if (bearings)
+                DrawPolarBearings(canvas, axes, theme, lw, ctr, boundaryPx, pattern is not null);
+
             canvas.Save();
             canvas.ClipRect(exactClip);
 
@@ -455,6 +492,61 @@ namespace CircuitRF.Render.DataDisplay
         /// tick always lands on a number worth reading: a step of 1 or 5 divides by five, a step of
         /// 2 divides by four (giving halves, not fifths of a two).</para>
         /// </summary>
+        /// <summary>Spacing of the bearing spokes and their labels, in degrees. 30 is what an
+        /// antenna-range plot is read on, and it divides 360 into twelve legible marks.</summary>
+        internal const int BearingStepDeg = 30;
+
+        /// <summary>
+        /// The unit vector for a bearing, in CANVAS axes (y DOWN), under the plot's own angular
+        /// convention.
+        ///
+        /// <para><paramref name="compass"/> true is the PATTERN convention —
+        /// 0&#176; at the top, increasing clockwise — and it is
+        /// <see cref="PolarPatternAngle.Point"/>'s, restated here in canvas axes rather than called,
+        /// because that one returns WORLD coordinates on the unit disc and this has only a pixel
+        /// centre and a pixel radius to work from. False is the complex plane's: 0&#176; at the
+        /// right, increasing counter-clockwise, which is the angle a locus plot's own points carry.</para>
+        /// </summary>
+        internal static (double X, double Y) BearingUnit(double deg, bool compass)
+        {
+            double rad = (compass ? 90.0 - deg : deg) * Math.PI / 180.0;
+            return (Math.Cos(rad), -Math.Sin(rad));
+        }
+
+        /// <summary>
+        /// The bearing numbers, printed just outside the boundary ring in the margin
+        /// <see cref="PlotRenderer.ComplexAngleLabelMargin"/> reserved. Each is centred on its own
+        /// spoke, which is what puts "0" over the top of a pattern plot and "90" off its right
+        /// shoulder without a per-quadrant alignment table.
+        /// </summary>
+        private static void DrawPolarBearings(SKCanvas canvas, Axes axes, RenderTheme theme,
+                                              float lw, SKPoint ctr, float boundaryPx, bool compass)
+        {
+            var (font, paint) = MakeTextObjects(axes.FontSizeTicks * 0.85, lw, theme);
+            using var _f = font;
+            using var _p = paint;
+
+            float gap = lw * 3f;
+            for (int a = 0; a < 360; a += BearingStepDeg)
+            {
+                var (ux, uy) = BearingUnit(a, compass);
+                string text = a.ToString(CultureInfo.InvariantCulture);
+
+                // Centred ON the spoke: the anchor is pushed out by the text's own half-extent in
+                // the spoke's direction, so the label clears the ring by `gap` whatever bearing it
+                // is at. The vertical half-extent uses the cap height rather than the full line, so
+                // a label at the top and one at the bottom sit the same distance off the ring.
+                float halfW = font.MeasureText(text) / 2f;
+                float halfH = font.Size * 0.36f;
+                float rx    = boundaryPx + gap + halfW;
+                float ry    = boundaryPx + gap + halfH;
+
+                float x = ctr.X + (float)ux * rx;
+                float y = ctr.Y + (float)uy * ry + halfH;
+                canvas.DrawText(text, x, y, SKTextAlign.Center, font, paint);
+            }
+        }
+
         internal static (double Step, int Subdivisions) PolarRings(double rMax)
         {
             if (!(rMax > 0) || !double.IsFinite(rMax)) return (0, 0);

@@ -221,7 +221,17 @@ public class RadiationPatternUiTests
 
         Assert.Contains("setup.RadiationPattern", src, StringComparison.Ordinal);
         Assert.Contains("FarField = setup.RadiationPattern", src, StringComparison.Ordinal);
-        Assert.Contains("PlanarFarFieldSettings.Default with { FrequenciesHz = freqs }", src,
+        // The two halves separately, not as one literal: the `with` block gained a third member
+        // (the TRP/EIRP reference power, 2026-09-11) and grew onto several lines, so a single
+        // contiguous string would break on every formatting change without saying anything about
+        // the wiring. What is actually under test is that the far-field settings come from the
+        // shipped default and carry the SWEEP's frequencies.
+        Assert.Contains("PlanarFarFieldSettings.Default with", src, StringComparison.Ordinal);
+        Assert.Contains("FrequenciesHz = freqs", src, StringComparison.Ordinal);
+
+        // The reference power reaches the metric settings — a stored setting nothing reads is
+        // decoration, which is what this whole test exists to prevent.
+        Assert.Contains("ReferenceInputPowerDbm = setup.ReferenceInputPowerDbm", src,
                         StringComparison.Ordinal);
 
         // And the one combination the panel can express that the cross-section kernel cannot honour is

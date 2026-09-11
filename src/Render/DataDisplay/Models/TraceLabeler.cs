@@ -247,6 +247,12 @@ namespace CircuitRF.Render.DataDisplay
             // Append transform suffix (not folded into the cube name).
             sb.Append(TransformSuffix(t.Transform));
 
+            // A dBm LEVEL says what it is a level above, always — see Trace.ReferenceLevelSuffix.
+            // Here rather than in RectYLabel because this label is the one that reaches BOTH the
+            // rectangular Y axis and the polar label strip, and a level that named its reference on
+            // one and not the other would be exactly the divergence the strips were just fixed for.
+            if (t.ReferenceLevelSuffix is { } refSuffix) sb.Append(refSuffix);
+
             // A binding that FAILED to resolve must say so on the plot, not only under the spec box on
             // the card. Nothing else in this label can express it: the label is built from the trace's
             // authoring state (cube + pins + transform), which is still perfectly well-formed when the

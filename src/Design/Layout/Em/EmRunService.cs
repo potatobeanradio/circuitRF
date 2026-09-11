@@ -497,8 +497,17 @@ public static class EmRunService
                 // the shipped 5.8 GHz example: the same 21-point sweep took 1 m 37 s with one
                 // pattern and 3 m 45 s with twenty-one. That is the price of the switch, and it is
                 // paid only when the user asks for it.
+                //
+                // The reference power rides along because TRP and peak EIRP are the only ABSOLUTE
+                // quantities in the metric registry — every other one is a ratio and needs no
+                // excitation to be absolute against. See PlanarMetricSettings for the whole of why.
                 FarField = setup.RadiationPattern
-                    ? PlanarFarFieldSettings.Default with { FrequenciesHz = freqs }
+                    ? PlanarFarFieldSettings.Default with
+                      {
+                          FrequenciesHz = freqs,
+                          Metrics = PlanarMetricSettings.Default with
+                                    { ReferenceInputPowerDbm = setup.ReferenceInputPowerDbm },
+                      }
                     : null,
                 Fill = setup.DirectVerticalKernel || setup.AcceleratedSolve
                     ? fill
