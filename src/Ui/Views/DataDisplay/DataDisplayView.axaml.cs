@@ -69,11 +69,17 @@ public partial class DataDisplayView : UserControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Handled || e.Key != Key.F || e.KeyModifiers != KeyModifiers.None) return;
+        if (e.Handled || e.KeyModifiers != KeyModifiers.None) return;
+
+        // Z arms the magnifier — the same key the schematic editor has always used for its Zoom Box
+        // (owner, 2026-09-11). Under the SAME typing guard as F below and for the same reason: a bare
+        // letter must not arm a tool while someone is typing a "z" into a marker name.
+        if (e.Key is not (Key.F or Key.Z)) return;
         if (IsTypingInAField(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement())) return;
         if (DataContext is not DataDisplayDocument doc) return;
 
-        var cmd = doc.ViewModel.Window.FitAllCommand;
+        var cmd = e.Key == Key.Z ? doc.ViewModel.Window.ZoomBoxCommand
+                                 : doc.ViewModel.Window.FitAllCommand;
         if (!cmd.CanExecute(null)) return;
         cmd.Execute(null);
         e.Handled = true;

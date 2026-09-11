@@ -14,6 +14,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -28,6 +29,12 @@ public partial class PlotCanvasView : UserControl
     // ---- Middle-button canvas pan state ----------------------------
     private bool  _canvasPanning;
     private Point _canvasPanLast;
+
+    // ---- Zoom-box state (the toolbar's magnifier) ------------------
+    // The ARMED flag lives on DataDisplayViewModel (per tab, so switching tabs cannot leave a
+    // crosshair over a canvas nobody armed); only the in-flight drag is held here.
+    private bool  _zoomBoxDragging;
+    private Point _zoomBoxOrigin;
 
     // ---- Drag-select rubber-band state -----------------------------
     private bool  _maybeDragSelecting;
@@ -92,7 +99,100 @@ public partial class PlotCanvasView : UserControl
         _contentGrid?.AddHandler(
             PointerReleasedEvent, OnDragSelectReleased,
             RoutingStrategies.Bubble, handledEventsToo: true);
+
+        // Zoom box — the press is a TUNNEL handler, unlike everything else here, because an armed
+        // magnifier has to pre-empt the CHILDREN: a bubble handler runs after the plot or InfoBox
+        // under the pointer has already taken the press as a move or a marker drag, and marking it
+        // handled then is too late. Move and release bubble like the pan's, so the box keeps growing
+        // when the pointer crosses a plot.
+        _contentGrid?.AddHandler(
+            PointerPressedEvent, OnZoomBoxPressed,
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        _contentGrid?.AddHandler(
+            PointerMovedEvent, OnZoomBoxMoved,
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        _contentGrid?.AddHandler(
+            PointerReleasedEvent, OnZoomBoxReleased,
+            RoutingStrategies.Bubble, handledEventsToo: true);
+
+        // Escape reaches the document's own KeyBinding (DeselectAllCommand, which disarms the
+        // magnifier first), so it is not handled here. Arrow keys are — see OnCanvasKeyDown.
+        AddHandler(KeyDownEvent, OnCanvasKeyDown, RoutingStrategies.Bubble);
     }
+
+    // ---- Zoom box ---------------------------------------------------
+
+    /// <summary>Smallest drag, in device pixels, that counts as a zoom window rather than a stray
+    /// click. Below it the press is treated as "I did not mean to" and the view is left alone —
+    /// though the tool still disarms, so it is never left on with nothing explaining it.</summary>
+    private const double ZoomBoxMinDragPixels = 4.0;
+
+    private void OnZoomBoxPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_plotCanvas is null || Display is not { ZoomBoxArmed: true }) return;
+        if (!e.GetCurrentPoint(_plotCanvas).Properties.IsLeftButtonPressed) return;
+
+        Focus();
+        _zoomBoxDragging = true;
+        _zoomBoxOrigin   = e.GetPosition(_plotCanvas);
+        _dragSelectOverlay?.SetSelectionRect(null);
+        e.Pointer.Capture(_contentGrid);
+        e.Handled = true;
+    }
+
+    private void OnZoomBoxMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_zoomBoxDragging || _plotCanvas is null) return;
+        _dragSelectOverlay?.SetSelectionRect(ZoomBoxRect(e.GetPosition(_plotCanvas)));
+        e.Handled = true;
+    }
+
+    private void OnZoomBoxReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_zoomBoxDragging || _plotCanvas is null) return;
+
+        var box = ZoomBoxRect(e.GetPosition(_plotCanvas));
+        _zoomBoxDragging = false;
+        _dragSelectOverlay?.SetSelectionRect(null);
+        e.Pointer.Capture(null);
+
+        // Disarm FIRST: a box too small to count, or a zoom that clamps against the display's own
+        // limits, still ends the gesture. Leaving the tool armed on those paths is how a mode gets
+        // stuck with nothing on screen explaining it.
+        var display = Display;
+        display?.DisarmZoomBox();
+        if (display is not null && box.Width >= ZoomBoxMinDragPixels && box.Height >= ZoomBoxMinDragPixels)
+            display.ZoomToScreenRect(box.X, box.Y, box.Width, box.Height,
+                                     _plotCanvas.Bounds.Width, _plotCanvas.Bounds.Height);
+
+        e.Handled = true;
+    }
+
+    private Rect ZoomBoxRect(Point current) => new(_zoomBoxOrigin, current);
+
+    // ---- Arrow-key pan ----------------------------------------------
+
+    /// <summary>
+    /// Arrow keys pan the canvas when nothing is selected — see <see cref="CanvasArrowPan"/> for why
+    /// the gesture exists and why the selection gates it. With something selected the arrows belong
+    /// to the plot or marker that has it (<c>PlotControl</c> steps a marker along its trace with
+    /// them), which is why this asks first and declines rather than handling them unconditionally.
+    /// </summary>
+    private void OnCanvasKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || Display is not { } display || display.HasAnySelection) return;
+        if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return;
+
+        // These offsets translate the CONTENT, so the view moves the other way: Right means "show me
+        // what is further right", which slides the plots left.
+        display.ViewOffsetX -= step.Dx;
+        display.ViewOffsetY -= step.Dy;
+        e.Handled = true;
+    }
+
+    // The display this view is currently watching for ZoomBoxArmed, so the subscription is dropped
+    // when the DataContext moves rather than accumulating one per tab rebuild.
+    private DataDisplayViewModel? _watchedDisplay;
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -101,7 +201,23 @@ public partial class PlotCanvasView : UserControl
         if (DataContext is TabViewModel tabVm && _plotCanvas is not null)
             tabVm.GetCanvasSizeFunc = () =>
                 (_plotCanvas.Bounds.Width, _plotCanvas.Bounds.Height);
+
+        if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged -= OnDisplayPropertyChanged;
+        _watchedDisplay = Display;
+        if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged += OnDisplayPropertyChanged;
+        SyncZoomBoxCursor();
     }
+
+    private void OnDisplayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DataDisplayViewModel.ZoomBoxArmed)) SyncZoomBoxCursor();
+    }
+
+    /// <summary>The armed magnifier reads as a crosshair, the same way the schematic, layout and
+    /// wBond editors draw theirs — the arming is a mode, and a mode with no pointer change is one the
+    /// user discovers by clicking.</summary>
+    private void SyncZoomBoxCursor() =>
+        Cursor = Display is { ZoomBoxArmed: true } ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
 
     // Helper to reach the active DataDisplayViewModel.
     private DataDisplayViewModel? Display => (DataContext as TabViewModel)?.DataDisplay;

@@ -126,7 +126,13 @@
                         <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit  (F)" Padding="6,3">
                             <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                         </Button>
-                        <Button Click="OnZoomIn" ToolTip.Tip="Zoom In" Padding="6,3">
+                        <!-- The magnifier ARMS; it does not zoom (owner, 2026-09-11). Clicking it
+                             takes the left button for one drag, and the box that drag draws is what
+                             gets framed. Ctrl/Cmd +/- is where a single step lives now. Same icon,
+                             same place and same behaviour as the Schematic editor's Zoom Box. -->
+                        <Button x:Name="ZoomBoxToolBtn" Click="OnZoomBoxTool"
+                                ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl+ +/- steps)"
+                                Padding="6,3">
                             <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
                         </Button>
                         <Button Click="OnZoomOut" ToolTip.Tip="Zoom Out" Padding="6,3">

@@ -56,6 +56,12 @@ public partial class LayoutEditorView : UserControl
         // routing needs re-asserting, since Dock's own ActiveDockable never actually changed.
         LayoutCanvasCtrl.GotFocus += (_, _) => _subscribedDoc?.NotifyCanvasInteracted();
 
+        // The magnifier's lit state comes from the CANVAS, which owns the mode — including the
+        // disarm the canvas performs itself when the drag ends or Escape is pressed, neither of which
+        // this view can see. Same pattern as SchematicView's own tool-button states.
+        LayoutCanvasCtrl.ZoomBoxArmedChanged += (_, _) =>
+            ZoomBoxToolBtn.Classes.Set("ToolActive", LayoutCanvasCtrl.ZoomBoxArmed);
+
         DataContextChanged += (_, _) => SyncRulerUnits();
         DataContextChanged += OnDataContextChangedForFocus;
 
@@ -367,6 +373,19 @@ public partial class LayoutEditorView : UserControl
     public void ZoomCanvasOut()   => LayoutCanvasCtrl.ZoomOut();
     public void ZoomCanvas1To1()  => LayoutCanvasCtrl.Zoom1To1();
 
+    /// <summary>The magnifier, for a host toolbar that arms this canvas alongside one of its own —
+    /// the wBond editor, whose one button arms both of its viewports.</summary>
+    public void ArmCanvasZoomBox()    => LayoutCanvasCtrl.ArmZoomBox();
+    public void DisarmCanvasZoomBox() => LayoutCanvasCtrl.DisarmZoomBox();
+    public bool CanvasZoomBoxArmed    => LayoutCanvasCtrl.ZoomBoxArmed;
+
+    /// <inheritdoc cref="LayoutCanvas.ZoomBoxArmedChanged"/>
+    public event EventHandler? CanvasZoomBoxArmedChanged
+    {
+        add    => LayoutCanvasCtrl.ZoomBoxArmedChanged += value;
+        remove => LayoutCanvasCtrl.ZoomBoxArmedChanged -= value;
+    }
+
     /// <summary>
     /// Whether this view's own rulers are showing. A host with a ruler switch of its own drives it
     /// from here rather than hosting a second pair of ruler strips — the wBond editor's one toggle
@@ -428,6 +447,18 @@ public partial class LayoutEditorView : UserControl
         }
 
         if (e.Key != Key.Escape) return;
+
+        // Step 0 of the Escape unwind: an ARMED magnifier is the most recently turned-on state, so
+        // that is what Escape means while it is on. It has to be claimed HERE and not in the canvas —
+        // this tunnel runs first and forwards Escape straight to the view model, so the canvas's own
+        // Escape branch never sees the key while this view is hosting it.
+        if (LayoutCanvasCtrl.ZoomBoxArmed)
+        {
+            LayoutCanvasCtrl.DisarmZoomBox();
+            e.Handled = true;
+            return;
+        }
+
         doc.ActiveViewModel.OnKeyDown(e.Key, e.KeyModifiers);
         e.Handled = true;
     }
@@ -955,7 +986,15 @@ public partial class LayoutEditorView : UserControl
     }
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e) { LayoutCanvasCtrl.ZoomToFit();  LayoutCanvasCtrl.Focus(); }
-    private void OnZoomIn(object? sender, RoutedEventArgs e)    { LayoutCanvasCtrl.ZoomIn();     LayoutCanvasCtrl.Focus(); }
+    /// <summary>The magnifier ARMS and does not zoom (owner, 2026-09-11) — the box the next left-drag
+    /// draws is what gets framed. Focus goes back to the canvas because the gesture, its Escape and
+    /// its rubber band all live there.</summary>
+    private void OnZoomBoxTool(object? sender, RoutedEventArgs e)
+    {
+        if (LayoutCanvasCtrl.ZoomBoxArmed) LayoutCanvasCtrl.DisarmZoomBox();
+        else LayoutCanvasCtrl.ArmZoomBox();
+        LayoutCanvasCtrl.Focus();
+    }
     private void OnZoomOut(object? sender, RoutedEventArgs e)   { LayoutCanvasCtrl.ZoomOut();    LayoutCanvasCtrl.Focus(); }
     private void OnZoom1To1(object? sender, RoutedEventArgs e)  { LayoutCanvasCtrl.Zoom1To1();   LayoutCanvasCtrl.Focus(); }
 

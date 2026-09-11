@@ -285,6 +285,16 @@ public sealed class LayoutCanvas : Control
     // ── Pan (middle-mouse always; Space-drag as an alternative) ─────────────────
 
     private bool   _isPanning;
+
+    // ── Zoom-box tool (the toolbar's magnifier) ───────────────────────────────
+    // Held on the CANVAS, not on LayoutEditorViewModel.Tool: zooming changes nothing in the
+    // document, so a mode that only ever moves the viewport has no business in the model's tool
+    // enum, where every other member draws something. That also makes the gesture identical in the
+    // wBond editor's hosted copy of this canvas, which drives it through the same two methods.
+    private bool  _zoomBoxArmed;
+    private bool  _zoomBoxDragging;
+    private Point _zoomBoxStart;
+    private Point _zoomBoxCurrent;
     private Point  _panDragStartScreen;
     private double _panDragStartPanX;
     private double _panDragStartPanY;
@@ -414,7 +424,14 @@ public sealed class LayoutCanvas : Control
         var vp = CurrentViewport;
         var opts = new LayoutRenderOptions
         {
-            Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache,
+            Theme = theme, ShowGrid = true, PathCache = _pathCache,
+            // The zoom window rides on the frame's own marquee slot rather than a second rubber-band
+            // path: it IS a marquee, and the editor already draws one. Applied to a COPY of the view
+            // model's overlay (LayoutOverlay is a record) — never to the instance the view model
+            // holds, which would leave a stale box on it after the gesture.
+            Overlay = ZoomBoxMarquee() is { } zoomBox
+                ? (_viewModel?.Overlay ?? LayoutOverlay.Empty) with { Marquee = zoomBox }
+                : _viewModel?.Overlay,
             BaseDir = _viewModel?.InstanceBaseDir, ShowPCellPins = _viewModel?.ShowPCellPins ?? true,
             ShowEmMesh = _viewModel?.ShowEmMesh ?? false, EmMesh = _viewModel?.EmMeshReport,
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
@@ -528,6 +545,90 @@ public sealed class LayoutCanvas : Control
     public void ZoomIn()  => ZoomAtCenter(_zoom * ZoomFactor);
     public void ZoomOut() => ZoomAtCenter(_zoom / ZoomFactor);
 
+    // ── Zoom box ──────────────────────────────────────────────────────────────
+
+    /// <summary>Raised whenever <see cref="ZoomBoxArmed"/> changes, so the toolbar button that armed
+    /// the tool can light up and go out again without polling.</summary>
+    public event EventHandler? ZoomBoxArmedChanged;
+
+    /// <summary>True while the magnifier is armed and the next left-drag will draw a zoom window.</summary>
+    public bool ZoomBoxArmed => _zoomBoxArmed;
+
+    /// <summary>
+    /// Arms the magnifier: the next left-drag frames the box it draws. <b>One shot</b> — the tool
+    /// disarms itself once it has zoomed, exactly as the schematic editor's Zoom Box has always
+    /// done, so the pointer is never left in a mode the user has finished with.
+    /// </summary>
+    public void ArmZoomBox()
+    {
+        if (_zoomBoxArmed) return;
+        // A drawing tool and the magnifier both want the left button. The magnifier is the one the
+        // user just asked for, so the drawing tool stands down rather than the two racing for the
+        // press.
+        if (_viewModel is { ActiveTool: not LayoutEditorViewModel.Tool.Select } vm)
+            vm.ActiveTool = LayoutEditorViewModel.Tool.Select;
+        _zoomBoxArmed = true;
+        UpdateCursor();
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Disarms the magnifier and drops any half-drawn box. Idempotent.</summary>
+    public void DisarmZoomBox()
+    {
+        if (!_zoomBoxArmed && !_zoomBoxDragging) return;
+        _zoomBoxArmed = false;
+        _zoomBoxDragging = false;
+        UpdateCursor();
+        InvalidateVisual();
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The half-drawn box, in DBU, for the frame's marquee — normalized left-to-right so it
+    /// draws solid (a right-to-left <see cref="LayoutMarquee"/> means "crossing" and renders dashed,
+    /// a distinction a zoom window does not have).</summary>
+    private LayoutMarquee? ZoomBoxMarquee()
+    {
+        if (!_zoomBoxDragging) return null;
+        var box = ZoomBoxScreenRect();
+        if (box.Width < 1 || box.Height < 1) return null;
+        var vp = CurrentViewport;
+        return new LayoutMarquee(
+            (long)Math.Round(vp.ScreenToWorldX(box.Left)),  (long)Math.Round(vp.ScreenToWorldY(box.Bottom)),
+            (long)Math.Round(vp.ScreenToWorldX(box.Right)), (long)Math.Round(vp.ScreenToWorldY(box.Top)));
+    }
+
+    private Rect ZoomBoxScreenRect() => new(_zoomBoxStart, _zoomBoxCurrent);
+
+    /// <summary>Smallest drag, in device pixels, that counts as a zoom window rather than a stray
+    /// click. Below it the press is treated as "I did not mean to" and the view is left alone.</summary>
+    private const double ZoomBoxMinDragPixels = 4.0;
+
+    /// <summary>
+    /// Frames exactly the box the user drew — no margin and no minimum span, unlike
+    /// <see cref="ZoomToRegion"/>, which pads because it is framing a hairline DRC marker nobody
+    /// aimed at. A box of a different aspect ratio than the canvas is LETTERBOXED, never cropped:
+    /// everything inside it is visible afterwards, which is the promise the gesture makes.
+    /// </summary>
+    private void ZoomToScreenBox(Rect box)
+    {
+        if (Bounds.Width < 1 || Bounds.Height < 1) return;
+        if (box.Width < ZoomBoxMinDragPixels || box.Height < ZoomBoxMinDragPixels) return;
+
+        var vp = CurrentViewport;
+        // Screen Y grows downward and world Y upward, so the box's BOTTOM edge is the world minimum.
+        long x0 = (long)Math.Floor(vp.ScreenToWorldX(box.Left));
+        long x1 = (long)Math.Ceiling(vp.ScreenToWorldX(box.Right));
+        long y0 = (long)Math.Floor(vp.ScreenToWorldY(box.Bottom));
+        long y1 = (long)Math.Ceiling(vp.ScreenToWorldY(box.Top));
+        if (x1 <= x0 || y1 <= y0) return;
+
+        var framed = LayoutViewport.ZoomToFit(
+            new Bbox(x0, y0, x1, y1), Bounds.Width, Bounds.Height,
+            marginFrac: 0.0, minZoom: MinZoom, maxZoom: MaxZoom);
+        _panX = framed.PanX; _panY = framed.PanY; _zoom = Math.Clamp(framed.Zoom, MinZoom, MaxZoom);
+        RaiseViewportChanged();
+    }
+
     /// <summary>1 device pixel per one tick of the document's display unit (e.g. 1 px = 1 mil on a
     /// PCB layout, 1 px = 1 µm on an MMIC layout) — a stable, physically-meaningful "actual size".</summary>
     public void Zoom1To1()
@@ -593,6 +694,17 @@ public sealed class LayoutCanvas : Control
             // drawing tool) makes the memo non-null again and the next release then does clear it,
             // which is also exactly why it was "hard" rather than impossible to get back.
             SetCursor(StandardCursorType.Hand);
+            return;
+        }
+
+        // The armed magnifier owns the left button outright — ahead of the right-click menu and of
+        // every tool below, and after the pan branch so a middle-drag still pans while it is armed.
+        if (_zoomBoxArmed && props.IsLeftButtonPressed)
+        {
+            _zoomBoxDragging = true;
+            _zoomBoxStart = _zoomBoxCurrent = pos;
+            e.Pointer.Capture(this);
+            e.Handled = true;
             return;
         }
 
@@ -1455,6 +1567,13 @@ public sealed class LayoutCanvas : Control
             return;   // middle-drag pan keeps working during any left-button drawing gesture
         }
 
+        if (_zoomBoxDragging)
+        {
+            _zoomBoxCurrent = pos;
+            InvalidateVisual();
+            return;
+        }
+
         var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
@@ -1516,7 +1635,13 @@ public sealed class LayoutCanvas : Control
         UpdateCursor();
     }
 
-    private void OnPointerCaptureLost(object? _, PointerCaptureLostEventArgs e) => EndPanIfActive();
+    private void OnPointerCaptureLost(object? _, PointerCaptureLostEventArgs e)
+    {
+        EndPanIfActive();
+        // Same latch, same reason (see EndPanIfActive): a zoom box whose capture is taken away never
+        // sees its own release, and would otherwise keep painting a rubber band over every frame.
+        DisarmZoomBox();
+    }
 
     private void OnPointerReleased(object? _, PointerReleasedEventArgs e)
     {
@@ -1524,6 +1649,23 @@ public sealed class LayoutCanvas : Control
         {
             e.Pointer.Capture(null);
             EndPanIfActive();
+            return;
+        }
+
+        if (_zoomBoxDragging)
+        {
+            // Read the box BEFORE releasing the capture: dropping it raises PointerCaptureLost, whose
+            // handler disarms — so anything derived from the gesture has to be in hand first.
+            _zoomBoxCurrent = e.GetPosition(this);
+            var box = ZoomBoxScreenRect();
+            e.Pointer.Capture(null);
+
+            // Disarm BEFORE zooming: a zoom that clamps against MinZoom/MaxZoom, or a box too small
+            // to count, still ends the gesture — leaving the tool armed on those paths is how a mode
+            // gets stuck with nothing on screen explaining it.
+            DisarmZoomBox();
+            ZoomToScreenBox(box);
+            e.Handled = true;
             return;
         }
 
@@ -1581,6 +1723,17 @@ public sealed class LayoutCanvas : Control
         // unhandled routed event) — this guard only stops the SIDE EFFECT, not the character.
         if (e.Key == Key.Space && _viewModel?.IsTypingLabel != true) { _spaceHeld = true; UpdateCursor(); return; }
 
+        // Escape disarms the magnifier and hands the left button back to the Select tool. Ahead of
+        // everything else, including the paste-ghost branch below, only for the armed case — when the
+        // tool is not armed this falls straight through and Escape keeps every meaning it had.
+        if (e.Key == Key.Escape && (_zoomBoxArmed || _zoomBoxDragging))
+        {
+            DisarmZoomBox();
+            if (_viewModel is { } escVm) escVm.ActiveTool = LayoutEditorViewModel.Tool.Select;
+            e.Handled = true;
+            return;
+        }
+
         // R-pch-12: Alt with the pointer STATIONARY still has to light the grips up — the armed state
         // is what tells the user the next press cannot move the cell, and waiting for a pointer move to
         // say so would make the mode announce itself only after they had already committed to aiming.
@@ -1635,14 +1788,55 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        // Z arms the magnifier — the same key the schematic editor has always used for its Zoom Box
+        // (owner, 2026-09-11), and a toggle, so Z twice leaves the pointer where it started. Gated on
+        // IsTypingLabel exactly as F above is, and for the same reason: 'z' is an ordinary character
+        // in label text and without the guard typing one would arm a tool mid-word. !ctrl keeps
+        // Ctrl/⌘+Z free for Undo.
+        if (!ctrl && e.Key == Key.Z && _viewModel?.IsTypingLabel != true)
+        {
+            if (_zoomBoxArmed) DisarmZoomBox(); else ArmZoomBox();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl/Cmd +/- still step the zoom (owner, 2026-09-11). The toolbar's Zoom In button became
+        // the magnifier, which arms rather than zooms — so the keyboard is where a plain "one step
+        // closer" lives now, and it had to be somewhere. OemPlus/OemMinus are the main row;
+        // Add/Subtract are the numeric keypad, which reports different keys for the same characters.
+        if (ctrl && e.Key is Key.OemPlus or Key.Add)      { ZoomIn();  e.Handled = true; return; }
+        if (ctrl && e.Key is Key.OemMinus or Key.Subtract) { ZoomOut(); e.Handled = true; return; }
+
         if (ctrl && e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && shift && e.Key == Key.V) { ClipboardPasteInPlaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && e.Key == Key.D) { DuplicateRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
 
+        // Arrow keys pan the VIEW when nothing is selected — see CanvasArrowPan. After the overlay
+        // branch above (a wBond overlay with its own selection nudges its wires first) and before the
+        // view model's, whose arrow branch is the layout nudge this defers to.
+        if (TryArrowPan(e)) { e.Handled = true; return; }
+
         _viewModel?.OnKeyDown(e.Key, e.KeyModifiers);
         InvalidateVisual();
+    }
+
+    /// <summary>Pans on a bare arrow key when nothing at all is selected — neither in the layout nor
+    /// in an overlay drawn on it — and no text or placement gesture owns the keyboard.</summary>
+    private bool TryArrowPan(KeyEventArgs e)
+    {
+        // An overlay with its own selection has already consumed the key above (its OnKeyDown returns
+        // true exactly then), so reaching here means nothing anywhere is selected.
+        if (_viewModel is null || _viewModel.HasSelection || _viewModel.IsTypingLabel) return false;
+        if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return false;
+
+        // Y-up world: a downward step LOWERS the world Y at the bottom edge, so the Y component is
+        // negated here where the schematic's is not (see LayoutViewport's own convention note).
+        _panX += step.Dx / _zoom;
+        _panY -= step.Dy / _zoom;
+        RaiseViewportChanged();
+        return true;
     }
 
     private void OnKeyUp(object? _, KeyEventArgs e)
@@ -1696,6 +1890,10 @@ public sealed class LayoutCanvas : Control
     private void UpdateCursor()
     {
         if (_isPanning || _spaceHeld) { SetCursor(StandardCursorType.Hand); return; }
+
+        // The armed magnifier, drawn the way the schematic editor's Zoom Box has always drawn it.
+        // Above the grip and tool branches below: while it is armed, none of those gestures can run.
+        if (_zoomBoxArmed) { SetCursor(StandardCursorType.Cross); return; }
 
         // R-pch-12: over a PCell parameter grip the pointer says which way that grip travels, which is
         // the only pre-press signal separating "edit this parameter" from "move the whole instance".

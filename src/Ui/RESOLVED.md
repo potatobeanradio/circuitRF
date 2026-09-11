@@ -1,5 +1,105 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Arrow-key pan on every document, and the Zoom In button became a magnifier that arms (2026-09-11)
+
+Two owner requests, one round. Both exist because a **trackpad has no middle mouse button** and no
+comfortable way to draw a step-zoom.
+
+### Arrow keys pan when nothing is selected
+
+Every canvas that pans on the middle button now also pans on the arrows: `SchematicCanvas`,
+`SymbolEditorCanvas`, `LayoutCanvas`, `WBondProfileCanvas`, `PlotCanvasView`. Two-finger scroll is
+spent on ZOOM in all five, so before this there was no keyboard or trackpad pan at all.
+
+**The gate is an EMPTY selection**, because four of the five already nudge the selection with the
+same keys and that gesture is the older one. Each canvas asks its own view model in its own
+vocabulary (`Selection.IsEmpty`, `HasSelection`, `HasAnySelection`) — `SymbolEditorViewModel` and
+`LayoutEditorViewModel` gained a `HasSelection` for exactly this, the layout's covering all three
+kinds `NudgeSelection` moves (shapes, instances, rulers).
+
+**The step is SCREEN-space** (`CanvasArrowPan`, 40 px, ×5 on Shift). A world-space step moves a hair
+at board zoom and flies off the canvas at via zoom; one definition in pixels feels the same
+everywhere.
+
+**Two traps, both silent:**
+
+- **The Y sign is per canvas.** `LayoutCanvas` and `WBondProfileCanvas` have a Y-up world (see
+  `LayoutViewport`'s own convention note) and must SUBTRACT the step's Y where the schematic and
+  symbol canvases add it. Getting it wrong is invisible until someone presses Down.
+- **`SchematicViewModel.OnKeyDown` consumes all four arrows unconditionally** — its `NudgeSelection`
+  is simply a no-op on an empty selection — so a pan placed after the VM delegation would never run.
+  It goes ahead of it. In `LayoutCanvas` the order is the other way round for the overlay: a wBond
+  overlay with its own wire selection consumes the key first (its `OnKeyDown` returns true exactly
+  then), so reaching the pan means nothing anywhere is selected.
+
+Ctrl/Cmd/Alt arrows are DECLINED rather than panned — those combinations belong to whatever else has
+claimed them, and quietly panning under one would make an unrelated shortcut scroll the page.
+
+### The Zoom In button arms the magnifier; it does not zoom
+
+Owner, explicitly: *clicking the button must not zoom — the user draws a box.* The Layout, wBond and
+Data Display toolbars each had a step Zoom In wearing `MagnifyPlusOutline`, which is the very icon
+the **schematic** editor uses for its Zoom Box. All three now mean what the schematic's means, and
+`Z` arms it in all four editors.
+
+**Ctrl/Cmd +/- keeps the step zoom** (owner's own condition). The Data Display already had the
+binding; `LayoutCanvas` and `WBondEditorView` gained one. `Key.Add`/`Key.Subtract` are there too —
+the numeric keypad reports different keys for the same characters.
+
+**The armed state lives on the CANVAS, not in a tool enum.** Zooming changes nothing in the
+document, so it has no business in `LayoutEditorViewModel.Tool`, where every other member draws
+something — and keeping it out is what makes the gesture identical in the wBond editor's hosted copy
+of the same canvas. The Data Display is the exception and for a reason: its armed flag is on
+`DataDisplayViewModel`, per TAB, so arming one tab and switching away cannot leave a crosshair over a
+canvas nobody armed.
+
+**The rubber band reuses each canvas's existing marquee slot** rather than adding a second
+rubber-band path — a zoom window IS a marquee and all three already draw one. In `LayoutCanvas` it
+is applied to a COPY of the view model's overlay (`LayoutOverlay` is a record); mutating the
+instance the view model holds would leave a stale box on it after the gesture. It is normalized
+left-to-right, because a right-to-left `LayoutMarquee` means "crossing" and renders dashed — a
+distinction a zoom window does not have.
+
+**Escape has to be claimed where that editor's unwind already lives, and this is not optional:**
+
+- **Layout** — `LayoutEditorView.OnViewKeyDownTunnel` claims Escape and forwards it straight to the
+  view model, so a disarm left in `LayoutCanvas.OnKeyDown` would never run while that view is
+  hosting it. The canvas keeps its own branch as well; the tunnel's is the one that fires.
+- **wBond** — step 0 of `HandleEscape`, ahead of the tool unwind. The magnifier is not an
+  `ActiveTool` member, which is exactly why it needs its own step rather than falling out of that
+  branch.
+- **Data Display** — Escape is a document-level `KeyBinding` onto `DeselectAllCommand`, so the
+  disarm goes in that command, before the deselect.
+
+**The Data Display's press is a TUNNEL handler** where every other pointer handler in
+`PlotCanvasView` bubbles. An armed magnifier must pre-empt the CHILDREN: a bubble handler runs after
+the plot or InfoBox under the pointer has already taken the press as a move or a marker drag, and
+marking it handled then is too late.
+
+**Read the gesture's own state BEFORE releasing the capture.** `e.Pointer.Capture(null)` raises
+`PointerCaptureLost`, whose handler disarms — so the box has to be in hand first. (The disarm on
+capture-loss is deliberate: it is the same latch `LayoutCanvas.EndPanIfActive` already documents for
+the pan, and without it a zoom box whose capture is taken away paints a rubber band over every
+frame.)
+
+**Disarm before zooming, on every path.** A box too small to count, or a zoom that clamps against
+the canvas's own limits, still ends the gesture; leaving the tool armed there is how a mode gets
+stuck with nothing on screen explaining it.
+
+**The box is framed exactly as drawn — no margin.** `LayoutCanvas.ZoomToRegion` is NOT the method to
+reuse: it pads by 1.5× and grows a hairline to 20 snap steps because it is framing a DRC marker
+nobody aimed at. A box of a different aspect ratio is LETTERBOXED, never cropped — everything inside
+it is visible afterwards, which is the promise the gesture makes.
+
+**The wBond editor arms BOTH viewports** (the user has not said which one they mean; the drag says
+that) and has to remember WHICH it armed. Reading "are they both armed?" back off the canvases is
+wrong: a hidden viewport is never armed, so that question reads as out-of-step the instant one is
+switched off and disarms the gesture as it begins.
+
+Gate: `tests/Ui.Tests/CanvasArrowPanAndZoomBoxTests.cs`. Two pre-existing wBond toolbar tests pinned
+`Click="OnZoomIn"` by name and were updated with it.
+
+
 ## The protected-folder refusal after a macOS auto-update recurred a THIRD time, and the 2026-09-10 reading of it was wrong (2026-09-11)
 
 beta.16 → beta.17. Immediately after the update the owner could not open a workspace under

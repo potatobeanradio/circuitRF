@@ -475,8 +475,19 @@ public partial class DisplayWindowViewModel : ViewModelBase
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
 
-    /// <summary>Escape — drops every selection in the active display. See <c>DataDisplayViewModel.DeselectAll</c>.</summary>
-    [RelayCommand] private void DeselectAll() => DataDisplay?.DeselectAll();
+    /// <summary>Escape — one thing at a time, most specific first. An ARMED magnifier is the most
+    /// recently turned-on state, so that is what Escape means while it is on; only once it is off
+    /// does Escape drop the selection. See <c>DataDisplayViewModel.DeselectAll</c>.</summary>
+    [RelayCommand]
+    private void DeselectAll()
+    {
+        if (DataDisplay?.DisarmZoomBox() == true) return;
+        DataDisplay?.DeselectAll();
+    }
+
+    /// <summary>The magnifier ARMS and does not zoom (owner, 2026-09-11) — the box the next left-drag
+    /// draws on the canvas is what gets framed. Ctrl/Cmd +/- is still a single step.</summary>
+    [RelayCommand] private void ZoomBox() => DataDisplay?.ToggleZoomBox();
 
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();

@@ -401,7 +401,26 @@ public sealed class SymbolEditorCanvas : Control
             if (e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         }
 
+        // Arrow keys pan the VIEW when nothing is selected — see CanvasArrowPan. Ahead of the VM
+        // delegation because the VM's own arrow branch is what nudges a selection; this is what the
+        // same key means when there is nothing to nudge.
+        if (TryArrowPan(e)) { e.Handled = true; return; }
+
         _viewModel?.OnKeyDown(e.Key, e.KeyModifiers);
+    }
+
+    /// <summary>Pans on a bare arrow key when the selection is empty. Declines while text is being
+    /// typed, where an arrow key is caret movement.</summary>
+    private bool TryArrowPan(KeyEventArgs e)
+    {
+        if (_viewModel is null || _viewModel.HasSelection || _viewModel.IsTypingText) return false;
+        if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return false;
+
+        // Symbol world Y is screen-sense (down is +), like the schematic's.
+        _panX += step.Dx / _zoom;
+        _panY += step.Dy / _zoom;
+        InvalidateVisual();
+        return true;
     }
 
     private void OnTextInput(object? _, TextInputEventArgs e)

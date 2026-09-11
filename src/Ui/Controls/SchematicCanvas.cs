@@ -840,6 +840,13 @@ public sealed class SchematicCanvas : Control
             return;
         }
 
+        // Arrow keys pan the VIEW when there is nothing to nudge — see CanvasArrowPan for why the
+        // gesture exists and why the selection gates it. Ahead of the VM delegation below because
+        // SchematicViewModel.OnKeyDown consumes all four arrows unconditionally (its NudgeSelection
+        // is simply a no-op on an empty selection), so a pan placed after it would never run.
+        // Suppressed while an inline text box is open: there an arrow key is caret movement.
+        if (TryArrowPan(e)) { e.Handled = true; return; }
+
         // Delegate to VM for Delete, R, nudge, Enter, and other canvas-specific keys.
         // Esc/S/W/F/Z are owned by the View-level tunnel handler (OnViewKeyDownTunnel) and
         // will already be marked handled before this bubble handler fires, so the VM won't
@@ -847,6 +854,22 @@ public sealed class SchematicCanvas : Control
         if (_editContext.OnKeyDown(e.Key, e.KeyModifiers))
             e.Handled = true;
         InvalidateVisual();
+    }
+
+    /// <summary>Pans on a bare arrow key when the selection is empty. Returns false (leaving the key
+    /// to the nudge) whenever something is selected or a text gesture owns the keyboard.</summary>
+    private bool TryArrowPan(KeyEventArgs e)
+    {
+        if (_editContext is null || !_editContext.Selection.IsEmpty || _editContext.IsInlineEditing)
+            return false;
+        if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return false;
+
+        // World Y is screen-sense here (down is +), so both components carry straight through.
+        _panX += step.Dx / _zoom;
+        _panY += step.Dy / _zoom;
+        InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     // ── Scroll-wheel zoom ─────────────────────────────────────────────────────

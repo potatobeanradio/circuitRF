@@ -410,9 +410,14 @@ public class WBondToolbarAndRulersTests
     // ════════════════════════════════════════════════════════ toolbar order
 
     /// <summary>
-    /// Zoom to Fit / In / Out / 1:1 are the FIRST four controls in the toolbar, matching the Layout
-    /// Editor and the schematic (owner) — the point of moving them is that a hand does not have to
-    /// re-learn the toolbar per editor.
+    /// Zoom to Fit / Zoom Box / Out / 1:1 are the FIRST four controls in the toolbar, matching the
+    /// Layout Editor and the schematic (owner) — the point of moving them is that a hand does not
+    /// have to re-learn the toolbar per editor.
+    ///
+    /// <para>The second slot was a step Zoom In until 2026-09-11, when the owner made it the
+    /// magnifier that ARMS: it takes the left button for one drag and frames the box that drag
+    /// draws. Same icon, same position, and Ctrl/Cmd +/- is where a single step lives now — see
+    /// <c>CanvasArrowPanAndZoomBoxTests</c>.</para>
     /// </summary>
     [Fact]
     public void TheFourZoomButtons_ComeFirst()
@@ -422,7 +427,7 @@ public class WBondToolbarAndRulersTests
         Assert.True(wrap >= 0, "The toolbar's WrapPanel is gone.");
 
         AssertOrder(xaml[wrap..],
-            "Click=\"OnZoomToFit\"", "Click=\"OnZoomIn\"", "Click=\"OnZoomOut\"", "Click=\"OnZoom1To1\"",
+            "Click=\"OnZoomToFit\"", "Click=\"OnZoomBoxTool\"", "Click=\"OnZoomOut\"", "Click=\"OnZoom1To1\"",
             // …and everything else follows them.
             "Click=\"OnSave\"", "x:Name=\"ViewModeToggle\"", "ConverterParameter=Select");
     }

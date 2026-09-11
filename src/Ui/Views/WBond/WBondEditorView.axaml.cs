@@ -45,6 +45,11 @@ public partial class WBondEditorView : UserControl
         // bubble handler here would silently never run after a toolbar click moved focus.
         AddHandler(KeyDownEvent, OnViewKeyDownTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
 
+        // Either canvas can disarm ITSELF — a finished drag, its own Escape — and the other one plus
+        // the toolbar button have to follow. Neither canvas can see the other, so the editor does it.
+        ProfileView.ZoomBoxArmedChanged            += (_, _) => SyncZoomBoxArmedState();
+        HostedLayoutView.CanvasZoomBoxArmedChanged += (_, _) => SyncZoomBoxArmedState();
+
     }
 
     /// <summary>
@@ -107,6 +112,26 @@ public partial class WBondEditorView : UserControl
             return;
         }
 
+        // Ctrl/Cmd +/- still steps the zoom (owner, 2026-09-11), on whichever canvases are showing.
+        // The toolbar's Zoom In button became the magnifier, which arms rather than zooms — so the
+        // keyboard is where a plain "one step closer" lives now. Add/Subtract are the numeric keypad,
+        // which reports different keys for the same characters.
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 && !IsTypingInAField())
+        {
+            if (e.Key is Key.OemPlus or Key.Add)
+            {
+                ForEachVisibleCanvas(ProfileView.ZoomIn, HostedLayoutView.ZoomCanvasIn);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key is Key.OemMinus or Key.Subtract)
+            {
+                ForEachVisibleCanvas(ProfileView.ZoomOut, HostedLayoutView.ZoomCanvasOut);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (e.KeyModifiers == KeyModifiers.None && !IsTypingInAField())
         {
             switch (e.Key)
@@ -122,6 +147,14 @@ public partial class WBondEditorView : UserControl
 
                 case Key.R:
                     _bound.ActiveTool = WBondTool.Rotate;
+                    e.Handled = true;
+                    return;
+
+                // Z arms the magnifier — the same key the schematic editor has always used for its
+                // Zoom Box (owner, 2026-09-11). Reached only with NO modifier (this whole switch is),
+                // so Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z stay Undo and Redo.
+                case Key.Z:
+                    OnZoomBoxTool(this, new RoutedEventArgs());
                     e.Handled = true;
                     return;
 
@@ -273,6 +306,12 @@ public partial class WBondEditorView : UserControl
     private bool HandleEscape()
     {
         if (_bound is null) return false;
+
+        // Step 0, ahead of the tool unwind: the magnifier is the most recently armed thing, so it is
+        // what Escape means while it is on. It is not an ActiveTool member (it changes nothing in the
+        // document), which is exactly why it needs its own step here rather than falling out of the
+        // branch below.
+        if (DisarmZoomBoxes()) return true;
 
         if (_bound.ActiveTool != WBondTool.Select)
         {
@@ -855,8 +894,69 @@ public partial class WBondEditorView : UserControl
         HostedLayoutView.ZoomCanvasToFit();
     }
 
-    private void OnZoomIn(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
-        ProfileView.ZoomIn, HostedLayoutView.ZoomCanvasIn);
+    /// <summary>
+    /// Arms the magnifier on every visible canvas at once, and does not zoom (owner, 2026-09-11).
+    ///
+    /// <para>Both viewports are armed because the user has not yet said which one they mean — the
+    /// drag says that. Whichever canvas gets the press frames its own box and disarms itself; the
+    /// other is disarmed here in step, through <see cref="SyncZoomBoxArmedState"/>, so the pointer is
+    /// never left as a crosshair over a canvas that has finished with the gesture.</para>
+    /// </summary>
+    private void OnZoomBoxTool(object? sender, RoutedEventArgs e)
+    {
+        if (DisarmZoomBoxes()) return;   // a second click on a lit button turns it back off
+
+        // A drawing tool and the magnifier both want the left button; the magnifier is what was just
+        // asked for, so whatever was armed stands down first — the same unwind Escape performs.
+        if (_bound is { ActiveTool: not WBondTool.Select }) _bound.ActiveTool = WBondTool.Select;
+        DisarmLayoutTool();
+
+        // WHICH canvases were armed is recorded, not re-derived: a hidden viewport is never armed, so
+        // "are they both armed?" would read as out-of-step the moment one of them is switched off and
+        // would disarm the gesture the instant it began.
+        _zoomBoxArmedProfile = _bound?.ProfileVisible != false;
+        _zoomBoxArmedLayout  = _bound?.LayoutVisible  != false;
+        ForEachVisibleCanvas(ProfileView.ArmZoomBox, HostedLayoutView.ArmCanvasZoomBox);
+        ZoomBoxToolBtn.Classes.Set("ToolActive", _zoomBoxArmedProfile || _zoomBoxArmedLayout);
+    }
+
+    /// <summary>Which viewports this editor armed — see <see cref="OnZoomBoxTool"/> for why this is
+    /// remembered rather than read back off the canvases.</summary>
+    private bool _zoomBoxArmedProfile, _zoomBoxArmedLayout;
+
+    /// <summary>Guards the re-entry through <see cref="DisarmZoomBoxes"/>'s own armed-changed events.</summary>
+    private bool _zoomBoxSyncing;
+
+    /// <summary>Keeps the two canvases' magnifiers and the toolbar button in step: the moment EITHER
+    /// one disarms itself — a finished drag, its own Escape — the other one and the button follow, so
+    /// the pointer is never left as a crosshair over a canvas that has finished with the gesture.</summary>
+    private void SyncZoomBoxArmedState()
+    {
+        if (_zoomBoxSyncing) return;
+        bool stillArmed = (!_zoomBoxArmedProfile || ProfileView.ZoomBoxArmed)
+                       && (!_zoomBoxArmedLayout  || HostedLayoutView.CanvasZoomBoxArmed);
+        if (stillArmed) return;
+        DisarmZoomBoxes();
+    }
+
+    /// <summary>Disarms the magnifier on both canvases. Returns true when one of them WAS armed —
+    /// which is what makes it the first step of the Escape unwind.</summary>
+    private bool DisarmZoomBoxes()
+    {
+        if (!_zoomBoxArmedProfile && !_zoomBoxArmedLayout) return false;
+
+        _zoomBoxSyncing = true;
+        try
+        {
+            _zoomBoxArmedProfile = _zoomBoxArmedLayout = false;
+            ProfileView.DisarmZoomBox();
+            HostedLayoutView.DisarmCanvasZoomBox();
+        }
+        finally { _zoomBoxSyncing = false; }
+
+        ZoomBoxToolBtn.Classes.Set("ToolActive", false);
+        return true;
+    }
 
     private void OnZoomOut(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
         ProfileView.ZoomOut, HostedLayoutView.ZoomCanvasOut);

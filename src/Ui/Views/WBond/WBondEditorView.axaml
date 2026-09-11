@@ -140,7 +140,12 @@
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                     </Button>
-                    <Button Click="OnZoomIn" ToolTip.Tip="Zoom In" Padding="6,3"
+                    <!-- The magnifier ARMS; it does not zoom (owner, 2026-09-11). One click arms
+                         BOTH viewports; whichever one the drag lands in frames the box and disarms
+                         the other. Ctrl/Cmd +/- is where a single step lives now. -->
+                    <Button x:Name="ZoomBoxToolBtn" Click="OnZoomBoxTool"
+                            ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl+ +/- steps)"
+                            Padding="6,3"
                             Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
                     </Button>

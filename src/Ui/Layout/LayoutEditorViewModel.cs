@@ -1224,6 +1224,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// as <c>SymbolPrimitiveInspectorViewModel</c> watches <c>SymbolEditorViewModel.Overlay</c>.</summary>
     public IReadOnlyList<int> SelectedIndices => _selectedIndices;
 
+    /// <summary>True when any shape, instance or ruler is selected — all three kinds, exactly as
+    /// <see cref="NudgeSelection"/> reads them, because they are what an arrow key would move. Read
+    /// by <c>LayoutCanvas</c> to decide whether an arrow key nudges or pans the view (see
+    /// <c>CanvasArrowPan</c>).</summary>
+    public bool HasSelection =>
+        _selectedIndices.Count > 0 || _selectedInstanceIndices.Count > 0 || _selectedRulerIndices.Count > 0;
+
     [ObservableProperty] private string _selectionStatusText = "";
 
     public IRelayCommand SelectAllCommand { get; private set; } = null!;

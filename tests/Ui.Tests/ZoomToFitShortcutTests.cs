@@ -103,13 +103,17 @@ public class ZoomToFitShortcutTests
     /// The Data Display fits every plot on F, running the same command its toolbar button runs — the
     /// gesture the schematic and layout editors already have, under the name this document uses for
     /// it ("Fit All").
+    ///
+    /// <para>The same handler took on Z (the magnifier) on 2026-09-11, under the same typing guard,
+    /// which is why the gate below matches the whole bare-letter set rather than the one key this
+    /// test is named after.</para>
     /// </summary>
     [Fact]
     public void TheDataDisplay_FitsAllOnF()
     {
         var code = CodeOf("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml.cs");
 
-        Assert.Matches(@"e\.Key\s*!=\s*Key\.F\b", code);
+        Assert.Matches(@"e\.Key\s+is\s+not\s+\(Key\.F\s+or\s+Key\.Z\)", code);
         Assert.Contains("FitAllCommand", code, StringComparison.Ordinal);
     }
 

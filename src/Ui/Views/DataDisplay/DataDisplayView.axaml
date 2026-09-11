@@ -55,6 +55,26 @@
         <KeyBinding Gesture="Meta+V"        Command="{Binding ViewModel.Window.PasteCommand}"/>
     </UserControl.KeyBindings>
 
+    <UserControl.Styles>
+        <!-- An armed toolbar tool reads the same here as in the Schematic, Layout and wBond editors —
+             accent fill, white glyph. Transcribed rather than shared for the same reason those three
+             each carry their own copy: the selector is three lines and a shared one would be a
+             fourth place to look. -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel>
 
         <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
@@ -138,8 +158,12 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <Button Command="{Binding ViewModel.Window.ZoomInCommand}"
-                        ToolTip.Tip="Zoom In  (Ctrl++)"
+                <!-- The magnifier ARMS; it does not zoom (owner, 2026-09-11). Clicking it takes the
+                     left button for one drag, and the box that drag draws on the canvas is what gets
+                     framed. Ctrl/Cmd +/- above is where a single step lives. -->
+                <Button Command="{Binding ViewModel.Window.ZoomBoxCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.ZoomBoxArmed, FallbackValue=False}"
+                        ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl++ steps)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
                 </Button>

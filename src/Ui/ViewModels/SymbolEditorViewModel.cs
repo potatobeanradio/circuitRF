@@ -179,6 +179,12 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     // ── Pin tool state ────────────────────────────────────────────────────────
 
     private readonly HashSet<int> _selectedPins = [];
+
+    /// <summary>True when any primitive or pin is selected. Read by <c>SymbolEditorCanvas</c> to
+    /// decide whether an arrow key nudges the selection or pans the view (see
+    /// <c>CanvasArrowPan</c>) — the nudge is the older gesture and keeps the key whenever it has
+    /// something to move.</summary>
+    public bool HasSelection => _selection.Count > 0 || _selectedPins.Count > 0;
     private bool   _isPinDragging;
     private double _pinOrigX, _pinOrigY;    // grabbed pin's position at drag start (delta reference)
     private double _pinGrabX, _pinGrabY;    // raw cursor position at grab

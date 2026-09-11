@@ -488,6 +488,75 @@ public sealed class WBondProfileCanvas : Control
 
     public void ZoomOut() => ZoomAtCenter(_zoom / ZoomFactor);
 
+    // ── Zoom box (the toolbar's magnifier) ────────────────────────────────────
+    // Mirrors LayoutCanvas's own, method for method, because the wBond toolbar arms BOTH canvases at
+    // once and whichever one the drag lands in has to behave the same way.
+
+    private bool  _zoomBoxArmed;
+    private bool  _zoomBoxDragging;
+    private Point _zoomBoxStart;
+    private Point _zoomBoxCurrent;
+
+    /// <summary>Raised whenever <see cref="ZoomBoxArmed"/> changes, so the toolbar button can follow.</summary>
+    public event EventHandler? ZoomBoxArmedChanged;
+
+    /// <summary>True while the magnifier is armed and the next left-drag draws a zoom window.</summary>
+    public bool ZoomBoxArmed => _zoomBoxArmed;
+
+    /// <summary>Arms the magnifier for ONE drag; it disarms itself once it has zoomed.</summary>
+    public void ArmZoomBox()
+    {
+        if (_zoomBoxArmed) return;
+        // The Wire tool and the magnifier both want the left button; the magnifier is what was just
+        // asked for, so the wire draw stands down rather than the two racing for the press. Through
+        // the property, which abandons any half-placed wire with it.
+        WireDrawArmed = false;
+        _zoomBoxArmed = true;
+        Cursor = new Cursor(StandardCursorType.Cross);
+        InvalidateVisual();
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Disarms the magnifier and drops any half-drawn box. Idempotent.</summary>
+    public void DisarmZoomBox()
+    {
+        if (!_zoomBoxArmed && !_zoomBoxDragging) return;
+        _zoomBoxArmed = false;
+        _zoomBoxDragging = false;
+        Cursor = Cursor.Default;
+        InvalidateVisual();
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private Rect ZoomBoxScreenRect() => new(_zoomBoxStart, _zoomBoxCurrent);
+
+    /// <summary>Smallest drag, in device pixels, that counts as a zoom window rather than a stray click.</summary>
+    private const double ZoomBoxMinDragPixels = 4.0;
+
+    /// <summary>
+    /// Frames exactly the box the user drew, with no margin. A box of a different aspect ratio than
+    /// the canvas is LETTERBOXED rather than cropped — everything inside it is visible afterwards.
+    /// </summary>
+    private void ZoomToScreenBox(Rect box)
+    {
+        if (Bounds.Width <= 1 || Bounds.Height <= 1) return;
+        if (box.Width < ZoomBoxMinDragPixels || box.Height < ZoomBoxMinDragPixels) return;
+
+        double span0 = ScreenToSpan(box.Left), span1 = ScreenToSpan(box.Right);
+        // Screen Y grows downward and z upward, so the box's BOTTOM edge is the z minimum.
+        double z0 = ScreenToZ(box.Bottom), z1 = ScreenToZ(box.Top);
+
+        double spanExtent = span1 - span0, zExtent = z1 - z0;
+        if (spanExtent <= 0 || zExtent <= 0) return;
+
+        _zoom = Math.Clamp(Math.Min(Bounds.Width / spanExtent, Bounds.Height / zExtent), MinZoom, MaxZoom);
+        _panSpan = span0 - (Bounds.Width / _zoom - spanExtent) / 2.0;
+        _panZ = z0 - (Bounds.Height / _zoom - zExtent) / 2.0;
+
+        RaiseViewportChanged();
+        InvalidateVisual();
+    }
+
     /// <summary>
     /// One device pixel per one tick of the given display unit — the same "actual size" definition
     /// <c>LayoutCanvas.Zoom1To1</c> uses, expressed in this view's own units (nanometres).
@@ -522,7 +591,10 @@ public sealed class WBondProfileCanvas : Control
             // EITHER canvas — and the committed selection the rest of the time.
             _viewModel?.EffectiveSelection,
             SpanToScreen, ZToScreen,
-            _marqueeActive ? MarqueeRect() : null,
+            // The zoom window rides on the marquee slot — it IS a marquee and this canvas already
+            // draws one. Solid (Crossing: false); a zoom box has no enclose-vs-crossing distinction.
+            _zoomBoxDragging ? (ZoomBoxScreenRect(), false)
+                             : _marqueeActive ? MarqueeRect() : null,
             GridPitchNm, _zoom, _panSpan, _panZ, _ghost, Thickness));
 
     /// <summary>The live marquee in SCREEN coordinates, plus which way the hand went.</summary>
@@ -595,6 +667,17 @@ public sealed class WBondProfileCanvas : Control
             _panStartSpan = _panSpan;
             _panStartZ = _panZ;
             e.Pointer.Capture(this);
+            return;
+        }
+
+        // The armed magnifier owns the left button outright — ahead of the wire tool, the hit test
+        // and the marquee, and after the pan branch so a middle-drag still pans while it is armed.
+        if (_zoomBoxArmed && props.IsLeftButtonPressed)
+        {
+            _zoomBoxDragging = true;
+            _zoomBoxStart = _zoomBoxCurrent = pos;
+            e.Pointer.Capture(this);
+            e.Handled = true;
             return;
         }
 
@@ -713,6 +796,13 @@ public sealed class WBondProfileCanvas : Control
             _panSpan = _panStartSpan - (pos.X - _panStartScreen.X) / _zoom;
             _panZ = _panStartZ + (pos.Y - _panStartScreen.Y) / _zoom;
             RaiseViewportChanged();
+            InvalidateVisual();
+            return;
+        }
+
+        if (_zoomBoxDragging)
+        {
+            _zoomBoxCurrent = pos;
             InvalidateVisual();
             return;
         }
@@ -870,6 +960,19 @@ public sealed class WBondProfileCanvas : Control
     {
         if (_isPanning) { _isPanning = false; e.Pointer.Capture(null); return; }
 
+        if (_zoomBoxDragging)
+        {
+            _zoomBoxCurrent = e.GetPosition(this);
+            var box = ZoomBoxScreenRect();
+            e.Pointer.Capture(null);
+            // Disarm FIRST: a box too small to count, or a zoom that clamps, still ends the gesture.
+            // Leaving the tool armed on those paths is how a mode gets stuck with nothing explaining it.
+            DisarmZoomBox();
+            ZoomToScreenBox(box);
+            e.Handled = true;
+            return;
+        }
+
         if (_marqueeActive)
         {
             var pos = e.GetPosition(this);
@@ -970,6 +1073,9 @@ public sealed class WBondProfileCanvas : Control
 
         if (e.Key == Key.Escape)
         {
+            // Escape disarms the magnifier FIRST and leaves the selection alone — the armed tool is
+            // the thing the user most recently turned on, so it is the thing Escape means.
+            if (_zoomBoxArmed || _zoomBoxDragging) { DisarmZoomBox(); e.Handled = true; return; }
             _viewModel.Selection = new WireSelection();
             InvalidateVisual();
             e.Handled = true;
@@ -989,7 +1095,19 @@ public sealed class WBondProfileCanvas : Control
             return;
         }
 
-        if (_viewModel.Selection.IsEmpty) return;
+        // With nothing selected the arrow keys pan the VIEW — see CanvasArrowPan. The nudge below
+        // keeps them whenever there IS something to nudge.
+        if (_viewModel.Selection.IsEmpty)
+        {
+            if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return;
+            // z is up, like the layout's world Y, so the Y component is negated.
+            _panSpan += step.Dx / _zoom;
+            _panZ    -= step.Dy / _zoom;
+            RaiseViewportChanged();
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
 
         bool coarse = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         var (dx, dz) = e.Key switch

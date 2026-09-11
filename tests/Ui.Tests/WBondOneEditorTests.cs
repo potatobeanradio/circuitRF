@@ -334,7 +334,10 @@ public class WBondOneEditorTests
 
         string[] allowed =
         [
-            "OnZoomToFit", "OnZoomIn", "OnZoomOut", "OnZoom1To1",
+            // OnZoomBoxTool replaced OnZoomIn on 2026-09-11: the magnifier ARMS both viewports at
+            // once and does not zoom, which is a wBond-only concern (a LayoutEditorView has one
+            // canvas and arms only its own).
+            "OnZoomToFit", "OnZoomBoxTool", "OnZoomOut", "OnZoom1To1",
             "OnSave", "OnSaveAs", "OnCycleViewMode",
             "OnReverse", "OnStraighten", "OnReapplyProfile", "OnTransform", "OnDetach",
             "OnExportDxf", "OnImportWires", "OnExportTouchstone", "OnCopyGraphic",

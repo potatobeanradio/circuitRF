@@ -1217,6 +1217,67 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     private const double ZoomMin  = 0.1;
     private const double ZoomMax  = 8.0;
 
+    // ── Zoom box (the toolbar's magnifier) ────────────────────────────────────
+
+    private bool _zoomBoxArmed;
+
+    /// <summary>
+    /// True while the magnifier is armed and the next left-drag on the canvas draws a zoom window
+    /// rather than a selection rectangle (owner, 2026-09-11 — the toolbar's Zoom In button ARMS and
+    /// no longer zooms).
+    ///
+    /// <para>Per TAB, because each tab is its own canvas with its own zoom. Arming one and switching
+    /// to another would otherwise leave a crosshair over a canvas nobody armed.</para>
+    /// </summary>
+    public bool ZoomBoxArmed
+    {
+        get => _zoomBoxArmed;
+        private set => SetProperty(ref _zoomBoxArmed, value);
+    }
+
+    /// <summary>Arms the magnifier, or disarms it when it is already on — one button, two states.</summary>
+    public void ToggleZoomBox() => ZoomBoxArmed = !ZoomBoxArmed;
+
+    /// <summary>Disarms the magnifier. Returns true when it WAS armed, which is what lets Escape
+    /// unwind it before reaching the selection.</summary>
+    public bool DisarmZoomBox()
+    {
+        if (!_zoomBoxArmed) return false;
+        ZoomBoxArmed = false;
+        return true;
+    }
+
+    /// <summary>
+    /// Frames exactly the canvas rectangle the user drew, in canvas-local pixels. Same arithmetic as
+    /// <see cref="FitAll"/> with the drawn box standing in for the content bounds, so the two cannot
+    /// disagree about what "centred with this much of it visible" means — but with no padding, since
+    /// the box IS the request. A box of a different aspect ratio than the canvas is LETTERBOXED, not
+    /// cropped: everything inside it is visible afterwards.
+    /// </summary>
+    public void ZoomToScreenRect(double left, double top, double width, double height,
+                                 double canvasW, double canvasH)
+    {
+        if (width <= 0 || height <= 0 || canvasW <= 0 || canvasH <= 0) return;
+        double zoom = _zoomLevel > 0 ? _zoomLevel : 1.0;
+
+        // Canvas pixels -> content units, which is what the offsets below are expressed in.
+        double contentL = (left - _viewOffsetX) / zoom;
+        double contentT = (top  - _viewOffsetY) / zoom;
+        double contentW = width  / zoom;
+        double contentH = height / zoom;
+
+        double newZoom = Math.Clamp(Math.Min(canvasW / contentW, canvasH / contentH), ZoomMin, ZoomMax);
+
+        _zoomLevel   = newZoom;
+        _viewOffsetX = (canvasW - contentW * newZoom) / 2.0 - contentL * newZoom;
+        _viewOffsetY = (canvasH - contentH * newZoom) / 2.0 - contentT * newZoom;
+
+        OnPropertyChanged(nameof(ZoomLevel));
+        OnPropertyChanged(nameof(ViewOffsetX));
+        OnPropertyChanged(nameof(ViewOffsetY));
+        PropagateViewProperties();
+    }
+
     public void ZoomIn()  => ZoomLevel = Math.Min(ZoomMax, ZoomLevel * ZoomStep);
     public void ZoomOut() => ZoomLevel = Math.Max(ZoomMin, ZoomLevel / ZoomStep);
     public void ActualSize() => ZoomLevel = 1.0;
