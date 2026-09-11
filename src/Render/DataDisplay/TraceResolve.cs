@@ -336,6 +336,10 @@ public static class TraceResolve
     {
         if (!t.IsCubeBound) return;
 
+        // Derived from the cube, so it cannot outlive the resolve that produced it — the same
+        // clear-first contract SetPinnedAxisDisplay has. Re-stamped below once a cube is in hand.
+        t.CubeValueUnit = null;
+
         // "Plot versus": the X side resolves against its own source when one is set, else against
         // the Y side's. Everything below reads xDataSet, so cross-source is not a second code path.
         DataSet? xDataSet = xDs ?? ds;
@@ -476,6 +480,12 @@ public static class TraceResolve
         // From here down, `cube` is what the indexer will read. Record it now so the crash note
         // describes the object the gather saw rather than re-deriving one from the DataSet later.
         probe.Cube = cube;
+
+        // ANT-7 §2 — the cube's own VALUE unit, which is what a pattern plot's radial numbers are in.
+        // Stamped here rather than passed through SetCubeData beside the AXIS unit, because it is a
+        // property of the cube and not of the slice, and because every SetCubeData call site below
+        // (family, versus, scalar) would otherwise have to carry it and one of them would forget.
+        t.CubeValueUnit = string.IsNullOrWhiteSpace(cube.Unit) ? null : cube.Unit;
 
         // Cube + slice resolved → clear any stale invalid flag left by a prior bad source
         // (covers the scalar, family, all-pinned, and rank-1 success paths below).

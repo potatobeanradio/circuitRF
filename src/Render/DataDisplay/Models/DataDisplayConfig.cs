@@ -113,6 +113,19 @@ public sealed class PlotContainerConfig
     public double        TableCompression { get; set; } = 3.0;
     public string?       SummaryLoadpullGroup { get; set; }
 
+    // ---- The dB radial mode (ANT-7 §2) --------------------------------------
+    //
+    //  Defaults match Plot's own, so a plot that never touched the mode round-trips byte for byte
+    //  and every `.cdd` written before ANT-7 loads as the Linear polar plot it was.
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PolarRadialMode      PolarRadial           { get; set; } = PolarRadialMode.Linear;
+    public double               PolarDbFloor          { get; set; } = -40.0;
+    public double               PolarDbRingStep       { get; set; } = 10.0;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PolarDbReferenceMode PolarDbReference      { get; set; } = PolarDbReferenceMode.Peak;
+    public double               PolarDbReferenceValue { get; set; }
+    public string               PolarDbUnit           { get; set; } = "";
+
     public List<TraceConfig> Traces { get; set; } = new();
 
     // Null on older .splot files — load code defaults to full autoscale when absent.

@@ -246,12 +246,20 @@ namespace CircuitRF.Render.DataDisplay
         /// one out has already taken the space — so a tight lattice thins its labels rather than
         /// overprinting them.</para>
         /// </summary>
+        /// <param name="pattern">
+        /// <b>ANT-7 §2 — the dB RADIAL MODE, and it is the only thing on this plot that changes.</b>
+        /// Non-null turns the 1/2/5 lattice below into a decibel one: the outer ring is the scale's
+        /// reference at world radius 1, the centre is its floor, and the rings fall at
+        /// <see cref="PolarPatternScale.RingsDb"/> and are labelled in dB. Null is every polar plot
+        /// that existed before, unchanged.
+        /// </param>
         public static void DrawPolarGrid(
             SKCanvas             canvas,
             (double W, double H) canvasSize,
             Axes                 axes,
             TransformSet         tf,
-            RenderTheme          theme)
+            RenderTheme          theme,
+            PolarPatternScale?   pattern = null)
         {
             float lw     = LineWidth(canvasSize);
             float gridSw = lw * (float)axes.GridThicknessFactor;
@@ -305,9 +313,33 @@ namespace CircuitRF.Render.DataDisplay
             // the edge.
             double lastMultiple = rMax - step * 0.4;
 
-            var rings = new List<double>();
-            for (int n = 1; n * step <= lastMultiple; n++) rings.Add(n * step);
-            rings.Add(rMax);
+            var rings  = new List<double>();
+            var labels = new List<string>();
+
+            if (pattern is { } pat)
+            {
+                // A dB lattice, innermost first so the shared drawing loop below (which treats the
+                // LAST entry as the boundary) needs no second form. The boundary is at world radius
+                // 1 by construction — not at rMax — so panning or zooming a pattern plot moves the
+                // whole disc without ever moving the outer ring off its own reference.
+                var dbRings = pat.RingsDb;
+                for (int k = dbRings.Count - 1; k >= 0; k--)
+                {
+                    rings.Add(pat.Radius(dbRings[k]));
+                    labels.Add(pat.RingLabel(dbRings[k], withUnit: k == 0));
+                }
+                if (rings.Count == 0) { rings.Add(1.0); labels.Add(pat.RingLabel(pat.ReferenceDb, true)); }
+                // Five dB marks on a ten dB lattice, the same "a minor tick lands on a number worth
+                // reading" rule the linear branch applies to its own mantissa.
+                sub = 2;
+            }
+            else
+            {
+                for (int n = 1; n * step <= lastMultiple; n++) rings.Add(n * step);
+                rings.Add(rMax);
+            }
+
+            float boundaryPx = pattern is null ? pxMax : (float)rings[^1] * pxPerWorld;
 
             for (int i = 0; i < rings.Count - 1; i++)
                 canvas.DrawCircle(ctr.X, ctr.Y, (float)rings[i] * pxPerWorld, ringPaint);
@@ -318,17 +350,39 @@ namespace CircuitRF.Render.DataDisplay
             // reading at a fifth of the ink, and they are the polar counterpart of the minor ticks
             // DrawRectGrid puts on its own two edges.
             double minorStep = step / sub;
+            var    minorRadii = new List<double>();
+            if (pattern is { } patM)
+            {
+                // Halfway between each pair of dB rings, in dB — which is NOT halfway in radius,
+                // because the radius is linear in decibels and the rings are evenly spaced in them.
+                // (It is, here; the arithmetic is written as a dB step regardless so a non-uniform
+                // lattice would still land right.)
+                var db = patM.RingsDb;
+                for (int k = 0; k + 1 < db.Count; k++)
+                    minorRadii.Add(patM.Radius(0.5 * (db[k] + db[k + 1])));
+                if (db.Count > 0)
+                {
+                    double last = db[^1] - patM.RingStepDb * 0.5;
+                    if (last > patM.FloorDb) minorRadii.Add(patM.Radius(last));
+                }
+                minorStep = minorRadii.Count > 1
+                    ? Math.Abs(minorRadii[0] - minorRadii[1])
+                    : (minorRadii.Count == 1 ? minorRadii[0] : 0.0);
+            }
+            else
+            {
+                for (int n = 1; n * minorStep <= lastMultiple; n++)
+                    if (n % sub != 0) minorRadii.Add(n * minorStep);     // a major radius: its ring is drawn
+            }
+
             if (sub > 1 && minorStep * pxPerWorld >= MinMinorTickSpacingPx)
             {
                 float  halfX     = (float)(axes.TickLengthX / 2);
                 float  halfY     = (float)(axes.TickLengthY / 2);
 
                 using var minorTicks = new SKPath();
-                for (int n = 1; n * minorStep <= lastMultiple; n++)
+                foreach (double rm in minorRadii)
                 {
-                    if (n % sub == 0) continue;              // a major radius: its ring is drawn
-                    double rm = n * minorStep;
-
                     foreach (double s in new[] { rm, -rm })
                     {
                         minorTicks.MoveTo(tf.PrimaryToCanvas(s, -halfY));
@@ -344,7 +398,7 @@ namespace CircuitRF.Render.DataDisplay
             canvas.Restore();
             canvas.Save();
             canvas.ClipRect(SKRect.Inflate(exactClip, gridSw, gridSw));
-            canvas.DrawCircle(ctr.X, ctr.Y, pxMax, axisPaint);
+            canvas.DrawCircle(ctr.X, ctr.Y, boundaryPx, axisPaint);
             canvas.Restore();
             canvas.Save();
             canvas.ClipRect(exactClip);
@@ -370,7 +424,12 @@ namespace CircuitRF.Render.DataDisplay
                 float takenLeft = float.MaxValue;
                 for (int i = rings.Count - 1; i >= 0; i--)
                 {
-                    string text  = EngineeringFormat.Tick(rings[i], group, axes.NumDigitsXAxis);
+                    // A dB lattice labels itself: its numbers are already round and its outer ring
+                    // carries the unit, so the SI-prefix grouping the linear branch needs would turn
+                    // "-20 dB" into "-20" with a stray prefix on the axis.
+                    string text  = pattern is not null && i < labels.Count
+                        ? labels[i]
+                        : EngineeringFormat.Tick(rings[i], group, axes.NumDigitsXAxis);
                     float  right = ctr.X + (float)rings[i] * pxPerWorld - gap;
                     float  left  = right - lblFont.MeasureText(text);
                     if (right > takenLeft - gap) continue;
@@ -1002,6 +1061,42 @@ namespace CircuitRF.Render.DataDisplay
                 float tw2 = tf2.MeasureText(title);
                 canvas.DrawText(title, vpCenterX - tw2 / 2f,
                     vpTop / 2f + tf2.Size * 0.35f, SKTextAlign.Left, tf2, tp2);
+            }
+
+            // ── ANT-7 §4 — a pattern plot states what it is, and the freq row is not what it is ──
+            //
+            //  The per-trace row below reads Min/MaxFreq, which for a CUBE-bound trace is simply the
+            //  first and last value of its X axis — on a pattern that is the θ range, so the row read
+            //  "freq (0 to 90 GHz)". These lines replace it: whether the radius is normalised or
+            //  absolute and what its reference is, and what the θ span means. The cut, the port and
+            //  the frequency are the trace's own pinned axes and are already in its label strip.
+            if (plot.IsPolarPattern && PatternCaption.Lines(plot) is { Count: > 0 } captions)
+            {
+                float capSize = (float)(plot.Axes.FontSizeLabel * lw);
+                if (capSize < 4f) return;
+                float capLineH = capSize * 1.2f;
+
+                using var capFont  = new SKFont(SkiaFonts.PlexRegular, capSize);
+                using var capPaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
+
+                for (int i = 0; i < captions.Count; i++)
+                {
+                    float cy = vpBottom + capLineH * (i + 0.8f) + 2f * lw;
+                    if (cy > h) break;
+
+                    // Shrink-to-fit rather than clip: the reference sentence is the one line that
+                    // must never be cut in half, since half of "normalised — outer ring = peak …" is
+                    // a claim about an absolute level.
+                    capFont.Size = capSize;
+                    float avail  = w - 4f * lw;
+                    float meas   = capFont.MeasureText(captions[i]);
+                    if (meas > avail && meas > 0f)
+                        capFont.Size = Math.Max(capSize * (avail / meas), capSize * 0.5f);
+
+                    float cw = capFont.MeasureText(captions[i]);
+                    canvas.DrawText(captions[i], vpCenterX - cw / 2f, cy, SKTextAlign.Left, capFont, capPaint);
+                }
+                return;
             }
 
             var traces = plot.Traces;

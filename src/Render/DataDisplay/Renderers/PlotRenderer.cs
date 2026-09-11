@@ -207,7 +207,7 @@ namespace CircuitRF.Render.DataDisplay
                     AxesRenderer.DrawRectGrid(canvas, canvasSize, plot.Axes, tf, detail, theme);
                     break;
                 case PlotType.Polar:
-                    AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme);
+                    AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme, plot.PatternScale);
                     break;
                 case PlotType.Smith:
                     AxesRenderer.DrawSmithGrid(canvas, canvasSize, plot.Axes, tf, theme);

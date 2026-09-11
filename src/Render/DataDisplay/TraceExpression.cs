@@ -153,7 +153,7 @@ public static class TraceExpression
             for (int d = 0; d < tokens.Length; d++)
             {
                 var axis = cube.Axes[d];
-                var t = SliceTokenParser.Parse(tokens[d], axis.Length, axis.Labels, axis.Name, out error);
+                var t = SliceTokenParser.Parse(tokens[d], axis.Length, axis.Labels, axis.Name, axis.Values, out error);
                 switch (t.Kind)
                 {
                     case SliceTokenParser.Kind.KeepWhole:

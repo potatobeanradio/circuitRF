@@ -1735,6 +1735,58 @@ on a Smith or Polar chart, whose window is the complex plane framed on the unit 
 convenience over `.cdd` authoring, not a replacement for it**: everything a display can express stays
 reachable by writing one and calling `render`.
 
+### 15.1 An antenna pattern — `--radial db`, and the cut
+
+ANT-7. **Whatever the Data Display gains, this verb gains the same**, because it writes the document
+the display reads; `--radial db` is one field on the plot container and nothing here draws it.
+
+```
+circuitrf plot run.npy -o eplane.svg --type polar --radial db --db-unit "dB(W/sr)" \
+  --trace cube=farfield.U,cut=0,port=1,freq=2.45G,y=db10
+circuitrf plot run.npy -o pattern.svg --type polar --radial db --db-floor -30 --db-ring 5 \
+  --trace cube=farfield.U,cut=all,y=db10
+```
+
+| Flag | Means |
+|---|---|
+| `--radial linear\|db` | how the polar RADIUS is read. `db` makes it a pattern plot; refused on any other `--type`, because there is no radius for it to be. |
+| `--db-floor` | the centre, **relative to the outer ring**. Default −40. A positive value is a refusal naming the sign convention, not a silent flip. |
+| `--db-ring` | ring spacing in dB. Default 10. |
+| `--db-ref peak\|<dB>` | the outer ring: the data's own peak (normalised, the default) or an absolute level. |
+| `--db-unit` | what the radial numbers are in — `dBi`, `dB(W/sr)`. Blank takes the cube's own `Unit`, which ANT-4's and ANT-5's cubes do not yet carry. |
+
+Every one of those is refused when `--radial db` was not given, rather than doing nothing.
+
+**Values below the floor are drawn AT the floor and never dropped.** A gap in a pattern trace reads as
+a null in the antenna, and a real null and a clipped value must not look the same. Above an ABSOLUTE
+reference a sample is drawn at the outer ring and the plot says how many were — the same discipline,
+the other end of the disc.
+
+**The plot states whether it is normalised or absolute**, with its reference, under the picture; a 0 dB
+peak with no reference is not a result. Beside it, the θ span and what it means, built from the axis
+rather than written as a constant, so ANT-11's extension to 180° changes the sentence with it. The
+cut, the driven port and the frequency are the trace's own pinned axes and are already in its label
+strip.
+
+Two trace keys, both shorthand over the general slice mechanism:
+
+| Key | Means |
+|---|---|
+| `cut=<deg>` | pin `phi` to the nearest sample to that bearing and sweep `theta` — the E-plane / H-plane plot. The verb PRINTS the φ it landed on. |
+| `cut=all` | sweep `theta` and keep every `phi` as a curve family — the whole pattern at one frequency. |
+| `port=<n>` | pin a `port` axis by **port number**. |
+| `freq=<f>` | pin the `freq` axis to its nearest sample; takes an SI suffix (`2.45G`). |
+
+**An integer on a `port` axis is a 1-based PORT NUMBER, not an index** — the same trap `i`/`j` record,
+and for the same reason. It is resolved against the axis's own VALUES rather than by subtracting one,
+because a far-field cube's port axis carries the numbers of the ports that were DRIVEN and those need
+not start at 1; a port the run does not have is refused listing the ports it does.
+
+**0° is at the top and angles increase clockwise** — the compass convention, which is what both an
+elevation cut (θ from zenith) and an azimuth cut read on. It is fixed rather than a flag: a plot whose
+orientation has to be read off a control before the picture means anything is worse than one
+convention stated on the plot.
+
 ---
 
 ## 16. `find` — what is here

@@ -939,6 +939,112 @@ namespace CircuitRF.Render.DataDisplay
         public string                  CubeXAxisName => _cubeXAxisName;
         public string?                 CubeXUnit     => _cubeXUnit;
 
+        // ---- The dB radial mode (ANT-7 §2) ------------------------------
+
+        /// <summary>
+        /// The cube's own VALUE unit, when the source carried one — "dBi", "W/sr", "dB". Stamped by
+        /// <see cref="TraceResolve"/> beside the X-axis unit; null when the cube said nothing, which
+        /// is most of them (only axes carry units in the data model generally, and a cube-level Unit
+        /// is a later addition the antenna cubes do use).
+        /// </summary>
+        public string? CubeValueUnit { get; set; }
+
+        /// <summary>
+        /// The plot's resolved radial scale, pushed down by <see cref="Plot.RefreshPolarPattern"/>.
+        /// Null means the ordinary Linear polar plot, which is every plot that is not a pattern.
+        /// <b>Set by the plot and by nothing else</b> — the reference is a property of all the traces
+        /// together, and a trace that resolved its own would make two cuts incomparable.
+        /// </summary>
+        public PolarPatternScale? PatternScale { get; set; }
+
+        /// <summary>True when the last build was on a pattern plot and this trace's X axis is not an
+        /// ANGLE — a frequency sweep on a compass. Surfaces as "&lt;invalid&gt;" on the label rather
+        /// than as a plausible shape, exactly as <see cref="RectValueInvalid"/> does.</summary>
+        public bool PatternAxisInvalid { get; private set; }
+
+        /// <summary>The unit the radial numbers should carry, derived from the cube's own value unit
+        /// and the transform applied to it. Null when nothing better than "dB" can be said.</summary>
+        public string? PatternDbUnit
+        {
+            get
+            {
+                string? u = CubeValueUnit;
+                if (string.IsNullOrWhiteSpace(u)) return null;
+                // Already decibels (ANT-5's dBi metrics, ANT-6's dB co/cross) — the transform is None
+                // and the unit passes straight through.
+                if (u.StartsWith("dB", StringComparison.OrdinalIgnoreCase)) return u;
+                // A linear quantity read in dB — the unit names what the ratio is OF, which is the
+                // half a bare "dB" loses (ANT-4's U is W/sr, and dB(W/sr) is not dBi).
+                return Transform is CubeTransform.dB or CubeTransform.dB10 or CubeTransform.dB20
+                    ? $"dB({u})" : null;
+            }
+        }
+
+        /// <summary>The largest dB value this trace holds, or −∞ when it holds none. Read by the plot
+        /// to place a normalised outer ring across every trace at once.</summary>
+        public double PatternPeakDb()
+        {
+            double peak = double.NegativeInfinity;
+            foreach (double v in PatternDbValues())
+                if (v > peak) peak = v;
+            return peak;
+        }
+
+        /// <summary>How many samples sit strictly above <paramref name="referenceDb"/> — what an
+        /// absolute reference below the data has to report rather than silently flatten.</summary>
+        public int PatternCountAbove(double referenceDb)
+        {
+            int n = 0;
+            foreach (double v in PatternDbValues())
+                if (v > referenceDb) n++;
+            return n;
+        }
+
+        /// <summary>Every finite dB sample on this trace — the single curve, or every curve of a
+        /// family. The values are the SAME ones the path is built from (<see cref="RectY"/>), so the
+        /// reference can never be taken of a different number than the one drawn.</summary>
+        private IEnumerable<double> PatternDbValues()
+        {
+            if (FamilyCurves.Count > 0)
+            {
+                foreach (var fc in FamilyCurves)
+                {
+                    int n = fc.RawComplex?.Length ?? fc.RawReal?.Length ?? 0;
+                    for (int i = 0; i < n; i++)
+                    {
+                        double? y = RectY(fc.RawComplex is { } cz ? cz[i] : (Complex?)null,
+                                          fc.RawComplex is null && fc.RawReal is { } rv ? rv[i] : (double?)null);
+                        if (y is double v && double.IsFinite(v)) yield return v;
+                    }
+                }
+                yield break;
+            }
+
+            int m = CubeSampleCount;
+            for (int i = 0; i < m; i++)
+            {
+                double? y = RectY(_cubeComplexValues is { } c ? c[i] : (Complex?)null,
+                                  _cubeComplexValues is null && _cubeRealValues is { } r ? r[i] : (double?)null);
+                if (y is double v && double.IsFinite(v)) yield return v;
+            }
+        }
+
+        /// <summary>
+        /// One pattern sample as a world point on the unit disc, or null when it cannot be drawn.
+        /// The RADIUS is clamped to the floor rather than dropped — see
+        /// <see cref="PolarPatternScale.Radius"/> — so only a non-finite VALUE skips a point.
+        /// </summary>
+        private Vector2? PatternPoint(double angleUnits, double degPerUnit,
+                                      Complex? cz, double? rv, PolarPatternScale scale)
+        {
+            double? y = RectY(cz, rv);
+            if (y is not double db) return null;
+            double r = scale.Radius(db);
+            if (!double.IsFinite(r)) return null;
+            var (x, yy) = PolarPatternAngle.Point(angleUnits * degPerUnit, r);
+            return new Vector2((float)x, (float)yy);
+        }
+
         // ---- Markers ----------------------------------------------------
 
         public List<Marker> Markers { get; } = new();
@@ -1050,6 +1156,8 @@ namespace CircuitRF.Render.DataDisplay
             string baseLabel = networkFallback;
             if (IsCubeBound && RectValueInvalid && !baseLabel.Contains("<invalid"))
                 baseLabel += " <invalid: complex on scalar plot type>";
+            if (IsCubeBound && PatternAxisInvalid && !baseLabel.Contains("<invalid"))
+                baseLabel += " <invalid: a dB polar plot sweeps an ANGLE>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
             if (IsZ0ReReferenced) baseLabel += " @ Z0=" + ComplexStringHelper.Format(_z0) + "Ω";
             return baseLabel;
@@ -1254,6 +1362,8 @@ namespace CircuitRF.Render.DataDisplay
             _cubeXAxisName     = src._cubeXAxisName;
             _cubeXUnit         = src._cubeXUnit;
             _cubeXLabels       = src._cubeXLabels;
+            CubeValueUnit      = src.CubeValueUnit;
+            PatternScale       = src.PatternScale;
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
@@ -1529,7 +1639,36 @@ namespace CircuitRF.Render.DataDisplay
         {
             _lastPlotType = plotType;
             RectValueInvalid = false;
+            PatternAxisInvalid = false;
             if (_cubeXValues is null) return;
+
+            // A family of cuts — "pin freq, keep θ, iterate φ" — is the full-pattern trace of ANT-7
+            // §3, and it draws through the same mapping one cut does.
+            if (PatternScale is { } famScale && plotType == PlotType.Polar)
+            {
+                if (!PolarPatternAngle.TryDegreesPerUnit(_cubeXAxisName, _cubeXUnit, out double famDpu))
+                {
+                    PatternAxisInvalid = true;
+                    foreach (var fc0 in FamilyCurves) fc0.Points.Clear();
+                    return;
+                }
+
+                foreach (var fc in FamilyCurves)
+                {
+                    fc.Points.Clear();
+                    bool cplx = fc.RawComplex is not null;
+                    double[] fxs = fc.RawX ?? _cubeXValues;
+                    int fn = Math.Min(fxs.Length, cplx ? fc.RawComplex!.Length : fc.RawReal!.Length);
+                    for (int i = 0; i < fn; i++)
+                    {
+                        var p = PatternPoint(fxs[i], famDpu,
+                                             cplx ? fc.RawComplex![i] : (Complex?)null,
+                                             cplx ? (double?)null : fc.RawReal![i], famScale);
+                        if (p is { } pt) fc.Points.Add(pt);
+                    }
+                }
+                return;
+            }
 
             bool isRect = plotType.IsRect();
             bool isHarmonicFamilyX = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
@@ -1574,6 +1713,7 @@ namespace CircuitRF.Render.DataDisplay
             _lastPlotType = plotType;
             Points.Clear();
             RectValueInvalid = false;
+            PatternAxisInvalid = false;
             ScalarOnNonTableInvalid = false;
             if (_cubeIsScalar)
             {
@@ -1590,6 +1730,26 @@ namespace CircuitRF.Render.DataDisplay
 
             if (!plotType.IsRect())
             {
+                // ── Polar, dB radial (ANT-7 §2) ──────────────────────────────────────────────
+                //
+                //  The ANGLE is the trace's own X axis and the RADIUS is its value in dB, so this is
+                //  the one place on a complex plot where a REAL cube draws — and it must, because
+                //  every pattern quantity worth plotting (U, gain in dBi, the Ludwig-3 pair) is real.
+                if (PatternScale is { } scale && plotType == PlotType.Polar)
+                {
+                    if (!PolarPatternAngle.TryDegreesPerUnit(_cubeXAxisName, _cubeXUnit, out double dpu))
+                    { PatternAxisInvalid = true; return; }
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        var p = PatternPoint(_cubeXValues[i], dpu,
+                                             isComplex ? _cubeComplexValues![i] : (Complex?)null,
+                                             isComplex ? (double?)null : _cubeRealValues![i], scale);
+                        if (p is { } pt) Points.Add(pt);
+                    }
+                    return;
+                }
+
                 // Smith / Polar: require a Complex cube; Real yields no points.
                 if (!isComplex) return;
                 for (int i = 0; i < n; i++)

@@ -206,6 +206,11 @@ The text box is a two-way view of the binding. Grammar:
   engineers name S-parameters. Every **other** axis (`freq`, sweep, harmonic) uses 0-based
   integer indices; labeled axes (node/branch) use quoted names. A port outside `1..nPorts` is a
   reported error.
+- On a **`port`** axis a bare integer is likewise a **port number** (ANT-7), but it is resolved
+  against the axis's own VALUES rather than by subtracting one: a far-field cube's port axis carries
+  the numbers of the ports that were actually DRIVEN and those need not start at 1 or be contiguous.
+  A port the cube does not hold is refused listing the ones it does. harmonicaRF's intrinsic-plane
+  `port` axis holds `0, 1, 2 …`, so its existing specs mean exactly what they always meant.
 
 Validity: exactly one X **or** zero X (scalar); at most one `~`; a `~` requires an X. Anything
 else is reported inline under the box.

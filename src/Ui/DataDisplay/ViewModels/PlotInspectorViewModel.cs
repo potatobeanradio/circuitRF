@@ -202,6 +202,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsSmithPlot));
         OnPropertyChanged(nameof(IsPolarPlot));
+        OnPropertyChanged(nameof(IsPolarDbPlot));
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsSummaryTable));
         OnPropertyChanged(nameof(AddLoadpullTraceLabel));
@@ -227,6 +228,112 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public bool IsSmithPlot => _plot.PlotType == PlotType.Smith;
     public bool IsPolarPlot => _plot.PlotType == PlotType.Polar;
     public bool IsTablePlot => _plot.PlotType == PlotType.Table;
+
+    // ---- The dB radial mode (ANT-7 §2) ----------------------------------
+    //
+    //  Six plain properties over the Plot's own, in the shape TableCompression already has. Each
+    //  ends in ApplyRadialChange, because every one of them moves the SCALE — and on a pattern plot
+    //  the scale is what the trace's points are built from, not merely how they are framed.
+
+    /// <summary>True when the polar radius is read in decibels — the pattern mode.</summary>
+    public bool PolarRadialIsDb
+    {
+        get => _plot.PolarRadial == PolarRadialMode.Db;
+        set
+        {
+            var target = value ? PolarRadialMode.Db : PolarRadialMode.Linear;
+            if (_plot.PolarRadial == target) return;
+            _plot.PolarRadial = target;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsPolarDbPlot));
+            ApplyRadialChange();
+        }
+    }
+
+    /// <summary>Gates the dB sub-controls: they say nothing on a linear polar plot.</summary>
+    public bool IsPolarDbPlot => IsPolarPlot && _plot.PolarRadial == PolarRadialMode.Db;
+
+    /// <summary>True when the outer ring is the data's own peak. <b>The plot states which either
+    /// way</b> — see <see cref="PolarPatternScale.ReferenceCaption"/>.</summary>
+    public bool PolarDbNormalised
+    {
+        get => _plot.PolarDbReference == PolarDbReferenceMode.Peak;
+        set
+        {
+            var target = value ? PolarDbReferenceMode.Peak : PolarDbReferenceMode.Absolute;
+            if (_plot.PolarDbReference == target) return;
+            _plot.PolarDbReference = target;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PolarDbAbsolute));
+            ApplyRadialChange();
+        }
+    }
+
+    /// <summary>The inverse, so the absolute-reference box can bind its own enablement.</summary>
+    public bool PolarDbAbsolute => !PolarDbNormalised;
+
+    public double PolarDbReferenceValue
+    {
+        get => _plot.PolarDbReferenceValue;
+        set
+        {
+            if (!double.IsFinite(value)) { OnPropertyChanged(); return; }
+            if (Math.Abs(_plot.PolarDbReferenceValue - value) < 1e-9) return;
+            _plot.PolarDbReferenceValue = value;
+            OnPropertyChanged();
+            ApplyRadialChange();
+        }
+    }
+
+    public double PolarDbFloor
+    {
+        get => _plot.PolarDbFloor;
+        set
+        {
+            if (!double.IsFinite(value)) { OnPropertyChanged(); return; }
+            double clamped = Math.Clamp(value, -200.0, -1.0);
+            if (Math.Abs(_plot.PolarDbFloor - clamped) < 1e-9) { if (value != clamped) OnPropertyChanged(); return; }
+            _plot.PolarDbFloor = clamped;
+            OnPropertyChanged();
+            ApplyRadialChange();
+        }
+    }
+
+    public double PolarDbRingStep
+    {
+        get => _plot.PolarDbRingStep;
+        set
+        {
+            if (!double.IsFinite(value)) { OnPropertyChanged(); return; }
+            double clamped = Math.Clamp(value, 0.5, 100.0);
+            if (Math.Abs(_plot.PolarDbRingStep - clamped) < 1e-9) { if (value != clamped) OnPropertyChanged(); return; }
+            _plot.PolarDbRingStep = clamped;
+            OnPropertyChanged();
+            ApplyRadialChange();
+        }
+    }
+
+    public string PolarDbUnit
+    {
+        get => _plot.PolarDbUnit;
+        set
+        {
+            string v = value ?? "";
+            if (string.Equals(_plot.PolarDbUnit, v, StringComparison.Ordinal)) return;
+            _plot.PolarDbUnit = v;
+            OnPropertyChanged();
+            ApplyRadialChange();
+        }
+    }
+
+    private void ApplyRadialChange()
+    {
+        // force: the window a pattern plot wants is its own unit disc, and the window a linear one
+        // wants is framed on the data — so switching between them has to re-frame even when the
+        // user had pinned the previous mode's.
+        _plot.Autoscale(force: true);
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>True when this Table contains summary columns — gates the summary header controls.</summary>
     public bool IsSummaryTable => _plot.PlotType == PlotType.Table

@@ -51,6 +51,11 @@ internal static class PlotVerb
 
         // WSProbe (WSP-4 R-wsp4-12). `probe=` is what turns a `cube=wsp` trace into a probe metric;
         // everything else here is the option some metrics read.
+        // ANT-7 §3 — the two pattern spellings, both shorthand over the general slice mechanism.
+        public string? Cut;      // a phi in degrees, or "all" for the whole pattern as a family
+        public int?    Port;     // a 1-based PORT NUMBER on a `port` axis, never an index
+        public double? FreqHz;   // pins the freq axis to its nearest sample
+
         public string? Probe;
         public string? With;
         public string? Set;
@@ -87,6 +92,15 @@ internal static class PlotVerb
         public bool?           Transparent;
         public bool            Dark;
         public string?         WriteCdd;
+
+        // ANT-7 §2 — the dB radial mode, which the Data Display and this verb gain together.
+        public PolarRadialMode      Radial     = PolarRadialMode.Linear;
+        public double               DbFloor    = -40.0;
+        public double               DbRingStep = 10.0;
+        public PolarDbReferenceMode DbRef      = PolarDbReferenceMode.Peak;
+        public double               DbRefValue;
+        public string               DbUnit     = "";
+        public List<string>         DbOptions  = new();   // what was typed, for the refusals
     }
 
     /// <summary>
@@ -137,6 +151,16 @@ internal static class PlotVerb
         if (o.Type is PlotType.Smith or PlotType.Polar
             && (o.X is not null || o.Y is not null || o.Y2 is not null))
             return JsonRun.Fail(CliDiagnostics.PlotWindowOnComplex(o.Type.ToString().ToLowerInvariant()));
+
+        // The dB radial mode is a property of the POLAR plot's radius (ANT-7 §2). On any other plot
+        // type there is no radius for it to be, and a flag that did nothing would leave a caller with
+        // a picture it cannot tell from the one it asked for — `render`'s own rule, applied here.
+        if (o.Radial == PolarRadialMode.Db && o.Type != PlotType.Polar)
+            return JsonRun.Fail(CliDiagnostics.PlotRadialNeedsPolar(o.Type.ToString().ToLowerInvariant()));
+        if (o.Radial != PolarRadialMode.Db && o.DbOptions.Count > 0
+            && o.DbOptions.Exists(f => f != "--radial"))
+            return JsonRun.Fail(CliDiagnostics.PlotDbOptionWithoutRadial(
+                string.Join(", ", o.DbOptions.FindAll(f => f != "--radial"))));
 
         // ── the data, read once, before anything is authored ─────────────────
         //
@@ -193,7 +217,11 @@ internal static class PlotVerb
             "                     [--x lo:hi] [--y lo:hi] [--y2 lo:hi]\n" +
             "                     [--size WxH] [--scale n | --dpi n] [--variant light|dark]\n" +
             "                     [--background opaque|transparent] [--write-cdd out.cdd]\n" +
+            "                     [--radial linear|db] [--db-floor -40] [--db-ring 10]\n" +
+            "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db axis=left|right\n" +
+            "  an antenna pattern: cube=farfield.U cut=<phi deg>|all [port=<n>] [freq=2.45G] y=db10\n" +
+            "                      cut=<deg> sweeps theta at one phi; cut=all keeps every phi as a family\n" +
             "  cube= takes the trace card's own shorthand — S[:,1,0], Pout, mag(V[:,\"X1.drain\"])\n" +
             "  a WSProbe quantity: cube=<analysis>.wsp probe=<label> metric=<name> [with=<label>]\n" +
             "                      [set=A;B] [z0=50] [side=G|L] [gi=1]\n" +
@@ -315,6 +343,48 @@ internal static class PlotVerb
                     }
                     continue;
 
+                case "--radial" when i + 1 < args.Length:
+                    o.DbOptions.Add(a);
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "linear": o.Radial = PolarRadialMode.Linear; break;
+                        case "db":     o.Radial = PolarRadialMode.Db;     break;
+                        default: return JsonRun.Fail(CliDiagnostics.PlotUnknownRadial(args[i]));
+                    }
+                    continue;
+
+                case "--db-floor" when i + 1 < args.Length:
+                {
+                    o.DbOptions.Add(a);
+                    if (!double.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out double f)
+                        || !(f < 0) || f < -200)
+                        return JsonRun.Fail(CliDiagnostics.PlotDbFloorMalformed(args[i]));
+                    o.DbFloor = f;
+                    continue;
+                }
+                case "--db-ring" when i + 1 < args.Length:
+                {
+                    o.DbOptions.Add(a);
+                    if (!double.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out double r)
+                        || !(r > 0) || r > 100)
+                        return JsonRun.Fail(CliDiagnostics.PlotDbRingMalformed(args[i]));
+                    o.DbRingStep = r;
+                    continue;
+                }
+                case "--db-ref" when i + 1 < args.Length:
+                {
+                    o.DbOptions.Add(a);
+                    string v = args[++i];
+                    if (v.Equals("peak", StringComparison.OrdinalIgnoreCase))
+                    { o.DbRef = PolarDbReferenceMode.Peak; continue; }
+                    if (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
+                        return JsonRun.Fail(CliDiagnostics.PlotDbRefMalformed(v));
+                    o.DbRef = PolarDbReferenceMode.Absolute; o.DbRefValue = rv;
+                    continue;
+                }
+                case "--db-unit" when i + 1 < args.Length:
+                    o.DbOptions.Add(a); o.DbUnit = args[++i]; continue;
+
                 case "--write-cdd" when i + 1 < args.Length: o.WriteCdd = args[++i]; continue;
 
                 default:
@@ -378,6 +448,21 @@ internal static class PlotVerb
                         default: return (null, JsonRun.Fail(CliDiagnostics.PlotTraceAxisUnknown(raw, value)));
                     }
                     break;
+                case "cut":    spec.Cut    = value; break;
+                case "port":
+                {
+                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int pn))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortMalformed(raw, key, value)));
+                    spec.Port = pn;
+                    break;
+                }
+                case "freq":
+                {
+                    if (!CircuitRF.Core.Netlist.Spice.SpiceNumber.TryParse(value, out double fhz) || !(fhz > 0))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceFreqMalformed(raw, value)));
+                    spec.FreqHz = fhz;
+                    break;
+                }
                 case "probe":  spec.Probe  = value; break;
                 case "with":   spec.With   = value; break;
                 case "set":    spec.Set    = value; break;
@@ -598,6 +683,84 @@ internal static class PlotVerb
             }, null);
         }
 
+        // ── the two pattern spellings (ANT-7 §3) ─────────────────────────────
+        //
+        //  Both are shorthand over the SAME general slice mechanism everything else uses — they
+        //  build the bracket text and hand it to the trace card's own parser, so what is authored
+        //  here is a `.cdd` the window would have written and there is no second resolve path.
+        //
+        //    cut=<deg>  pin freq and phi, sweep theta   — the E-plane / H-plane plot
+        //    cut=all    pin freq,         sweep theta, iterate phi as a family — the whole pattern
+        if (spec.Cut is not null)
+        {
+            if (text.Contains('['))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortsWithSlice(spec.Raw)));
+
+            var pcube = data[text];
+            if (!HasAxis(pcube, "theta") || !HasAxis(pcube, "phi"))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotCutNeedsPatternAxes(
+                    spec.Raw, text, AxisNames(pcube))));
+
+            bool wholePattern = spec.Cut.Equals("all", StringComparison.OrdinalIgnoreCase);
+            int  phiIndex     = 0;
+            if (!wholePattern)
+            {
+                if (!double.TryParse(spec.Cut, NumberStyles.Float, CultureInfo.InvariantCulture, out double phiDeg))
+                    return (null, JsonRun.Fail(CliDiagnostics.PlotCutMalformed(spec.Raw, spec.Cut)));
+                phiIndex = NearestIndex(AxisOf(pcube, "phi")!.Values, phiDeg, out double gotPhi);
+                Console.Error.WriteLine(
+                    $"[circuitRF] cut at phi = {gotPhi.ToString("0.###", CultureInfo.InvariantCulture)}°"
+                  + (Math.Abs(gotPhi - phiDeg) > 1e-9
+                        ? $" (nearest sample to the {phiDeg.ToString("0.###", CultureInfo.InvariantCulture)}° asked for)"
+                        : ""));
+            }
+
+            var ptok = new string[pcube.Rank];
+            for (int d = 0; d < pcube.Rank; d++)
+            {
+                var ax = pcube.Axes[d];
+                ptok[d] = ax.Name switch
+                {
+                    "theta" => ":",
+                    "phi"   => wholePattern ? "~" : phiIndex.ToString(CultureInfo.InvariantCulture),
+                    "port"  => PortToken(ax, spec.Port),
+                    "freq"  => FreqToken(ax, spec.FreqHz),
+                    _       => "0",
+                };
+            }
+            if (spec.Port is { } wantPort && !HasAxis(pcube, "port"))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotNoPortAxis(text, "port", AxisNames(pcube))));
+
+            text = $"{text}[{string.Join(", ", ptok)}]";
+        }
+        // `port=`/`freq=` alone are the same convenience without a cut — they pin one named axis on
+        // a cube whose other axes are already one sample deep, which every metric cube is.
+        else if (spec.Port is not null || spec.FreqHz is not null)
+        {
+            if (text.Contains('['))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortsWithSlice(spec.Raw)));
+
+            var qcube = data[text];
+            if (spec.Port is not null && !HasAxis(qcube, "port"))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotNoPortAxis(text, "port", AxisNames(qcube))));
+            if (spec.FreqHz is not null && !HasAxis(qcube, "freq"))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotNoPortAxis(text, "freq", AxisNames(qcube))));
+
+            var qtok = new string[qcube.Rank];
+            bool xTaken = false;
+            for (int d = 0; d < qcube.Rank; d++)
+            {
+                var ax = qcube.Axes[d];
+                if (ax.Name == "port" && spec.Port is not null) { qtok[d] = PortToken(ax, spec.Port); continue; }
+                if (ax.Name == "freq" && spec.FreqHz is not null) { qtok[d] = FreqToken(ax, spec.FreqHz); continue; }
+                // The first axis nobody pinned is the sweep. Anything after it is pinned, exactly as
+                // the parser's own positional convention would have resolved a bare name.
+                qtok[d] = xTaken ? "0" : ":";
+                xTaken  = true;
+            }
+            text = $"{text}[{string.Join(", ", qtok)}]";
+        }
+
         // i/j pin the axes NAMED i and j, by port number. They are the convenience over the
         // shorthand, so a spec that already carries a slice is a caller saying both things at once,
         // and it is refused rather than one of them being dropped.
@@ -697,6 +860,52 @@ internal static class PlotVerb
 
     private static string AxisNames(DataCube cube) => string.Join(", ", cube.Axes.Select(a => a.Name));
 
+    private static Axis? AxisOf(DataCube cube, string name) =>
+        cube.Axes.FirstOrDefault(a => a.Name.Equals(name, StringComparison.Ordinal));
+
+    private static bool HasAxis(DataCube cube, string name) => AxisOf(cube, name) is not null;
+
+    /// <summary>The index of the sample nearest <paramref name="want"/>, and the value it actually
+    /// landed on — which the caller REPORTS, because a pin that silently moved is a plot of a
+    /// different cut.</summary>
+    private static int NearestIndex(double[] values, double want, out double got)
+    {
+        int best = 0;
+        double bestD = double.PositiveInfinity;
+        for (int k = 0; k < values.Length; k++)
+        {
+            double d = Math.Abs(values[k] - want);
+            if (d < bestD) { bestD = d; best = k; }
+        }
+        got = values.Length > 0 ? values[best] : double.NaN;
+        return best;
+    }
+
+    /// <summary>
+    /// The token for a <c>port</c> axis. <b>A 1-based PORT NUMBER, verbatim</b> — the same trap
+    /// <c>i</c>/<c>j</c> already record, and the reason the parser resolves it against the axis's own
+    /// VALUES rather than by subtracting one: a far-field cube's port axis carries the numbers of the
+    /// ports that were driven, which need not start at 1. With no <c>port=</c> given, the FIRST port
+    /// the run holds, written as its number so the authored `.cdd` reads the same way.
+    /// </summary>
+    private static string PortToken(Axis axis, int? port)
+    {
+        double n = port ?? (axis.Values.Length > 0 ? axis.Values[0] : 1.0);
+        return n.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The token for a <c>freq</c> axis: the nearest sample's INDEX (a frequency axis is
+    /// indexed, not numbered), or 0 when the caller named none.</summary>
+    private static string FreqToken(Axis axis, double? fHz)
+    {
+        if (fHz is not double f) return "0";
+        int idx = NearestIndex(axis.Values, f, out double got);
+        Console.Error.WriteLine(
+            $"[circuitRF] freq pinned to {got.ToString("G6", CultureInfo.InvariantCulture)} Hz"
+          + (Math.Abs(got - f) > 1e-6 ? " (nearest sample)" : ""));
+        return idx.ToString(CultureInfo.InvariantCulture);
+    }
+
     private static string CubeNames(DataSet ds)
         => string.Join(", ", ds.Groups.SelectMany(g => ds.CubesIn(g).Keys
             .Select(c => g == DataSet.DefaultGroup ? c : $"{g}.{c}")));
@@ -726,6 +935,13 @@ internal static class PlotVerb
             Traces   = traces,
             Axes     = BuildAxes(o),
         };
+
+        container.PolarRadial           = o.Radial;
+        container.PolarDbFloor          = o.DbFloor;
+        container.PolarDbRingStep       = o.DbRingStep;
+        container.PolarDbReference      = o.DbRef;
+        container.PolarDbReferenceValue = o.DbRefValue;
+        container.PolarDbUnit           = o.DbUnit;
 
         if (o.Title   is { } title)  { container.CustomTitle   = title;  container.CustomTitleOn   = true; }
         if (o.XLabel  is { } xl)     { container.CustomXLabel  = xl;     container.CustomXLabelOn  = true; }

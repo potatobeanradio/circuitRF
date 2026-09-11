@@ -1443,6 +1443,9 @@ One plot, one axis pair, without writing a data display first.
 | `i`, `j` | The **port numbers** of a matrix cube — `i=2,j=1` is S21. Refused together with a bracketed slice: they are the convenience over writing one. |
 | `y` | `db`, `db10`, `db20`, `mag`, `phase`, `real`, `imag` or `conj`. |
 | `axis` | `left` (the default) or `right`. |
+| `cut` | An antenna pattern cut: a bearing in degrees pins the cube's `phi` axis and sweeps `theta`; `all` keeps every `phi` as a curve family. The verb prints the φ it landed on. |
+| `port` | The **port number** on a cube's `port` axis — not an index. A port the run does not hold is refused, listing the ones it does. |
+| `freq` | Pins a `freq` axis to its nearest sample. Takes an SI suffix: `2.45G`. |
 | `probe` | A [WSProbe](wsprobe.html) label. Given, it turns a `cube=<analysis>.wsp` trace into a probe metric. |
 | `metric` | Which of the reference document's quantities — `H0`, `1/Y0`, `ZG`, `SM_Y0`, `LGa`, `SMenv`, … See [The WSProbe](wsprobe.html#metrics). Some take `with=`, `set=`, `z0=`, `side=`, `gi=` or the envelope's grid keys. |
 
@@ -1466,7 +1469,28 @@ from. A cube the file does not hold is refused, listing the ones it does.
 | `--x lo:hi`, `--y lo:hi`, `--y2 lo:hi` | Axis windows. An axis you leave out autoscales. Refused on a Smith or Polar chart, whose window is the complex plane. |
 | `--size WxH`, `--scale`, `--dpi` | The page. Default 792×612 points — the same page **File ▸ Export** writes. `--scale`/`--dpi` are `.png` only. |
 | `--variant light\|dark`, `--background opaque\|transparent` | As `render`. |
+| `--radial linear\|db` | How a **polar** plot's radius is read. `db` makes it an antenna pattern plot. Refused on any other `--type`. |
+| `--db-floor <dB>` | The centre of a `db` plot, **relative to the outer ring**. Default −40. |
+| `--db-ring <dB>` | Ring spacing. Default 10. |
+| `--db-ref peak\|<dB>` | The outer ring: the data's own peak (normalised, the default) or an absolute level. |
+| `--db-unit <text>` | What the radial numbers are in — `dBi`, `dB(W/sr)`. |
 | `--write-cdd <path>` | Also write the data display this drew. |
+
+```text
+circuitrf plot run.npy -o eplane.svg --type polar --radial db --db-unit "dB(W/sr)" \
+  --trace cube=farfield.U,cut=0,port=1,y=db10
+```
+
+<div class="callout">
+<span class="label">A pattern plot says what it is</span>
+<p>On a <code>--radial db</code> plot the outer ring is a reference and the centre is a floor, and the
+picture states which reference it is using — a 0&nbsp;dB peak with no reference is not a result.
+<b>Values below the floor are drawn AT the floor, never dropped</b>: a gap in a pattern trace reads as
+a null in the antenna, and a real null and a clipped value must not look the same. 0° is at the top
+and angles increase clockwise, and the note under the plot says what the θ range covers — with an
+infinite ground plane there is no field below the horizon, so a pattern occupying part of the disc is
+the model saying so rather than a drawing fault.</p>
+</div>
 
 <div class="callout">
 <span class="label"><code>--write-cdd</code> is how you go further</span>

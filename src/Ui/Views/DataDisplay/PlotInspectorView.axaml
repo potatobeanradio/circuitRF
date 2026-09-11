@@ -205,6 +205,61 @@
 
             </StackPanel>
 
+            <!-- ── §B Row 1b: the polar RADIAL mode (ANT-7 §2) ─────────────
+                 Polar only. "dB" turns the radius into an antenna pattern: the outer ring is a
+                 reference, the centre is a floor, and everything below the floor is drawn AT the
+                 floor rather than dropped — a gap would read as a null in the antenna. The plot
+                 states which reference it is using, so an unlabelled normalised pattern cannot be
+                 produced from here. -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="6"
+                        IsVisible="{Binding IsPolarPlot}">
+
+                <CheckBox Content="dB radial"
+                          IsChecked="{Binding PolarRadialIsDb, Mode=TwoWay}"
+                          FontSize="11"
+                          ToolTip.Tip="Read the radius in decibels — an antenna pattern"/>
+
+                <CheckBox Content="Normalise"
+                          IsChecked="{Binding PolarDbNormalised, Mode=TwoWay}"
+                          IsVisible="{Binding IsPolarDbPlot}"
+                          FontSize="11"
+                          ToolTip.Tip="Outer ring = the peak of every trace on this plot (0 dB). Unchecked, the outer ring is the absolute level beside it."/>
+
+                <NumericUpDown Value="{Binding PolarDbReferenceValue, Mode=TwoWay}"
+                               IsVisible="{Binding IsPolarDbPlot}"
+                               IsEnabled="{Binding PolarDbAbsolute}"
+                               Minimum="-200" Maximum="200" Increment="1"
+                               Width="72" Padding="5,3" FontSize="11"
+                               ShowButtonSpinner="False"
+                               ToolTip.Tip="Outer-ring level, absolute"/>
+
+                <TextBlock Text="Floor" Classes="label"
+                           IsVisible="{Binding IsPolarDbPlot}"/>
+                <NumericUpDown Value="{Binding PolarDbFloor, Mode=TwoWay}"
+                               IsVisible="{Binding IsPolarDbPlot}"
+                               Minimum="-200" Maximum="-1" Increment="5"
+                               Width="68" Padding="5,3" FontSize="11"
+                               ShowButtonSpinner="False"
+                               ToolTip.Tip="Decibels from the outer ring down to the centre"/>
+
+                <TextBlock Text="Rings" Classes="label"
+                           IsVisible="{Binding IsPolarDbPlot}"/>
+                <NumericUpDown Value="{Binding PolarDbRingStep, Mode=TwoWay}"
+                               IsVisible="{Binding IsPolarDbPlot}"
+                               Minimum="0.5" Maximum="100" Increment="5"
+                               Width="58" Padding="5,3" FontSize="11"
+                               ShowButtonSpinner="False"
+                               ToolTip.Tip="Ring spacing, dB"/>
+
+                <TextBox Text="{Binding PolarDbUnit, Mode=TwoWay}"
+                         IsVisible="{Binding IsPolarDbPlot}"
+                         Width="58" Padding="5,3" FontSize="11"
+                         Watermark="dB"
+                         ToolTip.Tip="Unit the radial numbers are in — dBi, dB(W/sr). Blank takes the cube's own."/>
+            </StackPanel>
+
             <!-- ── §B Row 2: + Trace (left) / Freq + Font Size (right) ─── -->
             <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
 

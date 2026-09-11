@@ -166,6 +166,121 @@ namespace CircuitRF.Render.DataDisplay
         private bool UnityMinimumApplies
             => AutoscaleEnforceUnityMinimum && PlotType != PlotType.Polar;
 
+        // ---- The dB radial mode (ANT-7 §2) ------------------------------
+
+        /// <summary>
+        /// How this plot's RADIUS is read. <see cref="PolarRadialMode.Linear"/> is every polar plot
+        /// that existed before ANT-7 and stays the default; <see cref="PolarRadialMode.Db"/> makes it
+        /// a pattern plot. Ignored on every other plot type.
+        /// </summary>
+        public PolarRadialMode PolarRadial { get; set; } = PolarRadialMode.Linear;
+
+        /// <summary>
+        /// Where the centre of a Db-radial plot is, RELATIVE TO THE OUTER RING — so −40 means the
+        /// centre is 40 dB below whatever the outer ring turned out to be, and the control means the
+        /// same thing whether the reference is the peak or an absolute value.
+        ///
+        /// <para>It is a control rather than a constant because a high-directivity pattern and a
+        /// near-isotropic one want different ones: 40 dB of disc on a pattern whose whole variation
+        /// is 3 dB is a dot at the rim.</para>
+        /// </summary>
+        public double PolarDbFloor { get; set; } = -40.0;
+
+        /// <summary>Ring spacing in dB. 10 is what a pattern is read on.</summary>
+        public double PolarDbRingStep { get; set; } = 10.0;
+
+        /// <summary>Whether the outer ring is the data's own peak or a value the author named.</summary>
+        public PolarDbReferenceMode PolarDbReference { get; set; } = PolarDbReferenceMode.Peak;
+
+        /// <summary>The outer-ring value when <see cref="PolarDbReference"/> is
+        /// <see cref="PolarDbReferenceMode.Absolute"/>. Ignored otherwise.</summary>
+        public double PolarDbReferenceValue { get; set; } = 0.0;
+
+        /// <summary>
+        /// The unit the radial numbers are in — "dBi" for a gain pattern, "dB(W/sr)" for radiation
+        /// intensity. Empty means "take it from the cube, and fall back to dB": a cube VALUE unit is
+        /// not something every source carries, and a bare "dB" is honest where "dBi" would be a claim.
+        /// </summary>
+        public string PolarDbUnit { get; set; } = "";
+
+        /// <summary>True when this plot is drawing a pattern rather than a locus.</summary>
+        public bool IsPolarPattern => PlotType == PlotType.Polar && PolarRadial == PolarRadialMode.Db;
+
+        /// <summary>The resolved radial scale, or null when this is not a pattern plot. Rebuilt by
+        /// <see cref="RefreshPolarPattern"/>; never set from outside.</summary>
+        public PolarPatternScale? PatternScale { get; private set; }
+
+        /// <summary>
+        /// Resolves the radial scale from EVERY trace on the plot at once and pushes it onto each of
+        /// them, rebuilding their paths when it changed.
+        ///
+        /// <para><b>Why the plot owns this and a trace cannot.</b> A trace builds its own path the
+        /// moment its data is set (<c>Trace.SetCubeData</c>), which is before the plot knows what
+        /// else is on it — and a normalised reference is a property of the whole plot, not of one
+        /// curve. So the scale is resolved here, at the two points every caller already passes
+        /// through after resolving traces: <see cref="Autoscale"/> and
+        /// <see cref="RestoreAxesFromConfig"/>.</para>
+        /// </summary>
+        public void RefreshPolarPattern()
+        {
+            PolarPatternScale? scale = IsPolarPattern ? BuildPatternScale() : null;
+
+            bool changed = !Equals(scale, PatternScale);
+            PatternScale = scale;
+
+            foreach (var t in Traces)
+            {
+                bool traceChanged = !Equals(t.PatternScale, scale);
+                t.PatternScale = scale;
+                if (changed || traceChanged) t.BuildPath(PlotType, FreqUnits);
+            }
+        }
+
+        private PolarPatternScale? BuildPatternScale()
+        {
+            double step = PolarDbRingStep > 0 ? PolarDbRingStep : 10.0;
+            // A floor at or above the outer ring is not a disc. Clamped to one ring rather than
+            // refused: the control is a spinner and a user dragging it past zero wants the smallest
+            // legible scale, not an empty plot.
+            double depth = PolarDbFloor < 0 ? -PolarDbFloor : step;
+
+            double peak = double.NegativeInfinity;
+            string unit = PolarDbUnit;
+            foreach (var t in Traces)
+            {
+                if (t.IsContourTrace || t.IsSummaryColumn) continue;
+                double p = t.PatternPeakDb();
+                if (double.IsFinite(p) && p > peak) peak = p;
+                if (unit.Length == 0 && t.PatternDbUnit is { Length: > 0 } u) unit = u;
+            }
+
+            bool normalised = PolarDbReference == PolarDbReferenceMode.Peak;
+            double reference = normalised ? peak : PolarDbReferenceValue;
+
+            // No finite sample anywhere — every trace is empty or unresolved. A plot with no data
+            // still needs a grid to say what it WOULD show, so the scale is built on the author's own
+            // numbers with the peak standing in at 0.
+            if (!double.IsFinite(reference)) reference = 0.0;
+
+            int above = 0;
+            if (!normalised)
+                foreach (var t in Traces)
+                {
+                    if (t.IsContourTrace || t.IsSummaryColumn) continue;
+                    above += t.PatternCountAbove(reference);
+                }
+
+            return new PolarPatternScale
+            {
+                ReferenceDb         = reference,
+                FloorDb             = reference - depth,
+                RingStepDb          = step,
+                Normalised          = normalised,
+                Unit                = unit.Length > 0 ? unit : "dB",
+                AboveReferenceCount = above,
+            };
+        }
+
         // ---- Display options --------------------------------------------
 
         public bool   ShowWatermark      { get; set; } = false;
@@ -551,6 +666,11 @@ namespace CircuitRF.Render.DataDisplay
 
         public void Autoscale(bool force = false)
         {
+            // FIRST, and before the Table return and the per-axis flags: a pattern trace's POINTS
+            // depend on the plot-wide radial scale, so they have to be rebuilt even when no axis is
+            // being autoscaled at all (a pinned window is the common case on a pattern plot).
+            RefreshPolarPattern();
+
             if (PlotType == PlotType.Table) return;
 
             if (SupportsComplex)
@@ -573,6 +693,8 @@ namespace CircuitRF.Render.DataDisplay
             _autoscaleY      = autoscaleY;
             _autoscaleRightY = autoscaleRightY;
             _autoscaleMag    = autoscaleMag;
+
+            RefreshPolarPattern();   // see Autoscale — the points, not just the window
 
             Axes.Window          = window;
             Axes.WindowSecondary = windowSecondary;
@@ -696,6 +818,16 @@ namespace CircuitRF.Render.DataDisplay
 
                 primary   = SquareCentredOnOrigin(primary);
                 secondary = SquareCentredOnOrigin(secondary);
+
+                // A pattern plot's disc IS the scale: the outer ring is the reference and the centre
+                // is the floor, both by construction at radius 1 and 0. Framing it on the data would
+                // put the peak a little inside the rim on a normalised plot and the rings would stop
+                // meaning what they are labelled.
+                if (IsPolarPattern)
+                {
+                    primary   = new PlotRect(-1, -1, 2, 2);
+                    secondary = primary;
+                }
             }
 
             double xTick  = Axes.CalcInterval(primary.Width);

@@ -182,7 +182,7 @@ namespace CircuitRF.Render.DataDisplay
             for (int i = 0; i < tokens.Length; i++)
             {
                 var axis = cube.Axes[i];
-                var t = SliceTokenParser.Parse(tokens[i], axis.Length, axis.Labels, axis.Name, out error);
+                var t = SliceTokenParser.Parse(tokens[i], axis.Length, axis.Labels, axis.Name, axis.Values, out error);
                 switch (t.Kind)
                 {
                     case SliceTokenParser.Kind.KeepWhole:

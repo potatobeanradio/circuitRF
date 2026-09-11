@@ -1440,6 +1440,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             TableReadMode               = plot.TableReadMode,
             TableCompression            = plot.TableCompression,
             SummaryLoadpullGroup        = plot.SummaryLoadpullGroup,
+            PolarRadial                 = plot.PolarRadial,
+            PolarDbFloor                = plot.PolarDbFloor,
+            PolarDbRingStep             = plot.PolarDbRingStep,
+            PolarDbReference            = plot.PolarDbReference,
+            PolarDbReferenceValue       = plot.PolarDbReferenceValue,
+            PolarDbUnit                 = plot.PolarDbUnit,
             Axes = new AxesConfig
             {
                 AutoscaleX      = plot.AutoscaleX,

@@ -83,7 +83,11 @@ public static class PlotCanvasGeometry
             if (!plot.PlotType.IsComplex()) return 0;
 
             bool hasCustomX = plot.CustomXLabelOn && !string.IsNullOrEmpty(plot.CustomXLabel);
-            int  n          = hasCustomX ? 1 : Math.Max(1, plot.Traces.Count);
+            // ANT-7 §4: a pattern plot's rows are its CAPTION lines, not one per trace — the branch
+            // DrawComplexXLabels takes first. Mirrored here for the same reason every other formula
+            // in this file is: a row the canvas is not made tall enough for is a clipped sentence.
+            int  n          = plot.IsPolarPattern ? Math.Max(1, PatternCaption.Lines(plot).Count)
+                            : hasCustomX ? 1 : Math.Max(1, plot.Traces.Count);
 
             // Mirror DrawComplexXLabels: lw = min(W,H)/200.  Once extra height
             // is added H > W, so effectiveH = W → lw = W/200.

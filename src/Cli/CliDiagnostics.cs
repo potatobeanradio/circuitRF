@@ -2003,6 +2003,55 @@ internal static class CliDiagnostics
         "plot.frequnit.unknown", DiagnosticSeverity.Error,
         "plot: --freq-unit '{name}' is not one of Hz, kHz, MHz, GHz.", ("name", name));
 
+    // ── ANT-7 §2/§3 — the dB radial mode and the pattern spellings ──────────────────────────────
+
+    public static Diagnostic PlotUnknownRadial(string name) => Diagnostic.Create(
+        "plot.radial.unknown", DiagnosticSeverity.Error,
+        "plot: --radial '{name}' is not one of linear, db.", ("name", name));
+
+    public static Diagnostic PlotRadialNeedsPolar(string type) => Diagnostic.Create(
+        "plot.radial.needs-polar", DiagnosticSeverity.Error,
+        "plot: --radial db is a property of a POLAR plot's radius, and --type is '{type}'. "
+      + "A pattern is drawn with --type polar --radial db; a rectangular cut needs neither.",
+        ("type", type));
+
+    public static Diagnostic PlotDbOptionWithoutRadial(string options) => Diagnostic.Create(
+        "plot.radial.db-option-without-radial", DiagnosticSeverity.Error,
+        "plot: {options} set the dB radial scale and --radial db was not given, so they would do "
+      + "nothing. Add --radial db, or drop them.", ("options", options));
+
+    public static Diagnostic PlotDbFloorMalformed(string value) => Diagnostic.Create(
+        "plot.radial.floor-malformed", DiagnosticSeverity.Error,
+        "plot: --db-floor '{value}' is not a negative number of decibels. It is measured RELATIVE "
+      + "TO THE OUTER RING, so -40 puts the centre 40 dB below it; a positive value would put the "
+      + "centre above the rim.", ("value", value));
+
+    public static Diagnostic PlotDbRingMalformed(string value) => Diagnostic.Create(
+        "plot.radial.ring-malformed", DiagnosticSeverity.Error,
+        "plot: --db-ring '{value}' is not a positive ring spacing in decibels (10 is the default).",
+        ("value", value));
+
+    public static Diagnostic PlotDbRefMalformed(string value) => Diagnostic.Create(
+        "plot.radial.ref-malformed", DiagnosticSeverity.Error,
+        "plot: --db-ref '{value}' is neither 'peak' nor a number. 'peak' normalises the outer ring "
+      + "to the data's own maximum; a number puts it at that absolute level.", ("value", value));
+
+    public static Diagnostic PlotCutNeedsPatternAxes(string trace, string cube, string axes) => Diagnostic.Create(
+        "plot.trace.cut-needs-pattern-axes", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', cut= is a PATTERN cut and needs a cube with both a 'theta' and "
+      + "a 'phi' axis. Cube '{cube}' has: {axes}. Write the slice instead — cube={cube}[...].",
+        ("trace", trace), ("cube", cube), ("axes", axes));
+
+    public static Diagnostic PlotCutMalformed(string trace, string value) => Diagnostic.Create(
+        "plot.trace.cut-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', cut='{value}' is neither a phi in degrees nor 'all'.",
+        ("trace", trace), ("value", value));
+
+    public static Diagnostic PlotTraceFreqMalformed(string trace, string value) => Diagnostic.Create(
+        "plot.trace.freq-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', freq='{value}' is not a frequency (2.45G and 2.45e9 both work).",
+        ("trace", trace), ("value", value));
+
     public static Diagnostic PlotUnknownVariant(string name) => Diagnostic.Create(
         "plot.variant.unknown", DiagnosticSeverity.Error,
         "plot: --variant '{name}' is not light or dark.", ("name", name));

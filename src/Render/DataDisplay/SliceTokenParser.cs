@@ -13,6 +13,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RfCore.Data;
 
 namespace CircuitRF.Render.DataDisplay;
@@ -59,6 +60,25 @@ public static class SliceTokenParser
     /// Resolves quoted labels against <paramref name="axisLabels"/> (may be null).
     /// On failure returns <c>Invalid</c> and sets <paramref name="error"/>.</summary>
     public static Token Parse(string tk, int axisLength, string[]? axisLabels, string axisName, out string error)
+        => Parse(tk, axisLength, axisLabels, axisName, null, out error);
+
+    /// <summary>
+    /// The same, with the axis's own VALUES — which is what a <c>port</c> axis needs.
+    ///
+    /// <para><b>An integer on a port axis is a 1-based PORT NUMBER, not an index</b> (ANT-7 §3, and
+    /// the same trap the <c>i</c>/<c>j</c> axes already record). Those two resolve it by arithmetic
+    /// (<c>index = n − 1</c>) because an S matrix's ports are 1…N by construction; a <c>port</c> axis
+    /// is not — it carries the numbers of the ports that were actually DRIVEN
+    /// (<c>PlanarFarFieldSet.PortNumbers</c>), which need not start at 1 and need not be contiguous.
+    /// So the number is looked up in the values rather than shifted, and a port the run does not
+    /// have is refused by NAME instead of silently becoming a neighbour.</para>
+    ///
+    /// <para>harmonicaRF's own <c>port</c> axis holds 0, 1, 2 … and is therefore unaffected: the
+    /// lookup of the value <c>k</c> in <c>[0, 1, 2 …]</c> is the index <c>k</c>, which is exactly
+    /// what it meant before.</para>
+    /// </summary>
+    public static Token Parse(string tk, int axisLength, string[]? axisLabels, string axisName,
+                              double[]? axisValues, out string error)
     {
         error = "";
         tk = tk.Trim();
@@ -107,6 +127,19 @@ public static class SliceTokenParser
         // Integer index (pins/removes the axis).
         if (int.TryParse(tk, out int index))
         {
+            if (axisName == "port" && axisValues is { Length: > 0 })
+            {
+                for (int k = 0; k < axisValues.Length && k < axisLength; k++)
+                    if (Math.Abs(axisValues[k] - index) < 1e-9)
+                        return new Token(Kind.PinIndex, Index: k);
+
+                error = $"Port {index} is not a port of axis '{axisName}' "
+                      + $"(it has {string.Join(", ", axisValues.Take(axisLength)
+                                                               .Select(v => v.ToString("0.###",
+                                                                   System.Globalization.CultureInfo.InvariantCulture)))}).";
+                return new Token(Kind.Invalid);
+            }
+
             // S/Y/Z port axes (i, j) use 1-based PORT NUMBERS, not 0-based indices: S[:, 2, 1] = S21.
             // The WSProbe matrix's row/col are the same case and must read the same way: the cube's
             // own axis VALUES are 1-based (WspCubePacker writes k+1), so the document's wsp(1,1) is

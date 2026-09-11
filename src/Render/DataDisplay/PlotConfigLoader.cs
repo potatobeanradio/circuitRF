@@ -56,6 +56,12 @@ public static class PlotConfigLoader
         plot.TableReadMode               = pc.TableReadMode;
         plot.TableCompression            = pc.TableCompression > 0 ? pc.TableCompression : 3.0;
         plot.SummaryLoadpullGroup        = pc.SummaryLoadpullGroup;
+        plot.PolarRadial                 = pc.PolarRadial;
+        plot.PolarDbFloor                = pc.PolarDbFloor;
+        plot.PolarDbRingStep             = pc.PolarDbRingStep > 0 ? pc.PolarDbRingStep : 10.0;
+        plot.PolarDbReference            = pc.PolarDbReference;
+        plot.PolarDbReferenceValue       = pc.PolarDbReferenceValue;
+        plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
 
         foreach (var traceConfig in pc.Traces)
         {
