@@ -58,6 +58,12 @@ public partial class WBondShellWindow : Window
 
         WireMenus();
         Adopt(document);
+
+        // The menu bar is re-exported when this window becomes key, which restores the plain "Quit";
+        // rename it again. Idempotent and a no-op off macOS (MacOsAppMenu).
+        Activated += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => MacOsAppMenu.NameQuitItem("wBond"),
+            Avalonia.Threading.DispatcherPriority.Background);
     }
 
     /// <summary>The one document this window shows.</summary>

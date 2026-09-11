@@ -25,6 +25,12 @@ public partial class HarmonicaShellWindow : Window
             new HarmonicaViewModel(HarmonicaTickleDefaults.SeedModel())));
         UpdateTitle();
 
+        // The menu bar is re-exported when this window becomes key, which restores the plain "Quit";
+        // rename it again. Idempotent and a no-op off macOS (MacOsAppMenu).
+        Activated += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => MacOsAppMenu.NameQuitItem("harmonicaRF"),
+            Avalonia.Threading.DispatcherPriority.Background);
+
         // The document owns the dirty bullet; the window title mirrors it, the same way a docked tab
         // does — so a standalone window and a docked tab say the same thing about the same document.
         Document.ViewModel.PropertyChanged += (_, e) =>

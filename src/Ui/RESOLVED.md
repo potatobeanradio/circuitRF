@@ -1,5 +1,45 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — "Quit circuitRF", and why every earlier attempt produced two of them
+
+On macOS the application menu's last item read a bare **"Quit"**, while its own neighbour three rows
+up reads "Hide circuitRF". Earlier attempts added a Quit item to the XAML and ended with two.
+
+**The item is not ours, and that is the whole explanation.** circuitRF's `NativeMenu` in `App.axaml`
+declares only About and Settings; the Services / Hide / Show All / Quit block below them is appended
+for us, and it arrives with the plain title. Nothing in this repository creates it — and nothing in
+Avalonia does either: `libAvaloniaNative.dylib` and `Avalonia.Native.dll` contain neither the string
+"Quit" nor the selector `terminate:`. So declaring one does not REPLACE it; it adds a second, which
+is the two-Quit menu that was reported before.
+
+**Measured rather than reasoned about.** `MenuBarProbe` (`CRF_MENU_DIAG=<logfile>`) was temporarily
+extended to dump one level of submenu, which settled it in a single 25-second run:
+
+```
+mainMenu[9]: {About circuitRF…, -, Settings…, -, Services, -, Hide circuitRF, Hide Others, Show All, -, Quit} | File {...} | ...
+```
+
+The File menu has no Quit on macOS at all (Windows and Linux have had "Quit circuitRF" there since the
+app shell was built), so the report was about the application menu — the only place a Mac application
+should carry one.
+
+**The fix is `setTitle:` on the item that is already there** — `src/Ui/MacOsAppMenu.cs`, ~100 lines of
+`libobjc` interop of the kind `App.axaml.cs` already uses for the Dock icon. It adds nothing and
+removes nothing, so a second Quit is unrepresentable. Three properties earn their place:
+
+* **The item is found by its ACTION (`terminate:`), not its title**, so a localized build is renamed
+  just the same and no other item can be hit by accident. The title match is a fallback for an unset
+  action.
+* **It is idempotent, and it has to be.** The menu bar is re-exported whenever a window becomes key,
+  which restores the plain title, so the rename runs again from every shell's `Activated` — a version
+  that appended would spell "Quit circuitRF circuitRF" by the third window switch.
+* **It is POSTED at Background priority, never called inline.** The export itself is a dispatcher job;
+  renaming before it runs renames nothing.
+
+Wired in all three applications (circuitRF, harmonicaRF, wBond) at startup and on activation. Verified
+in a running build: `{…, Show All, -, Quit circuitRF}`, one item.
+
+
 ## The longer note in the three history dialogs, and two gates that guarded a shape by proxy (2026-09-11)
 
 `docs/design/revision-control.md` §5.12. Keep This Version…, Keep This State… and Correct What You

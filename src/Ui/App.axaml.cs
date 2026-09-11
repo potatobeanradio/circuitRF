@@ -254,6 +254,14 @@ public partial class App : Application
 
             Diagnostics.MenuBarProbe.StartIfRequested();   // opt-in; inert without CRF_MENU_DIAG
 
+            // "Quit circuitRF", not "Quit" — see MacOsAppMenu. Posted rather than called: the native
+            // menu bar is exported from the dispatcher once the first window is up, so there is no
+            // application menu to rename yet at this point in Show(). WorkspaceWindow's own Activated
+            // handler renames it again after every re-export.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => MacOsAppMenu.NameQuitItem("circuitRF"),
+                Avalonia.Threading.DispatcherPriority.Background);
+
             // "The last session crashed" is announced LAST, at ApplicationIdle. Everything above can
             // still open a workspace, and a workspace open CLEARS the Messages region — announcing
             // any earlier would post the notice and then wipe it. Idle is below every priority those

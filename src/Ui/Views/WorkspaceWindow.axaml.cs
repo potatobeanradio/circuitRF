@@ -63,6 +63,12 @@ public partial class WorkspaceWindow : Window
             // fallback should be (R-mw1-13).
             App.NoteWorkspaceActivated(this);
             AttachNativeMenuAtApplicationScope();
+            // The re-export replaces the menu bar, so the Quit item is back to its plain title —
+            // rename it again, at Background priority so the export has happened first. A no-op when
+            // the title is already right, which is the common case (see MacOsAppMenu).
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => MacOsAppMenu.NameQuitItem("circuitRF"),
+                Avalonia.Threading.DispatcherPriority.Background);
             // Settings ▸ Revision Control writes preferences directly and tells no window about it, so
             // coming back to the workspace is where the toolbar's two history buttons find out that
             // git was named, or that "keep a history" was switched. Cheap by construction — see

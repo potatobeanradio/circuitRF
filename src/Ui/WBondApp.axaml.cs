@@ -76,6 +76,13 @@ public partial class WBondApp : Application
             desktop.MainWindow = shell;
             shell.Show();
 
+            // "Quit wBond", not "Quit" — the same one-line rename circuitRF's own shell does, for the
+            // same reason (see MacOsAppMenu). Posted, because the menu bar is exported from the
+            // dispatcher after this.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => MacOsAppMenu.NameQuitItem("wBond"),
+                Avalonia.Threading.DispatcherPriority.Background);
+
             // Automatic updates. The sink is null here on purpose: MessagesTool is a docking tool of
             // circuitRF's workspace and this shell has none, so a staged update is silent in this
             // application. The check, the staging and the launch-time swap are identical; only the
