@@ -23,13 +23,13 @@
             BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
         <DockPanel>
             <DockPanel x:Name="ProfileRulerRow" DockPanel.Dock="Top" Height="22">
-                <Border DockPanel.Dock="Left" Width="22"
+                <Border DockPanel.Dock="Left" Width="26"
                         Background="{DynamicResource SystemChromeMediumLowColor}"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="0,0,1,1"/>
                 <ctrl:LayoutRulerControl x:Name="ProfileHRuler" Orientation="Horizontal" ClipToBounds="True"/>
             </DockPanel>
-            <ctrl:LayoutRulerControl x:Name="ProfileVRuler" DockPanel.Dock="Left" Width="22"
+            <ctrl:LayoutRulerControl x:Name="ProfileVRuler" DockPanel.Dock="Left" Width="26"
                                      Orientation="Vertical" ClipToBounds="True"/>
 
             <!-- The canvas, with the PLANE control floating over its top-right corner.

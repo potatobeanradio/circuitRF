@@ -12,8 +12,38 @@ public enum LayoutRulerOrientation { Horizontal, Vertical }
 /// </summary>
 public static class LayoutRulerRenderer
 {
+    /// <summary>The horizontal strip's HEIGHT.</summary>
     public const double Thickness = 22.0;
+
+    /// <summary>
+    /// The vertical strip's WIDTH — wider than <see cref="Thickness"/>, and the two XAML hosts
+    /// (<c>LayoutEditorView</c>, <c>WBondProfileView</c>) must match it.
+    ///
+    /// <para><b>It is sized to hold four characters at <see cref="BaseLabelFontSize"/> and no
+    /// more.</b> The vertical ruler writes its label HORIZONTALLY across a strip that used to be
+    /// the same 22 px as the horizontal one is tall, which fits about three and a half digits, so
+    /// "-1000" — an entirely ordinary coordinate, since the canvas pans through zero in one gesture
+    /// — was cut off mid-number with nothing to say it had been. Four characters is the deliberate
+    /// floor rather than the widest label imaginable: the strip is chrome beside the drawing, and a
+    /// label that needs more room gets a smaller font (see <see cref="ComputeLabelFontSize"/>)
+    /// instead of taking that room from the canvas.</para>
+    /// </summary>
+    public const double VerticalThickness = 26.0;
+
     private const double MinLabelPixelSpacing = 60.0;
+
+    /// <summary>The label size when everything fits — every ruler drew at this before the fit rule.</summary>
+    private const float BaseLabelFontSize = 10f;
+
+    /// <summary>
+    /// The floor <see cref="ComputeLabelFontSize"/> will not shrink past. Below this the label stops
+    /// being readable, at which point clipping and illegibility cost the same and the larger of the
+    /// two is the better answer.
+    /// </summary>
+    private const float MinLabelFontSize = 7f;
+
+    private const float LabelPadLeft  = 1f;
+    private const float LabelPadRight = 1f;
 
     // See LayoutRenderer's identical [ThreadStatic] cache — same reasoning: Avalonia hands a custom
     // draw operation the whole render-surface canvas, so a bare canvas.Clear(...) with no clip in
@@ -47,7 +77,8 @@ public static class LayoutRulerRenderer
 
             using var tickPaint = new SKPaint { IsAntialias = false, Color = theme.RulerTick, StrokeWidth = 1f };
             using var textPaint = new SKPaint { IsAntialias = true, Color = theme.RulerText };
-            using var font = new SKFont(SkiaFonts.PlexRegular, 10f);
+            using var font = new SKFont(
+                SkiaFonts.PlexRegular, ComputeLabelFontSize(vp, step, dbuPerMicron, displayUnit));
 
             if (orientation == LayoutRulerOrientation.Horizontal)
                 DrawHorizontal(canvas, size, vp, step, dbuPerMicron, displayUnit, tickPaint, textPaint, font);
@@ -97,8 +128,52 @@ public static class LayoutRulerRenderer
             if (sy < -20 || sy > size.H + 20) continue;
             canvas.DrawLine((float)(size.W - 8), sy, (float)size.W, sy, tickPaint);
             string label = LayoutUnits.Format(wy, displayUnit, dbuPerMicron);
-            canvas.DrawText(label, 2, sy - 2, SKTextAlign.Left, font, textPaint);
+            canvas.DrawText(label, LabelPadLeft, sy - 2, SKTextAlign.Left, font, textPaint);
         }
+    }
+
+    /// <summary>
+    /// One label size for BOTH strips, chosen so the VERTICAL ruler's widest currently-visible label
+    /// fits inside <see cref="VerticalThickness"/>.
+    ///
+    /// <para><b>Only the vertical labels are measured, and the horizontal ruler takes the answer.</b>
+    /// The vertical strip is the only one with a hard width — a horizontal label has the whole tick
+    /// spacing (<see cref="MinLabelPixelSpacing"/> at least) to sit in and never runs out of room.
+    /// Sizing the two independently would leave a window whose two rulers are lettered differently,
+    /// which reads as a rendering fault rather than as a fit. Both controls are handed the same
+    /// <paramref name="vp"/> (the canvas's own), so each can compute this identically without the
+    /// two needing to talk.</para>
+    ///
+    /// <para>The result is quantised to a quarter point so that panning — which changes the label
+    /// set continuously — steps the size occasionally rather than jittering it every frame.</para>
+    /// </summary>
+    internal static float ComputeLabelFontSize(
+        LayoutViewport vp, long step, int dbuPerMicron, LayoutUnit displayUnit)
+    {
+        double available = VerticalThickness - LabelPadLeft - LabelPadRight;
+        if (available <= 0) return MinLabelFontSize;
+
+        long jStart = (long)Math.Floor(vp.VisibleMinY / step);
+        long jEnd   = (long)Math.Ceiling(vp.VisibleMaxY / step);
+        if (jEnd - jStart > 4096) return BaseLabelFontSize;   // DrawVertical draws nothing either
+
+        using var probe = new SKFont(SkiaFonts.PlexRegular, BaseLabelFontSize);
+        float widest = 0f;
+        for (long j = jStart; j <= jEnd; j++)
+        {
+            double sy = vp.WorldToScreenY(j * step);
+            if (sy < -20 || sy > vp.Height + 20) continue;     // same visibility test DrawVertical applies
+            float w = probe.MeasureText(LayoutUnits.Format(j * step, displayUnit, dbuPerMicron));
+            if (w > widest) widest = w;
+        }
+
+        if (widest <= available) return BaseLabelFontSize;
+
+        // Skia's advance widths scale linearly with text size, so one measurement at the base size
+        // gives the exact factor; no search is needed.
+        float fitted = (float)(BaseLabelFontSize * available / widest);
+        fitted = (float)(Math.Floor(fitted * 4.0) / 4.0);
+        return Math.Clamp(fitted, MinLabelFontSize, BaseLabelFontSize);
     }
 
     private static void DrawCursorIndicator(

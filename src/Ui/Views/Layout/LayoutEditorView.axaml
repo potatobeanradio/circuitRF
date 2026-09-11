@@ -752,14 +752,14 @@
 
             <!-- Top row: corner box + horizontal ruler -->
             <DockPanel x:Name="RulerRow" DockPanel.Dock="Top" Height="22">
-                <Border DockPanel.Dock="Left" Width="22"
+                <Border DockPanel.Dock="Left" Width="26"
                         Background="{DynamicResource SystemChromeMediumLowColor}"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="0,0,1,1"/>
                 <ctrl:LayoutRulerControl x:Name="HRuler" Orientation="Horizontal" ClipToBounds="True"/>
             </DockPanel>
 
-            <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="22" Orientation="Vertical" ClipToBounds="True"/>
+            <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="26" Orientation="Vertical" ClipToBounds="True"/>
 
             <Panel>
                 <!-- An empty layout renders as a plain canvas with the background grid showing — no

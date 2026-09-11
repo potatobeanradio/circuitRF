@@ -1,5 +1,38 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — the layout ruler's y-axis labels were cut off past ~3.5 characters
+
+The left ruler writes its label HORIZONTALLY across a strip that was the same 22 px the top ruler is
+TALL. At the 10 px label size that holds about three and a half digits, so "-1000" — not an edge
+case, since the canvas pans through zero in one gesture and a layout is routinely drawn in both
+signs — lost its last character with nothing to say it had.
+
+**Two changes, and the second is why the first can stay small.** `VerticalThickness` is now 26 px,
+sized to hold exactly four characters at the base size and no more (four digits measure 24.00 px in
+IBM Plex Sans at 10 px; the strip carries a 1 px pad each side). Past four characters the label is
+SHRUNK to fit rather than the strip widened: the ruler is chrome beside the drawing, and the owner
+asked for room for four and not for a column.
+
+**The horizontal ruler takes the vertical one's size, and only the vertical labels are measured.**
+`ComputeLabelFontSize` walks the Y ticks alone — a horizontal label has the whole tick spacing (60 px
+at least) to sit in and can never run out of room, so measuring it would only ever produce a second,
+larger answer, and a window whose two rulers are lettered differently reads as a rendering fault. The
+two controls need no channel between them to agree: `LayoutEditorView.SyncRulers` and
+`WBondProfileView` hand BOTH strips the canvas's own viewport, so each computes the same number from
+the same input. That is also why the visibility test inside the helper reads `vp.Height` and not the
+control's own `size.H` — for the horizontal strip those differ by two orders of magnitude.
+
+Skia's advance widths scale linearly with text size, so ONE measurement at the base size gives the
+exact factor and no search is needed. The result is quantised down to a quarter point, because
+panning changes the visible label set continuously and an unquantised size jitters every frame. The
+floor is 7 px: below that, clipping and illegibility cost the same and the larger of the two is the
+better answer, so a nanometre-unit view of a whole board still truncates — deliberately.
+
+**The two XAML hosts repeat the 26 as a literal** (`LayoutEditorView.axaml`, `WBondProfileView.axaml`,
+each with a corner box that must match its ruler or the strips misalign). A strip drawn narrower than
+the renderer believes would clip the label the fit rule just made room for, silently, so
+`tests/Ui.Tests/LayoutRulerLabelFitTests.cs` compares the XAML against the constant.
+
 ## ANT-10, 2026-09-10 — the 3D pattern viewer
 
 `brief-antenna-10-pattern-3d.md`. A surface r(θ, φ) = the pattern in dB above a floor, over the upper
