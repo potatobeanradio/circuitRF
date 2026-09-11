@@ -71,8 +71,7 @@ public static class UpdateStartup
             // the system resolves a Documents/Desktop grant against. HandOverTo leaves rather than let
             // that session continue — this flag is the belt for anything that gets past it, so a
             // refusal explains itself instead of sending the user to Privacy & Security.
-            if (site.Shape == InstallShape.MacOsBundle
-                && result.Outcome is SwapOutcome.BundleSwapped or SwapOutcome.RolledBack)
+            if (ThisSessionReplacedItsOwnBundle(site, result))
                 CircuitRF.Diagnostics.FileAccessDiagnostics.AppBundleReplacedThisSession = true;
 
             switch (result.Outcome)
@@ -103,6 +102,11 @@ public static class UpdateStartup
                     // over to the restored one.
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
                         HandOverTo(result.NewExecutable, args);
+
+                    // Reached only when the restored executable is not where the exchange put it —
+                    // HandOverTo itself never returns on a macOS bundle. The notice is already
+                    // recorded, so this launch simply ends; see LeaveRatherThanOutliveTheExchange.
+                    LeaveRatherThanOutliveTheExchange(site, result, notice: null);
                     return;
 
                 case SwapOutcome.SwapAlreadyApplied:
@@ -148,9 +152,13 @@ public static class UpdateStartup
                                previousVersion: AppVersion.Display);
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
                         HandOverTo(result.NewExecutable, args);
-                    // Only reached if execv failed; the swap already happened, so carrying on runs
-                    // the OLD process image against the NEW tree for this session only. Harmless,
-                    // and better than refusing to start.
+
+                    // Reached only when the installed executable is not where the exchange put it —
+                    // HandOverTo itself never returns on a macOS bundle. Carrying on used to be
+                    // described here as "harmless": it is not, and see
+                    // LeaveRatherThanOutliveTheExchange for what it actually costs.
+                    LeaveRatherThanOutliveTheExchange(site, result,
+                        "the new version's executable was not where the exchange put it");
                     return;
 
                 default:
@@ -254,14 +262,56 @@ public static class UpdateStartup
         try
         {
             UpdateStateIo.Update(s => s.PendingNotice =
-                $"{UpdateApp.Name} has finished installing its update, but macOS would not start the "
-                + "new version automatically"
+                $"{UpdateApp.Name} has finished installing its update, but the new version could not "
+                + "be started automatically"
                 + (string.IsNullOrWhiteSpace(refusal) ? "" : $" ({refusal})")
                 + $", so the previous session closed instead. This launch IS the new version — "
                 + "nothing was lost and nothing needs to be repaired.");
         }
         catch (Exception) { /* a notice is not worth failing an exit over */ }
 
+        Environment.Exit(0);
+    }
+
+    /// <summary>
+    /// Whether this launch is one that EXCHANGED the macOS <c>.app</c> it was started from — the one
+    /// state in which the process may not be trusted with a protected folder, because macOS resolves
+    /// the grant against the bundle the process was launched from and that bundle has just been moved
+    /// to <c>updates/previous</c> (and is deleted as soon as a window confirms the new version).
+    ///
+    /// <para>One expression, used twice: it selects the remedy a refusal offers
+    /// (<c>FileAccessDiagnostics.AppBundleReplacedThisSession</c>) and it decides whether this launch
+    /// may continue at all (<see cref="LeaveRatherThanOutliveTheExchange"/>). Those two must never
+    /// disagree.</para>
+    /// </summary>
+    private static bool ThisSessionReplacedItsOwnBundle(InstallSite site, SwapResult result)
+        => site.Shape == InstallShape.MacOsBundle
+        && result.Outcome is SwapOutcome.BundleSwapped or SwapOutcome.RolledBack;
+
+    /// <summary>
+    /// Ends a launch that has exchanged its own bundle and has no successor to hand to. Returns only
+    /// when this is not that launch.
+    ///
+    /// <para><b>The last way a denied session could still exist, and it was described here as
+    /// "harmless".</b> <see cref="HandOverTo"/> never returns on a macOS bundle — it either hands to
+    /// Launch Services or leaves — so the only way past it is the executable not being where the
+    /// exchange put it, and that branch used to fall through to "carrying on runs the OLD process
+    /// image against the NEW tree for this session only. Harmless." It is not harmless: that session
+    /// is denied <c>~/Downloads</c>, <c>~/Documents</c> and <c>~/Desktop</c> with NO prompt, because
+    /// the identity the grant is resolved against names a bundle that is no longer installed. The
+    /// user is then told to switch on a privacy setting that was never off. Leaving costs one more
+    /// launch and the exchange is already durable, so the version on disk is the new one either
+    /// way.</para>
+    ///
+    /// <para><paramref name="notice"/> is null where the caller has already recorded one — a rollback
+    /// explains itself and must not have that explanation overwritten.</para>
+    /// </summary>
+    private static void LeaveRatherThanOutliveTheExchange(InstallSite site, SwapResult result,
+                                                          string? notice)
+    {
+        if (!ThisSessionReplacedItsOwnBundle(site, result)) return;
+
+        if (notice is not null) LeaveTheUpdateForTheNextLaunch(notice);   // never returns
         Environment.Exit(0);
     }
 

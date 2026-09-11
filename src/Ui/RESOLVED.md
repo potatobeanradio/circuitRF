@@ -1,5 +1,74 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The protected-folder refusal after a macOS auto-update recurred a THIRD time, and the 2026-09-10 reading of it was wrong (2026-09-11)
+
+beta.16 → beta.17. Immediately after the update the owner could not open a workspace under
+`~/Downloads`; a second launch, with nothing else changed, was fine. Same symptom as 2026-09-04 and
+2026-09-10, and the session log says exactly what happened.
+
+**The whole chain, from the kernel's own record.** `circuitRF(50438) deny(1) file-read-data
+…/Downloads/gerberimport2/.cws` — a real TCC refusal, and tccd's attribution for that pid is the
+tell:
+
+```
+responsible={pid=50438, responsible_path=…/circuitRF/updates/previous/Contents/MacOS/circuitRF,
+             binary_path=/Applications/circuitRF.app/Contents/MacOS/circuitRF}
+tccd: -[TCCDAccessIdentity staticCode]: … at …/circuitRF/updates/previous
+tccd: Failed to create LSApplicationRecord for …/circuitRF/updates/previous/
+```
+
+pid 50438 is the session the Relaunch button started. It was launched by Launch Services correctly
+(`launchd … Successfully spawned circuitRF[50438] because launch job demand`, `open[50437] LAUNCH:
+Asking CSUI to launch 0 items`) — and then **it** was the process that applied the bundle exchange,
+in its own `Main`. The exchange moves the executable it was launched from to `updates/previous`, so
+from that instant its own launch-time identity names a directory that is not an `.app` — and
+`NoteFirstWindowShown` deletes it a few seconds later, at which point the identity cannot be
+evaluated at all (`SecStaticCodeCreateWithPath … -67068`). Nothing is left to match the stored grant,
+so TCC denies, and denies **without prompting**, because from its side there is no unanswered
+question.
+
+**It then `execv`'d, which is what carried the broken identity into the session the user saw.**
+Proved, not inferred: `kernel: circuitRF[50438] triggered unnest of … in VM map 0x33943cfd24c3ff8f`
+at 01:33:06.264 and again `in VM map 0x3b8c79a311d35451` at 01:33:07.808 — two unnest events, two VM
+maps, one pid. Every ordinary circuitRF launch in the same log (50334, 50587) has exactly one. And
+there is no second `open` process anywhere in the window, so Launch Services was never asked.
+
+**Why the fix that was already written did not run: the OUTGOING version performs the hand-over.**
+`e670febe` (2026-09-10) made a macOS bundle hand over through Launch Services or leave, with no
+`execv` fall-back. It is in beta.17. The exchange on 2026-09-11 was applied by **beta.16**, which
+still had `if (AppRelaunch.TryRelaunchBundle(…)) Environment.Exit(0); UpdateSwap.ExecReplace(…);` —
+and whose `TryRelaunchBundle` returned false without ever spawning `open`. beta.16 also predates
+`FileAccessDiagnostics.AppBundleReplacedThisSession`, which is why the owner got the Privacy &
+Security instructions rather than the sentence that says the setting is not what is wrong. So the
+first update this fix can act on is beta.17 → beta.18. `git merge-base --is-ancestor <fix>
+1.0.0-beta.16` answers this in one line and is worth running before calling an updater fix shipped —
+the same trap `auto-update.md` §13.6a records for beta.3.
+
+**What the 2026-09-10 note got wrong, and it matters.** It concluded that the failing session "was
+spawned by Launch Services … and was still denied", and therefore that the hand-over mechanism was
+irrelevant. The first half is true and the inference is not: the LS-spawned process it was looking at
+is the one the Relaunch button starts, which is the process that goes on to APPLY the exchange. The
+hand-over is the launch AFTER that one, and on both occasions it was an `execv`. Measured directly,
+on this machine: a process that `open -n -a`s its own bundle immediately after exchanging that bundle
+aside produces a successor whose identity resolves to the installed `.app` and which reads
+`~/Downloads` without a prompt. The mechanism works; it had not been reached.
+
+**The last hole, which had been written down as harmless.** `HandOverTo` never returns on a macOS
+bundle, so the only way past it is `NewExecutable` not existing — and both `BundleSwapped` and
+`RolledBack` fell through that branch to a comment reading "carrying on runs the OLD process image
+against the NEW tree for this session only. Harmless, and better than refusing to start." That is the
+denied session, described as harmless. Both cases now end the launch instead
+(`LeaveRatherThanOutliveTheExchange`), which shares its one condition —
+`ThisSessionReplacedItsOwnBundle` — with the flag that selects the refusal's remedy, so the two can
+never disagree. A rollback keeps the notice it already recorded rather than having it overwritten.
+
+**Note for anyone reading the log again.** `tccd` logs nothing useful for a file denial and the user's
+`TCC.db` is unreadable without Full Disk Access; the two predicates that carry the whole story are
+`eventMessage CONTAINS "System Policy"` (the kernel's deny lines) and `process == "tccd"` filtered to
+the app name (the attribution, which is where `responsible_path` appears). `process == "open"` over
+the same window answers "was Launch Services asked at all" on its own.
+
+
 ## A view test read for a spelling the view had deliberately stopped using (2026-09-10)
 
 `EmPanelDeclutterTests.TheButtonCluster_IsTopRightAligned_SoItLandsOnTheOutputFileRow` failed on a
