@@ -18,6 +18,25 @@
       <TextBox x:Name="TextBox" AcceptsReturn="False" />
     </StackPanel>
 
+    <!-- §5.12. THE NOTE IS CORRECTED WHERE THE TITLE IS, because they were written together, in one
+         dialog, about one entry — and a designer who has just noticed one is careless has very often
+         noticed both. It goes through whichever of the three cases applies, unchanged: replaced on an
+         entry nobody else has seen, and added beside the original on one that has left the machine.
+
+         It opens ALREADY EXPANDED when there is something in it (see the code-behind). Somebody who
+         came here to edit a paragraph should not have to find it first; somebody who came to fix four
+         words should not have a paragraph field in their way. -->
+    <Expander x:Name="NoteExpander" Header="More detail" FontSize="11" Classes="fill">
+      <StackPanel Spacing="4" Margin="2,6,2,4">
+        <TextBox x:Name="NoteBox" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="90" MaxHeight="200"
+                 HorizontalAlignment="Stretch"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+        <TextBlock x:Name="NoteHint" FontSize="10" Opacity="0.6" TextWrapping="Wrap" />
+      </StackPanel>
+    </Expander>
+
     <!-- The original, shown beside the field rather than only in the panel: somebody correcting a
          careless line needs to see what they are correcting while they type the replacement. -->
     <Border x:Name="OriginalPanel" IsVisible="False"

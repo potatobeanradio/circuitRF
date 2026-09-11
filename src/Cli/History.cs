@@ -78,6 +78,17 @@ internal static class History
         };
     }
 
+    /// <summary>
+    /// §5.12's note, as the two argument helpers read it.
+    ///
+    /// <para><b>A field rather than a fifth out-parameter</b>, because the helpers already hand back
+    /// four and every one of their callers would have to name a discard for a flag it does not take.
+    /// It is cleared at the top of each helper and this process runs one verb, so there is nothing for
+    /// it to leak into. <b>Null means "leave whatever is there alone"</b> — which is what a rename or a
+    /// retitle with no <c>--note</c> means, and is why it is not an empty string.</para>
+    /// </summary>
+    private static string? _note;
+
     private static int UnknownNoun(string noun)
     {
         JsonRun.Report(CliDiagnostics.HistoryUnknownNoun(noun));
@@ -97,6 +108,7 @@ internal static class History
     {
         string?      workspace = null;
         string?      intent    = null;
+        string?      note      = null;
         bool         create       = false;
         bool         unattended   = false;
         bool         includeLarge = false;
@@ -107,6 +119,8 @@ internal static class History
             switch (args[i])
             {
                 case "--intent" when i + 1 < args.Length:     intent = args[++i]; break;
+                // §5.12's longer note — what the one-line intent has no room for.
+                case "--note" when i + 1 < args.Length:       note = args[++i]; break;
                 // The RC-3 spelling, kept so a caller that learned it still works.
                 case "--message" when i + 1 < args.Length:    intent = args[++i]; break;
                 case "--leave-out" when i + 1 < args.Length:  leaveOut.Add(args[++i]); break;
@@ -147,7 +161,8 @@ internal static class History
         }
 
         var outcome = WorkspaceCheckpoints.Take(
-            git!, CheckpointOrigin.SavePoint, intent, attended: !unattended, exclusions: leaveOut);
+            git!, CheckpointOrigin.SavePoint, intent, attended: !unattended, exclusions: leaveOut,
+            note: note);
 
         foreach (var d in outcome.Diagnostics)
             JsonRun.Report(d);
@@ -373,6 +388,7 @@ internal static class History
     {
         string?      workspace = null;
         string?      title     = null;
+        string?      note      = null;
         List<string> leaveOut  = [];
 
         for (int i = 0; i < args.Length; i++)
@@ -380,6 +396,8 @@ internal static class History
             switch (args[i])
             {
                 case "--title" when i + 1 < args.Length:      title = args[++i]; break;
+                // §5.12's longer note — what the title has no room for.
+                case "--note" when i + 1 < args.Length:       note = args[++i]; break;
                 // The spelling anyone who has used a version-control tool will reach for first.
                 case "--message" when i + 1 < args.Length:    title = args[++i]; break;
                 case "-m" when i + 1 < args.Length:           title = args[++i]; break;
@@ -409,7 +427,7 @@ internal static class History
         if (!RevisionArming.IsArmed(RevisionArming.KeepHistoryDefault, setting))
             return JsonRun.Fail(HistoryMessages.CannotKeepAVersionOff());
 
-        var result = WorkspaceCommit.Commit(git!, title, leaveOut);
+        var result = WorkspaceCommit.Commit(git!, title, leaveOut, note);
         foreach (var d in result.Diagnostics) JsonRun.Report(d);
 
         JsonRun.History = new HistoryReportJson(
@@ -549,13 +567,13 @@ internal static class History
     private static int Rename(string[] args)
     {
         if (Entry(args, "history rename", out long sequence, out string? text,
-                  out var git, out int failure) is false)
+                  out var git, out int failure, takesNote: true) is false)
             return failure;
 
         var point = RestorePoints.ListIncludingThinned(git!).FirstOrDefault(p => p.Sequence == sequence);
         if (point is null) return JsonRun.Fail(CliDiagnostics.HistoryNoSuchPoint(sequence));
 
-        var outcome = RestorePoints.Rename(git!, point, text);
+        var outcome = RestorePoints.Rename(git!, point, text, _note);
         JsonRun.Report(outcome.Diagnostic ?? HistoryMessages.RestorePointRenamed(text ?? ""));
         if (!outcome.Ok) return JsonRun.Finish(1);
 
@@ -606,7 +624,7 @@ internal static class History
         if (Find(git!, which) is not { } version)
             return JsonRun.Fail(CliDiagnostics.HistoryNoSuchVersion(which ?? ""));
 
-        var outcome = VersionCorrections.CorrectTitle(git!, version, text);
+        var outcome = VersionCorrections.CorrectTitle(git!, version, text, _note);
         JsonRun.Report(outcome.Diagnostic);
         if (!outcome.Ok) return JsonRun.Finish(1);
 
@@ -633,7 +651,7 @@ internal static class History
         if (Find(git!, which) is not { } version)
             return JsonRun.Fail(CliDiagnostics.HistoryNoSuchVersion(which ?? ""));
 
-        var outcome = VersionCorrections.Annotate(git!, version, text);
+        var outcome = VersionCorrections.Annotate(git!, version, text, _note);
         JsonRun.Report(outcome.Diagnostic);
         if (!outcome.Ok) return JsonRun.Finish(1);
 
@@ -699,7 +717,8 @@ internal static class History
     /// rename, the words. Shared so the two cannot parse their arguments differently.
     /// </summary>
     private static bool Entry(string[] args, string verb, out long sequence, out string? text,
-                              out GitCommand? git, out int failure, bool needsText = true)
+                              out GitCommand? git, out int failure, bool needsText = true,
+                              bool takesNote = false)
     {
         string? workspace = null;
         long?   wanted    = null;
@@ -707,6 +726,7 @@ internal static class History
         git     = null;
         failure = 0;
         sequence = 0;
+        _note    = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -714,8 +734,12 @@ internal static class History
             {
                 case "--point" when i + 1 < args.Length && long.TryParse(args[i + 1], out long n):
                     wanted = n; i++; break;
-                case "--label" when i + 1 < args.Length: text = args[++i]; break;
-                case "--text"  when i + 1 < args.Length: text = args[++i]; break;
+                case "--label" when i + 1 < args.Length: text   = args[++i]; break;
+                case "--text"  when i + 1 < args.Length: text   = args[++i]; break;
+                // §5.12. The paragraph the label has no room for, on the surface an agent has. A verb
+                // that could write one and not correct one would leave the terminal with fewer of
+                // these operations than the window has, which is §5.3d's whole rule.
+                case "--note"  when takesNote && i + 1 < args.Length: _note = args[++i]; break;
                 default:
                     if (args[i].StartsWith('-') || workspace is not null)
                     { failure = JsonRun.Fail(CliDiagnostics.RunUnknownOption(verb, args[i])); return false; }
@@ -753,6 +777,7 @@ internal static class History
         text    = null;
         git     = null;
         failure = 0;
+        _note   = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -761,6 +786,9 @@ internal static class History
                 case "--version" when i + 1 < args.Length: which = args[++i]; break;
                 case "--title"   when i + 1 < args.Length: text  = args[++i]; break;
                 case "--text"    when i + 1 < args.Length: text  = args[++i]; break;
+                // §5.12, and see Entry's note: the correction covers both halves of what a person
+                // wrote, here as in the window.
+                case "--note"    when i + 1 < args.Length: _note = args[++i]; break;
                 default:
                     if (args[i].StartsWith('-') || workspace is not null)
                     { failure = JsonRun.Fail(CliDiagnostics.RunUnknownOption(verb, args[i])); return false; }
@@ -1123,7 +1151,8 @@ internal static class History
         v.WhenUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ"),
         v.Title,
         v.Who,
-        v.RestoredFrom?.Label);
+        v.RestoredFrom?.Label,
+        v.Note.Length > 0 ? v.Note : null);
 
     /// <inheritdoc cref="ToJson(HistoryVersion)"/>
     private static RestorePointJson ToJson(RestorePoint p) => new(
@@ -1133,18 +1162,21 @@ internal static class History
         p.Label,
         p.Kept,
         p.LeftOut,
-        p.Thinned);
+        p.Thinned,
+        p.Note.Length > 0 ? p.Note : null);
 
     private static int Usage()
     {
         Console.Error.WriteLine(
-            "usage: circuitrf history checkpoint <workspace> [--intent <text>] [--leave-out <path>]\n"
+            "usage: circuitrf history checkpoint <workspace> [--intent <text>] [--note <text>]\n"
+          + "                                    [--leave-out <path>]\n"
           + "                                    [--include-large] [--unattended] [--create-repository]\n"
           + "       circuitrf history list <workspace> [--limit <n>] [--include-automatic]\n"
           + "                                  [--kinds versions,save-points,ai-batches,automatic,tidied-away]\n"
           + "                                  [--search <text>]\n"
           + "       circuitrf history restore <workspace> --point <number>\n"
-          + "       circuitrf history commit <workspace> [--title <text>] [--leave-out <path>]\n"
+          + "       circuitrf history commit <workspace> [--title <text>] [--note <text>]\n"
+          + "                                  [--leave-out <path>]\n"
           + "       circuitrf history versions <workspace> [--limit <n>] [--changes <version>]\n"
           + "       circuitrf history clone <address> <folder>\n"
           + "       circuitrf history pins <workspace>\n"
@@ -1152,10 +1184,10 @@ internal static class History
           + "       circuitrf history unpin <workspace> --alias <name>\n"
           + "       circuitrf history fetch <workspace>\n"
           + "       circuitrf history send <workspace>\n"
-          + "       circuitrf history rename <workspace> --point <number> --label <text>\n"
+          + "       circuitrf history rename <workspace> --point <number> --label <text> [--note <text>]\n"
           + "       circuitrf history forget <workspace> --point <number>\n"
-          + "       circuitrf history retitle <workspace> [--version <id>] --title <text>\n"
-          + "       circuitrf history correct <workspace> [--version <id>] --text <text>\n"
+          + "       circuitrf history retitle <workspace> [--version <id>] --title <text> [--note <text>]\n"
+          + "       circuitrf history correct <workspace> [--version <id>] --text <text> [--note <text>]\n"
           + "       circuitrf history review <workspace> [--send | --copy | --archive]");
         return 2;
     }

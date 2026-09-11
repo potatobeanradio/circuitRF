@@ -1,5 +1,64 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The longer note in the three history dialogs, and two gates that guarded a shape by proxy (2026-09-11)
+
+`docs/design/revision-control.md` §5.12. Keep This Version…, Keep This State… and Correct What You
+Wrote… each gained a multi-line field behind an expander; the panel shows it in the row's expander with
+a small glyph on the row saying there is one. The encoding is `MessageNotes` in `src/Design` — see that
+project's RESOLVED for why the extent is counted.
+
+**The expander is CLOSED on the two recording dialogs and OPEN on the correction dialog when there is
+something in it.** Recording is the common case and most entries never need a paragraph; correcting is
+the case where somebody arrived because of what is in that field.
+
+**The row gets a mark, not the text.** R-rc10-14's split puts everything a row cannot carry in the
+expander and a paragraph cannot be scanned — but an expander nobody knows to open is a paragraph nobody
+reads, which is the one way this feature fails quietly.
+
+### The field rendered a fraction of the dialog's width, and the two that looked right were luck
+
+Owner-reported the same day. **The theme sizes an Expander to its content and does not stretch the
+presenter inside its template**, so an empty multi-line TextBox — no text, no placeholder — asks for
+its minimum and gets it. Measured headlessly, before and after, against the built dialogs:
+
+| dialog | expander | note field |
+|---|---|---|
+| Correct What You Wrote…, before | 438 px of 620 | 400 px |
+| Correct What You Wrote…, after | 588 px | 550 px |
+| Keep This Version… (unchanged either way) | 608 px of 640 | 570 px |
+| Keep This State… (unchanged either way) | 588 px of 620 | 550 px |
+
+**The two Keep dialogs measured full width all along and only by accident**: a long `PlaceholderText`
+was padding out the TextBox's desired width. That is what hid the defect during the build, and it is
+why all three now carry the class rather than two of them depending on a string.
+
+`HorizontalContentAlignment` on the control is not enough — the presenter inside the template has to
+be stretched, and the header's ToggleButton with it or the control changes width as it is toggled.
+`AnalysesListView` found all three the hard way in 2026 and kept a private copy; they are now
+`Expander.fill` in `CircuitRfStyles.axaml`, opt-in, because several expanders in this application are
+deliberately content-sized.
+
+**The measurement is not in the suite** — `tests/Ui.Tests` has no headless Avalonia host, and adding
+one to assert a layout is a larger change than this bug warrants. The gate is the class on all three
+fields plus the style's existence (`NotesOnEntriesTests.TheNoteFieldSpansItsDialog`); the numbers above
+came from a throwaway `Avalonia.Headless` probe that loaded the real dialogs and read `Bounds.Width`.
+
+### Two existing tests asserted a shape through a proxy that this broke
+
+Both were correct about their invariant and wrong about how they checked it, and both now check the
+invariant itself:
+
+- `CorrectingWhatYouWroteTests.TheUnSoftenedSentenceIsPresentAndIsNotHidden` asserted the correction
+  dialog's XAML contains **no `<Expander` at all**, as a proxy for R-rc11-14's "this sentence is on the
+  face of the dialog". The rule has never been "no expander anywhere". It now strips every
+  `<Expander>…</Expander>` block and asserts `NoticeText` survives, which is the actual claim.
+- `OneHistoryPanelTests.ALongTitleIsTrimmedRatherThanDrawnOverTheMarkBesideIt` matched the literal
+  `ColumnDefinitions="Auto,Auto,*"`, as a proxy for "the title is in the star column" — its own comment
+  said the count was not the invariant, and then spelled the count out. The note glyph added a fourth
+  column. It now parses the column list, asserts the last column is the star one, and asserts the
+  title's `Grid.Column` is the last index.
+
+
 ## Arrow-key pan on every document, and the Zoom In button became a magnifier that arms (2026-09-11)
 
 Two owner requests, one round. Both exist because a **trackpad has no middle mouse button** and no

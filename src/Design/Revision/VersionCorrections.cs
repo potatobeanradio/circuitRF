@@ -4,6 +4,47 @@ using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Revision;
 
+/// <summary>
+/// <b>What §5.11 case (c)'s annotation holds</b> — a corrected title and, since §5.12, a corrected
+/// note (RC-12 R-rc12-6).
+///
+/// <para><b>It is shaped like a message because it stands in for one.</b> The first line is the title
+/// the row shows in place of the original; anything after it is the longer note, shown where the
+/// original's would have been. A single-line annotation — every one written before notes existed — is
+/// a title and no note, which is what it always meant.</para>
+/// </summary>
+/// <param name="Title">The corrected line. Never empty on an annotation that exists.</param>
+/// <param name="Note">The corrected note, or an empty string.</param>
+public sealed record VersionCorrection(string Title, string Note = "")
+{
+    /// <summary>Reads one back out of the object git handed over.</summary>
+    public static VersionCorrection Of(string text)
+    {
+        var lines = (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        string title = lines.Length > 0 ? lines[0].Trim() : "";
+        string note  = lines.Length > 1 ? string.Join('\n', lines[1..]).Trim() : "";
+        return new VersionCorrection(title, note);
+    }
+
+    /// <summary>What gets written. Empty when there is nothing to correct, which REMOVES the
+    /// annotation and puts the original in front again.</summary>
+    public string Text
+    {
+        get
+        {
+            string title = Title.ReplaceLineEndings(" ").Trim();
+            string note  = MessageNotes.Text(Note);
+
+            if (title.Length == 0 && note.Length == 0) return "";
+            if (note.Length == 0)                      return title;
+            return title + "\n\n" + note;
+        }
+    }
+
+    /// <summary>Whether this annotation says anything at all.</summary>
+    public bool IsEmpty => Text.Length == 0;
+}
+
 /// <summary>What one correction did, or why it was refused.</summary>
 /// <param name="Ok">Whether anything changed.</param>
 /// <param name="Version">The entry as it now reads, when a title was corrected.</param>
@@ -69,7 +110,14 @@ public static class VersionCorrections
     /// <param name="title">What it should say. Blank is a refusal — a correction to nothing is not a
     /// correction, and the entry would list as <see cref="CommitMessage.UntitledVersion"/>, which is
     /// not what anybody opening this dialog meant.</param>
-    public static CorrectionOutcome CorrectTitle(GitCommand git, HistoryVersion version, string? title)
+    /// <param name="note">
+    /// §5.12's longer note (R-rc12-5). <b>Null leaves the one already there alone</b> — what every
+    /// caller that predates notes means — and a value replaces it, an empty one removing it. Written
+    /// into the message that is being rewritten anyway, so correcting both costs exactly what
+    /// correcting one costs.
+    /// </param>
+    public static CorrectionOutcome CorrectTitle(GitCommand git, HistoryVersion version, string? title,
+                                                 string? note = null)
     {
         string wanted = OneLine(title);
         if (wanted.Length == 0)
@@ -92,6 +140,10 @@ public static class VersionCorrections
 
         var original = Parse(raw);
         string message = ReplaceSubject(original.Message, wanted);
+
+        // R-rc11-4's rule, applied to the note: ONE thing moves and the rest of the message — the
+        // explanation line, every trailer, R-rc7-6's restored-from pair — is carried through verbatim.
+        if (note is not null) message = MessageNotes.Replace(message, note);
 
         List<string> write = ["commit-tree", original.TreeId];
         foreach (string parent in original.Parents) { write.Add("-p"); write.Add(parent); }
@@ -118,6 +170,7 @@ public static class VersionCorrections
         RestoreProvenance.Retitle(git.WorkspaceRoot, version.CommitId, written.Line, wanted);
 
         var corrected = version with { CommitId = written.Line, Title = wanted };
+        if (note is not null) corrected = corrected with { Note = MessageNotes.Text(note) };
         return new CorrectionOutcome(true, corrected, HistoryMessages.TitleCorrected(wanted));
     }
 
@@ -172,12 +225,22 @@ public static class VersionCorrections
     /// correction they did not mean — and is not a way to erase anything, because the original was
     /// never altered.</para>
     /// </summary>
-    public static CorrectionOutcome Annotate(GitCommand git, HistoryVersion version, string? correction)
+    /// <param name="note">§5.12's longer note, corrected alongside the title and carried in the same
+    /// object (R-rc12-6). It travels with the version exactly as the corrected title does.</param>
+    public static CorrectionOutcome Annotate(GitCommand git, HistoryVersion version, string? correction,
+                                             string? note = null)
     {
         git.Identity ??= RevisionIdentity.Resolve(git);
         if (git.Identity is null) return CorrectionOutcome.Refused(GitFailures.NoIdentity());
 
-        string text = (correction ?? "").Trim();
+        // A correction to the NOTE ALONE is a real request — `history correct --note …` with no
+        // --text — and it must not produce an annotation whose first line is blank, because that first
+        // line is what stands in for the title wherever this version is listed. The title it already
+        // has is what it should go on saying.
+        string title = (correction ?? "").Trim();
+        if (title.Length == 0 && MessageNotes.Text(note).Length > 0) title = version.Title;
+
+        string text = new VersionCorrection(title, note ?? "").Text;
 
         if (text.Length == 0)
         {
@@ -200,10 +263,13 @@ public static class VersionCorrections
         // row already shows the correction in place of the original (R-rc11-13). So what the next
         // commit says it came back from is the correction too, rather than a sentence contradicting
         // the row directly above it. The identity is unchanged: a note leaves the commit alone.
-        if (added.Ok) RestoreProvenance.Retitle(git.WorkspaceRoot, version.CommitId, version.CommitId, text);
+        if (added.Ok)
+            RestoreProvenance.Retitle(git.WorkspaceRoot, version.CommitId, version.CommitId,
+                                      VersionCorrection.Of(text).Title);
 
         return added.Ok
-            ? new CorrectionOutcome(true, version, HistoryMessages.CorrectionAdded(text))
+            ? new CorrectionOutcome(true, version, HistoryMessages.CorrectionAdded(
+                  VersionCorrection.Of(text).Title))
             : CorrectionOutcome.Refused(GitFailures.Translate(
                   added, HistoryMessages.CorrectingATitle, git.WorkspaceRoot));
     }
@@ -219,9 +285,9 @@ public static class VersionCorrections
     /// <para><b>An empty answer is the ordinary one</b> — most workspaces have never had a correction
     /// written in them — and it costs one process that fails and is not an error.</para>
     /// </summary>
-    public static IReadOnlyDictionary<string, string> Annotations(GitCommand git)
+    public static IReadOnlyDictionary<string, VersionCorrection> Annotations(GitCommand git)
     {
-        var empty = new Dictionary<string, string>(StringComparer.Ordinal);
+        var empty = new Dictionary<string, VersionCorrection>(StringComparer.Ordinal);
 
         var listed = git.Run(["notes", "--ref", NotesRef, "list"], new GitRunOptions(ReadOnly: true));
         if (!listed.Ok) return empty;
@@ -239,10 +305,10 @@ public static class VersionCorrections
 
         var bodies = ReadBlobs(git, noteOf.Values);
 
-        Dictionary<string, string> corrections = new(StringComparer.Ordinal);
+        Dictionary<string, VersionCorrection> corrections = new(StringComparer.Ordinal);
         foreach (var (commitId, noteId) in noteOf)
             if (bodies.TryGetValue(noteId, out string? text) && text.Trim().Length > 0)
-                corrections[commitId] = text.Trim();
+                corrections[commitId] = VersionCorrection.Of(text.Trim());
 
         return corrections;
     }

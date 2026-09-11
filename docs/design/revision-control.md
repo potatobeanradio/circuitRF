@@ -1668,6 +1668,65 @@ The scan that holds that shut (RC-7 gate 11) narrows rather than lifts — see �
 
 ---
 
+### 5.12 The longer note *(new in rev 7)*
+
+**Status: BUILT 2026-09-11** · `MessageNotes` in `src/Design/Revision/`, the second field on
+`KeepThisVersionDialog`, `KeepThisStateDialog` and `CorrectWhatYouWroteDialog`, `--note` on five nouns
+of `circuitrf history` and on the `history checkpoint` tool, gated by
+`tests/Ui.Tests/Revision/NotesOnEntriesTests.cs`.
+
+**A title is one line and some decisions need a paragraph.** "Output match retuned" is what a designer
+scans a list for six weeks later — and *why* it was retuned, what was tried first, what the measurement
+said and which of two options this is are the parts that cannot be recovered from the files at all.
+Before this there was nowhere to put them: the dialogs asked for one line and the panel showed one
+line, so the reasoning either went into a title too long to scan or went nowhere.
+
+**Both recording dialogs ask for both, and the second is behind an expander, closed.** Most entries do
+not need a paragraph, and a second field in front of every designer makes the one that matters harder
+to reach rather than easier — the same argument §5.11's escape-hatch paragraph is collapsed under.
+**A designer who writes nothing loses nothing:** an entry with no note is written byte for byte as it
+was before this existed, with no block and no trailer saying it has none.
+
+**It is corrected where the title is** (§5.11's dialog, and all three of its cases unchanged). They
+were written together, about one entry, and a designer who has just noticed the title is careless has
+very often noticed the paragraph too. So case (a) rewrites the parentless checkpoint, case (b) rewrites
+the unshared commit, and case (c) annotates — with the annotation now holding both halves, its first
+line the corrected title and the rest the corrected note. **A single-line annotation written before
+this existed still means a title and no note**, which is what it always meant.
+
+**Four decisions worth stating, because each one is the thing that would otherwise fail quietly:**
+
+- **R-rc12-1 — it lives in the BODY of the message the entry already carries**, not in a side file.
+  The metadata has to survive everything the object survives (§5.2b's argument, unchanged), and the
+  body is where a paragraph belongs in any case: §4.1's escape hatch reads it as ordinary prose under
+  the title with no parser anybody has to learn.
+- **R-rc12-2 — its extent is COUNTED, in a `CircuitRF-Note-Lines` trailer, never inferred.** The
+  obvious alternative is to recognise circuitRF's own generated sentences and treat whatever is left
+  as the note; that fails silently the first time one of those sentences is reworded, and every
+  workspace recorded before the change then reads its own explanation back as part of somebody's note.
+  The count is read from the FINAL run of trailer lines alone, because a note is free text and a line
+  of it can look like a trailer — a note able to describe its own extent is a note that can be made to
+  hide the rest of the message.
+- **R-rc12-3 — every operation that REBUILDS an entry's message carries it through.** Marking an entry
+  *keep* and renaming one both rewrite the whole message over the identical tree; either of them
+  dropping the note would delete somebody's paragraph as a side effect of an operation about a label,
+  with nothing said anywhere. R-rc11-4 already states this rule for the sequence, the origin, the kept
+  mark and the left-out record; the note joins that list.
+- **R-rc12-4 — the row says there IS one; the expander is where it is read.** §5.10 rule 3's split is
+  what keeps the list scannable and a paragraph cannot be scanned — but an expander nobody knows to
+  open is a paragraph nobody reads, which is the one way this feature fails quietly. So the row carries
+  one small glyph and no accent: it marks content, not importance.
+
+**And the search reads it** (R-rc10-9 extended). It is the half most worth searching: a title is four
+words somebody chose under pressure, and the paragraph under it is where they wrote down the part they
+would later go looking for.
+
+**What does not change.** Nothing here alters what was recorded — a note is commentary in exactly
+§5.11's sense, and it is correctable on exactly §5.11's terms. A restore point's note stays on this
+machine because the entry does (§5.2a); a version's travels with the version because the message does.
+
+---
+
 ## 6. Where the software analogy breaks
 
 This section exists because the failure mode of this whole idea is importing software-engineering

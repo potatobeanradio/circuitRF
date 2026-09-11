@@ -791,7 +791,7 @@ public class OneHistoryPanelTests
 
         var sources = new HistorySources(
             [], [Pt("aaa", 1), Pt("bbb", 2)], [], SharedVersions.Local,
-            new Dictionary<string, string>(StringComparer.Ordinal), 0);
+            new Dictionary<string, VersionCorrection>(StringComparer.Ordinal), 0);
 
         // Pure, and it does not touch the entry it was not asked about.
         var tidied = sources.WithThinned("aaa", true);
@@ -851,8 +851,19 @@ public class OneHistoryPanelTests
         int grid  = before.LastIndexOf("<Grid ColumnDefinitions=\"Auto,", StringComparison.Ordinal);
         int stack = before.LastIndexOf("<StackPanel Orientation=\"Horizontal\"", StringComparison.Ordinal);
 
-        Assert.True(grid > 0 && axaml[grid..].StartsWith("<Grid ColumnDefinitions=\"Auto,Auto,*\"", StringComparison.Ordinal),
-                    "the title's own column is no longer the star one, so nothing constrains its width.");
+        Assert.True(grid > 0, "the title is no longer inside a Grid at all.");
+
+        // The COLUMN LIST IS NOT SPELLED OUT HERE and the count is not the invariant (§5.12 added a
+        // fourth column, for the mark saying an entry carries a longer note). What makes the ellipsis
+        // engage is that the title occupies the STAR column, so that is what is asserted: the last
+        // column is the star one, and the title's own index is the last index.
+        int listStart = grid + "<Grid ColumnDefinitions=\"".Length;
+        int listEnd   = axaml.IndexOf('"', listStart);
+        string[] columns = axaml[listStart..listEnd].Split(',');
+
+        Assert.Equal("*", columns[^1].Trim());
+        Assert.Contains($"Grid.Column=\"{columns.Length - 1}\"",
+                        axaml[(at - 200)..at], StringComparison.Ordinal);
 
         Assert.True(grid > stack,
                     "the title is back inside a horizontal StackPanel, which measures with infinite "

@@ -97,7 +97,7 @@ public static class TitlesLeaving
         foreach (var v in versions)
             titles.Add(new LeavingTitle(
                 v.CommitId, v.Title,
-                corrections.TryGetValue(v.CommitId, out string? c) ? c : null,
+                corrections.TryGetValue(v.CommitId, out var c) ? c.Title : null,
                 v.WhenUtc, v.Who));
 
         // An archive carries the restore points too (§5.2a), and their labels are what a designer

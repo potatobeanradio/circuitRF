@@ -556,10 +556,14 @@ public class CorrectingWhatYouWroteTests
         // And it is on the FACE of the dialog. An expander is where §8.3's paragraph belongs — the
         // answer to a question most designers never ask — and this is the opposite: it is the answer
         // to the question the person opening this dialog already has.
+        //
+        // Asserted by REMOVING every expander and checking the notice is still there, rather than by
+        // forbidding the word: §5.12 put the longer note behind one in this same dialog, and the rule
+        // has never been "no expander anywhere" — it is that THIS sentence is not inside one.
         string xaml = RestorePointsTests.ReadSource(
             "src/Ui/Views/Dialogs/CorrectWhatYouWroteDialog.axaml");
         Assert.Contains("x:Name=\"NoticeText\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("<Expander", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NoticeText\"", WithoutExpanders(xaml), StringComparison.Ordinal);
 
         // There is no delete on the shared case and no code path behind one (R-rc11-12).
         string behind = RestorePointsTests.StripComments(RestorePointsTests.ReadSource(
@@ -1054,6 +1058,24 @@ public class CorrectingWhatYouWroteTests
         => ws.Raw("--no-pager", "log", "-1", "--format=%B", commitId).Out;
 
     /// <summary>An armed workspace with a resolvable identity.</summary>
+    /// <summary>
+    /// The XAML with every <c>&lt;Expander&gt;…&lt;/Expander&gt;</c> block cut out, so "this control is
+    /// not hidden behind one" can be asserted about a named control rather than about the file.
+    /// </summary>
+    private static string WithoutExpanders(string xaml)
+    {
+        while (true)
+        {
+            int open = xaml.IndexOf("<Expander", StringComparison.Ordinal);
+            if (open < 0) return xaml;
+
+            int close = xaml.IndexOf("</Expander>", open, StringComparison.Ordinal);
+            Assert.True(close > 0, "an <Expander> in this file is never closed.");
+
+            xaml = xaml[..open] + xaml[(close + "</Expander>".Length)..];
+        }
+    }
+
     private static GitWorkspace Armed()
     {
         var ws = new GitWorkspace();

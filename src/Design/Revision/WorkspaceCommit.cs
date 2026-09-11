@@ -64,10 +64,14 @@ public static class WorkspaceCommit
     /// <see cref="CommitMessage.UntitledVersion"/>; it is never a bare time.</param>
     /// <param name="extraExclusions">Workspace-relative paths the caller is leaving out — the same
     /// large-file boundary a checkpoint honours.</param>
+    /// <param name="note">§5.12's longer note, or null. Written into the body of the message this
+    /// version carries; a version nobody wrote one for is byte-identical to what this produced
+    /// before.</param>
     public static CommitResult Commit(
         GitCommand             git,
         string?                title,
-        IReadOnlyList<string>? extraExclusions = null)
+        IReadOnlyList<string>? extraExclusions = null,
+        string?                note            = null)
     {
         // §4.4's first sentence, checked BEFORE the invocation rather than recognised from git's
         // English afterwards: if nobody can be named, nothing is recorded.
@@ -112,7 +116,7 @@ public static class WorkspaceCommit
                      ? new RestoredFrom(state.Label, state.TakenUtc)
                      : null;
 
-            string message = CommitMessage.Build(title, from);
+            string message = CommitMessage.Build(title, from, note);
 
             List<string> commit = ["commit-tree", treeId];
             if (parent is { } p) { commit.Add("-p"); commit.Add(p); }

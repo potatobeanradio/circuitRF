@@ -15,8 +15,8 @@
     {
       "Index": 2,
       "Slot": 1,
-      "Id": "",
-      "Tooltip": "Zoom In",
+      "Id": "ZoomBoxToolBtn",
+      "Tooltip": "Zoom Box  (Z) \u2014 drag a box to zoom to it  (Esc cancels; Ctrl\u002B \u002B/- steps)",
       "Icon": "SearchPlusOutline",
       "Command": null,
       "Kind": "button"

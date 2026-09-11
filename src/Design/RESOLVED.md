@@ -1,5 +1,65 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## RC-12 — the longer note on a history entry, and where a note is allowed to live (2026-09-11)
+
+`docs/design/revision-control.md` §5.12. Both recording dialogs and the correction dialog now carry a
+second, multi-line field; `MessageNotes` is the one encoding, and `CommitMessage`, `CheckpointMessage`,
+`WorkspaceCommit`, `WorkspaceCheckpoints`, `RestorePoints.Rename`/`MarkKept` and `VersionCorrections`
+all route through it. Gate: `tests/Ui.Tests/Revision/NotesOnEntriesTests.cs`.
+
+### The extent is COUNTED, and that is not fussiness
+
+The note sits in the body of the message the entry already carries, directly under the subject. The
+obvious way to read it back is to recognise circuitRF's own generated sentences — `ExplicitLine`, the
+restored-from line, `Explanation(origin)` — and treat whatever is left as the note. **That fails
+silently the first time one of those sentences is reworded**, and every workspace recorded before the
+change then reads its own explanation back as part of somebody's paragraph. There is no error and no
+way to notice except by reading an old entry.
+
+So a `CircuitRF-Note-Lines: N` trailer says how long it is, and the note is lines `[2, 2+N)`. Exact,
+reworded-sentence-proof, and ignored on the way in by every reader that predates it.
+
+### The count is read from the TRAILING trailer block alone
+
+A note is free text a person typed, so a line of it can perfectly well read `CircuitRF-Origin: …`.
+Scanning the whole message for the count would let **a note describe its own extent** — and both
+readers would then parse a line of somebody's prose as a key. `MessageNotes.CountedLines` therefore
+walks backwards from the end over blank and trailer lines and stops at the first line that is neither,
+which is git's own definition of a trailer block. Both builders put a generated sentence between the
+note and the trailers, so the note can never be inside that run.
+
+The same extent is then stepped over by `CommitMessage.Read` and `CheckpointMessage.Read` — otherwise
+the note's first line is read as the SUBJECT on any entry whose own subject line is blank, and a
+trailer-shaped line inside it overwrites a real trailer.
+
+### Every rebuild has to carry it, and two of them are easy to miss
+
+`RestorePoints.MarkKept` and `RestorePoints.Rename` rebuild the whole message over the identical tree.
+Either of them dropping the note deletes somebody's paragraph as a side effect of an operation about a
+label, with nothing said anywhere — the same trap R-rc11-4 already records for the sequence, the
+origin, the kept mark and the left-out record. `Rename`'s early-out also had to learn about it: it
+returned success without writing when the label was unchanged, so **correcting only the note reported
+success and wrote nothing**.
+
+### Null is "leave it alone"; empty is "remove it"
+
+Every design-layer entry point takes `string? note = null`. Null is what a caller that predates notes
+means and is what `history retitle --title …` with no `--note` means, so correcting a title never
+discards the paragraph under it. An empty string removes the block and the trailer.
+
+### A no-note entry is byte-identical to what was written before
+
+No block, no trailer, nothing. Asserted directly, because the alternative is every workspace growing a
+line that says an entry has no note — visible in every message anybody ever reads with `git log`, and
+a format change made by accident.
+
+### The shared-version annotation became a message
+
+§5.11 case (c) writes a git note on `refs/notes/circuitrf`, which was the corrected title as one line.
+It is now `VersionCorrection` — first line the title, remainder the note — and **a single-line
+annotation written before this still means a title and no note**, which is what it always meant.
+
+
 ## ANT-1 — a width-bearing Path is metal, and it never was (2026-09-10)
 
 `brief-antenna-1-stroked-path-is-metal.md`. `PlanarExtractor` discarded **every** `PathShape` on

@@ -309,7 +309,7 @@
                          TextTrimming never engaged and a long one ran straight over the "tidied away"
                          mark in the next column. The star column is what gives the text a width to be
                          trimmed against; the ellipsis was there all along and had nothing to bite on. -->
-                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="4">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="4">
                       <!-- R-rc10-2. ONE MARK carries the whole difference between the two kinds. It
                            says titled, permanent, travels — three promises the unmarked rows do not
                            make — and it is not an importance badge. One mark and one accent: a second
@@ -327,7 +327,16 @@
                       <TextBlock Grid.Column="1" Text="{Binding ShortIdentity}" FontFamily="monospace"
                                  Opacity="0.55" TextWrapping="NoWrap"
                                  IsVisible="{Binding HasShortIdentity}" />
-                      <TextBlock Grid.Column="2" Text="{Binding Title}"
+                      <!-- §5.12. THE ROW SAYS THERE IS A NOTE; IT DOES NOT SAY WHAT IT IS. A paragraph
+                           cannot be scanned and R-rc10-14's split puts it in the expander — but an
+                           expander nobody knows to open is a paragraph nobody reads, which is the one
+                           way this feature fails quietly. One glyph, no accent: it marks content, not
+                           importance, and the accent is already spent on the version mark. -->
+                      <mi:MaterialIcon Grid.Column="2" Kind="TextBoxOutline" Width="10" Height="10"
+                                       VerticalAlignment="Center" Opacity="0.55"
+                                       IsVisible="{Binding HasNote}"
+                                       ToolTip.Tip="There is more detail on this entry — open it to read it." />
+                      <TextBlock Grid.Column="3" Text="{Binding Title}"
                                  TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                                  ToolTip.Tip="{Binding Title}" />
                     </Grid>
@@ -356,6 +365,14 @@
                    opening this expander is that action. It is the one string with which a designer, or
                    somebody helping them, can ask a question circuitRF's own window cannot answer. -->
               <StackPanel Margin="24,2,6,6" Spacing="2">
+                <!-- §5.12. FIRST IN THE EXPANDER, because it is the only thing here somebody wrote:
+                     everything under it is a fact circuitRF recorded, and a paragraph a designer typed
+                     on purpose does not belong below an identifier. Selectable, so a line of it can be
+                     taken out into a message to a colleague. -->
+                <SelectableTextBlock Text="{Binding Note}" FontSize="11" TextWrapping="Wrap"
+                                     Margin="0,2,0,4" IsVisible="{Binding HasNote}"/>
+                <TextBlock Text="{Binding OriginalNoteText}" FontSize="10" Opacity="0.75"
+                           TextWrapping="Wrap" IsVisible="{Binding IsNoteCorrected}"/>
                 <TextBlock Text="{Binding FullWhen}"     FontSize="10" Opacity="0.75" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding Origin}"       FontSize="10" Opacity="0.75" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding Reach}"        FontSize="10" Opacity="0.75" TextWrapping="Wrap"/>

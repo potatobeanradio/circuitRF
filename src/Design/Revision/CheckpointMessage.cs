@@ -33,6 +33,9 @@ public static class CheckpointMessage
     /// <summary>Repeatable: one line per workspace-relative path left out under R-rc5-15a.</summary>
     public const string LeftOutKey  = KeyPrefix + "Left-Out";
 
+    /// <summary>§5.12's longer note, when somebody wrote one. See <see cref="MessageNotes"/>.</summary>
+    public const string NoteLinesKey = MessageNotes.LinesKey;
+
     /// <summary>
     /// What the list shows when the user asked for a save-point and typed nothing (R-rc5-5a).
     /// <b>Never a bare time</b>: a time is what every entry already has, so an entry labelled only
@@ -112,24 +115,43 @@ public static class CheckpointMessage
     /// the sequence, the kept mark and the left-out record are unaffected either way: the label is the
     /// only thing a rename moves.</para>
     /// </param>
+    /// <param name="note">
+    /// §5.12's longer note — what the label has no room for. Null or blank writes <b>nothing at
+    /// all</b>, so an entry nobody wrote a paragraph for is byte-identical to the one this produced
+    /// before notes existed. It is carried through every rebuild of the message for
+    /// <paramref name="subject"/>'s reason: a mark-keep or a rename that dropped it would delete
+    /// somebody's paragraph as a side effect of tidying a label.
+    /// </param>
     public static string Build(
         CheckpointOrigin       origin,
         string?                label,
         long                   sequence,
         bool                   kept        = false,
         IReadOnlyList<string>? leftOut     = null,
-        string?                subject     = null)
+        string?                subject     = null,
+        string?                note        = null)
     {
         string line = subject?.ReplaceLineEndings(" ").Trim() is { Length: > 0 } given
                     ? given
                     : SubjectFor(origin, label);
 
+        var noteLines = MessageNotes.Lines(note);
+
         var text = new StringBuilder();
         text.Append(line).Append('\n').Append('\n');
+
+        // MessageNotes.FirstLine: directly under the subject, and always with a generated sentence
+        // between it and the trailer block.
+        foreach (string body in noteLines) text.Append(body).Append('\n');
+        if (noteLines.Count > 0) text.Append('\n');
+
         text.Append(Explanation(origin)).Append('\n').Append('\n');
 
         text.Append(SequenceKey).Append(": ").Append(sequence).Append('\n');
         text.Append(OriginKey).Append(": ").Append(Spell(origin)).Append('\n');
+
+        if (noteLines.Count > 0)
+            text.Append(NoteLinesKey).Append(": ").Append(noteLines.Count).Append('\n');
 
         if (label?.Trim() is { Length: > 0 } intent)
             text.Append(IntentKey).Append(": ").Append(intent.ReplaceLineEndings(" ").Trim()).Append('\n');
@@ -177,9 +199,16 @@ public static class CheckpointMessage
 
         var lines = (message ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
+        // §5.12, and the same reason CommitMessage.Read steps over it: a note is free text, so one of
+        // its lines may look like a trailer, and its first line would be read as the subject on an
+        // entry whose own subject line was blank.
+        var note = MessageNotes.Extent(lines);
+
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i];
+
+            if (MessageNotes.IsNoteLine(i, note)) continue;
 
             if (subject.Length == 0 && line.Trim().Length > 0 && !IsTrailer(line))
                 subject = line.Trim();
@@ -211,7 +240,10 @@ public static class CheckpointMessage
                          or CheckpointOrigin.RecordingOff
                          or CheckpointOrigin.RecordingOn) kept = true;
 
-        return new CheckpointMetadata(subject, sequence, parsedOrigin, intent, kept, leftOut);
+        return new CheckpointMetadata(subject, sequence, parsedOrigin, intent, kept, leftOut,
+                                      note.Start == note.End
+                                          ? ""
+                                          : string.Join('\n', lines[note.Start..note.End]).Trim());
     }
 
     private static bool IsTrailer(string line)
@@ -225,10 +257,12 @@ public static class CheckpointMessage
 /// <param name="Intent">The label the user or the agent supplied, when there was one.</param>
 /// <param name="Kept">Whether retention may thin it (R-rc5-1f).</param>
 /// <param name="LeftOut">Paths left out at an unattended boundary (R-rc5-15a).</param>
+/// <param name="Note">§5.12's longer note, or an empty string.</param>
 public sealed record CheckpointMetadata(
     string                Subject,
     long?                 Sequence,
     CheckpointOrigin      Origin,
     string?               Intent,
     bool                  Kept,
-    IReadOnlyList<string> LeftOut);
+    IReadOnlyList<string> LeftOut,
+    string                Note = "");

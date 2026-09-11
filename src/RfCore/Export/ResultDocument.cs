@@ -905,13 +905,17 @@ namespace RfCore.Export
     /// exactly the versions that need it</b> (R-rc7-6): without it, two consecutive versions where the
     /// second reverts the first read as a change of mind with no record of the moment.
     /// </param>
+    /// <param name="Note">The longer note the designer wrote, or absent. Omitted on the versions
+    /// nobody wrote one for, which is most of them.</param>
     public sealed record VersionJson(
         string  Id,
         string  Kept,
         string  Title,
         string  Who,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? RestoredFrom = null);
+        string? RestoredFrom = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Note = null);
 
     /// <summary>One document that differs between two versions.</summary>
     /// <param name="Path">Where it is in the workspace.</param>
@@ -938,6 +942,8 @@ namespace RfCore.Export
     /// thinning drops the pointer and leaves the state, and nothing reclaims it unless a person asks.
     /// Omitted when false, which is every entry written before RC-6.
     /// </param>
+    /// <param name="Note">The longer note somebody wrote, or absent. Omitted on the entries nobody
+    /// wrote one for, which is most of them.</param>
     public sealed record RestorePointJson(
         long                  Sequence,
         string                Taken,
@@ -946,7 +952,9 @@ namespace RfCore.Export
         bool                  Kept,
         IReadOnlyList<string> LeftOut,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-        bool                  Thinned = false);
+        bool                  Thinned = false,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               Note = null);
 
     public sealed record ReferenceReportJson(
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

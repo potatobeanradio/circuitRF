@@ -129,8 +129,25 @@ One field: a title. Write what the design *is* at this moment, not what you did 
 only thing that tells one version from another, and it is what anyone you send the workspace to will
 read first.
 
+**And, under *Add more detail*, as much as you want to write.** A title is one line and some decisions
+need a paragraph: what you tried first, what the measurement actually said, which of two options this
+is and why you took it. That is the part the files themselves can never tell you afterwards. The field
+is closed until you open it and you never have to use it — but when a version matters, it is the
+difference between a line you recognise and a line you can act on.
+
+It is kept with the version and travels with it, so whoever you send the workspace to reads it too.
+[You can correct it later](#titles), exactly as you can correct the title.
+
 What is recorded is **the whole workspace as it stands**: every cell, every schematic, every layout, the
 technology, the workspace's own configuration. Not just the document you have open.
+
+**Keep This State… asks for the same two things**, and the same way round: one line for the list, and
+as much detail as you want behind the expander. On a save-point the detail is usually *what you were in
+the middle of* — the part you would otherwise have to reconstruct when you come back to it on Monday.
+
+**Where you read it back.** The row in the History panel shows the title and a small mark saying there
+is more; **open the row** and the note is at the top of what unfolds, above the time and the identity.
+The [search](#search) reads it too, which is very often how you find the entry at all.
 
 <div class="callout note">
 <span class="label">Nothing changed means nothing to keep, and you are told before you type</span>
@@ -239,9 +256,13 @@ is not something anybody else inherits.
 ### Search
 
 The magnifier opens a field, and it searches **what a person wrote** — the titles you gave your
-versions, what an assistant said it was about to do, and who kept each entry. *"I broke the match
-network yesterday"* is a search, and scrolling a year of entries to perform it is doing the machine's
-work for it.
+versions, **the longer notes under them**, what an assistant said it was about to do, and who kept each
+entry. *"I broke the match network yesterday"* is a search, and scrolling a year of entries to perform
+it is doing the machine's work for it.
+
+The notes are the half most worth searching. A title is four words you chose in a hurry; the paragraph
+under it is where you wrote down the thing you would later go looking for — *"the 4.7 pF"*, *"the band
+edge"*, a part number.
 
 If entries that circuitRF has **tidied away** also match and the filter is hiding them, the panel says
 so on a line of its own with a count. An incomplete answer that says it is incomplete is a very
@@ -340,14 +361,20 @@ coordinates is not a picture of what moved.
 Right-click the entry. What you get depends on which of three things it is, and the difference is only
 ever about **who else has already read it**.
 
+**The longer note is edited in the same place, at the same time.** The dialog carries both: the line,
+and *More detail* under it — already open when there is something in it. You wrote them together about
+one entry, and if one of them is wrong the other very often is too. Whichever of the three cases below
+applies governs both halves.
+
 | the entry | what you can do | why |
 |---|---|---|
 | **a restore point** | **Rename this entry…** — change the label to anything. You can also **Tidy this away**. | Nothing chains to a restore point, no copy takes one and no send carries one. It is your machine's own safety net and the label is yours alone. |
 | **a version you have not shared** | **Edit Comments…** — the title changes, and that is the end of it. | Nobody else has seen it, so there is nothing to put out of step. |
 | **a version you have sent to another copy** | **Edit Comments…** — this adds a correction *beside* the original. | The original string is on somebody else's disk. circuitRF can put your wording in front of it; it cannot reach into their copy and take the old one out. |
 
-**Correcting a title never changes what the version holds.** The files, who kept it and when are the
-ones already recorded, in all three cases. A correction is about the sentence, never the design.
+**Correcting a title or a note never changes what the version holds.** The files, who kept it and when
+are the ones already recorded, in all three cases. A correction is about what you wrote, never about
+the design.
 
 circuitRF works out which case applies — you do not have to know whether a version has been sent. If it
 cannot tell (there is another copy configured and this machine has never heard from it), it takes the
@@ -373,7 +400,13 @@ away in the entry's expander, exactly as you see it here.
 **Headless:** `circuitrf history rename <workspace> --point <n> --label "…"`,
 `circuitrf history forget <workspace> --point <n>`,
 `circuitrf history retitle <workspace> --title "…"` (the newest version) and
-`circuitrf history correct <workspace> --version <id> --text "…"`.
+`circuitrf history correct <workspace> --version <id> --text "…"`. Each of the three that changes
+wording also takes `--note "…"` for the longer note — and leaving `--note` off leaves whatever is
+there alone, so correcting a title never quietly discards the paragraph under it. `--note ""` removes
+it.
+
+Recording one headlessly is the same flag: `circuitrf history commit <workspace> --title "…"
+--note "…"` and `circuitrf history checkpoint <workspace> --intent "…" --note "…"`.
 
 ## "I went back to an old version, then kept working" {#restore-then}
 

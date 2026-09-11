@@ -21,7 +21,10 @@ public enum CorrectionCase
 /// <summary>What the designer decided. Null from the dialog means they cancelled.</summary>
 /// <param name="Text">What it should say. Empty is meaningful only in case (c), where it takes the
 /// correction back and puts the original in front again.</param>
-public sealed record CorrectionChoice(string Text);
+/// <param name="Note">§5.12's longer note as it should now read — <b>never null</b>, because this
+/// dialog always shows the field and an empty one means the designer removed what was there. A caller
+/// that wanted "leave the note alone" would have to say so, and nothing here does.</param>
+public sealed record CorrectionChoice(string Text, string Note = "");
 
 /// <summary>
 /// <b>Correcting what you wrote</b> (<c>docs/design/revision-control.md</c> §5.11; RC-11 R-rc11-12 …
@@ -32,6 +35,12 @@ public sealed record CorrectionChoice(string Text);
 /// a computation (<see cref="VersionSharing"/>) and the answer decides which of two things the
 /// dialog offers. Three separate controls on the menu would make the designer perform the
 /// computation before choosing one.</para>
+///
+/// <para><b>Both halves of what a person wrote are corrected here</b> (§5.12): the title, and the
+/// longer note under it. They were written together in one dialog about one entry, and a designer who
+/// has just noticed the title is careless has very often noticed the paragraph too. Whichever of the
+/// three cases applies governs both — replaced where nobody else has seen it, added beside the
+/// original where somebody has.</para>
 ///
 /// <para><b>What changes between the cases is the wording and one notice.</b> Cases (a) and (b)
 /// replace what is written; case (c) adds a correction beside it and <b>says plainly that the
@@ -55,17 +64,30 @@ public partial class CorrectWhatYouWroteDialog : Window
     /// On case (c) with a correction already in place: the wording underneath it. Null everywhere
     /// else, because everywhere else the current text IS the original.
     /// </param>
-    public CorrectWhatYouWroteDialog(CorrectionCase which, string current, string? original)
+    /// <param name="note">§5.12's longer note as the entry reads it now — the corrected one where
+    /// there is a correction, since that is what the row is showing. Empty opens the field empty.</param>
+    /// <param name="originalNote">
+    /// On case (c) with a correction already in place: the note underneath it, shown beside the
+    /// original title for the same reason that one is shown. Null everywhere else.
+    /// </param>
+    public CorrectWhatYouWroteDialog(CorrectionCase which, string current, string? original,
+                                     string note = "", string? originalNote = null)
     {
         InitializeComponent();
 
         Title       = which == CorrectionCase.RestorePointLabel ? "Rename This Entry"
                                                                 : "Correct What You Wrote";
         TextBox.Text = current;
+        NoteBox.Text = note;
+
+        // Expanded when there is something in it. A designer who came to edit a paragraph should not
+        // have to go looking for it; one who came to fix four words should not have it in the way.
+        NoteExpander.IsExpanded = note.Length > 0;
 
         switch (which)
         {
             case CorrectionCase.RestorePointLabel:
+                NoteHint.Text   = "Kept with this entry on this machine, like the label.";
                 LeadText.Text   = "Give this entry a line you will recognise. The state it holds does "
                                 + "not change — this is the label, not the workspace.";
                 FieldLabel.Text = "What should it say?";
@@ -76,6 +98,7 @@ public partial class CorrectWhatYouWroteDialog : Window
                 break;
 
             case CorrectionCase.UnsharedTitle:
+                NoteHint.Text   = "Kept with this version and sent with it.";
                 LeadText.Text   = "Correct the title on this version. It is the line you come back to "
                                 + "and the line anyone you send this to reads first.";
                 FieldLabel.Text = "What should it say?";
@@ -92,10 +115,19 @@ public partial class CorrectWhatYouWroteDialog : Window
                 // R-rc11-14. NOT AN EXPANDER, not a tooltip, not softened.
                 NoticeText.Text = HistoryMessages.ACorrectionDoesNotErase;
 
+                // The correction covers the note as well, so what the note replaces is named the same
+                // way the title's is — and by the same rule: it is not gone, and this dialog does not
+                // pretend it is.
+                NoteHint.Text = "Added beside what this version already says. The original stays in "
+                              + "the history.";
+
                 if (original is { Length: > 0 })
                 {
                     OriginalPanel.IsVisible = true;
-                    OriginalText.Text       = "It originally said: " + original;
+                    OriginalText.Text       = "It originally said: " + original
+                                            + (originalNote is { Length: > 0 } wasNote
+                                                   ? "\n\n" + wasNote
+                                                   : "");
                     RemoveButton.IsVisible  = true;
                 }
                 break;
@@ -107,7 +139,8 @@ public partial class CorrectWhatYouWroteDialog : Window
     private readonly CorrectionCase _case;
 
     private void OnApply(object? sender, RoutedEventArgs e)
-        => Close(new CorrectionChoice((TextBox.Text ?? "").Trim()));
+        => Close(new CorrectionChoice((TextBox.Text ?? "").Trim(),
+                                      MessageNotes.Text(NoteBox.Text)));
 
     /// <summary>
     /// Takes the correction back, which is offered only in case (c) and only when there is one.
@@ -119,7 +152,7 @@ public partial class CorrectWhatYouWroteDialog : Window
     /// </summary>
     private void OnRemove(object? sender, RoutedEventArgs e)
     {
-        if (_case == CorrectionCase.SharedTitle) Close(new CorrectionChoice(""));
+        if (_case == CorrectionCase.SharedTitle) Close(new CorrectionChoice("", ""));
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);

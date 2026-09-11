@@ -151,8 +151,9 @@ public sealed class WorkspaceHistoryService
     /// <param name="label">The one optional line the dialog asked for. R-rc5-6b's reasoning applies
     /// here too — the intent is the whole value of the entry — and an entry with none shows
     /// <i>save-point</i> with its time, never a bare time (R-rc5-5a).</param>
-    public bool TakeSavePoint(string? workspaceRoot, string? label)
-        => Reach(workspaceRoot, CheckpointOrigin.SavePoint, label, attended: true);
+    /// <param name="note">§5.12's longer note, or null — what the one line has no room for.</param>
+    public bool TakeSavePoint(string? workspaceRoot, string? label, string? note = null)
+        => Reach(workspaceRoot, CheckpointOrigin.SavePoint, label, attended: true, note: note);
 
     /// <summary>
     /// R-rc5-4's third boundary — <b>the one that reliably exists in every session</b>, including the
@@ -178,7 +179,8 @@ public sealed class WorkspaceHistoryService
     /// The common path. <b>Everything that could stop a boundary is answered here, in one place</b>,
     /// so the three callers cannot each answer it differently.
     /// </summary>
-    private bool Reach(string? workspaceRoot, CheckpointOrigin origin, string? label, bool attended)
+    private bool Reach(string? workspaceRoot, CheckpointOrigin origin, string? label, bool attended,
+                       string? note = null)
     {
         if (workspaceRoot is not { Length: > 0 }) return false;
 
@@ -208,7 +210,7 @@ public sealed class WorkspaceHistoryService
             return false;
         }
 
-        var outcome = WorkspaceCheckpoints.Take(armed.Git, origin, label, attended);
+        var outcome = WorkspaceCheckpoints.Take(armed.Git, origin, label, attended, note: note);
 
         foreach (var d in outcome.Diagnostics)
         {
@@ -590,7 +592,8 @@ public sealed class WorkspaceHistoryService
     /// R-rc7-4 states — and the identity in it is what makes §4.1's escape hatch usable.</para>
     /// </summary>
     public CommitResult KeepVersion(string? workspaceRoot, string? title,
-                                    IReadOnlyList<string>? leaveOut = null)
+                                    IReadOnlyList<string>? leaveOut = null,
+                                    string?                note     = null)
     {
         if (workspaceRoot is not { Length: > 0 })
             return CommitResult.Refused(HistoryMessages.NoHistoryToKeepAVersionIn(""));
@@ -633,7 +636,7 @@ public sealed class WorkspaceHistoryService
             return CommitResult.Refused(why);
         }
 
-        var result = WorkspaceCommit.Commit(armed.Git, title, leaveOut);
+        var result = WorkspaceCommit.Commit(armed.Git, title, leaveOut, note);
         foreach (var d in result.Diagnostics) _messages.PostDiagnostic(d);
 
         if (result.Ok)
@@ -771,11 +774,11 @@ public sealed class WorkspaceHistoryService
     /// commit, so the caller cannot assume the id it passed in still names anything — and the one
     /// caller that holds a copy of the old title needs the new id to keep its link alive.
     /// </returns>
-    public string? Rename(string? workspaceRoot, RestorePoint point, string? label)
+    public string? Rename(string? workspaceRoot, RestorePoint point, string? label, string? note = null)
     {
         if (Bind(workspaceRoot) is not { } git) return null;
 
-        var outcome = RestorePoints.Rename(git, point, label);
+        var outcome = RestorePoints.Rename(git, point, label, note);
         _messages.PostDiagnostic(outcome.Diagnostic ?? HistoryMessages.RestorePointRenamed(label ?? ""));
 
         Changed?.Invoke();
@@ -803,11 +806,12 @@ public sealed class WorkspaceHistoryService
     /// on anything else (R-rc11-7, R-rc11-8).
     /// </summary>
     /// <inheritdoc cref="Rename" path="/returns"/>
-    public string? CorrectTitle(string? workspaceRoot, HistoryVersion version, string? title)
+    public string? CorrectTitle(string? workspaceRoot, HistoryVersion version, string? title,
+                                string? note = null)
     {
         if (Bind(workspaceRoot) is not { } git) return null;
 
-        var outcome = VersionCorrections.CorrectTitle(git, version, title);
+        var outcome = VersionCorrections.CorrectTitle(git, version, title, note);
         _messages.PostDiagnostic(outcome.Diagnostic);
 
         Changed?.Invoke();
@@ -825,20 +829,21 @@ public sealed class WorkspaceHistoryService
 
     /// <summary>The correction already on a version, or null. What case (c)'s dialog opens on, so a
     /// designer refining one does not have to retype it.</summary>
-    public string? CorrectionOn(string? workspaceRoot, HistoryVersion version)
+    public VersionCorrection? CorrectionOn(string? workspaceRoot, HistoryVersion version)
         => Bind(workspaceRoot) is { } git
-        && VersionCorrections.Annotations(git).TryGetValue(version.CommitId, out string? c)
+        && VersionCorrections.Annotations(git).TryGetValue(version.CommitId, out var c)
             ? c : null;
 
     /// <summary>
     /// §5.11 case (c). <b>Adds a correction to a version, without altering it</b> (R-rc11-13) —
     /// available for any version at all, which is what lets the two refusals above name it.
     /// </summary>
-    public bool Annotate(string? workspaceRoot, HistoryVersion version, string? correction)
+    public bool Annotate(string? workspaceRoot, HistoryVersion version, string? correction,
+                         string? note = null)
     {
         if (Bind(workspaceRoot) is not { } git) return false;
 
-        var outcome = VersionCorrections.Annotate(git, version, correction);
+        var outcome = VersionCorrections.Annotate(git, version, correction, note);
         _messages.PostDiagnostic(outcome.Diagnostic);
 
         Changed?.Invoke();

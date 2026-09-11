@@ -58,26 +58,17 @@
       "Kind": "button"
     },
     {
-      "Index": 0,
+      "Index": 6,
       "Slot": 6,
       "Id": "",
-      "Tooltip": "",
-      "Icon": "separator",
-      "Command": null,
-      "Kind": "separator"
-    },
-    {
-      "Index": 6,
-      "Slot": 7,
-      "Id": "",
-      "Tooltip": "New Tab  (Ctrl\u002BT)",
-      "Icon": "TabAdd",
+      "Tooltip": "Add 3D Pattern \u2014 for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna.",
+      "Icon": "Sphere",
       "Command": "RelayCommand",
       "Kind": "button"
     },
     {
       "Index": 0,
-      "Slot": 8,
+      "Slot": 7,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -86,19 +77,28 @@
     },
     {
       "Index": 7,
-      "Slot": 9,
+      "Slot": 8,
       "Id": "",
-      "Tooltip": "Zoom In  (Ctrl\u002B\u002B)",
-      "Icon": "SearchPlusOutline",
+      "Tooltip": "New Tab  (Ctrl\u002BT)",
+      "Icon": "TabAdd",
       "Command": "RelayCommand",
       "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 9,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
     },
     {
       "Index": 8,
       "Slot": 10,
       "Id": "",
-      "Tooltip": "Zoom Out  (Ctrl\u002B-)",
-      "Icon": "MagnifyMinusOutline",
+      "Tooltip": "Zoom Box  (Z) \u2014 drag a box to zoom to it  (Esc cancels; Ctrl\u002B\u002B steps)",
+      "Icon": "SearchPlusOutline",
       "Command": "RelayCommand",
       "Kind": "button"
     },
@@ -106,14 +106,23 @@
       "Index": 9,
       "Slot": 11,
       "Id": "",
-      "Tooltip": "Actual Size  (Ctrl\u002B1)",
-      "Icon": "Magnify",
+      "Tooltip": "Zoom Out  (Ctrl\u002B-)",
+      "Icon": "MagnifyMinusOutline",
       "Command": "RelayCommand",
       "Kind": "button"
     },
     {
       "Index": 10,
       "Slot": 12,
+      "Id": "",
+      "Tooltip": "Actual Size  (Ctrl\u002B1)",
+      "Icon": "Magnify",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 11,
+      "Slot": 13,
       "Id": "",
       "Tooltip": "Fit All  (F, Ctrl\u002B0)",
       "Icon": "FitToPageOutline",
@@ -122,7 +131,7 @@
     },
     {
       "Index": 0,
-      "Slot": 13,
+      "Slot": 14,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -130,8 +139,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 11,
-      "Slot": 14,
+      "Index": 12,
+      "Slot": 15,
       "Id": "",
       "Tooltip": "Undo  (Ctrl\u002BZ)",
       "Icon": "Undo",
@@ -139,8 +148,8 @@
       "Kind": "button"
     },
     {
-      "Index": 12,
-      "Slot": 15,
+      "Index": 13,
+      "Slot": 16,
       "Id": "",
       "Tooltip": "Redo  (Ctrl\u002BShift\u002BZ)",
       "Icon": "Redo",
@@ -149,7 +158,7 @@
     },
     {
       "Index": 0,
-      "Slot": 16,
+      "Slot": 17,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -157,8 +166,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 13,
-      "Slot": 17,
+      "Index": 14,
+      "Slot": 18,
       "Id": "",
       "Tooltip": "Save Display (.cdd)",
       "Icon": "ContentSaveOutline",
@@ -166,8 +175,8 @@
       "Kind": "button"
     },
     {
-      "Index": 14,
-      "Slot": 18,
+      "Index": 15,
+      "Slot": 19,
       "Id": "",
       "Tooltip": "Open Display (.cdd)",
       "Icon": "FolderOpenOutline",
@@ -176,7 +185,7 @@
     },
     {
       "Index": 0,
-      "Slot": 19,
+      "Slot": 20,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -184,8 +193,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 15,
-      "Slot": 20,
+      "Index": 16,
+      "Slot": 21,
       "Id": "",
       "Tooltip": "Export Data",
       "Icon": "DatabaseExportOutline",

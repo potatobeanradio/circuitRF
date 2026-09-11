@@ -398,4 +398,32 @@
             </Setter>
         </Style>
 
+        <!-- ── Expander.fill — an expander whose BODY spans its container ──
+             Owner-reported, 2026-09-11, against the note field in Correct What You Wrote…: a
+             multi-line TextBox inside an expander rendered about 150 px wide in a 620 px dialog.
+
+             The theme sizes an Expander to its content and does not stretch the content presenter,
+             so an empty TextBox — no text, no placeholder — asks for its minimum and gets it. The
+             same expander in the two Keep dialogs looked fine only because a long PlaceholderText was
+             padding out its desired width, which is the accident that hid this.
+
+             Setting HorizontalContentAlignment on the control is NOT enough; the presenter inside
+             the template has to be stretched, and the header's ToggleButton with it or the control
+             changes width as it is toggled. AnalysesListView found all three the hard way and kept a
+             private copy of them; this is that fix, named, so the next expander that needs it says so
+             in one word. OPT-IN rather than a plain `Expander` selector: several expanders in this
+             application are deliberately content-sized. -->
+        <Style Selector="Expander.fill">
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="Expander.fill /template/ ToggleButton">
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="Expander.fill /template/ ContentPresenter">
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+
 </Styles>

@@ -113,9 +113,9 @@ public sealed record HistoryFilter(
 /// does not clone, so "local-only" is a property of the kind rather than of the entry.</para>
 /// </param>
 /// <param name="Correction">
-/// §5.11 case (c)'s annotation, when the author wrote one (RC-11 R-rc11-13). <b>Shown in place of the
-/// original, with the original one click away</b> — never instead of it, because the original is still
-/// in the file and the dialog that wrote this said so.
+/// §5.11 case (c)'s annotation, when the author wrote one (RC-11 R-rc11-13; RC-12 R-rc12-6 added its
+/// note half). <b>Shown in place of the original, with the original one click away</b> — never instead
+/// of it, because the original is still in the file and the dialog that wrote this said so.
 /// </param>
 public sealed record HistoryEntry(
     HistoryEntryKind Kind,
@@ -124,7 +124,7 @@ public sealed record HistoryEntry(
     RevisionGap?     Gap,
     DateTimeOffset   WhenUtc,
     bool             Shared = false,
-    string?          Correction = null)
+    VersionCorrection? Correction = null)
 {
     public bool IsVersion => Kind == HistoryEntryKind.Version;
     public bool IsPoint   => Kind == HistoryEntryKind.RestorePoint;
@@ -153,7 +153,7 @@ public sealed record HistoryEntry(
     /// The title, or the origin sentence for an entry nobody titled (R-rc10-12) — <b>and the
     /// correction in place of either, when the author wrote one</b> (R-rc11-13).
     /// </summary>
-    public string Title => Correction is { Length: > 0 } corrected ? corrected : OriginalTitle;
+    public string Title => Correction?.Title is { Length: > 0 } corrected ? corrected : OriginalTitle;
 
     /// <summary>
     /// What was actually written down. <b>One click away, never gone</b> (R-rc11-14): the original
@@ -185,8 +185,30 @@ public sealed record HistoryEntry(
          : CheckpointMessage.SubjectFor(point.Origin, null);
 
     /// <summary>Whether §5.11 case (c)'s annotation is what the row is showing.</summary>
-    public bool IsCorrected => Correction is { Length: > 0 }
-                            && !string.Equals(Correction, OriginalTitle, StringComparison.Ordinal);
+    public bool IsCorrected => Correction?.Title is { Length: > 0 } corrected
+                            && !string.Equals(corrected, OriginalTitle, StringComparison.Ordinal);
+
+    /// <summary>
+    /// <b>The longer note on this entry</b> (§5.12) — the corrected one where the author wrote one,
+    /// and otherwise what they wrote when they recorded it. Empty is the ordinary answer.
+    /// </summary>
+    public string Note => Correction?.Note is { Length: > 0 } corrected ? corrected : OriginalNote;
+
+    /// <summary>What was actually recorded, for <see cref="OriginalTitle"/>'s reason: a correction
+    /// never erases, and the expander shows both.</summary>
+    public string OriginalNote => Kind switch
+    {
+        HistoryEntryKind.Version      => Version!.Note,
+        HistoryEntryKind.RestorePoint => Point!.Note,
+        _                             => "",
+    };
+
+    /// <summary>Whether §5.11 case (c)'s annotation is what the note being shown came from.</summary>
+    public bool IsNoteCorrected => Correction?.Note is { Length: > 0 } corrected
+                                && !string.Equals(corrected, OriginalNote, StringComparison.Ordinal);
+
+    /// <summary>Whether this entry carries a note at all.</summary>
+    public bool HasNote => Note.Length > 0;
 
     /// <summary>Who kept it. Blank on a restore point, which nobody else ever sees.</summary>
     public string Who => Version?.Who ?? "";
@@ -306,17 +328,17 @@ public sealed record WayForward(
 /// list already read rather than by reading it a second time.
 /// </param>
 public sealed record HistorySources(
-    IReadOnlyList<HistoryVersion>       Versions,
-    IReadOnlyList<RestorePoint>         Points,
-    IReadOnlyList<HistoryVersion>       Incoming,
-    SharedVersions                      Shared,
-    IReadOnlyDictionary<string, string> Corrections,
-    int                                 AutomaticCount)
+    IReadOnlyList<HistoryVersion>                  Versions,
+    IReadOnlyList<RestorePoint>                    Points,
+    IReadOnlyList<HistoryVersion>                  Incoming,
+    SharedVersions                                 Shared,
+    IReadOnlyDictionary<string, VersionCorrection> Corrections,
+    int                                            AutomaticCount)
 {
     /// <summary>A workspace with no history, or none circuitRF can read — the ordinary empty answer.</summary>
     public static readonly HistorySources Nothing = new(
         [], [], [], SharedVersions.Local,
-        new Dictionary<string, string>(StringComparer.Ordinal), 0);
+        new Dictionary<string, VersionCorrection>(StringComparer.Ordinal), 0);
 
     /// <summary>
     /// <b>The most recently recorded entry, over both lists</b> — and therefore the content the
@@ -512,7 +534,7 @@ public static class HistoryList
         IReadOnlyList<RestorePoint>          points,
         SharedVersions                       shared,
         HistoryFilter                        filter,
-        IReadOnlyDictionary<string, string>? corrections = null)
+        IReadOnlyDictionary<string, VersionCorrection>? corrections = null)
     {
         List<HistoryEntry> all = [];
 
@@ -520,7 +542,7 @@ public static class HistoryList
             all.Add(new HistoryEntry(HistoryEntryKind.Version, v, null, null, v.WhenUtc,
                                      shared.Contains(v.CommitId),
                                      corrections is not null
-                                     && corrections.TryGetValue(v.CommitId, out string? c) ? c : null));
+                                     && corrections.TryGetValue(v.CommitId, out var c) ? c : null));
 
         foreach (var p in points)
             all.Add(new HistoryEntry(HistoryEntryKind.RestorePoint, null, p, null, p.TakenUtc));
@@ -612,7 +634,11 @@ public static class HistoryList
         // BOTH the correction and what it corrects (R-rc11-13). A designer searching for the wording
         // they replaced must still find the entry — that is very often exactly why they are searching —
         // and one searching for the wording they replaced it WITH must find it too.
-        return Has(entry.Title) || Has(entry.OriginalTitle) || Has(entry.Intent) || Has(entry.Who);
+        // §5.12's note is searched too (R-rc12-8), and it is the half most worth searching: a title is
+        // four words somebody chose under pressure, and the paragraph under it is where they wrote down
+        // the part they would later go looking for.
+        return Has(entry.Title) || Has(entry.OriginalTitle) || Has(entry.Intent) || Has(entry.Who)
+            || Has(entry.Note)  || Has(entry.OriginalNote);
 
         bool Has(string text) => text.Contains(term, StringComparison.OrdinalIgnoreCase);
     }

@@ -85,6 +85,25 @@ public sealed class HistoryRowItem
     public string OriginalTitleText
         => Entry.IsCorrected ? "Corrected. It originally said: " + Entry.OriginalTitle : "";
 
+    /// <summary>
+    /// <b>§5.12's longer note</b> — the corrected one where the author wrote a correction, and
+    /// otherwise what they wrote when they recorded the entry. Empty on most rows.
+    ///
+    /// <para>It lives in the expander and never on the row, by R-rc10-14's split: the row answers
+    /// <i>which moment was this</i> in one line, and a paragraph cannot be scanned. What the row
+    /// carries is <see cref="HasNote"/>'s mark, which says there is one to open.</para>
+    /// </summary>
+    public string Note => Entry.Note;
+
+    public bool HasNote => Entry.HasNote;
+
+    /// <summary>What the note originally said, when a correction is standing in front of it — the
+    /// same promise <see cref="OriginalTitleText"/> keeps, for the same reason (R-rc11-14).</summary>
+    public string OriginalNoteText
+        => Entry.IsNoteCorrected ? "It originally said: " + Entry.OriginalNote : "";
+
+    public bool IsNoteCorrected => Entry.IsNoteCorrected;
+
     /// <summary>What the gap row says: the dates and the reason, because the reason is the whole
     /// content of the row (R-rc10-11).</summary>
     public string GapText

@@ -22,6 +22,25 @@
                  Text="Without one it is listed as a save-point with its time." />
     </StackPanel>
 
+    <!-- §5.12, and the same field KeepThisVersionDialog carries for the same reason: the one line is
+         what a designer scans for, and what they were in the middle of when they pressed this is the
+         part that cannot be recovered from the files. Closed by default — a save-point is something
+         somebody reaches for quickly, and a paragraph is never the price of taking one. -->
+    <Expander x:Name="NoteExpander" Header="Add more detail (optional)" FontSize="11" Classes="fill">
+      <StackPanel Spacing="4" Margin="2,6,2,4">
+        <TextBox x:Name="NoteBox" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="90" MaxHeight="200"
+                 HorizontalAlignment="Stretch"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 PlaceholderText="Halfway through widening the output match — the input side is untouched and the 2.4 GHz point is still the one that fails." />
+        <!-- §5.2a's promise, said where it matters: this entry is this machine's own safety net, so
+             the note stays here too. -->
+        <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
+                   Text="Kept with this entry on this machine. You can correct it later." />
+      </StackPanel>
+    </Expander>
+
     <!-- The large-file guard (revision-control.md §8.2). Present only when there is something over
          the threshold that is not already kept, so the ordinary save-point is one field and a
          button. -->

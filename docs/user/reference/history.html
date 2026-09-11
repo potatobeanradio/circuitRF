@@ -175,8 +175,21 @@ would actually record something, and tells you once when it does.</p>
 <em>&quot;Output match retuned for 3.5 GHz&quot;</em>, not <em>&quot;changed some stuff&quot;</em>. Six weeks from now that line is the
 only thing that tells one version from another, and it is what anyone you send the workspace to will
 read first.</p>
+<p><strong>And, under <em>Add more detail</em>, as much as you want to write.</strong> A title is one line and some decisions
+need a paragraph: what you tried first, what the measurement actually said, which of two options this
+is and why you took it. That is the part the files themselves can never tell you afterwards. The field
+is closed until you open it and you never have to use it — but when a version matters, it is the
+difference between a line you recognise and a line you can act on.</p>
+<p>It is kept with the version and travels with it, so whoever you send the workspace to reads it too.
+<a href="#titles">You can correct it later</a>, exactly as you can correct the title.</p>
 <p>What is recorded is <strong>the whole workspace as it stands</strong>: every cell, every schematic, every layout, the
 technology, the workspace's own configuration. Not just the document you have open.</p>
+<p><strong>Keep This State… asks for the same two things</strong>, and the same way round: one line for the list, and
+as much detail as you want behind the expander. On a save-point the detail is usually <em>what you were in
+the middle of</em> — the part you would otherwise have to reconstruct when you come back to it on Monday.</p>
+<p><strong>Where you read it back.</strong> The row in the History panel shows the title and a small mark saying there
+is more; <strong>open the row</strong> and the note is at the top of what unfolds, above the time and the identity.
+The <a href="#search">search</a> reads it too, which is very often how you find the entry at all.</p>
 <div class="callout note">
 <span class="label">Nothing changed means nothing to keep, and you are told before you type</span>
 <p>If the workspace is exactly as it was when the last entry was made, both keep buttons are
@@ -267,9 +280,12 @@ a list is a decision about the list and never about what is kept. Tick the box a
 is not something anybody else inherits.</p>
 <h3 id="search">Search</h3>
 <p>The magnifier opens a field, and it searches <strong>what a person wrote</strong> — the titles you gave your
-versions, what an assistant said it was about to do, and who kept each entry. <em>&quot;I broke the match
-network yesterday&quot;</em> is a search, and scrolling a year of entries to perform it is doing the machine's
-work for it.</p>
+versions, <strong>the longer notes under them</strong>, what an assistant said it was about to do, and who kept each
+entry. <em>&quot;I broke the match network yesterday&quot;</em> is a search, and scrolling a year of entries to perform
+it is doing the machine's work for it.</p>
+<p>The notes are the half most worth searching. A title is four words you chose in a hurry; the paragraph
+under it is where you wrote down the thing you would later go looking for — <em>&quot;the 4.7 pF&quot;</em>, <em>&quot;the band
+edge&quot;</em>, a part number.</p>
 <p>If entries that circuitRF has <strong>tidied away</strong> also match and the filter is hiding them, the panel says
 so on a line of its own with a count. An incomplete answer that says it is incomplete is a very
 different thing from a wrong one.</p>
@@ -345,6 +361,10 @@ coordinates is not a picture of what moved.</p>
 <h2 id="titles">&quot;I typed the title wrong&quot;</h2>
 <p>Right-click the entry. What you get depends on which of three things it is, and the difference is only
 ever about <strong>who else has already read it</strong>.</p>
+<p><strong>The longer note is edited in the same place, at the same time.</strong> The dialog carries both: the line,
+and <em>More detail</em> under it — already open when there is something in it. You wrote them together about
+one entry, and if one of them is wrong the other very often is too. Whichever of the three cases below
+applies governs both halves.</p>
 <table>
 <thead>
 <tr>
@@ -371,8 +391,9 @@ ever about <strong>who else has already read it</strong>.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Correcting a title never changes what the version holds.</strong> The files, who kept it and when are the
-ones already recorded, in all three cases. A correction is about the sentence, never the design.</p>
+<p><strong>Correcting a title or a note never changes what the version holds.</strong> The files, who kept it and when
+are the ones already recorded, in all three cases. A correction is about what you wrote, never about
+the design.</p>
 <p>circuitRF works out which case applies — you do not have to know whether a version has been sent. If it
 cannot tell (there is another copy configured and this machine has never heard from it), it takes the
 cautious reading and offers you the correction rather than the rename.</p>
@@ -393,7 +414,11 @@ away in the entry's expander, exactly as you see it here.</p>
 <p><strong>Headless:</strong> <code>circuitrf history rename &lt;workspace&gt; --point &lt;n&gt; --label &quot;…&quot;</code>,
 <code>circuitrf history forget &lt;workspace&gt; --point &lt;n&gt;</code>,
 <code>circuitrf history retitle &lt;workspace&gt; --title &quot;…&quot;</code> (the newest version) and
-<code>circuitrf history correct &lt;workspace&gt; --version &lt;id&gt; --text &quot;…&quot;</code>.</p>
+<code>circuitrf history correct &lt;workspace&gt; --version &lt;id&gt; --text &quot;…&quot;</code>. Each of the three that changes
+wording also takes <code>--note &quot;…&quot;</code> for the longer note — and leaving <code>--note</code> off leaves whatever is
+there alone, so correcting a title never quietly discards the paragraph under it. <code>--note &quot;&quot;</code> removes
+it.</p>
+<p>Recording one headlessly is the same flag: <code>circuitrf history commit &lt;workspace&gt; --title &quot;…&quot; --note &quot;…&quot;</code> and <code>circuitrf history checkpoint &lt;workspace&gt; --intent &quot;…&quot; --note &quot;…&quot;</code>.</p>
 <h2 id="restore-then">&quot;I went back to an old version, then kept working&quot;</h2>
 <p>This is one line of work, not two, and there is nothing to manage.</p>
 <ol>

@@ -24,6 +24,29 @@
       <TextBox x:Name="TitleBox" PlaceholderText="Output match retuned for 3.5 GHz" />
     </StackPanel>
 
+    <!-- §5.12. THE TITLE IS ONE LINE AND SOME DECISIONS NEED A PARAGRAPH. What was tried first, what
+         the measurement said, which of two options this is and why — none of that fits in the line a
+         designer scans for, and none of it can be recovered from the files afterwards.
+
+         Behind an expander, and closed by default, for the reason the escape hatch below it is: most
+         versions do not need one, and a second field in front of every designer would make the one
+         that matters harder to reach rather than easier. The keyboard path is unchanged — Tab from the
+         title reaches the expander's own header. -->
+    <Expander x:Name="NoteExpander" Header="Add more detail (optional)" FontSize="11" Classes="fill">
+      <StackPanel Spacing="4" Margin="2,6,2,4">
+        <TextBox x:Name="NoteBox" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="90" MaxHeight="200"
+                 HorizontalAlignment="Stretch"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 PlaceholderText="Series inductor moved to the drain side; the 3.9 pF shunt was measured 0.4 dB better than the 4.7 pF and the band edge is now flat to 3.7 GHz." />
+        <!-- It is not a second title. A designer who writes nothing here loses nothing, and the entry
+             is written exactly as it was before this field existed. -->
+        <TextBlock FontSize="10" Opacity="0.6" TextWrapping="Wrap"
+                   Text="This is kept with the version and travels with it. You can correct it later." />
+      </StackPanel>
+    </Expander>
+
     <!-- R-rc7-6. A restore since the last version is recorded in this one, and the designer is told
          so BEFORE they press the button rather than discovering it in the list afterwards. Two
          consecutive versions where the second reverts the first read as a change of mind with no

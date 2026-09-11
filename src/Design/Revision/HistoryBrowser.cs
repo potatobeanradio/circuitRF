@@ -40,6 +40,17 @@ public sealed record HistoryVersion(
     /// The same reasoning as <see cref="RestorePoint.Thinned"/>, and for the same reason.</para>
     /// </summary>
     public bool OnTheOtherCopy { get; init; }
+
+    /// <summary>
+    /// <b>The longer note the designer wrote about this version</b> (§5.12), or an empty string.
+    ///
+    /// <para>Empty on anything circuitRF did not write, because <see cref="MessageNotes"/> reads a
+    /// COUNTED extent: an unrecognised body is somebody else's structure, and claiming it as a note
+    /// would mean offering to replace it.</para>
+    ///
+    /// <para>Not a positional member, for <see cref="OnTheOtherCopy"/>'s reason.</para>
+    /// </summary>
+    public string Note { get; init; } = "";
 }
 
 /// <summary>What changed between two versions, at the granularity of documents (R-rc7-11).</summary>
@@ -163,6 +174,7 @@ public static class HistoryBrowser
                 id, treeId, when, meta.Title, meta.Explicit, meta.RestoredFrom, who)
             {
                 OnTheOtherCopy = onTheOtherCopy,
+                Note           = meta.Note,
             });
         }
 

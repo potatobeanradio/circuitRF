@@ -669,6 +669,9 @@ internal static class ToolCatalog
                     [
                         new("intent", "--intent", OptKind.Str,
                             "One line saying what this state is. It is the label the designer reads."),
+                        new("note", "--note", OptKind.Str,
+                            "More detail, as long as it needs to be — what the one line has no room "
+                          + "for. It is kept with the entry and the designer can read and correct it."),
                         new("leaveOut", "--leave-out", OptKind.StrRepeat,
                             "A workspace-relative path to leave out of this one."),
                         new("includeLarge", "--include-large", OptKind.Flag,

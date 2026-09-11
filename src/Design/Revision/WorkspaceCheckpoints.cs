@@ -68,6 +68,8 @@ public static class WorkspaceCheckpoints
     /// that recording stopped or started, and suppressing it would leave the gap with one end, which
     /// is what makes it render as a quiet interval rather than as a gap.
     /// </param>
+    /// <param name="note">§5.12's longer note, or null — what the label has no room for. Only the two
+    /// attended boundaries ever have one: nobody is at a close or a batch to write a paragraph.</param>
     public static CheckpointOutcome Take(
         GitCommand             git,
         CheckpointOrigin       origin,
@@ -76,7 +78,8 @@ public static class WorkspaceCheckpoints
         IReadOnlyList<string>? exclusions  = null,
         bool                   kept        = false,
         bool                   forceRecord   = false,
-        IReadOnlySet<string>?  alsoHeldTrees = null)
+        IReadOnlySet<string>?  alsoHeldTrees = null,
+        string?                note          = null)
     {
         var newest       = RestorePoints.Newest(git);
         string? previous = forceRecord ? null : newest?.TreeId;
@@ -103,7 +106,8 @@ public static class WorkspaceCheckpoints
         string message    = CheckpointMessage.Build(
             origin, label, sequence,
             kept: kept || alwaysKept,
-            leftOut: leaveOut);
+            leftOut: leaveOut,
+            note: note);
 
         var result = GitCheckpoint.Record(git, reference, message, previous, leaveOut, alsoHeldTrees);
 
@@ -121,7 +125,7 @@ public static class WorkspaceCheckpoints
         var point = new RestorePoint(
             reference, result.CommitId!, result.TreeId!, sequence, DateTimeOffset.UtcNow,
             origin, CheckpointMessage.SubjectFor(origin, label), label?.Trim(),
-            kept || alwaysKept, leaveOut);
+            kept || alwaysKept, leaveOut) { Note = MessageNotes.Text(note) };
 
         return new CheckpointOutcome(true, point, leaveOut, notes, result.TreeId);
     }

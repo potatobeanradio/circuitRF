@@ -55,6 +55,17 @@ public sealed record RestorePoint(
     /// <para>Not a positional member: every construction of this record predates it and means false.</para>
     /// </summary>
     public bool Thinned { get; init; }
+
+    /// <summary>
+    /// <b>The longer note somebody wrote about this entry</b> (§5.12), or an empty string — what the
+    /// label has no room for and the files cannot recover.
+    ///
+    /// <para>Not a positional member, for <see cref="Thinned"/>'s reason. It is carried on the record
+    /// rather than re-read per row because everything that REBUILDS this entry's message has to write
+    /// it back: a mark-keep or a rename that rebuilt without it would delete somebody's paragraph as a
+    /// side effect of an operation about a label.</para>
+    /// </summary>
+    public string Note { get; init; } = "";
 }
 
 /// <summary>
@@ -96,7 +107,7 @@ public static class RestorePoints
                                         : CheckpointMessage.SubjectFor(meta.Origin, meta.Intent),
                 meta.Intent,
                 meta.Kept,
-                meta.LeftOut));
+                meta.LeftOut) { Note = meta.Note });
         }
 
         points.Sort((a, b) => b.Sequence.CompareTo(a.Sequence));
@@ -134,7 +145,7 @@ public static class RestorePoints
         // from the origin would quietly undo their correction the next time they marked it keep.
         string message = CheckpointMessage.Build(
             point.Origin, point.Intent, point.Sequence, kept: true, leftOut: point.LeftOut,
-            subject: point.Label);
+            subject: point.Label, note: point.Note);
 
         var written = git.Run(["commit-tree", point.TreeId], new GitRunOptions(StandardInput: message));
         if (!written.Ok || written.Line.Length == 0)
@@ -184,19 +195,32 @@ public static class RestorePoints
     /// to move, and writing one back under a new name would list the same state twice. Bring it back
     /// first — which is one reference update and is offered on the same menu.</para>
     /// </summary>
-    public static RevisionOutcome Rename(GitCommand git, RestorePoint point, string? label)
+    /// <param name="note">
+    /// §5.12's longer note. <b>Null leaves the one already there alone</b> — which is what every caller
+    /// that predates notes means — and a value replaces it, an empty one removing it. The two are
+    /// corrected together because they were written together, in one dialog, about one entry.
+    /// </param>
+    public static RevisionOutcome Rename(GitCommand git, RestorePoint point, string? label,
+                                         string? note = null)
     {
-        string wanted = label?.ReplaceLineEndings(" ").Trim() ?? "";
+        string wanted      = label?.ReplaceLineEndings(" ").Trim() ?? "";
+        string wantedNote  = note is null ? point.Note : MessageNotes.Text(note);
+
         if (wanted.Length == 0) return RevisionOutcome.Failed(HistoryMessages.ACorrectionNeedsWords());
         if (point.Thinned)      return RevisionOutcome.Failed(HistoryMessages.TidiedAwayCannotBeRenamed());
-        if (string.Equals(wanted, point.Label, StringComparison.Ordinal)) return RevisionOutcome.Success;
+
+        // BOTH halves, or a correction that only touched the note would report success and write
+        // nothing — the shape of "I edited it and it did not save".
+        if (string.Equals(wanted, point.Label, StringComparison.Ordinal)
+         && string.Equals(wantedNote, point.Note, StringComparison.Ordinal)) return RevisionOutcome.Success;
 
         // The SUBJECT is given explicitly and the INTENT becomes the corrected words. Both halves
         // matter: four of the six origins ignore the label when they build their own subject, and the
         // intent is what R-rc10-9's search reads — so a correction that left it behind would keep the
         // careless wording findable in the one place a designer cannot see it.
         string message = CheckpointMessage.Build(
-            point.Origin, wanted, point.Sequence, point.Kept, point.LeftOut, subject: wanted);
+            point.Origin, wanted, point.Sequence, point.Kept, point.LeftOut, subject: wanted,
+            note: wantedNote);
 
         var written = git.Run(["commit-tree", point.TreeId], new GitRunOptions(StandardInput: message));
         if (!written.Ok || written.Line.Length == 0)

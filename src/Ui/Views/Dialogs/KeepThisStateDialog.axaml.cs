@@ -10,12 +10,15 @@ namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>What the designer decided.</summary>
 /// <param name="Label">The optional line. Null when they typed none.</param>
+/// <param name="Note">§5.12's longer note, or null. Null writes an entry byte-identical to the one
+/// this recorded before the field existed.</param>
 /// <param name="LeaveOut">Workspace-relative paths to leave out of this one.</param>
 /// <param name="NeverInclude">Patterns to add to <c>.gitignore</c>.</param>
 public sealed record KeepThisStateChoice(
     string?                Label,
     IReadOnlyList<string>  LeaveOut,
-    IReadOnlyList<string>  NeverInclude);
+    IReadOnlyList<string>  NeverInclude,
+    string?                Note = null);
 
 /// <summary>
 /// One row of the large-file guard — a file, or a whole pattern when the first recording into an
@@ -83,7 +86,9 @@ public sealed partial class LargeFileRow : ObservableObject
 ///
 /// <para><b>It asks for one optional line</b>, because R-rc5-6b's reasoning applies here too: the
 /// intent is the whole value of the entry, and an entry labelled only with a time says nothing that
-/// every other entry does not already say.</para>
+/// every other entry does not already say. <b>And a longer note behind an expander</b> (§5.12), for
+/// the reason <see cref="KeepThisVersionDialog"/>'s carries one — closed by default, because a
+/// save-point is something a designer reaches for quickly and a paragraph is never its price.</para>
 ///
 /// <para><b>The guard appears only when there is something to ask about</b>, so the ordinary
 /// save-point is one field and a button. When the workspace has hundreds of large files — the first
@@ -161,8 +166,11 @@ public partial class KeepThisStateDialog : Window
         }
 
         string? label = LabelBox.Text?.Trim();
+        string  note  = MessageNotes.Text(NoteBox.Text);
+
         Close(new KeepThisStateChoice(
-            string.IsNullOrEmpty(label) ? null : label, leaveOut, neverInclude));
+            string.IsNullOrEmpty(label) ? null : label, leaveOut, neverInclude,
+            note.Length > 0 ? note : null));
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(null);

@@ -214,7 +214,7 @@ public partial class WorkspaceViewModel
         foreach (string pattern in choice.NeverInclude)
             LargeFileGuard.AppendIgnorePattern(root, pattern);
 
-        History.TakeSavePoint(root, choice.Label);
+        History.TakeSavePoint(root, choice.Label, choice.Note);
         RefreshHistoryPanel();
     }
 
@@ -556,7 +556,7 @@ public partial class WorkspaceViewModel
 
         if (choice is null) return;
 
-        History.KeepVersion(root, choice.Title);
+        History.KeepVersion(root, choice.Title, note: choice.Note);
         RefreshHistoryPanel();
     }
 
@@ -579,14 +579,16 @@ public partial class WorkspaceViewModel
     {
         if ((over ?? Views.WorkspaceLocator.WindowFor(this)) is not { } owner) return;
 
-        var dialog = new CorrectWhatYouWroteDialog(CorrectionCase.RestorePointLabel, point.Label, null);
+        var dialog = new CorrectWhatYouWroteDialog(CorrectionCase.RestorePointLabel, point.Label, null,
+                                                   point.Note);
         if (await dialog.ShowDialog<CorrectionChoice?>(owner) is not { } choice) return;
 
         // R-rc10-18's sentence holds its own COPY of the title, so it has to follow the correction or
         // it goes on reading the deleted wording back to the designer in the same panel they corrected
         // it in. See RestoreProvenance.Retitle for the copy bound for disk.
         RetitleTheWayForward(point.CommitId,
-                             History.Rename(WorkspaceRootDir, point, choice.Text), choice.Text);
+                             History.Rename(WorkspaceRootDir, point, choice.Text, choice.Note),
+                             choice.Text);
 
         RefreshHistoryPanel();
     }
@@ -630,21 +632,29 @@ public partial class WorkspaceViewModel
 
         // The correction already in place, if there is one — so case (c) opens on it rather than on a
         // blank field, and shows the wording underneath it.
-        string? existing = History.CorrectionOn(root, version);
+        var existing = History.CorrectionOn(root, version);
 
         var dialog = canRetitle
-            ? new CorrectWhatYouWroteDialog(CorrectionCase.UnsharedTitle, version.Title, null)
+            ? new CorrectWhatYouWroteDialog(CorrectionCase.UnsharedTitle, version.Title, null,
+                                            version.Note)
             : new CorrectWhatYouWroteDialog(CorrectionCase.SharedTitle,
-                                            existing ?? version.Title,
-                                            existing is null ? null : version.Title);
+                                            existing?.Title ?? version.Title,
+                                            existing is null ? null : version.Title,
+                                            // §5.12. The field opens on what the ROW is showing — the
+                                            // corrected note where there is one, the recorded note
+                                            // where there is not — so refining a correction never
+                                            // starts from a blank field.
+                                            existing?.Note is { Length: > 0 } corrected
+                                                ? corrected : version.Note,
+                                            existing is null ? null : version.Note);
 
         if (await dialog.ShowDialog<CorrectionChoice?>(owner) is not { } choice) return;
 
         // An annotation leaves the commit alone, so the entry keeps its identity; a correction rewrites
         // it and hands back the new one.
         string? nowAt = canRetitle
-            ? History.CorrectTitle(root, version, choice.Text)
-            : History.Annotate(root, version, choice.Text) ? version.CommitId : null;
+            ? History.CorrectTitle(root, version, choice.Text, choice.Note)
+            : History.Annotate(root, version, choice.Text, choice.Note) ? version.CommitId : null;
 
         RetitleTheWayForward(version.CommitId, nowAt, choice.Text);
 

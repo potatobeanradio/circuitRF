@@ -51,6 +51,13 @@ public static class CommitMessage
     public const string RestoredAtKey = KeyPrefix + "Restored-From-Time";
 
     /// <summary>
+    /// §5.12's longer note, when the designer wrote one. <b>The extent is counted rather than
+    /// inferred</b> — see <see cref="MessageNotes"/> for why recognising circuitRF's own sentences
+    /// instead fails silently the first time one of them is reworded.
+    /// </summary>
+    public const string NoteLinesKey = MessageNotes.LinesKey;
+
+    /// <summary>
     /// What a commit is listed as when the designer typed no title.
     ///
     /// <para><b>Never a bare time</b>, for <see cref="CheckpointMessage.UnnamedSavePoint"/>'s reason:
@@ -77,11 +84,24 @@ public static class CommitMessage
     /// restore, not the first</b>: restore to A, then to B, then commit, and the content is B's —
     /// naming A would be a sentence that is simply untrue.
     /// </param>
-    public static string Build(string? title, RestoredFrom? restoredFrom = null)
+    /// <param name="note">
+    /// §5.12's longer note — what the title has no room for. Null or blank writes <b>nothing at
+    /// all</b>: no block, no trailer, and a message byte-identical to the one this produced before
+    /// notes existed. The ordinary version is the one nobody wrote a paragraph for.
+    /// </param>
+    public static string Build(string? title, RestoredFrom? restoredFrom = null, string? note = null)
     {
         var text = new StringBuilder();
+        var noteLines = MessageNotes.Lines(note);
 
         text.Append(Subject(title)).Append('\n').Append('\n');
+
+        // Directly under the subject, which is where a body belongs and where MessageNotes.FirstLine
+        // says it is. The blank line after it is what keeps the note out of the trailing trailer block
+        // however many trailer-shaped lines somebody types into it.
+        foreach (string line in noteLines) text.Append(line).Append('\n');
+        if (noteLines.Count > 0) text.Append('\n');
+
         text.Append(ExplicitLine).Append('\n');
 
         if (restoredFrom is { } from)
@@ -89,6 +109,9 @@ public static class CommitMessage
 
         text.Append('\n');
         text.Append(OriginKey).Append(": ").Append(ExplicitCommitOrigin).Append('\n');
+
+        if (noteLines.Count > 0)
+            text.Append(NoteLinesKey).Append(": ").Append(noteLines.Count).Append('\n');
 
         if (restoredFrom is { } trailer)
         {
@@ -133,8 +156,17 @@ public static class CommitMessage
 
         var lines = (message ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
-        foreach (string line in lines)
+        // §5.12. The note is free text somebody typed, so a line of it may well look like a trailer —
+        // and the FIRST line of a note would otherwise be read back as the title on a commit whose
+        // subject was blank. Its extent is stepped over here rather than guessed at.
+        var note = MessageNotes.Extent(lines);
+
+        for (int i = 0; i < lines.Length; i++)
         {
+            string line = lines[i];
+
+            if (MessageNotes.IsNoteLine(i, note)) continue;
+
             if (title.Length == 0 && line.Trim().Length > 0 && !IsTrailer(line))
                 title = line.Trim();
 
@@ -167,7 +199,8 @@ public static class CommitMessage
             explicitly,
             restoredFrom is { } label
                 ? new RestoredFrom(label, restoredAt ?? DateTimeOffset.UnixEpoch)
-                : null);
+                : null,
+            note.Start == note.End ? "" : string.Join('\n', lines[note.Start..note.End]).Trim());
     }
 
     private static bool IsTrailer(string line)
@@ -194,4 +227,8 @@ public sealed record RestoredFrom(string Label, DateTimeOffset TakenUtc);
 /// anything else that reached this line of work — someone's own command line, an import, a script —
 /// which is listed anyway and is not pretended to be something it is not.</param>
 /// <param name="RestoredFrom">What it was restored from, or null when nothing was.</param>
-public sealed record CommitMetadata(string Title, bool Explicit, RestoredFrom? RestoredFrom);
+/// <param name="Note">§5.12's longer note, or an empty string. <b>Empty on anything circuitRF did not
+/// write</b>, because the extent is counted and an unrecognised body is somebody else's structure to
+/// interpret — not text to claim as a note and then offer to replace.</param>
+public sealed record CommitMetadata(string Title, bool Explicit, RestoredFrom? RestoredFrom,
+                                    string Note = "");

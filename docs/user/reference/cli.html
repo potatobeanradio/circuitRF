@@ -1772,6 +1772,18 @@ from. A cube the file does not hold is refused, listing the ones it does.</p>
 <td>What the radial numbers are in — <code>dBi</code>, <code>dB(W/sr)</code>.</td>
 </tr>
 <tr>
+<td><code>--trace …,ref=&lt;dBm&gt;</code></td>
+<td>Read a dBm <strong>level</strong> (<code>TrpDbm</code>, <code>PeakEirpDbm</code>) against this conducted input power instead of the one the run published. An exact dB shift — no re-run. Inert on anything that is not a level.</td>
+</tr>
+<tr>
+<td><code>--whole-plane</code></td>
+<td>Draw each <code>cut=</code> as <strong>one</strong> trace spanning −θ<sub>max</sub> … +θ<sub>max</sub>, by fetching the φ + 180° half alongside it — instead of the default two traces per cut. Needs <code>--type polar --radial db</code>.</td>
+</tr>
+<tr>
+<td><code>--angle-labels</code></td>
+<td>Print the bearing every 30° outside the disc, with a spoke to each, the way an antenna-range plot is drawn. Polar only, either radial mode. The disc shrinks to make room rather than the numbers overprinting the outer ring.</td>
+</tr>
+<tr>
 <td><code>--write-cdd &lt;path&gt;</code></td>
 <td>Also write the data display this drew.</td>
 </tr>
@@ -1779,6 +1791,11 @@ from. A cube the file does not hold is refused, listing the ones it does.</p>
 </table>
 <pre><code class="language-text">circuitrf plot run.npy -o eplane.svg --type polar --radial db --db-unit &quot;dB(W/sr)&quot; \
   --trace cube=farfield.U,cut=0,port=1,y=db10
+
+# both principal planes, one trace each, with bearings around the rim
+circuitrf plot run.npy -o cuts.svg --type polar --radial db --whole-plane --angle-labels \
+  --trace cube=farfield.U,freq=5.8e9,cut=0,port=1,y=db10 \
+  --trace cube=farfield.U,freq=5.8e9,cut=90,port=1,y=db10
 </code></pre>
 <div class="callout">
 <span class="label">A pattern plot says what it is</span>
