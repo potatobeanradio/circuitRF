@@ -1287,6 +1287,23 @@ namespace CircuitRF.Render.DataDisplay
         // ---- Pre-built geometry (world coordinates) ---------------------
 
         public List<Vector2> Points                     { get; private set; } = new();
+
+        /// <summary>
+        /// <b>Which cube SAMPLE drew each entry of <see cref="Points"/></b>, for a cube-bound trace —
+        /// one entry per point, filled by <see cref="BuildCubePath"/>. A front-branch sample is its
+        /// own index; a <b>back-branch</b> (φ + 180°) sample is stored as its bitwise complement, so
+        /// it is negative and the two halves of a whole-plane cut can never be confused.
+        ///
+        /// <para>It exists because a point's position in this list is <b>not</b> its position in the
+        /// cube: a whole-plane pattern draws the back branch first and then the front, so the second
+        /// half of the list indexes past the end of the cube's own arrays — every marker on it read
+        /// <c>NaN</c> and the angle it reported was pinned to the last sample. A non-finite value is
+        /// also skipped when the path is built, which shifts every later point by one. Empty for a
+        /// trace whose Points did not come from a cube; <see cref="CubeMarkerSample"/> falls back to
+        /// the raw index then.</para>
+        /// </summary>
+        private readonly List<int> _pointSample = new();
+
         public List<Vector2> StabilityCircleCentres     { get; private set; } = new();
         public List<double>  StabilityCircleRadii       { get; private set; } = new();
         public List<bool>    StabilityCircleStableInside { get; private set; } = new();
@@ -2012,6 +2029,7 @@ namespace CircuitRF.Render.DataDisplay
         {
             _lastPlotType = plotType;
             Points.Clear();
+            _pointSample.Clear();
             RectValueInvalid = false;
             PatternAxisInvalid = false;
             PatternValueInvalid = false;
@@ -2067,7 +2085,7 @@ namespace CircuitRF.Render.DataDisplay
                                                   backComplex ? _backComplexValues![i] : (Complex?)null,
                                                   backComplex ? (double?)null : _backRealValues![i],
                                                   scale);
-                            if (bp is { } bpt) Points.Add(bpt);
+                            if (bp is { } bpt) { Points.Add(bpt); _pointSample.Add(~i); }
                         }
                     }
 
@@ -2076,7 +2094,7 @@ namespace CircuitRF.Render.DataDisplay
                         var p = PatternPoint(_cubeXValues[i], dpu,
                                              isComplex ? _cubeComplexValues![i] : (Complex?)null,
                                              isComplex ? (double?)null : _cubeRealValues![i], scale);
-                        if (p is { } pt) Points.Add(pt);
+                        if (p is { } pt) { Points.Add(pt); _pointSample.Add(i); }
                     }
                     return;
                 }
@@ -2089,6 +2107,7 @@ namespace CircuitRF.Render.DataDisplay
                         ? Complex.Conjugate(_cubeComplexValues![i])
                         : _cubeComplexValues![i];
                     Points.Add(new Vector2((float)z.Real, (float)z.Imaginary));
+                    _pointSample.Add(i);
                 }
                 return;
             }
@@ -2140,6 +2159,7 @@ namespace CircuitRF.Render.DataDisplay
 
                 if (!double.IsFinite(y)) continue;
                 Points.Add(new Vector2((float)x, (float)y));
+                _pointSample.Add(i);
             }
         }
 
@@ -2659,7 +2679,7 @@ namespace CircuitRF.Render.DataDisplay
 
             foreach (var m in Markers)
             {
-                int idx = CubeMarkerIndex(m);
+                int idx = CubeMarkerSample(m).Sample;
                 if (idx >= 0 && idx < xs.Length) m.Freq = xs[idx];
             }
         }
@@ -2774,6 +2794,22 @@ namespace CircuitRF.Render.DataDisplay
             return idx;
         }
 
+        /// <summary>
+        /// The cube SAMPLE a marker sits on, and which half of a whole-plane cut it is on — the
+        /// number every readout needs, as opposed to <see cref="CubeMarkerIndex"/>'s position in
+        /// <see cref="Points"/>, which is not the same thing (see <see cref="_pointSample"/>).
+        /// Falls back to the raw point index when no map was built, which is every non-cube path
+        /// and every trace whose geometry predates one.
+        /// </summary>
+        private (int Sample, bool Back) CubeMarkerSample(Marker m)
+        {
+            int p = CubeMarkerIndex(m);
+            if (IsFamily || _pointSample.Count != Points.Count || p < 0 || p >= _pointSample.Count)
+                return (p, false);
+            int s = _pointSample[p];
+            return s < 0 ? (~s, true) : (s, false);
+        }
+
         private Vector2 CubeMarkerPointFor(Marker m)
         {
             var pts = CubeMarkerPoints(m);
@@ -2869,8 +2905,12 @@ namespace CircuitRF.Render.DataDisplay
 
             // On a Table the marker stores its X in Marker.Freq (PlotControl sets it from the row's
             // XValues), not PositionStatic.X — and Points may be empty — so resolve the index against
-            // _cubeXValues directly. Rect/Smith/Polar use the Points-based CubeMarkerIndex.
-            int xIdx = _lastPlotType == PlotType.Table ? NearestCubeXIndex(m.Freq) : CubeMarkerIndex(m);
+            // _cubeXValues directly. Rect/Smith/Polar resolve the SAMPLE (and, on a whole-plane
+            // pattern cut, which half of it) from the marker's position — see CubeMarkerSample.
+            var (pointSample, onBackBranch) = _lastPlotType == PlotType.Table
+                ? (NearestCubeXIndex(m.Freq), false)
+                : CubeMarkerSample(m);
+            int xIdx = pointSample;
             int curve = CubeMarkerCurveIndex(m);
 
             // Family: identify the bound curve via its iterated-axis value.
@@ -2966,7 +3006,14 @@ namespace CircuitRF.Render.DataDisplay
             {
                 string xName = string.IsNullOrEmpty(_cubeXAxisName) ? "x" : _cubeXAxisName;
                 string xUnit = string.IsNullOrEmpty(_cubeXUnit) ? "" : $" {_cubeXUnit}";
-                lines.Add(($"{xName}={xRaw:G6}{xUnit}", false));
+                // A whole-plane cut runs -θmax → 0 → +θmax with the negative half drawn from the
+                // φ + 180° branch, so a marker on that half is at MINUS the sample's angle. Reading
+                // it out unsigned put both halves at the same bearing, which on a symmetric pattern
+                // is invisible and on an asymmetric one is simply the wrong direction.
+                // xRaw != 0 keeps broadside spelled "0" rather than "-0": the two halves meet
+                // there and negating the sample would make which one the marker landed on visible.
+                double xShown = onBackBranch && xRaw != 0 ? -xRaw : xRaw;
+                lines.Add(($"{xName}={xShown:G6}{xUnit}", false));
             }
 
             // Pinned spectral line: when the harmonic/mixIndex axis is PINNED (X is the sweep), still
@@ -2979,10 +3026,10 @@ namespace CircuitRF.Render.DataDisplay
                     lines.Add(($"freq={_pinnedSpectralFreqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
             }
 
-            // Value row.
+            // Value row — from the branch the marker is actually on.
             string val = IsFamily
                 ? FormatFamilyCellForMarker(curve, xIdx, m)
-                : FormatCubeCellForMarker(xIdx, m);
+                : FormatCubeCellForMarker(xIdx, m, onBackBranch);
             if (string.IsNullOrEmpty(val)) val = "NaN";
             lines.Add((DbFloor.Label(desc, val), false));
 
@@ -3002,12 +3049,14 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>Transformed scalar value of THIS cube trace at X-index <paramref name="i"/> (single-curve
         /// path). Returns NaN when out of range, when the cube is complex with a non-scalar transform,
         /// or when this is a family trace (use the family overload). Mirrors FormatCubeCell's numeric path.</summary>
-        private double CubeScalarAt(int i)
+        private double CubeScalarAt(int i, bool back = false)
         {
             if (_cubeXValues is null || i < 0 || i >= CubeSampleCount) return double.NaN;
-            if (_cubeComplexValues is not null)
+            var (branchComplex, branchReal) = BranchValues(back);
+            if (branchComplex is not null)
             {
-                var z = _cubeComplexValues[i];
+                if (i >= branchComplex.Length) return double.NaN;
+                var z = branchComplex[i];
                 return Transform switch
                 {
                     CubeTransform.dB20  => DbFloor.Db20(z.Magnitude),
@@ -3020,9 +3069,10 @@ namespace CircuitRF.Render.DataDisplay
                     _                   => double.NaN,   // None/Conj: complex, not a scalar
                 };
             }
-            if (_cubeRealValues is not null)
+            if (branchReal is not null)
             {
-                double v = _cubeRealValues[i];
+                if (i >= branchReal.Length) return double.NaN;
+                double v = branchReal[i];
                 return Transform switch
                 {
                     CubeTransform.dB20 => DbFloor.Db20(Math.Abs(v)),
@@ -3041,7 +3091,9 @@ namespace CircuitRF.Render.DataDisplay
         /// incompatible axes. Honors delta mode when both values are finite scalars.</summary>
         private string GetCubeMultiMarkerLine(Marker m, Trace other)
         {
-            int xIdx = CubeMarkerIndex(m);
+            // The SAMPLE, not the point index — and which half of a whole-plane cut it is on, so the
+            // other trace is read on the same side of broadside this marker sits on.
+            var (xIdx, back) = CubeMarkerSample(m);
             bool compatible =
                 other.IsCubeXMarker && !other.IsFamily &&
                 other._cubeXValues is not null && _cubeXValues is not null &&
@@ -3049,15 +3101,15 @@ namespace CircuitRF.Render.DataDisplay
 
             if (m.IsDelta)
             {
-                double own   = CubeScalarAt(xIdx);
-                double oth   = compatible ? other.CubeScalarAt(xIdx) : double.NaN;
+                double own   = CubeScalarAt(xIdx, back);
+                double oth   = compatible ? other.CubeScalarAt(xIdx, back) : double.NaN;
                 double delta = oth - own;
                 string valStr = double.IsFinite(delta) ? m.FormatString.Format(delta, m.MaximumFractionDigits) : "NaN";
                 return "  " + DbFloor.Label($"Δ{other.ReadoutDescription(false)}", valStr);
             }
 
             string val = compatible
-                ? other.FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits)
+                ? other.FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits, back)
                 : "NaN";
             if (string.IsNullOrEmpty(val)) val = "NaN";
             return DbFloor.Label(other.ReadoutDescription(false), val);
@@ -3179,10 +3231,10 @@ namespace CircuitRF.Render.DataDisplay
                 var pts = CubeMarkerPoints(m);
                 if (pts.Count == 0 || _cubeXValues is null || _cubeXValues.Length == 0)
                     return $"{desc}=NaN";
-                int xIdx = CubeMarkerIndex(m);
+                var (xIdx, back) = CubeMarkerSample(m);
                 string val = IsFamily
                     ? FormatFamilyCellForMarker(CubeMarkerCurveIndex(m), xIdx, m)
-                    : FormatCubeCellForMarker(xIdx, m);
+                    : FormatCubeCellForMarker(xIdx, m, back);
                 if (string.IsNullOrEmpty(val)) val = "NaN";
                 return DbFloor.Label(desc, val);
             }
@@ -3266,22 +3318,40 @@ namespace CircuitRF.Render.DataDisplay
         }
 
         /// <summary>
+        /// The value arrays one half of a cut is read from: the back branch's when
+        /// <paramref name="back"/> and this trace actually has one, the trace's own otherwise. A
+        /// <c>back</c> on a trace with no back branch is the front, not an error — that is what the
+        /// caller's fallback index means.
+        /// </summary>
+        private (Complex[]? Complex, double[]? Real) BranchValues(bool back)
+            => back && HasPatternBackBranch
+                ? (_backComplexValues, _backRealValues)
+                : (_cubeComplexValues, _cubeRealValues);
+
+        /// <summary>
         /// Formats the cube value at X index <paramref name="i"/> for the Table renderer
         /// (post-Transform, same transform logic as <see cref="BuildPath"/>).
         /// Returns "NaN" when out of range or cube data is absent.
         /// Complex with Transform=None uses mag∠deg (MA) format.
         /// </summary>
-        public string FormatCubeCell(int i, PrecisionFormat fmt, int fracDigits)
+        /// <param name="back">
+        /// Read the <b>back branch</b> (the φ + 180° half of a whole-plane pattern cut) instead of
+        /// the trace's own values. The two halves share the angle axis exactly, so the index is the
+        /// same one; only the array it reads changes. Ignored when this trace has no back branch.
+        /// </param>
+        public string FormatCubeCell(int i, PrecisionFormat fmt, int fracDigits, bool back = false)
         {
             if (InvalidSpecText is not null) return "";
             if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= CubeSampleCount)
                 return "NaN";
+            var (branchComplex, branchReal) = BranchValues(back);
             string f = fmt == PrecisionFormat.S ? "G6" : $"{fmt}{fracDigits}";
             string Num(double v) => fmt.Format(v, fracDigits);
 
-            if (_cubeComplexValues is not null)
+            if (branchComplex is not null)
             {
-                var z = _cubeComplexValues[i];
+                if (i >= branchComplex.Length) return "NaN";
+                var z = branchComplex[i];
                 return Transform switch
                 {
                     // No scalar transform → complex value shown in the user's Number Format (MA/RI/DB).
@@ -3298,9 +3368,10 @@ namespace CircuitRF.Render.DataDisplay
                 };
             }
 
-            if (_cubeRealValues is not null)
+            if (branchReal is not null)
             {
-                double v = _cubeRealValues[i];
+                if (i >= branchReal.Length) return "NaN";
+                double v = branchReal[i];
                 // Expression-baked real value: transform is already in the expression — show as-is.
                 double y = _transformBaked ? v : Transform switch
                 {
@@ -3389,23 +3460,26 @@ namespace CircuitRF.Render.DataDisplay
         /// <see cref="Marker.FormatComplex"/> so the marker's MatrixFormat (MA/RI/DB) is honored on
         /// Smith/Polar plots. (FormatCubeCell hardcodes MA for the Table renderer, which has no marker.)
         /// </summary>
-        public string FormatCubeCellForMarker(int i, Marker m)
+        /// <param name="back">The φ + 180° half of a whole-plane cut — see
+        /// <see cref="FormatCubeCell(int, PrecisionFormat, int, bool)"/>.</param>
+        public string FormatCubeCellForMarker(int i, Marker m, bool back = false)
         {
             if (InvalidSpecText is not null) return "";
             if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= CubeSampleCount)
                 return "NaN";
 
-            if (_cubeComplexValues is not null &&
+            var (branchComplex, _) = BranchValues(back);
+            if (branchComplex is not null && i < branchComplex.Length &&
                 (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
             {
                 var z = Transform == CubeTransform.Conj
-                    ? Complex.Conjugate(_cubeComplexValues[i])
-                    : _cubeComplexValues[i];
+                    ? Complex.Conjugate(branchComplex[i])
+                    : branchComplex[i];
                 return m.FormatComplex(z);
             }
 
             // Scalar transforms (and real cubes) format identically to the table path.
-            return FormatCubeCell(i, m.FormatString, m.MaximumFractionDigits);
+            return FormatCubeCell(i, m.FormatString, m.MaximumFractionDigits, back);
         }
 
         /// <summary>Marker-aware family cell formatter — see <see cref="FormatCubeCellForMarker"/>.</summary>
@@ -3565,7 +3639,8 @@ namespace CircuitRF.Render.DataDisplay
             if (IsCubeBound)
             {
                 if (!IsCubeReflectionElement || _cubeComplexValues is null) return "";
-                int xIdx = _lastPlotType == PlotType.Table ? NearestCubeXIndex(m.Freq) : CubeMarkerIndex(m);
+                int xIdx = _lastPlotType == PlotType.Table
+                    ? NearestCubeXIndex(m.Freq) : CubeMarkerSample(m).Sample;
                 if (xIdx < 0 || xIdx >= _cubeComplexValues.Length) return "impedance=NaN";
                 // §1 already renormalized _cubeComplexValues upstream when Override is ON
                 // (PlotInspectorViewModel.ResolveNetworkParamCube); with Override off they are the

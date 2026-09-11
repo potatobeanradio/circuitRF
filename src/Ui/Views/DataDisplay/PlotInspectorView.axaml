@@ -1685,18 +1685,31 @@
                                         </Grid>
 
                                         <!-- ── Line row ──────────────────────────────────────────
-                                             Cols: 34 (ISB) | * (NUD+slider nested) | 95 (color) | 26 (blank)
-                                             Col * contains a nested Grid(30,*) so slider right edge
-                                             aligns with the signal combo above.
+                                             Cols: 34 (ISB) | 3* (NUD+slider nested) | * (color, ≤ 95)
+                                             Col 1 contains a nested Grid(30,*): the NUD, then the slider.
+
+                                             THE SLIDER GETS THE SPACE, and both of its neighbours are
+                                             why that has to be spelled out. The colour column used to
+                                             be 1000* capped at 95, which is a FLAT 95 px at every
+                                             width the panel ever has, and a fourth 26 px column after
+                                             it held nothing — so 155 px of the row was spoken for
+                                             before the slider was offered any of it. In the docked
+                                             Properties panel at 234 px (an ordinary width for it) the
+                                             row is 174 px, the columns summed to 185 and OVERFLOWED,
+                                             and the slider sat on its 38 px floor whatever the panel
+                                             did. 3*:* with the cap kept gives the slider the growth
+                                             and leaves the swatch its size; the spacer is gone rather
+                                             than shrunk, because it aligned with a control (the
+                                             identity row's →R) that only a Rect plot shows at all.
+
                                              Not on a Table, and not on the 3D surface — see
                                              TraceRowViewModel.ShowLineAndSymbol for why. -->
                                         <Grid ClipToBounds="False"
                                               IsVisible="{Binding ShowLineAndSymbol}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
-                                                <ColumnDefinition Width="*"     MinWidth="75"/>
-                                                <ColumnDefinition Width="1000*" MinWidth="50" MaxWidth="95"/>
-                                                <ColumnDefinition Width="26"/>
+                                                <ColumnDefinition Width="3*" MinWidth="60"/>
+                                                <ColumnDefinition Width="*"  MinWidth="40" MaxWidth="95"/>
                                             </Grid.ColumnDefinitions>
 
                                             <!-- Line ISB: Off / Solid / Dashed / … -->
@@ -1743,7 +1756,7 @@
                                                         IsEnabled="{Binding LineEnabled}"/>
                                             </Grid>
 
-                                            <!-- Col 2: color under YAxis column (95 px) -->
+                                            <!-- Col 2: the colour swatch -->
                                             <ctl:IconSelectButton Grid.Column="2"
                                                                   HorizontalAlignment="Stretch"
                                                                   ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
@@ -1763,7 +1776,6 @@
                                                 </ctl:IconSelectButton.ItemTemplate>
                                             </ctl:IconSelectButton>
 
-                                            <!-- Col 3: blank spacer to match identity row trailing col -->
                                         </Grid>
 
                                         <!-- Table number-format controls — visible only for Table plot -->
@@ -1797,14 +1809,14 @@
                                         </Grid>
 
                                         <!-- ── Symbol row ─────────────────────────────────────────
-                                             Same column layout as line row (34 | * | 95 | 26).      -->
+                                             Same column layout as the line row (34 | 3* | *), and it
+                                             has to stay the same: the two read as one block.        -->
                                         <Grid ClipToBounds="False"
                                               IsVisible="{Binding ShowLineAndSymbol}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
-                                                <ColumnDefinition Width="*"     MinWidth="75"/>
-                                                <ColumnDefinition Width="1000*" MinWidth="50" MaxWidth="95"/>
-                                                <ColumnDefinition Width="26"/>
+                                                <ColumnDefinition Width="3*" MinWidth="60"/>
+                                                <ColumnDefinition Width="*"  MinWidth="40" MaxWidth="95"/>
                                             </Grid.ColumnDefinitions>
 
                                             <!-- Symbol ISB: Off / Circle / Square -->
@@ -1848,7 +1860,7 @@
                                                         IsEnabled="{Binding MarkerEnabled}"/>
                                             </Grid>
 
-                                            <!-- Col 2: color under YAxis column (95 px) -->
+                                            <!-- Col 2: the colour swatch -->
                                             <ctl:IconSelectButton Grid.Column="2"
                                                                   HorizontalAlignment="Stretch"
                                                                   ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
@@ -1868,7 +1880,6 @@
                                                 </ctl:IconSelectButton.ItemTemplate>
                                             </ctl:IconSelectButton>
 
-                                            <!-- Col 3: blank spacer -->
                                         </Grid>
 
                                         <!-- Z0 row: S-param (network or cube-bound) traces, and a Γ-plane contour -->

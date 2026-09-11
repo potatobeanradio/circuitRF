@@ -398,6 +398,126 @@ public sealed class AntennaFeedbackTests(ITestOutputHelper output)
                         .ReferenceInputPowerDbmOverride);
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // "With marker m3 the readout gives NaN when the marker is on the right side of the polar
+    // plot" — a whole-plane cut draws TWICE as many points as it has samples.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>A marker reads the half of the cut it is standing on, at that half's own bearing.</b>
+    ///
+    /// <para>A whole-plane cut is one point list holding two branches — the φ + 180° half first, at
+    /// negative angles, then the trace's own — so a point's position in the list is <b>not</b> its
+    /// position in the cube. Reading the value out by the point index put every marker past
+    /// broadside off the end of the cube's arrays: the value came back <c>NaN</c> and the angle was
+    /// pinned to the last sample, which is the reported defect. The half BEFORE broadside resolved
+    /// to an index that existed and was therefore silent — it read the FRONT branch's value at a
+    /// POSITIVE angle while standing on the back one, which on a symmetric pattern is invisible.</para>
+    ///
+    /// <para>Both halves are asserted against the trace that draws that half ALONE, so the single
+    /// whole-plane spelling can never quietly report something the two-trace pair does not.</para>
+    /// </summary>
+    [Fact]
+    public void AMarkerOnAWholePlaneCut_ReadsTheHalfItIsStandingOn()
+    {
+        // A pattern that is NOT symmetric about broadside — the whole point is that the two halves
+        // say different things, and a real symmetric cut (PatternFixture's straight line) reads the
+        // same number either way, which is precisely how the defect stayed invisible.
+        var ds   = LopsidedPattern();
+        int back = BackIndexOf(ds, 0);
+
+        var front  = Resolve(ds, $"dB10({U}[0, :, 0, 1])", PlotType.Polar);
+        var mirror = Resolve(ds, $"dB10({U}[0, :, {back}, 1])", PlotType.Polar);
+        var pair   = PatternPlot(front, mirror);
+
+        var one  = Resolve(ds, $"dB10({U}[0, :, 0, 1])", PlotType.Polar, wholePlane: true);
+        var solo = PatternPlot(one);
+
+        int n = front.Points.Count;
+        Assert.Equal(2 * n, one.Points.Count);
+
+        // Well away from broadside, so the two branches are telling different stories.
+        int sample = n / 2;
+        int frontPoint = n + sample;      // the trace's own half, drawn second
+        int backPoint  = n - 1 - sample;  // the φ + 180° half, drawn first and outwards-in
+
+        var (frontAngle, frontValue) = Readout(one, solo, one.Points[frontPoint]);
+        var (backAngle,  backValue)  = Readout(one, solo, one.Points[backPoint]);
+        output.WriteLine($"front: {frontAngle} / {frontValue}");
+        output.WriteLine($"back:  {backAngle} / {backValue}");
+
+        // The defect, first: the far half read NaN and reported the last sample's angle.
+        Assert.DoesNotContain("NaN", frontValue);
+        Assert.DoesNotContain("NaN", backValue);
+
+        // Each half says what the trace that draws that half alone says, at that half's own bearing.
+        var (soloFrontAngle, soloFrontValue) = Readout(front, pair, front.Points[sample]);
+        var (soloBackAngle,  soloBackValue)  = Readout(mirror, pair, mirror.Points[sample]);
+        Assert.Equal(Number(soloFrontValue), Number(frontValue));
+        Assert.Equal(Number(soloBackValue),  Number(backValue));
+        Assert.Equal(Number(soloFrontAngle), Number(frontAngle));
+        Assert.Equal("-" + Number(soloBackAngle), Number(backAngle));
+
+        // And the two halves genuinely differ here, or the assertions above would pass on anything.
+        Assert.NotEqual(Number(frontValue), Number(backValue));
+    }
+
+    /// <summary>
+    /// <b>Broadside reads "0", never "-0".</b> The two halves meet at θ = 0 and both draw a point
+    /// there; negating the back one's angle would make which of the two the marker happened to land
+    /// on visible in the readout, and they are the same direction.
+    /// </summary>
+    [Fact]
+    public void BroadsideOnAWholePlaneCut_IsNotSpelledMinusZero()
+    {
+        var one  = Resolve(LopsidedPattern(), $"dB10({U}[0, :, 0, 1])", PlotType.Polar, wholePlane: true);
+        var plot = PatternPlot(one);
+
+        int n = one.Points.Count / 2;
+        foreach (int p in new[] { n - 1, n })          // the last back point and the first front one
+        {
+            var (angle, _) = Readout(one, plot, one.Points[p]);
+            output.WriteLine($"point {p}: {angle}");
+            Assert.Equal("0", Number(angle));
+        }
+    }
+
+    /// <summary>
+    /// A far-field <c>U</c> whose two halves of the φ = 0 plane DIFFER — <c>U</c> falls off with θ
+    /// on one bearing and rises on the other. Hand-built rather than solved: what is being asserted
+    /// is which array a readout reaches into, and a physically symmetric antenna cannot show that.
+    /// </summary>
+    private static DataSet LopsidedPattern()
+    {
+        double[] theta = [.. Enumerable.Range(0, 10).Select(i => i * 10.0)];
+        double[] phi   = [.. Enumerable.Range(0, 36).Select(i => i * 10.0)];
+        var values = new double[theta.Length * phi.Length];
+        for (int t = 0; t < theta.Length; t++)
+            for (int p = 0; p < phi.Length; p++)
+                // Same at broadside (θ = 0), and increasingly different away from it.
+                values[t * phi.Length + p] = 1.0 + t * (phi[p] < 180.0 ? 0.5 : 3.0);
+
+        var ds = new DataSet();
+        ds.Add(U, new DataCube(
+            [new Axis("freq", [5e9], "Hz"), new Axis("theta", theta, "deg"),
+             new Axis("phi", phi, "deg"), new Axis("port", [1.0], "")],
+            values) { Unit = "W/sr" });
+        return ds;
+    }
+
+    /// <summary>The angle row and the value row of the info box for a marker dropped at
+    /// <paramref name="at"/> on <paramref name="t"/>.</summary>
+    private static (string Angle, string Value) Readout(Trace t, Plot plot, System.Numerics.Vector2 at)
+    {
+        var m = new Marker(t, 0.0, isMulti: false, isDelta: false, index: 3) { PositionStatic = at };
+        var lines = t.BuildMarkerBoxLines(m, plot.FreqUnits, showFilePrefix: false, plot.Traces);
+        return (lines[1].Text, lines[2].Text);
+    }
+
+    /// <summary>The number in a "name=value unit" readout row, with any unit dropped.</summary>
+    private static string Number(string row)
+        => row[(row.LastIndexOf('=') + 1)..].Trim().Split(' ')[0];
+
     /// <summary>The φ index whose bearing is 180° away from <paramref name="fromIndex"/> on the
     /// fixture's own grid — found the way the resolve finds it, by value.</summary>
     private static int BackIndexOf(DataSet ds, int fromIndex)

@@ -906,3 +906,44 @@ The test pins the invariant rather than the wording: one picture, one title — 
 `KeepAsX`, `PinToIndex` and `FamilyIterate` in turn must produce the same three labels, because the
 surface drawn is the same in all three. A polar CUT is the other side: there the role IS what is
 drawn, so a `freq` axis kept as X is the sweep and correctly names no single frequency.
+
+## Antenna display feedback, round 5 (owner, 2026-09-11) — the marker on the right half of a polar cut read NaN
+
+**The report.** On a whole-plane pattern cut, marker m3's info box read `NaN` whenever the marker
+was on the RIGHT of the disc; on the left it read a number.
+
+**A point's position in `Points` is not its position in the cube, and on a whole-plane cut it is off
+by a whole branch.** `BuildCubePath` draws the φ + 180° half FIRST — outwards-in, at negative angles
+— and then the trace's own, so a cut of *n* samples produces 2*n* points running −θmax → 0 → +θmax.
+`CubeMarkerIndex` answers with a position in that list, and every readout then used it as an index
+into `_cubeXValues` / `_cubeComplexValues` / `_cubeRealValues`, which are *n* long. Past broadside
+the index was off the end: `FormatCubeCellForMarker` returned `"NaN"` and the angle row clamped to
+the last sample, which is why the readout said `theta=90 deg` wherever the marker actually was.
+
+**The half that "worked" was wrong too, and silently.** Angles are 0° at the top increasing
+clockwise (`PolarPatternAngle.Point`), so the back branch is the LEFT half and its points are at
+list positions 0…n−1 — indices that exist. A marker there read the FRONT branch's value at a
+POSITIVE angle while standing on the back one. On the reported file's own data that is a 3.5 dB
+error at θ = 8° reported under the wrong bearing. **On a symmetric pattern it is exactly zero
+error**, which is why it survived: `PatternFixture`'s straight line reads the same number either
+way, so the gate test builds a deliberately lopsided `farfield.U` instead — what is being asserted
+is *which array a readout reaches into*, and a symmetric antenna cannot show that.
+
+**The fix is a map, not arithmetic.** `Trace._pointSample` records, per entry of `Points`, which
+cube sample drew it, with a back-branch sample stored as its bitwise complement. Arithmetic would
+not have done: `PatternPoint` returns null for a non-finite value and the rectangular path skips one
+too, so a dropped sample shifts every later point by one — a second, rarer version of the same bug
+that was already latent on ordinary Rect cube traces. `CubeMarkerSample` is what every readout now
+asks; it falls back to the raw index when no map was built, which is every non-cube path.
+
+Then the value comes from the branch the marker is on (`BranchValues`, threaded through
+`FormatCubeCell`, `FormatCubeCellForMarker` and `CubeScalarAt`, so the multi-marker and delta rows
+read the same side of broadside), and the angle row is **signed**: a back-branch sample reads
+`theta=-8 deg`. Broadside is spelled `0`, never `-0` — both halves draw a point there and they are
+the same direction, so negating it would make which of the two the marker landed on visible.
+
+Verified against the reporter's own run rather than only against a fixture: at θ = 8° the info box
+now says `-45.12` and `numpy` says `10·log10(U[42, 8, 0, 0]) = -45.117`; the back branch says
+`-41.6` against `U[42, 8, 180, 0] = -41.596`; broadside agrees to the last digit on both halves.
+The `8.56 GHz` in that readout is also right — the trace pins freq index 42 — and the plot's
+"1.74 GHz" is a custom title the author typed and then switched off.

@@ -2269,3 +2269,41 @@ every trap** are in `src/Render/RESOLVED.md`'s RND-4 entry — this is the note 
   `DataDisplayDiagnostics.NoteSink`, installed by `DataDisplayDiagnosticsInstaller` (a module
   initializer, because this assembly has three entry points). Unset — in the CLI, or a unit test —
   the failure still ends as `<invalid>` on the trace, which is what the user sees either way.
+
+## The trace card's line-width and marker-size sliders never grew (owner, 2026-09-11)
+
+**The report.** The two sliders on a trace card are too narrow, and do not extend to occupy the
+space available.
+
+**155 px of a trace-card row was spoken for before the slider was offered any of it.** The line and
+symbol rows were `34 | * (min 75) | 1000* (min 50, max 95) | 26`. A `1000*` column capped at 95 is a
+FLAT 95 px at every width the panel ever has — Avalonia's star distribution honours the cap and
+hands the remainder to the other star column, which was verified directly rather than assumed — and
+the fourth column was 26 px of nothing, kept so the colour swatch lined up with the identity row's
+`→R` button, a control only a Rect plot shows at all.
+
+**Measured, by laying the real `PlotInspectorView` out headlessly against the reported `.cdd`** (a
+throwaway Avalonia-headless harness over `CddSources` + `PlotConfigLoader` + the real view model —
+far cheaper than reading the layout code, and it answers in actual pixels):
+
+| inspector width | line row | columns | slider |
+|---|---|---|---|
+| 234 (docked Properties panel, from the reporter's own `.cwsuser`) | 174 px | 34, 75, 50, 26 = **185 — it overflowed** | 38 px |
+| 260 | 200 | 34, 75, 65, 26 | 38 |
+| 292 | 232 | 34, 77, 95, 26 | 38 |
+| 430 (the Data Display window's own inspector) | 368 | 34, 213, 95, 26 | 178 |
+
+So below ~292 px of panel the slider sat on its floor whatever the panel did, and at the reporter's
+own dock width the row was 11 px wider than the space it had.
+
+**Now `34 | 3* (min 60) | * (min 40, max 95)`**: the slider column gets the growth, the swatch keeps
+its size, and the spacer is gone rather than shrunk. Same widths, after: **63 / 87 / 111 / 215 px**,
+and the columns sum to the row at every one of them.
+
+**There is no per-trace-type difference, measured.** The report suspected one (an `S(1,1)` card
+narrower than a farfield card); every card in that document lays out identically at a given panel
+width, because all of them are stretched to the same width by the items panel and the line row's
+columns do not depend on anything the trace is. **Two hosts of one view is the likelier explanation
+and worth knowing about:** `DataDisplayView.axaml` gives `PlotInspectorView` a fixed `Width="430"`
+inside the document, and `PropertiesView.axaml` gives it whatever the docked Properties panel is —
+so the same trace card is genuinely two different widths depending on which one you are looking at.
