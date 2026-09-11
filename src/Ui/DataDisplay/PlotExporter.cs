@@ -225,7 +225,11 @@ namespace CircuitRF.Ui.DataDisplay
             using var skBitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas   = new SKCanvas(skBitmap);
             canvas.Scale(Scale, Scale);
-            RenderContainersToCanvas(canvas, containers, theme);
+            // A clipboard bitmap is a DOCUMENT, not a frame — see PlotDocumentScope. This is the
+            // one plot raster this repo builds outside PlotDocumentWriter, so it enters the scope
+            // itself rather than drawing a 3D surface to a different standard than Export does.
+            using (PlotDocumentScope.Enter())
+                RenderContainersToCanvas(canvas, containers, theme);
 
             using var skData = skBitmap.Encode(SKEncodedImageFormat.Png, 100);
             if (skData is null) return null;

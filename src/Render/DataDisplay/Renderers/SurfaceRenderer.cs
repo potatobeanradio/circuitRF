@@ -144,7 +144,7 @@ public static class SurfaceRenderer
         if (grid is not null && scale is not null)
         {
             stride = StrideFor(grid, detail);
-            facets = PatternMesh.Build(grid, scale, cam, stride);
+            facets = MeshCache.Build(grid, scale, cam, stride);
         }
 
         bool fromAbove = cam.ElevationDeg >= 0;
@@ -219,6 +219,11 @@ public static class SurfaceRenderer
         return (int)Math.Max(1, Math.Ceiling(Math.Sqrt((double)facets / InteractiveFacetBudget)));
     }
 
+    /// <summary>
+    /// The surface itself. <b>Two ways to put the same triangles on the canvas, chosen by where the
+    /// frame is going</b> — see <see cref="PlotDocumentScope"/> for the measurements and for why the
+    /// choice is not a parameter.
+    /// </summary>
     private static void DrawFacets(SKCanvas canvas, IReadOnlyList<PatternFacet> facets,
                                    Func<double, double, SKPoint> P,
                                    PolarPatternScale? scale, ContourColorMap map)
@@ -227,6 +232,19 @@ public static class SurfaceRenderer
         double span = scale.SpanDb;
         if (!(span > 0)) return;
 
+        if (PlotDocumentScope.IsActive) DrawFacetsAsPaths(canvas, facets, P, scale, span, map);
+        else                            DrawFacetsAsMesh (canvas, facets, P, scale, span, map);
+    }
+
+    /// <summary>
+    /// <b>A document's surface: one antialiased filled path per triangle.</b> Exact, resolution
+    /// independent, and the only form a vector device records — an SVG or a PDF built from the mesh
+    /// below comes back with an empty page.
+    /// </summary>
+    private static void DrawFacetsAsPaths(SKCanvas canvas, IReadOnlyList<PatternFacet> facets,
+                                          Func<double, double, SKPoint> P,
+                                          PolarPatternScale scale, double span, ContourColorMap map)
+    {
         // One paint, recoloured per facet. A fresh SKPaint per triangle is 32,000 allocations a
         // frame at the 1° × 1° grid the brief sizes this on.
         using var fill = new SKPaint { Style = SKPaintStyle.StrokeAndFill, IsAntialias = true };
@@ -249,6 +267,101 @@ public static class SurfaceRenderer
             path.Close();
             canvas.DrawPath(path, fill);
         }
+    }
+
+    /// <summary>
+    /// <b>A live frame's surface: the whole mesh in ONE <c>DrawVertices</c> call.</b> Same triangles,
+    /// same depth order, same colours — three vertices per facet all carrying that facet's colour, so
+    /// the shading stays flat per triangle rather than becoming a Gouraud blend across the surface.
+    ///
+    /// <para><b>Antialiasing is off and the hairline stroke is gone with it.</b> Neither is a loss
+    /// here: the seam the stroke existed to close is an ANTIALIASING artefact — two AA triangles each
+    /// covering half of a shared boundary pixel — and a non-AA mesh tiles its shared edges exactly,
+    /// with no background showing through anywhere. What it costs is a slightly harder silhouette,
+    /// which is the trade a frame makes and a document does not.</para>
+    ///
+    /// <para><b>The paint is WHITE under <see cref="SKBlendMode.Modulate"/>, and it has to be.</b>
+    /// <c>DrawVertices</c> combines each vertex colour with the paint's shader through that mode; with
+    /// no shader the paint's own colour stands in, so the default black paint multiplies the whole
+    /// surface to black — which is what it draws, silently, if this is left off.</para>
+    /// </summary>
+    private static void DrawFacetsAsMesh(SKCanvas canvas, IReadOnlyList<PatternFacet> facets,
+                                         Func<double, double, SKPoint> P,
+                                         PolarPatternScale scale, double span, ContourColorMap map)
+    {
+        int n = facets.Count;
+        var pts  = MeshCache.RentPoints(n * 3);
+        var cols = MeshCache.RentColors(n * 3);
+
+        for (int i = 0; i < n; i++)
+        {
+            var f = facets[i];
+            var c = ContourColormaps.Sample(map, (f.Db - scale.FloorDb) / span);
+            int k = i * 3;
+            pts[k]     = P(f.X0, f.Y0);
+            pts[k + 1] = P(f.X1, f.Y1);
+            pts[k + 2] = P(f.X2, f.Y2);
+            cols[k] = cols[k + 1] = cols[k + 2] = c;
+        }
+
+        using var vertices = SKVertices.CreateCopy(SKVertexMode.Triangles, pts, cols);
+        using var paint    = new SKPaint { Color = SKColors.White, IsAntialias = false };
+        canvas.DrawVertices(vertices, SKBlendMode.Modulate, paint);
+    }
+
+    /// <summary>
+    /// <b>The last mesh this thread built, and the scratch arrays it drew with.</b>
+    ///
+    /// <para>A pan or a zoom of the Data Display redraws every plot on it without changing anything
+    /// about the pattern — same grid, same scale, same camera — and re-projecting and re-sorting
+    /// 64,000 facets to get the identical answer is 3.8 ms of every one of those frames. The key is
+    /// everything <see cref="PatternMesh.Build"/> reads: the grid by reference (it is rebuilt only
+    /// when the trace resolves), the scale by value (it is a record), the camera and the stride.</para>
+    ///
+    /// <para><b>Thread-local, and one entry.</b> The screen draws on the compositor thread and an
+    /// export draws on its own, so a shared slot would be two threads evicting each other's mesh on
+    /// every frame — and a lock around it would put the export's 50 ms path inside the frame's
+    /// budget. One entry is enough because a plot draws one surface (<c>FirstSurface</c>).</para>
+    /// </summary>
+    private static class MeshCache
+    {
+        [ThreadStatic] private static PatternSurfaceGrid? _grid;
+        [ThreadStatic] private static PolarPatternScale?  _scale;
+        [ThreadStatic] private static PatternCamera       _camera;
+        [ThreadStatic] private static int                 _stride;
+        [ThreadStatic] private static PatternFacet[]?     _facets;
+
+        [ThreadStatic] private static SKPoint[]? _points;
+        [ThreadStatic] private static SKColor[]? _colors;
+
+        public static PatternFacet[] Build(PatternSurfaceGrid grid, PolarPatternScale scale,
+                                           PatternCamera camera, int stride)
+        {
+            if (_facets is { } hit && ReferenceEquals(_grid, grid) && _stride == stride
+                && _camera.Equals(camera) && _scale == scale)
+                return hit;
+
+            var built = PatternMesh.Build(grid, scale, camera, stride);
+            _grid = grid; _scale = scale; _camera = camera; _stride = stride; _facets = built;
+            return built;
+        }
+
+        /// <summary>
+        /// Scratch for one frame's vertices, kept between frames — 64,000 facets is 2.3 MB of
+        /// SKPoint and SKColor per frame, which at 60 fps is a GC's worth of garbage for arrays that
+        /// are overwritten in full every time.
+        ///
+        /// <para><b>Reused only at the EXACT length.</b> <c>SKVertices.CreateCopy</c> takes the whole
+        /// array, not a count, so an over-long buffer left from a bigger mesh would draw its stale
+        /// tail as triangles. The length is a function of the facet count, which does not change
+        /// while a gesture is in flight, so the exact-match rule still hits on every frame that
+        /// matters.</para>
+        /// </summary>
+        public static SKPoint[] RentPoints(int n)
+            => _points is { } p && p.Length == n ? p : _points = new SKPoint[n];
+
+        public static SKColor[] RentColors(int n)
+            => _colors is { } c && c.Length == n ? c : _colors = new SKColor[n];
     }
 
     /// <summary>

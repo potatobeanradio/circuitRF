@@ -1236,3 +1236,72 @@ a square around the plane bounds empty metal while leaving an interior ring off 
 
 **The ghost passes `statedKind: null`, not `Edge`.** A ghost is not placed yet, so no setup can have
 claimed it, and it must show what a click will actually land.
+
+## A 3D radiation pattern drew one filled path per triangle, at 17 fps (owner, 2026-09-11)
+
+Reported: rotation, and even panning and zooming the Data Display, crawled whenever a `.cdd` carried
+a 3D pattern plot. Asked for >30 fps on a pan.
+
+**One plot was the whole frame.** Measured in Release from a scratch harness over the reported
+document (a 91 × 360 far-field grid, the nine plots at their authored sizes): the Surface3D plot cost
+**56.05 ms** and the other eight cost **2.5 ms between them**. A pan redraws every plot on the tab, so
+the frame was ~58 ms — 17 fps, which is the report exactly.
+
+**`DrawFacets` issued one `DrawPath` per facet: 64,060 antialiased `StrokeAndFill` calls.** The cost
+is per-triangle setup, not fill area — it barely moves with resolution (45.4 ms at 520 × 321 against
+48.6 ms at retina 1040 × 642), so a smaller plot would not have helped. Four alternatives, measured at
+retina on the same mesh:
+
+| | 520 × 321 | 1040 × 642 |
+|---|---|---|
+| path, AA `StrokeAndFill` (what shipped) | 45.4 ms | 48.6 ms |
+| path, no AA, `Fill` only | 10.5 ms | 11.4 ms |
+| paths bucketed into 256 colours, AA | 15.5 ms | 23.7 ms |
+| **one `DrawVertices` for the whole mesh** | **4.2 ms** | **5.6 ms** |
+
+**`DrawVertices` is what the surface draws with now, and the plot went 56.05 → 5.09 ms** (Quick,
+the decimated mesh an active rotation draws, went 3.76 → 0.71 ms). Three triangles' worth of vertices
+per facet, each carrying that facet's own colour, so the shading stays flat per triangle rather than
+becoming a Gouraud blend.
+
+**But a vector device records `drawVertices` as NOTHING.** Verified directly rather than assumed: the
+same mesh that rasterises correctly writes a 150-byte SVG holding an empty `<svg>` element, and a
+565-byte one-page PDF with nothing on it. An export that silently loses its surface is R-rnd4-4's
+worst case — it opens, it prints, and it looks like a run that came back empty. So the path fill
+stayed, and `PlotDocumentScope` decides between the two.
+
+**It is a DOCUMENT scope, not a "vector device" flag, and it is ambient rather than a parameter.**
+Ambient because the alternative — a `bool` threaded through `PlotComposer.Render` and
+`PlotRenderer.Draw` — can be forgotten by the next writer, and the symptom of forgetting it is a blank
+export rather than a compile error. The scope is entered by `PlotDocumentWriter`, which is the one
+place in the repo that builds a plot document; the only raster outside it is `PlotExporter`'s
+clipboard bitmap, which enters it itself. "Document" rather than "vector" because a PNG export is
+raster and could take the mesh, but it is written once and read at whatever size the reader likes, so
+it gets the exact fill too. The mesh is for the frame that has 16 ms to be in.
+
+**The hairline stroke went with the paths and is not missed.** It existed to close the seam two
+antialiased triangles leave along a shared edge, each covering about half the boundary pixel; a non-AA
+mesh tiles shared edges exactly and shows no background through them anywhere. What the mesh does cost
+is a slightly harder silhouette — 930 pixels of a 667,680-pixel frame differ by more than a rim's
+worth, all of them on the outline.
+
+**`SKBlendMode.Modulate` over a WHITE paint, and it has to be spelled out.** `DrawVertices` combines
+each vertex colour with the paint's shader through that mode, and with no shader the paint's own
+colour stands in — so the default black paint multiplies the entire surface to black. It draws a
+solid black lobe with a correct colour bar beside it and reports nothing.
+
+**The mesh build is memoised per thread, which is the other half of a pan.** `PatternMesh.Build`
+projects and depth-sorts 64,060 facets in 3.8 ms, and a pan asks for the identical answer every frame
+— same grid, same scale, same camera. The key is everything the build reads: the grid by reference
+(it is rebuilt only when the trace resolves, and `Plot.RenderSnapshot`'s `MemberwiseClone` carries the
+same one), the scale by value (it is a record), the camera and the stride. Thread-local and one entry:
+the screen draws on the compositor thread and an export on its own, so a shared slot would have the
+two evicting each other every frame, and a lock would put the export's 50 ms inside the frame's
+budget. The vertex and colour scratch arrays are kept with it — 2.3 MB a frame otherwise — and reused
+**only at the exact length**, because `SKVertices.CreateCopy` takes the whole array rather than a
+count and an over-long buffer would draw its stale tail as triangles.
+
+Gates: `tests/Ui.Tests/DataDisplay/Pattern3DDrawPathTests.cs` — the SVG still carries >4,000 `<path>`
+elements, the PDF grows by >100 kB when a surface is on it, and the mesh and the paths raster to the
+same silhouette (drawn area within 2%), the same colours (mean |Δ| < 2 of 765) and the same region
+(fewer than 1% of pixels more than a rim apart). Nothing here times anything.

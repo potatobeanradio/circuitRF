@@ -59,7 +59,7 @@ public static class PlotDocumentWriter
         using var skStream = new SKDynamicMemoryWStream();
         using var doc      = SKDocument.CreatePdf(skStream, metadata);
         var canvas = doc.BeginPage(page.Width, page.Height);
-        render(canvas);
+        using (PlotDocumentScope.Enter()) render(canvas);
         doc.EndPage();
         doc.Close();
         return skStream.DetachAsData().ToArray();
@@ -80,7 +80,7 @@ public static class PlotDocumentWriter
         foreach (var render in pages)
         {
             var canvas = doc.BeginPage(page.Width, page.Height);
-            render(canvas);
+            using (PlotDocumentScope.Enter()) render(canvas);
             doc.EndPage();
         }
         doc.Close();
@@ -91,6 +91,7 @@ public static class PlotDocumentWriter
     {
         using var skStream = new SKDynamicMemoryWStream();
         using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, page.Width, page.Height), skStream))
+        using (PlotDocumentScope.Enter())
             render(canvas);
         // Skia writes each text run's per-glyph x/y list with a trailing separator, which Firefox
         // reads as invalid and drops - putting every run a line above its baseline, where the
@@ -110,7 +111,7 @@ public static class PlotDocumentWriter
         using var bitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var canvas = new SKCanvas(bitmap);
         canvas.Scale(scale, scale);
-        render(canvas);
+        using (PlotDocumentScope.Enter()) render(canvas);
 
         using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return data?.ToArray();
