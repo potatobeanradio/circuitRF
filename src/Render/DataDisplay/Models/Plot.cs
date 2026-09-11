@@ -292,6 +292,24 @@ namespace CircuitRF.Render.DataDisplay
         /// is a shape" (§3).</summary>
         public bool SurfaceShowAxes { get; set; } = true;
 
+        /// <summary>
+        /// <b>Whether the colour bar is drawn — the legend that says what the colours MEAN.</b> On by
+        /// default, and it is now drawn at every canvas size.
+        ///
+        /// <para>Reported 2026-09-11: the legend stopped being drawn once the Data Display was
+        /// zoomed out past a threshold, and it was asked to stay at every zoom level. It was gated
+        /// on the label font coming out at least 4 px — a rule about whether TEXT is worth drawing,
+        /// applied to the whole legend — so a zoomed-out board silently lost the one thing that says
+        /// whether a colour is the peak or the floor. The bar is drawn whatever the size and its
+        /// numbers take a floor; a small legend is readable when the user zooms back in, and an
+        /// absent one is a picture that has changed meaning.</para>
+        ///
+        /// <para>A SETTING rather than always-on, because it is the one piece of chrome that costs
+        /// width: on a narrow plot the scene is what is left after the bar, and a user framing a
+        /// figure may want that width back.</para>
+        /// </summary>
+        public bool SurfaceShowLegend { get; set; } = true;
+
         /// <summary>The resolved radial scale, or null when this is not a pattern plot. Rebuilt by
         /// <see cref="RefreshPolarPattern"/>; never set from outside.</summary>
         public PolarPatternScale? PatternScale { get; private set; }
@@ -461,7 +479,11 @@ namespace CircuitRF.Render.DataDisplay
             bool isHarmonicAxis = string.Equals(axisName, Trace.HarmonicAxisName, StringComparison.Ordinal);
             if (isFreq || isHarmonicAxis)
                 return $"freq ({FreqUnits.Description()})";
-            return string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
+            // θ and φ, not "theta" and "phi" — the same mapping the trace card's axis rows and the
+            // Y-axis label read (AxisSymbols), so a rectangular cut and the polar one beside it
+            // cannot name one axis two ways.
+            string shown = AxisSymbols.Display(axisName);
+            return string.IsNullOrEmpty(unit) ? shown : $"{shown} ({unit})";
         }
 
         /// <summary>

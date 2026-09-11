@@ -4703,3 +4703,37 @@ of the seam reports the same beamwidth — they are one plane.
   answer. That is correct and is not the dead-knob defect `PlanarCurrentModel` was added for: the
   imported outline's own boundaries already subdivide the grid more finely than λ_g/10 = 7.1 mm, so
   the λ cap never binds. With the edge mesh on it moves the mesh at every value.
+
+---
+
+## The radiation efficiency, in percent and in decibels (owner, 2026-09-11)
+
+Asked for on 2026-09-11: publish the radiation efficiency as a PERCENTAGE, and publish a decibel
+form of the same quantity beside it, that being how an antenna designer reads a loss.
+
+`RadiationEfficiency` now publishes **100 · P_radiated / P_accepted** with unit `%`, and
+`RadiationEfficiencyDb` publishes **10·log₁₀(P_radiated / P_accepted)** with unit `dB`. Both come out
+of `PlanarPowerBudget.RadiationEfficiency`, which is unchanged and is still a fraction — this is a
+change to what is PUBLISHED, not to any arithmetic, and `PowerRadiated / PowerAccepted` still closes
+on it exactly.
+
+**Why a second CUBE rather than a transform on the first.** The Data Display's dB transforms are
+dB20 (a field) and dB10 (a power) applied to a cube's own numbers, and the cube's own numbers are now
+a percentage: dB10 of 92 is +19.6 dB, not −0.36 dB. Publishing the decibel form is the only way both
+readings are available and neither is a trap. The unit travels with the cube (`AddMetrics` has
+carried it since ANT-7 §8), so a plot of the percentage is labelled `(%)` rather than leaving 92 to
+be read as a ratio.
+
+**One bound, one refusal.** Both entries take the same `EfficiencyAvailability` predicate, extracted
+from the old inline lambda — an η above 1 is refused rather than clamped in both scales, because in
+dB it would read as a positive gain out of a passive structure. Two copies of a range test is two
+places for one of them to drift, which is the rule `MismatchUsable` already states next door.
+
+**The name is `RadiationEfficiencyDb`, not `…dB`** — the registry's own spelling everywhere else
+(`FrontToBackDb`, `TrpDbm`, `DirectivityDbi`), and the cube name is what a `measure` line and a trace
+spec type.
+
+Callers that read the cube as a fraction have to divide by 100; the ones in this repository are
+`PlanarMetricsTests` (the η·P_accepted = P_radiated identity and the TRP arithmetic) and
+`AntennaExampleTests`, both of which now assert the percentage's unit and the dB cube's agreement
+with it as well.

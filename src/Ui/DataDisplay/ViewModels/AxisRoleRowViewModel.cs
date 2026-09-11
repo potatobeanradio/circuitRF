@@ -25,10 +25,29 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
 
     /// <summary>Display label: "name", or "name (unit)" when unit is non-empty. Spectral axes
     /// (single-tone "harmonic", two-tone "mixIndex") show the bare name — they are spectral-line
-    /// identifiers, not unit-bearing quantities (the per-line frequency lives in the values/marker).</summary>
+    /// identifiers, not unit-bearing quantities (the per-line frequency lives in the values/marker).
+    /// <para>An ANGLE axis is shown as its symbol (&#952;, &#966;) rather than as the ASCII
+    /// identifier the cube stores — <see cref="AxisSymbols"/> owns the mapping, and owns it for the
+    /// Y-axis labels too so the card and the plot cannot spell one axis two ways.</para></summary>
     public string AxisLabel => AxisName is "harmonic" or "mixIndex" || string.IsNullOrEmpty(Unit)
-        ? AxisName
-        : $"{AxisName} ({Unit})";
+        ? AxisSymbols.Display(AxisName)
+        : $"{AxisSymbols.Display(AxisName)} ({Unit})";
+
+    /// <summary>
+    /// <b>Whether this row is worth the height it takes.</b> A <c>port</c> axis with ONE value is
+    /// not: it is a combo box with a single entry, on every trace card of every single-port antenna
+    /// (owner, 2026-09-11). The same rule drops "port=1" from the trace's label
+    /// (<c>TraceResolve.ApplyPinnedAxisDisplay</c>) — one decision, said in both places.
+    ///
+    /// <para>The row is HIDDEN rather than never built, so the axis keeps its entry in the slice
+    /// <c>FlushSliceAndRebuild</c> writes back. A row dropped from <c>AxisRoles</c> would be a
+    /// dimension dropped from the slice the next time any other row moved.</para>
+    ///
+    /// <para>Never hidden while it is the X axis. A one-value axis is a poor X and nothing promotes
+    /// one on purpose, but a cube whose ONLY axis is <c>port</c> would otherwise present an empty
+    /// card with no way to see what it is bound to.</para>
+    /// </summary>
+    public bool IsRowVisible => !(AxisName == "port" && PinOptions.Count <= 1 && !IsX);
 
     /// <summary>Selectable index labels (Axis.Labels[k] ?? Values[k].ToString("G3")).</summary>
     public IReadOnlyList<string> PinOptions { get; }
@@ -63,6 +82,7 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPinned))]
     [NotifyPropertyChangedFor(nameof(ShowPinPicker))]
+    [NotifyPropertyChangedFor(nameof(IsRowVisible))]
     private bool _isX;
 
     [ObservableProperty]

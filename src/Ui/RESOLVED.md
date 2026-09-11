@@ -24967,3 +24967,92 @@ rectangle.
 `DocGen` run here shows ~70 changed files of which only the antenna figures, the EM Setup pair (the new
 group) and `mom-engine.html` are this phase's. Two consecutive runs differ in exactly one file,
 `analysis-editor-hb-dark.svg`, which is a known nondeterministic family and not a regression.
+
+---
+
+## Antenna display feedback, round 2 — the card and the inspector (owner, 2026-09-11)
+
+The four reports that landed below the firewall are in `src/Render/DataDisplay/RESOLVED.md`; the
+efficiency cube is in `src/Engine/Mom/RESOLVED.md`. These two are the window's own.
+
+### The two pattern-cut checkboxes are now one three-state control
+
+Reported 2026-09-11: turning the whole-plane checkbox on made the back-half checkbox vanish and
+shifted the card under the pointer. The ask was to keep it in view and grey it instead, with two
+questions attached — whether the two settings could be one, and a note that both labels were too
+wordy.
+
+They can, and combining them is a better answer than greying one out, because the two were never
+independent: three of their four combinations are legal and the fourth — mirror a trace that already
+draws both halves — folds a plane onto itself, which is exactly why the card was hiding a control to
+keep the user out of it. A control that disappears is a layout that moves under the pointer; a
+control that is present but inert is a question with no answer. The three-way choice has neither
+problem, the states are named, and the illegal one is not expressible.
+
+`Cut: [ Front half | Back half (−θ) | Whole plane ]`.
+
+**`Trace.MirrorPatternAngle` and `Trace.PatternWholePlane` are untouched** — on the model, in the
+`.cdd`, in `PlotVerb` and in every test. `TraceRowViewModel.PatternCutIndex` is a view of them, and
+it clears the flag being LEFT before setting the one being taken, so the pair is never both-on even
+for the one notification in between (a resolve fired by the first write would otherwise see the state
+this control exists to make unreachable).
+
+### The pattern scale controls are disabled off a pattern plot, never hidden
+
+Reported 2026-09-11: unchecking dB radial made a row of controls disappear and shrank the Plot
+Inspector's own width with them.
+
+Six controls were `IsVisible`-bound to `HasPatternScale`, so one checkbox changed the width of the
+whole panel and moved everything below it. They are `IsEnabled`-bound now; the ROW stays gated on
+`HasPatternControls`, which is a different question (is this a polar or a 3D plot at all) and is not
+something a click in this row can change.
+
+The outer-ring level box had two gates — there must be a scale, and it must be an absolute one — so
+it binds one new property, `CanEditPolarDbReference`, rather than the view making up the conjunction.
+
+Gated by a scan of the `.axaml` in `AntennaFeedbackRound2Tests`, because that is where the bug was:
+the view model already answered correctly.
+
+### A one-value `port` row is hidden on the trace card
+
+A combo box offering one choice, on every trace card of every single-port antenna. The row is HIDDEN
+rather than never built — dropping it from `AxisRoles` would drop the axis from the slice
+`FlushSliceAndRebuild` writes back, the next time any other row moved. Never hidden while it is the X
+axis, so a cube whose only axis is `port` still presents a card that says what it is bound to.
+
+### A 3D plot had no context menu
+
+A right-click on a 3D plot produced no context menu, so there was no way to reach the axis labels,
+the limits or anything else on it.
+
+`OnPointerPressed`'s `Surface3D` branch returned for **every** button, from the day ANT-10 added it —
+so the generic right-press below, the one that arms the menu `OnPointerReleased` opens, was never
+reached. The same unconditional return is what made the plot unmovable (see the drag entry in
+`src/Render/DataDisplay/RESOLVED.md`); both reports are that one `return`.
+
+The right press arms the flag **in the branch** rather than falling through to the generic path,
+because everything between the two is about a 2D plot's own furniture — a marker hit test, a pan
+start — and a surface has none of it. The release path needs only `_rightButtonDown`.
+
+A right-DRAG on a surface still opens the menu, because `_rightDragOccurred` is set by the
+secondary-axis pan and a surface has no pan to set it. Nothing else happens on that drag, so it is
+left as is rather than given a flag of its own.
+
+Gated by a source scan in `PlotPanLockDefaultTests` — this file's house pattern for control wiring it
+cannot instantiate.
+
+### Three context-menu items a 3D pattern has nothing for
+
+Asked for on 2026-09-11: disable Axes Limits, Add Marker and Autoscale on a 3D plot's context menu.
+All three act on the 2D axes — "Axes Limits" edits a
+window a surface has none of (`Plot.SetAxesViewport` hands it the whole canvas and says why),
+"Autoscale" fits that same window, and a marker is a point on a 2D curve. The scene is framed by the
+CAMERA instead: the Iso/Broadside/φ buttons and Reset on the Plot Inspector, and the drag and wheel on
+the plot itself.
+
+Greyed rather than removed — the rule the Plot Inspector's own pattern row follows. A menu whose
+length changes with the plot type is a menu whose items move under the pointer.
+
+**Add Marker is gated in `RefreshAddMarkerSubmenu`, not in `ApplyMenuAvailability`**, because its
+enablement also depends on whether the plot carries a trace to put one on, and two writers on one
+flag would make the answer depend on which ran last. Both are called on every open.

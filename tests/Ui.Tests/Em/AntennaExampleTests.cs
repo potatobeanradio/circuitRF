@@ -226,7 +226,13 @@ public sealed class AntennaExampleTests(ITestOutputHelper output)
 
             double d   = At(ds, "DirectivityDbi", i);
             double g   = At(ds, "GainDbi", i);
-            double eta = At(ds, "RadiationEfficiency", i);
+            // PERCENT since 2026-09-11 — the cube's own unit says so. Read back as a fraction here
+            // because every identity below is written in fractions, and the dB cube published
+            // beside it is asserted against the same number.
+            double etaPc = At(ds, "RadiationEfficiency", i);
+            double eta   = etaPc / 100.0;
+            Assert.Equal("%", ds.CubesIn(PlanarFarField.Group)["RadiationEfficiency"].Unit);
+            Assert.Equal(10.0 * Math.Log10(eta), At(ds, "RadiationEfficiencyDb", i), 9);
             double bw  = At(ds, "BeamwidthDeg", i);
             output.WriteLine($"at {PageFreqGHz} GHz: D {d:F2} dBi, G {g:F2} dBi, " +
                              $"eta {eta:P1}, E-plane beamwidth {bw:F1} deg");

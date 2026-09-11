@@ -101,15 +101,25 @@ public static class PlotCanvasGeometry
             // Bottom edge of the last label row — must mirror DrawComplexXLabels exactly.
             // The 2.0 * lw term matches the downward nudge applied in the renderer;
             // change it here whenever you change the "+ 2f * lw" constant there.
-            double rowsH = lineH * (n - 0.2) + fontSizePx * 0.5 + 2.0 * lw;
+            //
+            // The BEARINGS push the rows further down when a polar plot prints them
+            // (AxesRenderer.PolarBearingDropPx, which the renderer places the rows from). Without
+            // this the canvas is sized for rows that start at the ring and the last line falls off
+            // the bottom of a plot with "Angles" on.
+            double bearingDrop = AxesRenderer.PolarBearingDropPx(plot, (float)lw);
+            double rowsH = bearingDrop + lineH * (n - 0.2) + fontSizePx * 0.5 + 2.0 * lw;
 
             // Compute the natural bottom space below the chart circle for a square canvas.
-            // Mirrors ComputeViewport exactly using the public margin constants.
-            // Circle is always sized with ComplexTopMarginBase regardless of title.
-            double availW  = width * (1.0 - 2.0 * PlotRenderer.ComplexSideMargin);
-            double availH  = width * (1.0 - PlotRenderer.ComplexTopMarginBase - PlotRenderer.ComplexBottomMargin);
+            // Mirrors ComputeViewport exactly using the public margin constants — including the
+            // margin the bearings take out of EVERY side, which shrinks the disc and therefore
+            // leaves more room underneath it than the no-bearings case does.
+            double bearings = plot.PlotType == PlotType.Polar && plot.ShowPolarAngleLabels
+                ? PlotRenderer.ComplexAngleLabelMargin : 0.0;
+            double availW  = width * (1.0 - 2.0 * PlotRenderer.ComplexSideMargin - 2.0 * bearings);
+            double availH  = width * (1.0 - PlotRenderer.ComplexTopMarginBase - PlotRenderer.ComplexBottomMargin
+                                          - 2.0 * bearings);
             double side    = Math.Min(availW, availH);
-            double natural = width * (1.0 - PlotRenderer.ComplexTopMarginBase) - side;
+            double natural = width * (1.0 - PlotRenderer.ComplexTopMarginBase - bearings) - side;
 
             return Math.Max(0, rowsH - natural);
         }

@@ -49,7 +49,8 @@ The results land in the `farfield` group of the same result the s-parameters do.
 | `DirectivityDbi`, `GainDbi` | freq, port | dBi |
 | `DirectivityPeakThetaDeg`, `…PhiDeg` | freq, port | deg — where the peak is |
 | `RealizedGainDbi` | freq, port | dBi — gain including mismatch |
-| `RadiationEfficiency` | freq, port | fraction, not dB |
+| `RadiationEfficiency` | freq, port | **%** — a percentage, not a fraction |
+| `RadiationEfficiencyDb` | freq, port | dB — the same number, 10·log10(η) |
 | `TrpDbm`, `PeakEirpDbm` | freq, port | dBm — see [TRP and EIRP](#trp) |
 | `ReferenceInputPowerDbm` | freq, port | dBm — what those two are referenced to |
 | `PowerAccepted`, `PowerRadiated`, `PowerSurfaceWave`, `PowerDielectric`, `PowerConductor` | freq, port | W |
@@ -190,6 +191,18 @@ In the Data Display:
 Neither is called just "gain", because the usual failure is comparing one against a datasheet that
 quotes the other.
 
+### Efficiency, twice
+
+`RadiationEfficiency` is P<sub>radiated</sub> / P<sub>accepted</sub> **in percent**, and
+`RadiationEfficiencyDb` is the same number in decibels — 0 dB lossless, −3 dB for half the accepted
+power gone. Both are published; neither is derived from the other on the plot, because the Data
+Display's dB transforms apply to a cube's own numbers and 10·log10 of a percentage is not a loss.
+
+The denominator is the power **accepted** at the port, never the incident power: mismatch is already in
+the port admittance, and counting it twice is the classic double count. Total efficiency — the one that
+does include mismatch — is `RadiationEfficiencyDb + 10·log10(1 − |S11|²)`, which is exactly what
+`TrpDbm` is at the default 0 dBm reference.
+
 **The mismatch factor is 1 − |S<sub>11</sub>|², read from the same published, de-embedded
 s-parameter the S cube carries** — so the two gains differ by exactly that and by nothing else:
 
@@ -228,7 +241,7 @@ trace's label **always** states the reference it is drawn at (`@ 20 dBm in`), be
 no file and there would otherwise be no way to tell one reference from another.
 
 ```
-TrpDbm      = ReferenceInputPowerDbm + 10·log10(RadiationEfficiency · (1 − |S11|²))
+TrpDbm      = ReferenceInputPowerDbm + RadiationEfficiencyDb + 10·log10(1 − |S11|²)
 PeakEirpDbm = ReferenceInputPowerDbm + RealizedGainDbi
             = TrpDbm + DirectivityDbi
 ```

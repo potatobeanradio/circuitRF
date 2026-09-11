@@ -244,6 +244,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private MenuItem? _selectAllMarkersMenuItem;
         private MenuItem? _plotPropertiesMenuItem;
         private MenuItem? _deletePlotMenuItem;
+        private MenuItem? _axesLimitsMenuItem;
+        private MenuItem? _autoscaleMenuItem;
 
         // Inspector flyout state
         private Flyout?                  _inspectorFlyout;
@@ -421,6 +423,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             icon = new MaterialIcon { Kind = MaterialIconKind.Numeric };
             var item2 = new MenuItem { Header = "Axes Limits", Icon = icon };
             item2.Click += OnMenuActionTwo;
+            _axesLimitsMenuItem = item2;
 
             icon = new MaterialIcon { Kind = MaterialIconKind.Alphabetical };
             var item3 = new MenuItem { Header = "Axes Labels…", Icon = icon };
@@ -456,6 +459,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             icon = new MaterialIcon { Kind = MaterialIconKind.FitToPageOutline };
             var item6 = new MenuItem { Header = "Autoscale", Icon = icon };
             item6.Click += OnMenuActionAutoscale;
+            _autoscaleMenuItem = item6;
 
             icon = new MaterialIcon { Kind = MaterialIconKind.ContentCopy };
             var item7 = new MenuItem { Header = "Copy", Icon = icon };
@@ -547,6 +551,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             Set(_plotPropertiesMenuItem, CanEditPlotProperties);
             Set(_deletePlotMenuItem, CanDeletePlot);
+
+            // —— THE THREE A 3D PATTERN HAS NOTHING FOR ——
+            //
+            //  Owner, 2026-09-11. All three act on the 2D AXES: "Axes Limits" edits the window a
+            //  surface has none of (Plot.SetAxesViewport hands it the whole canvas and says why),
+            //  "Autoscale" fits that same window, and a marker is a point on a 2D curve. The scene
+            //  is framed by the camera instead — the Iso/Broadside/φ buttons and Reset on the Plot
+            //  Inspector, and the drag and wheel on the plot itself.
+            //
+            //  Greyed rather than removed, the rule the Plot Inspector's own pattern row follows:
+            //  a menu whose length changes with the plot type is a menu whose items move under the
+            //  pointer, and the greyed row says the action exists and does not apply here.
+            //  ADD MARKER IS NOT HERE: RefreshAddMarkerSubmenu owns it, because its enablement
+            //  also depends on whether the plot carries a trace to put one on, and two writers on
+            //  one flag would make the answer depend on which ran last.
+            bool onAxes = _plot?.PlotType != PlotType.Surface3D;
+            Set(_axesLimitsMenuItem, onAxes);
+            Set(_autoscaleMenuItem,  onAxes);
 
             static void Set(MenuItem? item, bool on)
             {
@@ -753,9 +775,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_addMarkerMenuItem is null) return;
 
             _addMarkerMenuItem.Items.Clear();
-            bool hasTraces  = _plot?.Traces.Count > 0;
+            // A marker is a point on a 2D CURVE, and a 3D pattern draws a surface — there is nothing
+            // to put one on (owner, 2026-09-11). Greyed rather than removed, the same rule the two
+            // axis items beside it follow; see ApplyMenuAvailability.
+            bool hasTraces  = _plot?.Traces.Count > 0 && _plot.PlotType != PlotType.Surface3D;
             bool hasMarkers = _plot?.Traces.Any(t => t.Markers.Count > 0) ?? false;
             _addMarkerMenuItem.IsEnabled = hasTraces;
+            _addMarkerMenuItem.Opacity   = hasTraces ? 1.0 : 0.4;
             if (_selectAllMarkersMenuItem is not null)
                 _selectAllMarkersMenuItem.IsEnabled = hasMarkers;
 
@@ -902,6 +928,16 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             public void Dispose() { }
         }
 
+        // The two labelling inputs a frame is drawn with, so a HIT TEST asks the renderer the same
+        // question the last frame answered. Built the same way Render() builds them (see the note
+        // there on why the alias resolver is captured as a plain delegate); they reach the hit test
+        // because the caption block's HEIGHT depends on them, and the scene is what is left over.
+        private Func<Trace, string?>? AliasForTrace()
+            => _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null;
+
+        private bool AlwaysShowSourceForRender()
+            => AppSettingsViewModel.Instance.EffectiveShowFilePrefix(_library?.HasMultipleSources ?? false);
+
         // ============================================================
         //  Pointer — press
         // ============================================================
@@ -915,9 +951,20 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _dragStartScreen = e.GetPosition(this);
 
             // ---- ANT-10: rotate the 3D pattern surface ----
+            //
+            //  ONLY over the pattern itself. Owner report, 2026-09-11: a Surface3D plot could not
+            //  be picked up and moved at all, because every left press here started a rotate and
+            //  marked itself handled, and a handled press never reaches the PlotContainerView that
+            //  moves the plot. A press on the title, on the identity line under the scene, or on
+            //  the colour bar now FALLS THROUGH unhandled and drags the plot; so does a press
+            //  anywhere on a plot that resolved no surface. SurfaceRenderer owns the test, against
+            //  the arithmetic it laid the frame out with.
             if (_plot.PlotType == PlotType.Surface3D)
             {
-                if (props.IsLeftButtonPressed)
+                if (props.IsLeftButtonPressed
+                    && SurfaceRenderer.HitsPattern((Bounds.Width, Bounds.Height), _plot,
+                                                   _dragStartScreen.X, _dragStartScreen.Y,
+                                                   AliasForTrace(), AlwaysShowSourceForRender()))
                 {
                     // Select FIRST, on the container's own commands, because this press will not
                     // reach PlotContainerView — see the note beside _surfaceRotating.
@@ -938,6 +985,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     _renderDetail       = PlotDetail.Quick;
                     e.Pointer.Capture(this);
                     e.Handled = true;
+                }
+                else if (props.IsRightButtonPressed)
+                {
+                    // —— THE CONTEXT MENU, which a 3D plot never had ——
+                    //
+                    //  Reported 2026-09-11: a right-click on a 3D plot produced no context menu, so
+                    //  there was no way to reach the axis labels, the limits or anything else on it.
+                    //  The branch returned for EVERY button since ANT-10 added it, so the generic
+                    //  right-press below — the
+                    //  one that arms the menu OnPointerReleased opens — was never reached. Arming
+                    //  it here rather than falling through, because everything between here and
+                    //  there is about a 2D plot's own furniture (a marker hit test, a pan) and a
+                    //  surface has none of it; the release path needs only this flag.
+                    _rightButtonDown    = true;
+                    _rightDragOccurred  = false;
+                    _lastRightClickPos  = _dragStartScreen;
+                    _rightClickedMarker = null;
+                    _rightClickedTrace  = null;
                 }
                 return;
             }

@@ -237,7 +237,7 @@ public class PlanarFiniteGroundTests(Xunit.Abstractions.ITestOutputHelper output
 
         _out.WriteLine($"  radiated {pattern.RadiatedPowerW:E6} W, " +
                        $"D = {report[PlanarMetric.DirectivityDbi].Value:F3} dBi, " +
-                       $"η = {report[PlanarMetric.RadiationEfficiency].Value:F6}");
+                       $"η = {report[PlanarMetric.RadiationEfficiency].Value:F3} %");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

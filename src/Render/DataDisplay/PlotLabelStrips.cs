@@ -33,12 +33,25 @@ public static class PlotLabelStrips
     /// things about the same axis. With no custom label there is one strip per trace on that side;
     /// contour traces are excluded, having no Y axis of their own.</para>
     ///
-    /// <para><b>The back branch of a pattern cut is excluded for the same reason</b>
-    /// (<see cref="Trace.MirrorPatternAngle"/>): it is the φ + 180° half of a cut whose front half
-    /// is already on this axis, so it is one curve in two traces and not a second quantity. Left in,
-    /// it printed the axis name twice. <b>Unless it is the only thing on that side</b> — a back
-    /// branch with no front branch is an odd document, but it is one the reader must still be able
-    /// to read an axis name off.</para>
+    /// <para><b>The back branch of a pattern cut is dropped only when it REPEATS a label already on
+    /// that axis</b> (<see cref="Trace.MirrorPatternAngle"/>). It is the φ + 180° half of a cut whose
+    /// front half is on the same axis, so when the two carry one label they are one curve in two
+    /// traces and not a second quantity — left in, the strip printed the axis name twice.</para>
+    ///
+    /// <para><b>The "repeats a label" half is the fix to a reported bug</b> — 2026-09-11: ticking
+    /// the back-half checkbox made the Y-axis label appear and disappear with it, and the report
+    /// asked whether that was intended. It was not. The flag alone was read, so ticking the box
+    /// DELETED that trace's
+    /// strip whatever the trace was, and a label appearing and disappearing as a checkbox moves
+    /// reads as a fault whatever the reason behind it. The ordinary way to build a cut is two traces
+    /// pinned at φ and φ + 180°, whose labels DIFFER — two genuinely different slices, both of which
+    /// the reader needs named — and those are now stable under the checkbox in both directions. Only
+    /// a back branch drawing the very same slice as one already on the axis still collapses, which
+    /// is the case the rule was written for.</para>
+    ///
+    /// <para>Deduping on the label ALONE was tried and is wrong: two ordinary traces of one quantity
+    /// (the Add Trace button clones the selected one) are two traces a reader styles separately, and
+    /// silently giving them one strip between them is a different bug in a much commoner place.</para>
     /// </summary>
     /// <param name="aliasFor">The source alias resolver the minimal labeller takes; null falls back
     /// to the file-name stem, exactly as <see cref="TraceLabeler.ComputeMinimalLabels"/> does.</param>
@@ -54,19 +67,36 @@ public static class PlotLabelStrips
         var map    = new Dictionary<Trace, string>();
         for (int i = 0; i < plot.Traces.Count && i < labels.Count; i++) map[plot.Traces[i]] = labels[i];
 
-        var leftTraces  = Labelled(plot.LeftAxisTraces);
-        var rightTraces = Labelled(plot.RightAxisTraces);
+        var leftTraces  = Labelled(plot.LeftAxisTraces,  map);
+        var rightTraces = Labelled(plot.RightAxisTraces, map);
 
         return (Side(leftTraces,  plot.CustomYLabelOn,  plot.CustomYLabel,  showFilePrefix, map),
                 Side(rightTraces, plot.CustomY2LabelOn, plot.CustomY2Label, showFilePrefix, map));
     }
 
-    /// <summary>The traces on one side that name the axis — see <see cref="For"/>.</summary>
-    private static List<Trace> Labelled(IEnumerable<Trace> traces)
+    /// <summary>The traces on one side that name the axis — see <see cref="For"/>. Contour traces
+    /// have no Y axis of their own; a back branch whose label is already on this axis is a repeat of
+    /// the curve that put it there.</summary>
+    private static List<Trace> Labelled(IEnumerable<Trace> traces,
+                                        IReadOnlyDictionary<Trace, string> labels)
     {
-        var all   = traces.Where(t => !t.IsContourTrace).ToList();
-        var front = all.Where(t => !t.MirrorPatternAngle).ToList();
-        return front.Count > 0 ? front : all;
+        var all  = traces.Where(t => !t.IsContourTrace).ToList();
+        var kept = new List<Trace>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var t in all)
+        {
+            string label = labels.TryGetValue(t, out var l) ? l : "";
+            // An unlabelled trace is never a repeat of another unlabelled one: "" is the absence of
+            // a name rather than a name two traces share.
+            if (t.MirrorPatternAngle && label.Length > 0 && seen.Contains(label)) continue;
+            seen.Add(label);
+            kept.Add(t);
+        }
+
+        // A back branch with no front branch is an odd document, but it is one the reader must still
+        // be able to read an axis name off.
+        return kept.Count > 0 ? kept : all;
     }
 
     private static IReadOnlyList<PlacedLabelStrip> Side(

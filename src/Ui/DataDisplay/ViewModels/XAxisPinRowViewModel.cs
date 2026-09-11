@@ -51,7 +51,11 @@ public sealed partial class XAxisPinRowViewModel : ViewModelBase
     {
         _owner            = owner;
         AxisName          = axisName;
-        AxisLabel         = string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
+        // The axis's SYMBOL where a reader sees it, the ASCII name everywhere a spec is written —
+        // AxisSymbols, which the trace's own axis rows and its Y-axis label both read.
+        AxisLabel         = string.IsNullOrEmpty(unit)
+            ? AxisSymbols.Display(axisName)
+            : $"{AxisSymbols.Display(axisName)} ({unit})";
         PinOptions        = pinOptions;
         _optionsAreLabels = optionsAreLabels;
         _pinIndex         = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));

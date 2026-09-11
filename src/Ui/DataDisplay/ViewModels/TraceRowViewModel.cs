@@ -43,6 +43,26 @@ public partial class TraceRowViewModel : ViewModelBase
     // True for Rect or Table — used to show/hide the YAxis format combo.
     public bool IsRectOrTablePlot => _parent.PlotType is PlotType.Rect or PlotType.Table;
 
+    /// <summary>
+    /// <b>The transform combo is shown on a PATTERN plot too.</b> Asked on 2026-09-11, on noticing
+    /// there was no transform picker for <c>farfield.U</c> at all: add one, or make it always dB10.
+    ///
+    /// <para>It cannot "always be dB10", and that is the reason the picker has to exist: a pattern
+    /// radius is decibels, but of WHAT. <c>U</c> is a radiation intensity and its dB is 10·log₁₀;
+    /// <c>Etheta</c>/<c>Ephi</c> are FIELDS and theirs is 20·log₁₀; <c>CoPolLudwig3Db</c> and
+    /// <c>AxialRatioDb</c> are already in dB and take no transform at all. One answer for three
+    /// quantities would be wrong twice, silently and by a factor of two in dB.</para>
+    ///
+    /// <para>It was hidden everywhere but Rect and Table, so on the one plot type that REQUIRES a
+    /// transform the only way to set one was to type it into the spec box.
+    /// <see cref="DefaultTransformFor"/> now picks the right one when the trace is bound, and this
+    /// is how it is changed.</para>
+    /// </summary>
+    public bool ShowTransformCombo => IsRectOrTablePlot || IsPatternPlot;
+
+    /// <summary>A dB-radial polar plot or the 3D surface — the two whose radius is decibels.</summary>
+    public bool IsPatternPlot => _parent.IsPolarDbPlot || _parent.IsSurfacePlot;
+
     // True only for Table — used to show/hide per-trace number-format controls.
     public bool IsTablePlot    => _parent.PlotType == PlotType.Table;
     public bool IsNotTablePlot => _parent.PlotType != PlotType.Table;
@@ -1351,7 +1371,8 @@ public partial class TraceRowViewModel : ViewModelBase
             if (value.WspMetric != WspMetric.None)
                 _trace.Transform = WspMetrics.DefaultTransform(value.WspMetric, _parent.PlotType);
             else if (cubeForRank is not null)
-                _trace.Transform = DefaultTransformFor(cubeForRank, _parent.PlotType, value.CubeName);
+                _trace.Transform = DefaultTransformFor(cubeForRank, _parent.PlotType, value.CubeName,
+                                                       IsPatternPlot);
             _trace.InvalidSpecText = null;
             _trace.ExpressionError = null;
             _trace.Expression      = _trace.BuildPickerExpression();
@@ -1965,10 +1986,12 @@ public partial class TraceRowViewModel : ViewModelBase
             // two reads as equal even when nothing changed.
             var key = (_trace.IsCubeBound, _parent.PlotType,
                        isComplexData: _trace.IsCubeBound ? _trace.CubeDataIsComplex : true,
-                       _trace.Derived);
+                       _trace.Derived, IsPatternPlot);
             if (_cachedTransformItems is null || _cachedTransformItemsKey != key)
             {
-                _cachedTransformItems    = BuildTransformItems(key.IsCubeBound, key.PlotType, key.isComplexData, key.Derived);
+                _cachedTransformItems    = BuildTransformItems(key.IsCubeBound, key.PlotType,
+                                                               key.isComplexData, key.Derived,
+                                                               key.IsPatternPlot);
                 _cachedTransformItemsKey = key;
             }
             return _cachedTransformItems;
@@ -1976,18 +1999,20 @@ public partial class TraceRowViewModel : ViewModelBase
     }
 
     private IReadOnlyList<CubeTransformItem>? _cachedTransformItems;
-    private (bool IsCubeBound, PlotType PlotType, bool isComplexData, DerivedParameters Derived) _cachedTransformItemsKey;
+    private (bool IsCubeBound, PlotType PlotType, bool isComplexData, DerivedParameters Derived,
+             bool IsPatternPlot) _cachedTransformItemsKey;
 
     internal static IReadOnlyList<CubeTransformItem> BuildTransformItems(
         bool isCubeBound, PlotType plotType, bool isComplexData,
-        DerivedParameters derived = DerivedParameters.None) =>
+        DerivedParameters derived = DerivedParameters.None, bool isPatternPlot = false) =>
         Enum.GetValues<CubeTransform>()
-            .Select(t => new CubeTransformItem(t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData, derived)))
+            .Select(t => new CubeTransformItem(
+                t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData, derived, isPatternPlot)))
             .ToList();
 
     private static bool TransformEntryEnabled(
         CubeTransform t, bool isCubeBound, PlotType plotType, bool isComplexData,
-        DerivedParameters derived = DerivedParameters.None)
+        DerivedParameters derived = DerivedParameters.None, bool isPatternPlot = false)
     {
         // Max Gain is a real, positive POWER ratio, so its list is its own: None and Mag (the
         // linear ratio) and dB10 (10*log10 of it). dB20/dB would misname the arithmetic — the
@@ -2002,6 +2027,15 @@ public partial class TraceRowViewModel : ViewModelBase
             return false;
 
         if (plotType == PlotType.Table) return true;   // renders complex & scalar cells alike
+
+        // A PATTERN radius is DECIBELS (Trace.PatternValuesCanBeDb), so the list is the three dB
+        // entries and nothing else — a magnitude or a phase cannot be a radius there, and offering
+        // one would be offering the uniform-pink-hemisphere that ANT-7's own refusal exists to
+        // catch. `None` joins them only for REAL data, which is how a cube that is ALREADY in dB
+        // (GainDbi, CoPolLudwig3Db) is legitimately drawn.
+        if (isPatternPlot)
+            return t is CubeTransform.dB10 or CubeTransform.dB20 or CubeTransform.dB
+                || (t == CubeTransform.None && !isComplexData);
 
         bool isComplexPassthrough = t is CubeTransform.None or CubeTransform.Conj;
 
@@ -2060,20 +2094,15 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnMirrorPatternAngleChanged(bool value)
     {
         _trace.MirrorPatternAngle = value;
+        OnPropertyChanged(nameof(PatternCutIndex));
         _parent.OnTracePatternMirrorChanged();
     }
 
     /// <summary>
-    /// Gates the checkbox. It is a statement about an ANGLE, so it says nothing anywhere the angle
-    /// is not the trace's own swept axis: a dB-radial POLAR plot and nowhere else. Same rule the dB
-    /// sub-controls follow, and the same reason <c>PlotVerb</c> adds no back branch off one.
-    /// </summary>
-    public bool ShowPatternMirror => _parent.IsPolarDbPlot && IsCubeBoundTrace && !PatternWholePlane;
-
-    /// <summary>
     /// <b>One trace, both halves of the plane</b> — <see cref="Trace.PatternWholePlane"/>. The
-    /// simple form of the picture the checkbox above builds by hand; both ship, and this one is off
-    /// by default because it is the one that did not exist before.
+    /// simple form of the picture <see cref="MirrorPatternAngle"/> builds out of two traces; both
+    /// ship, and this one is off by default because it is the one that did not exist before. The
+    /// card offers the two of them as <see cref="PatternCutIndex"/>.
     /// </summary>
     [ObservableProperty]
     private bool _patternWholePlane;
@@ -2081,7 +2110,7 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnPatternWholePlaneChanged(bool value)
     {
         _trace.PatternWholePlane = value;
-        OnPropertyChanged(nameof(ShowPatternMirror));
+        OnPropertyChanged(nameof(PatternCutIndex));
         // The companion slice is fetched by the RESOLVE, not by the path build, so this needs a
         // full re-resolve rather than the mirror's cheap re-frame — the trace has no back-branch
         // values in hand until the gather runs again.
@@ -2089,10 +2118,53 @@ public partial class TraceRowViewModel : ViewModelBase
         _parent.OnTracePatternMirrorChanged();
     }
 
-    /// <summary>Gates the whole-plane checkbox — the same rule the mirror follows. <b>The two are
-    /// mutually exclusive in practice</b> and the mirror hides while this is on: mirroring a trace
-    /// that already draws both halves would reflect the whole plane onto itself.</summary>
-    public bool ShowPatternWholePlane => _parent.IsPolarDbPlot && IsCubeBoundTrace;
+    // ---- The two above, as the ONE control the card shows --------------------
+    //
+    //  Reported 2026-09-11: turning the whole-plane checkbox on made the back-half checkbox vanish
+    //  and shifted the card under the pointer. The ask was to keep it in view and grey it instead,
+    //  with two questions attached — whether the two settings could be one, and a note that both
+    //  labels were too wordy.
+    //
+    //  They CAN be one, and combining them is the better answer than greying one out, because the two
+    //  checkboxes were never independent: three of their four combinations are legal and the fourth
+    //  (mirror a trace that already draws both halves) folds a plane onto itself, which is why the
+    //  card was hiding a control to keep the user out of it. A control that disappears is a layout
+    //  that moves under the pointer; a control that is present but inert is a question with no
+    //  answer. A THREE-WAY choice has neither problem: the states are named, all three are always
+    //  offered, and the illegal one is not expressible.
+    //
+    //  The two booleans stay exactly as they are — on the Trace, in the `.cdd`, in `PlotVerb` and
+    //  in every test. This is a view of them, not a new piece of state.
+
+    /// <summary>Which half (or halves) of the cut this trace draws, in card order.</summary>
+    public static IReadOnlyList<string> PatternCutModes { get; } =
+        ["Front half", "Back half (−θ)", "Whole plane"];
+
+    /// <summary>
+    /// The one control's selection. Front = neither flag, Back = <c>MirrorPatternAngle</c>,
+    /// Whole = <c>PatternWholePlane</c>; the fourth combination cannot be selected.
+    /// </summary>
+    public int PatternCutIndex
+    {
+        get => PatternWholePlane ? 2 : MirrorPatternAngle ? 1 : 0;
+        set
+        {
+            if (value == PatternCutIndex) return;
+            // The flag being LEFT is always cleared first, so the pair is never both-on even for the
+            // one notification in between — a resolve triggered by the first write would otherwise
+            // see the folded-onto-itself state this control exists to make unreachable.
+            if (value == 2) { MirrorPatternAngle = false; PatternWholePlane = true;  }
+            else            { PatternWholePlane  = false; MirrorPatternAngle = value == 1; }
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Gates the row. It is a statement about an ANGLE, so it says nothing anywhere the angle is not
+    /// the trace's own swept axis: a dB-radial POLAR plot and nowhere else. Same rule the dB
+    /// sub-controls follow, and the same reason <c>PlotVerb</c> adds no back branch off one.
+    /// </summary>
+    public bool ShowPatternCut => _parent.IsPolarDbPlot && IsCubeBoundTrace;
 
     // ---- A dBm level's reference power (owner, 2026-09-11) ------------------
     //
@@ -3583,11 +3655,62 @@ public partial class TraceRowViewModel : ViewModelBase
     /// practice) keeps the previous dB20-for-any-parameter-cube default.</para>
     /// </summary>
     internal static CubeTransform DefaultTransformFor(
-        RfCore.Data.DataCube cube, PlotType plotType, string? cubeName = null)
+        RfCore.Data.DataCube cube, PlotType plotType, string? cubeName = null,
+        bool isPatternPlot = false)
     {
+        // A FAR-FIELD cube reads in decibels wherever it is drawn, not only on a pattern plot —
+        // asked for on 2026-09-11, of picking farfield.U on a trace card for the first time. The
+        // rule is the same one a pattern radius uses: a radiated quantity is quoted in dB on a
+        // rectangular cut as much as on a disc, and U at 1e-4 W/sr on a linear axis is a flat line
+        // with a spike.
+        //
+        // It is the GROUP that decides, not the cube's name: "U" on its own is not necessarily a
+        // radiation intensity, and the group is what the run publishes the answer under.
+        if (isPatternPlot || IsFarFieldCube(cubeName)) return DefaultPatternTransform(cube, cubeName);
         if (plotType != PlotType.Rect) return CubeTransform.None;
         return Trace.DefaultRectTransform(
             cube.DataKind == RfCore.Data.DataKind.Complex, IsParameterCube(cube), cubeName);
+    }
+
+    /// <summary>
+    /// <b>What a cube has to be transformed by to be a pattern RADIUS.</b> Seeded when a trace is
+    /// bound on a pattern plot, because the alternative is what the owner hit on 2026-09-11: a
+    /// <c>farfield.U</c> trace born with no transform draws its LINEAR values against a dB scale
+    /// — plausible and wrong — and an <c>Etheta</c> one is born <c>&lt;invalid&gt;</c> with the
+    /// only cure being to type a transform into the spec box.
+    ///
+    /// <para><b>Three cases, in order, and none of them is a guess about magnitudes.</b> A cube
+    /// that is ALREADY in decibels takes no transform. A FIELD is 20·log₁₀ and a POWER is
+    /// 10·log₁₀ — read off the cube's own unit where it has one, which is what ANT-7 §8 put
+    /// units on these cubes FOR. Where it has none (every result file written before that), the
+    /// DataKind is the discriminator and it is exact for the cubes that matter: <c>Etheta</c> and
+    /// <c>Ephi</c> are complex fields, <c>U</c> is a real intensity.</para>
+    /// </summary>
+    /// <summary>Whether a cube spec names something in the run's far-field group — the one group
+    /// whose every quantity is read in decibels.</summary>
+    internal static bool IsFarFieldCube(string? cubeName) =>
+        cubeName is not null
+        && cubeName.StartsWith(CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal);
+
+    internal static CubeTransform DefaultPatternTransform(RfCore.Data.DataCube cube, string? cubeName)
+    {
+        string unit = cube.Unit ?? "";
+        string bare = cubeName is null ? "" : cubeName[(cubeName.LastIndexOf('.') + 1)..];
+
+        // Already decibels — by unit, or by this repository's own cube-naming convention, which is
+        // what carries the answer for a file written before the units were published.
+        if (unit is "dB" or "dBi" or "dBm" or "dBc"
+            || bare.EndsWith("Db",  StringComparison.Ordinal)
+            || bare.EndsWith("Dbi", StringComparison.Ordinal)
+            || bare.EndsWith("Dbm", StringComparison.Ordinal))
+            return CubeTransform.None;
+
+        if (unit is "V" or "A")        return CubeTransform.dB20;   // a field
+        if (unit is "W" or "W/sr")     return CubeTransform.dB10;   // a power
+
+        return cube.DataKind == RfCore.Data.DataKind.Complex
+            ? CubeTransform.dB20
+            : CubeTransform.dB10;
     }
 
     private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
@@ -3672,8 +3795,10 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsStandardTrace));
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsRectOrTablePlot));
-        OnPropertyChanged(nameof(ShowPatternMirror));
-        OnPropertyChanged(nameof(ShowPatternWholePlane));
+        OnPropertyChanged(nameof(ShowTransformCombo));
+        OnPropertyChanged(nameof(IsPatternPlot));
+        OnPropertyChanged(nameof(ShowPatternCut));
+        OnPropertyChanged(nameof(PatternCutIndex));
         // Whether this trace IS a referenced level is resolved from the cube, so it changes with the
         // binding — the control has to appear and disappear with the signal, not only with the plot.
         OnPropertyChanged(nameof(ShowReferenceInputPower));

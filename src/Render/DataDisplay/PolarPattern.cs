@@ -223,6 +223,14 @@ public static class PolarPatternAngle
     /// rendering fault rather than as the model's own stated limit. <b>When ANT-11 extends θ to
     /// 180° this sentence changes with it</b>, because it is derived from the span that is actually
     /// present.
+    ///
+    /// <para><b>NOTHING DRAWS IT SINCE 2026-09-11</b> — the owner asked for the whole caption block
+    /// under a pattern plot to go, and <see cref="PatternCaption"/> records what that cost. It is
+    /// kept, unreferenced, because it is the correct sentence for the fact and the fact has not
+    /// changed: a θ axis stopping at 90° still draws a half-disc, and anything that wants to say so
+    /// — a run note, a tooltip, an export header — should say it in these words rather than invent a
+    /// second phrasing. Delete it only when the model stops having a lower hemisphere it cannot
+    /// see.</para>
     /// </summary>
     /// <returns>Null when the axis is not θ — a φ sweep says nothing about hemispheres.</returns>
     public static string? HemisphereNote(string axisName, double firstDeg, double lastDeg)
@@ -246,73 +254,66 @@ public static class PolarPatternAngle
 }
 
 /// <summary>
-/// <b>ANT-7 §4 — what a pattern plot must state, as the lines it states them on.</b>
+/// <b>What is written under a pattern plot — which, since 2026-09-11, is its ANGLE AXIS and
+/// nothing else.</b>
 ///
-/// <para>An antenna pattern carries more context than an S-parameter trace and losing it makes the
-/// picture unfalsifiable. Two of §4's five items are NOT here, and deliberately: the cut, the driven
-/// port and the frequency are the trace's own PINNED AXES, and
-/// <see cref="TraceLabeler.ComputeMinimalLabels"/> already puts every one of them in the label strip
-/// beside the plot ("U(freq=5e+09 Hz,phi=0 deg,port=1) dB"). Restating them here would be a second
-/// copy of one fact, and the two would drift.</para>
+/// <para>ANT-7 §4 put five sentences here: whether the radius was normalised or absolute, what the
+/// reference was, that 0° is at the top, that a cut is a plane, and what the θ range means. Every
+/// one of them is true and none of them is wrong. Read on a real plot they were reported as
+/// distracting, on both the polar and the 3D pattern, and on 2026-09-11 all of it was asked to go —
+/// with the polar plot to carry its angle axis instead, θ or φ, whichever it is swept in.</para>
 ///
-/// <para>What is left is the two things nothing else says: <b>whether the radius is normalised or
-/// absolute</b>, and <b>what the θ range means</b>.</para>
+/// <para>What it cost is worth stating rather than hiding, because §4 was not arbitrary: the
+/// reference sentence is the one thing on a NORMALISED pattern that says a 0 dB peak is 0 dB
+/// relative to itself. It is not lost — <see cref="PolarPatternScale.ReferenceCaption"/> still
+/// composes it and the RINGS still carry their own numbers with the unit on the outer one, which is
+/// where a reader looks for a level anyway. The rest was genuinely restating what the label strip
+/// beside the plot already says (the cut, the port, the frequency) or what the picture already
+/// shows.</para>
+///
+/// <para>What replaces it is the one thing the picture could NOT say: <b>which angle the compass
+/// is</b>. A θ cut and a φ cut are the same disc with the same rings and different meanings, and
+/// the axis name was the only sentence here that was not available anywhere else on the plot.</para>
 /// </summary>
 public static class PatternCaption
 {
     /// <summary>
-    /// The lines drawn under a pattern plot, in order. Empty for every other plot, so the caller can
-    /// ask unconditionally.
+    /// The lines drawn under a pattern plot, in order — at most one, and empty for every plot that
+    /// is not a POLAR pattern, so the caller can ask unconditionally.
+    ///
+    /// <para><b>A 3D surface gets nothing.</b> Its angles are the scene's own drawn axes, which are
+    /// labelled in the picture; a line under it would be naming an axis that is not on the bottom
+    /// of the plot. The surface renderer still writes the trace's own identity there — that is the
+    /// trace LABEL, which a surface has no strip for, not a caption.</para>
     /// </summary>
     public static IReadOnlyList<string> Lines(Plot plot)
     {
-        if (plot is null || !plot.IsPatternPlot || plot.PatternScale is not { } scale)
+        if (plot is null || !plot.IsPolarPattern)
             return Array.Empty<string>();
 
-        bool surface = plot.PlotType == PlotType.Surface3D;
-
-        var lines = new List<string>(3)
-        {
-            // §6: "Do not draw an unlabelled normalised pattern." This line is why. The orientation
-            // half differs by kind: the polar cut's compass is fixed, and the surface's orientation
-            // is whatever the camera is, which the scene's own drawn axes state.
-            scale.ReferenceCaption() + (surface
-                ? "  ·  radius = level above the floor"
-                : "  ·  0° at top, clockwise"),
-        };
-
-        // The back-branch statement, when the plot carries one. It is a property of the PLOT rather
-        // than of any one trace, and it is its OWN LINE rather than a longer hemisphere sentence:
-        // the caption is drawn unwrapped at a fixed canvas width, and folding it in overran the
-        // plot on both sides at 792 points — clipped mid-word, which is worse than not said.
-        // It also says a different thing. The θ AXIS of the data still runs 0…90°, which is what
-        // the hemisphere line reports; what spans −90…90° is the COMPASS, because the negative half
-        // is the same θ at the opposite azimuth.
-        foreach (var t in plot.Traces)
-            if (t.MirrorPatternAngle || t.HasPatternBackBranch)
-            {
-                lines.Add("the cut is a PLANE: the negative half is the φ + 180° branch");
-                break;
-            }
-
-        // The hemisphere statement, per DISTINCT θ range present — normally one. Built from the
-        // axis, so ANT-11's extension to 180° changes it with no edit here — and ANT-10 §4 asks for
-        // the SAME sentence, from the same place, for the same reason: a hemisphere floating above a
-        // plane reads as a complete, very good antenna unless the view says otherwise.
         foreach (var t in plot.Traces)
         {
             if (t.IsContourTrace || t.IsSummaryColumn) continue;
-
-            string? note = t.SurfaceGrid is { ThetaCount: > 0 } g
-                ? PolarPatternAngle.HemisphereNote(g.ThetaAxisName, g.ThetaDeg[0], g.ThetaDeg[^1])
-                : t.CubeXValues is { Count: > 0 } xs
-                    ? PolarPatternAngle.HemisphereNote(t.CubeXAxisName, xs[0], xs[^1])
-                    : null;
-
-            if (note is null) continue;
-            if (!lines.Contains(note)) lines.Add(note);
+            if (t.CubeXValues is not { Count: > 0 }) continue;
+            if (AngleAxisLabel(t.CubeXAxisName, t.CubeXUnit) is { } label) return [label];
         }
 
-        return lines;
+        return Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// <b>"θ (deg)"</b> — the axis's own name in its own symbol, with its own unit. Null when the
+    /// swept axis is not an angle at all, which on a dB-radial polar plot is a trace already
+    /// refusing to draw (<c>PatternAxisInvalid</c>): naming a bearing it is not drawn in would be a
+    /// caption that is confidently wrong, and this is the one line left under the plot.
+    /// </summary>
+    internal static string? AngleAxisLabel(string axisName, string? axisUnit)
+    {
+        if (!PolarPatternAngle.TryDegreesPerUnit(axisName, axisUnit, out _)) return null;
+
+        // The unit the numbers around the rim are actually printed in — always degrees, whatever
+        // the cube stored. A cut swept in radians is drawn on a compass in degrees, so labelling it
+        // "rad" would name a unit that appears nowhere on the picture.
+        return $"{AxisSymbols.Display(axisName)} (deg)";
     }
 }

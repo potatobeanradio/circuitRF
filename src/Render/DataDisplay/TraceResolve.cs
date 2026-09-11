@@ -1052,10 +1052,12 @@ public static class TraceResolve
     public static void ApplyPinnedAxisDisplay(Trace t, DataSet? ds, FreqUnit? freqUnit = null)
     {
         t.SetPinnedAxisDisplay(null);
+        t.SetPinnedAxisSpecTokens(null);
         if (ds is null || t.CubeName is null || t.Slice is null || !ds.Contains(t.CubeName)) return;
 
         var cube = ds[t.CubeName];
-        Dictionary<string, string>? map = null;
+        Dictionary<string, string>? map  = null;
+        Dictionary<string, string>? spec = null;
 
         foreach (var s in t.Slice)
         {
@@ -1068,7 +1070,35 @@ public static class TraceResolve
             foreach (var a in cube.Axes) if (a.Name == s.AxisName) { axis = a; break; }
             if (axis is null || axis.Length == 0) continue;
 
+            // A ONE-VALUE PORT AXIS SAYS NOTHING, so it is not said (owner, 2026-09-11: a
+            // single-port antenna's every trace read "…, port=1"). The test is the axis LENGTH
+            // rather than the value: "port=1" on a two-port run is the whole point of the token,
+            // and "port=2" on a one-port run cannot occur. Confined to `port` deliberately — a
+            // single-frequency sweep still names its frequency, because WHICH frequency a pattern
+            // was taken at is the first thing a reader needs and a run of one is still a choice.
             int idx = Math.Clamp(s.Index, 0, axis.Length - 1);
+
+            // WHAT A SPEC HAS TO SAY, which for a `port` axis is not its index — SliceTokenParser
+            // matches an integer there against the axis's own VALUES. Resolved here because this is
+            // the one place holding both the slice and the cube, and stamped BEFORE the
+            // one-value suppression below, which is about what a LABEL says and not about what a
+            // spec must parse. See Trace.PinnedAxisSpecToken.
+            if (axis.Name == "port")
+                (spec ??= new Dictionary<string, string>(StringComparer.Ordinal))[s.AxisName] =
+                    axis.Values[idx].ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+            // An EMPTY token rather than a missing one: the labeller reads a missing entry as "the
+            // owner resolved nothing" and falls back to the raw INDEX, which would turn the
+            // suppression into "port=0". Empty means "say nothing", which is what is meant.
+            if (axis.Name == "port" && axis.Length == 1)
+            {
+                (map ??= new Dictionary<string, string>(StringComparer.Ordinal))[s.AxisName] = "";
+                continue;
+            }
+
+            // θ and φ rather than "theta" and "phi" — AxisSymbols says why, and says it once so the
+            // trace card's own axis rows cannot spell them differently.
+            string shown = AxisSymbols.Display(axis.Name);
 
             string token;
             if (axis.Labels is not null && idx < axis.Labels.Length &&
@@ -1091,17 +1121,17 @@ public static class TraceResolve
                     .ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
                 token = axis.Name == "freq"
                     ? $"{val} {fu.Description()}"
-                    : $"{axis.Name}={val} {fu.Description()}";
+                    : $"{shown}={val} {fu.Description()}";
             }
             else
             {
                 string val = axis.Values[idx].ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
                 token = string.IsNullOrWhiteSpace(axis.Unit)
-                    ? $"{axis.Name}={val}"
-                    : $"{axis.Name}={val} {axis.Unit}";
+                    ? $"{shown}={val}"
+                    : $"{shown}={val} {axis.Unit}";
             }
 
-            // A whole-plane cut carries BOTH azimuths, so its azimuth token says both — "phi=0/180
+            // A whole-plane cut carries BOTH azimuths, so its azimuth token says both — "φ=0/180
             // deg". Written here rather than in the labeller because this is where the axis, its
             // unit and the resolved companion are all in hand at once, and because the labeller
             // deliberately holds no DataSet.
@@ -1113,14 +1143,15 @@ public static class TraceResolve
                 string fwd = axis.Values[idx].ToString(
                     "G6", System.Globalization.CultureInfo.InvariantCulture);
                 token = string.IsNullOrWhiteSpace(axis.Unit)
-                    ? $"{axis.Name}={fwd}/{back}"
-                    : $"{axis.Name}={fwd}/{back} {axis.Unit}";
+                    ? $"{shown}={fwd}/{back}"
+                    : $"{shown}={fwd}/{back} {axis.Unit}";
             }
 
             (map ??= new Dictionary<string, string>(StringComparer.Ordinal))[s.AxisName] = token;
         }
 
         t.SetPinnedAxisDisplay(map);
+        t.SetPinnedAxisSpecTokens(spec);
     }
 
     /// <summary>Whether an axis carries frequency, by its UNIT — the same test the rest of the

@@ -36,6 +36,17 @@ public static class SurfaceRenderer
     /// <summary>How far the scene axes reach, in world units.</summary>
     private const double AxisLength = 1.16;
 
+    /// <summary>
+    /// <b>The smallest the legend's numbers are allowed to get, in pixels.</b> Everything else on
+    /// this canvas stops being drawn below <c>baseSize &lt; 4</c> — a rule about when TEXT is worth
+    /// the ink — and the colour bar was gated on it too, so zooming the Data Display out far enough
+    /// silently removed the one thing that says whether a colour is the peak or the floor (owner,
+    /// 2026-09-11). The bar is drawn at every size now, and its numbers stop shrinking here rather
+    /// than vanishing: small is legible once the user zooms back in, absent is a picture whose
+    /// meaning changed.
+    /// </summary>
+    private const float MinLegendTextPx = 4f;
+
     /// <summary>The facet budget an INTERACTING frame decimates to. §6: draw the full grid on
     /// release and a decimated one while the pointer is down, and say so. The endpoints of both
     /// angle axes are kept whatever the stride, so the silhouette and the peak direction do not
@@ -60,6 +71,122 @@ public static class SurfaceRenderer
                 (float)(Origin.Y - sceneY * WorldToCanvas));
     }
 
+    /// <summary>
+    /// <b>Where the scene, the caption block and the colour bar are</b> — the arithmetic
+    /// <see cref="Draw"/> lays a frame out with, in one place so a HIT TEST can ask the same
+    /// question the drawing answered. Two copies of it would be a pointer that rotates a pattern it
+    /// is not over, which is invisible until someone drags.
+    ///
+    /// <para>Top: the title. Bottom: the caption lines. Right: the colour bar with its numbers. The
+    /// square that is left is the scene. Laid out from the canvas directly, as <c>TableRenderer</c>
+    /// lays out its columns — a Surface3D plot has no world window for a viewport to be a fraction
+    /// of (<c>Plot.SetAxesViewport</c> gives it the whole canvas and says why).</para>
+    /// </summary>
+    private readonly record struct SceneLayout(
+        float TitleH, float CapH, float BarW, float LegendTextPx,
+        float Left, float Top, float Right, float Bottom,
+        float CentreX, float CentreY, float Side, float WorldToCanvas);
+
+    private static SceneLayout LayoutOf((double W, double H) canvasSize, Plot plot,
+                                        int captionCount, PolarPatternScale? scale, string title)
+    {
+        float w  = (float)canvasSize.W;
+        float h  = (float)canvasSize.H;
+        float lw = AxesRenderer.LineWidth(canvasSize);
+        float baseSize = (float)(plot.Axes.FontSizeLabel * lw);
+
+        float titleH = string.IsNullOrEmpty(title) ? 0f : (float)(plot.Axes.FontSizeLabel * 1.4 * lw) * 1.6f;
+        float capH   = baseSize >= 4f && captionCount > 0
+            ? captionCount * baseSize * 1.25f + 2f * lw : 0f;
+        float legendSize = Math.Max(baseSize, MinLegendTextPx);
+        float barW   = (scale is null || !plot.SurfaceShowLegend)
+            ? 0f : ColourBarTotalWidth(scale, legendSize, lw);
+
+        float left   = 2f * lw;
+        float top    = titleH + 2f * lw;
+        float right  = Math.Max(left + 1f, w - barW - 2f * lw);
+        float bottom = Math.Max(top  + 1f, h - capH - 2f * lw);
+
+        float side = Math.Min(right - left, bottom - top);
+        return new SceneLayout(titleH, capH, barW, legendSize, left, top, right, bottom,
+                               (left + right) / 2f, (top + bottom) / 2f, side,
+                               (float)(side / 2.0 / SceneHalfExtent));
+    }
+
+    /// <summary>
+    /// What goes under the scene — <b>nothing, since 2026-09-11</b>.
+    ///
+    /// <para>It held two things and both have left. <see cref="PatternCaption"/> stopped writing
+    /// sentences under a pattern (see its own note), and the trace IDENTITY — which is here because
+    /// a surface plot has no <c>PlotLabelStrips</c>, those being <c>IsComplex()</c>-only — is now the
+    /// plot's TITLE instead, which is what was asked for on 2026-09-11: the caption removed, its text
+    /// becoming the plot's DEFAULT title, and the user's own axes title overriding it. Which is the
+    /// better place for it: a title is where a reader looks for what a picture is OF, and the one
+    /// thing that made the
+    /// bottom the obvious spot — the scene's z axis is drawn at the top and a label there collides
+    /// with the letter — does not apply to the title block, which is above the scene rather than
+    /// over it.</para>
+    ///
+    /// <para>The method stays because the layout still has a block for it, and because
+    /// <see cref="HitsPattern"/> and <see cref="Draw"/> have to agree about its height whatever it
+    /// holds.</para>
+    /// </summary>
+    private static List<string> Captions(Plot plot, Func<Trace, string?>? aliasFor,
+                                         bool? alwaysShowSource)
+    {
+        _ = aliasFor; _ = alwaysShowSource;
+        return [.. PatternCaption.Lines(plot)];
+    }
+
+    /// <summary>
+    /// <b>A 3D pattern's title: the user's own, or the trace's identity when they have not set
+    /// one.</b> The identity comes through the SAME <c>TraceLabeler</c> a label strip uses, so the
+    /// surface and a cut beside it cannot spell one trace two ways.
+    ///
+    /// <para><c>CustomTitleOn</c> is what decides, not whether the text is empty — so a user who
+    /// sets an EMPTY title gets no title, which is the only way to turn the line off and would be
+    /// unreachable if a blank fell back to the default.</para>
+    /// </summary>
+    private static string TitleOf(Plot plot, Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        => plot.CustomTitleOn
+            ? plot.Title
+            : TraceIdentity(plot, aliasFor, alwaysShowSource) ?? "";
+
+    /// <summary>
+    /// <b>Whether a point on the canvas is ON the pattern rather than on the furniture around it</b>
+    /// — the title, the caption line under the scene, or the colour bar down the right.
+    ///
+    /// <para>Reported 2026-09-11: a 3D pattern plot could not be dragged anywhere in the Data
+    /// Display because every press rotated it, and the ask was to rotate only for a press near the
+    /// pattern itself. A press anywhere on a Surface3D plot started a rotate and marked itself
+    /// handled, so the press never reached the container that moves the plot and there was no way
+    /// to pick the plot up at all. The scene square is the rotate zone and everything outside it is
+    /// an ordinary press.</para>
+    ///
+    /// <para><b>False when the plot resolved no surface</b>, which the same report asked for
+    /// explicitly: with nothing drawn, every part of the plot is furniture and the whole of it
+    /// drags.</para>
+    ///
+    /// <para>The square rather than the lobe silhouette, deliberately. The ground disc and the
+    /// scene axes are the surface's own frame of reference and turning the object by them is what a
+    /// reader expects; and a pattern with a deep null has canvas inside its own outline that
+    /// belongs to it, which a silhouette test would hand to the drag.</para>
+    /// </summary>
+    public static bool HitsPattern((double W, double H) canvasSize, Plot plot, double x, double y,
+                                   Func<Trace, string?>? aliasFor = null,
+                                   bool? alwaysShowSource = null)
+    {
+        if (plot is null) return false;
+        var (grid, _) = FirstSurface(plot);
+        if (grid is null) return false;
+
+        var lay = LayoutOf(canvasSize, plot, Captions(plot, aliasFor, alwaysShowSource).Count,
+                           plot.PatternScale, TitleOf(plot, aliasFor, alwaysShowSource));
+        float half = lay.Side / 2f;
+        return x >= lay.CentreX - half && x <= lay.CentreX + half
+            && y >= lay.CentreY - half && y <= lay.CentreY + half;
+    }
+
     // ================================================================
     //  Draw
     // ================================================================
@@ -82,38 +209,17 @@ public static class SurfaceRenderer
 
         float baseSize = (float)(plot.Axes.FontSizeLabel * lw);
 
-        // WHAT IS DRAWN, then WHAT IT MEANS, as one block under the scene.
-        //
-        //  A surface plot has no PlotLabelStrips — those are IsComplex()-only — so the trace
-        //  identity that would have been in the strip goes here, through the SAME TraceLabeler the
-        //  strip uses so the two spellings cannot drift. It is in the caption block rather than over
-        //  the scene because the scene's own z axis is drawn at the top of it and a label placed
-        //  there collides with the letter; and because the caption block is the one part of the
-        //  layout whose height is already reserved from the canvas before the scene is sized.
-        var captions = new List<string>(4);
-        if (TraceIdentity(plot, aliasFor, alwaysShowSource) is { Length: > 0 } identity)
-            captions.Add(identity);
-        captions.AddRange(PatternCaption.Lines(plot));
+        // What goes under the scene — see Captions, which the hit test reads too — and the title,
+        // which is the trace's own identity unless the user has set one (TitleOf).
+        var captions = Captions(plot, aliasFor, alwaysShowSource);
+        string title = TitleOf(plot, aliasFor, alwaysShowSource);
 
         // ---- Layout ---------------------------------------------------
-        //
-        //  Top: the title. Bottom: the caption lines. Right: the colour bar with its numbers. The
-        //  square that is left is the scene. Laid out from the canvas directly, as TableRenderer
-        //  lays out its columns — a Surface3D plot has no world window for a viewport to be a
-        //  fraction of (Plot.SetAxesViewport gives it the whole canvas and says why).
-        float titleH = string.IsNullOrEmpty(plot.Title) ? 0f : (float)(plot.Axes.FontSizeLabel * 1.4 * lw) * 1.6f;
-        float capH   = baseSize >= 4f ? captions.Count * baseSize * 1.25f + 2f * lw : 0f;
-        float barW   = (scale is null || baseSize < 4f) ? 0f : ColourBarTotalWidth(scale, baseSize, lw);
-
-        float sceneL = 2f * lw;
-        float sceneT = titleH + 2f * lw;
-        float sceneR = Math.Max(sceneL + 1f, w - barW - 2f * lw);
-        float sceneB = Math.Max(sceneT + 1f, h - capH - 2f * lw);
-
-        float side   = Math.Min(sceneR - sceneL, sceneB - sceneT);
-        float cx     = (sceneL + sceneR) / 2f;
-        float cy     = (sceneT + sceneB) / 2f;
-        float s      = (float)(side / 2.0 / SceneHalfExtent);
+        var lay = LayoutOf(canvasSize, plot, captions.Count, scale, title);
+        float titleH = lay.TitleH, capH = lay.CapH, barW = lay.BarW;
+        float legendSize = lay.LegendTextPx;
+        float sceneL = lay.Left, sceneT = lay.Top, sceneR = lay.Right, sceneB = lay.Bottom;
+        float cx = lay.CentreX, cy = lay.CentreY, s = lay.WorldToCanvas;
         var   origin = new SKPoint(cx, cy);
 
         SKPoint P(double sx, double sy) => new((float)(cx + sx * s), (float)(cy - sy * s));
@@ -125,14 +231,14 @@ public static class SurfaceRenderer
             using var tFont = new SKFont(plot.CustomTitleBold ? SkiaFonts.PlexBold : SkiaFonts.PlexRegular, ts);
             using var tFall = new SKFont(plot.CustomTitleBold ? SkiaFonts.DejaVuBold : SkiaFonts.DejaVuRegular, ts);
             float avail = w - 4f * lw;
-            float meas  = RendererText.MeasureTextWithFallback(plot.Title, tFont, tFall);
+            float meas  = RendererText.MeasureTextWithFallback(title, tFont, tFall);
             if (meas > avail && meas > 0f)
             {
                 tFont.Size = Math.Max(ts * (avail / meas), ts * 0.5f);
                 tFall.Size = tFont.Size;
-                meas = RendererText.MeasureTextWithFallback(plot.Title, tFont, tFall);
+                meas = RendererText.MeasureTextWithFallback(title, tFont, tFall);
             }
-            RendererText.DrawLeftTextWithFallback(canvas, plot.Title, (w - meas) / 2f,
+            RendererText.DrawLeftTextWithFallback(canvas, title, (w - meas) / 2f,
                                                   titleH * 0.62f, tFont, tFall, text);
         }
 
@@ -167,9 +273,11 @@ public static class SurfaceRenderer
             DrawAxisLabels(canvas, cam, P, baseSize, theme);
 
         // ---- Colour bar, trace labels, captions -----------------------
+        // Drawn whenever the plot asks for one, at every canvas size — see MinLegendTextPx. It is
+        // OUTSIDE the `baseSize >= 4f` block below for exactly that reason.
         if (barW > 0f && scale is not null)
             DrawColourBar(canvas, scale, plot.SurfaceColorMap,
-                          new SKRect(w - barW, sceneT, w - 2f * lw, sceneB), baseSize, lw, theme);
+                          new SKRect(w - barW, sceneT, w - 2f * lw, sceneB), legendSize, lw, theme);
 
         if (baseSize >= 4f)
         {

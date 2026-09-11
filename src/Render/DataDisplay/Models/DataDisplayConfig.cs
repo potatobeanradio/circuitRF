@@ -143,6 +143,11 @@ public sealed class PlotContainerConfig
     public bool SurfaceShowGroundDisc { get; set; } = true;
     public bool SurfaceShowAxes       { get; set; } = true;
 
+    /// <summary>The colour bar. <b>True by default</b>, which is what a <c>.cdd</c> written before
+    /// 2026-09-11 carries — the legend was unconditional then (below its font threshold) and a
+    /// document that never had the setting must load with it on.</summary>
+    public bool SurfaceShowLegend     { get; set; } = true;
+
     public List<TraceConfig> Traces { get; set; } = new();
 
     // Null on older .splot files — load code defaults to full autoscale when absent.

@@ -207,6 +207,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSurfacePlot));
         OnPropertyChanged(nameof(HasPatternScale));
         OnPropertyChanged(nameof(HasPatternControls));
+        OnPropertyChanged(nameof(CanEditPolarDbReference));
         OnPropertyChanged(nameof(PolarAngleLabels));
         NotifySurfaceCameraChanged();
         OnPropertyChanged(nameof(IsSummaryTable));
@@ -256,6 +257,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsPolarDbPlot));
             OnPropertyChanged(nameof(HasPatternScale));
             OnPropertyChanged(nameof(HasPatternControls));
+            OnPropertyChanged(nameof(CanEditPolarDbReference));
             // The picker's enable gate is a function of this mode — a dB polar plot is a PATTERN and
             // takes REAL cubes, a linear one is a locus and does not. Alone among the six radial
             // properties this one changes what may be OFFERED, so it is the only one that rebuilds.
@@ -279,12 +281,22 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _plot.PolarDbReference = target;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PolarDbAbsolute));
+            OnPropertyChanged(nameof(CanEditPolarDbReference));
             ApplyRadialChange();
         }
     }
 
     /// <summary>The inverse, so the absolute-reference box can bind its own enablement.</summary>
     public bool PolarDbAbsolute => !PolarDbNormalised;
+
+    /// <summary>
+    /// <b>The outer-ring level is editable only when there IS a scale AND the scale is absolute.</b>
+    /// Two gates on one control, so the control binds one property rather than the view making up
+    /// the conjunction: the scale controls are greyed rather than hidden off a pattern plot (the row
+    /// keeps its width — see the note in <c>PlotInspectorView.axaml</c>), and a NORMALISED plot's
+    /// outer ring is the data's own peak and has no level to type.
+    /// </summary>
+    public bool CanEditPolarDbReference => HasPatternScale && PolarDbAbsolute;
 
     public double PolarDbReferenceValue
     {
@@ -404,6 +416,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         get => _plot.SurfaceShowAxes;
         set { if (_plot.SurfaceShowAxes == value) return; _plot.SurfaceShowAxes = value; OnPropertyChanged(); Redraw(); }
+    }
+
+    /// <summary>The colour bar — see <see cref="Plot.SurfaceShowLegend"/> for why it is a setting
+    /// and why it no longer disappears when the canvas gets small.</summary>
+    public bool SurfaceShowLegend
+    {
+        get => _plot.SurfaceShowLegend;
+        set { if (_plot.SurfaceShowLegend == value) return; _plot.SurfaceShowLegend = value; OnPropertyChanged(); Redraw(); }
     }
 
     public bool SurfaceShowGroundDisc
@@ -1013,7 +1033,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
         // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)
-        trace.Transform = TraceRowViewModel.DefaultTransformFor(cube, _plot.PlotType, cubeName);
+        //
+        // On a PATTERN plot it is not a nicety but the whole difference between a picture and a
+        // refusal: the radius is decibels, so a trace born with no transform is either
+        // <invalid> (a complex field) or a linear curve drawn against a dB scale (a real
+        // intensity). See TraceRowViewModel.DefaultPatternTransform.
+        trace.Transform = TraceRowViewModel.DefaultTransformFor(
+            cube, _plot.PlotType, cubeName, HasPatternScale);
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;

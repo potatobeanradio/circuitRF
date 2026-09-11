@@ -1457,6 +1457,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             SurfaceColorMap             = plot.SurfaceColorMap,
             SurfaceShowGroundDisc       = plot.SurfaceShowGroundDisc,
             SurfaceShowAxes             = plot.SurfaceShowAxes,
+            SurfaceShowLegend           = plot.SurfaceShowLegend,
             Axes = new AxesConfig
             {
                 AutoscaleX      = plot.AutoscaleX,

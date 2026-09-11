@@ -340,11 +340,18 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     public void TheEfficiencyDenominatorIsTheAcceptedPower_NotTheIncidentPower()
     {
         var (report, mc) = CheapSolve();
-        double eta      = report[PlanarMetric.RadiationEfficiency].Value;
+        // The cube is a PERCENTAGE since 2026-09-11, so the identity is written against η/100 — and
+        // the dB cube beside it is the same η again, which is what makes the pair one measurement
+        // rather than two.
+        double eta      = report[PlanarMetric.RadiationEfficiency].Value / 100.0;
         double accepted = report[PlanarMetric.PowerAccepted].Value;
         double radiated = report[PlanarMetric.PowerRadiated].Value;
 
         Assert.Equal(radiated, eta * accepted, 15);
+        Assert.Equal("%",  PlanarMetrics.Of(PlanarMetric.RadiationEfficiency).Unit);
+        Assert.Equal("dB", PlanarMetrics.Of(PlanarMetric.RadiationEfficiencyDb).Unit);
+        Assert.Equal(10.0 * Math.Log10(eta),
+                     report[PlanarMetric.RadiationEfficiencyDb].Value, 12);
         Assert.Equal(0.5 * mc.RawSelfAdmittance.Real, accepted, 15);
 
         // And the gain really is D·η_rad, which is the same statement from the other side.
@@ -371,6 +378,10 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         var eff = report[PlanarMetric.RadiationEfficiency];
         Assert.False(eff.Ok);
         Assert.Empty(eff.Values);
+
+        // The dB form refuses on the same predicate — one measurement, one bound.
+        Assert.False(report[PlanarMetric.RadiationEfficiencyDb].Ok);
+        Assert.Empty(report[PlanarMetric.RadiationEfficiencyDb].Values);
         Assert.Contains("REFUSED rather than clamped", eff.Verdict.Reason!);
         Assert.Contains("above 1", eff.Verdict.Reason!);
 
@@ -1062,7 +1073,7 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal(report[PlanarMetric.RealizedGainDbi].Value,
                      report[PlanarMetric.PeakEirpDbm].Value, 10);
 
-        double etaTotal = report[PlanarMetric.RadiationEfficiency].Value * mc.MismatchFactor;
+        double etaTotal = report[PlanarMetric.RadiationEfficiency].Value / 100.0 * mc.MismatchFactor;
         Assert.Equal(10.0 * Math.Log10(etaTotal), report[PlanarMetric.TrpDbm].Value, 10);
         _out.WriteLine($"eta_total {etaTotal:E4} -> TRP {report[PlanarMetric.TrpDbm].Value:F4} dBm; " +
                        $"realized gain {report[PlanarMetric.RealizedGainDbi].Value:F4} dBi");
@@ -1093,6 +1104,7 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
 
         foreach (var m in new[] { PlanarMetric.DirectivityDbi, PlanarMetric.GainDbi,
                                   PlanarMetric.RealizedGainDbi, PlanarMetric.RadiationEfficiency,
+                                  PlanarMetric.RadiationEfficiencyDb,
                                   PlanarMetric.PowerAccepted, PlanarMetric.PowerRadiated })
             Assert.Equal(baseline[m].Value, shifted[m].Value, 12);
 

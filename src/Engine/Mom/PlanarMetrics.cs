@@ -12,6 +12,7 @@
 //   Gain                 G = D · η_rad = 4π·U_peak / P_accepted          EFFICIENCY ONLY
 //   Realized gain        G · (accepted/available)                        INCLUDES MISMATCH
 //   Radiation efficiency η_rad = P_radiated / P_accepted                 ACCEPTED, not incident
+//                        published in PERCENT, and in dB beside it
 //
 // R-ant-4. BOTH GAINS SHIP, BOTH ARE NAMED IN FULL, AND NEITHER IS CALLED JUST "GAIN". On a board
 // mismatched by 3 dB at resonance the two differ by a factor of two, and this is the single most
@@ -78,6 +79,7 @@ public enum PlanarMetric
     PowerDielectric,
     PowerConductor,
     RadiationEfficiency,
+    RadiationEfficiencyDb,
     DirectivityDbi,
     DirectivityPeakThetaDeg,
     DirectivityPeakPhiDeg,
@@ -471,30 +473,38 @@ public static class PlanarMetrics
             _ => EmSuitability.Yes,
             c => [c.Budget.ConductorW]),
 
-        new(PlanarMetric.RadiationEfficiency, "RadiationEfficiency", "", PlanarMetricAxis.PerPoint,
-            "η_rad = P_radiated / P_accepted — a FRACTION, not dB, and not clamped. The denominator " +
+        new(PlanarMetric.RadiationEfficiency, "RadiationEfficiency", "%", PlanarMetricAxis.PerPoint,
+            "η_rad = 100 · P_radiated / P_accepted — a PERCENTAGE, and not clamped. The denominator " +
             "is the power ACCEPTED at the port, never the incident power (R-ant-5): mismatch is " +
             "already in the port admittance and counting it twice is the classic double count. " +
+            "**It is published in PERCENT rather than as a fraction** (owner, 2026-09-11), which is " +
+            "how an efficiency is quoted and read; the unit travels with the cube, so a plot of it " +
+            "is labelled (%) rather than leaving 92 to be read as a ratio. RadiationEfficiencyDb is " +
+            "the same quantity in decibels, published beside it. " +
             PlanarPowerBudget.BoundNote,
-            c =>
-            {
-                var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
-                if (!ok.Ok) return ok;
-                double e = c.Budget.RadiationEfficiency;
-                return e <= 1.0 + PlanarMetricSettings.EfficiencyTolerance
-                    ? EmSuitability.Yes
-                    : EmSuitability.No(
-                        $"The radiation efficiency came out as {e:F6} — above 1, by more than the " +
-                        $"{PlanarMetricSettings.EfficiencyTolerance:E0} quadrature tolerance. " +
-                        $"{SurfaceMesher.Eng(c.Budget.RadiatedW)}W is reported as radiated out of " +
-                        $"{SurfaceMesher.Eng(c.Budget.AcceptedW)}W accepted, which no passive " +
-                        $"structure can do. It is REFUSED rather than clamped, because a clamped " +
-                        $"efficiency reads as 100 % and hides exactly the kind of level error the " +
-                        $"itemisation exists to catch — the pattern's own normalisation, the port's " +
-                        $"admittance, or the hemisphere quadrature is wrong, and all three are " +
-                        $"published here so the wrong one can be found.");
-            },
-            c => [c.Budget.RadiationEfficiency]),
+            EfficiencyAvailability,
+            c => [100.0 * c.Budget.RadiationEfficiency]),
+
+        // ── The same number in dB, because that is how an antenna designer reads a loss ──────────
+        //
+        // Owner request, 2026-09-11. It is 10·log₁₀(η_rad) and NOTHING else — a SECOND cube rather
+        // than a transform on the first, because the Data Display's dB transforms are dB20 (a field)
+        // and dB10 (a power) applied to the cube's own numbers, and the cube's own numbers are now a
+        // PERCENTAGE: dB10 of 92 is +19.6 dB, not −0.36 dB. Publishing the decibel form is the only
+        // way both readings are available and neither is a trap.
+        //
+        // It refuses on exactly the predicate the fraction refuses on, which is structural rather
+        // than a shared precaution: they are one measurement, and an η above 1 is as unpublishable
+        // in dB as it is in percent (it would read as a positive gain from a passive structure).
+        new(PlanarMetric.RadiationEfficiencyDb, "RadiationEfficiencyDb", "dB", PlanarMetricAxis.PerPoint,
+            "10·log₁₀(P_radiated / P_accepted) — RadiationEfficiency in decibels, which is how a " +
+            "loss is read: 0 dB is lossless, −3 dB is half the accepted power gone. It is a ratio of " +
+            "POWERS, so the factor is 10 and not 20. Same denominator, same bound and same refusal " +
+            "as the percentage form; the two are one measurement published in the two scales it is " +
+            "quoted in, and G = D + this is the identity to read them by. " +
+            PlanarPowerBudget.BoundNote,
+            EfficiencyAvailability,
+            c => [PlanarMetricContext.Db(c.Budget.RadiationEfficiency)]),
 
         new(PlanarMetric.DirectivityDbi, "DirectivityDbi", "dBi", PlanarMetricAxis.PerPoint,
             "D = 4π·U_peak / P_radiated, peak over the sampled hemisphere. Standard and unambiguous: " +
@@ -691,6 +701,31 @@ public static class PlanarMetrics
         "publishes this cube and does not reach this sentence — it de-embeds each point before " +
         "taking that point's pattern and hands the reflection over; only a caller that built a " +
         "metric context by hand, with no s-matrix to give, sees this.";
+
+    /// <summary>
+    /// <b>The bound both efficiency cubes are published under</b>, said once because they are one
+    /// measurement in two scales and two copies of a range test is two places for one of them to
+    /// drift. An η above 1 is REFUSED rather than clamped — a clamped efficiency reads as 100 %
+    /// and hides exactly the kind of level error the itemisation exists to catch.
+    /// </summary>
+    private static EmSuitability EfficiencyAvailability(PlanarMetricContext c)
+    {
+        var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
+        if (!ok.Ok) return ok;
+        double e = c.Budget.RadiationEfficiency;
+        return e <= 1.0 + PlanarMetricSettings.EfficiencyTolerance
+            ? EmSuitability.Yes
+            : EmSuitability.No(
+                $"The radiation efficiency came out as {e:F6} — above 1, by more than the " +
+                $"{PlanarMetricSettings.EfficiencyTolerance:E0} quadrature tolerance. " +
+                $"{SurfaceMesher.Eng(c.Budget.RadiatedW)}W is reported as radiated out of " +
+                $"{SurfaceMesher.Eng(c.Budget.AcceptedW)}W accepted, which no passive " +
+                $"structure can do. It is REFUSED rather than clamped, because a clamped " +
+                $"efficiency reads as 100 % and hides exactly the kind of level error the " +
+                $"itemisation exists to catch — the pattern's own normalisation, the port's " +
+                $"admittance, or the hemisphere quadrature is wrong, and all three are " +
+                $"published here so the wrong one can be found.");
+    }
 
     /// <summary>
     /// <b>The shared half of the mismatch check</b> — the same range test

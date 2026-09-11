@@ -215,8 +215,6 @@ namespace CircuitRF.Render.DataDisplay
                     }
                     else if (t.IsWspTrace) continue;         // null — this pin says nothing
 
-                    sb.Append(first ? '(' : ',');
-
                     // The owner resolves what a pinned axis READS as, because that answer lives on
                     // the cube and a Trace deliberately never holds one: the swept VALUE with its
                     // unit ("VDS=3.5 V"), or a labelled axis's own label alone ("IDS" — the label
@@ -225,6 +223,19 @@ namespace CircuitRF.Render.DataDisplay
                     // one place. Falling back to the raw index when the owner resolved nothing keeps
                     // a hand-built trace — and every test that builds one directly — unchanged.
                     string? display = isPort ? null : t.PinnedAxisDisplay(s.AxisName);
+
+                    // An EMPTY resolved token means "say nothing about this axis" — the owner had
+                    // the cube in hand and decided the axis carries no information here. Today that
+                    // is a one-value `port` axis (owner, 2026-09-11): "port=1" on a single-port
+                    // antenna is a word on every label that no reader can act on. Distinct from a
+                    // MISSING entry, which means the owner resolved nothing and the raw index below
+                    // is the fallback. Tested BEFORE the bracket is opened — a skip after it leaves
+                    // a "GainDbi(" with nothing in it and no closing paren, because `first` is what
+                    // decides whether one is written.
+                    if (display is { Length: 0 }) continue;
+
+                    sb.Append(first ? '(' : ',');
+
                     if (display is not null)
                     {
                         sb.Append(display);
@@ -234,7 +245,7 @@ namespace CircuitRF.Render.DataDisplay
 
                     if (!(isPort && bothPortsPinned))
                     {
-                        sb.Append(s.AxisName);
+                        sb.Append(AxisSymbols.Display(s.AxisName));
                         sb.Append('=');
                     }
                     // i/j are S/Y/Z port axes — show 1-based port numbers (i=0 ⇒ port 1).
@@ -246,6 +257,16 @@ namespace CircuitRF.Render.DataDisplay
 
             // Append transform suffix (not folded into the cube name).
             sb.Append(TransformSuffix(t.Transform));
+
+            // A PERCENTAGE says so, because 92 with no unit reads as a ratio and is then wrong by
+            // two orders of magnitude (owner, 2026-09-11, of farfield.RadiationEfficiency, which is
+            // published in percent). Only when the trace draws the cube's own numbers: a transform
+            // has already replaced the unit with its own scale, and "dB10 (%)" would be a lie about
+            // what is on the axis. It is HERE rather than in RectYLabel because this label is the
+            // one that reaches the rectangular Y axis, the polar label strip AND the marker
+            // readouts, and a unit on one of the three and not the others is the drift the labeller
+            // exists to prevent.
+            if (t.Transform == CubeTransform.None && t.CubeValueUnit == "%") sb.Append(" (%)");
 
             // A dBm LEVEL says what it is a level above, always — see Trace.ReferenceLevelSuffix.
             // Here rather than in RectYLabel because this label is the one that reaches BOTH the

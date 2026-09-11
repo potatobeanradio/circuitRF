@@ -212,51 +212,47 @@ public sealed class Pattern3DTests(ITestOutputHelper output)
     // ══ §4 — the hemisphere, and what happens when ANT-11 extends it ═════════
 
     /// <summary>
-    /// <b>The note is BUILT FROM THE AXIS and the surface closes when the axis does.</b> Same cube,
-    /// same code, θ to 90° and θ to 180° — the sentence changes and the geometry changes with it,
-    /// with no constant anywhere to edit when ANT-11 lands.
+    /// <b>The surface closes when the axis does</b> — same cube, same code, θ to 90° and θ to 180°,
+    /// and the geometry follows the axis with no constant anywhere to edit.
+    ///
+    /// <para>The hemisphere SENTENCE this also used to assert is gone: nothing is drawn under a 3D
+    /// pattern but the trace's own identity (owner, 2026-09-11 — see <c>PatternCaption</c>). The
+    /// geometry half is the half that was ever a measurement.</para>
     /// </summary>
     [Fact]
-    public void TheHemisphereNote_AndTheClosedSurface_ComeFromTheAxisRange()
+    public void TheClosedSurface_ComesFromTheAxisRange()
     {
         var half = Surface(Pattern((_, _) => 1.0, thetaMaxDeg: 90),
                            cam: PatternCamera.For(SurfaceStandardView.Broadside));
         var full = Surface(Pattern((_, _) => 1.0, thetaMaxDeg: 180, thetaSteps: 36),
                            cam: PatternCamera.For(SurfaceStandardView.Broadside));
 
-        string halfNote = Assert.Single(PatternCaption.Lines(half), s => s.Contains("hemisphere"));
-        string fullNote = Assert.Single(PatternCaption.Lines(full), s => s.Contains("hemisphere"));
-
-        Assert.Contains("θ 0…90°", halfNote);
-        Assert.Contains("the lower hemisphere is not modelled", halfNote);
-        Assert.Contains("θ 0…180°", fullNote);
-        Assert.Contains("both hemispheres are modelled", fullNote);
+        Assert.Empty(PatternCaption.Lines(half));
+        Assert.Empty(PatternCaption.Lines(full));
 
         // And the surface itself: under Broadside, Depth IS z. The hemisphere has none below the
         // ground plane; the full sphere closes underneath.
         Assert.True(Mesh(half).All(f => f.Depth > -1e-9), "a hemisphere reached below z = 0");
         Assert.True(Mesh(full).Any(f => f.Depth < -0.5),  "a 180° cube did not close underneath");
 
-        output.WriteLine(halfNote);
-        output.WriteLine(fullNote);
+        output.WriteLine("half stays above z = 0; full closes underneath");
     }
 
     /// <summary>
-    /// <b>§4's first line, and §6's "shown with its floor and its reference".</b> The surface states
-    /// whether it is normalised and what its reference is, in ANT-7's own words — one caption
-    /// machinery, so the surface and the cut beside it cannot say it two ways.
+    /// <b>A 3D pattern writes NO sentence under itself</b> (owner, 2026-09-11). The reference is
+    /// still resolved and is still what the colour bar's numbers are against — and
+    /// <see cref="PolarPatternScale.ReferenceCaption"/> still composes the sentence for anything
+    /// that quotes it — but the plot does not print it.
     /// </summary>
     [Fact]
-    public void TheSurface_StatesItsReferenceInThePolarPlotsOwnWords()
+    public void TheSurface_DrawsNoCaptionButStillResolvesItsReference()
     {
         var plot = Surface(Pattern((th, _) => Dipole(th)), floor: -30);
-        var lines = PatternCaption.Lines(plot);
 
-        Assert.Contains("normalised — outer ring = peak", lines[0]);
-        Assert.Contains("30 dB to centre", lines[0]);
-        Assert.Contains("radius = level above the floor", lines[0]);     // not the compass sentence
-        Assert.DoesNotContain("0° at top", lines[0]);
-        output.WriteLine(string.Join("\n", lines));
+        Assert.Empty(PatternCaption.Lines(plot));
+        Assert.Contains("normalised — outer ring = peak", plot.PatternScale!.ReferenceCaption());
+        Assert.Contains("30 dB to centre", plot.PatternScale.ReferenceCaption());
+        output.WriteLine(plot.PatternScale.ReferenceCaption());
     }
 
     // ══ the grid, and the traps in it ════════════════════════════════════════

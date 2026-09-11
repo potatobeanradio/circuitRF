@@ -192,6 +192,38 @@ public sealed class PlotPanLockDefaultTests
                     "the container must be selected before the rotate drag is armed");
     }
 
+    /// <summary>
+    /// <b>A press on a 3D plot takes the rotate ONLY over the pattern, and a right press arms the
+    /// context menu.</b> Two owner reports of 2026-09-11, and one branch is the cause of both: it
+    /// returned for EVERY button and after every press, so a left press on the caption or the
+    /// colour bar was swallowed (the plot could not be moved, since a handled press never reaches
+    /// <c>PlotContainerView</c>) and a right press never armed the menu the release handler opens.
+    ///
+    /// <para>Scanned rather than driven, this file's own house pattern for control wiring it cannot
+    /// instantiate. <c>SurfaceRenderer.HitsPattern</c> is what the left half is asserted THROUGH,
+    /// and that one has its own behavioural gate in <c>AntennaFeedbackRound2Tests</c>.</para>
+    /// </summary>
+    [Fact]
+    public void PlotControl_ASurfacePress_RotatesOnlyOverThePattern_AndRightClickOpensTheMenu()
+    {
+        string code = StripComments(File.ReadAllText(SourceFile("src/Ui/DataDisplay/Controls/PlotControl.cs")));
+
+        int at = code.IndexOf("if (_plot.PlotType == PlotType.Surface3D)", StringComparison.Ordinal);
+        Assert.True(at >= 0, "the surface branch of OnPointerPressed was not found");
+        string body = code.Substring(at, Math.Min(1800, code.Length - at));
+
+        // The rotate is conditional on the press landing on the pattern — the renderer owns the
+        // test, against the arithmetic it laid the frame out with.
+        Assert.Contains("SurfaceRenderer.HitsPattern", body);
+        int hit    = body.IndexOf("SurfaceRenderer.HitsPattern", StringComparison.Ordinal);
+        int rotate = body.IndexOf("_surfaceRotating    = true;", StringComparison.Ordinal);
+        Assert.True(rotate > 0 && hit < rotate, "the hit test must gate the rotate, not follow it");
+
+        // And the right button arms the menu instead of being dropped on the floor.
+        Assert.Contains("IsRightButtonPressed", body);
+        Assert.Contains("_rightButtonDown    = true;", body);
+    }
+
     /// <summary>The two thresholds answer the same question about the same gesture and must agree,
     /// or a plot's click-to-select would need a different amount of stillness than the one beside
     /// it.</summary>

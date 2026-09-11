@@ -96,13 +96,13 @@ public sealed class AntennaFeedbackTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// <b>The label says BOTH azimuths</b> — "phi=0/180 deg". Without it a whole-plane cut is
+    /// <b>The label says BOTH azimuths</b> — "φ=0/180 deg". Without it a whole-plane cut is
     /// indistinguishable in the label strip from a front-half-only one, which is exactly the
-    /// difference the reader needs, and the caption's "the cut is a PLANE" line has to appear for it
-    /// as it does for the mirrored pair.
+    /// difference the reader needs. It is the only place that difference is stated now: the
+    /// caption's "the cut is a PLANE" line went with the rest of the caption (owner, 2026-09-11).
     /// </summary>
     [Fact]
-    public void AWholePlaneCut_NamesBothAzimuths_AndTheCaptionSaysItIsAPlane()
+    public void AWholePlaneCut_NamesBothAzimuthsInItsLabel()
     {
         var ds = PatternFixture.Data;
         var one = Resolve(ds, $"dB10({U}[0, :, 0, 1])", PlotType.Polar, wholePlane: true);
@@ -111,11 +111,11 @@ public sealed class AntennaFeedbackTests(ITestOutputHelper output)
         string? phi = one.PinnedAxisDisplay("phi");
         Assert.NotNull(phi);
         Assert.Contains("/", phi);
-        Assert.StartsWith("phi=0/", phi);
+        Assert.StartsWith("φ=0/", phi);
+        Assert.Contains("φ=0/", TraceLabeler.QuantityFor(one));
 
-        Assert.Contains(PatternCaption.Lines(plot),
-                        l => l.Contains("the cut is a PLANE", StringComparison.Ordinal));
-        output.WriteLine($"phi token: {phi}");
+        Assert.Equal(["θ (deg)"], PatternCaption.Lines(plot));
+        output.WriteLine($"φ token: {phi}");
     }
 
     /// <summary>

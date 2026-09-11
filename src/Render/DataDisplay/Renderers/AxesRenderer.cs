@@ -514,6 +514,29 @@ namespace CircuitRF.Render.DataDisplay
         }
 
         /// <summary>
+        /// <b>How far below the boundary ring the bearing at 180&#176; reaches</b>, in pixels — zero
+        /// when the plot is not printing bearings.
+        ///
+        /// <para>It exists because two things are drawn under a pattern plot and neither knew about
+        /// the other: the bearings, which live in the margin the VIEWPORT reserved for them, and the
+        /// angle-axis line, which is placed from the viewport's own bottom edge. With "Angles" on,
+        /// the "180" sat exactly where the caption was written (owner, 2026-09-11) — one printed
+        /// over the other.</para>
+        ///
+        /// <para>The arithmetic is <see cref="DrawPolarBearings"/>'s own, for the one bearing that
+        /// matters here: its anchor is <c>gap + 2 · halfH</c> below the ring and the glyph descends
+        /// a little past that baseline, so the caption starts clear of the whole number.</para>
+        /// </summary>
+        internal static float PolarBearingDropPx(Plot plot, float lw)
+        {
+            if (plot is null || plot.PlotType != PlotType.Polar || !plot.ShowPolarAngleLabels)
+                return 0f;
+
+            float size = (float)(plot.Axes.FontSizeTicks * 0.85 * lw);
+            return lw * 3f + size * 1.1f;      // gap + 2·halfH (0.72) + descent, with headroom
+        }
+
+        /// <summary>
         /// The bearing numbers, printed just outside the boundary ring in the margin
         /// <see cref="PlotRenderer.ComplexAngleLabelMargin"/> reserved. Each is centred on its own
         /// spoke, which is what puts "0" over the top of a pattern plot and "90" off its right
@@ -1162,8 +1185,15 @@ namespace CircuitRF.Render.DataDisplay
             //  "freq (0 to 90 GHz)". These lines replace it: whether the radius is normalised or
             //  absolute and what its reference is, and what the θ span means. The cut, the port and
             //  the frequency are the trace's own pinned axes and are already in its label strip.
-            if (plot.IsPolarPattern && PatternCaption.Lines(plot) is { Count: > 0 } captions)
+            //
+            // THE BRANCH IS TAKEN ON THE PLOT, NOT ON THERE BEING A LINE. Since 2026-09-11 the only
+            // line is the angle axis, and a trace that resolved no angle (a dB-radial polar plot
+            // whose X is a frequency — the trace refuses to draw) produces none. Falling through
+            // would then reach the per-trace row this branch exists to replace, and print exactly
+            // the "freq (0 to 90 GHz)" the note above is about.
+            if (plot.IsPolarPattern)
             {
+                var captions = PatternCaption.Lines(plot);
                 float capSize = (float)(plot.Axes.FontSizeLabel * lw);
                 if (capSize < 4f) return;
                 float capLineH = capSize * 1.2f;
@@ -1171,14 +1201,15 @@ namespace CircuitRF.Render.DataDisplay
                 using var capFont  = new SKFont(SkiaFonts.PlexRegular, capSize);
                 using var capPaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
 
+                // Below the BEARINGS, not merely below the ring — see PolarBearingDropPx.
+                float capTop = vpBottom + PolarBearingDropPx(plot, lw);
+
                 for (int i = 0; i < captions.Count; i++)
                 {
-                    float cy = vpBottom + capLineH * (i + 0.8f) + 2f * lw;
+                    float cy = capTop + capLineH * (i + 0.8f) + 2f * lw;
                     if (cy > h) break;
 
-                    // Shrink-to-fit rather than clip: the reference sentence is the one line that
-                    // must never be cut in half, since half of "normalised — outer ring = peak …" is
-                    // a claim about an absolute level.
+                    // Shrink-to-fit rather than clip — a label cut in half is worse than a small one.
                     capFont.Size = capSize;
                     float avail  = w - 4f * lw;
                     float meas   = capFont.MeasureText(captions[i]);

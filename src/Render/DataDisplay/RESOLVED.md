@@ -510,3 +510,213 @@ in the renderer**, and the cause is somewhere this harness does not reach — `P
 arriving, or the compositor being starved by something else on the tab (this repository has a
 recorded finding that one slow frame starves the whole window). Left open and reported rather than
 guessed at.
+
+---
+
+## Antenna display feedback, round 2 (owner, 2026-09-11)
+
+Six reports against the pattern display, and four of them landed below the firewall. Detail on the
+two that are pure view-model/XAML is in `src/Ui/RESOLVED.md`; the efficiency cube's own change is in
+`src/Engine/Mom/RESOLVED.md`.
+
+### 1. A 3D pattern plot could not be picked up and moved
+
+A 3D pattern plot could not be dragged anywhere: every press rotated it.
+
+`PlotControl.OnPointerPressed` took **every** left press on a `Surface3D` plot as the start of a
+rotate and set `e.Handled`. A handled press never reaches `PlotContainerView`, which is what moves a
+plot — so there was no press anywhere on the plot that could move it, and no combination of
+modifiers either. The rotate gesture was added in ANT-10 and the collision was never noticed because
+nothing else on that plot type wants a press.
+
+The fix is a hit test, `SurfaceRenderer.HitsPattern`, and the interesting part is that it had to be
+**the renderer's own arithmetic** rather than a plausible rectangle: the scene square is what is left
+of the canvas after the title, the caption block and the colour bar are taken out, and the caption
+block's height depends on the trace LABEL (which depends on the alias resolver and on the
+show-source preference). So `Draw`'s layout was extracted into `LayoutOf` and both callers read it;
+a second copy would be a pointer that rotates a pattern it is not over, which is invisible until
+somebody drags.
+
+**The square, not the lobe silhouette.** The ground disc and the scene axes are the surface's frame
+of reference and turning the object by them is what a reader expects, and a pattern with a deep null
+has canvas inside its own outline that belongs to it.
+
+**A plot that resolved no surface never rotates** — the owner's own second sentence, and it falls out
+of `FirstSurface(plot) is null` rather than being a special case.
+
+### 2. The Y-axis label toggled when the back-half checkbox moved
+
+Ticking the back-half checkbox made the Y-axis label appear and disappear with it, and the report
+asked whether that was intended.
+
+No. `PlotLabelStrips.Labelled` filtered on `Trace.MirrorPatternAngle` directly — "a back branch is
+one curve with its front half, so it does not name the axis twice" — so ticking the box DELETED that
+trace's strip whatever the trace was. The intent was right and the test was wrong: the ordinary way
+to build a cut is two traces pinned at φ and φ + 180°, whose labels DIFFER, and those are two
+genuinely different slices the reader needs both of.
+
+It now drops a back branch only when its label is **already on that axis**, which is the
+one-curve-in-two-traces case the rule was written for and is the only case where anything is being
+said twice. Stable under the checkbox in both directions.
+
+**Deduping on the label alone was tried and reverted before it shipped** — `Add Trace` clones the
+selected trace, so two ordinary traces of one quantity are extremely common, and giving them one
+strip between them is a worse bug in a much commoner place. `DataDisplayMultiFileUiTests
+.SwitchingTraceSource_RefreshesLabelStripsImmediately_AliasQualified` is what caught it.
+
+### 3. The three sentences under every pattern plot are gone
+
+All the text under a far-field plot — on both the polar cut and the 3D pattern — was reported as
+distracting and asked to go, with the polar plot to carry its angle axis instead: θ or φ, whichever
+it is swept in.
+
+ANT-7 §4 put five statements there: normalised or absolute, the reference value, 0° at the top, that
+a cut is a plane, and what the θ range means. **What it cost is worth recording rather than hiding**,
+because §4 was not arbitrary: the reference sentence is the one thing on a normalised pattern that
+says a 0 dB peak is 0 dB relative to itself. It is not lost —
+`PolarPatternScale.ReferenceCaption()` still composes it, the rings still carry their own numbers,
+and the unit is on the outer one, which is where a reader looks for a level anyway. The rest was
+restating the label strip beside the plot (the cut, the port, the frequency) or the picture itself.
+
+What replaces it is the one thing the picture could NOT say: **which angle the compass is**. A θ cut
+and a φ cut are the same disc with the same rings and different meanings. A 3D surface gets nothing
+at all — its angles are the scene's own drawn axes — but it keeps the trace IDENTITY line, which is
+the label a surface has no strip for rather than a caption.
+
+### 4. θ and φ, from one mapping
+
+`AxisSymbols.Display` is the whole of it, and it lives here because BOTH halves read it: the trace
+card's axis rows (`src/Ui`) and the pinned-axis tokens the Y-axis label and the marker readouts are
+built from. Two copies would drift, and the entire point of a symbol is that the card and the axis
+agree. **Display only** — a spec, a slice, a `.cdd` and a refusal all keep the ASCII name, which is
+what a user types.
+
+`cut` is deliberately NOT mapped to φ: it is a beamwidth cut's plane and putting two different axes
+under one symbol on one card would be worse than the ASCII name.
+
+### 5. "port=1" on a one-port antenna
+
+Dropped when the axis has ONE value — the test is the axis LENGTH, not the value, because "port=2"
+on a two-port run is the whole point of the token. Confined to `port`: a single-frequency sweep still
+names its frequency, since WHICH frequency a pattern was taken at is the first thing a reader needs.
+
+**Two traps, both hit while building it.** The suppression is an EMPTY token in the pinned-axis map
+rather than a missing entry — `TraceLabeler` reads a missing entry as "the owner resolved nothing"
+and falls back to the raw INDEX, so the first attempt printed `port=0`. And the skip has to happen
+**before** the bracket is opened: `first` is what decides whether a closing paren is written, so a
+`continue` after `sb.Append(first ? '(' : ',')` produced `farfield.GainDbi(` with nothing in it.
+
+### 6. A percentage says so on the axis
+
+`RadiationEfficiency` is published in percent now (see `src/Engine/Mom/RESOLVED.md`), and
+`TraceLabeler.BuildCubeQuantity` appends ` (%)` to a cube whose unit is `%` and which is drawn
+untransformed. It is in the LABELLER rather than in `RectYLabel` because that one label reaches the
+rectangular Y axis, the polar label strip and the marker readouts, and a unit on one of the three and
+not the others is the drift the labeller exists to prevent. A transform replaces the scale and
+therefore the unit, so `dB10 (%)` is never written — which is also why the decibel form is its own
+published cube rather than a transform of this one.
+
+### 7. The angle label printed over the 180° bearing
+
+With "Angles" on, the θ (deg) label under the plot was drawn on top of the 180° bearing.
+
+Two things are drawn under a pattern plot and neither knew about the other. The bearings live in the
+margin the **viewport** reserves for them (`PlotRenderer.ComplexAngleLabelMargin` shrinks the disc,
+so "180" sits *below* `vpBottom`); the caption is placed from `vpBottom` too, with only its own line
+height for an offset. Measured at the 420-point default box: the bearing baseline is 406.7 and the
+caption was at 404.9 — the same place.
+
+`AxesRenderer.PolarBearingDropPx` is the fix and it is `DrawPolarBearings`' own arithmetic for the
+one bearing that matters, so the two cannot drift: `gap + 2·halfH` plus the glyph's descent. The
+caption now starts below that. With "Angles" off it returns zero and nothing moves.
+
+**The height reservation is the other half, and forgetting it would have traded an overprint for a
+line off the bottom of the canvas.** `PlotCanvasGeometry.BottomLabelExtraLogical` mirrors the
+renderer's layout and now mirrors this too — and while there, it gained the bearings' own margin in
+its `natural` term, which it had never accounted for: with "Angles" on the disc is *smaller*, so
+there is more room under it than the no-bearings formula assumed.
+
+Gated by `AntennaFeedbackRound2Tests.TheAngleLabel_ClearsTheBearingRing_WhenAnglesAreOn`, which reads
+the two baselines out of the real SVG the application's own writer produces — and which was verified
+to fail (413.0 against 406.7) with the offset removed, rather than assumed to catch it. The
+conditionality is asserted on `PolarBearingDropPx` directly and NOT by comparing the two pictures'
+y values: with the bearings off the disc keeps the margin they would have taken, so the label sits
+*lower* in absolute terms (436.1 against 431.1) while nothing at all has been added to it.
+
+---
+
+## A farfield.U plot could not be built from the Plot Inspector (2026-09-11)
+
+One report, one root cause, and three things around it that made it hard to see.
+
+### THE BUG: the spec box printed text the spec box refused
+
+Two 3D plots in the reporter's own `.cdd`, the same expression on both, one `<invalid>`. The working
+one was authored through the PICKER and carries a `CubeSlice`; the broken one carries only the
+expression, copied from the other's spec box — and that text does not parse:
+
+```
+dB10(farfield.U[42, :, ~, 0])   →   "Port 0 is not a port of axis 'port' (it has 1)."
+```
+
+`SliceTokenParser` reads an integer on a `port` axis by matching the axis's own **values** — a port
+NUMBER, never an index — and `Trace.BuildPickerExpression` was writing the **index**. So the card
+displayed a spec that its own parser rejected. **On a one-port antenna that is every trace**, which
+is why it took a second plot to surface: the picker path never reads the text it shows.
+
+The `i`/`j` axes beside it were already right (`s.Index + 1`), which is what made this look
+consistent at a glance. They can do the arithmetic because they are 1-based by construction and the
+parser reverses it; a `port` axis carries whatever port numbers the run drove, so the VALUE is
+resolved from the cube — `Trace.PinnedAxisSpecToken`, stamped by `TraceResolve` in the same walk that
+stamps the display tokens, with `index + 1` as the fallback when nothing was resolved.
+
+**The gate is the round trip, not the spelling**: `BuildPickerExpression` → `TryParse` → the same
+slice back, which is the invariant that was silently false.
+
+### Should farfield.U always be plotted as dB10?
+
+**Not always dB10 — always dB, and which dB depends on the quantity.** That is exactly why a picker
+is needed rather than a constant: `U` is a radiation intensity and its dB is 10·log₁₀,
+`Etheta`/`Ephi` are FIELDS and theirs is 20·log₁₀, and `CoPolLudwig3Db`/`AxialRatioDb` are already in
+dB and take none. One rule for the three is wrong twice, by a factor of two in dB, silently.
+
+`TraceRowViewModel.DefaultPatternTransform` decides in that order: already-dB (by unit, or by this
+repository's own `…Db`/`…Dbi` cube-naming, which is what carries the answer for a file written before
+ANT-7 §8 published units), then field-vs-power by unit, then by `DataKind` — complex is a field, real
+is an intensity. Exact for every cube that matters.
+
+It applies on **every plot type**, not only a pattern plot — a follow-up asked for the dB default to
+apply the first time `farfield.U` is picked on a trace card, wherever that card is. The **group**
+decides, not the bare name: a cube called `U` outside `farfield` is not necessarily a radiation
+intensity.
+
+### The transform picker was missing on a pattern plot
+
+There was no transform picker for `farfield.U` anywhere. The combo was `IsRectOrTablePlot`-gated, so
+on the one plot type whose radius **must** be decibels
+the only way to set a transform was to type it into the spec box — the box that was printing an
+unparseable spec. It is shown on a pattern plot now, offering the three dB entries, plus `None` for
+REAL data (which is how an already-dB cube is legitimately drawn) and nothing else: a magnitude or a
+phase cannot be a radius on a dB scale.
+
+### The legend stopped rendering when the Data Display zoomed out
+
+Reported 2026-09-11. `barW` was gated on `baseSize >= 4f` — a rule about when TEXT is worth the ink,
+applied to the whole colour bar — so a zoomed-out plot silently lost the one thing that says whether
+a colour is the peak or the floor. The bar is drawn at every canvas size now and its numbers stop shrinking at
+`MinLegendTextPx` rather than vanishing: small is legible once the user zooms back in, absent is a
+picture whose meaning changed.
+
+`Plot.SurfaceShowLegend` (default true, persisted, "Legend" on the Plot Inspector's 3D row) is a
+setting because the bar is the one piece of chrome that costs the scene its width.
+
+### The identity line moved from under the scene to the title
+
+Asked for on 2026-09-11: remove the bottom caption, make its text the plot's DEFAULT title, and let
+the user's own axes title override it. `SurfaceRenderer.TitleOf` — the user's title when
+`CustomTitleOn`, the
+trace's identity otherwise. Keyed on the FLAG rather than on the text being blank, so an empty custom
+title is how the line is turned off; a blank falling back to the default would make that unreachable.
+
+Nothing is drawn under a 3D pattern now, and `capH` is zero rather than a bare `2·lw` when the
+caption block is empty, so the scene gets that space back.

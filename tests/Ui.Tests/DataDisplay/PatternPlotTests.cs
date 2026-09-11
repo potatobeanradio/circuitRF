@@ -134,44 +134,55 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
         // Broadside is on the axis, so the two branches MEET there rather than leaving a gap.
         Assert.Equal(front.Points[0].X, back.Points[0].X, 4);
 
-        // And the caption says which half is which, rather than leaving "theta 0...90" over a
-        // half-disc for the reader to reconcile. It is its OWN line, because the caption is drawn
-        // unwrapped and folding it into the hemisphere sentence overran the plot.
-        // The caption and the strips are asserted on the PAIR a real cut is — the control trace
-        // above is a third trace nothing authors, and it would make the strip count its own.
+        // Under the plot is the ANGLE AXIS and nothing else (owner, 2026-09-11 — see PatternCaption).
+        // The sentences that used to be here, including the back-branch one, are gone; what the two
+        // halves are is said by the two traces' own labels, which name their φ.
         var pair = PatternPlot(
         [
             Resolve(ds, $"db10({U}[0, :, 0, 1])", PlotType.Polar),
             Mirrored(Resolve(ds, $"db10({U}[0, :, 4, 1])", PlotType.Polar)),
         ]);
 
-        var caption = PatternCaption.Lines(pair);
-        Assert.Contains(caption, l => l.Contains("φ + 180° branch"));
-        Assert.Contains(caption, l => l.Contains("lower hemisphere is not modelled"));
-        Assert.All(caption, l => Assert.True(l.Length <= 160, $"too long to draw unclipped: {l}"));
+        Assert.Equal(["θ (deg)"], PatternCaption.Lines(pair));
 
-        // The back branch is one curve with its front half, so it does NOT name the axis a second
-        // time — the strip printed "farfield.U" twice before this.
-        var (left, right) = PlotLabelStrips.For(pair, showFilePrefix: false);
-        Assert.Single(left);
-        Assert.Empty(right);
+        // THE STRIP SET DOES NOT MOVE WHEN THE BACK-HALF BOX DOES — reported 2026-09-11: ticking
+        // the back-half checkbox made the Y-axis label appear and disappear with it, and the report
+        // asked whether that was intended. It was: the strips filtered on MirrorPatternAngle
+        // directly. They
+        // dedupe on the LABEL now, which a back branch pinned at its own φ does not share with the
+        // front one — so both halves are named, and named the same whichever way the box is set.
+        var backTrace = pair.Traces[1];
+        foreach (bool mirrored in new[] { true, false, true })
+        {
+            backTrace.MirrorPatternAngle = mirrored;
+            var (l, r) = PlotLabelStrips.For(pair, showFilePrefix: false);
+            Assert.Equal(2, l.Count);
+            Assert.Empty(r);
+        }
 
-        foreach (string l in caption) output.WriteLine(l);
+        // Two traces that ARE one curve — the same slice twice — still collapse to one strip, which
+        // is what the rule was always for.
+        var twice = PatternPlot(
+        [
+            Resolve(ds, $"db10({U}[0, :, 0, 1])", PlotType.Polar),
+            Mirrored(Resolve(ds, $"db10({U}[0, :, 0, 1])", PlotType.Polar)),
+        ]);
+        Assert.Single(PlotLabelStrips.For(twice, showFilePrefix: false).Left);
+
+        output.WriteLine("caption: " + string.Join(" | ", PatternCaption.Lines(pair)));
     }
 
     /// <summary>
-    /// <b>With no back branch the caption is the one ANT-7 shipped</b>, so this change is invisible
-    /// to every plot that does not use it — including every <c>.cdd</c> written before it, whose
-    /// <c>MirrorPatternAngle</c> is absent and therefore false.
+    /// <b>One branch or two, the line under the plot is the same</b> — the angle axis. Nothing about
+    /// the caption depends on the back-branch flag any more, which is what makes the strip set and
+    /// the caption both stable under the checkbox.
     /// </summary>
     [Fact]
-    public void OneBranchAlone_KeepsANT7sOwnCaption()
+    public void OneBranchAlone_DrawsTheSameAngleLabel()
     {
         var plot = PatternPlot([Resolve(PatternFixture.Data, $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
-        var caption = PatternCaption.Lines(plot);
-        Assert.DoesNotContain(caption, l => l.Contains("φ + 180"));
-        string note = Assert.Single(caption, l => l.Contains("θ"));
-        Assert.StartsWith("θ 0…90°", note);
+        string note = Assert.Single(PatternCaption.Lines(plot));
+        Assert.Equal("θ (deg)", note);
         output.WriteLine(note);
     }
 
@@ -480,9 +491,11 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
         Assert.Equal(1.0, Radius(norm.Traces[0], 0), 6);
         Assert.Equal((6.0206 - -30.0) / 40.0, Radius(abs.Traces[0], 0), 3);
 
-        // Both captions reach the plot's own lines.
-        Assert.Contains(PatternCaption.Lines(norm), l => l.Contains("normalised"));
-        Assert.Contains(PatternCaption.Lines(abs),  l => l.Contains("absolute"));
+        // The sentence is still COMPOSED — it is the text every refusal and every diagnostic quotes
+        // — but it is no longer DRAWN under the plot (owner, 2026-09-11). What a reader reads the
+        // reference off is the outer ring's own number with its unit, asserted above.
+        Assert.Equal(["θ (deg)"], PatternCaption.Lines(norm));
+        Assert.Equal(["θ (deg)"], PatternCaption.Lines(abs));
         output.WriteLine(norm.PatternScale.ReferenceCaption() + "\n" + abs.PatternScale.ReferenceCaption());
     }
 
@@ -537,30 +550,30 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
     // ══ §4 — what the plot must state ════════════════════════════════════════
 
     /// <summary>
-    /// <b>The hemisphere note is DERIVED from the axis and is not a constant (§5).</b> Asserted by
-    /// handing the renderer a cube whose θ axis reaches 180° and checking the note changes — which is
-    /// what ANT-11 will do for real.
+    /// <b>The line under the plot is the TRACE'S OWN swept axis, in its own symbol</b> — read off the
+    /// resolved axis rather than assumed, so a φ cut and a θ cut are not both called θ. That is the
+    /// one thing the picture could not otherwise say: the two are the same disc with the same rings
+    /// and different meanings.
+    ///
+    /// <para>The hemisphere sentence this test used to assert is gone with the rest of the caption
+    /// (owner, 2026-09-11). A θ axis stopping at 90° still draws a half-disc, which is the model's
+    /// own limit and is stated in the run's notes and in the metric registry's own wording.</para>
     /// </summary>
     [Fact]
-    public void TheHemisphereNote_ComesFromTheAxisAndChangesWhenTheAxisDoes()
+    public void TheAngleLabel_ComesFromTheAxisTheTraceActuallySwept()
     {
-        var upper = PatternPlot([Resolve(HandPattern(th => Math.Cos(th * Math.PI / 180.0) + 1e-6),
-                                         $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
+        var theta = PatternPlot([Resolve(PatternFixture.Data, $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
+        var phi   = PatternPlot([Resolve(PatternFixture.Data, $"db10({U}[0, 3, :, 1])", PlotType.Polar)]);
 
-        double[] full = Enumerable.Range(0, 13).Select(i => i * 15.0).ToArray();   // 0…180
-        var both = PatternPlot([Resolve(HandPattern(_ => 1.0, thetaDeg: full, thetaMax: 180),
-                                        $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
+        Assert.Equal(["θ (deg)"], PatternCaption.Lines(theta));
+        Assert.Equal(["φ (deg)"], PatternCaption.Lines(phi));
 
-        string upperNote = Assert.Single(PatternCaption.Lines(upper), l => l.Contains("θ "));
-        string bothNote  = Assert.Single(PatternCaption.Lines(both),  l => l.Contains("θ "));
+        // A LINEAR polar plot is a locus, not a pattern, and says nothing under itself.
+        var linear = PatternPlot([Resolve(PatternFixture.Data, $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
+        linear.PolarRadial = PolarRadialMode.Linear;
+        Assert.Empty(PatternCaption.Lines(linear));
 
-        Assert.Contains("θ 0…90°", upperNote);
-        Assert.Contains("lower hemisphere is not modelled", upperNote);
-        Assert.Contains("θ 0…180°", bothNote);
-        Assert.Contains("both hemispheres are modelled", bothNote);
-        Assert.NotEqual(upperNote, bothNote);
-
-        output.WriteLine(upperNote + "\n" + bothNote);
+        output.WriteLine("θ cut and φ cut label their own axes");
     }
 
     /// <summary>
@@ -579,7 +592,7 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
         var t  = Resolve(ds, $"db10({U}[0, :, 2, 2])", PlotType.Polar);
 
         string label = TraceLabeler.ComputeMinimalLabels([t])[0];
-        Assert.Contains("phi=90 deg", label);
+        Assert.Contains("φ=90 deg", label);      // the SYMBOL, not the cube's ASCII axis name
         Assert.Contains("port=2",     label);
         Assert.Contains("freq=5",     label);
 
@@ -666,9 +679,10 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
             foreach (string want in new[] { "0 dBi", "-10", "-20", "-30" })
                 Assert.Contains(want, text);
 
-            // …and §4's reference sentence, which is the one line that must never be missing.
-            Assert.Contains("normalised", text);
-            Assert.Contains("lower hemisphere is not modelled", text);
+            // …and the one line under the plot, which is the angle axis (owner, 2026-09-11).
+            Assert.Contains("θ (deg)", text);
+            Assert.DoesNotContain("normalised", text);
+            Assert.DoesNotContain("hemisphere", text);
         }
         output.WriteLine($"light {light.Length} bytes, dark {dark.Length} bytes");
     }

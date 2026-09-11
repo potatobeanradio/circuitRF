@@ -70,6 +70,14 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
+        <!-- A TextBlock has no disabled look of its own, so a label beside a greyed control stayed
+             at full strength and read as live. It matters now that the pattern scale controls are
+             DISABLED rather than hidden (see the note in section B row 1b): "Floor" and "Rings" sit
+             beside boxes that grey, and a label that does not follow them says the row is usable. -->
+        <Style Selector="TextBlock.label:disabled">
+            <Setter Property="Opacity" Value="0.25"/>
+        </Style>
+
         <!-- ── Broken-source trace label uses CrfWarningBrush ──────────── -->
         <Style Selector="TextBlock.brokenSource">
             <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
@@ -231,7 +239,14 @@
                      after it is the SCALE, which both kinds have and both read the same way.
                      The ROW is gated on HasPatternControls, not HasPatternScale: this switch is the
                      only way INTO dB mode, so gating it on already being in dB mode hid it on every
-                     polar plot that had not been authored as a pattern elsewhere. -->
+                     polar plot that had not been authored as a pattern elsewhere.
+
+                     THE SCALE CONTROLS ARE DISABLED, NEVER HIDDEN. Reported 2026-09-11: unchecking
+                     dB radial made a row of controls disappear and shrank the Plot Inspector's own
+                     width with them. They were IsVisible-gated on HasPatternScale, so
+                     one checkbox changed the width of the whole panel and moved every control below
+                     it. Greyed out, the row keeps its size and the reason the controls are inert is
+                     visible: the checkbox they sit beside is the one that turns them on. -->
                 <CheckBox Content="dB radial"
                           IsChecked="{Binding PolarRadialIsDb, Mode=TwoWay}"
                           IsVisible="{Binding IsPolarPlot}"
@@ -249,38 +264,37 @@
 
                 <CheckBox Content="Normalise"
                           IsChecked="{Binding PolarDbNormalised, Mode=TwoWay}"
-                          IsVisible="{Binding HasPatternScale}"
+                          IsEnabled="{Binding HasPatternScale}"
                           FontSize="11"
                           ToolTip.Tip="Outer ring = the peak of every trace on this plot (0 dB). Unchecked, the outer ring is the absolute level beside it."/>
 
                 <NumericUpDown Value="{Binding PolarDbReferenceValue, Mode=TwoWay}"
-                               IsVisible="{Binding HasPatternScale}"
-                               IsEnabled="{Binding PolarDbAbsolute}"
+                               IsEnabled="{Binding CanEditPolarDbReference}"
                                Minimum="-200" Maximum="200" Increment="1"
                                Width="72" Padding="5,3" FontSize="11"
                                ShowButtonSpinner="False"
                                ToolTip.Tip="Outer-ring level, absolute"/>
 
                 <TextBlock Text="Floor" Classes="label"
-                           IsVisible="{Binding HasPatternScale}"/>
+                           IsEnabled="{Binding HasPatternScale}"/>
                 <NumericUpDown Value="{Binding PolarDbFloor, Mode=TwoWay}"
-                               IsVisible="{Binding HasPatternScale}"
+                               IsEnabled="{Binding HasPatternScale}"
                                Minimum="-200" Maximum="-1" Increment="5"
                                Width="68" Padding="5,3" FontSize="11"
                                ShowButtonSpinner="False"
                                ToolTip.Tip="Decibels from the outer ring down to the centre"/>
 
                 <TextBlock Text="Rings" Classes="label"
-                           IsVisible="{Binding HasPatternScale}"/>
+                           IsEnabled="{Binding HasPatternScale}"/>
                 <NumericUpDown Value="{Binding PolarDbRingStep, Mode=TwoWay}"
-                               IsVisible="{Binding HasPatternScale}"
+                               IsEnabled="{Binding HasPatternScale}"
                                Minimum="0.5" Maximum="100" Increment="5"
                                Width="58" Padding="5,3" FontSize="11"
                                ShowButtonSpinner="False"
                                ToolTip.Tip="Ring spacing, dB"/>
 
                 <TextBox Text="{Binding PolarDbUnit, Mode=TwoWay}"
-                         IsVisible="{Binding HasPatternScale}"
+                         IsEnabled="{Binding HasPatternScale}"
                          Width="58" Padding="5,3" FontSize="11"
                          PlaceholderText="dB"
                          ToolTip.Tip="Unit the radial numbers are in — dBi, dB(W/sr). Blank takes the cube's own."/>
@@ -345,6 +359,11 @@
                           IsChecked="{Binding SurfaceShowAxes, Mode=TwoWay}"
                           FontSize="11"
                           ToolTip.Tip="Draw x, y and z in the scene, on the layout's own orientation"/>
+
+                <CheckBox Content="Legend"
+                          IsChecked="{Binding SurfaceShowLegend, Mode=TwoWay}"
+                          FontSize="11" Margin="6,0,0,0"
+                          ToolTip.Tip="The colour bar down the right, which says what the colours mean. It is drawn at every zoom level; turn it off to give its width back to the scene."/>
 
                 <CheckBox Content="Ground"
                           IsChecked="{Binding SurfaceShowGroundDisc, Mode=TwoWay}"
@@ -1155,6 +1174,7 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:AxisRoleRowViewModel">
                                                     <Grid ColumnDefinitions="70,Auto,Auto,Auto,*,Auto"
+                                                          IsVisible="{Binding IsRowVisible}"
                                                           Margin="0,0,0,2">
                                                         <TextBlock Grid.Column="0"
                                                                    Text="{Binding AxisLabel}"
@@ -1517,9 +1537,11 @@
                                              Transform combo moves here from identity row (Part D).
                                              Auto col collapses on Smith/Polar so TextBox reclaims width. -->
                                         <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                            <!-- Transform combo (Rect/Table; both cube and network) -->
+                                            <!-- Transform combo (Rect/Table, and a PATTERN plot, whose
+                                                 radius IS decibels and which therefore needs one most
+                                                 - see TraceRowViewModel.ShowTransformCombo) -->
                                             <ComboBox Grid.Column="0"
-                                                      IsVisible="{Binding IsRectOrTablePlot}"
+                                                      IsVisible="{Binding ShowTransformCombo}"
                                                       IsEnabled="{Binding IsTransformComboEnabled}"
                                                       ToolTip.Tip="Disabled for a real expression result — its transform is set in the expression text."
                                                       Width="90"
@@ -1559,29 +1581,26 @@
                                                              TextWrapping="Wrap"
                                                              Margin="0,1,0,0"/>
 
-                                        <!-- Pattern cut: this trace is the phi + 180 half, drawn on
-                                             the negative side of broadside. A cut is a PLANE, so it
-                                             takes two traces; only a dB-radial polar plot reads it. -->
-                                        <CheckBox Name="PatternMirrorCheck"
-                                                  IsVisible="{Binding ShowPatternMirror}"
-                                                  IsChecked="{Binding MirrorPatternAngle, Mode=TwoWay}"
-                                                  FontSize="11"
-                                                  Margin="0,2,0,0"
-                                                  Content="Back half of the cut (draw at -theta)"
-                                                  ToolTip.Tip="A cut runs from -theta_max through broadside to +theta_max, and the negative half is the phi + 180 branch. Pin this trace at phi + 180 and tick this to draw the whole plane."/>
-
-                                        <!-- The one-trace form of the same picture: this trace
-                                             fetches the phi + 180 half itself and draws the plane
-                                             as one curve. Hides the back-half checkbox while it is
-                                             on, because mirroring a whole plane folds it onto
-                                             itself. -->
-                                        <CheckBox Name="PatternWholePlaneCheck"
-                                                  IsVisible="{Binding ShowPatternWholePlane}"
-                                                  IsChecked="{Binding PatternWholePlane, Mode=TwoWay}"
-                                                  FontSize="11"
-                                                  Margin="0,2,0,0"
-                                                  Content="Whole plane in one trace"
-                                                  ToolTip.Tip="Draw both halves of this cut as one curve, -theta_max through broadside to +theta_max, by fetching the phi + 180 slice alongside this one. An E-plane and an H-plane cut is then two traces instead of four. Use the back-half checkbox above instead when the two halves want different colours."/>
+                                        <!-- Pattern cut: which half of the plane this trace draws.
+                                             ONE control, three named states - the two checkboxes it
+                                             replaces were mutually exclusive and one of them had to
+                                             hide, which moved the card under the pointer. See
+                                             TraceRowViewModel.PatternCutIndex. -->
+                                        <Grid Name="PatternCutRow"
+                                              ColumnDefinitions="Auto,*"
+                                              Margin="0,4,0,0"
+                                              IsVisible="{Binding ShowPatternCut}">
+                                            <TextBlock Grid.Column="0"
+                                                       Text="Cut"
+                                                       Classes="label"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0"/>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{x:Static vm:TraceRowViewModel.PatternCutModes}"
+                                                      SelectedIndex="{Binding PatternCutIndex, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="A cut is a PLANE: it runs from -&#952;max through broadside to +&#952;max, and the negative half is the &#966; + 180&#176; branch. Front half draws this slice alone. Back half draws it on the negative side - pin the trace at &#966; + 180 and pick this to build the plane out of two traces, which is what you want when the two halves need different colours. Whole plane fetches the &#966; + 180 slice alongside this one and draws both halves as a single curve, so an E-plane and an H-plane cut is two traces instead of four."/>
+                                        </Grid>
 
                                         <!-- A dBm LEVEL's reference power. Shown only on a cube
                                              that says it is one (unit dBm, with the run's own

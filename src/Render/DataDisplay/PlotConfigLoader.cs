@@ -67,6 +67,7 @@ public static class PlotConfigLoader
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
         plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
         plot.SurfaceShowAxes             = pc.SurfaceShowAxes;
+        plot.SurfaceShowLegend           = pc.SurfaceShowLegend;
 
         foreach (var traceConfig in pc.Traces)
         {

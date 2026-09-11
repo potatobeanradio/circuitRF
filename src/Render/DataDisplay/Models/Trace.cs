@@ -888,6 +888,35 @@ namespace CircuitRF.Render.DataDisplay
         public string? PinnedAxisDisplay(string axisName)
             => _pinnedAxisDisplay is { } m && m.TryGetValue(axisName, out var v) ? v : null;
 
+        private IReadOnlyDictionary<string, string>? _pinnedAxisSpecToken;
+
+        /// <summary>
+        /// <b>What a pinned axis has to be SPELLED as in a spec, when that is not its index</b> —
+        /// resolved by the owner, from the cube, exactly as <see cref="SetPinnedAxisDisplay"/> is and
+        /// with the same clear-first contract.
+        ///
+        /// <para><b>Today it holds one axis: <c>port</c>.</b> <c>SliceTokenParser</c> reads an
+        /// integer there by matching the axis's own VALUES — a port NUMBER, never an index — while
+        /// <see cref="BuildPickerExpression"/> wrote the index, so the picker authored text its own
+        /// parser refused. On a one-port antenna that is every single trace: the card showed
+        /// <c>dB10(farfield.U[42, :, ~, 0])</c> and typing it back gave "Port 0 is not a port of axis
+        /// 'port'". Reported 2026-09-11 as a 3D plot that could not be made to match the one beside
+        /// it.</para>
+        ///
+        /// <para><b>It is resolved rather than computed as <c>index + 1</c></b>, which is what the
+        /// <c>i</c>/<c>j</c> axes beside it do. Those are 1-based BY CONSTRUCTION and the parser
+        /// does the same arithmetic in reverse; a <c>port</c> axis carries whatever port numbers the
+        /// run actually drove, and a de-embedded subset publishing port 2 alone would make the
+        /// arithmetic silently wrong. The fallback when nothing was resolved IS <c>index + 1</c>,
+        /// because that is right for every axis this repository writes.</para>
+        /// </summary>
+        public void SetPinnedAxisSpecTokens(IReadOnlyDictionary<string, string>? map)
+            => _pinnedAxisSpecToken = map;
+
+        /// <inheritdoc cref="SetPinnedAxisSpecTokens"/>
+        public string? PinnedAxisSpecToken(string axisName)
+            => _pinnedAxisSpecToken is { } m && m.TryGetValue(axisName, out var v) ? v : null;
+
         // Per-X fundamental (Hz) injected by the owner before SetCubeData/SetFamilyData.
         // Non-null only for single-tone HB spectrum traces; null for all other trace types.
         private double[]? _f0ByX;
@@ -1474,6 +1503,10 @@ namespace CircuitRF.Render.DataDisplay
                 // same way, because its axis values are 1-based too (SliceTokenParser).
                 : (s.AxisName is "i" or "j" or "row" or "col") ? (s.Index + 1).ToString()
                 : !string.IsNullOrEmpty(s.Label)   ? $"\"{s.Label}\""
+                // A `port` axis is read by VALUE, so it is written by value — see
+                // PinnedAxisSpecToken for what went wrong when this emitted the index.
+                : PinnedAxisSpecToken(s.AxisName) is { Length: > 0 } spec ? spec
+                : s.AxisName == "port"             ? (s.Index + 1).ToString()
                 :                                    s.Index.ToString());
             var inner = string.Join(", ", parts);
             if (Transform == CubeTransform.None)
@@ -1607,6 +1640,7 @@ namespace CircuitRF.Render.DataDisplay
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
             _pinnedAxisDisplay    = src._pinnedAxisDisplay;
+            _pinnedAxisSpecToken  = src._pinnedAxisSpecToken;
             _cubeIsScalar      = src._cubeIsScalar;
             _transformBaked    = src._transformBaked;
             _lastPlotType      = src._lastPlotType;
@@ -1780,6 +1814,7 @@ namespace CircuitRF.Render.DataDisplay
             SetPatternBackBranch(backComplex, backReal, backPhiDeg);
             SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
                                                          // re-applies it for a single-curve pinned trace)
+            SetPinnedAxisSpecTokens(null);
             SetPinnedAxisDisplay(null);                  // same contract: resolved from the cube, so it
                                                          // cannot outlive the data it was resolved from
             // Two-tone spectrum is single-sided: each mixing product is shown at its ABSOLUTE
@@ -1867,6 +1902,7 @@ namespace CircuitRF.Render.DataDisplay
             SetPatternBackBranch(null, null, double.NaN);
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context
+            SetPinnedAxisSpecTokens(null);
             SetPinnedAxisDisplay(null);                  // resolved from the cube — cannot outlive it
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
