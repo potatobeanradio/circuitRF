@@ -250,6 +250,37 @@ public static class FigureCatalog
             "The EM Setup editor at the width of a docked panel: analysis, conductors, the frequency "
           + "sweep and the ports, with the mesh section below the fold."),
 
+        // ── ANT-12's example antenna, read out of testdata/antenna/ rather than rebuilt here ──────
+        //
+        // Three figures because the page asks three different things of the artwork: what the whole
+        // board is, what the feed a reader has to copy looks like up close, and what the port setup is
+        // in the panel that owns it. The sizes are the artwork's own aspect — the patch is 16.94 x
+        // 13.30 mm inside a 40 x 40 mm pour, so a square-ish frame is what fits it without slack.
+        new("antenna-patch-layout", DocAntennaFixtures.PatchLayout, 760, 660, null,
+            "The shipped 5.8 GHz example: a 16.94 x 13.30 mm inset-fed patch on top copper, the "
+          + "40 x 40 mm ground pour under it, and one edge port on the feed's end face. The pour is "
+          + "drawn so the run can report how large the real plane is; the ANALYSIS still terminates on "
+          + "a laterally infinite one."),
+
+        new("antenna-patch-feed", DocAntennaFixtures.PatchFeed, 560, 380, null,
+            "The port, close up: the bar across the 1.68 mm feed's end face is where current crosses "
+          + "into the structure, and the arrow is which way it flows in. Everything outside that plane "
+          + "is the port discontinuity, and the two-line calibration removes it."),
+
+        new("antenna-patch-em-setup", DocAntennaFixtures.PatchEmSetup, 560, 1560,
+            WindowFrame.Titled("EM Setup - patch-5p8GHz"),
+            "The example's EM Setup, from the top down to the mesh: the kernel the registry chose and "
+          + "why, the conductor level, the sweep with adaptive sampling and the resonance search on, "
+          + "and the resolved port with its side, its reference plane and its impedance."),
+
+        // A CROP of the same panel, for the reason FigureCrop exists: the control this page is about
+        // is one checkbox near the bottom of a panel 2,000 px tall, and in the figure above it is
+        // below the fold. No chrome - it is the inside of a panel, not a window.
+        new("antenna-radiation-pattern", DocAntennaFixtures.RadiationPatternControl, 520, 150, null,
+            "The one control that turns an ordinary planar run into an antenna run. Off by default, "
+          + "because it is only meaningful on a radiator; it changes no s-parameter and no mesh cell, "
+          + "and it disables itself with a reason when the pattern could not be computed."),
+
         new("em-setup-loaded", DocLayoutFixtures.EmSetupWithLayout, 520, 1430,
             WindowFrame.Titled("EM Setup - bend"),
             "The same panel with a layout resolved: the kernel the registry chose and why, the "

@@ -62,6 +62,7 @@ reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCe
 reference/stackup.html         | The layers your board is made of - and which conductor is ground.
 reference/mom-engine.html      | The planar method-of-moments solver: what it does, what it will not do, and how.
 reference/em-setup.html        | The EM Setup panel, control by control, and where the results land.
+reference/antennas.html        | Patch antennas: the pattern, the numbers that go with it, and the limits that bound both.
 
 == Tools
 reference/harmonicarf.html | Interactive harmonic load-pull on one device, at the speed of a mouse drag.

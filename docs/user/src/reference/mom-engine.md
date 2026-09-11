@@ -72,6 +72,11 @@ not general 3D.
 - **Discontinuities and the coupling between them** — which is the entire point.
 - **Frequency sweeps**, with [adaptive sampling](#adaptive) so a resonant response does not need a fine
   uniform grid.
+- **Radiation.** The top of the stack is an open half-space and the radiation condition is exact — no
+  airbox, no absorbing boundary — so an antenna is an ordinary run with one checkbox added. Far-field
+  pattern, directivity, gain, radiation efficiency, the itemised power budget, beamwidth per plane and
+  polarization all come out of the same solve. See [Antennas](antennas.html), which also carries the
+  limits that bound every one of those numbers.
 
 ### Cannot
 
@@ -84,13 +89,30 @@ not general 3D.
   [wBond](wbond.html), which is a separate 3D kernel built for exactly that.
 - **Finite substrate extent.** The dielectric layers are laterally **infinite**. A board edge, a cavity
   wall, a shielding can — none of these exist to this solver.
+- **A finite ground plane.** The plane is laterally infinite too, so there is no field behind it at all:
+  no back radiation, no front-to-back ratio (the metric is present and refused by name), and a
+  directivity that reads **optimistic** against a real board, whose plane is finite and puts substantial
+  power behind it. A run that can see your pour reports how large it is in wavelengths — the example
+  antenna's is 0.78 λ₀ across, the measured board that prompted this work 0.41 λ₀ — but the analysis
+  still terminates on the infinite plane. See [Antennas](antennas.html#cannot).
+- **Apertures in the ground plane.** A slot in the plane is not representable, so a slot antenna, a
+  CPW-fed slot and an aperture-coupled patch are out. Edge-fed, inset-fed and coupled-patch feeds are
+  in — see [Antennas](antennas.html#feeds) for which feed to use instead.
+- **A dielectric that stops somewhere.** This is the limit most often mis-remembered, because circuitRF
+  *does* model **drawn** dielectric artwork — a thin-film (MIM) capacitor's patterned film, tied to its
+  plate. That mechanism decides **whether** a layer is in the run, never **where it stops**: inside a run
+  every dielectric is laterally infinite. So a radome, a conformal coating or a gain-raising superstrate
+  drawn over the patch alone is modelled as covering the **whole run, to infinity** — which moves
+  resonance, gain and surface-wave launch. A *uniform* cover layer is a fair model of a real one and is
+  supported; a patterned one is not the thing you drew.
 - **Enclosures and absorbing boundaries.** There is no box. Real planar tools suppress port-to-port
   radiative and surface-wave coupling with box walls or absorbing boundaries; **this kernel has
   neither, by design**, and that is what sets the [de-embedding accuracy floor](#deembedding).
 - **Vertical conductors other than vias.** A via is a z-directed current path through the stack. An
   edge-plated wall, a connector barrel, a heatsink is not.
-- **Non-planar dielectrics.** Conformal coating, a partially milled cavity, a moulded package body — the
-  medium is stratified, so a dielectric is a slab spanning the whole plane or it is not representable.
+- **Non-planar dielectrics.** A partially milled cavity, a moulded package body, a coating that follows
+  the metal — the medium is stratified, so a dielectric is a slab spanning the whole plane or it is not
+  representable.
 - **Magnetic materials beyond a scalar µ<sub>r</sub> per layer.** No ferrites, no anisotropy.
 - **Non-linearity of any kind.** This solves a linear problem and returns S-parameters.
 - **A plate capacitance read off a mesh that does not resolve the plate gap.** A thin-film (MIM)
@@ -109,6 +131,10 @@ not general 3D.
   quasi-static kernel *does* model conductor loss, through Wheeler's incremental inductance rule over
   every lossy surface including the ground plane — which is one reason the two kernels' loss numbers
   do not agree exactly on a uniform line.
+  **On an antenna this lands on radiation efficiency**: with perfect metal the accepted power has one
+  fewer place to go, so a reported efficiency reads **high** by roughly the copper's own share. The
+  itemisation prints the conductor term as an explicit zero rather than leaving it out, and
+  [Antennas](antennas.html#numbers) says which way each correction pushes.
 
 There is also a **quasi-static kernel** for the special case of a uniform transmission-line
 cross-section, which is described below and which is far faster than the full-wave path where it

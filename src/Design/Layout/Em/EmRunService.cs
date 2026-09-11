@@ -308,6 +308,16 @@ public static class EmRunService
                 KernelName: choice.KernelName, Diagnostic: d);
         }
 
+        // ANT-12 — the one combination the panel can express and this kernel cannot honour. The far
+        // field belongs to the planar kernel; a cross-section solve returns a uniform line's RLGC and
+        // has no currents on artwork to transform. Said out loud rather than silently ignored, which
+        // is the same rule the resonance search follows in RunPlanar below.
+        if (setup.RadiationPattern && choice.Kind == EmAnalysisKind.CrossSection)
+            warnings.Add("The radiation pattern is on but this run used the cross-section " +
+                         "(quasi-static) kernel, which solves a uniform transmission-line " +
+                         "cross-section and has no radiating artwork to transform. No pattern was " +
+                         "computed. Set Analysis to the planar (full-wave) kernel.");
+
         if (choice.Kind == EmAnalysisKind.Planar)
             return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores);
 
@@ -463,6 +473,27 @@ public static class EmRunService
                       }
                     : null,
                 MaxDegreeOfParallelism = EmSolveCores.Sanitise(maxCores),
+                // ANT-12 — the far field's FIRST user-reachable switch. Null (off) is the behaviour
+                // every run had before this line existed; set, the pattern rides along with the
+                // solve the sweep already pays for at every point that was actually solved.
+                // PlanarFarFieldSettings.Default is a 1 degree x 1 degree hemisphere and the whole
+                // metric registry, which is deliberately not tunable from the panel: a pattern with
+                // no numbers attached is half an answer, and the metrics cost a fraction of one
+                // frequency point's own solve.
+                // A pattern at EVERY frequency the sweep asked for, not at one. Left to its own
+                // default the far field produces a single pattern at freqs[0] — the BOTTOM of the
+                // sweep, which on an antenna is the one frequency nobody wants: measured on the
+                // shipped 5.8 GHz example, 5.3 GHz reports 22.6 % radiation efficiency against 60 %
+                // at resonance, and both numbers are correct about different questions. Each request
+                // is mapped to the nearest point that was actually SOLVED and the set is deduplicated
+                // by index, so with adaptive sampling on this is a pattern at every solved point
+                // rather than one per requested point. The cost is a fraction of the solve it rides
+                // on: the transform is an exact O(N) sum per direction with no second fill and no
+                // second factorisation (measured at 21 points, N = 1,611: 97 s without patterns,
+                // 101 s with them).
+                FarField = setup.RadiationPattern
+                    ? PlanarFarFieldSettings.Default with { FrequenciesHz = freqs }
+                    : null,
                 Fill = setup.DirectVerticalKernel || setup.AcceleratedSolve
                     ? fill
                     : PlanarSolveSettings.Default.Fill,

@@ -601,6 +601,40 @@ public class PlanarPolarizationTests(Xunit.Abstractions.ITestOutputHelper output
         _out.WriteLine(disagree.CoCrossVerdict.Reason!);
     }
 
+    /// <summary>
+    /// <b>ANT-12 — round-off is not a disagreement, and φ₀ + 180° is not a second reference.</b> The
+    /// comparison was exact equality (1e-9°) on the output of an eigen-decomposition, which refused the
+    /// Ludwig-3 pair on the shipped 5.8 GHz patch and then printed its own two angles as 89.999° and
+    /// 89.999°. Both halves are asserted here, plus the case that must STILL refuse: a rotation large
+    /// enough to change the cube.
+    /// </summary>
+    [Fact]
+    public void AReferenceThatDiffersOnlyByRoundOffOrBy180_IsTheSameReference()
+    {
+        var grid = new PlanarFarFieldGrid([0], [0, 90, 180, 270]);
+        PlanarPolarizationPattern At(double phi0, double fHz)
+        {
+            var pattern = HandPattern(grid, (t, p) => (Complex.One, new Complex(0.1, 0)));
+            return PlanarPolarization.Of(
+                new PlanarFarFieldPattern(grid, pattern.ETheta, pattern.EPhi, pattern.U, 1, fHz),
+                EmSuitability.Yes, new PlanarPolarizationReference(phi0, true, 1e-6));
+        }
+
+        // Round-off, at the scale the patch actually produced.
+        Assert.True(PlanarPolarizationSet.From([1e9, 2e9], [1],
+            [At(89.9990, 1e9), At(89.9994, 2e9)]).CoCrossVerdict.Ok);
+
+        // The SAME plane, named the other way round: |E_co| and |E_cross| are unchanged by φ₀ → φ₀+180.
+        Assert.True(PlanarPolarizationSet.From([1e9, 2e9], [1],
+            [At(90.0, 1e9), At(270.0, 2e9)]).CoCrossVerdict.Ok);
+
+        // And a real rotation still refuses — the tolerance is 0.01°, not "anything".
+        var moved = PlanarPolarizationSet.From([1e9, 2e9], [1], [At(90.0, 1e9), At(90.5, 2e9)]);
+        Assert.False(moved.CoCrossVerdict.Ok);
+        Assert.Equal(0.01, PlanarPolarizationSet.ReferenceAgreementDeg);
+        _out.WriteLine(moved.CoCrossVerdict.Reason!);
+    }
+
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // §5.5 — the cubes, and R-ant-8: the definition travels with the number.
     // ══════════════════════════════════════════════════════════════════════════════════════════

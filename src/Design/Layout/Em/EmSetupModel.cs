@@ -282,6 +282,32 @@ public sealed class EmSetup
     /// </summary>
     public bool AcceleratedSolve { get; set; }
 
+    /// <summary>
+    /// <b>ANT-12 — the radiation pattern, OFF by default, and the first user-reachable switch the far
+    /// field has ever had.</b> Planar kernel only.
+    ///
+    /// <para>ANT-4 through ANT-11 built the pattern, the metrics, the polarization and the plots, and
+    /// every one of those phases recorded that "nothing reaches the CLI or the GUI" because the one
+    /// before it did not either. So the whole antenna capability was unreachable from the application
+    /// and from <c>circuitrf em</c>: <c>PlanarSolveSettings.FarField</c> could only be set by editing
+    /// C#. This field is what closes that, and it closes it for the CLI at the same time — the
+    /// <c>em</c> verb takes everything from the <c>.cem</c> and needs no flag of its own.</para>
+    ///
+    /// <para><b>A pattern is produced at every SOLVED point</b>, which with adaptive sampling on is a
+    /// subset of the requested grid: a pattern needs the basis currents, and an interpolated
+    /// s-parameter has none behind it. The cubes land in the <c>"farfield"</c> group of the same
+    /// <c>DataSet</c> the s-parameters do.</para>
+    ///
+    /// <para><b>It changes no s-parameter</b> — the pattern is a post-process of currents the solve
+    /// already paid for — so it is deliberately NOT in <c>EmSnpProvenance</c>'s hash: an <c>.snp</c>
+    /// written with this on is byte-identical to one written with it off, and marking every existing
+    /// file stale would be a lie about the network.</para>
+    ///
+    /// <para>Nullable + omitted at its default in the <c>.cem</c>, so a file written before it
+    /// existed loads and re-serialises byte-identically.</para>
+    /// </summary>
+    public bool RadiationPattern { get; set; }
+
     /// <summary>Workspace-relative override for the written <c>.snp</c>. Empty = the predictable
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
     public string SnpOutputPathOverride { get; set; } = "";
@@ -306,6 +332,7 @@ public sealed class EmSetup
         ResonanceSearch        = ResonanceSearch,
         DirectVerticalKernel   = DirectVerticalKernel,
         AcceleratedSolve       = AcceleratedSolve,
+        RadiationPattern       = RadiationPattern,
         SnpOutputPathOverride  = SnpOutputPathOverride,
     };
 

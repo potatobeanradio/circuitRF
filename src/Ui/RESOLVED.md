@@ -24858,3 +24858,43 @@ deleted — `LayoutPortGhostTests.TheGhostFollowsTheSnappedPoint_NotTheRawCursor
 `LayoutPortPlacementFollowUpTests.WithNothingNearby_ThePortStillLandsOnTheGrid` both still assert the
 along coordinate is the grid's; the across coordinate is now the conductor's centre. New gate:
 `tests/Ui.Tests/Layout/LayoutInteriorPortPlacementTests.cs`.
+
+## ANT-12 — the antenna page's figures, and why the port marker was invisible in two of them
+
+`brief-antenna-12-user-docs-and-example.md`. Three figures (`antenna-patch-layout`,
+`antenna-patch-feed`, `antenna-patch-em-setup`) plus a crop (`antenna-radiation-pattern`), all built by
+`DocAntennaFixtures` from `testdata/antenna/` — the workspace the page is written about and the one
+`AntennaExampleTests` runs through the CLI. `DocWsProbeFixtures`' rule, reused: the design is READ, not
+rebuilt here, because a second copy agrees with the first on the day it is written and drifts
+afterwards.
+
+**The trap, and it cost four regeneration rounds: a port's NAME is knocked out of its own MARKER.**
+`LayoutRenderer.DrawPortGlyphs` clips the marker pass out of the label's glyph outlines so the text
+reads on top of the arrow. On a 1.68 mm feed with a 2 mm label the glyphs are WIDER than the bar, so
+the whole marker vanished and the figure showed a bare label in port colour — which looks like a port
+that failed to resolve, and is not. `LayoutPortDirection.Resolve` was returning a perfectly good
+`PortHint` the entire time (Edge, 1.68 mm, plane at the end face), which is why reading the resolver
+led nowhere. Two things fix it, and the shipped port figures were already doing both:
+
+- **keep the label height well under the port width** — 600 µm against 1.68 mm here, the same trade
+  `DocLayoutFixtures.EdgePortsOnATaper` makes with its 900 µm labels; and
+- **name the port `1`, not `P1`** — a single glyph leaves the arrow visible where two do not.
+
+**A whole-board figure cannot show a port marker, and that is arithmetic rather than a framing
+choice.** The marker's bar spans the port's own width and its arrow is a fraction of that, so on a
+40 mm board a 1.68 mm feed's mark is two per cent of the picture at any resolution. The close-up is a
+separate figure with an explicit 10 mm WINDOW rather than a fit, sized so the mark is about a fifth of
+the frame — which is the ratio the existing `ports-edge` figure gets by choosing a part whose ports
+happen to be wide.
+
+**The EM Setup panel is taller than any sensible figure**, so the one control the page is about is
+below the fold of `antenna-patch-em-setup` even at 1,560 px. `antenna-radiation-pattern` is a
+`FigureCrop.Around` on the `RadiationPatternCheck` checkbox — located by NAME from the live visual
+tree, so a panel that gains a row moves the crop with it instead of silently photographing the wrong
+rectangle.
+
+**Regeneration note.** `docs/user/` was already stale before this phase: `ports-*.svg` was last written
+2026-08-26 and the port glyph changed on 2026-09-09 (three commits) and again on 2026-09-10. So a
+`DocGen` run here shows ~70 changed files of which only the antenna figures, the EM Setup pair (the new
+group) and `mom-engine.html` are this phase's. Two consecutive runs differ in exactly one file,
+`analysis-editor-hb-dark.svg`, which is a known nondeterministic family and not a regression.

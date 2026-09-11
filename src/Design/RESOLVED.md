@@ -5012,3 +5012,57 @@ means and what every port has always done.
 
 Gate: `tests/Ui.Tests/Em/PortReturnConductorTests.cs` — 18 tests, ~1 s, the brief's six gates in its
 own order.
+
+## ANT-12 — the far field's first user-reachable switch, and a cover layer that was silently dropped
+
+`brief-antenna-12-user-docs-and-example.md`. Two changes here, and the first is the reason the whole
+antenna series was undeliverable until now.
+
+### 1. `EmSetup.RadiationPattern` — ANT-4 through ANT-11 were unreachable
+
+Every phase from ANT-4 onward recorded, in its own write-up, that "nothing reaches the CLI or the GUI,
+because the phase before it does not either". Taken together that meant the far field, the metric
+registry, the polarization results, the dB polar plot and the 3D pattern surface had **all shipped with
+no way for a user to ask for any of them**: `PlanarSolveSettings.FarField` could only be set by editing
+C#, and `EmRunService` passed nothing.
+
+One `bool` closes it — model, `.cem` (nullable, omitted at its default, so every existing file
+round-trips byte-identically), Clone, view model, and a group of its own in the EM Setup panel. **The
+`em` verb needed no flag**: it takes everything from the `.cem`, which is why the setting went there
+rather than onto a command line.
+
+- **It is deliberately in NO provenance hash**, and the reason is stronger than the accelerator's:
+  that one computes the same answer a different way, while this one does not touch the answer at all.
+  An `.snp` written with the pattern on is byte-identical to one written with it off, so hashing it
+  would mark every existing file stale for a change that cannot have moved a number.
+- **`FrequenciesHz` is the sweep's own grid, not null.** Left at its default the far field produces ONE
+  pattern, at `freqs[0]` — the bottom of the sweep, which on an antenna is the one frequency nobody
+  wants. Measured on the shipped example: 22.6 % radiation efficiency at 5.3 GHz against 62.6 % at
+  resonance, both correct about different questions. Each request maps to the nearest point that was
+  actually SOLVED, so with adaptive sampling on this is one pattern per solved point.
+- **Two disabled-with-a-reason states**, both things the user set in that same panel: the cross-section
+  kernel, and CONFORMAL boundary cells — the far field does not transform a cut cell and refuses by
+  name, so the panel declines to arm a run whose pattern cannot be computed. Everything else the far
+  field refuses (a via's vertical current, a stack with no ground under it) stays the engine's own
+  refusal and arrives as a run note; re-deriving it here would be a copy of a judgement that can drift.
+
+### 2. A dielectric layer above the top metal is NOT in the solve, and nothing said so
+
+ANT-12 §1a required one covered-patch run to be taken before anything was written about superstrates,
+and anticipated two outcomes: it runs (the Can list gains it) or it refuses (the Cannot list does).
+**It did neither.** A uniform 0.5 mm, εᵣ = 3.0 radome added to the shipped RO4350B technology produced
+s-parameters **bit-identical** to the uncovered run at every one of 11 frequencies, with the same
+pattern, the same peak field and the same power budget to every published digit.
+
+The cause is one line in `BuildMediumStack`: `topOfInterest` is the topmost analysis level's own sheet,
+and the medium is terminated in air exactly there. Anything the technology declares above it is
+discarded. A real cover moves a patch's resonance by per cent and changes its surface-wave launch, so
+"no difference at all" is the one answer that cannot be right.
+
+**A WARNING, not a refusal**, on the same terms as the skipped-ground-plane warning beside it: a
+uniform superstrate is genuinely inside what a layered medium can express, so the limit is in the
+EXTRACTION rather than in the physics, and refusing would stop runs that are correct about everything
+below the metal. The sentence names the layer, names the level it sits above, says the answer is the
+UNCOVERED one, and says what a cover would have done. Gate:
+`tests/Ui.Tests/Em/SuperstrateNotInTheSolveTests.cs` — the identity (every number the solver reads is
+the same either way, which is stronger than "moved by less than a tolerance") and the warning.

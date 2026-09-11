@@ -624,6 +624,29 @@ public sealed record PlanarPolarizationSet(
     /// The set, from one pattern per (frequency, port). <b>The reference angle has to AGREE across
     /// it</b> — see the type's own summary for why a disagreement is a refusal rather than an average.
     /// </summary>
+    /// <summary>
+    /// <b>ANT-12 — how far two DERIVED reference angles may differ and still be one reference.</b>
+    /// 1e-9° was not a tolerance, it was exact equality on the output of an eigen-decomposition, and
+    /// it refused the Ludwig-3 pair on an ordinary symmetric patch whose own refusal sentence then
+    /// printed its two disagreeing angles as <c>89.999°</c> and <c>89.999°</c> — the whole spread was
+    /// round-off in the current moment.
+    ///
+    /// <para><b>0.01° is sized from what the decomposition does with it, not from taste.</b> A
+    /// reference off by δ leaks co-pol into cross at 20·log₁₀(sin δ), which at 0.01° is −75 dB —
+    /// roughly thirty dB below the ≈ −45 dB cross-pol floor the MESH itself sets (see
+    /// <see cref="MeshFloorNote"/>). Two decompositions that close are indistinguishable in the cube
+    /// they would produce. A reference that genuinely rotates with frequency moves far more than this
+    /// and still refuses, which is the case the refusal exists for.</para>
+    /// </summary>
+    public const double ReferenceAgreementDeg = 0.01;
+
+    /// <summary>φ₀ and φ₀ + 180° give the same |E_co| and |E_cross|, so they are ONE reference.</summary>
+    private static bool SameReference(double a, double b)
+    {
+        double d = Math.Abs(((a - b) % 180.0 + 180.0) % 180.0);
+        return Math.Min(d, 180.0 - d) <= ReferenceAgreementDeg;
+    }
+
     public static PlanarPolarizationSet From(IReadOnlyList<double> frequenciesHz,
                                              IReadOnlyList<int> portNumbers,
                                              IReadOnlyList<PlanarPolarizationPattern> patterns)
@@ -646,7 +669,7 @@ public sealed record PlanarPolarizationSet(
             {
                 phi0 = p.Reference!.PhiDeg;
             }
-            else if (Math.Abs(p.Reference!.PhiDeg - phi0) > 1e-9)
+            else if (!SameReference(p.Reference!.PhiDeg, phi0))
             {
                 verdict = EmSuitability.No(
                     $"CoPolLudwig3Db and CrossPolLudwig3Db are not published: the Ludwig-3 reference " +

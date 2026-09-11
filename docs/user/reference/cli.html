@@ -1687,6 +1687,18 @@ you gave (comments gone, directives reordered) and call it an extraction.</p>
 <td><code>left</code> (the default) or <code>right</code>.</td>
 </tr>
 <tr>
+<td><code>cut</code></td>
+<td>An antenna pattern cut: a bearing in degrees pins the cube's <code>phi</code> axis and sweeps <code>theta</code>; <code>all</code> keeps every <code>phi</code> as a curve family. The verb prints the φ it landed on.</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>The <strong>port number</strong> on a cube's <code>port</code> axis — not an index. A port the run does not hold is refused, listing the ones it does.</td>
+</tr>
+<tr>
+<td><code>freq</code></td>
+<td>Pins a <code>freq</code> axis to its nearest sample. Takes an SI suffix: <code>2.45G</code>.</td>
+</tr>
+<tr>
 <td><code>probe</code></td>
 <td>A <a href="wsprobe.html">WSProbe</a> label. Given, it turns a <code>cube=&lt;analysis&gt;.wsp</code> trace into a probe metric.</td>
 </tr>
@@ -1740,11 +1752,44 @@ from. A cube the file does not hold is refused, listing the ones it does.</p>
 <td>As <code>render</code>.</td>
 </tr>
 <tr>
+<td><code>--radial linear\|db</code></td>
+<td>How a <strong>polar</strong> plot's radius is read. <code>db</code> makes it an antenna pattern plot. Refused on any other <code>--type</code>.</td>
+</tr>
+<tr>
+<td><code>--db-floor &lt;dB&gt;</code></td>
+<td>The centre of a <code>db</code> plot, <strong>relative to the outer ring</strong>. Default −40.</td>
+</tr>
+<tr>
+<td><code>--db-ring &lt;dB&gt;</code></td>
+<td>Ring spacing. Default 10.</td>
+</tr>
+<tr>
+<td><code>--db-ref peak\|&lt;dB&gt;</code></td>
+<td>The outer ring: the data's own peak (normalised, the default) or an absolute level.</td>
+</tr>
+<tr>
+<td><code>--db-unit &lt;text&gt;</code></td>
+<td>What the radial numbers are in — <code>dBi</code>, <code>dB(W/sr)</code>.</td>
+</tr>
+<tr>
 <td><code>--write-cdd &lt;path&gt;</code></td>
 <td>Also write the data display this drew.</td>
 </tr>
 </tbody>
 </table>
+<pre><code class="language-text">circuitrf plot run.npy -o eplane.svg --type polar --radial db --db-unit &quot;dB(W/sr)&quot; \
+  --trace cube=farfield.U,cut=0,port=1,y=db10
+</code></pre>
+<div class="callout">
+<span class="label">A pattern plot says what it is</span>
+<p>On a <code>--radial db</code> plot the outer ring is a reference and the centre is a floor, and the
+picture states which reference it is using — a 0&nbsp;dB peak with no reference is not a result.
+<b>Values below the floor are drawn AT the floor, never dropped</b>: a gap in a pattern trace reads as
+a null in the antenna, and a real null and a clipped value must not look the same. 0° is at the top
+and angles increase clockwise, and the note under the plot says what the θ range covers — with an
+infinite ground plane there is no field below the horizon, so a pattern occupying part of the disc is
+the model saying so rather than a drawing fault.</p>
+</div>
 <div class="callout">
 <span class="label"><code>--write-cdd</code> is how you go further</span>
 <p>This verb draws one plot with one axis pair. Everything else a data display can do — several plots

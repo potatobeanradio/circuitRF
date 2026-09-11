@@ -685,6 +685,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _resonanceSearch;
     [ObservableProperty] private bool   _directVerticalKernel;
     [ObservableProperty] private bool   _acceleratedSolve;
+    [ObservableProperty] private bool   _radiationPattern;
 
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
@@ -1176,6 +1177,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         CommitEdit(before, "Change vertical-kernel integration");
     }
 
+    partial void OnRadiationPatternChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.RadiationPattern) return;
+        var before = SnapshotJson();
+        Working.RadiationPattern = value;
+        CommitEdit(before, "Change radiation pattern");
+        // Deliberately NO InvalidateMesh(): the pattern is a post-process of the currents the solve
+        // already produced on the SAME mesh, so no cell moves and no s-parameter changes.
+    }
+
     partial void OnAcceleratedSolveChanged(bool value)
     {
         if (_suppressCommit) return;
@@ -1249,6 +1261,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                   "piece of work."
                 : null;
 
+    /// <summary>
+    /// ANT-12 — why the radiation pattern is unavailable, or null when it is. <b>Two reasons, and
+    /// both are things the user set in THIS panel and can undo in this panel.</b> Everything else the
+    /// far field refuses — a via's vertical current, a stack with no ground plane under it, a closed
+    /// top — is the engine's own refusal, arrives as a run note in its own words, and is not
+    /// second-guessed here: re-deriving it would be a copy of a judgement that can drift.
+    /// </summary>
+    public string? RadiationPatternDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "The radiation pattern is part of the planar (full-wave) analysis; a cross-section solve " +
+              "returns a uniform line's RLGC and has no radiating artwork to transform."
+            : Working.PlanarMesh.BoundaryCells == PlanarBoundaryCells.Conformal
+                ? "The radiation pattern needs Staircase boundary cells. A conformal cell's metal is " +
+                  "not its rectangle, so the rectangle's transform is not the cell's own, and using " +
+                  "it would give a smooth, plausible, WRONG pattern. Set Boundary cells to Staircase."
+                : null;
+
     // ── M1 — the solver's core cap: SHOWN here, STORED in AppPreferences (R-emp-6) ──────────────
     //
     // This is the one control in this panel that is NOT part of the design. A core count is a
@@ -1289,6 +1318,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         ResonanceSearch      = Working.ResonanceSearch;
         DirectVerticalKernel = Working.DirectVerticalKernel;
         AcceleratedSolve     = Working.AcceleratedSolve;
+        RadiationPattern     = Working.RadiationPattern;
         AnalysisKind = Working.AnalysisKind;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
         SyncReturnPlaneChoice();
@@ -1337,6 +1367,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
+        OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         Readback           = null;
         ExtractionRefusal  = null;
         KernelRefusal      = null;
@@ -1474,6 +1505,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AdaptiveSamplingDisabledReason));
         OnPropertyChanged(nameof(ResonanceSearchDisabledReason));
+        OnPropertyChanged(nameof(RadiationPatternDisabledReason));
 
         var verdict = new PlanarKernel().CanSolve(planar.Problem!);
         KernelRefusal = verdict.Ok ? null : verdict.Reason;

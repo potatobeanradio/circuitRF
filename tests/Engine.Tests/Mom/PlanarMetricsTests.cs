@@ -267,7 +267,8 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     private (PlanarMetricReport Report, PlanarMetricContext Context) CheapSolve(
-        double lengthM = 4e-3, PlanarMetricSettings? settings = null)
+        double lengthM = 4e-3, PlanarMetricSettings? settings = null,
+        System.Numerics.Complex? portReflection = null)
     {
         var problem = PlanarLineFixtures.Fr4Line(lengthM, FHz);
         var (mesh, ports) = PlanarLineFixtures.MeshAndPorts(problem, PlanarLineFixtures.Coarse);
@@ -276,7 +277,7 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         var pattern = PlanarFarField.Compute(problem, mesh, sol.Currents[0], ports[0].Number, FHz,
                                             PlanarFarFieldGrid.Hemisphere(2, 2));
         var mc = new PlanarMetricContext(problem, mesh, sol.Currents[0], pattern, sol.Y[0, 0],
-                                         ports[0].Z0, settings);
+                                         ports[0].Z0, settings, null, portReflection);
         return (PlanarMetrics.Evaluate(mc), mc);
     }
 
@@ -289,15 +290,43 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     [Fact]
     public void TheTwoGains_DifferByExactlyTheOneMismatchFactor()
     {
-        var (report, mc) = CheapSolve();
+        // ANT-12: the identity is asserted with a reflection SUPPLIED, because that is the only
+        // state realized gain is published in now. Gamma = 0.2 is an arbitrary well-matched port;
+        // the assertion is about the arithmetic, not about the value.
+        var gamma = new System.Numerics.Complex(0.2, -0.1);
+        var (report, mc) = CheapSolve(portReflection: gamma);
         double g  = report[PlanarMetric.GainDbi].Value;
         double rg = report[PlanarMetric.RealizedGainDbi].Value;
         double m  = mc.MismatchFactor;
 
+        Assert.Equal(1.0 - (gamma * System.Numerics.Complex.Conjugate(gamma)).Real, m, 12);
         Assert.InRange(m, 0.0, 1.0);
         Assert.Equal(g + 10.0 * Math.Log10(m), rg, 12);
         _out.WriteLine($"gain {g:F4} dBi, realized {rg:F4} dBi, mismatch {m:F6} " +
                        $"({10 * Math.Log10(m):F3} dB), |S11|² = {1 - m:F6}");
+    }
+
+    /// <summary>
+    /// <b>ANT-12 — realized gain is PRESENT and REFUSED when no port reflection is supplied</b>, which
+    /// is every run today. Asserted so that publishing it again is a deliberate act: the number it
+    /// published before came from the raw delta-gap self-admittance and read 15 dB low on a matched
+    /// antenna, and the refusal carries the exact substitute arithmetic rather than only a reason.
+    /// </summary>
+    [Fact]
+    public void RealizedGain_IsRefusedWithNoPortReflection_AndTheRefusalCarriesTheArithmetic()
+    {
+        var (report, mc) = CheapSolve();
+        var outcome = report[PlanarMetric.RealizedGainDbi];
+
+        Assert.False(outcome.Ok);
+        Assert.Null(mc.PortReflection);
+        Assert.True(double.IsNaN(mc.MismatchFactor));
+        Assert.Contains("GainDbi + 10·log₁₀(1 − |S₁₁|²)", outcome.Verdict.Reason);
+        Assert.Contains("delta-gap", outcome.Verdict.Reason);
+        // Present in the registry, absent from the cubes — the FrontToBackDb staging, reused.
+        Assert.Contains("RealizedGainDbi",
+                        PlanarMetrics.Registry.Select(d => d.CubeName).ToArray());
+        _out.WriteLine(outcome.Verdict.Reason);
     }
 
     /// <summary>
@@ -754,6 +783,49 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains("DERIVED, not named", mc.Cuts.Note);
         Assert.Contains("dominant axis", mc.Cuts.Note);
         Assert.Single(report.CutsPhiDeg);
+        _out.WriteLine(mc.Cuts.Note);
+    }
+
+    /// <summary>
+    /// <b>ANT-12 — a cut at φ and a cut at φ + 180° are ONE plane, and the set must not refuse over
+    /// them.</b> A cut runs from −θ_max through broadside to +θ_max with the negative half on the
+    /// φ + 180° branch, so 90° and 270° sample the same two half-planes. Comparing the raw values
+    /// refused the beamwidth for the whole of the shipped 5.8 GHz patch's sweep, because the derived
+    /// fold flipped at two frequencies. The genuine one-grid-step rotation still refuses.
+    /// </summary>
+    [Fact]
+    public void CutsAtPhiAndPhiPlus180_AreOnePlane_AndDoNotRefuseTheSet()
+    {
+        var (a, _) = CheapSolve(settings: new PlanarMetricSettings([90.0]));
+        var (b, _) = CheapSolve(settings: new PlanarMetricSettings([270.0]));
+
+        var same = PlanarMetricSet.From([FHz, 2 * FHz], [1], [a, b]);
+        Assert.True(same.Publishable(PlanarMetric.BeamwidthDeg).Ok,
+                    same.Publishable(PlanarMetric.BeamwidthDeg).Reason);
+
+        // The two cuts are the same plane, so they must also have measured the same beamwidth.
+        Assert.Equal(a[PlanarMetric.BeamwidthDeg].Values[0],
+                     b[PlanarMetric.BeamwidthDeg].Values[0], 9);
+
+        var (c, _) = CheapSolve(settings: new PlanarMetricSettings([60.0]));
+        var moved = PlanarMetricSet.From([FHz, 2 * FHz], [1], [a, c]);
+        Assert.False(moved.Publishable(PlanarMetric.BeamwidthDeg).Ok);
+        _out.WriteLine(moved.Publishable(PlanarMetric.BeamwidthDeg).Reason!);
+    }
+
+    /// <summary>
+    /// <b>ANT-12 — the derived fold is NOT taken against a broadside peak's azimuth.</b> At θ_peak = 0
+    /// every azimuth names the same direction, which is why <c>DirectivityPeakPhiDeg</c> refuses there;
+    /// folding the current axis against that azimuth made the reported plane a function of which grid
+    /// value the peak search landed on. With no usable azimuth the plane is named once, in [0, 180).
+    /// </summary>
+    [Fact]
+    public void ADerivedCutAtBroadside_IsNamedInTheCanonicalHalf()
+    {
+        var (_, mc) = CheapSolve();
+        Assert.True(mc.Peak.AzimuthIsDegenerate, $"peak θ = {mc.Peak.ThetaDeg}");
+        Assert.True(mc.Cuts.Verdict.Ok, mc.Cuts.Verdict.Reason);
+        Assert.All(mc.Cuts.Cuts, c => Assert.InRange(c.RequestedPhiDeg, 0.0, 180.0 - 1e-12));
         _out.WriteLine(mc.Cuts.Note);
     }
 

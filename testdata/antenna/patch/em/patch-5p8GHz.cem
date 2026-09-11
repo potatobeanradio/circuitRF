@@ -1,0 +1,40 @@
+{
+  "FormatVersion": 1,
+  "Name": "patch-5p8GHz",
+  "LayoutRef": "patch/layout/patch.clay",
+  "SignalStackupLayerName": "Top Copper (1 oz)",
+  "Frequency": {
+    "StartExpr": "5.3",
+    "StopExpr": "6.3",
+    "StepExpr": "",
+    "NumPoints": 21,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Port1Z0Real": 50,
+  "Port1Z0Imag": 0,
+  "Port2Z0Real": 50,
+  "Port2Z0Imag": 0,
+  "Mesh": {
+    "MinCellsAcrossWidth": 8,
+    "EdgeCells": 4,
+    "EdgeFractionOfWidth": 0.1,
+    "EdgeGrowthRatio": 1.5,
+    "TruncationHeights": 6,
+    "TruncationTailCells": 4
+  },
+  "DispersionCorrection": true,
+  "ResonanceSearch": true,
+  "RadiationPattern": true,
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": true,
+    "EdgeCells": 3,
+    "CurrentModel": "Sheet"
+  }
+}

@@ -1019,6 +1019,40 @@ public static class PlanarExtractor
         var (mediumStack, levelZ, stackNote) = BuildMediumStack(stack, levels, groundTopM);
         if (stackNote is not null) notes.Add(stackNote);
 
+        // ── ANT-12 §1a — A COVER LAYER OVER THE TOP METAL IS NOT IN THE SOLVE, AND IT WAS SILENT ──
+        //
+        // BuildMediumStack stops at `topOfInterest` = the topmost analysis level's own sheet, and the
+        // stack is then terminated in AIR at exactly that height. Anything the technology declares
+        // above it — a radome, a conformal coating, a gain-raising superstrate — is discarded, and
+        // until this note nothing said so. Measured on the shipped 5.8 GHz patch example: adding a
+        // 0.5 mm, eps_r = 3.0 cover over the top copper produced s-parameters BIT-IDENTICAL to the
+        // uncovered run, at every one of 11 frequencies, with the pattern and the power budget
+        // identical too. A real cover moves a patch's resonance by per cent and changes its
+        // surface-wave launch, so "no difference at all" is the one answer that cannot be right.
+        //
+        // A WARNING rather than a refusal, on the same terms as the skipped-ground-plane warning
+        // above: the layer is genuinely representable in the medium this kernel solves (a uniform
+        // superstrate is a layered medium), so the limit is in the EXTRACTION and not in the physics,
+        // and refusing would stop runs that are otherwise correct about everything below the metal.
+        var covers = stack
+            .Where(b => b.Layer.Kind == StackupKind.Dielectric &&
+                        b.BottomM >= levels[^1].SheetM - 1e-15 && b.TopM > b.BottomM)
+            .OrderBy(b => b.BottomM)
+            .ToList();
+        if (covers.Count > 0)
+            notes.Add(
+                $"WARNING: {string.Join(", ", covers.Select(b => $"'{b.Layer.Name}'"))} " +
+                $"{(covers.Count == 1 ? "is a dielectric layer" : "are dielectric layers")} lying " +
+                $"ABOVE '{levels[^1].Layer.Name}', the topmost analysis level, and " +
+                $"{(covers.Count == 1 ? "it is NOT in this solve" : "they are NOT in this solve")}. " +
+                "The medium is built from the ground plane up to the topmost level and then terminated " +
+                "in an open air half-space at exactly that height, so a radome, a conformal coating or " +
+                "a superstrate over the metal is discarded rather than modelled — the answer is the " +
+                "answer for an UNCOVERED structure, and it will not look any different. On a patch " +
+                "antenna a real cover moves the resonance by per cent and changes the surface-wave " +
+                "launch. Remove the layer from the stackup if you did not mean it, and read the " +
+                "published resonance as the uncovered one if you did.");
+
         var conductorLayers = new PlanarConductorLayer[levels.Count];
         for (int i = 0; i < levels.Count; i++)
             conductorLayers[i] = new PlanarConductorLayer(

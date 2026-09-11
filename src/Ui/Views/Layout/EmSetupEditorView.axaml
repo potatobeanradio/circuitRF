@@ -591,10 +591,10 @@
                          in circuitRF that lets a sweep publish a frequency the user did not ask
                          for. The label says "add points" in those words for that reason. -->
                     <CheckBox Name="ResonanceSearchCheck" FontSize="11" Margin="16,4,0,0"
-                              Content="Resonance search (may ADD points between yours)"
+                              Content="Resonance search"
                               IsChecked="{Binding ViewModel.ResonanceSearch}"
                               IsEnabled="{Binding ViewModel.ResonanceSearchDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
-                              ToolTip.Tip="Finds resonances narrower than your frequency step, which no amount of refinement on the grid you asked for can see. It looks for Im(Z_in) crossing zero, brackets each one by bisection, and reports f0, Q and the bandwidth as a diagnostic. This is the ONLY setting that lets a sweep publish a frequency you did not ask for: every added point is flagged, every point of your own grid is published exactly as it was, and the number of added solves is capped. It costs real solve time — a full-wave point is tens of seconds — so it is off by default."/>
+                              ToolTip.Tip="Finds resonances narrower than your frequency step. It looks for Im(Z_in) crossing zero, brackets each one by bisection, and reports f0, Q and the bandwidth as a diagnostic. This costs real solve time — a full-wave point is tens of seconds — so it is off by default."/>
                     <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="16,0,0,0"
                                Text="{Binding ViewModel.ResonanceSearchDisabledReason}"
                                IsVisible="{Binding ViewModel.ResonanceSearchDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
@@ -947,6 +947,27 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.SolveCoresNote}"/>
 
+                  </StackPanel>
+                </Border>
+
+                <!-- ── Radiation pattern — ANT-12 ──────────────────────────────────────────
+                     Its OWN group, not a row under Solver options: it chooses an OUTPUT rather than
+                     how an output is computed, it changes no s-parameter and no cell, and it is the
+                     only control in this panel that asks for a second kind of result. The far field,
+                     the metrics, the polarization and the plots all shipped between ANT-4 and ANT-11
+                     with no way to ask for them; this checkbox is that way, and the `em` CLI verb
+                     picks it up from the .cem with no flag of its own. -->
+                <Border Classes="group">
+                  <StackPanel Spacing="2">
+                <TextBlock Classes="grouphdr" Text="Radiation pattern"/>
+                <CheckBox Name="RadiationPatternCheck" FontSize="11"
+                          Content="Compute the radiation pattern (gain, directivity, efficiency)"
+                          IsChecked="{Binding ViewModel.RadiationPattern}"
+                          IsEnabled="{Binding ViewModel.RadiationPatternDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                          ToolTip.Tip="Adds the far field to the run: E_theta, E_phi and the radiation intensity over the upper hemisphere on a 1 degree grid, plus directivity, the two gains, radiation efficiency, the itemised power budget, beamwidth per plane and the polarization cubes. They land in the farfield group of the same result the s-parameters do, and the Data Display plots them as polar dB cuts or a 3D surface. It is a post-process of currents the solve has already paid for, so it changes no s-parameter and no cell - but it needs the currents, so a pattern is produced only at points that were actually SOLVED, which with adaptive sampling on is a subset of your grid. Off by default because it is only meaningful on a radiator."/>
+                <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                           Text="{Binding ViewModel.RadiationPatternDisabledReason}"
+                           IsVisible="{Binding ViewModel.RadiationPatternDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                   </StackPanel>
                 </Border>
 

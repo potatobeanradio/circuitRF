@@ -179,8 +179,24 @@ public static class PlanarBeamwidth
             // φ = 0° the transverse rooftops across the line's width give the ellipse a cross term of
             // round-off size and a SIGN, so the unfolded axis came out as 180.00° — the right plane
             // reported back to front.
+            // ── ANT-12 — THE FOLD MAY NOT BE TAKEN AGAINST A DEGENERATE PEAK AZIMUTH ─────────
+            //
+            // The fold below exists for a peak that is genuinely off broadside, where φ_peak names a
+            // direction. At θ_peak = 0 every azimuth names the SAME direction — which is exactly why
+            // DirectivityPeakPhiDeg refuses there — so φ_peak is then whichever grid value the peak
+            // search happened to land on, and folding against it makes the reported plane a function
+            // of that. Measured on the shipped 5.8 GHz patch: the derived cut came out as 90° at most
+            // frequencies and 270° at two of them, the SAME plane reported two ways, and
+            // PlanarMetricSet.From then refused the beamwidth for the whole sweep on the grounds that
+            // the planes disagreed. They never did.
+            //
+            // With no usable azimuth to face, the canonical representative is the one in [0, 180) —
+            // a plane is a line, so that names it exactly once.
             double folded = axis;
-            if (Math.Abs(Delta(axis, context.Peak.PhiDeg)) > 90.0) folded = (axis + 180.0) % 360.0;
+            if (context.Peak.AzimuthIsDegenerate)
+                folded = ((axis % 180.0) + 180.0) % 180.0;
+            else if (Math.Abs(Delta(axis, context.Peak.PhiDeg)) > 90.0)
+                folded = (axis + 180.0) % 360.0;
 
             wanted = [folded];
             note = $"The beamwidth cut was DERIVED, not named: the current transform at the pattern's " +

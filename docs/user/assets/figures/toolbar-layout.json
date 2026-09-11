@@ -80,7 +80,7 @@
       "Slot": 8,
       "Id": "",
       "Tooltip": "Circle (center-radius)",
-      "Icon": "VectorCircle",
+      "Icon": "CircleOutline",
       "Command": "RelayCommand\u00601",
       "Kind": "button"
     },

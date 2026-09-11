@@ -212,6 +212,35 @@ public sealed class PlanarMetricContext
     /// available FROM.</summary>
     public Complex PortZ0 { get; }
 
+    /// <summary>
+    /// <b>ANT-12 — the driven port's own reflection coefficient at the plane a source would be
+    /// connected at, or null when nobody supplied one.</b> The ONLY input to
+    /// <see cref="MismatchFactor"/>, and therefore to <see cref="PlanarMetric.RealizedGainDbi"/>,
+    /// which refuses while it is null.
+    ///
+    /// <para><b>It is not <see cref="RawSelfAdmittance"/>, and that correction is what this field
+    /// is.</b> R-ant-6 read the mismatch factor off the raw self-admittance on the grounds that it
+    /// is "the same Y_jj and Z₀ everything else reads" — which is right for
+    /// <see cref="PlanarMetric.RadiationEfficiency"/> and both directivity-shaped ratios, because
+    /// those are SCALE-INVARIANT in the excitation and the raw admittance is the one the pattern's
+    /// own currents came out of. The mismatch factor is the one quantity here that is NOT a ratio of
+    /// two things the same excitation produced: it compares an absolute admittance against Z₀. And
+    /// at a de-embedded EDGE port the raw admittance is the delta gap's, not the antenna's — the
+    /// gap's own series parasitic is precisely what the error box removes, so the raw Γ is near 1
+    /// whatever the structure does. Measured on the shipped 5.8 GHz patch: the published S₁₁ is
+    /// −14.3 dB at resonance (a mismatch factor of 0.963, −0.16 dB) while the raw admittance gives
+    /// 0.032, so the realized gain was published 15 dB below the gain on an antenna matched to
+    /// within a quarter of a dB. A wrong number, not a pessimistic one.</para>
+    ///
+    /// <para><b>Nothing supplies it yet</b>, so the metric is present-and-refused exactly as
+    /// <see cref="PlanarMetric.FrontToBackDb"/> is, and for the same reason: the picker, the
+    /// exporter and the CLI stay plumbed while the number stays unprinted. What would supply it is
+    /// the DE-EMBEDDED, renormalised S of the driven port at this frequency, which the sweep
+    /// produces after the pattern is taken — see the refusal's own sentence for the arithmetic a
+    /// user can do in the meantime, which is exact.</para>
+    /// </summary>
+    public Complex? PortReflection { get; }
+
     public PlanarMetricSettings Settings { get; }
 
     private readonly Lazy<PlanarPowerBudget> _budget;
@@ -225,7 +254,8 @@ public sealed class PlanarMetricContext
     public PlanarMetricContext(PlanarProblem problem, PlanarMesh mesh, Vec<Complex> basisCurrents,
                                PlanarFarFieldPattern pattern, Complex rawSelfAdmittance,
                                Complex portZ0, PlanarMetricSettings? settings = null,
-                               int? maxDegreeOfParallelism = null)
+                               int? maxDegreeOfParallelism = null,
+                               Complex? portReflection = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
@@ -237,6 +267,7 @@ public sealed class PlanarMetricContext
         Pattern           = pattern;
         RawSelfAdmittance = rawSelfAdmittance;
         PortZ0            = portZ0;
+        PortReflection    = portReflection;
         Settings          = settings ?? PlanarMetricSettings.Default;
 
         _budget = new Lazy<PlanarPowerBudget>(() => PlanarPowerBudget.For(
@@ -247,20 +278,18 @@ public sealed class PlanarMetricContext
     }
 
     /// <summary>
-    /// <b>R-ant-6's ONE mismatch factor</b>: accepted power over AVAILABLE power,
-    /// <c>4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²</c>. Equal to <c>1 − |Γ|²</c> for a real reference and to the
-    /// power-wave form for a complex one, and written this way because it reads the same Y_jj and Z₀
-    /// as everything else here rather than a second estimate of the same thing.
+    /// <b>R-ant-6's ONE mismatch factor</b> — accepted power over AVAILABLE power, <c>1 − |Γ|²</c>,
+    /// read from <see cref="PortReflection"/> and from nothing else. <b>NaN while that is null</b>,
+    /// which is the state <see cref="PlanarMetric.RealizedGainDbi"/> refuses in.
+    ///
+    /// <para>It was <c>4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²</c> over the RAW self-admittance until ANT-12
+    /// measured what that publishes on a matched antenna — see <see cref="PortReflection"/> for the
+    /// number and for why the same raw admittance is still exactly right for everything else here.
+    /// The two forms are algebraically the same function of a port admittance; the correction is
+    /// WHICH port's admittance, not the formula.</para>
     /// </summary>
     public double MismatchFactor
-    {
-        get
-        {
-            Complex d = 1.0 + PortZ0 * RawSelfAdmittance;
-            double den = d.Real * d.Real + d.Imaginary * d.Imaginary;
-            return den > 0 ? 4.0 * PortZ0.Real * RawSelfAdmittance.Real / den : double.NaN;
-        }
-    }
+        => PortReflection is { } g ? 1.0 - (g.Real * g.Real + g.Imaginary * g.Imaginary) : double.NaN;
 
     /// <summary>4π·U_peak / P — the directivity-shaped ratio both gains are built from.</summary>
     internal double FourPiPeakOver(double powerW) =>
@@ -480,25 +509,30 @@ public static class PlanarMetrics
             c => [PlanarMetricContext.Db(c.FourPiPeakOver(c.Budget.AcceptedW))]),
 
         new(PlanarMetric.RealizedGainDbi, "RealizedGainDbi", "dBi", PlanarMetricAxis.PerPoint,
-            "Realized gain — G times the mismatch factor, so 4π·U_peak / P_available. **THIS ONE " +
-            "INCLUDES MISMATCH.** The mismatch factor is 4·Re(Z₀)·Re(Y_jj)/|1 + Z₀·Y_jj|², read " +
-            "from the SAME raw self-admittance and the SAME port reference as GainDbi and " +
-            "PowerAccepted — there is exactly one mismatch factor in this registry and both gains " +
-            "read it, so the two differing by exactly that factor is structural rather than two " +
-            "estimates happening to agree.",
+            "Realized gain — GainDbi times the mismatch factor, so 4π·U_peak / P_available. **THIS " +
+            "ONE INCLUDES MISMATCH**, and the factor is 1 − |Γ|² at the port, where Γ is the " +
+            "reflection a source connected at the port's own reference plane would see. **Present " +
+            "and REFUSED in this kernel** — see the verdict's own sentence, which gives the exact " +
+            "arithmetic to do from GainDbi and the published S instead.",
+            // ── ANT-12 — ONE PREDICATE, AND IT IS THE PORT'S OWN Γ ────────────────────────────
+            // Staged exactly as FrontToBackDb is: the metric stays in the registry, in the picker
+            // and in the exporter, and the one thing that would publish it is a non-null
+            // PortReflection. Nothing supplies one today. See PlanarMetricContext.PortReflection for
+            // what the raw self-admittance published before this, and why that was wrong here and is
+            // still right for every other metric in this list.
             c =>
             {
                 var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
                 if (!ok.Ok) return ok;
+                if (c.PortReflection is null) return EmSuitability.No(RealizedGainRefusal);
                 double m = c.MismatchFactor;
                 return m > 0 && m <= 1.0 + 1e-12
                     ? EmSuitability.Yes
                     : EmSuitability.No(
-                        $"The mismatch factor came out as {m:E6}, which is not in (0, 1]. It is the " +
-                        $"ratio of accepted to AVAILABLE power, 4·Re(Z₀)·Re(Y)/|1 + Z₀Y|², with " +
-                        $"Y_jj = {c.RawSelfAdmittance} S and Z₀ = {c.PortZ0} Ω; a value outside that " +
-                        $"range means one of those two is not a passive one-port seen from a source " +
-                        $"of positive resistance. Refused rather than turned into a dB.");
+                        $"The mismatch factor came out as {m:E6}, which is not in (0, 1]. It is " +
+                        $"1 − |Γ|² at the port, with Γ = {c.PortReflection} and Z₀ = {c.PortZ0} Ω; a " +
+                        $"value outside that range means the port is not a passive one-port seen " +
+                        $"from a source of positive resistance. Refused rather than turned into a dB.");
             },
             c => [PlanarMetricContext.Db(c.FourPiPeakOver(c.Budget.AcceptedW) * c.MismatchFactor)]),
 
@@ -544,6 +578,25 @@ public static class PlanarMetrics
                        $"than a numerical one."),
             c => [FrontToBack(c)]),
     ];
+
+    /// <summary>
+    /// <b>ANT-12's refusal, and it carries the arithmetic rather than only the reason</b> — the
+    /// substitute is EXACT, not an approximation, so a user who reads this is not left worse off
+    /// than a published cube would leave them.
+    /// </summary>
+    internal const string RealizedGainRefusal =
+        "Realized gain is not published, because the reflection coefficient it needs is not the one " +
+        "this analysis has in hand where the pattern is taken. The mismatch factor is 1 − |Γ|² at " +
+        "the plane a source would be connected at; what is available beside the pattern is the RAW " +
+        "self-admittance of the port's delta-gap excitation, and at a de-embedded edge port that is " +
+        "the gap's own series parasitic rather than the antenna's input — the thing the error box " +
+        "exists to remove. Reading the factor off it publishes a realized gain far below the gain " +
+        "on an antenna that is actually matched (measured: 15 dB low on a patch whose published S₁₁ " +
+        "is −14.3 dB), which is a wrong number rather than a pessimistic one. " +
+        "DO THIS INSTEAD, and it is exact: realized gain = GainDbi + 10·log₁₀(1 − |S₁₁|²), with " +
+        "S₁₁ read from the published, de-embedded S cube at the same frequency and port. What would " +
+        "lift the refusal is that same de-embedded S being supplied to the metric context as " +
+        "PortReflection, which the sweep produces one step AFTER the pattern is taken.";
 
     public static PlanarMetricDefinition Of(PlanarMetric metric) =>
         Registry.First(d => d.Metric == metric);
@@ -655,6 +708,14 @@ public sealed record PlanarMetricSet(
     }
 
     /// <summary>
+    /// <b>How far two cut planes may differ and still be the same plane</b> — a grid step's own
+    /// rounding, not a physical tolerance. Both numbers compared are SNAPPED grid azimuths, so they
+    /// are equal or they are a whole grid step apart; this only has to absorb the arithmetic of the
+    /// modulo. A genuine one-step rotation of the axis is a real disagreement and still refuses.
+    /// </summary>
+    private const double CutAgreementDeg = 1e-6;
+
+    /// <summary>
     /// The set, from one report per (frequency, port). <b>The cut axis has to AGREE across the set</b>:
     /// a derived cut is derived per pattern, and a structure whose dominant current axis rotates with
     /// frequency has no single plane to put on one axis. Averaging one in would be exactly the guess
@@ -668,8 +729,27 @@ public sealed record PlanarMetricSet(
         var first = reports.Count > 0 ? reports[0].CutsPhiDeg : [];
         var verdict = EmSuitability.Yes;
 
+        // ── ANT-12 — TWO CUTS AT φ AND φ + 180° ARE ONE PLANE, NOT TWO ────────────────────────
+        //
+        // A cut runs from −θ_max through broadside to +θ_max with the negative half on the φ + 180°
+        // branch (PlanarBeamwidth.Cuts), so 90° and 270° sample the same two half-planes and give the
+        // same beamwidth. Comparing the raw values refused the metric for a whole sweep whenever the
+        // derived fold flipped — which it did, on the shipped 5.8 GHz patch, because the fold was
+        // taken against a degenerate broadside azimuth. That cause is fixed where it is; this is the
+        // comparison being about the quantity it is a comparison of.
+        static bool SamePlanes(IReadOnlyList<double> a, IReadOnlyList<double> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                double d = Math.Abs(((a[i] - b[i]) % 180.0 + 180.0) % 180.0);
+                if (Math.Min(d, 180.0 - d) > CutAgreementDeg) return false;
+            }
+            return true;
+        }
+
         foreach (var r in reports)
-            if (!r.CutsPhiDeg.SequenceEqual(first))
+            if (!SamePlanes(r.CutsPhiDeg, first))
             {
                 verdict = EmSuitability.No(
                     $"BeamwidthDeg is not published: the cut planes do not agree across the sweep. " +

@@ -4329,3 +4329,89 @@ it would restore precisely the half-plot of structural zeros ANT-4 §4 exists to
   form — is strictly stronger about the thing it can reach, while saying nothing about the assembly.
 - **The real imported patch board is still not in this repository**, so every number above is on
   hand-built fixtures or on the 4-layer starter, as ANT-9's own §"Not done" records for the same reason.
+
+## ANT-12 — three metric defects the shipped example found, and the far field's first user (2026-09-10)
+
+`brief-antenna-12-user-docs-and-example.md`. The brief is a docs-and-example phase, and the example is
+what turned up the engine work: **ANT-4 through ANT-11 had never been run end to end by a user**, and
+three of the numbers they publish do not survive that. Gates:
+`tests/Engine.Tests/Mom/PlanarMetricsTests.cs` (30 tests, 3 s) and
+`tests/Engine.Tests/Mom/PlanarPolarizationTests.cs` (25 tests, 0.3 s), both routine tier.
+
+### 1. `RealizedGainDbi` published a number that was 15 dB wrong on a matched antenna
+
+R-ant-6 read the mismatch factor off the **raw self-admittance** on the stated grounds that it is "the
+same Y_jj and Z₀ everything else reads". That is right for `RadiationEfficiency` and both
+directivity-shaped ratios, and it is the one place it is wrong, for a reason the note could not have
+seen without a run: **every other metric here is SCALE-INVARIANT in the excitation, and the mismatch
+factor is not.** η, D and G are ratios of two things the same 1 V delta gap produced; the mismatch
+factor compares an absolute admittance against Z₀.
+
+At a de-embedded EDGE port the raw admittance is the **delta gap's**, not the antenna's — the gap's own
+series parasitic is precisely what the error box removes — so the raw Γ sits near 1 whatever the
+structure does. Measured on the shipped 5.8 GHz patch at its best-matched grid point:
+
+| | |
+|---|---|
+| published, de-embedded S₁₁ | **−14.31 dB** → mismatch factor 0.963, −0.16 dB |
+| raw self-admittance Y₁₁ | 163 µS → 4·Re(Z₀)·Re(Y)/\|1+Z₀Y\|² = **0.032**, −15.0 dB |
+| `GainDbi` | 4.66 dBi |
+| `RealizedGainDbi`, as published | **−15.05 dBi** |
+| realized gain, correctly | **4.50 dBi** |
+
+**The raw number is not merely pessimistic, it is impossible**: for a lossless 50 Ω lead terminated in
+the de-embedded 252 Ω the input Re(Y) is bounded into [3.9 mS, 100 mS], and 163 µS is two orders below
+that floor. So it cannot be a port admittance at all.
+
+**Refused, not fixed.** `PlanarMetricContext` gained `PortReflection` (nullable); `MismatchFactor` is
+now `1 − |Γ|²` from that and nothing else, and `RealizedGainDbi` refuses while it is null — the
+FrontToBackDb staging reused verbatim, one predicate, picker and exporter still plumbed. Nothing
+supplies it yet, because the de-embedded S is produced one step AFTER the pattern is taken and both
+sweep drivers would have to be re-ordered to hand it over; the refusal names that as what would lift
+it. **The refusal carries the arithmetic and it is EXACT**, not an approximation:
+`GainDbi + 10·log₁₀(1 − |S₁₁|²)` from the two published results.
+
+### 2. The beamwidth refused a whole sweep over two names for ONE plane
+
+`PlanarMetricSet.From` compared `CutsPhiDeg` with `SequenceEqual`. A cut runs from −θ_max through
+broadside to +θ_max with the negative half on the φ + 180° branch, so **90° and 270° sample the same
+two half-planes and give the same beamwidth** — but they are different doubles, and the whole sweep's
+`BeamwidthDeg` was refused.
+
+**The cause was upstream, and it is worth naming.** `PlanarBeamwidth.Cuts` folds the derived current
+axis to face `context.Peak.PhiDeg`. At θ_peak = 0 every azimuth names the same direction — which is
+exactly why `DirectivityPeakPhiDeg` refuses there — so the fold was conditioned on a quantity the run
+itself declines to report, and it flipped at the two frequencies where the peak search landed on a
+different grid azimuth. **A broadside peak now takes the canonical representative in [0, 180)**, and
+the set comparison is modulo 180° as well, because a plane is a line.
+
+### 3. The Ludwig-3 pair refused on 89.999° disagreeing with 89.999°
+
+`PlanarPolarizationSet.From` compared derived reference angles at **1e-9°**, which is exact equality on
+the output of an eigen-decomposition. On an ordinary symmetric patch the axis wobbles by round-off
+across frequency, the pair was refused for the whole sweep, and the refusal printed its own two
+angles as `89.999°` and `89.999°`.
+
+`ReferenceAgreementDeg` is **0.01°, sized from what the decomposition does with it**: a reference off
+by δ leaks co-pol into cross at 20·log₁₀(sin δ), which at 0.01° is −75 dB — some thirty dB below the
+≈ −45 dB cross-pol floor the MESH itself sets (ANT-6 §4). Two decompositions that close are
+indistinguishable in the result they would produce. A reference that genuinely rotates still refuses,
+and the comparison is modulo 180° for the same reason as the cut's: φ₀ and φ₀ + 180° give the same
+|E_co| and |E_cross|.
+
+### 4. What the example run confirmed, and one thing it refuted
+
+- **The far field is right on an antenna, against an independent oracle.** Resonance search f₀ =
+  5.81306 GHz against the cavity model's 5.7968 GHz — **+0.28 %** — with Q = 35.1 at R = 38.9 Ω and a
+  −10 dB bandwidth of 91 MHz. D = 6.70 dBi at broadside, η_rad = 62.6 %, E-plane 3 dB beamwidth 146°.
+- **A pattern costs ~6.4 s at N = 1,611 on a 1°×1° hemisphere**, against ~4.6 s for the de-embedded
+  solve it rides on — measured as the difference between a 21-point sweep with one pattern (1 m 37 s)
+  and the same sweep with 21 (3 m 45 s). Cheap enough that `EmRunService` asks for a pattern at every
+  requested frequency rather than at `freqs[0]`, which is the bottom of the sweep and the one
+  frequency nobody wants (22.6 % efficiency there against 62.6 % at resonance).
+- **REFUTED: `brief-antenna-0-overview.md` §2's "probe-fed is a particularly clean fit".** It is the
+  one feed whose pattern this kernel cannot compute. An internal port drives ground-attachment bases,
+  and `PlanarFarField.VerticalBasisRefusal` fires by name — measured on the same patch with the feed
+  line removed and one `Internal` port at the inset point. The s-parameters are computed normally. So
+  the set of feeds this kernel patterns is exactly the in-plane ones, and ANT-12's user page says so
+  rather than repeating the overview.

@@ -184,6 +184,14 @@ public sealed class CemFile
     /// byte-identically. That is an asserted property of this format, not a nicety.
     /// </summary>
     public bool?   AcceleratedSolve      { get; set; }
+
+    /// <summary>
+    /// ANT-12's radiation pattern — <b>null means off</b>, which is what every <c>.cem</c> written
+    /// before the far field was reachable means. Same nullable + omit-at-default rule as
+    /// <see cref="AcceleratedSolve"/> directly above, so such a file loads AND re-serialises
+    /// byte-identically.
+    /// </summary>
+    public bool?   RadiationPattern      { get; set; }
     public string? SnpOutputPathOverride { get; set; }
 
     /// <summary>
@@ -276,6 +284,7 @@ public static class EmSetupPersistence
         ResonanceSearch       = s.ResonanceSearch ? true : null,
         DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
         AcceleratedSolve      = s.AcceleratedSolve ? true : null,
+        RadiationPattern      = s.RadiationPattern ? true : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
@@ -325,6 +334,7 @@ public static class EmSetupPersistence
         ResonanceSearch       = f.ResonanceSearch ?? false,
         DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
         AcceleratedSolve      = f.AcceleratedSolve ?? false,
+        RadiationPattern      = f.RadiationPattern ?? false,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         PlanarMesh            = f.PlanarMesh is { } pm
