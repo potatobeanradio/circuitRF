@@ -66,7 +66,7 @@ public sealed class StabilityCircleMarkerImpedanceTests
     private static string Expected(Complex gamma, Complex z0, Marker m)
     {
         var Z = z0 * (Complex.Conjugate(z0) / z0 + gamma) / (Complex.One - gamma);
-        return $"impedance={m.FormatComplex(Z)} Ω";
+        return $"impedance={m.FormatImpedanceComplex(Z)} Ω";
     }
 
     // ---- Defect 1: the readout must track the marker, on a NON-UNIFORM source ----

@@ -114,6 +114,7 @@ public static class PlotConfigLoader
                     {
                         Name                   = mc.Name,
                         MatrixFormat           = mc.MatrixFormat,
+                        MatrixFormatImpedance  = mc.MatrixFormatImpedance,
                         Style                  = mc.Style,
                         UseNormalizedImpedance = mc.UseNormalizedImpedance,
                         MaximumFractionDigits  = mc.MaximumFractionDigits,

@@ -176,7 +176,7 @@ public sealed class PerPortZ0ComputeTests
 
         // The readout must be exactly the per-port formula, not merely "different from the uniform
         // one" — Override off means the raw S22 read against port-2's OWN 75-j10 Ω reference.
-        Assert.Equal($"impedance={marker.FormatComplex(Zexpect)} Ω", perPortResult);
+        Assert.Equal($"impedance={marker.FormatImpedanceComplex(Zexpect)} Ω", perPortResult);
         Assert.Equal(portZ0, unusual.MarkerZ0);
 
         // Override ON: every port is renormalized to the uniform trace Z0 (50 Ω here), and the
@@ -187,7 +187,7 @@ public sealed class PerPortZ0ComputeTests
         var ZoverExpect = portZ0w * (portZ0w.Conjugate() / portZ0w + sRenorm) / (Complex.One - sRenorm);
 
         Assert.Equal(portZ0w, overridden.MarkerZ0);
-        Assert.Equal($"impedance={marker.FormatComplex(ZoverExpect)} Ω",
+        Assert.Equal($"impedance={marker.FormatImpedanceComplex(ZoverExpect)} Ω",
                      overridden.GetMarkerImpedanceString(marker));
     }
 

@@ -87,7 +87,7 @@ public sealed class Z0ComplexPortMarkerTests : IDisposable
     {
         var m = MarkerOn(t);
         Assert.True(t.MarkerShowsImpedance(m), "pre-condition: S(i,i) must offer an impedance readout");
-        Assert.Equal($"impedance={m.FormatComplex(expected)} Ω", t.GetMarkerImpedanceString(m));
+        Assert.Equal($"impedance={m.FormatImpedanceComplex(expected)} Ω", t.GetMarkerImpedanceString(m));
     }
 
     /// <summary>Builds the display the way a run does: library entry, one Smith plot, one S(1,1)

@@ -422,6 +422,12 @@ public sealed class MarkerConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MatrixFormat MatrixFormat { get; set; } = MatrixFormat.MA;
 
+    /// <summary>How the marker's IMPEDANCE row is spelled — independent of
+    /// <see cref="MatrixFormat"/>, which spells the Γ/S value. Defaults to RI, so a display saved
+    /// before this field existed reads back with the R+jX the marker itself defaults to.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MatrixFormat MatrixFormatImpedance { get; set; } = MatrixFormat.RI;
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerStyle Style { get; set; } = MarkerStyle.Medium;
 

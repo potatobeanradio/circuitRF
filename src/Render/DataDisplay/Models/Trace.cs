@@ -3505,14 +3505,22 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>Shared impedance formula — Γ (or S(i,i)) at a reference Z0, both the plain and
         /// normalized forms. One formatter for the network and cube-bound paths (brief-dd-z0-
-        /// renormalization.md §5: "do not add a second impedance formatter").</summary>
+        /// renormalization.md §5: "do not add a second impedance formatter").
+        ///
+        /// <para><b>Spelled with <see cref="Marker.FormatImpedanceComplex"/>, not
+        /// <see cref="Marker.FormatComplex"/></b> — an impedance carries its OWN format, because it
+        /// is not the quantity the trace plots. It used to borrow the marker's Γ/S format, which on
+        /// an ordinary Rect plot of S(1,1) is dB (the marker takes its format from the y-axis), so the
+        /// termination read "33.7 dB ∠-14° Ω" — a decibel impedance, which is not a quantity. The
+        /// contour path already formatted its own Z row this way; this is the same call, in the one
+        /// place the network and cube readouts share.</para></summary>
         private static string FormatImpedance(Complex s, Complex z0, Marker m)
         {
             var Z  = z0 * (z0.Conjugate() / z0 + s) / (Complex.One - s);
             var Zn = Z / z0;
             return m.UseNormalizedImpedance
-                ? $"impedance=Z0*({m.FormatComplex(Zn)})"
-                : DbFloor.Label("impedance", m.FormatComplex(Z)) + " Ω";
+                ? $"impedance=Z0*({m.FormatImpedanceComplex(Zn)})"
+                : DbFloor.Label("impedance", m.FormatImpedanceComplex(Z)) + " Ω";
         }
 
         /// <summary>The 0-based port index a cube-bound reflection element (S(i,i)) reads; -1 when

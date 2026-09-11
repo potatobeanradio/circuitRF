@@ -241,7 +241,7 @@ public sealed class Z0NonUniformOverrideTests : IDisposable
         Assert.Equal(Port2Z0, trace.MarkerZ0);
 
         // S22 = 0 at its own reference ⇒ Z = 12 Ω exactly.
-        Assert.Equal($"impedance={marker.FormatComplex(Port2Z0)} Ω",
+        Assert.Equal($"impedance={marker.FormatImpedanceComplex(Port2Z0)} Ω",
                      trace.GetMarkerImpedanceString(marker));
     }
 
@@ -265,7 +265,7 @@ public sealed class Z0NonUniformOverrideTests : IDisposable
         // The IMPEDANCE is a physical quantity and must be reference-independent — the same 12 Ω
         // this port reads with Override off, only now arrived at the long way round.
         string result = trace.GetMarkerImpedanceString(marker);
-        Assert.Equal($"impedance={marker.FormatComplex(Port2Z0)} Ω", result);
+        Assert.Equal($"impedance={marker.FormatImpedanceComplex(Port2Z0)} Ω", result);
     }
 
     // ---- Network (Touchstone/SNP) path ------------------------------------

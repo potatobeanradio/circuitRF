@@ -1715,6 +1715,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 Freq                  = Finite(m.Freq),
                 FreqUnits             = m.FreqUnits,
                 MatrixFormat          = m.MatrixFormat,
+                MatrixFormatImpedance = m.MatrixFormatImpedance,
                 Style                 = m.Style,
                 UseNormalizedImpedance= m.UseNormalizedImpedance,
                 MaximumFractionDigits = m.MaximumFractionDigits,

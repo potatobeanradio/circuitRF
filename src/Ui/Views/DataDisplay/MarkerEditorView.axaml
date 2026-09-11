@@ -9,6 +9,15 @@
         <x:Static Member="vm:MarkerEditorViewModel.DesignInstance"/>
     </Design.DataContext>
 
+    <UserControl.Resources>
+        <!-- The ComboBox control theme puts MinWidth="{DynamicResource ComboBoxThemeMinWidth}" (64)
+             as a LOCAL value on the template's own background/border element, and a local value beats
+             every style setter — so `ComboBox /template/ Border#Background` cannot lower it. The
+             DynamicResource is the seam: redefining the key HERE reaches that binding through the
+             ordinary resource-lookup chain and touches no ComboBox outside this flyout. -->
+        <x:Double x:Key="ComboBoxThemeMinWidth">0</x:Double>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <!-- ── Opacity-tiered field labels ──────────────────────────────── -->
         <Style Selector="TextBlock.label">
@@ -39,7 +48,14 @@
             <Setter Property="Width"     Value="0"/>
             <Setter Property="MinWidth"  Value="0"/>
         </Style>
-        <Style Selector="ComboBox /template/ ContentPresenter#PART_ContentPresenter">
+        <!-- The template's grid is `1*,32` — the second column is the chevron's, at a FIXED 32 px,
+             so a narrow combo gives its content whatever is left and that can be nothing: the
+             selected item measured 0 px wide at 34 and the box read empty. Hiding the glyph does not
+             reclaim its column; spanning the content across both does. The grid child that carries
+             the selected item is the ContentControl named `ContentPresenter` — the `PART_` name
+             belongs to a presenter INSIDE it, which is not a child of the grid, so setting
+             Grid.ColumnSpan there set it on nothing at all. -->
+        <Style Selector="ComboBox /template/ ContentControl#ContentPresenter">
             <Setter Property="Grid.ColumnSpan" Value="2"/>
         </Style>
 
@@ -172,30 +188,59 @@
                          KeyDown="OnVswrValueKeyDown"/>
             </Grid>
 
-            <!-- Format — Smith/Polar + contour; shows mA / RI / dB casing -->
-            <StackPanel Spacing="3" IsVisible="{Binding ShowFormatSelector}">
-                <TextBlock Text="Format" Classes="label"/>
-                <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
-                          SelectedItem="{Binding MatrixFormat}"
-                          Width="72"
-                          HorizontalAlignment="Left">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Converter={x:Static vm:MatrixFormatConverter.Instance}}"
-                                       FontSize="10"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-            </StackPanel>
+            <!-- Format, Impedance format and Norm Z share one row — three narrow controls that were
+                 three full-width rows, on a 250 px flyout. A horizontal StackPanel and not a Grid on
+                 purpose: each of the three has its own visibility gate and they are independent (a
+                 Rect plot hides the Γ selector and keeps the other two), and StackPanel drops the
+                 spacing of a collapsed child where an Auto column would leave its gap behind.
+                 The combo boxes are as wide as "mA" / "RI" / "dB" needs — the chevron is already
+                 templated away above, so the content is all there is to fit. -->
+            <StackPanel Orientation="Horizontal" Spacing="10">
 
-            <!-- Normalize (ToggleButton) -->
-            <ToggleButton Classes="seg-btn"
-                          IsChecked="{Binding UseNormalized, Mode=TwoWay}"
-                          HorizontalAlignment="Left"
-                          IsVisible="{Binding ShowNormZ}"
-                          ToolTip.Tip="Normalize to reference impedance">
-                Norm Z
-            </ToggleButton>
+                <!-- Γ/S value format — Smith/Polar + contour; shows mA / RI / dB casing -->
+                <StackPanel Spacing="3" IsVisible="{Binding ShowFormatSelector}">
+                    <TextBlock Text="Format" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
+                              SelectedItem="{Binding MatrixFormat}"
+                              Width="34" MinWidth="0"
+                              HorizontalAlignment="Left">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:MatrixFormatConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Impedance format — wherever a "Z=" / "impedance=" row is actually printed,
+                     Rect included (where the Γ selector beside it is hidden and this one is not). -->
+                <StackPanel Spacing="3" IsVisible="{Binding ShowImpedanceFormatSelector}">
+                    <TextBlock Text="Impedance" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
+                              SelectedItem="{Binding ImpedanceFormat}"
+                              Width="34" MinWidth="0"
+                              HorizontalAlignment="Left"
+                              ToolTip.Tip="How the impedance readout is spelled. RI is R+jX — the form a matching network is built from.">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:MatrixFormatConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Normalize — bottom-aligned so it sits on the combo boxes' line, not the labels'. -->
+                <ToggleButton Classes="seg-btn"
+                              IsChecked="{Binding UseNormalized, Mode=TwoWay}"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Bottom"
+                              IsVisible="{Binding ShowNormZ}"
+                              ToolTip.Tip="Normalize to reference impedance">
+                    Norm Z
+                </ToggleButton>
+            </StackPanel>
 
             <!-- Multi-marker / Δ Delta — Rect only -->
             <StackPanel Orientation="Horizontal" Spacing="4"

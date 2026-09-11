@@ -362,7 +362,7 @@ public sealed class Z0RenormalizationTests : IDisposable
         string result = trace.GetMarkerImpedanceString(marker);
         // Format with the SAME marker (whatever MatrixFormat it resolved to) rather than hand-parsing
         // a substring — the exact string must match, not just "contains a number that looks right".
-        Assert.Equal($"impedance={marker.FormatComplex(expectedZ)} Ω", result);
+        Assert.Equal($"impedance={marker.FormatImpedanceComplex(expectedZ)} Ω", result);
 
         // Off-diagonal element (i != j) has no impedance meaning.
         var offDiag = new Trace(new SNP([1e9], 1), MatrixType.S, 0, 0, DependentVarFormat.Db)

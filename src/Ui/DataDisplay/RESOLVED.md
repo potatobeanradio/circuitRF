@@ -1,5 +1,72 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — a marker read its impedance in decibels
+
+A marker on S(1,1) in a Rect plot printed "impedance=… dB ∠…° Ω" — a decibel impedance, which is not
+a quantity, with the Ω right there saying so. The flyout offered no way to correct it either.
+
+**One line, and the cause is a shared formatter reading the wrong setting.** `Trace.FormatImpedance`
+spelled the value with `Marker.FormatComplex` — the marker's Γ/S format, which a marker takes from
+the TRACE's y-axis, and a Rect S-parameter trace is plotted in dB. `Marker.FormatImpedanceComplex`
+already existed for exactly this and was already used by the contour path's "Z=" row; the network and
+cube-bound readouts now call it too, which is the one place they share.
+
+**The Rect plot that shows the row is the CUBE-BOUND one**, which is to say a run's own S cube —
+`MarkerShowsImpedance` asks a cube-bound trace only whether it is a reflection element
+(`IsCubeReflectionElement`) and never looks at the y-axis, while for a plain network trace it also
+requires `YAxisIsComplexValue`. So the reported case is the ordinary one: simulate, plot S(1,1) in
+dB, drop a marker.
+
+**Why a second format property rather than one.** An impedance is not the quantity the trace plots,
+so it does not follow the trace's spelling: on a Smith chart the value is read in magnitude/angle and
+the termination still wants R+jX, which is the number that goes into a matching network.
+`MatrixFormatImpedance` defaults to RI and was carried, copied and persisted-in-name-only until this
+readout actually read it.
+
+**The Rect plot is precisely the case that had no control.** `ShowFormatSelector` hides the Γ/S combo
+on a Rect plot, correctly — the plotted value there is scalar. So the impedance selector is a second
+gate (`ShowImpedanceFormatSelector`), shown wherever an impedance row is actually PRINTED: a contour
+marker, or any reflection marker on any plot type. Sharing the first gate would have left the
+reported case exactly as it was.
+
+`MatrixFormatImpedance` now round-trips through `MarkerConfig`; its default there is RI, so a `.cdd`
+written before the field existed loads as what the marker itself defaults to. Gate:
+`tests/Ui.Tests/MarkerImpedanceFormatTests.cs`. The five pre-existing Z0 tests that asserted the
+readout string spelled their expectation with `FormatComplex`; they spell it with
+`FormatImpedanceComplex` now and still pin the VALUE, never the formatting.
+
+### The three controls share one row, and two Fluent ComboBox traps came with it
+
+Format, Impedance format and Norm Z were three full-width rows on a 250 px flyout; they are one row
+now, with the combo boxes narrowed from 72 px to 34 px — as wide as "mA" / "RI" / "dB" needs, the
+chevron already being templated away. A horizontal `StackPanel` rather than a `Grid`: each of the
+three has its own visibility gate and they are independent (a Rect plot hides the Γ selector and
+keeps the other two), and a StackPanel drops the spacing of a collapsed child where an `Auto` column
+would leave its gap behind.
+
+**Both traps were read off the live template tree, printed from a headless render of the real view** —
+`Border 'Background' minW=64 bounds=-15,0,64,22` inside a 34 px combo said everything at once.
+
+* **A style cannot lower `ComboBoxThemeMinWidth`.** The theme puts `MinWidth="{DynamicResource
+  ComboBoxThemeMinWidth}"` (64) as a LOCAL value on the template's `Border#Background`, and a local
+  value beats every style setter — so `ComboBox /template/ Border#Background` is inert. Below 64 px
+  that border measured 64 and, Stretch-aligned in a smaller slot, was arranged **centred**: x = -15,
+  width 64, both side strokes outside the control. Hence a box with a top and a bottom and no sides.
+  The `DynamicResource` is the seam that does work — the key is redefined in the flyout's own
+  `Resources`, which reaches the binding through ordinary lookup and touches no other ComboBox.
+* **Hiding the chevron does not reclaim its column.** The template grid is `1*,32`, so at 34 px the
+  selected item was allotted 0 px and the box read empty. Spanning the content across both columns
+  fixes it — but the grid's own child is the `ContentControl` named **`ContentPresenter`**, and the
+  `PART_ContentPresenter` name belongs to a presenter INSIDE it. The pre-existing
+  `Grid.ColumnSpan` setter aimed at the `PART_` name had therefore been setting it on nothing; at
+  72 px there was enough left-over width for nobody to notice. **`PlotInspectorView.axaml` carries
+  the same inert selector** and is left alone — its combos are wide enough that the only cost is 32
+  px of unused content width.
+
+Neither failure is loud — the symptom is a picture — so
+`tests/Ui.Tests/MarkerEditorFlyoutLayoutTests.cs` holds the row and both overrides.
+
+
 ## Owner report, 2026-09-09 — every plot honoured the dataset aliases except the Smith chart
 
 A `.cdd` with two aliased sources ("Edge Port", "Internal Port") rendered those aliases in every Rect

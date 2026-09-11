@@ -110,6 +110,23 @@ public partial class MarkerEditorViewModel : ViewModelBase
         NotifyParent();
     }
 
+    // ---- Impedance format -----------------------------------------------
+    //  Separate from MatrixFormat on purpose: the impedance is not the quantity the trace plots, so
+    //  it does not follow the trace's own spelling. On a Rect plot of S(1,1) the marker's format IS
+    //  dB (taken from the y-axis), and until this existed the termination was printed with it — a
+    //  decibel impedance. R+jX is the default because that is the number a matching network is
+    //  built from.
+
+    [ObservableProperty]
+    private MatrixFormat _impedanceFormat;
+
+    partial void OnImpedanceFormatChanged(MatrixFormat value)
+    {
+        if (!MarkerIsLive) return;
+        _marker.MatrixFormatImpedance = value;
+        NotifyParent();
+    }
+
     // ---- Marker style ---------------------------------------------------
 
     [ObservableProperty]
@@ -334,6 +351,17 @@ public partial class MarkerEditorViewModel : ViewModelBase
     public bool ShowFormatSelector =>
         _parent is null || _parent.PlotType != PlotType.Rect || IsContour;
 
+    /// <summary>
+    /// The impedance format selector shows wherever an impedance is actually READ OUT — a contour
+    /// marker's "Z=" row, and a reflection marker (S(i,i)) on any plot type, Rect included. It is a
+    /// second selector rather than a reuse of <see cref="ShowFormatSelector"/> because the two
+    /// quantities are formatted independently, and because on a Rect plot the Γ selector is
+    /// deliberately hidden (the trace value there is scalar) while the impedance is still shown —
+    /// which is exactly the case that had no way to change its own format at all.
+    /// </summary>
+    public bool ShowImpedanceFormatSelector =>
+        _parent is null || IsContour || _parent.Trace.MarkerShowsImpedance(_marker);
+
     // ---- Design-time instance (AXAML previewer) -------------------------
     //
     //  Usage in MarkerEditorView.axaml:
@@ -376,6 +404,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _impedanceText   = "";
 #pragma warning restore MVVMTK0034
         _matrixFormat    = marker.MatrixFormat;
+        _impedanceFormat = marker.MatrixFormatImpedance;
         _style           = marker.Style;
         _digits          = marker.MaximumFractionDigits;
         _useNormalized   = marker.UseNormalizedImpedance;
@@ -399,6 +428,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _impedanceText  = "";
 #pragma warning restore MVVMTK0034
         _matrixFormat   = _marker.MatrixFormat;
+        _impedanceFormat= _marker.MatrixFormatImpedance;
         _style          = _marker.Style;
         _digits         = _marker.MaximumFractionDigits;
         _useNormalized  = _marker.UseNormalizedImpedance;
