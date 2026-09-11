@@ -46,8 +46,16 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     /// <para>Never hidden while it is the X axis. A one-value axis is a poor X and nothing promotes
     /// one on purpose, but a cube whose ONLY axis is <c>port</c> would otherwise present an empty
     /// card with no way to see what it is bound to.</para>
+    ///
+    /// <para><b>The second rule is ANT-10's:</b> a 3D surface's own two angle axes are off the card
+    /// entirely (owner, 2026-09-11). The row had nothing left on it once the role buttons went — no
+    /// buttons, no picker, just the axis name — and a row that only says "this axis exists" is height
+    /// spent on nothing. The row still EXISTS in <see cref="TraceRowViewModel.AxisRoles"/> for the
+    /// same reason the <c>port</c> rule keeps it: the slice write-back is built from these rows, and
+    /// a row dropped from the list is a dimension dropped from the slice.</para>
     /// </summary>
-    public bool IsRowVisible => !(AxisName == "port" && PinOptions.Count <= 1 && !IsX);
+    public bool IsRowVisible => !(AxisName == "port" && PinOptions.Count <= 1 && !IsX)
+                             && !(SurfaceMode && IsSurfaceAngleAxis);
 
     /// <summary>Selectable index labels (Axis.Labels[k] ?? Values[k].ToString("G3")).</summary>
     public IReadOnlyList<string> PinOptions { get; }
@@ -74,6 +82,44 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     /// <summary>True when this is the only axis (rank-1 cube) — role toggle disabled.</summary>
     public bool IsRoleToggleable => _owner.AxisRoles.Count > 1;
 
+    // ---- ANT-10: what a role MEANS on a 3D surface -----------------------------------------
+    //
+    //  A surface has no X axis and no family. SurfaceResolve opens BOTH angle axes whole and pins
+    //  every other axis at this row's own index, whatever role the slice records — so on a
+    //  Surface3D plot X / Fam / Fix were three buttons that changed the trace's stored slice and
+    //  redrew exactly the same picture (owner, 2026-09-11: "I change them and select different
+    //  values, but the plot rendering appears to be the same no matter what I use"). They are not
+    //  shown there — and since that leaves an angle row with no control on it at all, the ROW goes
+    //  too (see IsRowVisible). The Fix PICKER stays for every axis that is NOT one of the two
+    //  angles, because that one does change the picture: it chooses the frequency, the port, the
+    //  sweep point the surface is drawn at.
+    //
+    //  A polar CUT is a different question and keeps all three: it draws one angle against a
+    //  value, so which axis is X and which is a family is exactly what the buttons are for.
+
+    /// <summary>True when the parent plot is the 3D pattern surface.</summary>
+    public bool SurfaceMode { get; private set; }
+
+    /// <summary>True when this row is one of the two axes the surface opens whole — its polar angle
+    /// or its azimuth, found by <c>SurfaceResolve.TryFindAngleAxes</c>, the same test the resolve
+    /// itself uses so the card cannot name a different pair from the picture.</summary>
+    public bool IsSurfaceAngleAxis { get; private set; }
+
+    /// <summary>X / Fam / Fix. Hidden on a surface — see the note above.</summary>
+    public bool ShowRoleButtons => !SurfaceMode;
+
+    internal void ApplySurfaceMode(bool surfaceMode, bool isAngleAxis)
+    {
+        if (SurfaceMode == surfaceMode && IsSurfaceAngleAxis == isAngleAxis) return;
+        SurfaceMode        = surfaceMode;
+        IsSurfaceAngleAxis = isAngleAxis;
+        OnPropertyChanged(nameof(SurfaceMode));
+        OnPropertyChanged(nameof(IsSurfaceAngleAxis));
+        OnPropertyChanged(nameof(ShowRoleButtons));
+        OnPropertyChanged(nameof(ShowPinPicker));
+        OnPropertyChanged(nameof(IsRowVisible));
+    }
+
     // ---- Role state -------------------------------------------------------
 
     // Suppresses FlushSliceAndRebuild calls during batch auto-flip.
@@ -94,7 +140,13 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     private int _pinIndex;
 
     public bool IsPinned      => !IsX && !IsFamily;
-    public bool ShowPinPicker => !IsX && !IsFamily;
+
+    /// <summary>Whether the value picker is on the row. Off for the X and family axes of an ordinary
+    /// plot; on a SURFACE it follows <see cref="IsSurfaceAngleAxis"/> instead, because the surface
+    /// pins every non-angle axis regardless of the role the slice happens to carry — a freq axis
+    /// left as X from a rect plot is still pinned by the surface, and hiding its picker would leave
+    /// a multi-frequency pattern with no way to choose the frequency.</summary>
+    public bool ShowPinPicker => SurfaceMode ? !IsSurfaceAngleAxis : (!IsX && !IsFamily);
 
     // ---- Construction -----------------------------------------------------
 
@@ -178,7 +230,10 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
 
     partial void OnPinIndexChanged(int value)
     {
-        if (_suppress || _isX || _isFamily) return;
+        if (_suppress) return;
+        // On a surface the picker is shown for a non-angle axis whatever its recorded role, so the
+        // X/family early return would swallow the one change the picker there actually makes.
+        if (!SurfaceMode && (_isX || _isFamily)) return;
         _owner.FlushSliceAndRebuild();
     }
 

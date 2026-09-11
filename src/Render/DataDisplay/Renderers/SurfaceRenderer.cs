@@ -164,8 +164,10 @@ public static class SurfaceRenderer
     /// an ordinary press.</para>
     ///
     /// <para><b>False when the plot resolved no surface</b>, which the same report asked for
-    /// explicitly: with nothing drawn, every part of the plot is furniture and the whole of it
-    /// drags.</para>
+    /// explicitly: with no pattern drawn, every part of the plot is furniture and the whole of it
+    /// drags. Still false now that an EMPTY plot draws its ground disc and axes — those are the
+    /// frame of reference for a pattern that is not there yet, and a plot a user has just placed is
+    /// a plot they are about to move.</para>
     ///
     /// <para>The square rather than the lobe silhouette, deliberately. The ground disc and the
     /// scene axes are the surface's own frame of reference and turning the object by them is what a
@@ -255,10 +257,20 @@ public static class SurfaceRenderer
 
         bool fromAbove = cam.ElevationDeg >= 0;
 
-        // The disc and the axes are the SURFACE's frame of reference, so with no surface they are
-        // furniture around an empty scene — and the refusal drawn below lands on top of them, which
-        // is how a sentence that must be read ends up struck through by an axis arm.
-        bool scene = grid is not null;
+        // ---- Whether the scene's own furniture is drawn ------------------------------------
+        //
+        //  The disc and the axes are drawn whenever there is nothing to READ in their place. An
+        //  EMPTY 3D plot is the case that matters (owner, 2026-09-11): a plot dropped on the Data
+        //  Display with no trace on it yet used to be a blank rectangle, so the three checkboxes
+        //  that were already on — Axes, Ground, Legend — showed nothing until a trace resolved, and
+        //  the plot itself was invisible to someone placing it. It draws its empty scene now, which
+        //  is also what says WHICH WAY the camera is pointing before any data arrives.
+        //
+        //  The one case that still stands them down is a trace that REFUSED: its sentence is drawn
+        //  in the middle of the scene, and a sentence that must be read ends up struck through by an
+        //  axis arm. A refusal is text in the scene's place; an empty plot is the scene.
+        bool refused = FirstRefusal(plot) is { Length: > 0 };
+        bool scene   = grid is not null || !refused;
 
         if (scene && plot.SurfaceShowGroundDisc && fromAbove) DrawGroundDisc(canvas, cam, P, s, lw, theme);
         if (scene && plot.SurfaceShowAxes)                     DrawSceneAxes  (canvas, cam, P, lw, theme);

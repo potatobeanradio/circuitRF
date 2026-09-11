@@ -209,6 +209,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasPatternControls));
         OnPropertyChanged(nameof(CanEditPolarDbReference));
         OnPropertyChanged(nameof(PolarAngleLabels));
+        RefreshPolarDbUnitOptions();
+        OnPropertyChanged(nameof(PolarDbUnitSelection));
         NotifySurfaceCameraChanged();
         OnPropertyChanged(nameof(IsSummaryTable));
         OnPropertyChanged(nameof(AddLoadpullTraceLabel));
@@ -348,8 +350,68 @@ public partial class PlotInspectorViewModel : ViewModelBase
             if (string.Equals(_plot.PolarDbUnit, v, StringComparison.Ordinal)) return;
             _plot.PolarDbUnit = v;
             OnPropertyChanged();
+            RefreshPolarDbUnitOptions();
+            OnPropertyChanged(nameof(PolarDbUnitSelection));
             ApplyRadialChange();
         }
+    }
+
+    // ---- The radial unit, as a LIST (owner request, 2026-09-11) ----------
+    //
+    //  It was a free text box, and a unit is not free text: it is printed around the plot as a
+    //  claim about what the numbers mean, so "dbi" or "dB/sr" typed in a hurry states something
+    //  false rather than failing. These are the spellings an antenna quantity is actually quoted
+    //  in, plus the row that takes whatever the CUBE says.
+
+    /// <summary>The row that means "no unit of my own — take the cube's". Empty is what the plot
+    /// stores for it; a row has to say something, and a blank row in a list reads as a bug.
+    ///
+    /// <para><b>A dash, not a sentence</b> (owner, 2026-09-11). The combo sits at the end of a row of
+    /// short unit spellings and it is sized by its widest row, so "from the data" set the width of
+    /// the control — four times the width of the answer it usually shows. The dash is the
+    /// conventional "nothing here" mark in a table of units, and the tooltip carries the
+    /// sentence.</para></summary>
+    public const string PolarDbUnitFromData = "—";
+
+    /// <summary>The standard rows, after <see cref="PolarDbUnitFromData"/>. <c>dBi</c> and <c>dBd</c>
+    /// are gains against the two conventional references, <c>dBsm</c> is a radar cross-section, and
+    /// the two parenthesised ones are what <c>Trace.PatternDbUnit</c> composes for a linear cube read
+    /// in decibels — a radiation intensity in W/sr and a field in V/m.</summary>
+    private static readonly string[] StandardPolarDbUnits =
+        ["dB", "dBi", "dBd", "dBsm", "dB(W/sr)", "dB(V/m)"];
+
+    private List<string> _polarDbUnitOptions = [];
+
+    /// <summary>
+    /// The rows of the unit combo. <b>Open at the bottom</b>: a unit that arrived from a saved
+    /// <c>.cdd</c> or from <c>circuitrf plot --db-unit</c> and is not one of the standard rows is
+    /// appended, so opening the Plot Inspector on such a plot SHOWS what it is set to instead of
+    /// presenting an empty combo and quietly rewriting the unit on the first click.
+    /// </summary>
+    public IReadOnlyList<string> PolarDbUnitOptions
+    {
+        get { if (_polarDbUnitOptions.Count == 0) RefreshPolarDbUnitOptions(); return _polarDbUnitOptions; }
+    }
+
+    private void RefreshPolarDbUnitOptions()
+    {
+        var rows = new List<string>(StandardPolarDbUnits.Length + 2) { PolarDbUnitFromData };
+        rows.AddRange(StandardPolarDbUnits);
+        string cur = _plot.PolarDbUnit;
+        if (cur.Length > 0 && !rows.Contains(cur, StringComparer.Ordinal)) rows.Add(cur);
+
+        if (_polarDbUnitOptions.Count == rows.Count &&
+            _polarDbUnitOptions.SequenceEqual(rows, StringComparer.Ordinal)) return;
+        _polarDbUnitOptions = rows;
+        OnPropertyChanged(nameof(PolarDbUnitOptions));
+    }
+
+    /// <summary>What the combo is showing, which is <see cref="PolarDbUnit"/> with the empty string
+    /// spelled as its own row.</summary>
+    public string PolarDbUnitSelection
+    {
+        get => _plot.PolarDbUnit.Length == 0 ? PolarDbUnitFromData : _plot.PolarDbUnit;
+        set => PolarDbUnit = (value is null || value == PolarDbUnitFromData) ? "" : value;
     }
 
     // ---- The 3D pattern surface (ANT-10 §3/§5) --------------------------
@@ -753,6 +815,67 @@ public partial class PlotInspectorViewModel : ViewModelBase
         return slice;
     }
 
+    /// <summary>
+    /// <b>The cube a 3D plot should seed a trace on: the first one that can actually BE a
+    /// surface.</b>
+    ///
+    /// <para>Owner, 2026-09-11: "+ Trace" on an empty 3D plot must make something appear. It did
+    /// not — a far-field <c>.npy</c> carries an S network as well as its pattern cubes, so the seed
+    /// took the S branch and produced S(1,1), which is a function of frequency and has no surface in
+    /// it at all. The user clicked a button and the plot stayed empty but for a sentence.</para>
+    ///
+    /// <para><b>Declaration order, not a name.</b> The test is
+    /// <see cref="SurfaceResolve.TryFindAngleAxes"/> — the same one the resolve and the picker's own
+    /// greying use — and the first cube that passes it wins. For a far-field run that is
+    /// <c>Etheta</c>, which is what was asked for; hard-coding that name would have been a fourth
+    /// opinion about which quantities are directional, and would seed nothing at all for a run that
+    /// publishes a pattern under any other name.</para>
+    ///
+    /// <para>Null when the source has no directional cube. The caller then falls back to the
+    /// ordinary seed, so the plot still gets a trace whose refusal SAYS why — a button that does
+    /// nothing is the thing being fixed here, and an inert button would be the same defect.</para>
+    /// </summary>
+    private static string? FirstSurfaceCubeName(DataSourceEntryViewModel e)
+    {
+        if (e.Data is not { } ds) return null;
+
+        foreach (var group in ds.Groups)
+            foreach (var (bareName, cube) in ds.CubesIn(group))
+            {
+                if (bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (!SurfaceResolve.TryFindAngleAxes(cube, out _, out _)) continue;
+                return group is DataSet.DefaultGroup or DataSet.MeasurementsGroup
+                    ? bareName
+                    : $"{group}.{bareName}";
+            }
+        return null;
+    }
+
+    /// <summary>
+    /// The seed slice for a SURFACE: both angle axes open, everything else pinned at index 0.
+    ///
+    /// <para>The resolve would open them anyway — it ignores the slice's roles for its two angles —
+    /// so this is about what the trace SAYS. <see cref="BuildSeedSlice"/> would have written
+    /// <c>farfield.Etheta[:, 0, 0, 1]</c> into the spec box of a plot drawn across every direction.
+    /// Which of the two is X and which is the family follows the positional convention the spec
+    /// parser reads back (last kept axis is X), so the text round-trips.</para>
+    /// </summary>
+    private static AxisSlice[] BuildSurfaceSeedSlice(DataCube cube, int thetaDim, int phiDim)
+    {
+        int xDim = Math.Max(thetaDim, phiDim), famDim = Math.Min(thetaDim, phiDim);
+        var slice = new AxisSlice[cube.Rank];
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            var ax = cube.Axes[d];
+            slice[d] =
+                d == xDim   ? new AxisSlice(ax.Name, AxisRole.KeepAsX, 0)
+              : d == famDim ? new AxisSlice(ax.Name, AxisRole.FamilyIterate, 0)
+              : new AxisSlice(ax.Name, AxisRole.PinToIndex, 0,
+                              Label: ax.Labels is { Length: > 0 } labels ? labels[0] : "");
+        }
+        return slice;
+    }
+
     // ---- Commands -------------------------------------------------------
 
     public IRelayCommand AddTraceCommand        { get; }
@@ -938,6 +1061,17 @@ public partial class PlotInspectorViewModel : ViewModelBase
             trace = new Trace(src, incrementColorBy: 1, includeMarkers: false);
             trace.SourceRef = src.SourceRef;
         }
+        else if (_plot.PlotType == PlotType.Surface3D &&
+                 _library?.SelectedEntry is { } surfEntry &&
+                 FirstSurfaceCubeName(surfEntry) is not null)
+        {
+            // BEFORE the S-network branch below, and that ORDER is the fix: a far-field .npy carries
+            // an S network too, so the seed used to take that branch and produce S(1,1) — a function
+            // of frequency, with no surface in it. See FirstSurfaceCubeName.
+            trace = BuildSeedCubeTrace(surfEntry);
+            trace.SourceRef  = DataSourceRef.Selected;
+            trace.SourcePath = _library.SelectedDataSourceAbs;
+        }
         else if (_library?.SelectedEntry is { } sel && sel.Snp is not null && !sel.Snp.IsEmpty)
         {
             var snp = sel.Snp!;
@@ -1008,7 +1142,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// </summary>
     private Trace BuildSeedCubeTrace(DataSourceEntryViewModel entry)
     {
-        string cubeName = FirstPlottableCubeName(entry, _plot.PlotType == PlotType.Table)!;
+        // On a 3D plot the best cube is the best DRAWABLE one, which is a different question — and
+        // the fallback is the ordinary answer, so a source with no pattern in it still seeds a trace
+        // that says why it cannot be drawn rather than leaving the button inert.
+        string cubeName = (_plot.PlotType == PlotType.Surface3D ? FirstSurfaceCubeName(entry) : null)
+                          ?? FirstPlottableCubeName(entry, _plot.PlotType == PlotType.Table)!;
         var    cube     = entry.Data![cubeName];
         int    rank     = cube.Rank;
 
@@ -1029,7 +1167,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // first non-label axis; every other axis pinned at index 0. For an S cube [freq, i, j] (+ optional
         // swept prefix) this yields S(1,1) over frequency with the sweep pinned — the user promotes the
         // sweep to Family or repins i/j via the axis-role editor.
-        trace.Slice = BuildSeedSlice(cube);
+        trace.Slice =
+            _plot.PlotType == PlotType.Surface3D &&
+            SurfaceResolve.TryFindAngleAxes(cube, out int thetaDim, out int phiDim)
+                ? BuildSurfaceSeedSlice(cube, thetaDim, phiDim)
+                : BuildSeedSlice(cube);
 
         // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
         // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)

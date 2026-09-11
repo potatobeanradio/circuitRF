@@ -720,3 +720,189 @@ title is how the line is turned off; a blank falling back to the default would m
 
 Nothing is drawn under a 3D pattern now, and `capH` is zero rather than a bare `2·lw` when the
 caption block is empty, so the scene gets that space back.
+
+---
+
+## Antenna display feedback, round 3 (owner, 2026-09-11) — all four are the 3D plot
+
+Two inert controls, one text box that should have been a list, and an empty plot that drew nothing
+while three of its own checkboxes said it would. Gate: `tests/Ui.Tests/DataDisplay/AntennaFeedbackRound3Tests.cs`.
+
+### 1. The line and marker properties were on a 3D trace card and did nothing
+
+`SurfaceRenderer` reads no `LineWidth`, no `LineColor`, no `MarkerSize`, no marker shape and neither
+colour from a trace — a surface is filled facets on the PLOT's colour ramp, which is the reason
+ANT-10 gave the ramp a control of its own. So all six controls on the card were inert.
+
+Inert is worse than absent: a user who sets the line colour and sees nothing change has been told the
+plot ignores the choice only by the plot's silence. Both rows are now gated on
+`TraceRowViewModel.ShowLineAndSymbol` (`!IsTablePlot && !IsSurfacePlot`) rather than on the
+Table-only `IsNotTablePlot` they used to share. A source scan holds the premise — the renderer must
+keep reading none of the six — because the gate would otherwise become wrong silently the day a
+surface learns to draw an outline.
+
+### 2. "Does phi/theta X / Fam / Fix make sense on a 3D plot?" — no, and it was measurable
+
+It was not a matter of taste. `SurfaceResolve` opens BOTH angle axes whole whatever the slice
+records, and pins every other axis at that axis's own slice index. So on a `Surface3D` plot:
+
+- X / Fam / Fix on **θ or φ** changed the stored slice and redrew an identical surface. The test
+  asserts this directly: `farfield.U[0, 2, :, 1]` and `farfield.U[0, :, :, 1]` produce grids equal
+  sample for sample.
+- X / Fam on **any other axis** were equally inert, since the surface pins it regardless.
+- The **Fix picker** on a non-angle axis is the one control that does change the picture — it
+  chooses the frequency, the port, the sweep point the pattern is drawn at.
+
+So on a surface the three buttons are hidden and every other row keeps its picker. **The picker is
+shown there whatever role the slice carries** — a trace carried over from a rect plot has its freq axis marked `KeepAsX`, and the
+ordinary rule hides a picker on the X axis; that would have left a multi-frequency pattern with no
+way to choose the frequency. `OnPinIndexChanged`'s `_isX || _isFamily` early return had to learn the
+same exception, or the picker would have moved and flushed nothing.
+
+**The two angle ROWS are off the card entirely** (owner, follow-up). With the buttons gone and no
+picker, an angle row said only "this axis exists", which is height spent on nothing — a first pass
+wrote "drawn whole" in the picker's place and that was one more thing to read, not one less. The rows
+are still BUILT and kept in `AxisRoles`, hidden by `IsRowVisible`, for the same reason the one-value
+`port` rule keeps its row: the slice write-back is assembled from these rows, and a row dropped from
+the list is a dimension dropped from the slice the next time any other row moves.
+
+The card asks `SurfaceResolve.TryFindAngleAxes` — the resolve's OWN finder — which axes the two are,
+so the card cannot mark a different pair from the one the picture is drawn on.
+
+A polar CUT keeps all three buttons and both rows: it draws one angle against a value, so which axis
+is X and which is a family is exactly what they are for.
+
+**And the default TITLE stopped naming them, in the same breath.** A surface authored from the picker
+carries θ and φ pins from the cut it started as, and `TraceLabeler` reported every pinned axis — so a
+pattern drawn across every direction was titled `farfield.U(5 GHz, θ=0 deg, φ=0 deg, port=1) dB10`.
+That is not noise; it is a claim the picture contradicts. `BuildCubeQuantity` now skips a pin whose
+axis is one of the two this trace's OWN `SurfaceGrid` opened whole — gated on the grid, so the same
+slice on a polar cut beside it still names its plane. It is skipped BEFORE the bracket is opened, so
+a label left with nothing else pinned carries no empty `()`: `farfield.U dB10`. Three slices that
+draw one surface now produce one title, which is the check the test makes.
+
+### 3. The radial unit: a combo box, and a row that wraps
+
+The unit was a free `TextBox`, and a unit is not free text — it is printed around the plot as a claim
+about what the numbers mean, so `dbi` or `dB/sr` typed in a hurry states something false rather than
+failing. It is a `ComboBox` now over `PolarDbUnitOptions`: a first row meaning *the cube's own*
+(stored as the empty string the plot already used), then `dB`, `dBi`, `dBd`, `dBsm`, `dB(W/sr)`,
+`dB(V/m)`.
+
+**The list is open at the bottom.** A `.cdd` and the CLI's own db-unit flag both carry a free string,
+so a unit that is not one of the standard rows is appended rather than dropped — a closed list would
+open blank on such a plot and rewrite the unit on the first click.
+
+**The clipping was the PANEL, not the control.** The row was a horizontal `StackPanel`, which lays
+its children out past its own edge without complaint, so the last control was simply cut in half at
+whatever width the user had dragged the inspector to. It is a `WrapPanel`, and each label travels
+with the control it names inside a small `StackPanel` so a group that drops to the next line drops
+whole. The outer-ring spinner gained a `Ref` label for the same reason: an unlabelled spinner that
+has wrapped onto its own line names nothing.
+
+### 4. An empty 3D plot drew nothing, with Axes / Ground / Legend all on
+
+`SurfaceRenderer.Draw` gated the ground disc and the scene axes on `grid is not null`, so a plot
+placed on the Data Display with no trace yet was a blank rectangle — and there was nothing to say
+which way the camera was pointing before any data arrived. (The colour bar was already unconditional,
+from the round-2 legend fix.)
+
+The gate is now `grid is not null || !refused`. The one case the furniture still stands down for is a
+trace that REFUSED: its sentence is drawn in the middle of the scene, and an axis arm through the
+middle of a sentence that must be read is how the round-2 report described it. Empty is the scene;
+refused is text in the scene's place.
+
+`HitsPattern` deliberately did NOT change — it still returns false with no grid, so an empty plot
+drags from anywhere. That was an explicit round-2 request, and a plot a user has just placed is a
+plot they are about to move.
+
+**A trap the §4 gate walked into first.** It measured "was the scene drawn" by counting non-background
+PIXELS, and on a refused plot most of those pixels are the refusal SENTENCE.
+`SkiaFonts.TestOverrideTypeface` is a process-wide static that several tests in `Ui.Tests` set and
+clear, so under a parallel full-suite run two renders inside one test can legitimately use two
+different typefaces — and the pixel counts then differ for a reason that has nothing to do with the
+scene. It passed filtered and failed in the full run. The gate counts `<path>` elements in the vector
+form of the same picture instead: the disc and each axis arm are paths, every sentence and legend
+number is a `<text>`, and the count is immune to which font is installed.
+
+---
+
+## Antenna display feedback, round 4 (owner, 2026-09-11) — the 3D plot's picker, and the widths
+
+### The unit row is a dash, and the four controls shrank
+
+`"from the data"` was the first row of the unit combo, and a combo is sized by its **widest** row —
+so the longest sentence in the list set the width of a control that normally shows `dBi`. It is `—`
+now, the conventional "nothing here" mark, with the sentence in the tooltip where it costs nothing.
+
+Ref, Floor and Rings went from 72/68/58 px to 42, and the unit combo from a `MinWidth` of 86 to a
+fixed 86. 42 rather than the literal three characters asked for: Ref and Floor both reach **-200**,
+four characters, and a control that clips a value its own spinner produces is a worse trade than the
+few pixels. The unit combo is FIXED rather than a minimum because the list is open at the bottom — a
+longer unit arriving from a file would otherwise widen the whole row.
+
+### A 3D plot offered quantities it could not draw
+
+A far-field run publishes 22 quantities and **7 of them are functions of direction** — the two field
+components, the radiation intensity, the Ludwig-3 co/cross pair, the polarization pair. The other 15
+are per-frequency and per-port: TRP, peak EIRP, the efficiencies, the beamwidths, the directivities.
+All 22 were offered on a 3D plot, and picking one of the 15 produced a refusal after the fact.
+
+They are **greyed with a reason** now, never dropped — the standing rule here, and the one the
+round-1 report proved the value of: a row that vanishes cannot be told apart from a quantity the run
+never published, and that is exactly the conclusion a reader drew last time.
+
+`SurfaceResolve.DisabledReasonOn(plotType, cube)` is the one rule, and it is the RESOLVE's own
+`TryFindAngleAxes` underneath — not a second opinion beside it, and not a hand-maintained list of
+names, which would have missed the Ludwig-3 pair (they are drawable, and a surface of them is exactly
+what this plot is for). Three callers:
+
+- the cube items in `TraceRowViewModel.RebuildSignals`, and the N² network-parameter port-pair rows
+  beside them (an S/Z/Y element is a function of frequency, never of direction);
+- `TraceDataItem`'s derived-metric constructor — asked FIRST there, because it is the one answer that
+  does not depend on which kind of derived metric it is;
+- `WspMetrics.DisabledReasonOn`, for the same reason: not one probe quantity is a function of
+  direction.
+
+Passing a null cube means "there is no cube to test, and the answer is no", which is what the second
+and third callers do.
+
+### "+ Trace" on an empty 3D plot seeded something that could not be drawn
+
+Clicking it produced no picture: a far-field `.npy` carries an **S network** alongside its pattern
+cubes, so `AddTrace` took the S branch and seeded `S(1,1)` — a function of frequency, with no surface
+in it. The user pressed a button and the plot stayed empty but for a refusal.
+
+The 3D branch is asked **before** the S-network one now, and the cube it takes is the first that
+passes `SurfaceResolve.TryFindAngleAxes` — the same test the resolve and the picker's greying use.
+Declaration order rather than a name: for a far-field run that is `Etheta`, which is what was asked
+for, and hard-coding it would have been a fourth opinion about which quantities are directional and
+would seed nothing for a run publishing a pattern under any other name.
+
+The seed slice is the surface's own (`BuildSurfaceSeedSlice`): both angle axes open, everything else
+pinned. The resolve opens them regardless — this is about what the trace SAYS, since the ordinary
+seed would have written `farfield.Etheta[:, 0, 0, 1]` into the spec box of a plot drawn across every
+direction. It comes out as `dB20(farfield.Etheta[0, ~, :, 1])`, which round-trips through the spec
+parser (`~` is the family token).
+
+A source with no directional cube falls back to the ordinary seed, so it still gets a trace whose
+refusal says why — a button that does nothing is the defect being fixed, and an inert one would be
+the same defect wearing a different hat.
+
+### The 3D title said nothing about which frequency it was taken at
+
+Reported straight after the θ/φ fix above, and it is the SAME rule seen from the other side. The
+picker's own default slice makes `freq` the **X axis**; a surface ignores that and pins it. So the
+label, which reported every axis the slice called `PinToIndex`, had nothing to report — and which
+frequency a pattern was taken at is the first thing a reader of a swept run needs.
+
+Both directions of the difference now come from one predicate, `SurfaceResolve.PinsAxis(trace,
+slice)`: **what the PICTURE pins**, which on a trace that resolved a surface is every axis that is
+not one of its two angles, whatever role the slice recorded, and off a surface is the role unchanged.
+`TraceLabeler.BuildCubeQuantity` and `TraceResolve.ApplyPinnedAxisDisplay` both ask it, so the
+token's existence and the token's text cannot disagree.
+
+The test pins the invariant rather than the wording: one picture, one title — setting `freq` to
+`KeepAsX`, `PinToIndex` and `FamilyIterate` in turn must produce the same three labels, because the
+surface drawn is the same in all three. A polar CUT is the other side: there the role IS what is
+drawn, so a `freq` axis kept as X is the sweep and correctly names no single frequency.

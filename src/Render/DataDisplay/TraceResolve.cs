@@ -1061,7 +1061,10 @@ public static class TraceResolve
 
         foreach (var s in t.Slice)
         {
-            if (s.Role != AxisRole.PinToIndex) continue;
+            // The PICTURE's idea of pinned, which on a 3D surface is not the slice's — see
+            // SurfaceResolve.PinsAxis. The labeller asks the same question, so the two cannot
+            // disagree about which axes have a token to show.
+            if (!SurfaceResolve.PinsAxis(t, s)) continue;
             // Positional pairs — TraceLabeler owns them. row/col are the WSProbe matrix's own and
             // read positionally too, so a display token built here would never be used.
             if (s.AxisName is "i" or "j" or "row" or "col") continue;

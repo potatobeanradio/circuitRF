@@ -342,6 +342,11 @@ public static class WspMetrics
         if (Info(m) is not { } info) return null;
         if (plotType == PlotType.Table) return null;
 
+        // A 3D surface is a function of DIRECTION, and not one probe quantity is — every one of them
+        // is a number, or a point in a plane, per frequency. Asked before the kind rules below,
+        // because the answer is the same for all three groups (owner, 2026-09-11).
+        if (SurfaceResolve.DisabledReasonOn(plotType, null) is { } surfaceReason) return surfaceReason;
+
         bool complexPlane = plotType is PlotType.Smith or PlotType.Polar;
 
         if (info.Group == WspMetricGroup.Margin)

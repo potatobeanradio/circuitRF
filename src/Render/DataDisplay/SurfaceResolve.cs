@@ -34,6 +34,60 @@ public static class SurfaceResolve
         "rest, as in farfield.U[0, :, :, 1].";
 
     /// <summary>
+    /// <b>Why a quantity is greyed in the picker of a 3D plot, or null when it can be drawn there.</b>
+    ///
+    /// <para>Most of a far-field run's registry is per-frequency and per-port — TRP, peak EIRP, the
+    /// efficiencies, the beamwidths — and not one of them has an angle axis, so a 3D plot offered a
+    /// long list of quantities of which a handful could actually be drawn (owner, 2026-09-11). They
+    /// are offered DISABLED WITH A REASON rather than dropped, which is this repository's rule
+    /// everywhere a plot kind cannot take a quantity: a row that vanishes cannot be told apart from
+    /// a quantity the run did not publish, and those are very different facts.</para>
+    ///
+    /// <para><paramref name="cube"/> is null for an item that has no cube to test — a derived
+    /// network metric, a WSProbe quantity — and the answer for those is the same sentence, because
+    /// none of them is a function of direction.</para>
+    /// </summary>
+    public static string? DisabledReasonOn(PlotType plotType, DataCube? cube)
+    {
+        if (plotType != PlotType.Surface3D) return null;
+        if (cube is not null && TryFindAngleAxes(cube, out _, out _)) return null;
+        return NotOnASurfaceRefusal;
+    }
+
+    /// <summary>The sentence <see cref="DisabledReasonOn"/> gives. Says what a surface IS before it
+    /// says what this quantity is not, and names the plots that draw it perfectly well — nothing is
+    /// wrong with the quantity.</summary>
+    public const string NotOnASurfaceRefusal =
+        "A 3D pattern surface is one quantity drawn over two angle axes — a polar angle (theta or " +
+        "el) and an azimuth (phi or az). This one has neither, so there is no surface to draw from " +
+        "it. Put it on a rectangular plot or a table, where it reads normally.";
+
+    /// <summary>
+    /// <b>Whether this slice entry is pinned as far as the PICTURE is concerned</b> — which on a
+    /// surface is not the same question as what role the slice records.
+    ///
+    /// <para><see cref="Resolve"/> opens the two angle axes whole and pins EVERY other axis at its
+    /// own slice index, whatever role it carries. So on a trace that resolved a surface the roles
+    /// are not what is drawn, and anything reading them gets two things wrong at once: a θ or φ pin
+    /// is reported though the surface ignored it, and a freq axis left as <c>KeepAsX</c> — which is
+    /// exactly what the picker's default slice writes — is NOT reported though the surface pinned
+    /// it. The second was the visible defect: a 3D pattern's title said nothing about which
+    /// frequency it was taken at (owner, 2026-09-11), and for a swept run that is the first thing a
+    /// reader needs.</para>
+    ///
+    /// <para>Off a surface (<see cref="Trace.SurfaceGrid"/> null, which includes a surface that
+    /// REFUSED) it is the role, unchanged.</para>
+    /// </summary>
+    public static bool PinsAxis(Trace t, AxisSlice s)
+    {
+        ArgumentNullException.ThrowIfNull(t);
+        return t.SurfaceGrid is { } g
+            ? !string.Equals(s.AxisName, g.ThetaAxisName, StringComparison.Ordinal)
+           && !string.Equals(s.AxisName, g.PhiAxisName,   StringComparison.Ordinal)
+            : s.Role == AxisRole.PinToIndex;
+    }
+
+    /// <summary>
     /// Fills <paramref name="t"/>'s <see cref="Trace.SurfaceGrid"/> from a cube, or clears it and
     /// sets the trace's error. Called from <see cref="TraceResolve"/> when — and only when — the
     /// parent plot is a <see cref="PlotType.Surface3D"/>.

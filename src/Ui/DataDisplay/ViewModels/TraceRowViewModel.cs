@@ -67,6 +67,19 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsTablePlot    => _parent.PlotType == PlotType.Table;
     public bool IsNotTablePlot => _parent.PlotType != PlotType.Table;
 
+    /// <summary>
+    /// <b>Whether the line row and the symbol row are on the card.</b> Not on a Table, which has no
+    /// ink to style — and not on the 3D surface either, from 2026-09-11.
+    ///
+    /// <para>A surface is drawn as filled facets coloured by the RAMP the plot carries
+    /// (<c>SurfaceRenderer</c> reads no <c>LineWidth</c>, <c>LineColor</c>, <c>MarkerSize</c> or
+    /// marker shape from a trace at all), so every one of those six controls was inert. Inert is
+    /// worse than absent here: a user who sets the line colour and sees nothing change has been
+    /// told the plot ignores their choice only by the plot's silence. The trace's colour on a
+    /// surface IS the colour map, which is on the plot's own row above.</para>
+    /// </summary>
+    public bool ShowLineAndSymbol => !IsTablePlot && !_parent.IsSurfacePlot;
+
     // Standard (line/marker/table) trace body; hidden for contour and summary traces.
     public bool IsStandardTrace => !IsContourTrace && !IsSummaryColumn;
 
@@ -3011,7 +3024,12 @@ public partial class TraceRowViewModel : ViewModelBase
                     int rank = cube.Rank;
                     if (rank == 0 && !_parent.IsTablePlot) continue;   // scalars are Table-only
 
-                    bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
+                    // Two reasons a cube can be greyed here, and they are asked in the order a
+                    // reader would: the 3D plot's is about the cube's SHAPE (no angle axes, no
+                    // surface), the Smith/polar one about its KIND. A cube can fail either.
+                    string? surfaceReason = SurfaceResolve.DisabledReasonOn(_parent.PlotType, cube);
+                    bool isEnabled = surfaceReason is null
+                                  && (!isComplexPlot || cube.DataKind == DataKind.Complex);
                     // Default- and measurements-group cubes are bare-resolvable — emit their bare
                     // name so the picker yields `PDC`/`V`, matching typed input. Analysis cubes
                     // must stay qualified (bare `V` would resolve to the wrong group).
@@ -3025,7 +3043,8 @@ public partial class TraceRowViewModel : ViewModelBase
                     AxisSlice[] defaultSlice = BuildDefaultSlice(cube);
 
                     _allSignals.Add(new TraceDataItem(entry, qualified, defaultSlice, bareName, isEnabled)
-                                    { Group = cubeGroup, DisabledReason = RealOnComplexPlotReason(isEnabled) });
+                                    { Group = cubeGroup,
+                                      DisabledReason = surfaceReason ?? RealOnComplexPlotReason(isEnabled) });
                 }
             }
         }
@@ -3430,6 +3449,21 @@ public partial class TraceRowViewModel : ViewModelBase
             }
         }
 
+        // ANT-10: which of these rows the SURFACE opens whole. Asked of the resolve's OWN finder, so
+        // the card cannot name a different pair of angles from the one the picture is drawn on — and
+        // asked even when the plot is not a surface, so switching away restores every button.
+        bool   surfaceMode = _parent.IsSurfacePlot;
+        string? thetaName = null, phiName = null;
+        if (surfaceMode && SurfaceResolve.TryFindAngleAxes(cube, out int thDim, out int phDim))
+        {
+            thetaName = cube.Axes[thDim].Name;
+            phiName   = cube.Axes[phDim].Name;
+        }
+        foreach (var r in AxisRoles)
+            r.ApplySurfaceMode(surfaceMode,
+                               (thetaName is not null && r.AxisName == thetaName) ||
+                               (phiName   is not null && r.AxisName == phiName));
+
         // Guard: if no X axis, promote the first non-family, non-label row.
         // A null fallback means only label/family axes exist → no X → scalar (valid for no-sweep DC).
         if (!AxisRoles.Any(r => r.IsX))
@@ -3582,7 +3616,11 @@ public partial class TraceRowViewModel : ViewModelBase
 
         int nPorts = cube.Axes[iDim].Length;
         string qualified = $"{group}.{bareName}";
-        bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
+        // An S/Z/Y matrix element is a function of frequency, never of direction — so on a 3D plot
+        // every one of these N² rows is greyed, for the same reason and with the same sentence.
+        string? surfaceReason = SurfaceResolve.DisabledReasonOn(_parent.PlotType, cube);
+        bool isEnabled = surfaceReason is null
+                      && (!isComplexPlot || cube.DataKind == DataKind.Complex);
         AxisSlice[] baseSlice = BuildDefaultSlice(cube);
 
         for (int i = 0; i < nPorts; i++)
@@ -3594,7 +3632,8 @@ public partial class TraceRowViewModel : ViewModelBase
 
             string label = $"{bareName}({i + 1},{j + 1})";
             _allSignals.Add(new TraceDataItem(entry, qualified, slice, label, isEnabled)
-                            { Group = cubeGroup, DisabledReason = RealOnComplexPlotReason(isEnabled) });
+                            { Group = cubeGroup,
+                              DisabledReason = surfaceReason ?? RealOnComplexPlotReason(isEnabled) });
         }
     }
 
@@ -3807,6 +3846,7 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsReferenceInputPowerOverridden));
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsNotTablePlot));
+        OnPropertyChanged(nameof(ShowLineAndSymbol));
         OnPropertyChanged(nameof(IsCubeBoundTrace));
         OnPropertyChanged(nameof(ShowAllToggleVisible));
         OnPropertyChanged(nameof(ShowYAxisCombo));

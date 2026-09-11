@@ -196,7 +196,15 @@ namespace CircuitRF.Render.DataDisplay
                 bool first = true;
                 foreach (var s in t.Slice)
                 {
-                    if (s.Role != AxisRole.PinToIndex) continue;
+                    // WHAT THE PICTURE PINS, not what the slice calls pinned — the two differ on a
+                    // 3D surface, in BOTH directions, and SurfaceResolve.PinsAxis owns the
+                    // difference. A theta or phi pin carried over from a cut is not a fact about a
+                    // surface, it is a claim the surface contradicts; and a freq axis the picker
+                    // left as KeepAsX IS pinned by the surface, which is why a 3D pattern's title
+                    // said nothing about its frequency. Asked BEFORE the bracket opens, so a label
+                    // left with nothing to say carries no empty "()".
+                    if (!SurfaceResolve.PinsAxis(t, s)) continue;
+
                     bool isPort = s.AxisName is "i" or "j" or "row" or "col";
 
                     // A WSProbe trace names its own pins where the generic path cannot: the wsp

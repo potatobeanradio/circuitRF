@@ -228,11 +228,15 @@
                  reference, the centre is a floor, and everything below the floor is drawn AT the
                  floor rather than dropped — a gap would read as a null in the antenna. The plot
                  states which reference it is using, so an unlabelled normalised pattern cannot be
-                 produced from here. -->
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Center"
-                        Spacing="6"
-                        IsVisible="{Binding HasPatternControls}">
+                 produced from here.
+
+                 A WRAP PANEL, not a row (owner report, 2026-09-11: the unit control was clipped at
+                 the right edge of the Plot Inspector). Eight controls of fixed width cannot be made
+                 to fit a panel the user is free to narrow, and a horizontal StackPanel does not
+                 report that: it lays out past its own edge and the last child is simply cut in half.
+                 Each label travels with the control it names, so a group that drops to the next line
+                 drops whole. -->
+            <WrapPanel IsVisible="{Binding HasPatternControls}">
 
                 <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and
                      has no linear reading to offer, so the checkbox is not shown for it. Everything
@@ -250,7 +254,7 @@
                 <CheckBox Content="dB radial"
                           IsChecked="{Binding PolarRadialIsDb, Mode=TwoWay}"
                           IsVisible="{Binding IsPolarPlot}"
-                          FontSize="11"
+                          FontSize="11" Margin="0,0,8,2"
                           ToolTip.Tip="Read the radius in decibels — an antenna pattern"/>
 
                 <!-- Bearings around the rim. A POLAR plot's, either radial mode: a locus has a
@@ -259,46 +263,79 @@
                 <CheckBox Content="Angles"
                           IsChecked="{Binding PolarAngleLabels, Mode=TwoWay}"
                           IsVisible="{Binding IsPolarPlot}"
-                          FontSize="11"
+                          FontSize="11" Margin="0,0,8,2"
                           ToolTip.Tip="Print the bearing every 30° around the outside of the disc, with a spoke to each. The disc shrinks to make room rather than the numbers overprinting the outer ring."/>
 
                 <CheckBox Content="Normalise"
                           IsChecked="{Binding PolarDbNormalised, Mode=TwoWay}"
                           IsEnabled="{Binding HasPatternScale}"
-                          FontSize="11"
+                          FontSize="11" Margin="0,0,8,2"
                           ToolTip.Tip="Outer ring = the peak of every trace on this plot (0 dB). Unchecked, the outer ring is the absolute level beside it."/>
 
-                <NumericUpDown Value="{Binding PolarDbReferenceValue, Mode=TwoWay}"
-                               IsEnabled="{Binding CanEditPolarDbReference}"
-                               Minimum="-200" Maximum="200" Increment="1"
-                               Width="72" Padding="5,3" FontSize="11"
-                               ShowButtonSpinner="False"
-                               ToolTip.Tip="Outer-ring level, absolute"/>
+                <!-- The outer-ring level. It carries a LABEL now that the panel wraps: an unlabelled
+                     spinner that has dropped onto its own line names nothing.
 
-                <TextBlock Text="Floor" Classes="label"
-                           IsEnabled="{Binding HasPatternScale}"/>
-                <NumericUpDown Value="{Binding PolarDbFloor, Mode=TwoWay}"
-                               IsEnabled="{Binding HasPatternScale}"
-                               Minimum="-200" Maximum="-1" Increment="5"
-                               Width="68" Padding="5,3" FontSize="11"
-                               ShowButtonSpinner="False"
-                               ToolTip.Tip="Decibels from the outer ring down to the centre"/>
+                     THE THREE SPINNERS ARE 42 px, not the 72/68/58 they were (owner, 2026-09-11:
+                     narrow them, three characters is enough). 42 rather than a literal three
+                     characters because the widest LEGAL value of two of them is four — Ref and Floor
+                     both reach -200 — and a control that clips a value the spinner itself will
+                     produce is a worse trade than the few pixels. The Unit combo is FIXED at the
+                     width of "dB(W/sr)", the longest unit the list offers, rather than a MinWidth
+                     that a longer unit from a file could grow. -->
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,2"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Ref" Classes="label"
+                               IsEnabled="{Binding CanEditPolarDbReference}"/>
+                    <NumericUpDown Value="{Binding PolarDbReferenceValue, Mode=TwoWay}"
+                                   IsEnabled="{Binding CanEditPolarDbReference}"
+                                   Minimum="-200" Maximum="200" Increment="1"
+                                   Width="42" Padding="4,3" FontSize="11"
+                                   ShowButtonSpinner="False"
+                                   ToolTip.Tip="Outer-ring level, absolute"/>
+                </StackPanel>
 
-                <TextBlock Text="Rings" Classes="label"
-                           IsEnabled="{Binding HasPatternScale}"/>
-                <NumericUpDown Value="{Binding PolarDbRingStep, Mode=TwoWay}"
-                               IsEnabled="{Binding HasPatternScale}"
-                               Minimum="0.5" Maximum="100" Increment="5"
-                               Width="58" Padding="5,3" FontSize="11"
-                               ShowButtonSpinner="False"
-                               ToolTip.Tip="Ring spacing, dB"/>
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,2"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Floor" Classes="label"
+                               IsEnabled="{Binding HasPatternScale}"/>
+                    <NumericUpDown Value="{Binding PolarDbFloor, Mode=TwoWay}"
+                                   IsEnabled="{Binding HasPatternScale}"
+                                   Minimum="-200" Maximum="-1" Increment="5"
+                                   Width="42" Padding="4,3" FontSize="11"
+                                   ShowButtonSpinner="False"
+                                   ToolTip.Tip="Decibels from the outer ring down to the centre"/>
+                </StackPanel>
 
-                <TextBox Text="{Binding PolarDbUnit, Mode=TwoWay}"
-                         IsEnabled="{Binding HasPatternScale}"
-                         Width="58" Padding="5,3" FontSize="11"
-                         PlaceholderText="dB"
-                         ToolTip.Tip="Unit the radial numbers are in — dBi, dB(W/sr). Blank takes the cube's own."/>
-            </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,2"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Rings" Classes="label"
+                               IsEnabled="{Binding HasPatternScale}"/>
+                    <NumericUpDown Value="{Binding PolarDbRingStep, Mode=TwoWay}"
+                                   IsEnabled="{Binding HasPatternScale}"
+                                   Minimum="0.5" Maximum="100" Increment="5"
+                                   Width="42" Padding="4,3" FontSize="11"
+                                   ShowButtonSpinner="False"
+                                   ToolTip.Tip="Ring spacing, dB"/>
+                </StackPanel>
+
+                <!-- A COMBO BOX, not a text box (owner request, 2026-09-11). The radial unit is one
+                     of a handful of spellings an antenna quantity is quoted in, and a free text box
+                     invited a typo that would have been printed around the plot as though it meant
+                     something. The list is open at the bottom rather than closed: a unit that
+                     arrived from a `.cdd` or from the CLI's own db-unit flag, and is not one of the
+                     standard rows is added to the list so it can be seen and re-selected, never
+                     silently replaced. The first row is the cube's own unit. -->
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,2"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Unit" Classes="label"
+                               IsEnabled="{Binding HasPatternScale}"/>
+                    <ComboBox ItemsSource="{Binding PolarDbUnitOptions}"
+                              SelectedItem="{Binding PolarDbUnitSelection, Mode=TwoWay}"
+                              IsEnabled="{Binding HasPatternScale}"
+                              Width="86" Padding="5,3" FontSize="11"
+                              ToolTip.Tip="Unit the radial numbers are in. The first row — the dash — takes the cube's own: dB(W/sr) for a radiation intensity, dBi for a gain. Every other row states one outright."/>
+                </StackPanel>
+            </WrapPanel>
 
             <!-- ── §B Row 1c: the 3D view (ANT-10 §3) ──────────────────────
                  Rotate and zoom are GESTURES on the plot itself (drag, wheel); what belongs here is
@@ -1181,11 +1218,20 @@
                                                                    Classes="label"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    ToolTip.Tip="{Binding AxisLabel}"/>
+                                                        <!-- X / Fam / Fix are hidden on a 3D
+                                                             surface: it opens both angle axes whole
+                                                             and pins the rest whatever the slice
+                                                             says, so all three were inert there.
+                                                             The surface's OWN two angle rows go
+                                                             further and are not shown at all
+                                                             (IsRowVisible) — nothing was left on
+                                                             them. See AxisRoleRowViewModel. -->
                                                         <Button Grid.Column="1"
                                                                 Classes="seg-btn"
                                                                 Classes.active="{Binding IsX}"
                                                                 Command="{Binding SetXCommand}"
                                                                 IsEnabled="{Binding IsRoleToggleable}"
+                                                                IsVisible="{Binding ShowRoleButtons}"
                                                                 Padding="6,2"
                                                                 ToolTip.Tip="Use as X axis">
                                                             <TextBlock Text="X" FontSize="10"/>
@@ -1195,6 +1241,7 @@
                                                                 Classes.active="{Binding IsFamily}"
                                                                 Command="{Binding SetFamilyCommand}"
                                                                 IsEnabled="{Binding IsRoleToggleable}"
+                                                                IsVisible="{Binding ShowRoleButtons}"
                                                                 Padding="6,2"
                                                                 ToolTip.Tip="Sweep this axis as a family of curves (one curve per value)">
                                                             <TextBlock Text="Fam" FontSize="10"/>
@@ -1204,6 +1251,7 @@
                                                                 Classes.active="{Binding IsPinned}"
                                                                 Command="{Binding SetPinnedCommand}"
                                                                 IsEnabled="{Binding IsRoleToggleable}"
+                                                                IsVisible="{Binding ShowRoleButtons}"
                                                                 Padding="6,2"
                                                                 Margin="0,0,4,0"
                                                                 ToolTip.Tip="Fix this axis to a single value">
@@ -1639,9 +1687,11 @@
                                         <!-- ── Line row ──────────────────────────────────────────
                                              Cols: 34 (ISB) | * (NUD+slider nested) | 95 (color) | 26 (blank)
                                              Col * contains a nested Grid(30,*) so slider right edge
-                                             aligns with the signal combo above.                     -->
+                                             aligns with the signal combo above.
+                                             Not on a Table, and not on the 3D surface — see
+                                             TraceRowViewModel.ShowLineAndSymbol for why. -->
                                         <Grid ClipToBounds="False"
-                                              IsVisible="{Binding IsNotTablePlot}">
+                                              IsVisible="{Binding ShowLineAndSymbol}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
                                                 <ColumnDefinition Width="*"     MinWidth="75"/>
@@ -1749,7 +1799,7 @@
                                         <!-- ── Symbol row ─────────────────────────────────────────
                                              Same column layout as line row (34 | * | 95 | 26).      -->
                                         <Grid ClipToBounds="False"
-                                              IsVisible="{Binding IsNotTablePlot}">
+                                              IsVisible="{Binding ShowLineAndSymbol}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
                                                 <ColumnDefinition Width="*"     MinWidth="75"/>

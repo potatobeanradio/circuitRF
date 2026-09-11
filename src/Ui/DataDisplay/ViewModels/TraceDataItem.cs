@@ -156,13 +156,22 @@ public sealed class TraceDataItem
         bool isTable   = plotType == PlotType.Table;
         string prefix  = omitFilePrefix ? string.Empty : $"{Path.GetFileNameWithoutExtension(entry.DisplayName)}..";
 
+        // The 3D surface takes NONE of them, and it is asked first because it is the one answer that
+        // does not depend on which kind of derived metric this is: a stability circle and a scalar
+        // versus frequency are both functions of frequency, and a surface is a function of direction
+        // (owner, 2026-09-11 — a 3D plot was offering a long list of quantities it could not draw).
+        bool isSurface = plotType == PlotType.Surface3D;
+
         // R-stb-5, expressed once from the metric's own kind rather than re-listed per member, so a
         // metric added to DerivedParameters later cannot be forgotten here.
-        bool enabled = derived.IsCircleLocus() ? (isComplex || isTable)
+        bool enabled = isSurface ? false
+                     : derived.IsCircleLocus() ? (isComplex || isTable)
                      : derived.IsScalarVsFrequency() ? !isComplex
                      : false;
 
         DisabledReason = enabled ? null
+            : isSurface
+                ? SurfaceResolve.NotOnASurfaceRefusal
             : derived.IsCircleLocus()
                 ? "Stability circles are loci in the Γ plane — add them to a Smith or Polar plot."
                 : "This is a scalar versus frequency — add it to a rectangular (or table) plot.";
