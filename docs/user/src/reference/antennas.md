@@ -54,8 +54,9 @@ The results land in the `farfield` group of the same result the s-parameters do.
 | `AxialRatioDb`, `PolarizationSense` | freq, θ, φ, port | dB, and signed Stokes *V* |
 | `CoPolLudwig3Db`, `CrossPolLudwig3Db` | freq, θ, φ, port | dB |
 
-Two are **present and refused**, each with its own sentence in the run's notes: `FrontToBackDb`
-(there is no field behind an infinite plane) and `RealizedGainDbi` (see [the numbers](#numbers)).
+One is **present and refused**, with its own sentence in the run's notes: `FrontToBackDb` — there is
+no field behind an infinite plane, so the true ratio is infinite rather than large, and a number for
+it would be a fiction.
 
 ## Which feeds work {#feeds}
 
@@ -142,19 +143,21 @@ In the Data Display:
 |---|---|---|
 | `DirectivityDbi` | no | no |
 | `GainDbi` | **yes** | no |
-| Realized gain | yes | **yes** |
+| `RealizedGainDbi` | yes | **yes** |
 
-Neither published result is called just "gain", because the usual failure is comparing one against a
-datasheet that quotes the other.
+Neither is called just "gain", because the usual failure is comparing one against a datasheet that
+quotes the other.
 
-**Realized gain is refused, and the substitute is exact.** The mismatch factor needs the reflection a
-source would see at the port; what the analysis has where the pattern is taken is the raw admittance of
-the port's delta-gap excitation, which at a de-embedded edge port is the gap's own parasitic rather than
-the antenna's input. So compute it yourself from the two published results:
+**The mismatch factor is 1 − |S<sub>11</sub>|², read from the same published, de-embedded
+s-parameter the S cube carries** — so the two gains differ by exactly that and by nothing else:
 
 ```
-realized gain (dBi) = GainDbi + 10·log10(1 − |S11|²)
+RealizedGainDbi = GainDbi + 10·log10(1 − |S11|²)
 ```
+
+It is *not* read from the raw admittance of the port's delta-gap excitation, which at a de-embedded
+edge port is the gap's own parasitic rather than the antenna's input — that reads a matched antenna as
+badly mismatched.
 
 ### The loss itemisation, and what to change for each term
 
@@ -224,8 +227,9 @@ physical, and it is ideally non-zero.</p>
   mechanism decides *whether* a layer is in the run, never *where it stops*. A radome, a conformal
   coating or a gain-raising superstrate is modelled as covering the whole run, to infinity — which moves
   resonance, gain and surface-wave launch by enough to matter.
-  **A uniform cover layer is therefore a fair model and is supported**; see the
-  [measured example](#example) below. A patterned one is not the thing you drew.
+  **And a uniform cover layer is not in the solve at all today** — a dielectric declared ABOVE the
+  topmost analysis level is discarded, the run warns by name, and the answer is the bare board's. That
+  is measured, not inferred; see the [measured example](#example) below.
 
 ## Worked example: a 5.8 GHz inset-fed patch {#example}
 
@@ -268,7 +272,7 @@ At 5.85 GHz, the requested grid point nearest resonance:
 | S₁₁ | −14.3 dB, Z<sub>in</sub> = 58.6 + j19.4 Ω |
 | Directivity | 6.70 dBi, peak at θ = 0° (broadside) |
 | Gain | 4.66 dBi — efficiency only |
-| Realized gain | 4.50 dBi — `GainDbi` + 10·log₁₀(1 − \|S₁₁\|²), done by hand per [above](#numbers) |
+| Realized gain | 4.50 dBi — `GainDbi` + 10·log₁₀(1 − \|S₁₁\|²), which is what `RealizedGainDbi` publishes |
 | Radiation efficiency | 62.6 % |
 | E-plane 3 dB beamwidth | 146° — and see the [infinite-ground caveat](#numbers) before quoting it |
 | Ground plane | 0.71 λ₀ across at 5.3 GHz rising to 0.84 λ₀ at 6.3, with 0.15–0.18 λ₀ beyond the metal |

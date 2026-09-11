@@ -487,10 +487,16 @@ public static class EmRunService
                 // at resonance, and both numbers are correct about different questions. Each request
                 // is mapped to the nearest point that was actually SOLVED and the set is deduplicated
                 // by index, so with adaptive sampling on this is a pattern at every solved point
-                // rather than one per requested point. The cost is a fraction of the solve it rides
-                // on: the transform is an exact O(N) sum per direction with no second fill and no
-                // second factorisation (measured at 21 points, N = 1,611: 97 s without patterns,
-                // 101 s with them).
+                // rather than one per requested point.
+                //
+                // AND IT IS NOT FREE — say the real number rather than the comfortable one. A
+                // pattern is an exact O(N) sum per direction with no second fill and no second
+                // factorisation, but a 1 degree x 1 degree hemisphere is 32,760 directions and at
+                // N = 1,611 that measured ~6.4 s against ~4.6 s for the de-embedded solve it rides
+                // on — MORE than the point it is attached to, not a fraction of it. End to end on
+                // the shipped 5.8 GHz example: the same 21-point sweep took 1 m 37 s with one
+                // pattern and 3 m 45 s with twenty-one. That is the price of the switch, and it is
+                // paid only when the user asks for it.
                 FarField = setup.RadiationPattern
                     ? PlanarFarFieldSettings.Default with { FrequenciesHz = freqs }
                     : null,

@@ -4415,3 +4415,83 @@ and the comparison is modulo 180° for the same reason as the cut's: φ₀ and �
   line removed and one `Internal` port at the inset point. The s-parameters are computed normally. So
   the set of feeds this kernel patterns is exactly the in-plane ones, and ANT-12's user page says so
   rather than repeating the overview.
+
+## ANT review — realized gain wired, and a Can-list claim its own phase had refuted (2026-09-10)
+
+A review pass over the whole ANT-1…ANT-12 series. Four things; two of them were statements that
+contradicted a measurement taken in the same phase, which is the class of defect this directory
+cares most about.
+
+### 1. `RealizedGainDbi` is PUBLISHED, and the fix was an ORDERING, not an arithmetic
+
+ANT-12 §1 correctly refused the metric rather than publishing a number read off the raw delta-gap
+self-admittance (15 dB low on a matched antenna), and left it present-and-refused because "the
+de-embedded S is produced one step AFTER the pattern is taken and both sweep drivers would have to be
+re-ordered to hand it over". **Re-ordering one of them is three lines, and the other needed none.**
+
+- The non-adaptive driver now calls `DeembedAt` BEFORE `FarFieldAt` for the same point and hands the
+  published `S[j, j]` over. Nothing else about the point moves: the raw solve, the currents and the
+  calibration run in the same order at the same frequencies, so R-adf-1's bit-identity is untouched.
+- The adaptive driver needed no re-ordering at all — its far-field block already runs after the
+  refinement loop, and `byIndex[i].S` is the replayed, de-embedded s-matrix of exactly that point.
+- `PlanarMetricContext.PortReflection` stays nullable, because a caller that builds a context by hand
+  (every gate in `PlanarMetricsTests`) has no s-matrix to give. That path still refuses, with the same
+  exact-substitute sentence.
+
+**The staging held in the direction it was built for.** ANT-5 wrote the entry, ANT-12 pointed its
+availability at one predicate, and publishing it moved that predicate and nothing else — not the
+registry's shape, not the cube list, not the exporter, not the CLI. Verified end to end on the shipped
+5.8 GHz example through `circuitrf em` as a process (4 m 27 s): f₀ = 5.8131 GHz, D = 6.70 dBi,
+G = 4.66 dBi, η = 62.6 %, and `RealizedGainDbi` now published at G + 10·log₁₀(1 − |S₁₁|²) = 4.50 dBi
+against a published S₁₁ of −14.3 dB.
+
+**`farY` was dead.** Both drivers populated a `Dictionary<int, Mat<Complex>>` of raw admittances that
+nothing ever read — the residue of an earlier attempt at this same wiring. Removed.
+
+### 2. `CLAUDE.md`'s R-ant-6 still stated the formula ANT-12 refuted
+
+The standing-memory entry read "written as the accepted-over-available ratio
+`4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²` from the same Y_jj and Z₀ everything else here uses" — which is the exact
+spelling ANT-12 measured to be 15 dB wrong, over the exact admittance it measured to be the wrong one.
+The correction lived only in `RESOLVED.md` and in the code. **A `CLAUDE.md` rule that survives its own
+refutation is worse than no rule**: it is the file a future implementer reads first, and this one told
+them to re-introduce the defect. R-ant-6 now states `1 − |Γ|²` off the published de-embedded S_jj,
+says why this is the ONE metric here not weighed against the raw admittance (every other is
+scale-invariant in the excitation; the mismatch factor compares an absolute admittance against Z₀),
+and names the refuted spelling as refuted so it cannot come back by symmetry with its neighbours.
+
+### 3. The user pages said a uniform cover layer "is supported" — the same phase measured that it is not
+
+`docs/user/src/reference/antennas.md` §Cannot and `docs/user/src/reference/mom-engine.md` both carried
+**"A uniform cover layer is a fair model of a real one and is supported"**, while the worked example
+three screens below on the same page said a 0.5 mm εᵣ 3.0 radome gives **bit-identical** s-parameters
+because `BuildMediumStack` terminates the medium in air at the topmost analysis level. One page, two
+answers, and the wrong one is on the Can list.
+
+This is precisely what `brief-antenna-12` §1a wrote its "do not write the superstrate onto the Can list
+from the refusals alone" rule to prevent: the sentence was drafted from what the refusals ALLOW, the
+measurement was then taken and recorded honestly in `src/Design/RESOLVED.md` §ANT-12, and the drafted
+sentence was never taken back out. Both pages now say the cover layer is discarded, that the run warns
+by name, and that the published answer is the bare board's. `docs/user/reference/*.html` and
+`assets/js/search-index.js` were patched to match rather than regenerated — **the next `DocGen` run
+should be allowed to rewrite these three pages**, and its figure diff read against the three known
+nondeterministic families first.
+
+### 4. A duplicated comment block in `SurfaceMesher.Mesh`
+
+ANT-2's fifteen-line detail-floor rationale was pasted twice, once before the artwork-bounds guard and
+once after it, the second copy carrying the extent-cap paragraph the first lacked. The first copy was
+removed; nothing else in the function changed.
+
+### Still open, and deliberately reported rather than fixed here
+
+- **A dielectric above the topmost analysis level is still dropped.** It is warned, not modelled, and
+  the limit is in the EXTRACTION rather than in the physics — a uniform superstrate is an ordinary
+  layered medium. Lifting it means `BuildMediumStack` carrying the bands above the top level and
+  terminating the half-space above THEM, which changes answers and therefore needs ANT-4 §5.3a's
+  stratified dipole oracle run over a covered stack before it can be trusted. Named as not built.
+- **`brief-antenna-12` §3b's imported-board regression fixture was not shipped.** ANT-1/2/3 are gated
+  by hand-built fixtures in code instead, which is sound and is what the anonymisation rule pushes
+  toward, but the brief's gate ("the imported regression fixture extracts the metal it should, meshes
+  under the ceiling, and carries no personal path or name") has no artefact behind it and that was not
+  recorded anywhere.

@@ -121,8 +121,11 @@ in — see <a href="antennas.html#feeds">Antennas</a> for which feed to use inst
 plate. That mechanism decides <strong>whether</strong> a layer is in the run, never <strong>where it stops</strong>: inside a run
 every dielectric is laterally infinite. So a radome, a conformal coating or a gain-raising superstrate
 drawn over the patch alone is modelled as covering the <strong>whole run, to infinity</strong> — which moves
-resonance, gain and surface-wave launch. A <em>uniform</em> cover layer is a fair model of a real one and is
-supported; a patterned one is not the thing you drew.</li>
+resonance, gain and surface-wave launch. <strong>And a cover layer above the topmost analysis level is not
+in the solve at all</strong>: the medium is built from the ground plane up to that level and terminated in
+air there, so a radome or coating is discarded and the run warns by name. Measured on the shipped
+patch example — adding one gives bit-identical s-parameters. See
+<a href="antennas.html#example">Antennas</a>.</li>
 <li><strong>Enclosures and absorbing boundaries.</strong> There is no box. Real planar tools suppress port-to-port
 radiative and surface-wave coupling with box walls or absorbing boundaries; <strong>this kernel has
 neither, by design</strong>, and that is what sets the <a href="#deembedding">de-embedding accuracy floor</a>.</li>

@@ -103,8 +103,11 @@ not general 3D.
   plate. That mechanism decides **whether** a layer is in the run, never **where it stops**: inside a run
   every dielectric is laterally infinite. So a radome, a conformal coating or a gain-raising superstrate
   drawn over the patch alone is modelled as covering the **whole run, to infinity** — which moves
-  resonance, gain and surface-wave launch. A *uniform* cover layer is a fair model of a real one and is
-  supported; a patterned one is not the thing you drew.
+  resonance, gain and surface-wave launch. **And a cover layer above the topmost analysis level is not
+  in the solve at all**: the medium is built from the ground plane up to that level and terminated in
+  air there, so a radome or coating is discarded and the run warns by name. Measured on the shipped
+  patch example — adding one gives bit-identical s-parameters. See
+  [Antennas](antennas.html#example).
 - **Enclosures and absorbing boundaries.** There is no box. Real planar tools suppress port-to-port
   radiative and surface-wave coupling with box walls or absorbing boundaries; **this kernel has
   neither, by design**, and that is what sets the [de-embedding accuracy floor](#deembedding).

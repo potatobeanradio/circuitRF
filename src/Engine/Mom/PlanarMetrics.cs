@@ -232,12 +232,13 @@ public sealed class PlanarMetricContext
     /// 0.032, so the realized gain was published 15 dB below the gain on an antenna matched to
     /// within a quarter of a dB. A wrong number, not a pessimistic one.</para>
     ///
-    /// <para><b>Nothing supplies it yet</b>, so the metric is present-and-refused exactly as
-    /// <see cref="PlanarMetric.FrontToBackDb"/> is, and for the same reason: the picker, the
-    /// exporter and the CLI stay plumbed while the number stays unprinted. What would supply it is
-    /// the DE-EMBEDDED, renormalised S of the driven port at this frequency, which the sweep
-    /// produces after the pattern is taken — see the refusal's own sentence for the arithmetic a
-    /// user can do in the meantime, which is exact.</para>
+    /// <para><b>The sweep supplies it</b>: <c>PlanarSolve</c> de-embeds each point BEFORE it takes
+    /// that point's pattern and hands the published <c>S[j, j]</c> over, so
+    /// <see cref="PlanarMetric.RealizedGainDbi"/> is an ordinary published cube. It stays nullable
+    /// because a caller that builds a context by hand — every gate in <c>PlanarMetricsTests</c>
+    /// does — has no s-matrix to give, and the metric is then present-and-refused exactly as
+    /// <see cref="PlanarMetric.FrontToBackDb"/> is, with the exact arithmetic in its own
+    /// sentence.</para>
     /// </summary>
     public Complex? PortReflection { get; }
 
@@ -516,10 +517,11 @@ public static class PlanarMetrics
             "arithmetic to do from GainDbi and the published S instead.",
             // ── ANT-12 — ONE PREDICATE, AND IT IS THE PORT'S OWN Γ ────────────────────────────
             // Staged exactly as FrontToBackDb is: the metric stays in the registry, in the picker
-            // and in the exporter, and the one thing that would publish it is a non-null
-            // PortReflection. Nothing supplies one today. See PlanarMetricContext.PortReflection for
-            // what the raw self-admittance published before this, and why that was wrong here and is
-            // still right for every other metric in this list.
+            // and in the exporter, and the one thing that publishes it is a non-null
+            // PortReflection. The sweep supplies one — it de-embeds a point before taking that
+            // point's pattern — so this refuses only for a caller holding no s-matrix. See
+            // PlanarMetricContext.PortReflection for what the raw self-admittance published before
+            // this, and why that was wrong here and is still right for every other metric here.
             c =>
             {
                 var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
@@ -594,9 +596,10 @@ public static class PlanarMetrics
         "on an antenna that is actually matched (measured: 15 dB low on a patch whose published S₁₁ " +
         "is −14.3 dB), which is a wrong number rather than a pessimistic one. " +
         "DO THIS INSTEAD, and it is exact: realized gain = GainDbi + 10·log₁₀(1 − |S₁₁|²), with " +
-        "S₁₁ read from the published, de-embedded S cube at the same frequency and port. What would " +
-        "lift the refusal is that same de-embedded S being supplied to the metric context as " +
-        "PortReflection, which the sweep produces one step AFTER the pattern is taken.";
+        "S₁₁ read from the published, de-embedded S cube at the same frequency and port. A SWEEP " +
+        "publishes this cube and does not reach this sentence — it de-embeds each point before " +
+        "taking that point's pattern and hands the reflection over; only a caller that built a " +
+        "metric context by hand, with no s-matrix to give, sees this.";
 
     public static PlanarMetricDefinition Of(PlanarMetric metric) =>
         Registry.First(d => d.Metric == metric);

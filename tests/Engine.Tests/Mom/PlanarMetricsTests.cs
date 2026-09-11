@@ -291,7 +291,7 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     public void TheTwoGains_DifferByExactlyTheOneMismatchFactor()
     {
         // ANT-12: the identity is asserted with a reflection SUPPLIED, because that is the only
-        // state realized gain is published in now. Gamma = 0.2 is an arbitrary well-matched port;
+        // state realized gain is published in. Gamma is an arbitrary well-matched port;
         // the assertion is about the arithmetic, not about the value.
         var gamma = new System.Numerics.Complex(0.2, -0.1);
         var (report, mc) = CheapSolve(portReflection: gamma);
@@ -307,10 +307,12 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     /// <summary>
-    /// <b>ANT-12 — realized gain is PRESENT and REFUSED when no port reflection is supplied</b>, which
-    /// is every run today. Asserted so that publishing it again is a deliberate act: the number it
-    /// published before came from the raw delta-gap self-admittance and read 15 dB low on a matched
-    /// antenna, and the refusal carries the exact substitute arithmetic rather than only a reason.
+    /// <b>ANT-12 — realized gain is PRESENT and REFUSED when no port reflection is supplied.</b> A
+    /// SWEEP always supplies one (it de-embeds a point before taking that point's pattern), so this
+    /// is the hand-built-context case. Asserted so that publishing it from anything ELSE is a
+    /// deliberate act: the number it published before came from the raw delta-gap self-admittance
+    /// and read 15 dB low on a matched antenna, and the refusal carries the exact substitute
+    /// arithmetic rather than only a reason.
     /// </summary>
     [Fact]
     public void RealizedGain_IsRefusedWithNoPortReflection_AndTheRefusalCarriesTheArithmetic()

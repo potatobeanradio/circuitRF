@@ -515,10 +515,20 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   count), and never the DE-EMBEDDED S, which describes a different structure with the feed leads
   removed. `PowerAccepted` is published for that reason: an efficiency whose denominator is not
   published cannot be reproduced.
-- **R-ant-6. THERE IS EXACTLY ONE MISMATCH FACTOR AND BOTH GAINS READ IT**, written as the
-  accepted-over-available ratio `4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²` from the same Y_jj and Z₀ everything else
-  here uses. So "the two gains differ by exactly the mismatch factor" is structural, not two
-  estimates agreeing.
+- **R-ant-6. THERE IS EXACTLY ONE MISMATCH FACTOR AND BOTH GAINS READ IT** — `1 − |Γ|²`, with Γ the
+  driven port's own **published, de-embedded, renormalised S_jj**. So "the two gains differ by
+  exactly the mismatch factor" is structural, not two estimates agreeing.
+  **It is the ONE metric here that is not weighed against the raw admittance, and ANT-12 measured
+  why.** Every other number in §3.7 is a ratio of two things the same 1 V delta gap produced and is
+  therefore scale-invariant in the excitation; the mismatch factor compares an ABSOLUTE admittance
+  against Z₀. At a de-embedded edge port the raw Y_jj is the delta gap's own series parasitic —
+  precisely what the error box removes — so the raw Γ sits near 1 whatever the antenna does. The
+  earlier spelling `4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²` over the RAW Y_jj **is refuted and must not come
+  back**: on the shipped 5.8 GHz patch it published a realized gain of −15.05 dBi where the answer is
+  4.50 dBi, against a published S₁₁ of −14.31 dB. `PlanarSolve` therefore de-embeds a point BEFORE
+  taking that point's pattern, and `PlanarMetricContext.PortReflection` is what it hands over; a
+  context built with none leaves `RealizedGainDbi` present-and-refused, with the exact substitute
+  (`GainDbi + 10·log₁₀(1 − |S₁₁|²)`) in the refusal.
 - **`PowerConductor` IS PUBLISHED AND IS ZERO, with its note.** Kernel B's metal is a perfect
   conductor; a missing term reads as "not a factor", a zero term with the note reads as "this kernel
   does not model it". The note carries §10.9's 6.5 / 3.0 / 2.1 % yardstick.

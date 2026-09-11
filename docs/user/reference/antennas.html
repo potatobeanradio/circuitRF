@@ -167,8 +167,9 @@ same results.</p>
 </tr>
 </tbody>
 </table>
-<p>Two are <strong>present and refused</strong>, each with its own sentence in the run's notes: <code>FrontToBackDb</code>
-(there is no field behind an infinite plane) and <code>RealizedGainDbi</code> (see <a href="#numbers">the numbers</a>).</p>
+<p>One is <strong>present and refused</strong>, with its own sentence in the run's notes: <code>FrontToBackDb</code> — there is
+no field behind an infinite plane, so the true ratio is infinite rather than large, and a number for
+it would be a fiction.</p>
 <h2 id="feeds">Which feeds work</h2>
 <table>
 <thead>
@@ -805,20 +806,21 @@ goes in a report. The principal-plane cuts say more.</li>
 <td>no</td>
 </tr>
 <tr>
-<td>Realized gain</td>
+<td><code>RealizedGainDbi</code></td>
 <td>yes</td>
 <td><strong>yes</strong></td>
 </tr>
 </tbody>
 </table>
-<p>Neither published result is called just &quot;gain&quot;, because the usual failure is comparing one against a
-datasheet that quotes the other.</p>
-<p><strong>Realized gain is refused, and the substitute is exact.</strong> The mismatch factor needs the reflection a
-source would see at the port; what the analysis has where the pattern is taken is the raw admittance of
-the port's delta-gap excitation, which at a de-embedded edge port is the gap's own parasitic rather than
-the antenna's input. So compute it yourself from the two published results:</p>
-<pre><code>realized gain (dBi) = GainDbi + 10·log10(1 − |S11|²)
+<p>Neither is called just &quot;gain&quot;, because the usual failure is comparing one against a datasheet that
+quotes the other.</p>
+<p><strong>The mismatch factor is 1 − |S<sub>11</sub>|², read from the same published, de-embedded
+s-parameter the S cube carries</strong> — so the two gains differ by exactly that and by nothing else:</p>
+<pre><code>RealizedGainDbi = GainDbi + 10·log10(1 − |S11|²)
 </code></pre>
+<p>It is <em>not</em> read from the raw admittance of the port's delta-gap excitation, which at a de-embedded
+edge port is the gap's own parasitic rather than the antenna's input — that reads a matched antenna as
+badly mismatched.</p>
 <h3 id="the-loss-itemisation-and-what-to-change-for-each-term">The loss itemisation, and what to change for each term</h3>
 <p>The run prints a power budget at every pattern point: accepted = radiated + surface wave + dielectric +
 conductor.</p>
@@ -901,8 +903,9 @@ to assume a superstrate drawn over the patch alone is modelled where it is drawn
 mechanism decides <em>whether</em> a layer is in the run, never <em>where it stops</em>. A radome, a conformal
 coating or a gain-raising superstrate is modelled as covering the whole run, to infinity — which moves
 resonance, gain and surface-wave launch by enough to matter.
-<strong>A uniform cover layer is therefore a fair model and is supported</strong>; see the
-<a href="#example">measured example</a> below. A patterned one is not the thing you drew.</li>
+<strong>And a uniform cover layer is not in the solve at all today</strong> — a dielectric declared ABOVE the
+topmost analysis level is discarded, the run warns by name, and the answer is the bare board's. That
+is measured, not inferred; see the <a href="#example">measured example</a> below.</li>
 </ul>
 <h2 id="example">Worked example: a 5.8 GHz inset-fed patch</h2>
 <p>The workspace is <code>testdata/antenna/</code> in the circuitRF source tree: one inset-fed patch on the shipped
@@ -988,7 +991,7 @@ checked against another circuitRF number.</p>
 </tr>
 <tr>
 <td>Realized gain</td>
-<td>4.50 dBi — <code>GainDbi</code> + 10·log₁₀(1 − |S₁₁|²), done by hand per <a href="#numbers">above</a></td>
+<td>4.50 dBi — <code>GainDbi</code> + 10·log₁₀(1 − |S₁₁|²), which is what <code>RealizedGainDbi</code> publishes</td>
 </tr>
 <tr>
 <td>Radiation efficiency</td>

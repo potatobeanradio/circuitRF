@@ -327,21 +327,6 @@ public static class SurfaceMesher
         double hWave   = double.IsInfinity(lambdaG) ? double.PositiveInfinity
                                                     : lambdaG / s.CellsPerWavelength;
 
-        // ── M1 — THE DETAIL FLOOR (ANT-2): metal narrower than this does not get to set the pitch ──
-        //
-        // Three separate width measurements drive the mesh — MeasureNarrowness' global 5th percentile,
-        // PlanarMeshPitchField's local across-chord, and LocalConductorWidth's per-edge run — and none
-        // of them has any notion of a feature being too small to matter electrically. On an imported
-        // board that is the normal case rather than a corner one: on a 1.74 GHz patch the narrowest
-        // metal was 310 µm of connector via land and aperture-rounded corner, λ_g/265 in size and
-        // ~9 mm from anything electrically interesting, and deleting only those features moved the
-        // default mesh from 704,482 unknowns to 51,031.
-        //
-        // It is λ-RELATIVE and taken at the SAME λ_g the cell-size cap uses, so it is one decision on
-        // a 1.7 GHz board and on a 40 GHz one rather than two. It FLOORS and never refines, so every
-        // field it touches is pointwise ≥ what it was and no configuration gets worse. With no
-        // frequency there is no λ_g and therefore no floor — geometry is all there is to go on.
-
         var layerNames = new List<string>(problem.Layers.Count);
         foreach (var l in problem.Layers) layerNames.Add(l.Name);
 

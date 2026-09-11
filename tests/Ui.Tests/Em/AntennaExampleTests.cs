@@ -195,12 +195,16 @@ public sealed class AntennaExampleTests(ITestOutputHelper output)
             output.WriteLine(stdout);
             Assert.Equal(0, exit);
 
-            // The pattern was produced, and the two refusals the page names are the refusals that
+            // The pattern was produced, and the ONE refusal the page names is the refusal that
             // fired — not a silent absence.
             Assert.Contains("Far field, port 1 driven", stderr);
             Assert.Contains("Power budget", stderr);
             Assert.Contains("FrontToBackDb is not published", stderr);
-            Assert.Contains("RealizedGainDbi is not published", stderr);
+
+            // …and the realized gain is PUBLISHED, not refused: a sweep de-embeds a point before it
+            // takes that point's pattern, so the mismatch factor reads the published S_11 rather
+            // than the delta gap's own raw admittance (ANT-12's correction, wired).
+            Assert.DoesNotContain("RealizedGainDbi is not published", stderr);
 
             // The resonance, against the cavity model the page compares it to.
             int at = stderr.IndexOf("f0 = ", StringComparison.Ordinal);

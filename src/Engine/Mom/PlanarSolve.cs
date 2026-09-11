@@ -1423,7 +1423,6 @@ public static class PlanarSolve
         var farPatterns = new Dictionary<int, PlanarFarFieldPattern[]>();
         var farMetrics  = new Dictionary<int, PlanarMetricReport[]>();
         var farPol      = new Dictionary<int, PlanarPolarizationPattern[]>();
-        var farY         = new Dictionary<int, Mat<Complex>>();
 
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
         //    reaches EXACTLY the same arithmetic. R-adf-1's bit-identity when adaptive is off is a
@@ -1598,17 +1597,28 @@ public static class PlanarSolve
                     capturedF = f;
                 }
 
+                // ── THE DE-EMBEDDING RUNS FIRST, AND THAT ORDER IS LOAD-BEARING ──────────
+                //
+                // ANT-12 measured that the mismatch factor may not be read off the RAW
+                // self-admittance — at a de-embedded edge port that is the delta gap's own
+                // parasitic, not the antenna's input, and the realized gain came out 15 dB low on an
+                // antenna matched to a quarter of a dB. The number it needs is the PUBLISHED,
+                // de-embedded, renormalised S_jj of this same point, which this loop produces one
+                // line later. So the pattern is taken after it rather than before, and
+                // RealizedGainDbi is published instead of refused. Nothing else about the point
+                // changes: the raw solve, the currents and the de-embedding are the same calls in
+                // the same frequency order.
+                var (s, cals, calMs) = DeembedAt(f, raw, () => kernel);
+
                 if (farWanted.Contains(points.Count))
                 {
-                    var (pats, mets, pols) = FarFieldAt(problem, mesh, currents, y, ports, f,
+                    var (pats, mets, pols) = FarFieldAt(problem, mesh, currents, y, s, ports, f,
                                                         farSettings!, cap, control);
                     farPatterns[points.Count] = pats;
                     farMetrics[points.Count]  = mets;
                     farPol[points.Count]      = pols;
-                    farY[points.Count] = y;
                 }
 
-                var (s, cals, calMs) = DeembedAt(f, raw, () => kernel);
                 points.Add(new PlanarFrequencyPoint(
                     f, s, raw, cals, kernelMs, dutMs, standardsMs + calMs));
                 control?.Tick();
@@ -1788,13 +1798,16 @@ public static class PlanarSolve
                 foreach (int i in chosen)
                 {
                     farWanted.Add(i);
+                    // ANT-12 — the de-embedded S of this same point, which `byIndex` already holds
+                    // because the refinement loop replayed the calibration over every solved index
+                    // before it stopped. That is RealizedGainDbi's one input; see the non-adaptive
+                    // loop above for why the RAW admittance is not.
                     var (pats, mets, pols) = FarFieldAt(problem, mesh, currentsByIndex[i],
-                                                        yByIndex[i], ports, freqs[i], farSettings!,
-                                                        cap, control);
+                                                        yByIndex[i], byIndex[i].S, ports, freqs[i],
+                                                        farSettings!, cap, control);
                     farPatterns[i] = pats;
                     farMetrics[i]  = mets;
                     farPol[i]      = pols;
-                    farY[i] = yByIndex[i];
                 }
                 if (moved.Count > 0)
                     notes.Add($"{moved.Count} requested far-field frequency point(s) were not solved " +
@@ -2130,16 +2143,29 @@ public static class PlanarSolve
     /// One frequency's patterns AND the metrics they imply, one of each per port.
     ///
     /// <para><b>ANT-5 — the metric report is built here, beside the pattern, because this is the only
-    /// place the three things a metric needs are in hand at once</b>: the pattern, the basis currents
-    /// it was transformed from, and the RAW port admittance those currents came out of (R-ant-5's
-    /// denominator). Carrying the pattern out and asking for metrics later would mean re-deciding
-    /// which admittance belongs to it, and the de-embedded one belongs to a different structure.</para>
+    /// place the four things a metric needs are in hand at once</b>: the pattern, the basis currents
+    /// it was transformed from, the RAW port admittance those currents came out of (R-ant-5's
+    /// denominator), and the DE-EMBEDDED S of the same point (ANT-12's mismatch factor). Carrying
+    /// the pattern out and asking for metrics later would mean re-deciding which admittance belongs
+    /// to it.</para>
+    ///
+    /// <para><b>The two are different ports on purpose and the split is the ANT-12 correction.</b>
+    /// Every ratio here — η_rad, D, G — is SCALE-INVARIANT in the excitation and is therefore
+    /// weighed against the raw admittance the transformed currents actually came out of. The
+    /// mismatch factor is the one quantity that is not such a ratio: it compares an absolute
+    /// admittance against Z₀, and at a de-embedded edge port the raw one is the delta gap's own
+    /// series parasitic rather than the antenna's input. So it reads the published S and nothing
+    /// else.</para>
     /// </summary>
+    /// <param name="deembeddedS">The point's published, renormalised s-matrix — <c>S[j, j]</c> is
+    /// the reflection a source connected at port <i>j</i>'s own reference plane would see, which is
+    /// <see cref="PlanarMetric.RealizedGainDbi"/>'s only input. Null leaves that metric
+    /// present-and-refused, exactly as it was before a caller could supply one.</param>
     private static (PlanarFarFieldPattern[] Patterns, PlanarMetricReport[] Metrics,
                     PlanarPolarizationPattern[] Polarization) FarFieldAt(
         PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> currents,
-        Mat<Complex> rawY, IReadOnlyList<PlanarPortResolution> ports, double fHz,
-        PlanarFarFieldSettings settings, int? cap, RunControl? control)
+        Mat<Complex> rawY, Mat<Complex>? deembeddedS, IReadOnlyList<PlanarPortResolution> ports,
+        double fHz, PlanarFarFieldSettings settings, int? cap, RunControl? control)
     {
         control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
         var made    = new PlanarFarFieldPattern[ports.Count];
@@ -2153,7 +2179,8 @@ public static class PlanarSolve
             // Ludwig-3 reference angle and the derived beamwidth cut one number rather than two.
             var context = new PlanarMetricContext(
                 problem, mesh, currents[j], made[j], rawY[j, j], ports[j].Z0,
-                settings.EffectiveMetrics, cap);
+                settings.EffectiveMetrics, cap,
+                deembeddedS is { } sm ? sm[j, j] : null);
             metrics[j] = PlanarMetrics.Evaluate(context);
             pol[j]     = PlanarPolarization.For(context);
             control?.TickStage();
