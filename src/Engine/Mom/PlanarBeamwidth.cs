@@ -211,8 +211,13 @@ public static class PlanarBeamwidth
             double front = ((want % 360.0) + 360.0) % 360.0;
             double back  = (front + 180.0) % 360.0;
 
-            int ifr = PlanarMetrics.Nearest(grid.PhiDeg, front);
-            int iba = PlanarMetrics.Nearest(grid.PhiDeg, back);
+            // NearestAzimuth, not Nearest: the wanted azimuth is a POINT ON A CIRCLE and the miss is
+            // measured three lines down with a WRAPPED delta, so a linear lookup here would reject a
+            // snap the tolerance accepts. A patch fed along x derives its axis at 0 or 180 and
+            // round-off decides the side, so `front` lands at 359.99 as often as at 0.01 — see
+            // PlanarMetrics.NearestAzimuth for the board that measured it.
+            int ifr = PlanarMetrics.NearestAzimuth(grid.PhiDeg, front);
+            int iba = PlanarMetrics.NearestAzimuth(grid.PhiDeg, back);
             double snapF = grid.PhiDeg[ifr], snapB = grid.PhiDeg[iba];
 
             // Half a cut has no second half-power point. The tolerance is half the FINEST φ step,

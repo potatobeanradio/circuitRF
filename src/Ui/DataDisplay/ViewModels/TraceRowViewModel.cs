@@ -2048,6 +2048,28 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AxisRoles));
     }
 
+    // ---- The back branch of a pattern cut -----------------------------------
+
+    /// <summary>
+    /// <b>Draw this trace on the NEGATIVE side of broadside</b> — the &#966; + 180&#176; half of a
+    /// polar cut. See <see cref="Trace.MirrorPatternAngle"/> for why a cut is two traces.
+    /// </summary>
+    [ObservableProperty]
+    private bool _mirrorPatternAngle;
+
+    partial void OnMirrorPatternAngleChanged(bool value)
+    {
+        _trace.MirrorPatternAngle = value;
+        _parent.OnTracePatternMirrorChanged();
+    }
+
+    /// <summary>
+    /// Gates the checkbox. It is a statement about an ANGLE, so it says nothing anywhere the angle
+    /// is not the trace's own swept axis: a dB-radial POLAR plot and nowhere else. Same rule the dB
+    /// sub-controls follow, and the same reason <c>PlotVerb</c> adds no back branch off one.
+    /// </summary>
+    public bool ShowPatternMirror => _parent.IsPolarDbPlot && IsCubeBoundTrace;
+
     // ---- Secondary axis -----------------------------------------------------
 
     [ObservableProperty]
@@ -2483,6 +2505,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
         _matrixType       = trace.MatrixType;
         _useSecondaryAxis = trace.UseSecondaryAxis;
+        _mirrorPatternAngle = trace.MirrorPatternAngle;
 
         _lineEnabled    = trace.Properties.LineEnabled;
         _lineWidth      = trace.Properties.LineWidth;
@@ -3526,6 +3549,7 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsStandardTrace));
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsRectOrTablePlot));
+        OnPropertyChanged(nameof(ShowPatternMirror));
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsNotTablePlot));
         OnPropertyChanged(nameof(IsCubeBoundTrace));

@@ -270,7 +270,7 @@
                 <TextBox Text="{Binding PolarDbUnit, Mode=TwoWay}"
                          IsVisible="{Binding HasPatternScale}"
                          Width="58" Padding="5,3" FontSize="11"
-                         Watermark="dB"
+                         PlaceholderText="dB"
                          ToolTip.Tip="Unit the radial numbers are in — dBi, dB(W/sr). Blank takes the cube's own."/>
             </StackPanel>
 
@@ -317,19 +317,32 @@
                         Content="Reset"
                         ToolTip.Tip="Back to the isometric view at zoom 1"/>
 
+            </StackPanel>
+
+            <!-- ── §B Row 1d: what the scene DRAWS, as opposed to where it is viewed from ───
+                 Split off Row 1c on owner report, 2026-09-11: the eight controls together were wider
+                 than the inspector and the colour-ramp combo was clipped at its right edge. The two
+                 rows also divide cleanly — the row above answers "which way am I looking", this one
+                 answers "what is in the scene". -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="4"
+                        IsVisible="{Binding IsSurfacePlot}">
+
                 <CheckBox Content="Axes"
                           IsChecked="{Binding SurfaceShowAxes, Mode=TwoWay}"
-                          FontSize="11" Margin="6,0,0,0"
+                          FontSize="11"
                           ToolTip.Tip="Draw x, y and z in the scene, on the layout's own orientation"/>
 
                 <CheckBox Content="Ground"
                           IsChecked="{Binding SurfaceShowGroundDisc, Mode=TwoWay}"
-                          FontSize="11"
+                          FontSize="11" Margin="6,0,0,0"
                           ToolTip.Tip="The ground plane at θ = 90° — the horizon, and the statement that nothing is modelled below it"/>
 
                 <ComboBox ItemsSource="{Binding SurfaceColorMaps}"
                           SelectedItem="{Binding SurfaceColorMap, Mode=TwoWay}"
                           Width="96" Padding="5,3" FontSize="11"
+                          Margin="6,0,0,0"
                           ToolTip.Tip="Colour ramp — the contour plot's own set"/>
             </StackPanel>
 
@@ -1533,6 +1546,17 @@
                                                              Foreground="{DynamicResource CrfIconBrush}"
                                                              TextWrapping="Wrap"
                                                              Margin="0,1,0,0"/>
+
+                                        <!-- Pattern cut: this trace is the phi + 180 half, drawn on
+                                             the negative side of broadside. A cut is a PLANE, so it
+                                             takes two traces; only a dB-radial polar plot reads it. -->
+                                        <CheckBox Name="PatternMirrorCheck"
+                                                  IsVisible="{Binding ShowPatternMirror}"
+                                                  IsChecked="{Binding MirrorPatternAngle, Mode=TwoWay}"
+                                                  FontSize="11"
+                                                  Margin="0,2,0,0"
+                                                  Content="Back half of the cut (draw at -theta)"
+                                                  ToolTip.Tip="A cut runs from -theta_max through broadside to +theta_max, and the negative half is the phi + 180 branch. Pin this trace at phi + 180 and tick this to draw the whole plane."/>
 
                                         <!-- ── Line row ──────────────────────────────────────────
                                              Cols: 34 (ISB) | * (NUD+slider nested) | 95 (color) | 26 (blank)

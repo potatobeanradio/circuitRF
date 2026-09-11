@@ -281,6 +281,20 @@ public static class PatternCaption
                 : "  ·  0° at top, clockwise"),
         };
 
+        // The back-branch statement, when the plot carries one. It is a property of the PLOT rather
+        // than of any one trace, and it is its OWN LINE rather than a longer hemisphere sentence:
+        // the caption is drawn unwrapped at a fixed canvas width, and folding it in overran the
+        // plot on both sides at 792 points — clipped mid-word, which is worse than not said.
+        // It also says a different thing. The θ AXIS of the data still runs 0…90°, which is what
+        // the hemisphere line reports; what spans −90…90° is the COMPASS, because the negative half
+        // is the same θ at the opposite azimuth.
+        foreach (var t in plot.Traces)
+            if (t.MirrorPatternAngle)
+            {
+                lines.Add("the cut is a PLANE: the negative half is the φ + 180° branch");
+                break;
+            }
+
         // The hemisphere statement, per DISTINCT θ range present — normally one. Built from the
         // axis, so ANT-11's extension to 180° changes it with no edit here — and ANT-10 §4 asks for
         // the SAME sentence, from the same place, for the same reason: a hemisphere floating above a

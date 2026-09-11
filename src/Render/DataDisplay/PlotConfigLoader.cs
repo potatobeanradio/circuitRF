@@ -203,6 +203,7 @@ public static class PlotConfigLoader
                                   DependentVarFormat.Db, traceConfig.UseSecondaryAxis);
                 trace.CubeName   = traceConfig.CubeName;
                 trace.Transform  = traceConfig.CubeTransform;
+                trace.MirrorPatternAngle = traceConfig.MirrorPatternAngle;
                 trace.Slice      = traceConfig.CubeSlice.Count > 0
                     ? traceConfig.CubeSlice.Select(s => s.ToSlice()).ToArray()
                     : null;

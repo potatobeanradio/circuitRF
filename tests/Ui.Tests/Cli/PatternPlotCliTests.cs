@@ -10,6 +10,7 @@
 //  Run as a PROCESS, like every other CLI gate in this folder.
 // ================================================================
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
 using CircuitRF.Render.DataDisplay;
@@ -109,6 +110,80 @@ public sealed class PatternPlotCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("cut at phi = 90", run.StdErr);
         Assert.Contains("freq pinned to 5", run.StdErr);
         output.WriteLine(run.StdErr.Trim());
+    }
+
+    /// <summary>
+    /// <b>A <c>cut=</c> on a dB-radial polar plot writes TWO traces — the plane, not half of it.</b>
+    ///
+    /// <para>The back branch is an ordinary cube trace through the ordinary resolve, pinned at
+    /// φ + 180° and carrying <c>MirrorPatternAngle</c>; it keeps the front branch's COLOUR because
+    /// the two halves are one curve, and its own label because <c>phi=180 deg</c> is what says where
+    /// the negative half came from. Everything else the front branch pinned — the port, the
+    /// frequency, the transform — is the same question asked at the opposite azimuth.</para>
+    /// </summary>
+    [Fact]
+    public void ACutOnAPatternPolar_WritesBothBranches_TheBackOneMirrored()
+    {
+        string dir = Dir("plane");
+        string cdd = Path.Combine(dir, "one.cdd");
+
+        var run = RunCli("plot", Result(dir), "-o", Path.Combine(dir, "p.svg"), "--write-cdd", cdd,
+                         "--type", "polar", "--radial", "db",
+                         "--trace", "cube=farfield.U,cut=0,port=2,freq=5G,y=db10");
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+
+        var plot = JsonSerializer.Deserialize<DataDisplayConfig>(File.ReadAllText(cdd))!.Tabs[0].Plots[0];
+        Assert.Equal(2, plot.Traces.Count);
+
+        var front = plot.Traces[0];
+        var back  = plot.Traces[1];
+        Assert.False(front.MirrorPatternAngle);
+        Assert.True(back.MirrorPatternAngle);
+
+        // phi: the fixture's grid is 45 degrees, so 0 is index 0 and 180 is index 4.
+        Assert.Equal(0, front.CubeSlice[2].Index);
+        Assert.Equal(4, back.CubeSlice[2].Index);
+
+        // Everything else is the SAME question: same cube, same transform, same pinned port and
+        // frequency, same colour.
+        Assert.Equal(front.CubeName,      back.CubeName);
+        Assert.Equal(front.CubeTransform, back.CubeTransform);
+        Assert.Equal(front.CubeSlice[0].Index, back.CubeSlice[0].Index);   // freq
+        Assert.Equal(front.CubeSlice[3].Index, back.CubeSlice[3].Index);   // port
+        Assert.Equal(front.Properties.LineColorIndex, back.Properties.LineColorIndex);
+        output.WriteLine(run.StdErr.Trim());
+    }
+
+    /// <summary>
+    /// <b>The back branch is added ONLY where something reads it.</b> On a LINEAR polar plot nothing
+    /// reads <c>MirrorPatternAngle</c>, so a second trace would draw a duplicate curve on top of the
+    /// first; on a RECT plot the negative half is a question about the x axis rather than about an
+    /// angle; and <c>cut=all</c> is a family that already carries every azimuth, the back branch
+    /// among them. Each writes ONE trace, exactly as it did before this existed.
+    /// </summary>
+    [Theory]
+    [InlineData("polar", true,  "all")]
+    [InlineData("polar", false, "0")]
+    [InlineData("rect",  false, "0")]
+    public void WhereNothingReadsTheMirror_OnlyOneBranchIsWritten(string type, bool db, string cut)
+    {
+        string dir = Dir($"one-branch-{type}-{db}-{cut}");
+        string cdd = Path.Combine(dir, "one.cdd");
+
+        var args = new List<string>
+        {
+            "plot", Result(dir), "-o", Path.Combine(dir, "p.svg"), "--write-cdd", cdd, "--type", type,
+        };
+        if (db) { args.Add("--radial"); args.Add("db"); }
+        args.Add("--trace");
+        args.Add($"cube=farfield.U,cut={cut},port=1,y=db10");
+
+        var run = RunCli([.. args]);
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+
+        var plot = JsonSerializer.Deserialize<DataDisplayConfig>(File.ReadAllText(cdd))!.Tabs[0].Plots[0];
+        Assert.Single(plot.Traces);
+        Assert.False(plot.Traces[0].MirrorPatternAngle);
     }
 
     /// <summary>

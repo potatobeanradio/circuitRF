@@ -32,6 +32,13 @@ public static class PlotLabelStrips
     /// names the axis, not a trace, so per-trace strips beside it would be saying two different
     /// things about the same axis. With no custom label there is one strip per trace on that side;
     /// contour traces are excluded, having no Y axis of their own.</para>
+    ///
+    /// <para><b>The back branch of a pattern cut is excluded for the same reason</b>
+    /// (<see cref="Trace.MirrorPatternAngle"/>): it is the φ + 180° half of a cut whose front half
+    /// is already on this axis, so it is one curve in two traces and not a second quantity. Left in,
+    /// it printed the axis name twice. <b>Unless it is the only thing on that side</b> — a back
+    /// branch with no front branch is an odd document, but it is one the reader must still be able
+    /// to read an axis name off.</para>
     /// </summary>
     public static (IReadOnlyList<PlacedLabelStrip> Left, IReadOnlyList<PlacedLabelStrip> Right)
         For(Plot plot, bool showFilePrefix)
@@ -39,11 +46,19 @@ public static class PlotLabelStrips
         if (!plot.PlotType.IsComplex())
             return (Array.Empty<PlacedLabelStrip>(), Array.Empty<PlacedLabelStrip>());
 
-        var leftTraces  = plot.LeftAxisTraces.Where(t => !t.IsContourTrace).ToList();
-        var rightTraces = plot.RightAxisTraces.Where(t => !t.IsContourTrace).ToList();
+        var leftTraces  = Labelled(plot.LeftAxisTraces);
+        var rightTraces = Labelled(plot.RightAxisTraces);
 
         return (Side(leftTraces,  plot.CustomYLabelOn,  plot.CustomYLabel,  showFilePrefix),
                 Side(rightTraces, plot.CustomY2LabelOn, plot.CustomY2Label, showFilePrefix));
+    }
+
+    /// <summary>The traces on one side that name the axis — see <see cref="For"/>.</summary>
+    private static List<Trace> Labelled(IEnumerable<Trace> traces)
+    {
+        var all   = traces.Where(t => !t.IsContourTrace).ToList();
+        var front = all.Where(t => !t.MirrorPatternAngle).ToList();
+        return front.Count > 0 ? front : all;
     }
 
     private static IReadOnlyList<PlacedLabelStrip> Side(

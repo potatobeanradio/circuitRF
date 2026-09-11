@@ -1559,6 +1559,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 : null,
             CubeName      = t.CubeName,
             CubeTransform = t.Transform,
+            // The back branch of a pattern cut. A field the window can DRAW but not SAVE is worse
+            // than one it cannot draw: the picture is right until someone saves, and then it is
+            // silently a quarter-disc again.
+            MirrorPatternAngle = t.MirrorPatternAngle,
             CubeSlice     = t.Slice is null
                 ? new()
                 : t.Slice.Select(AxisSliceConfig.From).ToList(),

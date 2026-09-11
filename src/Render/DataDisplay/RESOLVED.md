@@ -226,3 +226,162 @@ when a dB transform is applied to it.
   `port` axis meaning what it always meant.
 - The hemisphere note changes when the axis does.
 - Both themes draw, with all four rings, every ring's dB number, and the reference sentence in the SVG.
+
+---
+
+## A polar cut drew a QUARTER of the disc — the back branch (2026-09-10)
+
+Found running the imported 1.74 GHz patch board end to end (owner request; `src/Engine/Mom/RESOLVED.md`
+carries that run's engine half). Owner instruction to fix, after it was reported as a design question.
+
+### What was wrong
+
+`cut=<deg>` pins one φ and sweeps θ 0…90°, so on the compass mapping the curve occupies **one
+quadrant** — top to right — and nothing occupies the other three.
+
+**`PlanarBeamwidth` has defined a cut as BOTH azimuths since ANT-5**, in its own words: *"a cut runs
+from −θ_max through broadside to +θ_max, and the negative half is the φ + 180° branch — so BOTH have
+to be sampled"*, and it refuses when the grid carries only one of them. So the number and the picture
+were about different things: **a beamwidth read off the plot was half the one the metric published.**
+
+ANT-7 §4 had already anticipated the right shape — it asks for the hemisphere note because *"a polar
+plot occupying a half-disc will otherwise be read as a rendering bug"* — but §3 spelled a cut as "pin
+freq and φ, sweep θ", and §8's write-up never returned to the second branch. Nothing was measured
+wrong; one half of the plane was simply never drawn.
+
+### The shape of the fix, and the two things that are forced
+
+`Trace.MirrorPatternAngle` — one bool, read at exactly one place (`PatternPoint` negates the angle
+before `PolarPatternAngle.Point`), persisted as `TraceConfig.MirrorPatternAngle`, **absent and
+therefore false in every `.cdd` written before it**, which is the picture those files already drew.
+
+- **TWO TRACES, not one trace with a signed axis.** The halves are different SLICES of the cube — φ
+  and φ + 180° — so no single slice could carry both. Synthesising a signed-θ axis needs a derived
+  cube and a second resolve path, which is what ANT-7 §3's "there is ONE plotting path" exists to
+  prevent. The back branch is therefore an ordinary cube trace through the ordinary mechanism; it
+  takes the front branch's COLOUR, because the two halves are one curve, and keeps its OWN label,
+  because `phi=180 deg` is what tells the reader where the negative half came from.
+- **The ANGLE is mirrored and the VALUE never is.** The radius stays the branch's own dB against the
+  plot's shared reference, so an asymmetric pattern reads as asymmetric. Gated by resolving the same
+  slice twice, mirrored and not, and asserting one is the other reflected in x.
+
+`Cli plot` adds the back branch **only on a dB-radial polar plot**, and that is not caution: on a
+LINEAR polar plot nothing reads the flag, so the second trace would draw a duplicate curve on top of
+the first; on a RECT plot the negative half is a question about the x axis rather than about an angle.
+`cut=all` is excluded because a family already carries every azimuth, the back branch among them.
+
+### The caption had to learn it, and the hemisphere statement did NOT change
+
+`PolarPatternAngle.HemisphereNote` gains `bothBranches`. The hemisphere half is untouched — both
+branches are θ from the zenith and both are above the plane — but the SPAN is now −90…90°, and
+"θ 0…90°" printed under a half-disc invites the reading that the other half is a different quantity.
+It is the same θ at the opposite azimuth, and the sentence now says so. **The flag is asked of the
+PLOT, not of the trace**, so either authoring order gives one sentence and the existing dedupe still
+collapses the pair to one line.
+
+### A second defect, caught while building the first
+
+**`DataDisplayViewModel.BuildTraceConfig` did not write the field back.** The renderer reads it, so a
+`.cdd` from `Cli plot` draws the whole plane in the window — and the first SAVE returned it to a
+quarter-disc with nothing said. **A field the window can DRAW but not SAVE is worse than one it
+cannot draw**, because nothing about the moment it is lost is visible. Gated through
+`BuildTraceConfig` and the loader's own JSON rather than a hand-copied pair of fields, which would
+agree with itself and prove nothing.
+
+### Two presentation defects the first half-disc exposed
+
+Both were pre-existing shapes that only a two-trace cut could reach.
+
+- **The caption CLIPPED rather than shrank.** `AxesRenderer` shrinks a caption line to fit and floors
+  that at 0.5× — so a sentence long enough to need more than half was cut mid-word at both ends, which
+  is what a folded-in "the negative half is the φ + 180° branch…" produced at 792 points. The
+  statement is its OWN LINE now, and it is also a different statement: the θ AXIS still runs 0…90°,
+  which the hemisphere line reports, and what spans −90…90° is the COMPASS.
+  *Not changed, and visible in the picture:* each caption line shrinks INDEPENDENTLY, so a short line
+  between two long ones renders larger than both. One size for the whole block would read better and
+  would move the bytes of every shipped pattern figure; left alone deliberately.
+- **The Y-axis label strip printed the quantity twice.** `PlotLabelStrips` emits one strip per trace,
+  and the back branch is a second trace carrying the same quantity on the same axis — one curve in two
+  traces, not two quantities. Excluded like a contour trace is, **unless it is the only thing on that
+  side**, where the reader must still get an axis name.
+
+The trace card gains the checkbox to match (`ShowPatternMirror`, live only on a dB-radial polar plot
+on a cube-bound trace — the same gate `PlotVerb` applies, for the same reason), so the window can
+author a plane and not only render one.
+
+---
+
+## The 3D surface, as first used in anger — four reports (2026-09-11)
+
+All four came from the owner driving ANT-10's surface on the imported patch board, and the first is
+the one that matters.
+
+### 1. `Etheta` drew a uniform pink hemisphere, and a hemisphere is not an error shape
+
+`Etheta`/`Ephi` are COMPLEX cubes. With no transform `Trace.RectY` returns the LINEAR magnitude —
+volts, peaking near 0.01 on a real patch — and the surface reads its values as **dB** against a peak
+reference with a −25 dB floor. A span of 0…0.01 "dB" puts every direction on the outer radius in the
+top colour: **a perfect hemisphere, which is what an isotropic radiator over a ground plane looks
+like.** Nothing in the picture could have said otherwise, which is the whole reason it had to be a
+refusal rather than a nicety.
+
+`Trace.PatternValuesCanBeDb` decides it, and **the test is exact rather than a guess about
+magnitudes**, which matters because the obvious heuristic ("these numbers are too small to be dB")
+would have been a rule of thumb wearing a measurement's clothes:
+
+- a dB transform, or one baked into an expression → dB, drawn;
+- `Mag`/`Real`/`Imag`/`Phase`, **and `None` on a COMPLEX cube** (which `RectY` resolves to the
+  magnitude) → provably not dB, **refused by name** with the flag that answers it;
+- `None` on a REAL cube → left alone, because that is how an already-dB cube (`GainDbi`,
+  `CoPolLudwig3Db`) is legitimately plotted.
+
+**So a linear REAL cube — `U` with no transform — is still drawable and still wrong.** Named here
+rather than guessed at: the fix for that case is a unit on the cube, which §8 above already records
+as missing. The surface records `Trace.SurfaceComplexSource` before flattening its values to
+`double`, because after that line the trace cannot tell the two kinds apart.
+
+Applied to the polar cut as well, where the same category error draws a CIRCLE.
+
+### 2. The refusal was drawn over the scene furniture
+
+The ground disc, the axes and their letters were drawn whatever the trace resolved, so the sentence
+landed on top of them, struck through by an axis arm. They are the SURFACE's frame of reference; with
+no surface they are furniture around an empty scene, and they are now skipped.
+
+### 3. A 3D plot could not be SELECTED
+
+`PlotControl.OnPointerPressed`'s surface branch takes the left press for its rotate drag and marks it
+handled, so it never reached `PlotContainerView` and the container's click-to-select never armed. The
+note beside `_surfaceRotating` had reasoned that there is "no axis window here for the move/select
+conflict of `Axes.LockedPanning` to be about" — **true about the axis window and wrong about the
+container**, whose SELECT gesture is on that same press.
+
+**Selection is not a drag**: it is decided by a press that does not move, so the two can share the
+gesture. The press now selects through the container's own `RequestSelectOnly`/`RequestToggleSelect`
+— the same commands the container calls, not a second selection path, which is what keeps Ctrl/Cmd
+toggling identical to every other plot type — and then takes the rotate. Gated by a source scan in
+`PlotPanLockDefaultTests`, that file's own house pattern for control wiring it cannot instantiate.
+
+### 4. The colour ramp was clipped at the inspector's right edge
+
+Eight controls in one row were wider than the inspector. Split on the owner's own suggestion, and the
+two rows divide cleanly: the first answers *which way am I looking*, the second *what is in the
+scene*.
+
+### Reported and NOT reproduced: "cannot rotate in realtime due to poor FPS"
+
+**Measured in a scratch harness** (Release, `SurfaceRenderer.Draw` on the default 1°×1° hemisphere,
+91 × 360, 20 frames each, camera rotated between frames):
+
+| detail | stride | facets | ms/frame | fps |
+|---|---|---|---|---|
+| `Quick` (pointer down) | 4 | 3,822 | 5.50 | 182 |
+| `Full` (on release) | 1 | 61,920 | 54.84 | 18 |
+
+and `Quick` is **not fill-rate bound** — at 1520 × 1120 it is 6.87 ms (146 fps) and at 2400 × 1800
+it is 8.09 ms (124 fps), so a Retina canvas at any plausible container size stays well inside a
+frame. Those are ANT-10 §6's own claimed numbers, reproduced. **The drag path is therefore not slow
+in the renderer**, and the cause is somewhere this harness does not reach — `PlotDetail.Quick` not
+arriving, or the compositor being starved by something else on the tab (this repository has a
+recorded finding that one slow frame starves the whole window). Left open and reported rather than
+guessed at.

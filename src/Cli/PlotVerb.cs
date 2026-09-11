@@ -58,6 +58,30 @@ internal static class PlotVerb
 
         public string? Probe;
         public string? With;
+
+        /// <summary>
+        /// The azimuth of this cut's OTHER half, or null when this spec does not name one cut —
+        /// no <c>cut=</c>, <c>cut=all</c> (a family already carries every azimuth), or a
+        /// <c>cut=</c> that does not parse (which <see cref="BuildTrace"/> refuses by name; this
+        /// must not pre-empt that refusal with a silently missing branch).
+        /// </summary>
+        public string? BackBranchCut()
+        {
+            if (Cut is null || Cut.Equals("all", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!double.TryParse(Cut, NumberStyles.Float, CultureInfo.InvariantCulture, out double phi))
+                return null;
+            double back = (((phi + 180.0) % 360.0) + 360.0) % 360.0;
+            return back.ToString("0.######", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>This spec with its cut moved — everything else, including the pinned port and
+        /// frequency, is the same question asked at the opposite azimuth.</summary>
+        public TraceSpec WithCut(string cut) => new()
+        {
+            Text = Text, I = I, J = J, YText = YText, Secondary = Secondary, Raw = Raw,
+            Cut = cut, Port = Port, FreqHz = FreqHz,
+            Probe = Probe, With = With,
+        };
         public string? Set;
         public string? Metric;
         public string? Z0;
@@ -196,6 +220,35 @@ internal static class PlotVerb
             var (tc, refusal) = BuildTrace(o.Traces[i], data, Path.GetFileName(o.Result), i, o.Type);
             if (refusal is { } r) return r;
             traces.Add(tc!);
+
+            // ── A CUT IS A PLANE, SO IT IS TWO TRACES (2026-09-10) ───────────────────────────
+            //
+            //  PlanarBeamwidth has said since ANT-5 that a cut runs from -theta_max through
+            //  broadside to +theta_max with the negative half on the phi + 180 branch — it samples
+            //  BOTH azimuths, and refuses when the grid has only one of them. The plot drew one
+            //  branch, so a polar cut was a QUARTER of the disc and a beamwidth read off the
+            //  picture was half the one the metric published. Measured on an imported 1.74 GHz
+            //  patch; ANT-7 §4 had already anticipated "a polar plot occupying a half-disc".
+            //
+            //  The back branch is an ORDINARY cube trace through the ordinary resolve — the same
+            //  spec with its cut moved 180 — carrying MirrorPatternAngle so it draws at -angle.
+            //  It keeps the front branch's colour, because the two halves are one curve; it keeps
+            //  its OWN label, because `phi=180 deg` is what says where the negative half came from.
+            //
+            //  Gated to a dB-radial POLAR plot, and that is not caution: on a linear polar plot
+            //  nothing reads MirrorPatternAngle, so the second trace would draw a duplicate curve
+            //  on top of the first, and on a rect plot the negative half is an x-axis question
+            //  rather than an angle one. `cut=all` is excluded because a family already carries
+            //  every azimuth, the back branch among them.
+            if (o.Type == PlotType.Polar && o.Radial == PolarRadialMode.Db
+                && o.Traces[i].BackBranchCut() is { } backCut)
+            {
+                var (btc, brefusal) = BuildTrace(o.Traces[i].WithCut(backCut), data,
+                                                 Path.GetFileName(o.Result), i, o.Type);
+                if (brefusal is { } br) return br;
+                btc!.MirrorPatternAngle = true;
+                traces.Add(btc);
+            }
         }
 
         var config = BuildConfig(o, traces);
@@ -240,7 +293,9 @@ internal static class PlotVerb
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db axis=left|right\n" +
             "  an antenna pattern: cube=farfield.U cut=<phi deg>|all [port=<n>] [freq=2.45G] y=db10\n" +
-            "                      cut=<deg> sweeps theta at one phi; cut=all keeps every phi as a family\n" +
+            "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
+            "                      branch drawn at -theta, on a --radial db polar plot\n" +
+            "                      cut=all keeps every phi as a family\n" +
             "  cube= takes the trace card's own shorthand — S[:,1,0], Pout, mag(V[:,\"X1.drain\"])\n" +
             "  a WSProbe quantity: cube=<analysis>.wsp probe=<label> metric=<name> [with=<label>]\n" +
             "                      [set=A;B] [z0=50] [side=G|L] [gi=1]\n" +

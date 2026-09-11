@@ -4495,3 +4495,63 @@ removed; nothing else in the function changed.
   toward, but the brief's gate ("the imported regression fixture extracts the metal it should, meshes
   under the ceiling, and carries no personal path or name") has no artefact behind it and that was not
   recorded anywhere.
+
+---
+
+## An imported patch board, run end to end — the azimuth seam (2026-09-10)
+
+Owner request: take the four-layer FR-4 import that ANT-1 was written from, run it with the series
+landed, and report and fix what the run turns up. Every number below is from that board — a 41.3 ×
+49.4 mm inset-fed patch over a 70 × 70 mm plane 300 µm below it, εᵣ 4.4, tanδ 0.02 — through
+`Cli em` in Release on a scratch copy.
+
+**The series itself held.** ANT-1's stroke outlining put the feed back (`1 width-bearing Path
+shape(s) were outlined into conductor artwork, contributing 4.217 mm² of metal`), ANT-2's detail
+floor took the connector's 310 µm via lands out of the pitch decision, and ANT-3's sheet intent
+meshed the patch as a radiator. What the run produced was one defect, in ANT-5/6's φ lookup.
+
+### `PlanarMetrics.Nearest` measured an azimuth on a straight line, and the tolerance measured it round
+
+`BeamwidthDeg` was **not published at all**, with:
+
+> The beamwidth cut at φ = 359.989° cannot be taken on this grid … The nearest sampled azimuths are
+> 359° and 180°, which is further than half a grid step (0.5°) from what the cut needs.
+
+On the default 1°×1° hemisphere, φ = 0° is **0.011° away** from what the cut needed and 359° is
+0.989° away. The lookup was `Nearest`, a linear `|values[i] − want|` scan, so it chose 359°; the
+tolerance three lines later measures the miss with `Delta`, which **wraps**, and rejected the snap it
+had just been handed. **Neither the grid nor the tolerance was ever wrong — the lookup and its own
+test measured two different distances.**
+
+**Why it fires on the commonest antenna this kernel has.** The cut axis is derived from the current
+moment (R-ant-7/R-ant-9), a patch fed along x puts that axis at 0° or 180°, and round-off decides
+which side of the seam it lands on — 179.99° here, whose front half is 359.989°. A fraction the other
+way and it publishes. So this is a **coin flip on every x-fed patch**, and the two ANT-12 findings
+above did not cover it: those were a SET comparison refusing two names for one plane, this is one
+point refusing before a set exists.
+
+`PlanarMetrics.NearestAzimuth` is the wrapped-delta twin, used at the three φ lookups —
+`PlanarBeamwidth.Cuts`' front and back, and `PrincipalPlaneCrossPolDb`'s φ₀ and φ₀ + 90°, which has
+the same latent failure one quadrant over. **It is a second method rather than a fix to `Nearest`,
+because `Nearest` is also asked for a θ**, which is not cyclic and where wrapping 180° onto 0° would
+be an outright wrong answer. `AntipodalIntensity`'s φ lookup takes it too; that one is safe today
+only because `(φ_peak + 180) % 360` is exactly a grid value on a uniform grid, which is a property of
+the grid rather than of the code.
+
+Gated by `PlanarMetricsTests.ACutAcrossTheAzimuthSeam_SnapsToTheNearestGridline`, a hand-built
+pattern with no solve, at 359.99° / 0.01° / 179.99°, asserting the snap AND that the pair either side
+of the seam reports the same beamwidth — they are one plane.
+
+### What else the board said, and none of it is a defect
+
+- **The detail floor SATURATES on this board at divisor ≈ 60**, and the run says why rather than
+  going quiet: λ_g/60 would be 1191 µm, but the floor is separately held at 2 % of the artwork's own
+  extent, so 988 µm is where it stops and divisors 60/50/40/30/20 are one mesh. The unknown count
+  reads 1,697 (edge mesh off) or 6,109 (on) at all five.
+- **`MostCircular` reporting θ = 89° on a linear patch is not noise.** It was checked against the
+  cube: that direction is 32.6 dB below the pattern peak, not the −282 dB the grazing row carries, and
+  an axial ratio of 2.97 dB there is a real near-grazing ellipse. No level guard was added.
+- **Cells per wavelength is inert on this artwork with the edge mesh off**, 10/14/20 giving one
+  answer. That is correct and is not the dead-knob defect `PlanarCurrentModel` was added for: the
+  imported outline's own boundaries already subdivide the grid more finely than λ_g/10 = 7.1 mm, so
+  the λ cap never binds. With the edge mesh on it moves the mesh at every value.

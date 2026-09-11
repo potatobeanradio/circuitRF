@@ -637,7 +637,7 @@ public static class PlanarMetrics
     {
         var g = c.Pattern.Grid;
         int it = Nearest(g.ThetaDeg, 180.0 - c.Peak.ThetaDeg);
-        int ip = Nearest(g.PhiDeg, (c.Peak.PhiDeg + 180.0) % 360.0);
+        int ip = NearestAzimuth(g.PhiDeg, (c.Peak.PhiDeg + 180.0) % 360.0);
         return c.Pattern.U[g.IndexOf(it, ip)];
     }
 
@@ -647,6 +647,42 @@ public static class PlanarMetrics
         for (int i = 1; i < values.Count; i++)
             if (Math.Abs(values[i] - want) < Math.Abs(values[at] - want)) at = i;
         return at;
+    }
+
+    /// <summary>
+    /// <b><see cref="Nearest"/> for an AZIMUTH, where 359.99&#176; and 0&#176; are 0.01&#176; apart
+    /// and not 359.99&#176;.</b> Same search, on the wrapped difference.
+    ///
+    /// <para><b>It exists because the linear one silently refused an ordinary patch.</b> Measured on
+    /// an imported 1.74 GHz inset-fed board, 2026-09-10: the Ludwig-3 / beamwidth axis is derived from
+    /// the current moment, a patch fed along x puts it at 0&#176; or 180&#176;, and round-off decides
+    /// which side of the seam it lands on — 179.99&#176; there. <see cref="PlanarBeamwidth"/> then asks
+    /// for the cut's FRONT half at 359.99&#176;, whose nearest sampled azimuth on the default
+    /// 1&#176; grid is 0&#176; by 0.011&#176; and 359&#176; by linear distance. Every caller already
+    /// measures the miss with a WRAPPED delta, so the snap was rejected as 0.989&#176; off a
+    /// 0.5&#176; tolerance and <c>BeamwidthDeg</c> was not published at all — on a coin flip, on the
+    /// commonest antenna this kernel has. The grid was never at fault and no tolerance needed
+    /// widening; the lookup and the test it feeds simply measured two different distances.</para>
+    ///
+    /// <para><b>It is a separate method rather than a fix to <see cref="Nearest"/></b>, because that
+    /// one is also asked for a &#952; — which is NOT cyclic, and where wrapping 180&#176; onto
+    /// 0&#176; would be an outright wrong answer.</para>
+    /// </summary>
+    internal static int NearestAzimuth(IReadOnlyList<double> values, double want)
+    {
+        int at = 0;
+        for (int i = 1; i < values.Count; i++)
+            if (Math.Abs(AzimuthDelta(values[i], want)) < Math.Abs(AzimuthDelta(values[at], want))) at = i;
+        return at;
+    }
+
+    /// <summary>Signed angular difference a &#8722; b, folded into (&#8722;180, 180].</summary>
+    internal static double AzimuthDelta(double a, double b)
+    {
+        double d = (a - b) % 360.0;
+        if (d > 180.0) d -= 360.0;
+        if (d <= -180.0) d += 360.0;
+        return d;
     }
 }
 

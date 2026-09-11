@@ -123,9 +123,14 @@ would read as a measured front-to-back ratio.
 
 In the Data Display:
 
-- **A cut** is one φ, swept over θ. Plot `farfield.U` on a **Polar** plot and set the radial axis to
-  **dB**: the outer ring is the reference and each ring is a step down. The plot states which reference
-  it is using, so a normalised pattern cannot be mistaken for an absolute one.
+- **A cut** is one plane, swept over θ. Plot `farfield.U` on a **Polar** plot and set the radial axis
+  to **dB**: the outer ring is the reference and each ring is a step down. The plot states which
+  reference it is using, so a normalised pattern cannot be mistaken for an absolute one.
+- **A cut is a plane, so it is two traces.** It runs from −θ<sub>max</sub> through broadside to
+  +θ<sub>max</sub>, and the negative half is the φ + 180° branch — which is also what the beamwidth
+  metric measures, so the picture and the number agree. `circuitrf plot … --type polar --radial db
+  --trace cube=farfield.U,cut=0,…` adds the second branch for you. In the Data Display, add a trace
+  pinned at φ + 180° and tick **Back half of the cut** on its card.
 - **Normalised** means the peak of *this* trace is the outer ring — right for comparing shapes, useless
   for comparing two antennas. **Absolute** pins the outer ring to a dB value you choose, which is what
   you want when the levels are the point.

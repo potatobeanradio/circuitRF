@@ -282,6 +282,15 @@ public sealed class TraceConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public CubeTransform         CubeTransform { get; set; } = CubeTransform.None;
 
+    /// <summary>
+    /// <b>Draw this pattern trace on the NEGATIVE side of broadside</b> — the back half of a polar
+    /// cut, which is the &#966; + 180&#176; branch. See <see cref="Trace.MirrorPatternAngle"/> for
+    /// why a cut needs two traces and why it is the angle rather than the value that is mirrored.
+    /// <b>Absent, i.e. false, in every <c>.cdd</c> written before it</b>, which is the picture those
+    /// files already drew.
+    /// </summary>
+    public bool MirrorPatternAngle { get; set; }
+
     // Expression-mode field. When non-null, supersedes CubeName/CubeSlice/CubeTransform for value production.
     public string?               Expression    { get; set; }
 

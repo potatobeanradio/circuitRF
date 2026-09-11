@@ -958,6 +958,30 @@ namespace CircuitRF.Render.DataDisplay
         public PolarPatternScale? PatternScale { get; set; }
 
         /// <summary>
+        /// <b>This branch of a cut is drawn on the NEGATIVE side of broadside.</b> A cut is a PLANE,
+        /// and a plane crosses the disc: it runs from &#8722;&#952;_max through broadside to
+        /// +&#952;_max, and the negative half is the &#966; + 180&#176; branch.
+        /// <see cref="PlanarBeamwidth"/>-in-the-engine has said exactly that since ANT-5 — it samples
+        /// BOTH azimuths to find two half-power points — and the plot did not, so a polar cut drew a
+        /// QUARTER of the disc and a beamwidth read off it was half the one the metric published.
+        ///
+        /// <para><b>Two traces, not one trace with a signed axis, and that is forced.</b> The two
+        /// halves are different SLICES of the cube — &#966; and &#966; + 180&#176; — so there is no
+        /// one slice a single trace could carry. Synthesising a signed-&#952; axis would mean a
+        /// derived cube and a second resolve path, which is the thing ANT-7 §3 exists to prevent. So
+        /// the back branch is an ordinary cube trace, resolved by the ordinary mechanism, that draws
+        /// at &#8722;angle; its label keeps its own <c>phi=180 deg</c>, which is what says where the
+        /// negative half came from.</para>
+        ///
+        /// <para><b>It is the ANGLE that is mirrored, never the value</b> — the radius is the
+        /// trace&#8217;s own dB against the PLOT&#8217;s shared reference, exactly as the front
+        /// branch&#8217;s is, so the two halves stay comparable and an asymmetric pattern reads as
+        /// asymmetric. False by default, so every <c>.cdd</c> written before this drew the same
+        /// picture it always drew.</para>
+        /// </summary>
+        public bool MirrorPatternAngle { get; set; }
+
+        /// <summary>
         /// <b>ANT-10 — this trace's pattern over two angle axes</b>, filled by
         /// <see cref="SurfaceResolve"/> when the parent plot is a <see cref="PlotType.Surface3D"/>
         /// and null on every other plot kind. Values are in the trace's own displayed dB quantity,
@@ -970,6 +994,56 @@ namespace CircuitRF.Render.DataDisplay
         /// ANGLE — a frequency sweep on a compass. Surfaces as "&lt;invalid&gt;" on the label rather
         /// than as a plausible shape, exactly as <see cref="RectValueInvalid"/> does.</summary>
         public bool PatternAxisInvalid { get; private set; }
+
+        /// <summary>
+        /// True when the last build was on a pattern plot and this trace's values are provably NOT
+        /// decibels — see <see cref="PatternValuesCanBeDb"/>. Surfaces as "&lt;invalid&gt;" beside
+        /// the other two rather than being drawn.
+        /// </summary>
+        public bool PatternValueInvalid { get; private set; }
+
+        /// <summary>
+        /// <b>Whether this trace's values can be read as DECIBELS, which is what a pattern plot's
+        /// radius is.</b>
+        ///
+        /// <para><b>Reported, 2026-09-11: <c>Etheta</c> on a 3D surface drew a uniform pink
+        /// hemisphere.</b> It is a COMPLEX cube, and with no transform <see cref="RectY"/> returns
+        /// the linear magnitude — volts, peaking around 0.01 on a real patch. The surface reads its
+        /// values as dB against a peak reference and a −25 dB floor, so a span of 0…0.01 "dB" put
+        /// every direction on the outer radius in the top colour. <b>That is a perfect hemisphere:
+        /// the most plausible wrong answer the scene can produce</b>, and nothing on it said
+        /// otherwise.</para>
+        ///
+        /// <para><b>The test is EXACT rather than a guess about magnitudes.</b> Three cases:
+        /// a dB transform (or one baked into an expression) gives dB and passes; <c>Mag</c>,
+        /// <c>Real</c>, <c>Imag</c>, <c>Phase</c> — and <c>None</c> on a COMPLEX cube, which
+        /// <see cref="RectY"/> resolves to the magnitude — provably do not and are refused; and
+        /// <c>None</c> on a REAL cube is left alone, because that is how an already-dB cube
+        /// (<c>GainDbi</c>, <c>CoPolLudwig3Db</c>) is legitimately plotted and the plot cannot tell
+        /// it from a linear one. <b>So a linear REAL cube (<c>U</c> with no transform) is still
+        /// drawable and still wrong</b> — named here rather than guessed at, because the fix for it
+        /// is a unit on the cube, which ANT-7 §8 already records as missing.</para>
+        /// </summary>
+        internal bool PatternValuesCanBeDb =>
+            _transformBaked
+            || Transform is CubeTransform.dB or CubeTransform.dB10 or CubeTransform.dB20
+            || (Transform == CubeTransform.None && _cubeComplexValues is null
+                                                && SurfaceComplexSource != true);
+
+        /// <summary>
+        /// Whether the cube a SURFACE resolved from was complex — the surface flattens its values to
+        /// <c>double</c> before <see cref="PatternValuesCanBeDb"/> can see them, so it records the
+        /// kind here. Null on any trace that has not resolved a surface.
+        /// </summary>
+        internal bool? SurfaceComplexSource { get; set; }
+
+        /// <summary>The sentence a refused pattern value carries, in R-mom-17's shape: what is wrong,
+        /// and the flag that answers it.</summary>
+        internal const string PatternValueRefusal =
+            "A pattern plot reads its radius in DECIBELS, and this trace's values are not decibels: "
+          + "a complex cube with no dB transform is drawn as its linear magnitude, which fills the "
+          + "whole scale and draws a uniform hemisphere. Set the transform to dB20 for a FIELD "
+          + "quantity (Etheta, Ephi) or dB10 for a POWER one (U).";
 
         /// <summary>The unit the radial numbers should carry, derived from the cube's own value unit
         /// and the transform applied to it. Null when nothing better than "dB" can be said.</summary>
@@ -1061,7 +1135,8 @@ namespace CircuitRF.Render.DataDisplay
             if (y is not double db) return null;
             double r = scale.Radius(db);
             if (!double.IsFinite(r)) return null;
-            var (x, yy) = PolarPatternAngle.Point(angleUnits * degPerUnit, r);
+            double deg = angleUnits * degPerUnit;
+            var (x, yy) = PolarPatternAngle.Point(MirrorPatternAngle ? -deg : deg, r);
             return new Vector2((float)x, (float)yy);
         }
 
@@ -1178,6 +1253,8 @@ namespace CircuitRF.Render.DataDisplay
                 baseLabel += " <invalid: complex on scalar plot type>";
             if (IsCubeBound && PatternAxisInvalid && !baseLabel.Contains("<invalid"))
                 baseLabel += " <invalid: a dB polar plot sweeps an ANGLE>";
+            if (IsCubeBound && PatternValueInvalid && !baseLabel.Contains("<invalid"))
+                baseLabel += " <invalid: a pattern radius is dB — set dB20 (field) or dB10 (power)>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
             if (IsZ0ReReferenced) baseLabel += " @ Z0=" + ComplexStringHelper.Format(_z0) + "Ω";
             return baseLabel;
@@ -1666,15 +1743,17 @@ namespace CircuitRF.Render.DataDisplay
             _lastPlotType = plotType;
             RectValueInvalid = false;
             PatternAxisInvalid = false;
+            PatternValueInvalid = false;
             if (_cubeXValues is null) return;
 
             // A family of cuts — "pin freq, keep θ, iterate φ" — is the full-pattern trace of ANT-7
             // §3, and it draws through the same mapping one cut does.
             if (PatternScale is { } famScale && plotType == PlotType.Polar)
             {
-                if (!PolarPatternAngle.TryDegreesPerUnit(_cubeXAxisName, _cubeXUnit, out double famDpu))
+                if (!PolarPatternAngle.TryDegreesPerUnit(_cubeXAxisName, _cubeXUnit, out double famDpu)
+                    || !PatternValuesCanBeDb)
                 {
-                    PatternAxisInvalid = true;
+                    if (!PatternValuesCanBeDb) PatternValueInvalid = true; else PatternAxisInvalid = true;
                     foreach (var fc0 in FamilyCurves) fc0.Points.Clear();
                     return;
                 }
@@ -1740,6 +1819,7 @@ namespace CircuitRF.Render.DataDisplay
             Points.Clear();
             RectValueInvalid = false;
             PatternAxisInvalid = false;
+            PatternValueInvalid = false;
             ScalarOnNonTableInvalid = false;
             if (_cubeIsScalar)
             {
@@ -1765,6 +1845,10 @@ namespace CircuitRF.Render.DataDisplay
                 {
                     if (!PolarPatternAngle.TryDegreesPerUnit(_cubeXAxisName, _cubeXUnit, out double dpu))
                     { PatternAxisInvalid = true; return; }
+                    // The RADIUS is dB. A complex cube with no dB transform is its linear magnitude,
+                    // which on a peak-referenced scale pins every angle to the outer ring — a circle,
+                    // which is exactly what a very good antenna looks like.
+                    if (!PatternValuesCanBeDb) { PatternValueInvalid = true; return; }
 
                     for (int i = 0; i < n; i++)
                     {

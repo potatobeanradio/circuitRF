@@ -1118,6 +1118,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public void Notify() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
+    /// A trace's pattern branch was flipped to the negative side of broadside — see
+    /// <see cref="Trace.MirrorPatternAngle"/>. It moves POINTS, not framing, but it goes through
+    /// <see cref="ApplyRadialChange"/> anyway: the mirrored branch doubles the drawn extent about
+    /// the centre, and a window pinned to one quadrant would clip the half that just appeared.
+    /// </summary>
+    public void OnTracePatternMirrorChanged() => ApplyRadialChange();
+
+    /// <summary>
     /// Forcibly re-frames the plot to the current data and redraws — called after a loadpull contour's
     /// frequency changed, so the Rect x/y axes snap to the new frequency's RecommendedBox (MXP/MXE region).
     /// Uses <c>force: true</c> like <c>AddContourTrace</c>, because a contour plot keeps autoscale off for

@@ -187,6 +187,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         //  own plot, which on every other kind is the move/select gesture — a 3D view whose rotate
         //  needs a modifier is a 3D view nobody turns, and there is no axis window here for the
         //  move/select conflict of Axes.LockedPanning to be about.
+        //
+        //  THAT REASONING WAS HALF RIGHT AND COST THE PLOT ITS SELECTION (owner report, 2026-09-11:
+        //  a 3D plot could not be selected). There is indeed no axis window — but the container's
+        //  SELECT gesture is on the same left press, and marking the press handled meant
+        //  PlotContainerView never armed and its release never selected. Selection is not a drag:
+        //  it is decided by a press that does NOT move, so the two can share the gesture. The press
+        //  selects through the container's own commands — the same RequestSelectOnly /
+        //  RequestToggleSelect the container calls, not a second selection path — and THEN takes
+        //  the rotate drag.
         private bool           _surfaceRotating;
         private Point          _surfaceRotateStart;
         private PatternCamera  _surfaceRotateFrom;
@@ -910,6 +919,16 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             {
                 if (props.IsLeftButtonPressed)
                 {
+                    // Select FIRST, on the container's own commands, because this press will not
+                    // reach PlotContainerView — see the note beside _surfaceRotating.
+                    if (ContainerProvider?.Invoke() is { } surfaceContainer)
+                    {
+                        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)
+                            || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+                            surfaceContainer.RequestToggleSelect();
+                        else
+                            surfaceContainer.RequestSelectOnly();
+                    }
                     _surfaceRotating    = true;
                     _surfaceRotateStart = _dragStartScreen;
                     _surfaceRotateFrom  = _plot.SurfaceCamera;

@@ -251,7 +251,7 @@ public sealed record PlanarPolarizationPattern(
             foreach (double want in new[] { Reference.PhiDeg, Reference.PhiDeg + 90.0 })
             {
                 double target = ((want % 360.0) + 360.0) % 360.0;
-                int ip = PlanarMetrics.Nearest(Grid.PhiDeg, target);
+                int ip = PlanarMetrics.NearestAzimuth(Grid.PhiDeg, target);
                 if (Math.Abs(Delta(Grid.PhiDeg[ip], target)) > tol) return double.NaN;
                 for (int it = 0; it < Grid.ThetaDeg.Count; it++)
                     worst = Math.Max(worst, CrossPolDb[Grid.IndexOf(it, ip)]);

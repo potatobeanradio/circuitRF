@@ -157,6 +157,41 @@ public sealed class PlotPanLockDefaultTests
         Assert.Contains("if (wasLeftDrag &&", body);
     }
 
+    /// <summary>
+    /// <b>A 3D surface plot is SELECTABLE, and the press that selects it is the same one that starts
+    /// the rotate.</b>
+    ///
+    /// <para>Owner report, 2026-09-11: a 3D plot could not be selected. The surface branch of
+    /// <c>OnPointerPressed</c> takes the left press for its rotate drag and marks it handled, so it
+    /// never reached <c>PlotContainerView</c> and the container's own click-to-select never armed.
+    /// Selection is not a drag — it is decided by a press that does not move — so the two share the
+    /// gesture: the press selects through the container's OWN commands and then takes the rotate.
+    /// </para>
+    ///
+    /// <para>The commands are the container's rather than a second selection path, which is what
+    /// makes Ctrl/Cmd-click toggle here exactly as it does on every other plot type.</para>
+    /// </summary>
+    [Fact]
+    public void PlotControl_ASurfacePress_SelectsTheContainerBeforeTakingTheRotate()
+    {
+        string code = StripComments(File.ReadAllText(SourceFile("src/Ui/DataDisplay/Controls/PlotControl.cs")));
+
+        int at = code.IndexOf("if (_plot.PlotType == PlotType.Surface3D)", StringComparison.Ordinal);
+        Assert.True(at >= 0, "the surface branch of OnPointerPressed was not found");
+        string body = code.Substring(at, Math.Min(1200, code.Length - at));
+
+        Assert.Contains("RequestSelectOnly()",   body);
+        Assert.Contains("RequestToggleSelect()", body);
+        Assert.Contains("_surfaceRotating", body);
+
+        // Selecting must come BEFORE the rotate is armed and the press is swallowed — after the
+        // return there is nothing left to select from.
+        int select = body.IndexOf("RequestSelectOnly()", StringComparison.Ordinal);
+        int rotate = body.IndexOf("_surfaceRotating    = true;", StringComparison.Ordinal);
+        Assert.True(rotate > 0 && select < rotate,
+                    "the container must be selected before the rotate drag is armed");
+    }
+
     /// <summary>The two thresholds answer the same question about the same gesture and must agree,
     /// or a plot's click-to-select would need a different amount of stillness than the one beside
     /// it.</summary>

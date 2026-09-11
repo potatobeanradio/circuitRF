@@ -816,6 +816,44 @@ public class PlanarMetricsTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     /// <summary>
+    /// <b>A cut a hair BELOW 360° snaps to the 0° gridline, and the beamwidth is published.</b>
+    ///
+    /// <para>Measured on an imported 1.74 GHz inset-fed patch, 2026-09-10, and it refused there. The
+    /// cut axis is DERIVED from the current moment, a patch fed along x puts that axis at 0° or 180°,
+    /// and round-off decides which side of the seam it lands on — 179.99° on that board, whose front
+    /// half is 359.99°. The snap used a LINEAR distance and chose 359° over 0°; the tolerance three
+    /// lines later measures the miss with a WRAPPED delta and rejected it as 0.989° off a 0.5°
+    /// tolerance. So <c>BeamwidthDeg</c> was not published at all, on a coin flip, on the commonest
+    /// antenna this kernel has. Neither the grid nor the tolerance was ever at fault.</para>
+    ///
+    /// <para>The 0.01° either side of the seam are ONE plane and must both be published, so the test
+    /// asserts the pair agrees rather than only that neither refuses.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(359.99, 0.0)]
+    [InlineData(0.01, 0.0)]
+    [InlineData(179.99, 180.0)]
+    public void ACutAcrossTheAzimuthSeam_SnapsToTheNearestGridline(double want, double expectSnap)
+    {
+        var grid = PlanarFarFieldGrid.Hemisphere(5, 1);
+        var mc = HandContext(
+            HandPattern(grid, (t, _) => Math.Pow(Math.Cos(t * Math.PI / 180), 8)),
+            settings: new PlanarMetricSettings([want]));
+
+        Assert.True(mc.Cuts.Verdict.Ok, mc.Cuts.Verdict.Reason);
+        Assert.Equal(expectSnap, Assert.Single(mc.Cuts.Cuts).PhiDeg);
+
+        // The seam is not a boundary in the physics: 359.99° and 0.01° name one plane.
+        var mirror = HandContext(
+            HandPattern(grid, (t, _) => Math.Pow(Math.Cos(t * Math.PI / 180), 8)),
+            settings: new PlanarMetricSettings([(want + 180.0) % 360.0]));
+        Assert.True(mirror.Cuts.Verdict.Ok, mirror.Cuts.Verdict.Reason);
+        Assert.Equal(mc.Cuts.Cuts[0].BeamwidthDeg, mirror.Cuts.Cuts[0].BeamwidthDeg, 9);
+        _out.WriteLine($"φ = {want}° snapped to {mc.Cuts.Cuts[0].PhiDeg}°, " +
+                       $"beamwidth {mc.Cuts.Cuts[0].BeamwidthDeg:F2}°");
+    }
+
+    /// <summary>
     /// <b>ANT-12 — the derived fold is NOT taken against a broadside peak's azimuth.</b> At θ_peak = 0
     /// every azimuth names the same direction, which is why <c>DirectivityPeakPhiDeg</c> refuses there;
     /// folding the current axis against that azimuth made the reported plane a function of which grid

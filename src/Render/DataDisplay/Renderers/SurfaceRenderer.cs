@@ -149,16 +149,21 @@ public static class SurfaceRenderer
 
         bool fromAbove = cam.ElevationDeg >= 0;
 
-        if (plot.SurfaceShowGroundDisc && fromAbove) DrawGroundDisc(canvas, cam, P, s, lw, theme);
-        if (plot.SurfaceShowAxes)                     DrawSceneAxes  (canvas, cam, P, lw, theme);
+        // The disc and the axes are the SURFACE's frame of reference, so with no surface they are
+        // furniture around an empty scene — and the refusal drawn below lands on top of them, which
+        // is how a sentence that must be read ends up struck through by an axis arm.
+        bool scene = grid is not null;
+
+        if (scene && plot.SurfaceShowGroundDisc && fromAbove) DrawGroundDisc(canvas, cam, P, s, lw, theme);
+        if (scene && plot.SurfaceShowAxes)                     DrawSceneAxes  (canvas, cam, P, lw, theme);
 
         DrawFacets(canvas, facets, P, scale, plot.SurfaceColorMap);
 
-        if (plot.SurfaceShowGroundDisc && !fromAbove) DrawGroundDisc(canvas, cam, P, s, lw, theme);
+        if (scene && plot.SurfaceShowGroundDisc && !fromAbove) DrawGroundDisc(canvas, cam, P, s, lw, theme);
 
         // The letters go on last, whatever they sit over. An axis arm disappearing behind a lobe is
         // correct and readable; a LETTER half behind one is neither.
-        if (plot.SurfaceShowAxes && baseSize >= 4f)
+        if (scene && plot.SurfaceShowAxes && baseSize >= 4f)
             DrawAxisLabels(canvas, cam, P, baseSize, theme);
 
         // ---- Colour bar, trace labels, captions -----------------------

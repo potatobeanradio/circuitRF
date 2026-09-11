@@ -92,6 +92,27 @@ public static class SurfaceResolve
         var real    = sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null;
         if (complex is null && real is null) { t.ExpressionError = NotAPatternRefusal; return; }
 
+        // ── THE RADIUS IS IN DECIBELS, SO THE VALUES MUST BE (2026-09-11) ─────────────────────
+        //
+        //  Reported: Etheta on a surface drew a uniform pink hemisphere. It is complex, and with no
+        //  transform RectY returns the LINEAR magnitude — ~0.01 V on a real patch — which against a
+        //  peak reference spans 0.01 "dB" and puts every direction on the outer radius in the top
+        //  colour. A hemisphere is not an error shape; it is what an isotropic radiator over a
+        //  ground plane looks like, so nothing in the picture could have told anyone.
+        //
+        //  The kind is recorded before the values are flattened to double, because after that line
+        //  the trace cannot tell a complex cube from a real one.
+        t.SurfaceComplexSource = complex is not null;
+        if (!t.PatternValuesCanBeDb)
+        {
+            t.ExpressionError = Trace.PatternValueRefusal;
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
+            t.SurfaceGrid     = null;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            return;
+        }
+
         // The VALUE goes through the trace's own transform — the same RectY a rect cut and a polar
         // cut read, so `db10(U)` means one thing on all three and a surface can never be a different
         // quantity from the cut beside it.

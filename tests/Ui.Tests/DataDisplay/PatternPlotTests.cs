@@ -13,7 +13,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Text.Json;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using RfCore;
 using RfCore.Data;
 using Xunit;
@@ -92,6 +94,169 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
         ], values));
         return ds;
     }
+
+    /// <summary>
+    /// <b>A cut is a PLANE, so the plot draws BOTH branches and the back one is the &#966; + 180&#176;
+    /// slice drawn at &#8722;angle.</b>
+    ///
+    /// <para>Measured on an imported 1.74 GHz patch, 2026-09-10: a polar cut drew a QUARTER of the
+    /// disc. <c>PlanarBeamwidth</c> has defined a cut as both azimuths since ANT-5 — it refuses when
+    /// the grid carries only one of them — so a beamwidth read off the picture was half the one the
+    /// metric published, and ANT-7 §4 had already written its own hemisphere note for "a polar plot
+    /// occupying a half-disc".</para>
+    ///
+    /// <para><b>The mirror is on the ANGLE and never on the value</b>, which is what this asserts:
+    /// the back branch's radii are its OWN data against the plot's shared reference, and only the
+    /// sign of x separates the two point sets on a symmetric fixture.</para>
+    /// </summary>
+    [Fact]
+    public void TheBackBranchOfACut_DrawsAtNegativeAngle_AndKeepsItsOwnRadius()
+    {
+        var ds    = PatternFixture.Data;
+        var front = Resolve(ds, $"db10({U}[0, :, 0, 1])", PlotType.Polar);   // phi = 0
+        var back  = Resolve(ds, $"db10({U}[0, :, 4, 1])", PlotType.Polar);   // phi = 180
+        back.MirrorPatternAngle = true;
+
+        // The SAME slice again, unmirrored, so the assertion is "this is that reflected" and not a
+        // second derivation of where the points ought to be.
+        var unmirrored = Resolve(ds, $"db10({U}[0, :, 4, 1])", PlotType.Polar);
+        var plot = PatternPlot([front, back, unmirrored]);
+
+        Assert.NotEmpty(back.Points);
+        Assert.Equal(unmirrored.Points.Count, back.Points.Count);
+        for (int i = 0; i < back.Points.Count; i++)
+        {
+            Assert.Equal(-unmirrored.Points[i].X, back.Points[i].X, 5);   // angle negated
+            Assert.Equal(unmirrored.Points[i].Y, back.Points[i].Y, 5);   // radius untouched
+            Assert.Equal(Radius(unmirrored, i), Radius(back, i), 5);
+        }
+
+        // Broadside is on the axis, so the two branches MEET there rather than leaving a gap.
+        Assert.Equal(front.Points[0].X, back.Points[0].X, 4);
+
+        // And the caption says which half is which, rather than leaving "theta 0...90" over a
+        // half-disc for the reader to reconcile. It is its OWN line, because the caption is drawn
+        // unwrapped and folding it into the hemisphere sentence overran the plot.
+        // The caption and the strips are asserted on the PAIR a real cut is — the control trace
+        // above is a third trace nothing authors, and it would make the strip count its own.
+        var pair = PatternPlot(
+        [
+            Resolve(ds, $"db10({U}[0, :, 0, 1])", PlotType.Polar),
+            Mirrored(Resolve(ds, $"db10({U}[0, :, 4, 1])", PlotType.Polar)),
+        ]);
+
+        var caption = PatternCaption.Lines(pair);
+        Assert.Contains(caption, l => l.Contains("φ + 180° branch"));
+        Assert.Contains(caption, l => l.Contains("lower hemisphere is not modelled"));
+        Assert.All(caption, l => Assert.True(l.Length <= 160, $"too long to draw unclipped: {l}"));
+
+        // The back branch is one curve with its front half, so it does NOT name the axis a second
+        // time — the strip printed "farfield.U" twice before this.
+        var (left, right) = PlotLabelStrips.For(pair, showFilePrefix: false);
+        Assert.Single(left);
+        Assert.Empty(right);
+
+        foreach (string l in caption) output.WriteLine(l);
+    }
+
+    /// <summary>
+    /// <b>With no back branch the caption is the one ANT-7 shipped</b>, so this change is invisible
+    /// to every plot that does not use it — including every <c>.cdd</c> written before it, whose
+    /// <c>MirrorPatternAngle</c> is absent and therefore false.
+    /// </summary>
+    [Fact]
+    public void OneBranchAlone_KeepsANT7sOwnCaption()
+    {
+        var plot = PatternPlot([Resolve(PatternFixture.Data, $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
+        var caption = PatternCaption.Lines(plot);
+        Assert.DoesNotContain(caption, l => l.Contains("φ + 180"));
+        string note = Assert.Single(caption, l => l.Contains("θ"));
+        Assert.StartsWith("θ 0…90°", note);
+        output.WriteLine(note);
+    }
+
+    /// <summary>
+    /// <b>The WINDOW'S OWN SAVE carries the back-branch flag.</b>
+    ///
+    /// <para>Caught while building it, and it is the failure that would have been worst: the
+    /// renderer reads <c>TraceConfig.MirrorPatternAngle</c>, so a <c>.cdd</c> written by
+    /// <c>Cli plot</c> draws the whole plane in the window — and
+    /// <c>DataDisplayViewModel.BuildTraceConfig</c> did not write the field back, so the first SAVE
+    /// silently returned the picture to a quarter-disc. A field the window can draw but not save is
+    /// worse than one it cannot draw at all, because nothing about the moment it is lost is
+    /// visible.</para>
+    ///
+    /// <para>Asserted through <c>BuildTraceConfig</c> and <c>PlotConfigLoader</c>, which are the two
+    /// halves the application actually runs — a hand-copied pair of fields would agree with itself
+    /// and prove nothing.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheWindowsOwnSave_RoundTripsTheBackBranchFlag(bool mirrored)
+    {
+        var trace = Resolve(PatternFixture.Data, $"db10({U}[0, :, 4, 1])", PlotType.Polar);
+        trace.MirrorPatternAngle = mirrored;
+
+        var tc = DataDisplayViewModel.BuildTraceConfig(trace, configDir: ".");
+        Assert.Equal(mirrored, tc.MirrorPatternAngle);
+
+        // And back out through the loader's own JSON, so an omitted field is exercised too.
+        var round = JsonSerializer.Deserialize<TraceConfig>(
+            JsonSerializer.Serialize(tc, DataDisplayJson.Options), DataDisplayJson.Options)!;
+        Assert.Equal(mirrored, round.MirrorPatternAngle);
+        output.WriteLine($"mirrored={mirrored} survived the window's save");
+    }
+
+    /// <summary>
+    /// <b>A PATTERN RADIUS IS DECIBELS, and a complex cube with no dB transform is refused rather
+    /// than drawn.</b>
+    ///
+    /// <para>Owner report, 2026-09-11: <c>Etheta</c> on a 3D surface drew a uniform pink hemisphere.
+    /// With no transform <c>RectY</c> returns the LINEAR magnitude — volts — and against a peak
+    /// reference that spans a hundredth of a dB, so every direction sits on the outer radius in the
+    /// top colour. <b>A hemisphere is not an error shape</b>: it is what an isotropic radiator over a
+    /// ground plane looks like, so nothing in the picture could have said otherwise.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("farfield.Etheta")]
+    [InlineData("farfield.Ephi")]
+    public void AComplexPatternCubeWithNoDbTransform_IsRefused_NotDrawnAsAHemisphere(string cube)
+    {
+        var ds = PatternFixture.Data;
+
+        var bare = Resolve(ds, $"{cube}[0, :, 0, 1]", PlotType.Polar);
+        PatternPlot([bare]);
+        Assert.True(bare.PatternValueInvalid, "a linear magnitude was accepted as dB");
+        Assert.Empty(bare.Points);
+        Assert.Contains("<invalid", bare.RectYLabel("U", dimensionMismatch: false));
+
+        // db20 is the spelling that answers it, and the refusal names it.
+        var db20 = Resolve(ds, $"db20({cube}[0, :, 0, 1])", PlotType.Polar);
+        PatternPlot([db20]);
+        Assert.False(db20.PatternValueInvalid);
+        Assert.NotEmpty(db20.Points);
+        output.WriteLine(Trace.PatternValueRefusal);
+    }
+
+    /// <summary>
+    /// <b>A REAL cube with no transform is still drawn</b>, and that is the deliberate half of the
+    /// rule rather than an oversight: it is how an already-dB cube (<c>GainDbi</c>,
+    /// <c>CoPolLudwig3Db</c>) is legitimately plotted, and nothing on the cube says whether it is dB
+    /// — ANT-7 §8 records the missing unit. So a linear real cube is still drawable and still wrong;
+    /// only the case the plot can PROVE is refused.
+    /// </summary>
+    [Fact]
+    public void ARealPatternCubeWithNoTransform_IsStillDrawn()
+    {
+        var t = Resolve(PatternFixture.Data, $"{U}[0, :, 0, 1]", PlotType.Polar);
+        PatternPlot([t]);
+        Assert.False(t.PatternValueInvalid);
+        Assert.NotEmpty(t.Points);
+    }
+
+    /// <summary>The same trace, flagged as the back half of its cut.</summary>
+    private static Trace Mirrored(Trace t) { t.MirrorPatternAngle = true; return t; }
 
     private static double Radius(Trace t, int i) =>
         Math.Sqrt(t.Points[i].X * t.Points[i].X + t.Points[i].Y * t.Points[i].Y);
@@ -386,8 +551,8 @@ public sealed class PatternPlotTests(ITestOutputHelper output)
         var both = PatternPlot([Resolve(HandPattern(_ => 1.0, thetaDeg: full, thetaMax: 180),
                                         $"db10({U}[0, :, 0, 1])", PlotType.Polar)]);
 
-        string upperNote = Assert.Single(PatternCaption.Lines(upper).Where(l => l.Contains("θ ")));
-        string bothNote  = Assert.Single(PatternCaption.Lines(both).Where(l => l.Contains("θ ")));
+        string upperNote = Assert.Single(PatternCaption.Lines(upper), l => l.Contains("θ "));
+        string bothNote  = Assert.Single(PatternCaption.Lines(both),  l => l.Contains("θ "));
 
         Assert.Contains("θ 0…90°", upperNote);
         Assert.Contains("lower hemisphere is not modelled", upperNote);
