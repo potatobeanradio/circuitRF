@@ -180,6 +180,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         // ============================================================
 
         private PlotDetail  _renderDetail        = PlotDetail.Full;
+
+        // ---- ANT-10: the 3D pattern surface's own gesture state ----------
+        //
+        //  Three things and no more (§3): rotate, zoom, reset. The surface owns the LEFT DRAG on its
+        //  own plot, which on every other kind is the move/select gesture — a 3D view whose rotate
+        //  needs a modifier is a 3D view nobody turns, and there is no axis window here for the
+        //  move/select conflict of Axes.LockedPanning to be about.
+        private bool           _surfaceRotating;
+        private Point          _surfaceRotateStart;
+        private PatternCamera  _surfaceRotateFrom;
+        private PatternCamera  _surfaceUndoCamera;
         private bool        _isDragging;
         private bool        _isDraggingSecondary;
         private Point       _dragStartScreen;
@@ -228,6 +239,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         // Inspector flyout state
         private Flyout?                  _inspectorFlyout;
         private PlotInspectorViewModel?  _inspectorVm;
+
+        /// <summary>
+        /// Tells the inspector the camera moved, so its four named-view buttons stop showing
+        /// themselves as active the moment a drag or a wheel leaves the view they name. The
+        /// CONTAINER's inspector, not <see cref="_inspectorVm"/> — that one is only set when the
+        /// flyout has been opened, and the Properties pane's inspector is the one usually on screen.
+        /// </summary>
+        private void NotifySurfaceCamera()
+        {
+            (ContainerProvider?.Invoke()?.Inspector ?? _inspectorVm)?.NotifySurfaceCameraChanged();
+        }
         private PlotInspectorView?       _inspectorView;
         private Control?                 _inspectorFlyoutAnchor;
         // When true, a color-picker dialog is open; the flyout Closed handler re-shows instead of cleaning up.
@@ -883,6 +905,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var props = e.GetCurrentPoint(this).Properties;
             _dragStartScreen = e.GetPosition(this);
 
+            // ---- ANT-10: rotate the 3D pattern surface ----
+            if (_plot.PlotType == PlotType.Surface3D)
+            {
+                if (props.IsLeftButtonPressed)
+                {
+                    _surfaceRotating    = true;
+                    _surfaceRotateStart = _dragStartScreen;
+                    _surfaceRotateFrom  = _plot.SurfaceCamera;
+                    _surfaceUndoCamera  = _plot.SurfaceCamera;
+                    // The frame budget of §6: the full grid is 63,000 triangles at 1° x 1° and
+                    // 18 fps, the decimated one is 4,050 and well past 200. Restored on release.
+                    _renderDetail       = PlotDetail.Quick;
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                }
+                return;
+            }
+
             // ---- Table view interaction ----
             if (_plot.PlotType == PlotType.Table)
             {
@@ -1064,6 +1104,23 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             var current = e.GetPosition(this);
 
+            // ---- ANT-10: the rotate drag ----
+            if (_surfaceRotating && _plot.PlotType == PlotType.Surface3D)
+            {
+                // A full sweep of the plot's shorter side is half a turn, which is the rate that
+                // makes a drag feel like turning the OBJECT rather than flying a camera. Azimuth is
+                // NEGATED for the same reason: dragging right must turn the near face toward the
+                // right, which is the opposite of moving the eye that way.
+                double span = Math.Max(1.0, Math.Min(Bounds.Width, Bounds.Height));
+                double dAz  = -(current.X - _surfaceRotateStart.X) / span * 180.0;
+                double dEl  =  (current.Y - _surfaceRotateStart.Y) / span * 180.0;
+
+                _plot.SurfaceCamera = _surfaceRotateFrom.RotatedBy(dAz, dEl);
+                e.Handled = true;
+                InvalidateVisual();
+                return;
+            }
+
             // ---- Table column resize drag ----
             if (_tableColResizeDragging)
             {
@@ -1218,6 +1275,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            // ---- ANT-10: the rotate drag ends, and the FULL grid comes back ----
+            if (_surfaceRotating)
+            {
+                _surfaceRotating = false;
+                _renderDetail    = PlotDetail.Full;
+                e.Pointer.Capture(null);
+                NotifySurfaceCamera();
+                InvalidateVisual();
+                if (!_surfaceUndoCamera.Equals(_plot?.SurfaceCamera)) PlotChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
             // ---- Table column resize end ----
             if (_tableColResizeDragging)
             {
@@ -1349,6 +1418,25 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
         {
             if (_plot is null) return;
+
+            // ---- ANT-10: the wheel is the surface's zoom, plain, with no modifier ----
+            //
+            //  Plain rather than Ctrl+scroll, because a 3D view's wheel is universally its zoom and
+            //  the axis-window zoom this handler otherwise performs has nothing to act on here. At
+            //  the clamp the event is left UNHANDLED so the canvas can take it, which is what stops
+            //  a fully zoomed-out surface from swallowing every scroll over it.
+            if (_plot.PlotType == PlotType.Surface3D)
+            {
+                var before = _plot.SurfaceCamera;
+                var after  = before.ZoomedBy(e.Delta.Y > 0 ? 1.12 : 1 / 1.12);
+                if (after.Equals(before)) return;
+                _plot.SurfaceCamera = after;
+                e.Handled = true;
+                NotifySurfaceCamera();
+                InvalidateVisual();
+                PlotChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
 
             // Table plots: plain scroll moves rows; no Ctrl required.
             // If the table fits entirely on screen (can't scroll), let the event bubble for zoom.

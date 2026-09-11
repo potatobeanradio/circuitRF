@@ -957,6 +957,15 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public PolarPatternScale? PatternScale { get; set; }
 
+        /// <summary>
+        /// <b>ANT-10 — this trace's pattern over two angle axes</b>, filled by
+        /// <see cref="SurfaceResolve"/> when the parent plot is a <see cref="PlotType.Surface3D"/>
+        /// and null on every other plot kind. Values are in the trace's own displayed dB quantity,
+        /// through the same <see cref="RectY"/> a cut reads, so the surface and the cut beside it
+        /// can never be two different quantities.
+        /// </summary>
+        public PatternSurfaceGrid? SurfaceGrid { get; set; }
+
         /// <summary>True when the last build was on a pattern plot and this trace's X axis is not an
         /// ANGLE — a frequency sweep on a compass. Surfaces as "&lt;invalid&gt;" on the label rather
         /// than as a plausible shape, exactly as <see cref="RectValueInvalid"/> does.</summary>
@@ -1005,6 +1014,17 @@ namespace CircuitRF.Render.DataDisplay
         /// reference can never be taken of a different number than the one drawn.</summary>
         private IEnumerable<double> PatternDbValues()
         {
+            // ANT-10: a surface's samples ARE its grid, and they are already through RectY. Read
+            // first, because the same trace can carry a stale rank-1 gather from the plot kind it
+            // was on before — and a normalised reference taken from the cut rather than the surface
+            // would put the peak of the surface somewhere other than the outer ring.
+            if (SurfaceGrid is { } g)
+            {
+                foreach (double v in g.Db)
+                    if (double.IsFinite(v)) yield return v;
+                yield break;
+            }
+
             if (FamilyCurves.Count > 0)
             {
                 foreach (var fc in FamilyCurves)
@@ -1364,6 +1384,7 @@ namespace CircuitRF.Render.DataDisplay
             _cubeXLabels       = src._cubeXLabels;
             CubeValueUnit      = src.CubeValueUnit;
             PatternScale       = src.PatternScale;
+            SurfaceGrid        = src.SurfaceGrid;
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
@@ -1392,6 +1413,11 @@ namespace CircuitRF.Render.DataDisplay
 
         public void BuildPath(PlotType plotType, FreqUnit freqUnit)
         {
+            // ANT-10: the grid belongs to the 3D plot and to nothing else. Dropped on the way to any
+            // other kind, so a trace switched away and back cannot draw a surface resolved against a
+            // slice the author has since changed — the same clear-first contract the cube gather has.
+            if (plotType != PlotType.Surface3D) SurfaceGrid = null;
+
             if      (IsFamily)    BuildFamilyPath(plotType, freqUnit);
             else if (IsCubeBound) BuildCubePath(plotType, freqUnit);
             else if (IsDerived)   BuildDerivedPath(plotType, freqUnit);
@@ -1562,7 +1588,7 @@ namespace CircuitRF.Render.DataDisplay
         private static bool IsFreqUnit(string? unit) => unit is "Hz" or "kHz" or "MHz" or "GHz";
 
         // Rect scalar Y from one sample (null → skip point).
-        private double? RectY(Complex? cz, double? rv)
+        internal double? RectY(Complex? cz, double? rv)
         {
             if (cz is Complex z)
             {

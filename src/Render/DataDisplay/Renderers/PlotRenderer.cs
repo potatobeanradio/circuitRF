@@ -188,6 +188,18 @@ namespace CircuitRF.Render.DataDisplay
             Func<Trace, string?>? aliasFor        = null,
             bool?                 alwaysShowSource = null)
         {
+            // ANT-10: the 3D pattern surface has no world window, so it leaves BEFORE
+            // BuildTransforms — the same seam, and for the same reason, as the Table above it
+            // (brief-antenna-10-pattern-3d.md §2: every plot-kind seam here is an early return or an
+            // additive switch case, never a two-armed if).
+            if (plot.PlotType == PlotType.Surface3D)
+            {
+                SurfaceRenderer.Draw(canvas, canvasSize, plot, detail, theme,
+                    aliasFor:         aliasFor,
+                    alwaysShowSource: alwaysShowSource);
+                return;
+            }
+
             if (plot.PlotType == PlotType.Table)
             {
                 TableRenderer.Draw(canvas, canvasSize, plot, theme,

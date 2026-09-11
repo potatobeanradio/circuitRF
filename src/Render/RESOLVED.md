@@ -1,5 +1,169 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## ANT-10, 2026-09-10 — the 3D pattern viewer
+
+`brief-antenna-10-pattern-3d.md`. A surface r(θ, φ) = the pattern in dB above a floor, over the upper
+hemisphere, coloured by the same value, rotatable. Five files: `PatternSurface.cs` (the camera, the
+named views, the grid, the mesh), `SurfaceResolve.cs` (cube → grid), `Renderers/SurfaceRenderer.cs`
+(the canvas), plus the `PlotType` member and the CLI/inspector spellings.
+
+### §2's gate — `PlotType`, not a new document kind, and the reason is `Table`
+
+The brief asked for this to be answered **from the code and reported before the surface was built**,
+because "`PlotType` today means *2D axes* throughout" and a fourth kind might need an `IsPlanar`-style
+predicate threaded through a dozen call sites.
+
+It does not, and **`PlotType.Table` is why**: it has no x axis, no y axis and no `Axes.Window` in the
+sense the other three use one, and it has worked that way since long before this brief asked the
+question. Every seam a plot kind passes through is an **early return or an additive `switch` case**,
+never a two-armed `if` needing a third arm:
+
+| seam | what `Table` does | what a 4th kind costs |
+|---|---|---|
+| `PlotRenderer.Draw` | early `return` **before** `BuildTransforms` | one more early return |
+| `AxesRenderer` grid dispatch | `switch`, Table absent | one `case` |
+| `Plot.Autoscale` | `if (PlotType == Table) return;` | one more |
+| `Plot.SetAxesViewport` | `case PlotType.Table:` | one `case` |
+| `PlotCanvasGeometry`, `PlotLabelStrips` | guarded by `IsComplex()` → false | **nothing** |
+| `PlotTypeExtensions.IsRect` / `IsComplex` | both **positive** predicates over named members | **nothing** — a new member is false for both |
+| `PlotComposer`, `PlotExporter` | 1 branch each | 1 each |
+| `PlotControl` | 6 early-intercept blocks at the top of each handler | the same shape |
+
+**The `IsPlanar` predicate the brief feared already exists, in the form of the two existing predicates
+returning false.** `Table` costs 55 sites across `src`, the great majority of them booleans and
+labels (`IsTablePlot`, `"+ Summary"`), not structure.
+
+**One real trap, and it is the exception that proves the rule.** `Plot.SupportsComplex` is defined
+`=> PlotType != PlotType.Rect` — the one **negatively**-defined predicate, so a new member inherits
+`true` by accident. All twelve call sites are inside `Plot.cs`, in autoscale and window-sizing paths
+that the new kind exits before reaching (the `Autoscale` early return is what makes that true, so it
+is not luck — but it is the thing to route deliberately rather than inherit).
+
+### The family mechanism would have drawn 101 of 181 θ rows, silently
+
+A two-open-axis spec (`farfield.U[0, :, :, 1]`) already resolves today: the positional convention
+makes the earlier kept axis a curve FAMILY. So the grid the surface needs was reachable with no new
+resolve at all — and it was rejected, because **`Trace.MaxFamilyCurves` is 101** and ANT-11's 0…180°
+θ axis at 1° is **181**. A surface missing everything past θ = 101° is a smooth, plausible, wrong
+picture, which is the class of failure this whole series keeps refusing to draw.
+
+`SurfaceResolve` pulls a rank-2 slice directly instead, and **finds θ and φ by NAME** on ANT-7's own
+`PolarPatternAngle.TryDegreesPerUnit` test — the same rule the polar cut already applies to decide
+whether an axis can be an angle at all. Two consequences worth keeping: the positional convention
+never decides which of θ and φ is which, and a cube written `[phi, theta]` is read through the sliced
+result's own axis NAMES rather than by position, because assuming the order would draw a transposed
+surface of a different antenna.
+
+### Triangles, not quads, and the seam rules
+
+- **Two triangles per (θ, φ) cell.** A cell of a star-shaped surface is only *near*-planar, and a
+  non-planar quad filled as one path folds visibly wherever the pattern turns quickly — which is at a
+  null, the one feature the picture exists to show. Triangles also sort independently, which is what
+  makes §6's "a lobe behind the origin" case come out right.
+- **A hairline stroke in the FILL's own colour on every facet, and it is not decoration.** Two
+  antialiased triangles sharing an edge each cover about half of the boundary pixel, so the background
+  shows through between them as a lighter seam over the whole surface. The stroke closes it without
+  drawing a wireframe on top of the data.
+- **The φ seam closes on an OPEN axis and must not be closed again on a CLOSED one.** A grid sampled
+  0…350° in 10° steps wraps; one sampled 0…360° already carries the duplicate column. Both are legal
+  cubes, and the difference between them is a slit in one picture or a doubled seam drawn over itself
+  in the other. `PatternSurfaceGrid.PhiWraps` decides it from the axis rather than assuming.
+- **The degenerate triangles are real and are dropped, not drawn.** At θ = 0 every φ collapses to one
+  point; so does any row the dB floor clamps to radius 0. On the 1° dipole with a −30 dB floor that is
+  three θ rows, and dropping them accounts for exactly the 1,440 triangles by which the measured count
+  falls short of the arithmetic one — a useful check that nothing real is being dropped.
+- **Orthographic, and the basis is well conditioned at the poles.** `Right` does not depend on
+  elevation, so a broadside view is an ordinary case here rather than a gimbal lock to special-case.
+
+### The colour ramp default is NOT the contour renderer's own, and it was measured
+
+§7 forbids a third colour ramp; `ContourColorMap` and `ContourColormaps.Sample` are reused unchanged,
+so there is still one ramp family. **The DEFAULT could not be inherited.** A contour is drawn INSIDE
+a framed chart, so a ramp ending at white or at black is bounded by the axes whatever the theme — the
+contour's own default is `Bone`, black→white. A surface is not framed: it is a free shape on the page,
+and **a facet the colour of the background has no edge at all**. Rendered on both themes, the shipped
+`GistHeat` put a near-white peak on a white page and the surface almost vanished.
+
+Of the thirteen ramps exactly two — **`Cool` and `Winter`** — have neither end at white nor near-black.
+`Cool` is the default: its floor (cyan) is also bright enough to read on the dark theme, where
+`Winter`'s pure blue is dim. Every other ramp stays available, is persisted in the `.cdd`, and is
+reachable from `--color-map` and the inspector.
+
+*(Unrelated and pre-existing, found while checking this: `plot --variant dark` draws dark grid and
+text on a WHITE page. Every plot type does it, the polar plot included — it is the page background,
+not the theme reaching the renderer. Not touched here.)*
+
+### Frame cost, measured once (§6), and what the brief's own figure was
+
+Release, drawing alone, a scratch harness rather than a Benchmark test:
+
+| grid | triangles | full | decimated |
+|---|---|---|---|
+| 1° × 1° | 63,000 | 55.2 ms — **18 fps** | 4,050 tri, 4.4 ms — 225 fps |
+| 2° × 2° | 15,660 | 14.1 ms — 71 fps | (not decimated) |
+| 5° × 5° | 2,520 | 3.0 ms — 338 fps | (not decimated) |
+
+**The brief's "1° × 1° is 16,200 triangles" is about 4× low** — 16,200 is the QUAD count of a 90 × 180
+grid, i.e. 2° in azimuth. Over a full 360° at 1° it is 64,800 quads.
+
+So the decimation §6 asks for is genuinely needed, and it is wired to the `PlotDetail` parameter that
+`PlotRenderer.Draw` has always carried and that nothing had ever lowered: `PlotControl` sets `Quick`
+while the pointer is down and `Full` on release. **The stride is derived from the grid's own size, not
+from the detail level alone** — a 30° × 45° pattern is 8 cells and decimating it would turn a pattern
+into a triangle — and **both endpoints of both axes are always kept**, so the silhouette and the peak
+direction do not move between the two pictures. `Cli plot` and `Cli render` always draw the full grid.
+
+Cost is set by the triangle count and barely by the canvas: halving the canvas in each direction moved
+55.2 ms to 50.3 ms.
+
+### What is reused rather than restated
+
+- **The radius is ANT-7's.** `PolarPatternScale.Radius` maps dB to [0, 1] against the plot's own floor
+  and reference, clamping below the floor rather than dropping — so a null and a clipped value look
+  the same in 3D as they do on the cut, which is the point of not having a second scale.
+- **The value is the trace's own `RectY`.** One transform, so a surface and a polar cut of the same
+  trace can never be two different quantities.
+- **The captions are `PatternCaption.Lines`**, including §4's hemisphere note, which is built from the
+  cube's own axis and never written as a constant — hand it a 180° cube and the sentence changes and
+  the surface closes underneath, with nothing to edit when ANT-11 lands.
+- **The trace identity is `TraceLabeler.ComputeMinimalLabels`**, the label strip's own. A surface has
+  no label strips (`PlotLabelStrips` is `IsComplex()`-only), so the identity goes in the caption block
+  — which is also where it has to go for a second reason: the scene draws its own z axis at the top of
+  the plot box and a label placed there collides with the letter.
+
+### Two decisions that are deliberately literal
+
+- **The principal planes are named by their own φ, not "E-plane" and "H-plane".** Which cut is the
+  E-plane is a property of the antenna's polarization; the cube does not say it, ANT-6 computes it
+  separately and can disagree, and a view button naming the wrong plane is a caption that is
+  confidently wrong — worse than one that is merely literal.
+- **One surface per plot.** Two opaque surfaces in one scene occlude each other and neither can be
+  read; the comparison a user wants between two patterns is two cuts on one polar plot, which ANT-7
+  already draws. A second surface trace is left resolved and undrawn rather than refused, so switching
+  the plot back to Polar restores both curves.
+
+### The dB options are live on a surface with no `--radial`
+
+Found by the CLI gate. `--db-floor`/`--db-ring`/`--db-ref`/`--db-unit` were refused unless
+`--radial db` was given — but they set the pattern SCALE, and a surface has one by construction (its
+radius is dB above a floor and there is no linear reading of it to switch to). The rule is now "this
+plot has no pattern scale at all", and the inspector follows it: the dB controls show on a surface,
+the radial-MODE checkbox does not.
+
+### Gates
+
+`tests/Ui.Tests/DataDisplay/Pattern3DTests.cs` (13) — geometry, not pixels, all through the real
+projection: an isotropic hemisphere is the unit hemisphere to 10 digits under `Broadside` (where the
+basis makes X² + Y² + Depth² = x² + y² + z² a closed form, so it pins radius, direction, basis and
+zoom at once); a half-wave dipole peaks at the horizon, nulls at the zenith, is rotationally
+symmetric in its VALUES and projects onto exactly `ThetaCount` concentric rings; a lobe behind the
+origin is painted facet 21 of 862 at depth −0.864 and, with the camera turned 180°, facet 830 of 862
+at +0.835.
+
+`tests/Ui.Tests/Cli/Pattern3DCliTests.cs` (14) — `plot` and `render` byte-identical on all four named
+views and on an arbitrary rotation and zoom, both themes genuinely different pictures, three small
+panes, and the refusals.
+
 ## Owner report, 2026-09-08 — the Polar grid only ever looked right at unity
 
 `AxesRenderer.DrawPolarGrid` took its ring radii from `axes.Ticks(true).MinorX`. That tick set is

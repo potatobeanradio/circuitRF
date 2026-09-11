@@ -196,6 +196,16 @@
                     <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                 </Button>
 
+                <!-- ANT-10: the 3D pattern surface. LAST in the row, and the tooltip says what it is
+                     for, because the cuts beside it tell an engineer more about an antenna and this
+                     must not read as the better one. -->
+                <Button Classes="seg-btn"
+                        Classes.active="{Binding IsSurfacePlot}"
+                        Command="{Binding SetPlotTypeSurfaceCommand}"
+                        ToolTip.Tip="3D pattern — for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna.">
+                    <mi:MaterialIcon Kind="Sphere" Width="16" Height="16"/>
+                </Button>
+
                 <Button Classes="seg-btn"
                         Click="OnPlotTypeHelp"
                         Margin="8,0,0,0"
@@ -214,21 +224,25 @@
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Center"
                         Spacing="6"
-                        IsVisible="{Binding IsPolarPlot}">
+                        IsVisible="{Binding HasPatternScale}">
 
+                <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and
+                     has no linear reading to offer, so the checkbox is not shown for it. Everything
+                     after it is the SCALE, which both kinds have and both read the same way. -->
                 <CheckBox Content="dB radial"
                           IsChecked="{Binding PolarRadialIsDb, Mode=TwoWay}"
+                          IsVisible="{Binding IsPolarPlot}"
                           FontSize="11"
                           ToolTip.Tip="Read the radius in decibels — an antenna pattern"/>
 
                 <CheckBox Content="Normalise"
                           IsChecked="{Binding PolarDbNormalised, Mode=TwoWay}"
-                          IsVisible="{Binding IsPolarDbPlot}"
+                          IsVisible="{Binding HasPatternScale}"
                           FontSize="11"
                           ToolTip.Tip="Outer ring = the peak of every trace on this plot (0 dB). Unchecked, the outer ring is the absolute level beside it."/>
 
                 <NumericUpDown Value="{Binding PolarDbReferenceValue, Mode=TwoWay}"
-                               IsVisible="{Binding IsPolarDbPlot}"
+                               IsVisible="{Binding HasPatternScale}"
                                IsEnabled="{Binding PolarDbAbsolute}"
                                Minimum="-200" Maximum="200" Increment="1"
                                Width="72" Padding="5,3" FontSize="11"
@@ -236,28 +250,87 @@
                                ToolTip.Tip="Outer-ring level, absolute"/>
 
                 <TextBlock Text="Floor" Classes="label"
-                           IsVisible="{Binding IsPolarDbPlot}"/>
+                           IsVisible="{Binding HasPatternScale}"/>
                 <NumericUpDown Value="{Binding PolarDbFloor, Mode=TwoWay}"
-                               IsVisible="{Binding IsPolarDbPlot}"
+                               IsVisible="{Binding HasPatternScale}"
                                Minimum="-200" Maximum="-1" Increment="5"
                                Width="68" Padding="5,3" FontSize="11"
                                ShowButtonSpinner="False"
                                ToolTip.Tip="Decibels from the outer ring down to the centre"/>
 
                 <TextBlock Text="Rings" Classes="label"
-                           IsVisible="{Binding IsPolarDbPlot}"/>
+                           IsVisible="{Binding HasPatternScale}"/>
                 <NumericUpDown Value="{Binding PolarDbRingStep, Mode=TwoWay}"
-                               IsVisible="{Binding IsPolarDbPlot}"
+                               IsVisible="{Binding HasPatternScale}"
                                Minimum="0.5" Maximum="100" Increment="5"
                                Width="58" Padding="5,3" FontSize="11"
                                ShowButtonSpinner="False"
                                ToolTip.Tip="Ring spacing, dB"/>
 
                 <TextBox Text="{Binding PolarDbUnit, Mode=TwoWay}"
-                         IsVisible="{Binding IsPolarDbPlot}"
+                         IsVisible="{Binding HasPatternScale}"
                          Width="58" Padding="5,3" FontSize="11"
                          Watermark="dB"
                          ToolTip.Tip="Unit the radial numbers are in — dBi, dB(W/sr). Blank takes the cube's own."/>
+            </StackPanel>
+
+            <!-- ── §B Row 1c: the 3D view (ANT-10 §3) ──────────────────────
+                 Rotate and zoom are GESTURES on the plot itself (drag, wheel); what belongs here is
+                 the part a gesture answers badly — which way am I looking — plus the reset that
+                 undoes both. The two principal planes are named by their own φ: which of them is the
+                 E-plane is a property of the antenna's polarization and the cube does not say. -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="4"
+                        IsVisible="{Binding IsSurfacePlot}">
+
+                <Button Classes="seg-btn"
+                        Classes.active="{Binding SurfaceViewIsIso}"
+                        Command="{Binding SurfaceViewIsoCommand}"
+                        FontSize="11" Padding="8,3"
+                        Content="Iso"
+                        ToolTip.Tip="An oblique view, off both principal planes"/>
+
+                <Button Classes="seg-btn"
+                        Classes.active="{Binding SurfaceViewIsBroadside}"
+                        Command="{Binding SurfaceViewBroadsideCommand}"
+                        FontSize="11" Padding="8,3"
+                        Content="Broadside"
+                        ToolTip.Tip="Looking straight down the z axis at the zenith"/>
+
+                <Button Classes="seg-btn"
+                        Classes.active="{Binding SurfaceViewIsPhi0}"
+                        Command="{Binding SurfaceViewPhi0Command}"
+                        FontSize="11" Padding="8,3"
+                        Content="φ 0°"
+                        ToolTip.Tip="The φ = 0° / 180° plane in the screen"/>
+
+                <Button Classes="seg-btn"
+                        Classes.active="{Binding SurfaceViewIsPhi90}"
+                        Command="{Binding SurfaceViewPhi90Command}"
+                        FontSize="11" Padding="8,3"
+                        Content="φ 90°"
+                        ToolTip.Tip="The φ = 90° / 270° plane in the screen"/>
+
+                <Button Command="{Binding SurfaceResetCommand}"
+                        FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                        Content="Reset"
+                        ToolTip.Tip="Back to the isometric view at zoom 1"/>
+
+                <CheckBox Content="Axes"
+                          IsChecked="{Binding SurfaceShowAxes, Mode=TwoWay}"
+                          FontSize="11" Margin="6,0,0,0"
+                          ToolTip.Tip="Draw x, y and z in the scene, on the layout's own orientation"/>
+
+                <CheckBox Content="Ground"
+                          IsChecked="{Binding SurfaceShowGroundDisc, Mode=TwoWay}"
+                          FontSize="11"
+                          ToolTip.Tip="The ground plane at θ = 90° — the horizon, and the statement that nothing is modelled below it"/>
+
+                <ComboBox ItemsSource="{Binding SurfaceColorMaps}"
+                          SelectedItem="{Binding SurfaceColorMap, Mode=TwoWay}"
+                          Width="96" Padding="5,3" FontSize="11"
+                          ToolTip.Tip="Colour ramp — the contour plot's own set"/>
             </StackPanel>
 
             <!-- ── §B Row 2: + Trace (left) / Freq + Font Size (right) ─── -->

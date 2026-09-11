@@ -394,8 +394,11 @@ public partial class PlotContainerViewModel : ViewModelBase
         {
             SyncTableWidth();
         }
-        else if (plotType == PlotType.Rect && typeChanged)
+        else if ((plotType == PlotType.Rect || plotType == PlotType.Surface3D) && typeChanged)
         {
+            // ANT-10's surface takes the rectangular aspect rather than the square one: the scene is
+            // square but the colour bar beside it and the caption block under it are not, and a
+            // square box gives the scene the smaller half of it.
             double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
             if (ratio > 0) ResizeTo(Width, Width / ratio);
         }

@@ -266,22 +266,36 @@ public static class PatternCaption
     /// </summary>
     public static IReadOnlyList<string> Lines(Plot plot)
     {
-        if (plot is null || !plot.IsPolarPattern || plot.PatternScale is not { } scale)
+        if (plot is null || !plot.IsPatternPlot || plot.PatternScale is not { } scale)
             return Array.Empty<string>();
+
+        bool surface = plot.PlotType == PlotType.Surface3D;
 
         var lines = new List<string>(3)
         {
-            // §6: "Do not draw an unlabelled normalised pattern." This line is why.
-            scale.ReferenceCaption() + "  ·  0° at top, clockwise",
+            // §6: "Do not draw an unlabelled normalised pattern." This line is why. The orientation
+            // half differs by kind: the polar cut's compass is fixed, and the surface's orientation
+            // is whatever the camera is, which the scene's own drawn axes state.
+            scale.ReferenceCaption() + (surface
+                ? "  ·  radius = level above the floor"
+                : "  ·  0° at top, clockwise"),
         };
 
         // The hemisphere statement, per DISTINCT θ range present — normally one. Built from the
-        // axis, so ANT-11's extension to 180° changes it with no edit here.
+        // axis, so ANT-11's extension to 180° changes it with no edit here — and ANT-10 §4 asks for
+        // the SAME sentence, from the same place, for the same reason: a hemisphere floating above a
+        // plane reads as a complete, very good antenna unless the view says otherwise.
         foreach (var t in plot.Traces)
         {
             if (t.IsContourTrace || t.IsSummaryColumn) continue;
-            if (t.CubeXValues is not { Count: > 0 } xs) continue;
-            if (PolarPatternAngle.HemisphereNote(t.CubeXAxisName, xs[0], xs[^1]) is not { } note) continue;
+
+            string? note = t.SurfaceGrid is { ThetaCount: > 0 } g
+                ? PolarPatternAngle.HemisphereNote(g.ThetaAxisName, g.ThetaDeg[0], g.ThetaDeg[^1])
+                : t.CubeXValues is { Count: > 0 } xs
+                    ? PolarPatternAngle.HemisphereNote(t.CubeXAxisName, xs[0], xs[^1])
+                    : null;
+
+            if (note is null) continue;
             if (!lines.Contains(note)) lines.Add(note);
         }
 

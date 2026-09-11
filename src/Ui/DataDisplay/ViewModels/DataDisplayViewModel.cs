@@ -1446,6 +1446,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             PolarDbReference            = plot.PolarDbReference,
             PolarDbReferenceValue       = plot.PolarDbReferenceValue,
             PolarDbUnit                 = plot.PolarDbUnit,
+            SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
+            SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,
+            SurfaceZoom                 = plot.SurfaceCamera.Zoom,
+            SurfaceColorMap             = plot.SurfaceColorMap,
+            SurfaceShowGroundDisc       = plot.SurfaceShowGroundDisc,
+            SurfaceShowAxes             = plot.SurfaceShowAxes,
             Axes = new AxesConfig
             {
                 AutoscaleX      = plot.AutoscaleX,

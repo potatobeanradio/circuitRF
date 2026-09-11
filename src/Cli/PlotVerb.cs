@@ -100,6 +100,12 @@ internal static class PlotVerb
         public PolarDbReferenceMode DbRef      = PolarDbReferenceMode.Peak;
         public double               DbRefValue;
         public string               DbUnit     = "";
+
+        // ANT-10 — the 3D pattern surface. Null means "the default view", which is the isometric
+        // one; --view and --rotate are the two spellings of the same state and the last one wins.
+        public PatternCamera?       Camera;
+        public ContourColorMap?     ColorMap;
+        public List<string>         ViewOptions = new();
         public List<string>         DbOptions  = new();   // what was typed, for the refusals
     }
 
@@ -148,7 +154,9 @@ internal static class PlotVerb
         // there is no X and no Y for a range to be a range of. Refused rather than dropped, for
         // `render`'s reason: a flag that did nothing leaves a caller with a picture it cannot tell
         // from the one it asked for.
-        if (o.Type is PlotType.Smith or PlotType.Polar
+        // A 3D surface joins them: its framing is the CAMERA's (--view/--rotate/--zoom), and it has
+        // no x and no y for a range to be a range of either.
+        if (o.Type is PlotType.Smith or PlotType.Polar or PlotType.Surface3D
             && (o.X is not null || o.Y is not null || o.Y2 is not null))
             return JsonRun.Fail(CliDiagnostics.PlotWindowOnComplex(o.Type.ToString().ToLowerInvariant()));
 
@@ -157,7 +165,18 @@ internal static class PlotVerb
         // a picture it cannot tell from the one it asked for — `render`'s own rule, applied here.
         if (o.Radial == PolarRadialMode.Db && o.Type != PlotType.Polar)
             return JsonRun.Fail(CliDiagnostics.PlotRadialNeedsPolar(o.Type.ToString().ToLowerInvariant()));
-        if (o.Radial != PolarRadialMode.Db && o.DbOptions.Count > 0
+        // The same rule for the surface's own view flags: on any other plot type there is no camera
+        // for them to be, and a flag that did nothing leaves a caller with a picture it cannot tell
+        // from the one it asked for.
+        if (o.Type != PlotType.Surface3D && o.ViewOptions.Count > 0)
+            return JsonRun.Fail(CliDiagnostics.PlotViewNeedsSurface(o.Type.ToString().ToLowerInvariant()));
+
+        // ANT-10: the dB options are properties of the pattern SCALE — the floor, the reference, the
+        // ring step, the unit — and a SURFACE has one by construction (its radius is dB above a
+        // floor and there is no linear reading of it to switch to). So they are live there with no
+        // --radial, and it is only a plot with no pattern scale at all that they would do nothing on.
+        bool hasPatternScale = o.Radial == PolarRadialMode.Db || o.Type == PlotType.Surface3D;
+        if (!hasPatternScale && o.DbOptions.Count > 0
             && o.DbOptions.Exists(f => f != "--radial"))
             return JsonRun.Fail(CliDiagnostics.PlotDbOptionWithoutRadial(
                 string.Join(", ", o.DbOptions.FindAll(f => f != "--radial"))));
@@ -265,6 +284,7 @@ internal static class PlotVerb
                         case "smith": o.Type = PlotType.Smith; break;
                         case "polar": o.Type = PlotType.Polar; break;
                         case "table": o.Type = PlotType.Table; break;
+                        case "surface": o.Type = PlotType.Surface3D; break;
                         default: return JsonRun.Fail(CliDiagnostics.PlotUnknownType(args[i]));
                     }
                     continue;
@@ -384,6 +404,55 @@ internal static class PlotVerb
                 }
                 case "--db-unit" when i + 1 < args.Length:
                     o.DbOptions.Add(a); o.DbUnit = args[++i]; continue;
+
+                case "--view" when i + 1 < args.Length:
+                {
+                    o.ViewOptions.Add("--view");
+                    double keepZoom = o.Camera?.Zoom ?? 1.0;
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "iso" or "isometric": o.Camera = PatternCamera.For(SurfaceStandardView.Isometric, keepZoom); break;
+                        case "broadside":          o.Camera = PatternCamera.For(SurfaceStandardView.Broadside, keepZoom); break;
+                        case "phi0":               o.Camera = PatternCamera.For(SurfaceStandardView.PhiZeroPlane, keepZoom); break;
+                        case "phi90":              o.Camera = PatternCamera.For(SurfaceStandardView.PhiNinetyPlane, keepZoom); break;
+                        default: return JsonRun.Fail(CliDiagnostics.PlotUnknownView(args[i]));
+                    }
+                    continue;
+                }
+
+                case "--rotate" when i + 1 < args.Length:
+                {
+                    o.ViewOptions.Add("--rotate");
+                    var parts = args[++i].Split(',');
+                    if (parts.Length != 2
+                        || !double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float,
+                                            System.Globalization.CultureInfo.InvariantCulture, out double az)
+                        || !double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float,
+                                            System.Globalization.CultureInfo.InvariantCulture, out double el))
+                        return JsonRun.Fail(CliDiagnostics.PlotRotateMalformed(args[i]));
+                    o.Camera = PatternCamera.New(az, el, o.Camera?.Zoom ?? 1.0);
+                    continue;
+                }
+
+                case "--zoom" when i + 1 < args.Length:
+                {
+                    o.ViewOptions.Add("--zoom");
+                    if (!double.TryParse(args[++i], System.Globalization.NumberStyles.Float,
+                                         System.Globalization.CultureInfo.InvariantCulture, out double z) || z <= 0)
+                        return JsonRun.Fail(CliDiagnostics.PlotZoomMalformed(args[i]));
+                    o.Camera = (o.Camera ?? PatternCamera.Default).WithZoom(z);
+                    continue;
+                }
+
+                case "--color-map" when i + 1 < args.Length:
+                {
+                    o.ViewOptions.Add("--color-map");
+                    if (!Enum.TryParse<ContourColorMap>(args[++i], ignoreCase: true, out var cm))
+                        return JsonRun.Fail(CliDiagnostics.PlotUnknownColorMap(
+                            args[i], string.Join(", ", Enum.GetNames<ContourColorMap>()).ToLowerInvariant()));
+                    o.ColorMap = cm;
+                    continue;
+                }
 
                 case "--write-cdd" when i + 1 < args.Length: o.WriteCdd = args[++i]; continue;
 
@@ -942,6 +1011,12 @@ internal static class PlotVerb
         container.PolarDbReference      = o.DbRef;
         container.PolarDbReferenceValue = o.DbRefValue;
         container.PolarDbUnit           = o.DbUnit;
+
+        var cam = o.Camera ?? PatternCamera.Default;
+        container.SurfaceAzimuthDeg   = cam.AzimuthDeg;
+        container.SurfaceElevationDeg = cam.ElevationDeg;
+        container.SurfaceZoom         = cam.Zoom;
+        if (o.ColorMap is { } cmap) container.SurfaceColorMap = cmap;
 
         if (o.Title   is { } title)  { container.CustomTitle   = title;  container.CustomTitleOn   = true; }
         if (o.XLabel  is { } xl)     { container.CustomXLabel  = xl;     container.CustomXLabelOn  = true; }

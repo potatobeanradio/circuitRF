@@ -62,6 +62,10 @@ public static class PlotConfigLoader
         plot.PolarDbReference            = pc.PolarDbReference;
         plot.PolarDbReferenceValue       = pc.PolarDbReferenceValue;
         plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
+        plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
+        plot.SurfaceColorMap             = pc.SurfaceColorMap;
+        plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
+        plot.SurfaceShowAxes             = pc.SurfaceShowAxes;
 
         foreach (var traceConfig in pc.Traces)
         {

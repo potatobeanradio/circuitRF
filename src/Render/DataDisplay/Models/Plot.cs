@@ -45,7 +45,24 @@ namespace CircuitRF.Render.DataDisplay
     //  PlotType
     // ============================================================
 
-    public enum PlotType { Smith, Polar, Rect, Table }
+    /// <summary>
+    /// <b>Four kinds, and the fourth is why the fifth fits.</b> <see cref="Table"/> has no x axis, no
+    /// y axis and no <see cref="Axes.Window"/> in the sense the other three use one, and it has
+    /// worked that way since before ANT-10 asked whether a non-2D kind belonged here at all
+    /// (brief-antenna-10-pattern-3d.md §2). Every seam a plot kind passes through is an early return
+    /// or an additive <c>switch</c> case, and <see cref="PlotTypeExtensions.IsRect"/> and
+    /// <see cref="PlotTypeExtensions.IsComplex"/> are POSITIVE predicates over named members, so a
+    /// new kind is false for both and needs no third predicate threaded anywhere.
+    /// </summary>
+    public enum PlotType
+    {
+        Smith, Polar, Rect, Table,
+
+        /// <summary>ANT-10: a pattern r(θ, φ) in dB over a floor, drawn as a rotatable surface.
+        /// <b>Not the default pattern view</b> — the principal-plane cuts of ANT-7 are, and they tell
+        /// an engineer more about an antenna than a 3D lobe does.</summary>
+        Surface3D,
+    }
 
     public static class PlotTypeExtensions
     {
@@ -55,9 +72,15 @@ namespace CircuitRF.Render.DataDisplay
             PlotType.Polar => "Polar Plot",
             PlotType.Rect  => "Rectangular Plot",
             PlotType.Table  => "Table",
+            PlotType.Surface3D => "3D Pattern",
             _              => t.ToString()
         };
         public static bool IsRect   (this PlotType t) => t == PlotType.Rect;
+
+        /// <summary>The 3D pattern surface. Its own predicate rather than an <c>IsPlanar</c> over
+        /// the other four, because every call site that needs it is asking "is this the surface",
+        /// never "is this planar".</summary>
+        public static bool IsSurface(this PlotType t) => t == PlotType.Surface3D;
         public static bool IsComplex(this PlotType t) => t == PlotType.Smith || t == PlotType.Polar;
     }
 
@@ -206,6 +229,49 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>True when this plot is drawing a pattern rather than a locus.</summary>
         public bool IsPolarPattern => PlotType == PlotType.Polar && PolarRadial == PolarRadialMode.Db;
 
+        /// <summary>
+        /// True when this plot carries a <see cref="PatternScale"/> at all — the polar cut in its dB
+        /// radial mode, or ANT-10's surface.
+        ///
+        /// <para><b>The surface has no mode to switch.</b> A 3D pattern IS a radius in dB above a
+        /// floor (ANT-10 §1); there is no linear reading of it that means anything, so
+        /// <see cref="PolarRadialMode"/> does not apply and is not consulted.</para>
+        /// </summary>
+        public bool IsPatternPlot => IsPolarPattern || PlotType == PlotType.Surface3D;
+
+        // ---- ANT-10: the 3D pattern surface ------------------------------
+
+        /// <summary>Where the eye is. Persisted with the plot, so a `.cdd` reopens on the view it was
+        /// saved from and <c>circuitrf render</c> draws that same view.</summary>
+        public PatternCamera SurfaceCamera { get; set; } = PatternCamera.Default;
+
+        /// <summary>
+        /// The ramp the surface is coloured by. <b>The contour renderer's own enum</b>, sampled by
+        /// its own <c>ContourColormaps.Sample</c> — ANT-10 §7 forbids a third colour ramp and this
+        /// is the second, not a new one.
+        ///
+        /// <para><b>The DEFAULT is not the contour's own <c>Bone</c>, and it was measured rather
+        /// than chosen.</b> A contour is drawn INSIDE a framed chart, so a ramp that ends at white
+        /// or at black is bounded by the axes whatever the theme. A surface is not: it is a free
+        /// shape on the page, and a facet the colour of the background has no edge at all. Of the
+        /// thirteen ramps, exactly two — <c>Cool</c> and <c>Winter</c> — have NEITHER end at white
+        /// nor near-black, and are therefore legible on both themes; <c>Cool</c> is the one whose
+        /// floor (cyan) is also bright enough to read on the dark one. Every other ramp remains
+        /// available and is persisted, so an author who wants the conventional black-to-white heat
+        /// map has it.</para>
+        /// </summary>
+        public ContourColorMap SurfaceColorMap { get; set; } = ContourColorMap.Cool;
+
+        /// <summary>
+        /// Whether the ground plane is drawn as a disc at θ = 90°. On by default and §4 says why: a
+        /// hemisphere floating above nothing reads as a complete, very good antenna.
+        /// </summary>
+        public bool SurfaceShowGroundDisc { get; set; } = true;
+
+        /// <summary>Whether the scene's x/y/z axes are drawn. On by default — "a pattern with no axes
+        /// is a shape" (§3).</summary>
+        public bool SurfaceShowAxes { get; set; } = true;
+
         /// <summary>The resolved radial scale, or null when this is not a pattern plot. Rebuilt by
         /// <see cref="RefreshPolarPattern"/>; never set from outside.</summary>
         public PolarPatternScale? PatternScale { get; private set; }
@@ -223,7 +289,7 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public void RefreshPolarPattern()
         {
-            PolarPatternScale? scale = IsPolarPattern ? BuildPatternScale() : null;
+            PolarPatternScale? scale = IsPatternPlot ? BuildPatternScale() : null;
 
             bool changed = !Equals(scale, PatternScale);
             PatternScale = scale;
@@ -659,6 +725,14 @@ namespace CircuitRF.Render.DataDisplay
                     Axes.Viewport = new PlotRect(0.5 / w - 0.5 / TableAspect, 0.5 / h - 0.5, w, h);
                     break;
                 }
+                case PlotType.Surface3D:
+                {
+                    // The whole canvas. SurfaceRenderer lays out the scene, the colour bar and the
+                    // captions from the canvas size directly, exactly as TableRenderer lays out its
+                    // columns — there is no world window for a viewport to be a fraction of.
+                    Axes.Viewport = new PlotRect(0, 0, 1, 1);
+                    break;
+                }
             }
         }
 
@@ -671,7 +745,10 @@ namespace CircuitRF.Render.DataDisplay
             // being autoscaled at all (a pinned window is the common case on a pattern plot).
             RefreshPolarPattern();
 
-            if (PlotType == PlotType.Table) return;
+            // Table has no axes, and neither has the 3D surface — its framing is the camera's, and
+            // it is resolved per frame from the canvas rather than stored in a window. Both leave
+            // AFTER RefreshPolarPattern above, which is the call the surface actually needs.
+            if (PlotType is PlotType.Table or PlotType.Surface3D) return;
 
             if (SupportsComplex)
             {

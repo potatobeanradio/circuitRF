@@ -1755,7 +1755,10 @@ circuitrf plot run.npy -o pattern.svg --type polar --radial db --db-floor -30 --
 | `--db-ref peak\|<dB>` | the outer ring: the data's own peak (normalised, the default) or an absolute level. |
 | `--db-unit` | what the radial numbers are in — `dBi`, `dB(W/sr)`. Blank takes the cube's own `Unit`, which ANT-4's and ANT-5's cubes do not yet carry. |
 
-Every one of those is refused when `--radial db` was not given, rather than doing nothing.
+Every one of those is refused when the plot has **no pattern scale at all**, rather than doing nothing.
+`--radial db` gives a polar plot one; `--type surface` (§15.2) has one by construction, so the floor,
+the reference, the ring step and the unit are live there with no `--radial` — they are properties of
+the SCALE, and both kinds read them the same way.
 
 **Values below the floor are drawn AT the floor and never dropped.** A gap in a pattern trace reads as
 a null in the antenna, and a real null and a clipped value must not look the same. Above an ABSOLUTE
@@ -1786,6 +1789,66 @@ not start at 1; a port the run does not have is refused listing the ports it doe
 elevation cut (θ from zenith) and an azimuth cut read on. It is fixed rather than a flag: a plot whose
 orientation has to be read off a control before the picture means anything is worse than one
 convention stated on the plot.
+
+### 15.2 The 3D pattern surface — `--type surface`
+
+ANT-10. A surface r(θ, φ) = the pattern in dB above a floor, over the upper hemisphere, coloured by
+the same value. **It is not the default pattern view and must not be read as the better one**: the
+principal-plane cuts of §15.1 tell an engineer more about an antenna. What the surface is genuinely
+better at is seeing a pattern is *not* what you assumed — a squint, an unexpected lobe, a mode that is
+not the one you designed for — and being the picture that goes in a report.
+
+```
+circuitrf plot run.npy -o lobe.png --type surface --view iso --db-unit "dB(W/sr)" \
+  --trace cube=farfield.U,cut=all,port=1,freq=2.45G,y=db10
+circuitrf plot run.npy -o broadside.svg --type surface --view broadside --db-floor -25 \
+  --trace cube=farfield.U,cut=all,y=db10
+```
+
+**The trace spelling is `cut=all`, unchanged** — the same two-open-angle-axis slice the polar family
+plot uses. Nothing new is authored: the surface finds θ and φ **by name**, on the same
+`theta`/`el`/`phi`/`az` test the polar cut already applies to decide whether an axis can be an angle
+at all, so it never depends on which of the two `:` the positional family convention would have made
+the X axis. A cube with no such pair is refused by name rather than drawn as something plausible.
+
+| Flag | Means |
+|---|---|
+| `--view iso\|broadside\|phi0\|phi90` | a named camera. `broadside` looks down +z at the zenith; `phi0` and `phi90` put that principal plane IN the screen. Keeps the current `--zoom`. |
+| `--rotate <az>,<el>` | the camera directly, in degrees. Azimuth wraps; elevation clamps to ±90 — **negative is allowed and is informative**, since from below a hemisphere shows nothing but the ground disc. |
+| `--zoom <k>` | how much of the canvas the unit sphere fills. 0.25 … 8. |
+| `--color-map <name>` | the contour plot's own ramp set. Default `cool`. |
+
+All four are refused on any other `--type`, and `--x`/`--y`/`--y2` are refused on a surface: its
+framing is the camera's and it has no x and no y axis for a range to be a range of.
+
+**The principal planes are named by their own φ, not "E-plane" and "H-plane".** Which cut is the
+E-plane is a property of the antenna's polarization; the cube does not say, ANT-6 computes it
+separately, and a view button that named the wrong plane would be a caption that is confidently wrong.
+
+**The ground plane is drawn as a disc at θ = 90°, and the θ span is stated under the picture** — the
+same sentence §15.1's cut carries, from the same place. It is §4's whole point: in 2D a missing lower
+hemisphere reads as a half-disc and needs a note, but **in 3D a hemisphere floating above a plane
+reads as a complete, very good antenna** unless the view says otherwise. Both halves are built from
+the cube's own axis, so ANT-11's extension to 180° changes the sentence and closes the surface
+underneath with no constant to edit.
+
+**Orthographic, no lighting, no perspective.** Orthographic is easier to read for a pattern and easier
+to get right; a shaded surface would encode the same number twice, in two scales, one of which has no
+legend. The scale that IS shown is the colour bar, with its floor and its reference, on ANT-7's own
+ring lattice and in ANT-7's own words.
+
+**The camera is carried in the `.cdd`, not re-read from a flag** — two angles and a zoom, which is the
+whole of it — so `plot --write-cdd` followed by `render` draws the same view, byte for byte. That is
+the gate (`tests/Ui.Tests/Cli/Pattern3DCliTests.cs`, all four named views).
+
+**Frame cost, measured once** (Release, an M-series Mac, the drawing alone): at **1° × 1° — 63,000
+triangles — 55 ms, about 18 fps**, which is not comfortably interactive; decimated for interaction it
+is **4,050 triangles and 4.4 ms**, past 200 fps. So the app draws the decimated grid while the pointer
+is down and the full one on release, and the endpoints of both angle axes are kept whatever the stride
+so the silhouette and the peak direction do not move between the two. `plot` and `render` always draw
+the full grid. Cost is set by the triangle count and barely by the canvas: halving the canvas in each
+direction moved 55 ms to 50 ms. A 2° × 2° grid is 15,660 triangles at 14 ms and needs no decimation
+at all.
 
 ---
 

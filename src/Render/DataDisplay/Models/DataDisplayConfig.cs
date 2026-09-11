@@ -126,6 +126,19 @@ public sealed class PlotContainerConfig
     public double               PolarDbReferenceValue { get; set; }
     public string               PolarDbUnit           { get; set; } = "";
 
+    // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
+    //
+    //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are
+    //  PatternCamera.Default's, so a `.cdd` written before ANT-10 loads on the isometric view
+    //  rather than on a degenerate camera looking down its own axis.
+    public double SurfaceAzimuthDeg   { get; set; } = 35.0;
+    public double SurfaceElevationDeg { get; set; } = 25.0;
+    public double SurfaceZoom         { get; set; } = 1.0;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ContourColorMap SurfaceColorMap { get; set; } = ContourColorMap.Cool;
+    public bool SurfaceShowGroundDisc { get; set; } = true;
+    public bool SurfaceShowAxes       { get; set; } = true;
+
     public List<TraceConfig> Traces { get; set; } = new();
 
     // Null on older .splot files — load code defaults to full autoscale when absent.

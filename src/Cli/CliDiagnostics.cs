@@ -1997,7 +1997,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic PlotUnknownType(string name) => Diagnostic.Create(
         "plot.type.unknown", DiagnosticSeverity.Error,
-        "plot: --type '{name}' is not one of rect, smith, polar, table.", ("name", name));
+        "plot: --type '{name}' is not one of rect, smith, polar, table, surface.", ("name", name));
 
     public static Diagnostic PlotUnknownFreqUnit(string name) => Diagnostic.Create(
         "plot.frequnit.unknown", DiagnosticSeverity.Error,
@@ -2012,13 +2012,42 @@ internal static class CliDiagnostics
     public static Diagnostic PlotRadialNeedsPolar(string type) => Diagnostic.Create(
         "plot.radial.needs-polar", DiagnosticSeverity.Error,
         "plot: --radial db is a property of a POLAR plot's radius, and --type is '{type}'. "
-      + "A pattern is drawn with --type polar --radial db; a rectangular cut needs neither.",
+      + "A pattern CUT is drawn with --type polar --radial db; the 3D surface is --type surface, "
+      + "whose radius is already dB above a floor and has no mode to set; a rectangular cut needs "
+      + "neither.",
         ("type", type));
+
+    // ── ANT-10 §2/§3 — the 3D pattern surface ───────────────────────────────────────────────────
+
+    public static Diagnostic PlotUnknownView(string name) => Diagnostic.Create(
+        "plot.view.unknown", DiagnosticSeverity.Error,
+        "plot: --view '{name}' is not one of iso, broadside, phi0, phi90.", ("name", name));
+
+    public static Diagnostic PlotViewNeedsSurface(string type) => Diagnostic.Create(
+        "plot.view.needs-surface", DiagnosticSeverity.Error,
+        "plot: {name} frames the 3D pattern surface and --type is '{type}'. A surface is drawn with "
+      + "--type surface; a principal-plane CUT is --type polar --radial db, which is the view that "
+      + "tells an engineer more about an antenna.",
+        ("type", type), ("name", "--view/--rotate/--zoom"));
+
+    public static Diagnostic PlotRotateMalformed(string value) => Diagnostic.Create(
+        "plot.rotate.malformed", DiagnosticSeverity.Error,
+        "plot: --rotate '{value}' is not 'azimuth,elevation' in degrees, as in --rotate 35,25.",
+        ("value", value));
+
+    public static Diagnostic PlotUnknownColorMap(string name, string all) => Diagnostic.Create(
+        "plot.colormap.unknown", DiagnosticSeverity.Error,
+        "plot: --color-map '{name}' is not one of {all}.", ("name", name), ("all", all));
+
+    public static Diagnostic PlotZoomMalformed(string value) => Diagnostic.Create(
+        "plot.zoom.malformed", DiagnosticSeverity.Error,
+        "plot: --zoom '{value}' is not a positive number.", ("value", value));
 
     public static Diagnostic PlotDbOptionWithoutRadial(string options) => Diagnostic.Create(
         "plot.radial.db-option-without-radial", DiagnosticSeverity.Error,
-        "plot: {options} set the dB radial scale and --radial db was not given, so they would do "
-      + "nothing. Add --radial db, or drop them.", ("options", options));
+        "plot: {options} set the dB pattern scale and this plot has none, so they would do nothing. "
+      + "Add --radial db (a polar cut), or use --type surface (whose radius is dB already), or drop "
+      + "them.", ("options", options));
 
     public static Diagnostic PlotDbFloorMalformed(string value) => Diagnostic.Create(
         "plot.radial.floor-malformed", DiagnosticSeverity.Error,
@@ -2087,8 +2116,9 @@ internal static class CliDiagnostics
     /// <c>render</c>'s reason.</summary>
     public static Diagnostic PlotWindowOnComplex(string type) => Diagnostic.Create(
         "plot.window.on-complex", DiagnosticSeverity.Error,
-        "plot: --x/--y/--y2 do not apply to a {type} chart, whose window is the complex plane. "
-      + "Use --type rect, or leave them out.", ("type", type));
+        "plot: --x/--y/--y2 do not apply to a {type} chart, which has no x and no y axis — a "
+      + "smith or polar chart's window is the complex plane, and a surface's framing is its camera "
+      + "(--view/--rotate/--zoom). Use --type rect, or leave them out.", ("type", type));
 
     public static Diagnostic PlotWriteFailed(string path, string why) => Diagnostic.Create(
         "plot.output.write-failed", DiagnosticSeverity.Error,

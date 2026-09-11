@@ -204,6 +204,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsPolarPlot));
         OnPropertyChanged(nameof(IsPolarDbPlot));
         OnPropertyChanged(nameof(IsTablePlot));
+        OnPropertyChanged(nameof(IsSurfacePlot));
+        OnPropertyChanged(nameof(HasPatternScale));
+        NotifySurfaceCameraChanged();
         OnPropertyChanged(nameof(IsSummaryTable));
         OnPropertyChanged(nameof(AddLoadpullTraceLabel));
         OnPropertyChanged(nameof(IsSummaryAddMode));
@@ -229,6 +232,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public bool IsPolarPlot => _plot.PlotType == PlotType.Polar;
     public bool IsTablePlot => _plot.PlotType == PlotType.Table;
 
+    /// <summary>ANT-10's 3D pattern surface. <b>Not the default pattern view</b> — the cuts are.</summary>
+    public bool IsSurfacePlot => _plot.PlotType == PlotType.Surface3D;
+
     // ---- The dB radial mode (ANT-7 §2) ----------------------------------
     //
     //  Six plain properties over the Plot's own, in the shape TableCompression already has. Each
@@ -246,6 +252,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _plot.PolarRadial = target;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsPolarDbPlot));
+            OnPropertyChanged(nameof(HasPatternScale));
             ApplyRadialChange();
         }
     }
@@ -325,6 +332,77 @@ public partial class PlotInspectorViewModel : ViewModelBase
             ApplyRadialChange();
         }
     }
+
+    // ---- The 3D pattern surface (ANT-10 §3/§5) --------------------------
+    //
+    //  The dB controls above serve this plot too and are shown for it: a surface HAS a pattern scale
+    //  by construction (its radius is dB above a floor), so the floor, the reference and the unit
+    //  mean exactly what they mean on the cut. What is extra here is the VIEW — which is the whole
+    //  of the new interaction, and §3 keeps it to three things: rotate, zoom, reset.
+
+    /// <summary>The dB scale controls apply on a polar plot IN dB MODE, and on a surface always.</summary>
+    public bool HasPatternScale => IsPolarDbPlot || IsSurfacePlot;
+
+    /// <summary>
+    /// <b>§3's named views, because "which way am I looking" is the question a 3D picture always
+    /// raises.</b> The two principal planes are named by their own φ rather than "E-plane" and
+    /// "H-plane" — see <see cref="SurfaceStandardView"/> for why naming them would be a guess about
+    /// the antenna that the cube cannot settle.
+    /// </summary>
+    public IRelayCommand SurfaceViewIsoCommand       { get; }
+    public IRelayCommand SurfaceViewBroadsideCommand { get; }
+    public IRelayCommand SurfaceViewPhi0Command      { get; }
+    public IRelayCommand SurfaceViewPhi90Command     { get; }
+
+    /// <summary>Back to the isometric view AND to zoom 1 — the one control that undoes every gesture,
+    /// which a rotate/zoom pair with no reset leaves a user without.</summary>
+    public IRelayCommand SurfaceResetCommand { get; }
+
+    public bool SurfaceViewIsIso       => IsSurfacePlot && _plot.SurfaceCamera.Is(SurfaceStandardView.Isometric);
+    public bool SurfaceViewIsBroadside => IsSurfacePlot && _plot.SurfaceCamera.Is(SurfaceStandardView.Broadside);
+    public bool SurfaceViewIsPhi0      => IsSurfacePlot && _plot.SurfaceCamera.Is(SurfaceStandardView.PhiZeroPlane);
+    public bool SurfaceViewIsPhi90     => IsSurfacePlot && _plot.SurfaceCamera.Is(SurfaceStandardView.PhiNinetyPlane);
+
+    public bool SurfaceShowAxes
+    {
+        get => _plot.SurfaceShowAxes;
+        set { if (_plot.SurfaceShowAxes == value) return; _plot.SurfaceShowAxes = value; OnPropertyChanged(); Redraw(); }
+    }
+
+    public bool SurfaceShowGroundDisc
+    {
+        get => _plot.SurfaceShowGroundDisc;
+        set { if (_plot.SurfaceShowGroundDisc == value) return; _plot.SurfaceShowGroundDisc = value; OnPropertyChanged(); Redraw(); }
+    }
+
+    public IReadOnlyList<ContourColorMap> SurfaceColorMaps { get; } = Enum.GetValues<ContourColorMap>();
+
+    public ContourColorMap SurfaceColorMap
+    {
+        get => _plot.SurfaceColorMap;
+        set { if (_plot.SurfaceColorMap == value) return; _plot.SurfaceColorMap = value; OnPropertyChanged(); Redraw(); }
+    }
+
+    /// <summary>Called by <c>PlotControl</c> after a drag or a wheel has moved the camera, so the
+    /// view buttons stop showing themselves as the active one the moment the user leaves it.</summary>
+    public void NotifySurfaceCameraChanged()
+    {
+        OnPropertyChanged(nameof(SurfaceViewIsIso));
+        OnPropertyChanged(nameof(SurfaceViewIsBroadside));
+        OnPropertyChanged(nameof(SurfaceViewIsPhi0));
+        OnPropertyChanged(nameof(SurfaceViewIsPhi90));
+    }
+
+    private void SetSurfaceView(SurfaceStandardView view)
+    {
+        // The zoom is kept: a user who has zoomed in on a lobe is asking to keep looking at it from
+        // a named direction, not to start over. Reset is the control that undoes the zoom.
+        _plot.SurfaceCamera = PatternCamera.For(view, _plot.SurfaceCamera.Zoom);
+        NotifySurfaceCameraChanged();
+        Redraw();
+    }
+
+    private void Redraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
     private void ApplyRadialChange()
     {
@@ -631,6 +709,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public IRelayCommand SetPlotTypeSmithCommand { get; }
     public IRelayCommand SetPlotTypePolarCommand { get; }
     public IRelayCommand SetPlotTypeTableCommand { get; }
+    public IRelayCommand SetPlotTypeSurfaceCommand { get; }
 
     /// <summary>True when the selected data source is a loadpull result eligible for contour authoring.</summary>
     public bool CanAddContourTrace =>
@@ -679,6 +758,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
         SetPlotTypeSmithCommand = Gesture.Command("plotType=Smith", () => PlotType = PlotType.Smith);
         SetPlotTypePolarCommand = Gesture.Command("plotType=Polar", () => PlotType = PlotType.Polar);
         SetPlotTypeTableCommand = Gesture.Command("plotType=Table", () => PlotType = PlotType.Table);
+        SetPlotTypeSurfaceCommand = Gesture.Command("plotType=Surface3D", () => PlotType = PlotType.Surface3D);
+
+        SurfaceViewIsoCommand       = Gesture.Command("surfaceView=iso",       () => SetSurfaceView(SurfaceStandardView.Isometric));
+        SurfaceViewBroadsideCommand = Gesture.Command("surfaceView=broadside", () => SetSurfaceView(SurfaceStandardView.Broadside));
+        SurfaceViewPhi0Command      = Gesture.Command("surfaceView=phi0",      () => SetSurfaceView(SurfaceStandardView.PhiZeroPlane));
+        SurfaceViewPhi90Command     = Gesture.Command("surfaceView=phi90",     () => SetSurfaceView(SurfaceStandardView.PhiNinetyPlane));
+        SurfaceResetCommand         = Gesture.Command("surfaceView=reset",     () =>
+        {
+            _plot.SurfaceCamera = PatternCamera.Default;
+            NotifySurfaceCameraChanged();
+            Redraw();
+        });
 
         if (_library != null)
         {

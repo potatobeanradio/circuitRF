@@ -507,6 +507,22 @@ public static class TraceResolve
             return;
         }
 
+        // ── ANT-10: the 3D surface, BEFORE the family path ────────────────────
+        //
+        //  Before, because a two-':' spec already resolves as a family under the positional
+        //  convention (the earlier kept axis becomes the family) and would therefore draw 101 polar
+        //  cuts stacked on a plot that has no disc to draw them on. The surface reads the same cube
+        //  through its own rank-2 slice, and it finds its two axes by NAME so the convention never
+        //  decides which of θ and φ is which.
+        if (plotType == PlotType.Surface3D)
+        {
+            SurfaceResolve.Resolve(t, cube, slice);
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            ApplyPinnedAxisDisplay(t, ds);
+            return;
+        }
+
         // ── Family path (Phase 7.3b) ──────────────────────────────────────────
         if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
         {
