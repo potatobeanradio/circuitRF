@@ -757,6 +757,14 @@ public sealed class PlanarSolveResult
     public PlanarMetricSet? Metrics { get; init; }
 
     /// <summary>
+    /// <b>ANT-6 — the polarization of every pattern this sweep produced</b>, or null when no pattern
+    /// was produced. The axial ratio and the IEEE sense are always there; the Ludwig-3 co/cross pair
+    /// is there when a reference angle was named or could be derived, and carries its own refusal
+    /// when it could not (R-ant-9).
+    /// </summary>
+    public PlanarPolarizationSet? Polarization { get; init; }
+
+    /// <summary>
     /// <b>L9e/R-adf-2 — how many of the published points were actually SOLVED.</b> Equal to
     /// <c>Points.Count</c> when adaptive sampling is off. This is half of what makes an adaptively
     /// sampled sweep honest: a user who cannot tell whether a value was solved or modelled cannot
@@ -1362,6 +1370,7 @@ public static class PlanarSolve
         }
         var farPatterns = new Dictionary<int, PlanarFarFieldPattern[]>();
         var farMetrics  = new Dictionary<int, PlanarMetricReport[]>();
+        var farPol      = new Dictionary<int, PlanarPolarizationPattern[]>();
         var farY         = new Dictionary<int, Mat<Complex>>();
 
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
@@ -1536,10 +1545,11 @@ public static class PlanarSolve
 
                 if (farWanted.Contains(points.Count))
                 {
-                    var (pats, mets) = FarFieldAt(problem, mesh, currents, y, ports, f,
-                                                  farSettings!, cap, control);
+                    var (pats, mets, pols) = FarFieldAt(problem, mesh, currents, y, ports, f,
+                                                        farSettings!, cap, control);
                     farPatterns[points.Count] = pats;
                     farMetrics[points.Count]  = mets;
+                    farPol[points.Count]      = pols;
                     farY[points.Count] = y;
                 }
 
@@ -1672,10 +1682,12 @@ public static class PlanarSolve
                 foreach (int i in chosen)
                 {
                     farWanted.Add(i);
-                    var (pats, mets) = FarFieldAt(problem, mesh, currentsByIndex[i], yByIndex[i],
-                                                  ports, freqs[i], farSettings!, cap, control);
+                    var (pats, mets, pols) = FarFieldAt(problem, mesh, currentsByIndex[i],
+                                                        yByIndex[i], ports, freqs[i], farSettings!,
+                                                        cap, control);
                     farPatterns[i] = pats;
                     farMetrics[i]  = mets;
+                    farPol[i]      = pols;
                     farY[i] = yByIndex[i];
                 }
                 if (moved.Count > 0)
@@ -1760,8 +1772,9 @@ public static class PlanarSolve
         foreach (var cal in calibrators) coreBuildMs += cal.CoreBuildMs;
 
         // ── ANT-4/ANT-5 — the patterns, the metrics, and the sentences that make them readable ──
-        PlanarFarFieldSet? farSet = null;
-        PlanarMetricSet?   metricSet = null;
+        PlanarFarFieldSet?       farSet    = null;
+        PlanarMetricSet?         metricSet = null;
+        PlanarPolarizationSet?   polSet    = null;
         if (farSettings is not null && !farVerdict.Ok)
         {
             // Present and refused, which is the house shape: the sweep is not thrown away for a
@@ -1800,6 +1813,22 @@ public static class PlanarSolve
             if (firstMetrics.Budget.SurfaceWave is { } guided) notes.Add(guided.Caption);
             notes.Add(PlanarPowerBudget.BoundNote);
             foreach (string refusal in metricSet.Refusals) notes.Add(refusal);
+
+            // ── ANT-6 — polarization. The reference angle is REPORTED whether it was named or
+            //    derived (R-ant-9), and the mesh-limited cross-pol floor is said wherever a cross-pol
+            //    number is (R-ant-11) rather than left for a user to discover.
+            var flatPol = new List<PlanarPolarizationPattern>(idx.Length * ports.Count);
+            foreach (int i in idx) flatPol.AddRange(farPol[i]);
+            polSet = PlanarPolarizationSet.From(
+                idx.Select(i => freqs[i]).ToArray(),
+                ports.Select(pp => pp.Number).ToArray(),
+                flatPol);
+
+            var firstPol = polSet.At(0, 0);
+            notes.Add(firstPol.ScaleCaption);
+            if (firstPol.Reference is { } reference) notes.Add(reference.Note);
+            if (polSet.CoCrossVerdict.Ok) notes.Add(PlanarPolarization.MeshFloorNote);
+            foreach (string refusal in polSet.Refusals) notes.Add(refusal);
         }
 
         return new PlanarSolveResult
@@ -1814,6 +1843,7 @@ public static class PlanarSolve
             CapturedFrequencyHz = capturedF,
             CapturedPortNumber  = captured is null ? 0 : st.CurrentDensityPortNumber,
             Metrics       = metricSet,
+            Polarization  = polSet,
             SolvedPointCount          = solvedCount,
             WorstAdaptiveDisagreement = worstAdaptive,
             SolvedFrequencies         = solvedList,
@@ -1837,7 +1867,8 @@ public static class PlanarSolve
     /// denominator). Carrying the pattern out and asking for metrics later would mean re-deciding
     /// which admittance belongs to it, and the de-embedded one belongs to a different structure.</para>
     /// </summary>
-    private static (PlanarFarFieldPattern[] Patterns, PlanarMetricReport[] Metrics) FarFieldAt(
+    private static (PlanarFarFieldPattern[] Patterns, PlanarMetricReport[] Metrics,
+                    PlanarPolarizationPattern[] Polarization) FarFieldAt(
         PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> currents,
         Mat<Complex> rawY, IReadOnlyList<PlanarPortResolution> ports, double fHz,
         PlanarFarFieldSettings settings, int? cap, RunControl? control)
@@ -1845,16 +1876,21 @@ public static class PlanarSolve
         control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
         var made    = new PlanarFarFieldPattern[ports.Count];
         var metrics = new PlanarMetricReport[ports.Count];
+        var pol     = new PlanarPolarizationPattern[ports.Count];
         for (int j = 0; j < ports.Count; j++)
         {
             made[j] = PlanarFarField.Compute(problem, mesh, currents[j], ports[j].Number, fHz,
                                              settings.EffectiveGrid, cap);
-            metrics[j] = PlanarMetrics.Evaluate(new PlanarMetricContext(
+            // ANT-6 reads the SAME context ANT-5's metrics do, which is what makes the derived
+            // Ludwig-3 reference angle and the derived beamwidth cut one number rather than two.
+            var context = new PlanarMetricContext(
                 problem, mesh, currents[j], made[j], rawY[j, j], ports[j].Z0,
-                settings.EffectiveMetrics, cap));
+                settings.EffectiveMetrics, cap);
+            metrics[j] = PlanarMetrics.Evaluate(context);
+            pol[j]     = PlanarPolarization.For(context);
             control?.TickStage();
         }
-        return (made, metrics);
+        return (made, metrics, pol);
     }
 
     /// <summary>

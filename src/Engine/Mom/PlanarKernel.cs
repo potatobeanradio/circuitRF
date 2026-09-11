@@ -474,6 +474,7 @@ public sealed class PlanarKernel
 
         AddFarField(ds, sweep.FarField);
         AddMetrics(ds, sweep.Metrics);
+        AddPolarization(ds, sweep.FarField, sweep.Polarization);
 
         return ds;
     }
@@ -575,6 +576,66 @@ public sealed class PlanarKernel
 
             Axis[] axes = perCut ? [Freq(), Cut(), Port()] : [Freq(), Port()];
             ds.AddToGroup(PlanarFarField.Group, def.CubeName, new DataCube(axes, values));
+        }
+    }
+
+    /// <summary>
+    /// <b>ANT-6 — polarization, in ANT-4's own <c>"farfield"</c> group and still with no new result
+    /// type</b> (R-res-6 for the eighth phase running). Four real cubes on ANT-4's own
+    /// <c>[freq, theta, phi, port]</c> axes, because each is a per-DIRECTION property of a pattern
+    /// rather than a per-point metric.
+    ///
+    /// <para><b><c>AxialRatioDb</c> and <c>PolarizationSense</c> are always published; the Ludwig-3
+    /// pair needs a reference angle and is published only when one applies to the whole set</b>
+    /// (<see cref="PlanarPolarizationSet.CoCrossVerdict"/>) — a cube whose φ₀ changed halfway along its
+    /// own frequency axis would be two quantities under one name. The refusal arrives as a note in
+    /// <see cref="PlanarPolarization"/>'s own wording, exactly as a refused metric does.</para>
+    ///
+    /// <para><b>The DEFINITION travels with the cube</b> (R-ant-8): it is in the name —
+    /// <c>CoPolLudwig3Db</c>, not <c>CoPolDb</c> — and in <see cref="PlanarPolarization.Cubes"/>'
+    /// note, which a picker, a listing and an exporter all read rather than restating.</para>
+    /// </summary>
+    private static void AddPolarization(DataSet ds, PlanarFarFieldSet? far, PlanarPolarizationSet? pol)
+    {
+        if (far is null || pol is null || pol.Patterns.Count == 0) return;
+
+        int nf = pol.FrequenciesHz.Count, nt = far.Grid.ThetaDeg.Count;
+        int np = far.Grid.PhiDeg.Count,   nq = pol.PortNumbers.Count;
+
+        Axis[] Ax() =>
+        [
+            new Axis("freq",  pol.FrequenciesHz.ToArray(),  "Hz"),
+            new Axis("theta", far.Grid.ThetaDeg.ToArray(),  "deg"),
+            new Axis("phi",   far.Grid.PhiDeg.ToArray(),    "deg"),
+            new Axis("port",  pol.PortNumbers.Select(n => (double)n).ToArray(), ""),
+        ];
+
+        bool coCross = pol.CoCrossVerdict.Ok;
+
+        foreach (var (cubeName, unit, _) in PlanarPolarization.Cubes)
+        {
+            bool isPair = cubeName is "CoPolLudwig3Db" or "CrossPolLudwig3Db";
+            if (isPair && !coCross) continue;
+
+            var values = new double[nf * nt * np * nq];
+            for (int i = 0; i < nf; i++)
+                for (int q = 0; q < nq; q++)
+                {
+                    var pat = pol.At(i, q);
+                    var src = cubeName switch
+                    {
+                        "AxialRatioDb"      => pat.AxialRatioDb,
+                        "PolarizationSense" => pat.Sense,
+                        "CoPolLudwig3Db"    => pat.CoPolDb,
+                        _                   => pat.CrossPolDb,
+                    };
+                    for (int t = 0; t < nt; t++)
+                        for (int f = 0; f < np; f++)
+                            values[((i * nt + t) * np + f) * nq + q] = src[far.Grid.IndexOf(t, f)];
+                }
+
+            ds.AddToGroup(PlanarPolarization.Group, cubeName,
+                          new DataCube(Ax(), values) { Unit = unit });
         }
     }
 

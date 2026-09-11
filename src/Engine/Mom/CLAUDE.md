@@ -44,7 +44,7 @@ the file moved). The Ui half is `src/Ui/Layout/Em/CLAUDE.md`; the user-facing pa
 |---|---|---|
 | Physics | 2D quasi-static per-unit-length RLGC → S | 2.5D full-wave MPIE surface MoM |
 | Input | `EmProblem` (cross-section) | `PlanarProblem` (layout + stackup) — a **sibling type, not a subtype** |
-| Diagnostics group | `"tline"` | `"planar"`, plus `"farfield"` (pattern **and** metrics) when a pattern was asked for |
+| Diagnostics group | `"tline"` | `"planar"`, plus `"farfield"` (pattern, metrics **and** polarization) when a pattern was asked for |
 | Cost | ~1000× cheaper (`EmKernelRegistry.CheaperByRoughly`) | dense fill dominates |
 
 `EmKernelRegistry` is keyed on the **analysis kind** and unifies the **output** (`EmKernelOutcome`
@@ -514,7 +514,76 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   metric is published as ONE cube over the whole sweep or not at all** — a `DataCube` has no
   missing-value concept — and a refused one arrives as a note in the registry's own wording.
 
+### 3.8 Polarization (`PlanarPolarization`, ANT-6)
+
+- **R-ant-8. A CROSS-POL NUMBER CARRIES ITS DEFINITION.** Ludwig's first, second and third definitions
+  give different numbers for the same antenna; the **THIRD** is computed, because it is the
+  antenna-measurement standard. It is in the cube NAMES — `CoPolLudwig3Db` / `CrossPolLudwig3Db`, never
+  `CrossPolDb` — **and** in `PlanarPolarization.Cubes`' own note, which a picker, a listing and an
+  exporter read rather than restate. **A second definition would be a second CUBE, never a mode**: a
+  switch that re-points an existing cube makes every exported file ambiguous after the fact.
+  `E_co = E_θcos(φ−φ₀) − E_φsin(φ−φ₀)`, `E_cross = E_θsin(φ−φ₀) + E_φcos(φ−φ₀)` on ANT-4's own triad,
+  where at θ = 0 the two unit vectors are the azimuths φ₀ and φ₀+90° for EVERY φ — which is the
+  property Ludwig-3 exists to have and is what makes the reduction, not the algebra, the evidence.
+- **R-ant-9. φ₀ IS NAMED OR DERIVED-AND-REPORTED, NEVER GUESSED — AND THE DERIVED ONE IS THE BEAMWIDTH
+  CUT'S OWN AXIS.** `PlanarMetricSettings.PolarizationReferencePhiDeg` wins when set; otherwise
+  `PlanarBeamwidth.AxisAtPatternPeak`, **the one call ANT-5's cut also makes**, because "the dominant
+  current axis" is one physical quantity and computing it twice is two definitions of it. Ambiguous
+  (minor/major past `AxisAmbiguityRatio`; a circularly polarized current reads **1.0 exactly**) or no
+  current moment at all ⇒ **REFUSED**, and the refusal points at the axial ratio, which is why that
+  cube is in the same phase. **A derived φ₀ must AGREE across the sweep** or the pair is refused for
+  the whole set — same rule and same reason as the beamwidth cut axis.
+- **φ₀ is an AXIS, not a direction: φ₀ + 180° flips both components' SIGN and neither magnitude**, so
+  ANT-6 deliberately does not fold it toward the peak the way ANT-5's cut must. Load-bearing rather
+  than tidy — the same symmetric patch reports 0.00° at two mesh densities and 180.00° at a third.
+- **R-ant-10. THE SENSE IS IEEE AND IS DERIVED FROM THIS DIRECTORY'S OWN TRIAD, NOT QUOTED.**
+  (E × dE/dt)·r̂ = ω·Im{E_θ·conj(E_φ)}, so **RHCP ⟺ Im{E_θ·conj(E_φ)} > 0**; the check that it is the
+  right hand is that (θ̂, φ̂, r̂) is right-handed as (x̂, ŷ, ẑ) is, i.e. "x̂ − jŷ along +ẑ is RHCP" in
+  this e^{jωt} convention. `PolarizationSense` is the normalised **Stokes V**,
+  `2·Im{E_θconj(E_φ)}/(|E_θ|²+|E_φ|²)`: sign = sense, magnitude = how circular, so a nearly linear
+  direction reads ≈ 0 rather than being assigned a sense. Gated against the TIME-SAMPLED rotation of
+  the real field vector, both signs.
+- **`AxialRatioDb` is written `(T + √(T²−4Im²))/(2|Im|)` and that spelling is required, not tidy.**
+  The ratio-of-circular-magnitudes form subtracts two nearly equal numbers exactly where a nominally
+  linear antenna's answer lives. **Pure linear takes a NAMED SENTINEL of 100 dB** — not ∞, not a NaN,
+  not a plausible clamp (which would make "linear" indistinguishable from "quite linear").
+  |s₃| = 2·AR/(AR²+1) exactly, so the two cubes are the ellipse's shape and its direction of travel.
+- **The dB floor is −400 dB and −300 dB was measurably WRONG.** A grazing co-pol over a PEC plane is a
+  genuine round-off zero near −320 to −340 dB, and a −300 dB floor CLIPPED it. **A sentinel that sits
+  above real data is a clamp, not a floor**; −400 dB is reachable by nothing but an exact zero, which
+  §5.1's principal-plane cross-pol genuinely is.
+- **R-ant-11. THE REPORTED CROSS-POL FLOOR IS THE MESH'S, AND IT IS SAID WHEREVER CROSS-POL IS.**
+  Measured on a symmetric 29.18 × 36.47 mm patch at 2.4 GHz: with the edge mesh ON (the default) the
+  principal-plane figure is **≈ −74 dB and FLAT in the mesh** (−75.0/−73.9/−73.5 dB at cells/λ
+  10/20/40) — and **the grid of a perfectly symmetric rectangular patch is not mirror-symmetric about
+  its own centre line at any density**, because each rim's graded fan is marched independently. With
+  the edge mesh off the grid IS symmetric and the number becomes a *different* quantity — round-off
+  over the O(N) sum, −105/−88/−78 dB, i.e. WORSE as N grows. **Two mechanisms, opposite signs in mesh
+  density**, which is why the note says to refine and watch whether the number MOVES, not whether it
+  falls. Directivity moves 0.015 dB across all of it, so nothing else on the screen warns anyone.
+- Cubes: group `"farfield"`, `[freq, theta, phi, port]` each. **`AxialRatioDb` and
+  `PolarizationSense` are always published** (rotation invariants, no reference angle needed); the
+  Ludwig-3 pair is published only when one φ₀ applies to the whole set. Co/cross are **ABSOLUTE dB
+  (re 1 V of the r-normalised pattern)**, never normalised to peak co-pol — a self-normalising cube
+  hides its own level and means something different at every frequency; the caption states the
+  "X dB below peak co-pol" figure so the headline number is not left as an exercise.
+
 ### 3.5 Kernel B traps
+
+**Polarization**
+- **"Identically zero" is a statement about the ALGEBRA; only φ = φ₀ gets it in floating point.** π/2
+  and π are not representable (`cos(π/2)` is 6.1e-17), so at φ = 90° and 180° the principal-plane
+  cross-pol is a cancellation of two round-off-sized terms and lands near −358 dB rather than at the
+  exact-zero sentinel. Assert a structural zero there, not an exact one.
+- **The rotation identity |E_co|²+|E_cross|² = |E_θ|²+|E_φ|² cannot catch a sign error** — it is the
+  one property a sign error preserves. It is worth gating (it says no level can move with φ₀) but the
+  gate that pins the signs is the x̂-element's principal-plane zero **together with** its non-zero
+  diagonal: the first half alone passes on a decomposition that returns zero everywhere or swaps co
+  for cross.
+- **`PlanarBoundaryCells.Conformal` vs `Staircase` is VACUOUS on Manhattan artwork** (R-cut-2 —
+  bit-identical, 0 cut cells), and on artwork where it is not vacuous the far field REFUSES the cut
+  cells. Any conformal-vs-staircase antenna measurement needs the cut-cell transform first; there is
+  no fixture that gets round it.
 
 **Antenna metrics**
 - **The dominant current axis must be read at the PEAK direction, not at k = 0.** The k = 0 transform
@@ -935,6 +1004,14 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   axis (a circularly polarized structure reads 1.0 exactly), no current moment at all, a grid that
   samples only part of the azimuth circle, or a cut with no 3 dB crossing inside the sampled θ range.
   **It is never defaulted to φ = 0.**
+- **POLARIZATION refuses exactly one thing, and it takes TWO cubes with it** (ANT-6, §3.8): the
+  Ludwig-3 REFERENCE ANGLE, when it was not named and cannot be derived — no dominant linear current
+  axis (a circularly polarized structure reads minor/major = 1.0 exactly), no current moment at the
+  peak at all, or a derived angle that disagrees across the sweep. `CoPolLudwig3Db` and
+  `CrossPolLudwig3Db` go together, because both are one rotation about that angle. **It is never
+  defaulted to φ₀ = 0**, and the refusal points at `AxialRatioDb`/`PolarizationSense`, which need no
+  reference, are published regardless, and are the numbers that actually describe a circularly
+  polarized antenna.
 - **The FAR FIELD refuses four things by name, and each leaves the sweep intact** (an
   `EmSuitability`, reported as a note — present and refused). A **CUT cell** (its metal is not its
   rectangle, so the rectangle's transform would be a smooth plausible wrong pattern; `Staircase`

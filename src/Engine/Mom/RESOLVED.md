@@ -3764,3 +3764,204 @@ of a pattern the run has already paid for, and a pattern with no numbers attache
 - **No front-to-back number.** Staged, not omitted.
 - **Nothing reaches the CLI or the GUI**, because ANT-4's far field does not either: the registry is
   what makes the picker, the listing and the exporter cheap when a presentation phase arrives.
+
+## ANT-6 — polarization: Ludwig-3 co/cross, axial ratio, sense
+### (brief-antenna-6-polarization.md, 2026-09-10)
+
+Short arithmetic over ANT-4's `E_θ` and `E_φ`, one file, `PlanarPolarization.cs`, plus one extracted
+function in `PlanarBeamwidth.cs`, one setting, and four cubes in ANT-4's own `"farfield"` group.
+
+### The verdict, in one paragraph
+
+**Every definitional decision the brief asked for was makeable and none of them needed an oracle,
+because the whole phase is a ROTATION plus two rotation INVARIANTS — so the interesting work was the
+§4 measurement, and it came out better than the brief expected in one direction and blocked in the
+other.** The floor is real, it is **≈ −74 dB on the shipping default and it does NOT fall with mesh
+refinement**, which is the signature that says "floor" rather than "accuracy"; with the edge mesh off
+it is 27 dB lower and *falls* as the mesh coarsens, which is a different mechanism entirely. And the
+staircase-vs-conformal half of §4 **cannot be measured today**, for two independent reasons that
+between them cover every case: on a rectangular patch the two boundary models produce a
+**bit-identical** mesh (R-cut-2 — a Manhattan mesh has no cut cells to differ about), and on artwork
+where conformal cells *do* something, ANT-4's cut-cell refusal fires by name. Reported, not
+worked around. 24 tests, **0.3 s**, all routine tier; nothing in this phase needs a solve except the
+four tests that use one for realism.
+
+### The decomposition, derived rather than transcribed — and the one thing that pins the signs
+
+The brief's §1 gives the Ludwig-3 form and then says, correctly, **do not lift the algebra from
+here**. Derived against ANT-4's own convention it comes out the same, and the reason to *believe* that
+is not the agreement but the reduction: ANT-4 stores its pattern on the standard triad
+(θ̂ = (cosθcosφ, cosθsinφ, −sinθ), φ̂ = (−sinφ, cosφ, 0)), so at θ = 0
+
+    ê_co = θ̂cos(φ−φ₀) − φ̂sin(φ−φ₀) = (cos φ₀, sin φ₀, 0)      for EVERY φ
+
+which is the azimuth φ₀ itself — the property Ludwig-3 exists to have, and what a range's two probe
+orientations do. Nothing about the layered medium enters.
+
+- **The rotation identity is NOT sufficient as a gate and is still worth having.**
+  |E_co|² + |E_cross|² = |E_θ|² + |E_φ|² holds to **4.3e-16 … 6.1e-16** at every φ₀ tried, which says
+  no level can move when the reference angle changes — but it is exactly the statement a SIGN error
+  could not break. What pins the signs is the exact one below.
+- **The gate that pins them: an x̂-directed element has zero Ludwig-3 cross-pol in the principal
+  planes, and non-zero on the diagonals.** From ANT-4's own form, E_cross ∝ J̃_x·sinφcosφ·(f_TM − f_TE)
+  about φ₀ = 0 — the element factors cancel out of the *statement*, so it holds for every θ and every
+  stack and needs no substrate physics. Measured on 1.6 mm FR-4 at 5 GHz: the principal planes read
+  **−324.7 dB** below peak co-pol at worst over every θ, and θ = 45°, φ = 45° reads **−20.85 dB**.
+  **The diagonal half is what makes it non-vacuous** — a decomposition that returned zero everywhere,
+  or swapped co for cross, passes the first half alone.
+- **The exactness is a property of the ANGLE's floating-point representation, not of the algebra, and
+  only φ = φ₀ gets it.** There `sin(0)` is exactly 0 and the cross component is an exact zero. At
+  φ = 90° and 180° the mathematical zero is a *cancellation of two round-off-sized terms*, because
+  π/2 and π are not representable — `cos(π/2)` is 6.1e-17 — so both of E_cross's terms are ~1e-17 of
+  the peak and the result lands near **−358 dB** instead of at the sentinel. That is the right answer,
+  and the test asserts a structural zero rather than an exact one at those two azimuths.
+
+### R-ant-9 — φ₀ comes from ONE place, and it is the beamwidth cut's own axis
+
+The brief's §2 asks for two sources and a refusal. The implementation adds a third requirement that
+the brief does not state and that this directory's own habits demand: **the derived φ₀ must be the
+same number ANT-5's derived beamwidth plane is.** "The dominant current axis" is one physical
+quantity, and computing it twice would be two definitions of it — the thing
+`PlanarCurrentDensity`'s header exists to prevent. So `PlanarBeamwidth.AxisAtPatternPeak` was
+extracted from `PlanarBeamwidth.Cuts` and both callers read it; the test asserts equality rather than
+agreement.
+
+- The brief's §2 says "weighted by |J|²". That is satisfied in substance: the ellipse's principal
+  values are quadratic in the current MOMENT, and the axis is the major axis of that |M|² form. A
+  literal per-basis |J|² tensor has no well-defined cross term — x and y rooftops are not co-located —
+  which is why the moment form is the one that exists.
+- **φ₀ → φ₀ + 180° changes the SIGN of both components and neither magnitude**, so ANT-6 deliberately
+  does NOT fold its axis toward the peak the way ANT-5's cut must (there the fold decides which half
+  of a θ sweep is called positive). **This is load-bearing rather than tidy**: the measurement below
+  reports φ₀ = 180.00° at one mesh density and 0.00° at the two others, on the same symmetric patch,
+  because the transverse rooftops give the ellipse's cross term a round-off magnitude and a SIGN — the
+  same trap `CLAUDE.md` already records for the beamwidth cut. Both answers are the same plane and the
+  reported dB are identical.
+- The ambiguity refusal reuses `AxisAmbiguityRatio` and the measured value is exact: a circularly
+  polarized current reads **minor/major = 1.000000000000**. Its sentence points at `AxialRatioDb`, and
+  that is the whole reason §3 put the axial ratio in this phase — **the refusal has somewhere to
+  point.**
+- **A derived φ₀ must AGREE ACROSS THE SWEEP or the co/cross pair is refused for the whole set**, in
+  the same shape and for the same reason ANT-5's cut axis is: a `DataCube` has no missing-value
+  concept, and a cube whose φ₀ changed halfway along its own frequency axis would be two quantities
+  under one name with nothing in the axis to say so. `AxialRatioDb` and `PolarizationSense` are
+  published either way, being rotation invariants.
+
+### R-ant-10 — the sense, derived from the triad, and the axial ratio's stable spelling
+
+**Sense conventions differ by a sign between disciplines**, so it is derived here rather than quoted.
+For E(t) = Re{(Aθ̂ + Bφ̂)e^{jωt}}, (E × dE/dt)·r̂ = ω·Im{A·conj(B)} — constant in time, as it must be —
+and IEEE right-handed is that being positive. The check that this is the right hand and not the left
+is that (θ̂, φ̂, r̂) is right-handed exactly as (x̂, ŷ, ẑ) is, so the rule reads "x̂ − jŷ along +ẑ is
+RHCP", which is the textbook statement in this time convention.
+
+- **`PolarizationSense` is the normalised Stokes V**, `2·Im{E_θ·conj(E_φ)}/(|E_θ|²+|E_φ|²)` ∈ [−1, 1].
+  Its sign is the sense and its magnitude is how circular the direction is — strictly more than a ±1
+  carries, because a nearly linear direction reads ≈ 0 instead of being assigned a sense it does not
+  have. Gated against the **time-sampled rotation of the real field vector**, which shares no algebra
+  with it: two orthogonal elements in quadrature give s₃ = **+1.000000000000** / **−1.000000000000**
+  with the oracle's own sign at ±4.688, both signs, axial ratio 0 dB to 1e-9.
+- **The axial ratio is written as `AR = (T + √(T² − 4·Im²)) / (2·|Im|)`, and that is not a
+  simplification.** The obvious spelling, (|E_R|+|E_L|)/||E_R|−|E_L||, subtracts two nearly equal
+  magnitudes exactly where a nominally linear antenna's answer lives, and loses half its digits there.
+  The stable form is exact instead: measured against 20·log₁₀(1/ε) at ε = 1e-1, 1e-3, 1e-4 it agrees
+  to **0.00e+00 dB** at every rung. The exact relation to the sense, |s₃| = 2·AR/(AR²+1), holds to
+  **1.1e-16** across the whole ellipse family — which is what says the two cubes are the ellipse's
+  shape and its direction of travel rather than two estimates of one number.
+- **Pure linear reads a NAMED SENTINEL of 100 dB, not ∞, not a NaN and not a plausible clamp.** ∞ or a
+  NaN in a Real cube breaks every autoscaled plot and several export formats; a clamp at, say, 40 dB
+  would make "linear" indistinguishable from "quite linear", which is what the brief's §6 forbids.
+  100 dB is one part in 10⁵ of cross-circular amplitude — past any antenna, any measurement and any
+  mesh — so it cannot be misread as a computed value, and the cube's note says exactly what it means.
+- **The dB floor is −400 dB and it took two goes to size.** −300 dB was the first choice and it was
+  wrong: a structure's *grazing* co-pol over a PEC plane is a genuine round-off zero that lands near
+  −320 to −340 dB, and −300 dB clipped it — i.e. the floor was clipping real output. −400 dB (1e-20 of
+  a volt against a pattern peaking at order 1) can be reached by nothing but an exact zero, so
+  round-off zeros are now reported as the arithmetic produced them and only the exact ones floor.
+  **A sentinel that sits above real data is not a floor, it is a clamp.**
+
+### §4's measurement — the cross-pol floor IS the mesh, and the number does not improve
+
+Symmetric edge-fed patch, 29.18 × 36.47 mm on the 1.6 mm FR-4 starter at 2.4 GHz, one frequency
+point, staircase and conformal both run at every rung. The figure is the worst
+`CrossPolLudwig3Db − peak CoPolLudwig3Db` over the two principal planes.
+
+| cells/λ | edge mesh | N | y grid mirror-symmetric | principal-plane cross-pol | D |
+|---|---|---|---|---|---|
+| 10 | off | 58 | **yes** | **−105.3 dB** | 6.416 dBi |
+| 20 | off | 237 | **yes** | **−87.6 dB** | 6.423 dBi |
+| 40 | off | 955 | **yes** | **−78.0 dB** | 6.427 dBi |
+| 10 | **on (the default)** | 178 | **NO** | **−75.0 dB** | 6.431 dBi |
+| 20 | **on (the default)** | 387 | **NO** | **−73.9 dB** | 6.429 dBi |
+| 40 | **on (the default)** | 1,139 | **NO** | **−73.5 dB** | 6.429 dBi |
+
+Four things, and the second is the one worth keeping:
+
+1. **With the edge mesh ON — the shipping default — the grid of a perfectly symmetric rectangular
+   patch is NOT mirror-symmetric about the patch's own centre line**, at any density. That is §4's
+   geometric hypothesis confirmed directly, and its mechanism named: the graded fan is marched from
+   each rim independently and one march's partition is not the mirror of the other's.
+2. **The floor there is ≈ −74 dB and it is FLAT in the mesh** — 1.5 dB across a 6.4× range of N. **A
+   number that does not improve when the mesh is refined is a floor**; that is the whole distinction
+   §4 asked for, and it is the answer to quote.
+3. **With the edge mesh off the grid IS exactly symmetric, and then the number is a different
+   quantity**: 27 dB lower at the coarsest mesh and *rising* with N (−105 → −88 → −78 dB). Nothing
+   geometric is left, so what is being measured is round-off accumulating over the O(N) transform sum
+   and the dense solve — it gets worse as there is more of it. **Both mechanisms are real and they
+   push in opposite directions with mesh density**, which is exactly why the note tells a user to
+   refine and watch whether the number MOVES rather than whether it falls.
+4. **The floor is invisible in every other metric.** Directivity moves **0.015 dB** across all six
+   rows. A user reading a −74 dB cross-pol as their antenna's has nothing else on the screen to warn
+   them, which is why `MeshFloorNote` ships attached to both cross-pol cubes rather than living in a
+   document.
+
+**Staircase vs conformal could not be measured, and the reason is structural rather than a shortfall
+of effort.** On the rectangular patch the two produce a **bit-identical** mesh with **0 cut cells** at
+every rung — R-cut-2's own statement, that a Manhattan mesh is bit-identical under conformal cells —
+so the comparison is vacuous there, not merely close. On artwork where conformal cells do anything (an
+8-segment oblique taper: 138 cut cells, N = 1,936 against 1,942) **ANT-4 refuses the far field by
+name**. Between them those two cases cover every input: the comparison needs the cut-cell transform,
+which is named as not built. **§4's consequence for the series stands unchanged and untested by this
+phase** — staircase quantisation of a 41.3 mm patch at a 2.4 mm cell is a ~6 % length error and
+therefore ~6 % in resonant frequency, which is the headline number for an antenna — and this phase
+does NOT flip `PlanarBoundaryCells.Staircase`, per §6.
+
+### What was built
+
+- `src/Engine/Mom/PlanarPolarization.cs` — `PlanarPolarizationReference` (φ₀, where it came from, and
+  the ellipse it was read off), `PlanarPolarizationPattern` (the per-direction arrays, the captions,
+  and `PrincipalPlaneCrossPolDb`), `PlanarPolarization` (the four rules, the derivation, the
+  arithmetic, the `Cubes` table carrying each cube's unit and note), `PlanarPolarizationSet` (the
+  set-wide reference-angle agreement and its refusal).
+- `src/Engine/Mom/PlanarBeamwidth.cs` — `AxisAtPatternPeak` extracted so ANT-5 and ANT-6 read ONE
+  derivation of the dominant current axis.
+- `PlanarMetricSettings.PolarizationReferencePhiDeg` — null means derive-and-report. It names a
+  reference DIRECTION and changes no cube's MEANING; a second *definition* of cross-pol would be a
+  second cube (R-ant-8).
+- `PlanarSolveResult.Polarization`, the pattern's polarization built beside its metrics in the one
+  place the pattern and its currents are in hand together, and `PlanarKernel.AddPolarization` — **four
+  cubes in ANT-4's `"farfield"` group on ANT-4's own `[freq, theta, phi, port]` axes, and no new
+  result type for the eighth phase running.** The run's notes gain the polarization caption, the
+  reference angle's provenance and the mesh-floor sentence.
+- `tests/Engine.Tests/Mom/PlanarPolarizationTests.cs` — 24 tests, **0.3 s**, all routine tier.
+
+### Not done, on purpose
+
+- **No fifth cube for the principal-plane cross-pol ratio.** It is computed and it is in the caption
+  and in this write-up, but the brief lists four cubes and the ratio is a REDUCTION of two published
+  ones rather than a new quantity. A user subtracts two cubes; a plot of the ratio is ANT-7's.
+- **No second definition of cross-pol, and no mode that could become one.** Ludwig's first and second
+  are each a second CUBE if they are ever wanted (R-ant-8).
+- **The co/cross cubes are ABSOLUTE dB (re 1 V of the r-normalised pattern), not normalised to peak
+  co-pol.** A self-normalising cube would hide its own level, which R-res-8 forbids, and would mean
+  something different at every frequency. The familiar "cross-pol is X dB below peak co-pol" is one
+  subtraction of two published cubes, and the run's caption states it outright so the headline number
+  is not left as an exercise.
+- **No conformal-vs-staircase comparison.** Blocked structurally, above, and the blocking refusal is
+  ANT-4's own, named.
+- **`PlanarBoundaryCells.Staircase` is NOT flipped.** §6, and its recorded reason — reproducibility of
+  every measured number in this directory — stands. The argument for conformal on antenna work is
+  recorded here and ANT-12 should pick it for the shipped example.
+- **Nothing reaches the CLI or the GUI**, because ANT-4's far field and ANT-5's metrics do not either.
+  `PlanarPolarization.Cubes` is what makes a picker, a listing and an exporter cheap when ANT-7
+  arrives: the note a panel must say in words is already written next to the name.

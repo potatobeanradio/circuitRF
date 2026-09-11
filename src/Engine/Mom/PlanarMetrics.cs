@@ -94,8 +94,8 @@ public enum PlanarMetricAxis
 
 /// <summary>
 /// What a metric evaluation may be tuned by. <b>There is deliberately nothing here that changes a
-/// DEFINITION</b> — only which cuts to take and how finely to sample the azimuth of the
-/// surface-wave integral.
+/// DEFINITION</b> — only which cuts to take, which reference angle to measure polarization against,
+/// and how finely to sample the azimuth of the surface-wave integral.
 /// </summary>
 /// <param name="BeamwidthCutsPhiDeg">
 /// The φ planes, in degrees, to report a beamwidth in. <b>Null or empty means DERIVE one</b> — the
@@ -107,9 +107,20 @@ public enum PlanarMetricAxis
 /// eleven digits</b>, because the φ integrand is smooth and periodic and the rule is the periodic
 /// rectangle; 360 is the default only because it costs nothing on any mesh a pattern is affordable on.
 /// </param>
+/// <param name="PolarizationReferencePhiDeg">
+/// <b>ANT-6's φ₀ — the nominal linear polarization direction the Ludwig-3 co/cross pair is measured
+/// against, in degrees.</b> It is a property of the ANTENNA rather than of a plot, so it belongs to
+/// the run and not to a view. <b>Null means DERIVE it</b> from the solved current distribution and
+/// REPORT it (R-ant-9), and where that derivation is ambiguous — a circularly polarized or dual-fed
+/// structure — the co/cross pair is <i>refused</i> rather than taken against an invented reference;
+/// <c>AxialRatioDb</c> and <c>PolarizationSense</c> need no reference and are reported either way.
+/// <b>This does not change what any cube MEANS</b>: it names the reference direction, and a second
+/// DEFINITION of cross-pol would be a second cube (R-ant-8).
+/// </param>
 public sealed record PlanarMetricSettings(
     IReadOnlyList<double>? BeamwidthCutsPhiDeg = null,
-    int                    AzimuthSamples = PlanarSurfaceWaveLaunch.DefaultAzimuthSamples)
+    int                    AzimuthSamples = PlanarSurfaceWaveLaunch.DefaultAzimuthSamples,
+    double?                PolarizationReferencePhiDeg = null)
 {
     public static readonly PlanarMetricSettings Default = new();
 

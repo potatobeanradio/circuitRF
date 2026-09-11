@@ -102,6 +102,27 @@ public static class PlanarBeamwidth
     }
 
     /// <summary>
+    /// <b>The dominant current axis AT THE PATTERN'S OWN PEAK</b> — the one call that answers "which
+    /// way does this structure's current point", so that ANT-5's beamwidth cut and ANT-6's Ludwig-3
+    /// reference angle are the SAME NUMBER rather than two derivations of one physical quantity.
+    ///
+    /// <para>See the file header for why the transform is evaluated at the peak direction and not at
+    /// k = 0, and for what the two principal values mean: <c>Major</c> = 0 is no net moment at all and
+    /// <c>Minor/Major</c> past <see cref="PlanarMetricSettings.AxisAmbiguityRatio"/> is a current with
+    /// no dominant linear axis, which a circularly polarized structure reads as 1.0 exactly. Both
+    /// callers refuse on those, in their own words.</para>
+    /// </summary>
+    public static (double AxisDeg, double Major, double Minor) AxisAtPatternPeak(
+        PlanarMetricContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        double kRho = 2.0 * Math.PI * context.Pattern.FrequencyHz / EmConstants.C0
+                      * Math.Sin(context.Peak.ThetaDeg * Math.PI / 180.0);
+        var (sinP, cosP) = Math.SinCos(context.Peak.PhiDeg * Math.PI / 180.0);
+        return DominantAxis(context.Mesh, context.BasisCurrents, kRho * cosP, kRho * sinP);
+    }
+
+    /// <summary>
     /// Every beamwidth cut for one pattern, or the reason there are none. See the file header for the
     /// four things this refuses and why each would otherwise be a guess.
     /// </summary>
@@ -123,12 +144,10 @@ public static class PlanarBeamwidth
         }
         else
         {
-            // At the PEAK direction — see the file header for why not at k = 0.
-            double kRho = 2.0 * Math.PI * context.Pattern.FrequencyHz / EmConstants.C0
-                          * Math.Sin(context.Peak.ThetaDeg * Math.PI / 180.0);
-            var (sinP, cosP) = Math.SinCos(context.Peak.PhiDeg * Math.PI / 180.0);
-            var (axis, major, minor) = DominantAxis(
-                context.Mesh, context.BasisCurrents, kRho * cosP, kRho * sinP);
+            // At the PEAK direction — see the file header for why not at k = 0. ANT-6's Ludwig-3
+            // reference angle reads the SAME call, so the derived co-polar plane and the derived
+            // E-plane cut cannot disagree.
+            var (axis, major, minor) = AxisAtPatternPeak(context);
             if (!(major > 0))
                 return new PlanarBeamCuts(EmSuitability.No(
                     "No beamwidth cut could be derived: the structure's CURRENT MOMENT at the peak " +
