@@ -624,12 +624,31 @@ public static class GerberImport
         var allShapes = reads.SelectMany(r => r.Read.Shapes.Select(s => s.Shape)).ToList();
         var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech);
 
+        // WHICH FILE each row is asking about — the one thing the row's own name cannot say here.
+        // A layer is a FILE in this format, and a set's files share the board's stem by construction
+        // (<board>.gtl, <board>.ssb, …), so every row the cascade could not identify is named after
+        // that one stem and the table reads as the same word repeated. The extension is what the
+        // author used to tell the layers apart, so the file name rides along and the dialog shows it.
+        // One key can hold more than one file (a composited read, or two files donated the same
+        // technology layer), so this is a list and not a lookup.
+        var filesByKey = new Dictionary<LayerKey, List<string>>();
+        foreach (var identity in allIdentities)
+        {
+            var key = keyByFile[identity.FilePath];
+            if (!filesByKey.TryGetValue(key, out var named)) filesByKey[key] = named = [];
+            named.Add(identity.FileName);
+        }
+
         // R-L4g-6: an unmatched row defaults to "Add to technology", following L4b's and L4d's own
         // divergence from the paste path — a file set's layer names are the author's deliberate intent,
         // not an accident of a paste.
-        rows = [.. rows.Select(r => r.Match == LayerMatchKind.NoMatch
-            ? r with { Choice = new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology) }
-            : r)];
+        rows = [.. rows.Select(r => r with
+        {
+            Choice = r.Match == LayerMatchKind.NoMatch
+                ? new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology)
+                : r.Choice,
+            SourceDetail = filesByKey.TryGetValue(r.Source, out var named) ? string.Join(", ", named) : null,
+        })];
 
         // The dialog is rung 4 and ONLY rung 4: whatever rungs 0-3 identified is settled, and asking
         // about it would make an exactly-identified set (gates 6 and 7) interrupt for nothing. What is
@@ -1494,8 +1513,14 @@ public static class GerberImport
             string name = identity.LayerName;
             if (!names.Add(name))
             {
-                name = $"{identity.LayerName} ({Path.GetFileNameWithoutExtension(identity.FilePath)})";
-                names.Add(name);
+                // Disambiguated by the file's EXTENSION, not by its stem. A set's files share the
+                // board's stem by construction, so the stem separates nothing: two unidentified files
+                // both named after it produced the IDENTICAL name "<stem> (<stem>)", and a third
+                // produced it again. The extension is what the author used to tell the layers apart,
+                // and the counter is only there so the name is unique even when that is shared too.
+                string tag = identity.Extension is { Length: > 0 } suffix ? suffix : identity.FileName;
+                name = $"{identity.LayerName} ({tag})";
+                for (int n = 2; !names.Add(name); n++) name = $"{identity.LayerName} ({tag} {n})";
             }
 
             var donor = destTech?.Layers.FirstOrDefault(l => l.Key == key);

@@ -19,11 +19,12 @@
         <Border Grid.Row="2"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="1" CornerRadius="4" Padding="0">
-            <!-- The five columns' own MinWidths add up to 570 px before spacing, margins and the
-                 window's own 40, so the table needs ~660 to show its last column at all — and at the
-                 old 620 the "Map to" combo was simply off the right edge with the horizontal scroll
-                 bar DISABLED, so there was no way to reach it. Auto, so a user who shrinks the window
-                 can still scroll to it. -->
+            <!-- The columns' own MinWidths add up to 570 px before spacing, margins and the window's
+                 own 40, so the table needs ~660 to show its last column at all — and at the old 620
+                 the "Map to" combo was simply off the right edge with the horizontal scroll bar
+                 DISABLED, so there was no way to reach it. Auto, so a user who shrinks the window can
+                 still scroll to it. "From" adds no minimum: it is empty for the importers whose
+                 source layer has no separate origin to name, and an empty column must not cost width. -->
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
 
                 <!-- Header and rows declare IDENTICAL ColumnDefinitions (SharedSizeGroup) so columns
@@ -33,16 +34,18 @@
                     <Grid Grid.Row="0" Margin="8,6" ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MFrom"   MinWidth="0"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="Source layer" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
-                        <TextBlock Grid.Column="1" Text="Shapes"      FontSize="11" FontWeight="SemiBold" Opacity="0.7" HorizontalAlignment="Right"/>
-                        <TextBlock Grid.Column="2" Text="Match"       FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
-                        <TextBlock Grid.Column="3" Text="Action"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
-                        <TextBlock Grid.Column="4" Text="Map to"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="1" Text="From" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="2" Text="Shapes"      FontSize="11" FontWeight="SemiBold" Opacity="0.7" HorizontalAlignment="Right"/>
+                        <TextBlock Grid.Column="3" Text="Match"       FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="4" Text="Action"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="5" Text="Map to"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
                     </Grid>
 
                     <ItemsControl x:Name="RowsControl" Grid.Row="1" Margin="8,0,8,8">
@@ -51,21 +54,27 @@
                                 <Grid ColumnSpacing="8" Margin="0,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MFrom"   MinWidth="0"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Column="0" Text="{Binding SourceLabel}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding ShapeCountText}" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding MatchLabel}" FontSize="11" Opacity="0.65" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding SourceLabel}" FontSize="12" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourceLabel}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SourceDetail}" IsVisible="{Binding HasSourceDetail}"
+                                               FontSize="12" FontFamily="Courier New,Consolas,monospace"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                               MaxWidth="220" ToolTip.Tip="{Binding SourceDetail}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding ShapeCountText}" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding MatchLabel}" FontSize="11" Opacity="0.65" VerticalAlignment="Center" TextWrapping="Wrap"/>
 
-                                    <ComboBox Grid.Column="3" ItemsSource="{Binding Actions}"
+                                    <ComboBox Grid.Column="4" ItemsSource="{Binding Actions}"
                                               SelectedItem="{Binding SelectedAction, Mode=TwoWay}"
                                               FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
 
-                                    <ComboBox Grid.Column="4" ItemsSource="{Binding MapTargets}"
+                                    <ComboBox Grid.Column="5" ItemsSource="{Binding MapTargets}"
                                               SelectedItem="{Binding SelectedMapTarget, Mode=TwoWay}"
                                               IsVisible="{Binding ShowMapTargetCombo}"
                                               FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center">

@@ -30,6 +30,15 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
 
     public string ShapeCountText => Row.ShapeCount.ToString();
 
+    /// <summary>WHICH FILE this row is asking about, for a format whose unit of layer identity is a
+    /// file — empty for the callers whose source layer has no origin apart from its own name, and the
+    /// column then costs nothing. A Gerber set is why it exists: its files all carry the board's own
+    /// stem, so every row the identification cascade could not name reads as the same word and the
+    /// extension is the only thing that says which layer is being mapped.</summary>
+    public string SourceDetail => Row.SourceDetail ?? "";
+
+    public bool HasSourceDetail => Row.SourceDetail is { Length: > 0 };
+
     public string MatchLabel => Row.Match switch
     {
         LayerMatchKind.SameKeySameName       => "same layer",

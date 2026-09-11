@@ -349,7 +349,7 @@ public static class GerberLayerCascade
                 pattern.Purpose, pattern.Side, null, null);
         }
 
-        return ExtensionFamily(filePath, extension);
+        return ExtensionFamily(filePath, extension) ?? FunctionSideFamily(filePath, extension);
     }
 
     /// <summary>
@@ -405,6 +405,47 @@ public static class GerberLayerCascade
             's' => Make(top ? "Soldermask Top" : "Soldermask Bottom", UnidentifiedPurpose, side),
             'o' => Make(top ? "Silk Top" : "Silk Bottom", UnidentifiedPurpose, side),
             'p' => Make(top ? "Paste Top" : "Paste Bottom", UnidentifiedPurpose, side),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The SAME decomposition read in the other order — <c>&lt;function&gt;&lt;side&gt;</c>, where a
+    /// two-letter function comes first and the side last: <c>ss</c> for the silkscreen, <c>sm</c> for
+    /// the solder mask and <c>sp</c> for the paste stencil, then <c>t</c> or <c>b</c>. So
+    /// <c>.sst</c>/<c>.ssb</c> are the top and bottom silkscreens, <c>.smt</c>/<c>.smb</c> the two
+    /// solder masks, <c>.spt</c>/<c>.spb</c> the two paste stencils.
+    ///
+    /// <para>A set spelling its layers this way was otherwise wholly unidentified, and that is worse
+    /// here than it sounds: its files all carry the board's own stem, so rung 4 named every one of
+    /// them after that one word and the mapping dialog asked about six layers that all read
+    /// "&lt;board&gt;". The extension was the only thing telling them apart and nothing was looking at
+    /// it.</para>
+    ///
+    /// <para><b>Non-conductors only, deliberately.</b> The same convention spells copper with words
+    /// that are not a decomposition of anything (a side's name, or an unrelated abbreviation), and a
+    /// wrong guess there is the one that costs something real: only conductors enter the stackup and
+    /// the copper order, so a mis-read copper layer puts the stack order wrong — which R-L4g-10 says
+    /// must never happen quietly. A mis-read mask or silkscreen costs a label, and is reported as a
+    /// guess like every other rung-3 answer.</para>
+    /// </summary>
+    private static GerberLayerIdentity? FunctionSideFamily(string filePath, string extension)
+    {
+        string ext = extension.ToLowerInvariant();
+        if (ext.Length != 3) return null;
+
+        string? side = ext[2] switch { 't' => "Top", 'b' => "Bot", _ => null };
+        if (side is null) return null;
+        bool top = side == "Top";
+
+        GerberLayerIdentity Make(string name) =>
+            new(filePath, extension, GerberLayerRung.Heuristic, name, null, UnidentifiedPurpose, side, null, null);
+
+        return ext[..2] switch
+        {
+            "ss" => Make(top ? "Silk Top" : "Silk Bottom"),
+            "sm" => Make(top ? "Soldermask Top" : "Soldermask Bottom"),
+            "sp" => Make(top ? "Paste Top" : "Paste Bottom"),
             _ => null,
         };
     }

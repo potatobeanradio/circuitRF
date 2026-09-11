@@ -5066,3 +5066,42 @@ below the metal. The sentence names the layer, names the level it sits above, sa
 UNCOVERED one, and says what a cover would have done. Gate:
 `tests/Ui.Tests/Em/SuperstrateNotInTheSolveTests.cs` — the identity (every number the solver reads is
 the same either way, which is stronger than "moved by less than a tolerance") and the warning.
+
+## The Gerber mapping dialog never said which FILE a row was (2026-09-11)
+
+Owner-reported, from a real import: the layer-mapping dialog showed no file extension, so there was no
+way to tell which row was which. The reported workaround was renaming every file before importing —
+which is exactly the information the dialog was throwing away.
+
+**A layer is a FILE in this format**, and a fabricator's files all carry the board's own stem
+(`<board>.gtl`, `<board>.ssb`, …). The dialog's row is named after its LAYER, and rung 4 of the
+identification cascade — nothing identified this file — names a layer after the file's STEM. So on a
+set whose layers are spelled only in the extension, every unidentified row read as the same word. The
+extension was the one thing distinguishing them and nothing was looking at it. Three changes, and the
+first is the one that answers the report:
+
+1. **`LayerMappingRow.SourceDetail`, and a "From" column.** Where the source layer came from, when that
+   is a different fact from its name. `GerberImport` fills it with the file name(s) that landed on the
+   key — a list, because a composited read or two files donated one technology layer both put more than
+   one file on one row. No other caller supplies it and the column takes **`MinWidth="0"`**, so a paste
+   or a retarget, whose source layer has no origin apart from its own name, pays no width for it.
+2. **A colliding name is disambiguated by the EXTENSION, not by the stem.** The old spelling appended
+   the stem — which the colliding files share by construction — so two unidentified files produced the
+   *identical* name `board (board)`, and a third produced it again. `names.Add` returned false and the
+   name was left as it was, so the collision the code was there to break was not broken. The counter is
+   only a backstop for a shared extension.
+3. **`GerberLayerCascade.FunctionSideFamily` — the mirrored extension spelling.** `ExtensionFamily`
+   already decomposes `g<side><function>` (`.gtl`, `.gbs`, `.gto`). The other convention in circulation
+   writes the same thing backwards, `<function><side>`: `ss`/`sm`/`sp` for the silkscreen, the solder
+   mask and the paste stencil, then `t` or `b`. A set written that way was wholly unidentified, which is
+   how six rows all reading "board" reached the user in the first place.
+
+   **Non-conductors only, and that line is deliberate.** The same convention spells copper with words
+   that decompose into nothing, and a wrong guess there is the expensive one: only conductors enter the
+   stackup and the copper order, so a mis-read copper layer puts the stack order wrong — which R-L4g-10
+   says must never happen quietly. A mis-read mask or silkscreen costs a label, and is reported as a
+   guess like every other rung-3 answer.
+
+Gate: three tests in `tests/Ui.Tests/GerberImportTests.cs` — the row carries the file name, the minted
+names are `board` / `board (ly2)` / `board (ly3)` rather than one name three times, and the five
+mirrored extensions land on their own layers with no copper claimed.

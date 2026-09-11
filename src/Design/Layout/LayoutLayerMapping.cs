@@ -37,14 +37,23 @@ public enum LayerMatchKind
 
 /// <summary>One row of a layer-mapping table: a source layer actually used by the shapes being
 /// moved, how many shapes use it (sort key — the layers that matter appear first), what target was
-/// proposed and why, and what the user (or the default) settled on.</summary>
+/// proposed and why, and what the user (or the default) settled on.
+///
+/// <para><see cref="SourceDetail"/> is where the source layer CAME FROM, when that is a different
+/// fact from its name — the file, for a format whose unit of layer identity is a file. Nothing
+/// reconciles against it and no caller has to supply it; it exists so the row can be told apart in
+/// the dialog. A Gerber set is the case that needs it: every file carries the board's own stem
+/// (<c>&lt;board&gt;.gtl</c>, <c>&lt;board&gt;.ssb</c>, …), so for anything the identification
+/// cascade could not name, every row's name is the same word and the EXTENSION is the only thing
+/// that says which layer is being asked about.</para></summary>
 public sealed record LayerMappingRow(
     LayerKey Source,
     string? SourceName,
     int ShapeCount,
     LayerKey? Proposed,
     LayerMatchKind Match,
-    LayoutFragment.LayerReconciliationChoice Choice);
+    LayoutFragment.LayerReconciliationChoice Choice,
+    string? SourceDetail = null);
 
 /// <summary>
 /// Proposes a layer mapping for a set of shapes moving from one technology to another — the single

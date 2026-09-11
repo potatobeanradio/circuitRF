@@ -36,19 +36,32 @@ public class LayerMappingDialogSourceTests
         Assert.DoesNotContain("Import GDSII — Layer Mapping", source, StringComparison.Ordinal);
     }
 
-    /// <summary>The dialog's five columns declare MinWidths that add up to 570 px before column
-    /// spacing, the table's own margins and the window's 40 — so it needs well over the 620 it used to
-    /// open at, and the "Map to" column was simply off the right edge. With the horizontal scroll bar
-    /// DISABLED there was no way to reach it at all.</summary>
+    /// <summary>The dialog's columns declare MinWidths that add up to 570 px before column spacing,
+    /// the table's own margins and the window's 40 — so it needs well over the 620 it used to open at,
+    /// and the "Map to" column was simply off the right edge. With the horizontal scroll bar DISABLED
+    /// there was no way to reach it at all.
+    ///
+    /// <para>The columns are read from the HEADER's own block rather than counted to a fixed number,
+    /// so adding one (the "From" column, which declares a MinWidth of 0 precisely so an empty column
+    /// costs no width) does not silently drop the LAST column out of the sum — which is the one the
+    /// bug was about.</para></summary>
     [Fact]
     public void TheDialogIsWideEnoughForItsOwnColumns_AndCanScrollToThemWhenItIsNot()
     {
         var xaml = ReadRepoFile("src/Ui/Views/Dialogs/LayerMappingDialog.axaml");
 
-        int declaredMinimum = Regex.Matches(xaml, @"SharedSizeGroup=""M\w+""\s+MinWidth=""(\d+)""")
+        // The first <Grid.ColumnDefinitions> block is the header's; the item template repeats it.
+        var header = Regex.Match(xaml, @"<Grid\.ColumnDefinitions>(.*?)</Grid\.ColumnDefinitions>", RegexOptions.Singleline);
+        Assert.True(header.Success, "The layer table declares no ColumnDefinitions.");
+
+        var mins = Regex.Matches(header.Groups[1].Value, @"SharedSizeGroup=""M\w+""\s+MinWidth=""(\d+)""")
             .Select(m => int.Parse(m.Groups[1].Value))
-            .Take(5)                                   // the header row; the item template repeats it
-            .Sum();
+            .ToList();
+
+        // Every column carries a SharedSizeGroup, so the header and the rows can never drift apart.
+        Assert.Equal(Regex.Matches(header.Groups[1].Value, "<ColumnDefinition").Count, mins.Count);
+
+        int declaredMinimum = mins.Sum();
         Assert.Equal(570, declaredMinimum);
 
         int width = int.Parse(Regex.Match(xaml, @"\bWidth=""(\d+)""").Groups[1].Value);

@@ -330,6 +330,84 @@ public class GerberImportTests : IDisposable
             m.Contains("copper layer(s)", StringComparison.Ordinal));
     }
 
+    // -- The mapping dialog has to say WHICH FILE each row is ------------------------------------
+
+    /// <summary>
+    /// The owner-reported defect: on a set whose layers are spelled only in the extension, the mapping
+    /// dialog showed every row as the same word. A layer is a FILE here and a fabricator's files all
+    /// carry the board's own stem, so a row named after rung 4's fallback — that stem — distinguishes
+    /// nothing. The row now carries the file name, extension and all.
+    /// </summary>
+    [Fact]
+    public void AMappingRow_NamesTheFileItIsAskingAbout()
+    {
+        var dir = Folder("row-names-file");
+        Write(dir, "board.ly1", Artwork());
+        Write(dir, "board.ly2", Artwork(xMm: 2.0));
+
+        IReadOnlyList<LayerMappingRow> shown = [];
+        var result = Import(
+            dir, _root, "row_names_file_import",
+            new Technology { Name = "W", Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Metal" }] },
+            dialog: rows => { shown = rows; return LayoutLayerMapping.BuildChoices(rows); });
+
+        Assert.False(result.Cancelled);
+        Assert.Equal(
+            ["board.ly1", "board.ly2"],
+            shown.Select(r => r.SourceDetail).OrderBy(d => d, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// And the layer NAME the same set mints is disambiguated by the extension too. Both files fall to
+    /// rung 4 and are named "board"; disambiguating with the STEM — which they share — gave the second
+    /// one the name "board (board)" and would have given a third the identical name again.
+    /// </summary>
+    [Fact]
+    public void CollidingLayerNames_AreDisambiguatedByTheExtension_NotByTheSharedStem()
+    {
+        var dir = Folder("colliding-names");
+        Write(dir, "board.ly1", Artwork());
+        Write(dir, "board.ly2", Artwork(xMm: 2.0));
+        Write(dir, "board.ly3", Artwork(xMm: 3.0));
+
+        IReadOnlyList<LayerMappingRow> shown = [];
+        var result = Import(
+            dir, _root, "colliding_names_import",
+            new Technology { Name = "W", Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Metal" }] },
+            dialog: rows => { shown = rows; return LayoutLayerMapping.BuildChoices(rows); });
+
+        Assert.False(result.Cancelled);
+        Assert.Equal(
+            ["board", "board (ly2)", "board (ly3)"],
+            shown.Select(r => r.SourceName).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The mirrored extension spelling — &lt;function&gt;&lt;side&gt;, so .sst/.ssb are the two
+    /// silkscreens and .smt/.smb the two solder masks. A set written this way was wholly unidentified
+    /// before, which is what put six rows all reading "board" in front of the user in the first place.
+    /// Non-conductors only, deliberately: a mis-read copper layer would put the stack order wrong.
+    /// </summary>
+    [Fact]
+    public void TheMirroredExtensionFamily_IsReadStructurallyToo()
+    {
+        var dir = Folder("mirrored-extfamily");
+        Write(dir, "board.sst", Artwork());
+        Write(dir, "board.ssb", Artwork(xMm: 2.0));
+        Write(dir, "board.smt", Artwork(xMm: 3.0));
+        Write(dir, "board.smb", Artwork(xMm: 4.0));
+        Write(dir, "board.spt", Artwork(xMm: 5.0));
+
+        var result = Import(dir, _root, "mirrored_extfamily_import");
+
+        Assert.Equal(
+            ["Paste Top", "Silk Bottom", "Silk Top", "Soldermask Bottom", "Soldermask Top"],
+            result.Layers.Select(l => l.LayerName).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.All(result.Layers, l => Assert.True(l.IdentityGuessed));
+        // None of them is copper, so none of them reaches the stackup or the copper order.
+        Assert.DoesNotContain(result.Messages, m => m.Contains("copper layer(s)", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// A pour painted with %LPC composites the whole layer, which unions every pad into the copper
     /// around it — so there is no discrete flash left for a drill hit to pair with, however exactly
