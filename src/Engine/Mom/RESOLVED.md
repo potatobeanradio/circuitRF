@@ -3507,3 +3507,260 @@ else is closed form.
 - **No optimisation.** See the cost table: the direct sum is exact and fast enough, and an FFT or an
   interpolation over directions would trade the exactness away for a cost that has not been shown to
   matter.
+
+---
+
+## ANT-5 — directivity, gain, efficiency, beamwidth, and the staged front-to-back refusal
+### (brief-antenna-5-metrics.md, 2026-09-10)
+
+The numbers an antenna is judged by. `PlanarMetrics.cs` (the registry), `PlanarPowerBudget.cs` (the
+itemisation and the surface-wave launch), `PlanarBeamwidth.cs` (the cut derivation and its refusals),
+plus the sweep wiring and one group of cubes that already existed.
+
+### The verdict, in one paragraph
+
+**The conventions half of the brief held exactly and cost what it said. The loss-itemisation half is
+where it was wrong twice, and both corrections are improvements rather than reductions.** §3's
+"three of the four are already computable" is two computed plus a RESIDUAL, because over a laterally
+infinite lossy substrate a volume dielectric-loss integral already contains the whole surface-wave
+term; and §5's characterisation of the two power-balance regimes is inverted — surface-wave power
+grows with substrate thickness, so on a thin board radiation dominates and the surface wave is a few
+per cent, not the other way round. The surface-wave term itself, which the brief called "the term a
+laterally-infinite substrate model captures uniquely well", came out right **on the first run**: the
+pole-residue derivation, its constant and its sign are pinned by the lossless power balance closing
+to **5.6e-5** on the shipped FR-4 cross-section. 26 tests, **3 s**, all routine tier.
+
+### The four conventions, and why naming them was the actual deliverable
+
+Every metric here has at least two defensible definitions. The registry's notes carry all four:
+
+| quantity | taken as | the trap |
+|---|---|---|
+| Directivity | 4π·U_peak / P_radiated | none; it is the unambiguous one |
+| **`GainDbi`** | D·η_rad = 4π·U_peak / P_accepted | **EXCLUDES mismatch** |
+| **`RealizedGainDbi`** | that × the mismatch factor | **INCLUDES mismatch** |
+| η_rad | P_radiated / P_accepted | the denominator is ACCEPTED, never incident |
+
+- **R-ant-4. Neither is called just "gain", and each note names the other.** Asserted structurally —
+  there is no cube named `Gain` and both notes cross-reference — because the failure mode is a user
+  comparing one against a datasheet that quotes the other and concluding a tool is broken.
+- **R-ant-5. P_accepted is ½Re(Y_jj) of the RAW self-admittance**, the matrix the transformed currents
+  actually came out of. **The de-embedded `S` cube describes a different structure** with the feed
+  leads removed, and weighing a pattern of one structure against the power accepted by another is a
+  mistake nothing downstream could see. `PowerAccepted` is therefore published as a cube of its own,
+  which the brief's table did not list: an efficiency whose denominator is not published cannot be
+  reproduced.
+- **R-ant-6. One mismatch factor, written as accepted-over-AVAILABLE power**,
+  `4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²`. Equal to 1 − |Γ|² for a real reference and to the power-wave form for
+  a complex one, and written this way because it is a function of the same Y_jj and Z₀ everything
+  else reads — so "the two gains differ by exactly the mismatch factor" is structural rather than two
+  estimates happening to agree. On a multiport it is the reflection with the OTHER ports SHORTED,
+  which is exactly the excitation the pattern belongs to.
+
+### The surface-wave launch — the one piece of new physics, and it closed first time
+
+The derivation is in `PlanarPowerBudget.cs`'s header. The shape of it: the complex power an impressed
+surface current delivers is `−½∫E·J*dS`, which Parseval plus the transmission-line map turns into a
+k-plane integral of `Σ_{L,L′} Ĵ*·V^p(z_L|z_{L′})·Ĵ` — a second, matrix-free statement of ½Re(Y_jj). A
+guided mode is a simple pole of `V^p`; it must decay as it propagates, so the pole is BELOW the real
+axis, and Sokhotski–Plemelj picks up `−jπ·β·Q(β, φ)` per mode:
+
+    P_sw = Σ_modes β · Σ_j Im[Q_p(β, φ_j)] / (4·N_φ)
+
+Three places this could have been written wrong and looked right, all of them stated in the file:
+
+- **The residue is taken in k_ρ, not in w = k_ρ².** `V` is literally a function of `w`, so in `k_ρ` it
+  is EVEN with poles at ±k_p and `R_k = R_w/(2k_p)`. A contour integral in k_ρ gets that for free; an
+  analytic substitution is where a factor of 2 goes missing invisibly.
+- **The contour radius is a fraction of the distance to the nearest other singularity, never a fixed
+  number.** A near-cutoff mode sits essentially ON the branch point at k₀ — the measured 203 µm
+  prepreg board's TM₀ is at (k_p − k₀)/k₀ = 1.4e-5 — and a mode too close for a simple pole to be
+  separable from the continuum is REFUSED by name rather than given a number.
+- **Ĵ is evaluated at Re(k_p)**, which makes this a small-loss expansion; the worst pole's
+  |Im k_ρ|/Re k_ρ is reported with the answer and refused past 0.05.
+
+**The one-slab branch of the line voltage is written as `(Z₀^p/2)(1 + Γ^p)` and that is an identity,
+not an approximation** — the voltage a shunt source sees at the interface is `Z_up ∥ Z_down`, and
+`SpectralGreens`' cross-multiplied Γ is exactly `(Z_down − Z₀)/(Z_down + Z₀)`. Gated against the
+general cascade rather than asserted: **they agree to 5.7e-14** over k_ρ/k₀ ∈ [0, 10] on both
+polarisations. R-ant-2 still has `PlanarProblem.RequiresGeneralKernel` choose which one a problem
+takes.
+
+**The φ rule is the periodic rectangle and is converged at 90 samples to eleven digits** (checked at
+90, 180, 360 and 1,440). The default is 360 only because it costs nothing.
+
+### Two places the brief was wrong, and the corrections
+
+**1. `PowerDielectric` cannot be a third independent integral.** The brief asks for the volume loss
+`½∫ωε₀ε″|E|²dV` alongside the surface-wave residue, and for the four terms to sum to P_accepted. They
+cannot both be true: over a **laterally infinite** lossy substrate the guided mode decays as
+`e^{−2αρ}/ρ`, and `∫ρdρ` of that is finite and equals *everything the mode ever carried* — so the
+volume integral already CONTAINS the whole surface-wave term and adding them double-counts. What is
+disjoint, and what ships, is
+
+    PowerDielectric = PowerAccepted − PowerRadiated − PowerSurfaceWave
+
+the dielectric loss **not** carried away by a guided mode. On a real finite board that is exactly the
+distinction that matters, because the guided part instead reaches the edge and radiates.
+
+**R-ant-3 follows: a residual cannot gate itself, so the LOSSLESS case is the gate.** With tanδ = 0,
+PEC metal and a PEC floor there is nowhere for accepted power to go but the upper hemisphere and the
+guided modes, so the residual must be ZERO — and the three quantities forced to meet there share no
+implementation at all: ½Re(Y_jj) from the MoM factorisation, ∫U dΩ from the far field, and the pole
+residues from the spectral kernel. Measured, lossless:
+
+| substrate | N | radiated | surface wave | residual / accepted |
+|---|---|---|---|---|
+| **1.6 mm εᵣ 4.4** (the FR-4 starter cross-section) | 45 | 80.1 % | **19.9 %** | **5.6e-5** |
+| **8 mm εᵣ 2.2** (5× thicker, low permittivity) | 49 | 68.0 % | **32.0 %** | **1.6e-4** |
+| 203 µm εᵣ 4.4 (the measured board's prepreg) | 45 | 96.7 % | 2.7 % | 6.0e-3 |
+| 100 µm εᵣ 12.9 (GaAs) | 45 | 96.4 % | 2.0 % | 1.6e-2 |
+
+**2. §5's two regimes are inverted.** The brief expects "the thin FR-4 case, where surface-wave and
+dielectric loss dominate". Lossless thin FR-4 books **2.7 %** into the surface wave and 96.7 % into
+radiation; the surface-wave share grows with `k₀h√(εᵣ−1)`, so it is the THICK substrate that is the
+surface-wave regime. The gate therefore runs on the two top rows, where the share is a real fraction
+in both (20 % and 32 %) so a sign or factor error in the residue cannot hide, and the thin rows are
+reported rather than gated.
+
+**The residual is the MATRIX FILL's accuracy, not the metrics'.** Attributed rather than assumed. It
+does **not** move when the far-field θ grid is refined 10× (1° → 0.1° moves the 203 µm case from
+6.09e-3 to 5.97e-3 and stops), it does not converge cleanly with mesh density, and it tracks how hard
+the DCIM fit is: ~1e-5 on FR-4, ~1e-2 on GaAs — which `GroundedSlab`'s own comment already calls "the
+harder case for DCIM". And the argument closes: in a lossless medium Re(V^p) is identically zero for
+k_ρ > k₀ away from the poles (Z₀ and Γ are both purely imaginary there), so radiation and the poles
+are the only real-power channels there are, and any gap is the matrix.
+
+### The cavity model agrees, and the agreement is the MODEL's error not the mesh's
+
+An independent analytic oracle, written from the two-slot construction (TM₁₀ cavity, magnetic walls,
+`M_s = −2E₀ŷ` on both radiating edges in phase) and sharing nothing with the MoM or with
+`SpectralGreens`:
+
+    U ∝ sinc²(k₀W sinθ sinφ/2) · cos²(k₀L sinθ cosφ/2) · (cos²φ + cos²θ sin²φ)
+
+On a 29.18 × 36.47 mm edge-fed patch on the 1.6 mm FR-4 starter at 2.4 GHz (h/λ₀ = 0.013):
+
+- **Directivity: 6.423 dBi against the cavity model's 5.950 — Δ 0.47 dB.**
+- **And it is MESH-INDEPENDENT to 0.006 dB** from N = 237 to N = 3,831 (6.423 / 6.427 / 6.428 /
+  6.429 dBi), so the 0.47 dB is the cavity model's own — it has no surface wave and no feed.
+- **Cut shapes: the H-plane agrees to 0.10 dB and the E-plane to 0.57 dB** out to θ = 80°, the
+  E-plane being the one the infinite ground plane changes most.
+- Radiation efficiency reads 41 % there and is mesh-stable to 0.4 pp (41.21 / 41.34 / 41.20 / 40.99 %). **The realized gain is NOT**
+  (−3.85 dBi at N = 237 against −1.25 at N = 536): it inherits the edge port's own Z_in convergence,
+  3.2 Ω against 6.6 Ω. Worth knowing which numbers are robust to the mesh and which are not.
+
+### The beamwidth's cut, and the three things that went wrong deriving it
+
+`BeamwidthDeg` is per cut, and R-ant-7 is that the cut is either named or derived-and-REPORTED, never
+defaulted to φ = 0. The derivation reads the major axis of the current moment's polarization ellipse,
+`φ_c = ½atan2(2Re(M_x M_y*), |M_x|² − |M_y|²)`, and refuses when there is no dominant linear axis
+(`minor/major` past 0.25 — a circularly polarized structure reads **1.0 exactly**).
+
+- **It must be evaluated at the PEAK DIRECTION, not at k = 0.** At k = 0 the transform is the plain
+  dipole moment and the sum is the structure's total current moment, which **cancels to round-off on
+  anything electrically long**: on a 3 λ_g line the integral of a standing wave over whole periods is
+  zero, so the axis would be read off noise. At the peak the transform is by construction the current
+  that made the largest field there, so it cannot vanish — and for a broadside peak the two agree,
+  which is why a patch is unaffected either way.
+- **An axis is a LINE, so fold it toward the peak's azimuth.** Unfolded, the 3 λ_g line (peak at
+  θ = 31°, φ = 0°) reported φ = 180.00° — the right plane, back to front, because the transverse
+  rooftops across the line's width give the ellipse a cross term of round-off size and a SIGN. The
+  cut's own peak then landed in the negative-θ branch.
+- **A φ-grid tolerance must be half the FINEST step, not the coarsest.** A half-circle grid's 225°
+  wrap-around gap is the symptom, not a step; counting it made such a grid look finely sampled and
+  accepted a back azimuth 45° from where the cut needed one.
+
+**And the cut dominates the answer**, which is the whole reason it may not be guessed: on the measured
+patch the **E-plane reads 157° and the H-plane 84°**. The E-plane figure is also a good illustration
+of the infinite ground plane — the pattern only reaches zero at exact grazing, so the half-power point
+sits near 78° where a finite board puts it nearer 40°.
+
+### The staged front-to-back refusal, and the proof that it is one predicate
+
+`FrontToBackDb` is in the registry from this phase, refuses with its own sentence naming the reason
+(the ground plane and every dielectric layer are laterally infinite, so there is no lower hemisphere)
+and the phase that supplies it, and — the part that makes the staging real — **its `Evaluate` is
+written and already correct**. `FrontToBack_BecomesAvailableOnTheOnePredicate_AndItsValueIsAlreadyRight`
+hands the same registry entry a pattern whose θ axis reaches 180° and gets 20.000000 dB out of a
+hand-built 100:1 ratio. The finite-ground phase moves `PlanarFarFieldGrid.MaxThetaDeg` and nothing in
+the picker, the exporter or the cube emission changes. `LayeredMedium.CanHost`'s rule holds: the
+refusal is narrowed, never deleted.
+
+`DirectivityPeakPhiDeg` is refused the same way at a broadside peak — every azimuth names the same
+direction there, and reporting the first grid value would look like a measurement of a direction. The
+θ cube says where the peak is, so the refusal is informative rather than a hole. (On the edge-fed
+patch the peak is at θ = 1°, not 0: the feed breaks the x symmetry, and the azimuth is therefore
+published.)
+
+### Measured cost — reported, not made into a timing test
+
+Release, 10 cores, 1°×1° hemisphere, the 2.4 GHz patch. **The whole registry costs 20-40 ms** against
+a 287-2,429 ms pattern and a 58-1,961 ms solve, from N = 237 to N = 3,831 — roughly **1 %** of the
+pattern at the top end, the surface-wave integral being nearly all of it. **That is why
+`PlanarFarFieldSettings` has no switch to turn the metrics off**: every one of them is a post-process
+of a pattern the run has already paid for, and a pattern with no numbers attached is half an answer.
+
+### Other traps and decisions worth having written down
+
+- **An efficiency above 1 REFUSES and names both numbers; it is never clamped.** A clamped efficiency
+  reads as 100 % and hides exactly the kind of level error the itemisation exists to catch. The
+  tolerance is 2e-3 — an order of magnitude above the worst measured lossless residual — and it exists
+  only because the numerator is a quadrature and the denominator comes out of a factorisation.
+- **Refusing `PowerSurfaceWave` must take `PowerDielectric` with it.** The residual's meaning depends
+  on the term taken out of it, so publishing accepted − radiated under the dielectric name would be
+  the double count the note warns about. The combined remainder is left for the caller to form from
+  the two cubes that are published.
+- **A barely bound mode keeps its energy in the AIR, so a lossy substrate does not make its pole
+  lossy.** 1.6 mm FR-4 reads |Im k_ρ|/Re k_ρ = 1.2e-4 at tanδ = 0.02 and still only 3.9e-3 at
+  tanδ = 1. Reaching the 0.05 residue ceiling takes a mode genuinely inside the dielectric — 8 mm
+  εᵣ = 10 at tanδ = 0.3 puts TM₀ at k_ρ/k₀ = 2.65 and |Im/Re| = 0.20. **The ceiling is reachable but
+  fires for no ordinary board**, which is where a ceiling belongs.
+- **A metric is published as ONE cube over the whole sweep or not at all.** A `DataCube` has no
+  missing-value concept, so a cube with a refused point would carry either a NaN — a hole that reads
+  as data — or a fabricated number. Availability depends on the medium and the grid, both constant
+  across a sweep; the one frequency-dependent case (the pole's loss ceiling) is named rather than
+  half-published.
+- **The beamwidth cut axis must AGREE across the set.** A derived cut is derived per pattern, and a
+  structure whose dominant axis moves with frequency or differs between driven ports has no single
+  plane to put on one axis. Averaging one in would be the guess §4 forbids, so a disagreement refuses
+  the beamwidth for the whole set and says to name a cut.
+- **`tests/Firewall.Tests` was ALREADY RED at ANT-4's commit**, and that is worth recording because it
+  is the failure mode the user-facing-text gate exists to catch: ANT-4 added three
+  `throw new …Exception("…")` sentences in `PlanarFarField.cs` and did not list them in
+  `user-facing-text-allowlist.txt`, so `NoNewUserFacingTextIsAddedBelowTheUiFirewall` failed on 3 of
+  them before this phase added a fourth. All four are internal invariants no user reads — a solution
+  and a mesh that are not the same solve, the two spectral-kernel choices disagreeing, a merged cell
+  the closed-form rooftop transform cannot describe — so all four are allow-listed, which is what that
+  gate's own message says to do when a plain exception really is right.
+- **ANT-4's interim `PlanarFarField.PowerBalanceNote` is RETIRED**, one day after it landed, because
+  its own closing sentence ("the unaccounted term … which this phase does not itemise") stopped being
+  true. `PlanarPowerBudget.Caption` is its strict superset, and carrying both would have put two
+  sentences that contradict each other into one notes list.
+
+### What was built
+
+- `src/Engine/Mom/PlanarMetrics.cs` — `PlanarMetric`, `PlanarMetricAxis`, `PlanarMetricSettings`,
+  `PlanarPatternPeak`, `PlanarBeamCut`/`PlanarBeamCuts`, `PlanarMetricContext`,
+  `PlanarMetricDefinition`, `PlanarMetricOutcome`, `PlanarMetricReport`, **`PlanarMetrics.Registry`**
+  and `PlanarMetricSet`.
+- `src/Engine/Mom/PlanarPowerBudget.cs` — `PlanarSpectralVoltages` (the problem's own kernel at an
+  arbitrary complex k_ρ and level pair), `PlanarGuidedModePower`, `PlanarSurfaceWavePower`,
+  `PlanarSurfaceWaveLaunch`, `PlanarPowerBudget`.
+- `src/Engine/Mom/PlanarBeamwidth.cs` — the cut derivation, the fold, and the four refusals.
+- `PlanarFarFieldSettings.Metrics`, `PlanarSolveResult.Metrics`, the reports built beside each pattern
+  in both sweep drivers (the only place the pattern, its currents and its raw admittance are in hand
+  at once), and `PlanarKernel.AddMetrics` — **13 metrics in ONE registry**, published as cubes in
+  ANT-4's `"farfield"` group, **and no new result type for the seventh phase running.**
+- `tests/Engine.Tests/Mom/PlanarMetricsTests.cs` — 26 tests, **3 s**, all routine tier.
+
+### Not done, on purpose
+
+- **No independent volume integral for the dielectric loss.** Refuted above: over a laterally infinite
+  substrate it is not a disjoint channel from the surface wave, so it would double-count rather than
+  cross-check. The lossless balance is the cross-check, and it is a stronger one.
+- **No axial ratio or polarization sense** — ANT-6's, and the circular-polarization case is exactly
+  where this phase's beamwidth REFUSES and points at it.
+- **No front-to-back number.** Staged, not omitted.
+- **Nothing reaches the CLI or the GUI**, because ANT-4's far field does not either: the registry is
+  what makes the picker, the listing and the exporter cheap when a presentation phase arrives.

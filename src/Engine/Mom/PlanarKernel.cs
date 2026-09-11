@@ -473,6 +473,7 @@ public sealed class PlanarKernel
         ds.AddToGroup(DiagnosticsGroup, "CalibrationUsable",  new DataCube(Ax1(), usable));
 
         AddFarField(ds, sweep.FarField);
+        AddMetrics(ds, sweep.Metrics);
 
         return ds;
     }
@@ -529,6 +530,52 @@ public sealed class PlanarKernel
         ds.AddToGroup(PlanarFarField.Group, "Etheta", new DataCube(Ax(), eth));
         ds.AddToGroup(PlanarFarField.Group, "Ephi",   new DataCube(Ax(), eph));
         ds.AddToGroup(PlanarFarField.Group, "U",      new DataCube(Ax(), u));
+    }
+
+    /// <summary>
+    /// <b>ANT-5 — the metrics, in ANT-4's own <c>"farfield"</c> group and still with no new result
+    /// type</b> (R-res-6 for the seventh phase running). Each is a real cube over
+    /// <c>[freq, port]</c>, except the beamwidth, which carries a <c>cut</c> axis between them holding
+    /// the φ of each plane in degrees — which is how §4's "report the cut alongside the number" is
+    /// satisfied without a second cube to go and read.
+    ///
+    /// <para><b>A metric is published as one cube or not at all</b>, which
+    /// <see cref="PlanarMetricSet.Publishable"/> decides; a refused one is carried as a NOTE in the
+    /// registry's own wording, and is PRESENT in <see cref="PlanarMetrics.Registry"/> either way. That
+    /// is what makes front-to-back visible to a picker, a listing and an exporter on day one while
+    /// still refusing to print a number for it.</para>
+    /// </summary>
+    private static void AddMetrics(DataSet ds, PlanarMetricSet? metrics)
+    {
+        if (metrics is null || metrics.Reports.Count == 0) return;
+
+        int nf = metrics.FrequenciesHz.Count, nq = metrics.PortNumbers.Count;
+        int nc = metrics.CutsPhiDeg.Count;
+
+        Axis Freq() => new("freq", metrics.FrequenciesHz.ToArray(), "Hz");
+        Axis Port() => new("port", metrics.PortNumbers.Select(n => (double)n).ToArray(), "");
+        Axis Cut()  => new("cut",  metrics.CutsPhiDeg.ToArray(), "deg");
+
+        foreach (var def in PlanarMetrics.Registry)
+        {
+            if (!metrics.Publishable(def.Metric).Ok) continue;
+
+            bool perCut = def.Axis == PlanarMetricAxis.PerCut;
+            int  stride = perCut ? nc : 1;
+            if (perCut && nc == 0) continue;
+
+            var values = new double[nf * stride * nq];
+            for (int i = 0; i < nf; i++)
+                for (int q = 0; q < nq; q++)
+                {
+                    var outcome = metrics.At(i, q)[def.Metric];
+                    for (int k = 0; k < stride; k++)
+                        values[(i * stride + k) * nq + q] = outcome.Values[k];
+                }
+
+            Axis[] axes = perCut ? [Freq(), Cut(), Port()] : [Freq(), Port()];
+            ds.AddToGroup(PlanarFarField.Group, def.CubeName, new DataCube(axes, values));
+        }
     }
 
     private static double[] PortNumbers(IReadOnlyList<PlanarPortResolution> ports)

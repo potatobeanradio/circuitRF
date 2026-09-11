@@ -576,12 +576,21 @@ public sealed class FarFieldElementFactors
 /// already looking. <b>The freq axis is data</b> — a metric-versus-frequency phase widens this list,
 /// not the cube's shape.
 /// </param>
+/// <param name="Metrics">
+/// <b>ANT-5 — how the metrics are tuned, and there is deliberately no switch to turn them OFF.</b>
+/// Null takes <see cref="PlanarMetricSettings.Default"/>. Every metric is a post-process of a pattern
+/// the run has already paid for, the whole registry costs a fraction of one frequency point's own
+/// solve, and a pattern with no numbers attached is half an answer — so the only things this selects
+/// are which beamwidth cuts to take and how finely to sample the surface-wave azimuth.
+/// </param>
 public sealed record PlanarFarFieldSettings(
     PlanarFarFieldGrid?    Grid          = null,
-    IReadOnlyList<double>? FrequenciesHz = null)
+    IReadOnlyList<double>? FrequenciesHz = null,
+    PlanarMetricSettings?  Metrics       = null)
 {
     public static readonly PlanarFarFieldSettings Default = new();
     public PlanarFarFieldGrid EffectiveGrid => Grid ?? PlanarFarFieldGrid.Hemisphere();
+    public PlanarMetricSettings EffectiveMetrics => Metrics ?? PlanarMetricSettings.Default;
 }
 
 /// <summary>Every pattern one sweep produced, on one grid, with the axes the DataSet cubes carry.</summary>
@@ -800,33 +809,5 @@ public static class PlanarFarField
         PlanarFanOut.Run(maxDegreeOfParallelism, rows);
 
         return new PlanarFarFieldPattern(g, eTheta, ePhi, u, drivenPortNumber, fHz);
-    }
-
-    /// <summary>
-    /// <b>§5.4's power balance, reported rather than gated.</b> The power that actually leaves the
-    /// driven port for a 1 V delta gap is <c>½·Re(Y_jj)</c> — the RAW admittance of the structure as
-    /// meshed, which is what the currents belong to; the de-embedded matrix belongs to a different
-    /// structure with the feed leads removed.
-    ///
-    /// <para><b>The copper term is identically zero in this kernel</b> — the metal is a perfect
-    /// conductor and <c>SigmaSm</c> is carried through the whole pipeline and never read by the fill
-    /// — so the balance closes OPTIMISTICALLY, and the shortfall reported here is dielectric loss
-    /// plus surface-wave power together. Itemising those two is the metrics phase's, and it is named
-    /// rather than approximated.</para>
-    /// </summary>
-    public static string PowerBalanceNote(PlanarFarFieldPattern pattern, Complex rawSelfAdmittance)
-    {
-        double accepted = 0.5 * rawSelfAdmittance.Real;
-        double radiated = pattern.RadiatedPowerW;
-        double shortfall = accepted - radiated;
-        string pct = accepted > 0 ? $" ({100.0 * radiated / accepted:F1} % of it)" : "";
-        return
-            $"Power balance at {SurfaceMesher.Eng(pattern.FrequencyHz)}Hz, port {pattern.DrivenPort} " +
-            $"driven at 1 V: {SurfaceMesher.Eng(accepted)}W accepted, " +
-            $"{SurfaceMesher.Eng(radiated)}W radiated into the upper hemisphere{pct}, " +
-            $"{SurfaceMesher.Eng(shortfall)}W unaccounted. The unaccounted term is DIELECTRIC LOSS " +
-            $"plus SURFACE-WAVE power, which this phase does not itemise. Conductor loss is " +
-            $"identically zero here — the metal is a perfect conductor — so the balance closes " +
-            $"optimistically and a radiation efficiency read off it would read high.";
     }
 }

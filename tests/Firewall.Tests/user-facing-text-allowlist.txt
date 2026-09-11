@@ -375,6 +375,9 @@ src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance s
 src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) needs 
 src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
 src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
+src/Engine/Mom/PlanarFarField.cs|The far field and the matrix fill disagree about which spectral kernel this problem 
+src/Engine/Mom/PlanarFarField.cs|The solution has {basisCurrents.Count} unknowns and the mesh has {mesh.Bases.Count} 
+src/Engine/Mom/PlanarFarField.cs|The two cells of this {basis.Direction} rooftop do not span the same transverse extent 
 src/Engine/Mom/PlanarFeedExtension.cs|{p} ports need {p} lengths and {p} propagation constants.
 src/Engine/Mom/PlanarFill.cs|The cores-only source carries no remainder.
 src/Engine/Mom/PlanarFill.cs|These cores were built geometry-only (M5's accelerator path), so the cached cell-pair 
@@ -383,6 +386,7 @@ src/Engine/Mom/PlanarFill.cs|This mesh has {n:N0} unknowns, which is past the {S
 src/Engine/Mom/PlanarFill.cs|{caller} needs cores in the {layout} layout and these are {cores.Layout}. 
 src/Engine/Mom/PlanarKernel.cs|A planar solve needs at least one port. Place port labels on the conductor ends in 
 src/Engine/Mom/PlanarKernel.cs|This layout has no port {drivenPortNumber} to drive; it has 
+src/Engine/Mom/PlanarPowerBudget.cs|The solution has {basisCurrents.Count} unknowns and the mesh has 
 src/Engine/Mom/PlanarSolve.cs|A sweep needs at least one frequency.
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} returns through drawn metal, and 
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 

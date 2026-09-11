@@ -750,6 +750,13 @@ public sealed class PlanarSolveResult
     public PlanarFarFieldSet? FarField { get; init; }
 
     /// <summary>
+    /// <b>ANT-5 — every metric ANT-4's patterns imply</b>, or null when no pattern was produced. One
+    /// report per (requested frequency, port), each carrying both the numbers and the REFUSALS, so a
+    /// metric that cannot be computed is present with its reason rather than missing.
+    /// </summary>
+    public PlanarMetricSet? Metrics { get; init; }
+
+    /// <summary>
     /// <b>L9e/R-adf-2 — how many of the published points were actually SOLVED.</b> Equal to
     /// <c>Points.Count</c> when adaptive sampling is off. This is half of what makes an adaptively
     /// sampled sweep honest: a user who cannot tell whether a value was solved or modelled cannot
@@ -1354,6 +1361,7 @@ public static class PlanarSolve
             if (!farVerdict.Ok) farWanted.Clear();
         }
         var farPatterns = new Dictionary<int, PlanarFarFieldPattern[]>();
+        var farMetrics  = new Dictionary<int, PlanarMetricReport[]>();
         var farY         = new Dictionary<int, Mat<Complex>>();
 
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
@@ -1528,8 +1536,10 @@ public static class PlanarSolve
 
                 if (farWanted.Contains(points.Count))
                 {
-                    farPatterns[points.Count] = FarFieldAt(problem, mesh, currents, ports, f,
-                                                           farSettings!, cap, control);
+                    var (pats, mets) = FarFieldAt(problem, mesh, currents, y, ports, f,
+                                                  farSettings!, cap, control);
+                    farPatterns[points.Count] = pats;
+                    farMetrics[points.Count]  = mets;
                     farY[points.Count] = y;
                 }
 
@@ -1662,8 +1672,10 @@ public static class PlanarSolve
                 foreach (int i in chosen)
                 {
                     farWanted.Add(i);
-                    farPatterns[i] = FarFieldAt(problem, mesh, currentsByIndex[i], ports, freqs[i],
-                                                farSettings!, cap, control);
+                    var (pats, mets) = FarFieldAt(problem, mesh, currentsByIndex[i], yByIndex[i],
+                                                  ports, freqs[i], farSettings!, cap, control);
+                    farPatterns[i] = pats;
+                    farMetrics[i]  = mets;
                     farY[i] = yByIndex[i];
                 }
                 if (moved.Count > 0)
@@ -1747,8 +1759,9 @@ public static class PlanarSolve
         double coreBuildMs = setupMs + dut.CoreBuildMs;
         foreach (var cal in calibrators) coreBuildMs += cal.CoreBuildMs;
 
-        // ── ANT-4 — the patterns, and the sentences that make them readable ─────────────────────
+        // ── ANT-4/ANT-5 — the patterns, the metrics, and the sentences that make them readable ──
         PlanarFarFieldSet? farSet = null;
+        PlanarMetricSet?   metricSet = null;
         if (farSettings is not null && !farVerdict.Ok)
         {
             // Present and refused, which is the house shape: the sweep is not thrown away for a
@@ -1768,11 +1781,25 @@ public static class PlanarSolve
 
             var first = farSet.At(0, 0);
             notes.Add(first.ScaleCaption);
-            notes.Add(PlanarFarField.PowerBalanceNote(first, farY[idx[0]][0, 0]));
             notes.Add("The pattern is the radiation of the structure AS MESHED, which includes any " +
                       "uniform feed lead R-fed-1 grew for the calibration. The s-parameters beside it " +
                       "have that lead de-embedded away; a pattern cannot, because the lead's current " +
                       "is real current and it really radiates.");
+
+            // ── ANT-5 — the metrics. Every refusal is said ONCE, in the registry's own wording, and
+            //    the sweep is never thrown away for one of them (present and refused).
+            var flatMetrics = new List<PlanarMetricReport>(idx.Length * ports.Count);
+            foreach (int i in idx) flatMetrics.AddRange(farMetrics[i]);
+            metricSet = PlanarMetricSet.From(
+                idx.Select(i => freqs[i]).ToArray(),
+                ports.Select(pp => pp.Number).ToArray(),
+                flatMetrics);
+
+            var firstMetrics = metricSet.At(0, 0);
+            notes.Add(firstMetrics.Budget.Caption);
+            if (firstMetrics.Budget.SurfaceWave is { } guided) notes.Add(guided.Caption);
+            notes.Add(PlanarPowerBudget.BoundNote);
+            foreach (string refusal in metricSet.Refusals) notes.Add(refusal);
         }
 
         return new PlanarSolveResult
@@ -1786,6 +1813,7 @@ public static class PlanarSolve
             CapturedCurrents    = captured,
             CapturedFrequencyHz = capturedF,
             CapturedPortNumber  = captured is null ? 0 : st.CurrentDensityPortNumber,
+            Metrics       = metricSet,
             SolvedPointCount          = solvedCount,
             WorstAdaptiveDisagreement = worstAdaptive,
             SolvedFrequencies         = solvedList,
@@ -1800,20 +1828,33 @@ public static class PlanarSolve
     /// is what makes array pattern synthesis possible later. Retro-fitting an axis onto a shipped
     /// cube is not free.
     /// </summary>
-    private static PlanarFarFieldPattern[] FarFieldAt(
+    /// <summary>
+    /// One frequency's patterns AND the metrics they imply, one of each per port.
+    ///
+    /// <para><b>ANT-5 — the metric report is built here, beside the pattern, because this is the only
+    /// place the three things a metric needs are in hand at once</b>: the pattern, the basis currents
+    /// it was transformed from, and the RAW port admittance those currents came out of (R-ant-5's
+    /// denominator). Carrying the pattern out and asking for metrics later would mean re-deciding
+    /// which admittance belongs to it, and the de-embedded one belongs to a different structure.</para>
+    /// </summary>
+    private static (PlanarFarFieldPattern[] Patterns, PlanarMetricReport[] Metrics) FarFieldAt(
         PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> currents,
-        IReadOnlyList<PlanarPortResolution> ports, double fHz,
+        Mat<Complex> rawY, IReadOnlyList<PlanarPortResolution> ports, double fHz,
         PlanarFarFieldSettings settings, int? cap, RunControl? control)
     {
         control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
-        var made = new PlanarFarFieldPattern[ports.Count];
+        var made    = new PlanarFarFieldPattern[ports.Count];
+        var metrics = new PlanarMetricReport[ports.Count];
         for (int j = 0; j < ports.Count; j++)
         {
             made[j] = PlanarFarField.Compute(problem, mesh, currents[j], ports[j].Number, fHz,
                                              settings.EffectiveGrid, cap);
+            metrics[j] = PlanarMetrics.Evaluate(new PlanarMetricContext(
+                problem, mesh, currents[j], made[j], rawY[j, j], ports[j].Z0,
+                settings.EffectiveMetrics, cap));
             control?.TickStage();
         }
-        return made;
+        return (made, metrics);
     }
 
     /// <summary>

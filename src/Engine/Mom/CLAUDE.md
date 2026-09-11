@@ -44,7 +44,7 @@ the file moved). The Ui half is `src/Ui/Layout/Em/CLAUDE.md`; the user-facing pa
 |---|---|---|
 | Physics | 2D quasi-static per-unit-length RLGC → S | 2.5D full-wave MPIE surface MoM |
 | Input | `EmProblem` (cross-section) | `PlanarProblem` (layout + stackup) — a **sibling type, not a subtype** |
-| Diagnostics group | `"tline"` | `"planar"`, plus `"farfield"` when a pattern was asked for |
+| Diagnostics group | `"tline"` | `"planar"`, plus `"farfield"` (pattern **and** metrics) when a pattern was asked for |
 | Cost | ~1000× cheaper (`EmKernelRegistry.CheaperByRoughly`) | dense fill dominates |
 
 `EmKernelRegistry` is keyed on the **analysis kind** and unifies the **output** (`EmKernelOutcome`
@@ -466,7 +466,74 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   (9.51 s on one core), exactly linear in N and in direction count.** The direct sum is exact and
   nothing is optimised.
 
+### 3.7 The antenna metrics (`PlanarMetrics`, ANT-5)
+
+- **R-ant-4. BOTH GAINS SHIP AND NEITHER IS CALLED JUST "GAIN".** `GainDbi` = D·η_rad = 4π·U_peak /
+  P_accepted, **efficiency only, mismatch EXCLUDED**; `RealizedGainDbi` = that times the mismatch
+  factor, i.e. 4π·U_peak / P_available, **mismatch INCLUDED**. On a board mismatched by 3 dB the two
+  differ by a factor of two, and this is the commonest place antenna tools quietly disagree.
+- **R-ant-5. THE EFFICIENCY DENOMINATOR IS P_ACCEPTED = ½Re(Y_jj) OF THE RAW SELF-ADMITTANCE** —
+  never an incident power (mismatch is already in Y and counting it twice is the classic double
+  count), and never the DE-EMBEDDED S, which describes a different structure with the feed leads
+  removed. `PowerAccepted` is published for that reason: an efficiency whose denominator is not
+  published cannot be reproduced.
+- **R-ant-6. THERE IS EXACTLY ONE MISMATCH FACTOR AND BOTH GAINS READ IT**, written as the
+  accepted-over-available ratio `4·Re(Z₀)·Re(Y)/|1 + Z₀Y|²` from the same Y_jj and Z₀ everything else
+  here uses. So "the two gains differ by exactly the mismatch factor" is structural, not two
+  estimates agreeing.
+- **`PowerConductor` IS PUBLISHED AND IS ZERO, with its note.** Kernel B's metal is a perfect
+  conductor; a missing term reads as "not a factor", a zero term with the note reads as "this kernel
+  does not model it". The note carries §10.9's 6.5 / 3.0 / 2.1 % yardstick.
+- **`PowerDielectric` IS A RESIDUAL (accepted − radiated − surface wave), AND THAT IS PHYSICS, NOT A
+  SHORTCUT.** Over a laterally infinite lossy substrate a volume integral of ωε₀ε″|E|² already
+  contains the whole surface-wave term — the guided mode decays as e^{−2αρ}/ρ and never escapes — so
+  the two are not disjoint channels and adding them double-counts. What is published is the
+  dielectric loss NOT carried away by a guided mode; on a finite board that is the distinction that
+  matters, because the guided part instead reaches the edge.
+- **R-ant-3. THE BALANCE CANNOT GATE ITSELF; THE LOSSLESS CASE GATES IT.** With tanδ = 0 the residual
+  must be zero, so ½Re(Y_jj) (MoM factorisation), ∫U dΩ (far field) and the pole residues (spectral
+  kernel) are three independent routes on one number. **Measured: 5.6e-5 on the 1.6 mm FR-4 starter
+  cross-section and 1.6e-4 on a 5× thicker low-εᵣ slab**, with the surface wave carrying 20 % and
+  32 % of the budget respectively.
+- **`PowerSurfaceWave` is the residue of the spectral line voltages at the surface-wave poles** —
+  `P = Σ_modes β·Σ_j Im[Q_p(β, φ_j)] / (4N_φ)`, the φ rule being the periodic rectangle (**converged
+  at 90 samples to eleven digits**; the default 360 costs nothing). It is a **permanent loss** here,
+  it is **not radiation**, and it must not be added to it.
+- **`BeamwidthDeg` is PER CUT and the cut is NEVER guessed** (R-ant-7) — named by the caller, or
+  derived from the current transform **at the peak direction** and reported as derived, with the φ
+  actually used on the cube's own `cut` axis. **The cut dominates the answer**: 157° E-plane against
+  84° H-plane on one measured patch.
+- **`FrontToBackDb` is PRESENT AND REFUSED**, its `Evaluate` already written and already correct, so
+  the finite-ground phase flips ONE predicate (`Grid.ThetaDeg[^1] > MaxThetaDeg`) and re-plumbs
+  nothing. `DirectivityPeakPhiDeg` refuses at a broadside peak, where every azimuth names the same
+  direction.
+- **Cost, measured (Release, 10 cores, 1°×1° hemisphere):** the whole registry is **20-40 ms** against
+  a 287-2,429 ms pattern and a 58-1,961 ms solve, from N = 237 to N = 3,831 — about **1 %** of the
+  pattern. Which is why there is no switch to turn the metrics off.
+- Cubes: group `"farfield"`, `[freq, port]` each, except `BeamwidthDeg` at `[freq, cut, port]`. **A
+  metric is published as ONE cube over the whole sweep or not at all** — a `DataCube` has no
+  missing-value concept — and a refused one arrives as a note in the registry's own wording.
+
 ### 3.5 Kernel B traps
+
+**Antenna metrics**
+- **The dominant current axis must be read at the PEAK direction, not at k = 0.** The k = 0 transform
+  is the structure's total current moment, which CANCELS to round-off on anything electrically long
+  (a 3 λ_g line), so the derived cut would come off noise. Measured: it produced the right plane only
+  because the y moment was exactly zero by symmetry, and reported it back to front (180° instead of
+  0°) — an axis is a LINE, so fold it toward the peak's azimuth.
+- **A φ-grid tolerance must be half the FINEST step, not the coarsest.** A half-circle grid's 225°
+  wrap-around gap is the symptom, not a step; counting it made such a grid look finely sampled and
+  accepted a back azimuth 45° from where the cut needed one.
+- **A barely bound mode keeps its energy in the AIR, so a lossy substrate does not make its pole
+  lossy.** 1.6 mm FR-4 reads |Im k_ρ|/Re k_ρ = 1.2e-4 at tanδ = 0.02 and only 3.9e-3 at tanδ = 1;
+  reaching the 0.05 residue ceiling takes a mode genuinely inside the dielectric (k_ρ/k₀ = 2.65 on
+  8 mm εᵣ = 10).
+- **The lossless power-balance residual is the MATRIX FILL's accuracy, not the metrics'.** It is
+  ~1e-5 on the FR-4 starter, ~4e-4 to 6e-3 on 203 µm prepreg and ~1e-2 on 100 µm GaAs; it tracks how
+  hard the DCIM fit is and does **not** move when the far-field quadrature is refined 10×.
+- **The residue is taken in k_ρ, never in w = k_ρ².** V is a function of w, so in k_ρ it is even with
+  poles at ±k_p and R_k = R_w/(2k_p) — a factor a substitution loses silently and a contour gets free.
 
 **Far field**
 - **Neither element factor may be written with a `1/cosθ` or a `Z^h = ωµ/k_z` in it.** The obvious
@@ -856,6 +923,18 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 - **A calibration standard containing a via** — the two-line algebra models a uniform matched
   section. A standard also carries **no cut cell** (`BuildLine` never runs the conformal pass).
 - `CanSolve` refuses: a level not on any interface, levels not bottom-to-top, a via skipping a level.
+- **The ANTENNA METRICS refuse five things by name, each leaving the sweep and the other metrics
+  intact** (ANT-5, §3.7). `FrontToBackDb` **always, in this kernel** — the field below a laterally
+  infinite ground plane is identically zero so the true ratio is infinite, and ∞, a large finite
+  number and a missing metric are all worse than the sentence; the finite-ground phase NARROWS it by
+  one predicate. `DirectivityPeakPhiDeg` **at a broadside peak**, where every azimuth names the same
+  direction. `PowerSurfaceWave` on a substrate whose pole is too far off the real axis for a
+  simple-pole residue (|Im k_ρ|/Re k_ρ past 0.05), or whose mode is too close to cutoff to be
+  separable from the continuum — and `PowerDielectric` goes with it, because the residual's meaning
+  depends on the term taken out of it. `BeamwidthDeg` when there is no cut: no dominant linear current
+  axis (a circularly polarized structure reads 1.0 exactly), no current moment at all, a grid that
+  samples only part of the azimuth circle, or a cut with no 3 dB crossing inside the sampled θ range.
+  **It is never defaulted to φ = 0.**
 - **The FAR FIELD refuses four things by name, and each leaves the sweep intact** (an
   `EmSuitability`, reported as a note — present and refused). A **CUT cell** (its metal is not its
   rectangle, so the rectangle's transform would be a smooth plausible wrong pattern; `Staircase`

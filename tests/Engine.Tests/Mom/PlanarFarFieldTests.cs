@@ -535,7 +535,9 @@ public class PlanarFarFieldTests(Xunit.Abstractions.ITestOutputHelper output)
     /// <para><b>The copper term is identically zero in this kernel</b> (the metal is a perfect
     /// conductor and <c>SigmaSm</c> is never read by the fill), so the balance closes optimistically
     /// and the shortfall printed below is dielectric loss plus surface-wave power together. That is
-    /// expected, not a defect, and it is exactly why the gate is an inequality.</para>
+    /// expected, not a defect, and it is exactly why the gate HERE is an inequality. ANT-5 itemises
+    /// the shortfall and gates the EQUALITY on a lossless substrate — see
+    /// <c>PlanarMetricsTests.ThePowerBalanceCloses_OnALosslessSubstrate</c>.</para>
     /// </summary>
     [Fact]
     public void RadiatedPower_NeverExceedsThePowerAcceptedAtThePort()
@@ -550,7 +552,8 @@ public class PlanarFarFieldTests(Xunit.Abstractions.ITestOutputHelper output)
 
         double accepted = 0.5 * sol.Y[0, 0].Real;
         double radiated = pattern.RadiatedPowerW;
-        _out.WriteLine(PlanarFarField.PowerBalanceNote(pattern, sol.Y[0, 0]));
+        _out.WriteLine(PlanarPowerBudget.For(problem, mesh, sol.Currents[0], pattern, sol.Y[0, 0])
+                                        .Caption);
         _out.WriteLine($"N = {mesh.Bases.Count}, accepted {accepted:E4} W, radiated {radiated:E4} W, " +
                        $"ratio {radiated / accepted:P2}");
 
@@ -586,8 +589,11 @@ public class PlanarFarFieldTests(Xunit.Abstractions.ITestOutputHelper output)
         // The S cube is untouched: the far field ADDS a group, it does not change the result type.
         Assert.NotNull(result.Data["S"]);
         Assert.Contains(result.Notes, n => n.Contains("θ spans 0…90°"));
-        Assert.Contains(result.Notes, n => n.Contains("Power balance"));
-        _out.WriteLine(string.Join("\n", result.Notes.Where(n => n.Contains("Far field") || n.Contains("Power balance"))));
+        // ANT-5 superseded ANT-4's interim one-line balance note with the itemised BUDGET, because
+        // that note's own closing sentence ("this phase does not itemise") stopped being true. The
+        // note this asserts is the one the run now carries.
+        Assert.Contains(result.Notes, n => n.Contains("Power budget at"));
+        _out.WriteLine(string.Join("\n", result.Notes.Where(n => n.Contains("Far field") || n.Contains("Power budget"))));
     }
 
     /// <summary>A structure the far field cannot do is REPORTED and the sweep still ships — present
