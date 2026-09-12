@@ -1603,3 +1603,109 @@ were both verified to go **red** against a deliberately-installed one-part guard
 The class sits in `CellStatGlobalsCollection` rather than the typeface one: its fixtures carry no
 label, but every render in it resolves placed cells and each test invalidates the resolver, which is
 the process-global traffic that collection exists to serialize.
+
+## RF2 — a pinch gesture was a 100% cache miss, and bucketing it up needed a finer ladder than the brief thought (2026-09-12)
+
+`docs/sonnet-briefs/brief-rasterfill-2-widen-key-bucketing.md`, the second of the raster-fill series.
+`DrawLayer` computed the stroke-elision tier's widening allowance straight from the zoom —
+`ceil(2 device px / devicePxPerDbu)` — and that number is `LayoutPathCache`'s key for the widened
+outline (`Entry.WidenedAtDbu`). At board fit on the reported board `devicePxPerDbu` is ~3.08e-5, so
+the key is ~64,935 and a **0.1% zoom change moves it by ~65**. Different key, total miss, every
+hairline path on every visible layer rebuilt — on a gesture that produces such a frame dozens of times
+a second. `LayoutRenderDetail.ToleranceDbu` two lines away had been bucketed to a zoom octave for
+exactly this reason since L2c; the widening never was.
+
+It now goes through `LayoutRenderDetail.WidenDbu`, which buckets it to a rung of an **eighth-octave**
+ladder. `src/Cli` and the GUI share it, since both draw through `LayoutRenderer`.
+
+### The direction is UP, and that is the part worth writing down
+
+`ToleranceDbu` buckets **down** and is safe doing so: a finer decimation tolerance than was asked for
+only tightens an error bound. The obvious symmetry is a trap, because this number is not an error
+bound — it is a **visibility substitution**. The widened fill stands in for a fill plus the pen that
+would have outlined it, so a widening that came out *smaller* than that pen draws hairline artwork
+thinner than the frame meant to, and sub-pixel geometry starts to disappear. That is the exact defect
+the tier exists to prevent (it is why the closed drill-chart glyphs vanished when outlines were first
+dropped wholesale). So the bucket is always >= the raw allowance, and the price is paid as an
+over-cover instead.
+
+### What the over-cover costs, measured — and why the brief's own premise was wrong
+
+The brief expected whole-octave buckets, on the reasoning that "the over-cover is at most one further
+device pixel, so the change is expected to be imperceptible", and asked for a differential render
+rather than an argument. The differential render refutes it. Oracle: ink coverage (1 - luminance,
+averaged over the frame) of the substitution against the real fill-plus-outline at the same zoom, on
+**separated** one-mil traces — an abutting pour hides this, because its strokes overlap and only the
+pour's rim moves, where a routed layer's traces each get visibly fatter.
+
+| ladder | widening, worst zoom in a bucket | ink vs the true pen | verdict |
+|---|---|---|---|
+| whole octave | up to 2.000x the pen | **45.8%** | plainly visible |
+| half-octave | 1.414x | 19.0% | plainly visible |
+| quarter-octave (the brief's fallback) | 1.189x | 8.6% | still visible |
+| **eighth-octave (shipped)** | **1.090x** | **4.3%** | a 0.18 device-pixel step in drawn width |
+
+4.3% is the band `DefaultHairlineWidthDevicePixels`' own note already calls antialiasing-level, and it
+is what a viewer would see as a POP on the one frame that crosses a rung — inside a bucket the drawn
+widening drifts continuously with the zoom and there is nothing to see at all.
+
+**Going two halvings past the brief instead of one costs almost nothing**, which is what made the
+choice easy: against the gesture that provoked the work (0.1% zoom a frame) an eighth-octave bucket
+rebuilds the working set once every ~90 frames rather than every frame, and against a brisk pinch (an
+octave in a second, ~1.2% a frame) 8 times rather than 60. Sixteenths would halve the step again and
+double the rebuilds, and **the rebuild is the expensive event this exists to make rare** — so the
+ladder is not a free knob to turn down.
+
+### Before and after
+
+The reported board is not in the repo, so this is a synthetic stand-in of the same shape: 21,600
+abutting one-mil scanline strokes over two pour layers, 1600x1000, board fit (a 1-mil trace is
+0.813 device px there, so the whole document is in the hairline tier). Release scratch console against
+a CPU `SKSurface`, warm cache, mean of 12 frames.
+
+| | before | after |
+|---|---|---|
+| repaint, zoom fixed | 10.4 ms, **0** paths built | 10.2 ms, **0** |
+| pan, zoom fixed | 11.2 ms, **0** | 9.9 ms, **0** |
+| **zoom 0.1% a frame** | **23.0 ms, 54,630 paths a frame** | **8.2 ms, 0 paths a frame** |
+| zoom 1.2% a frame | 18.3 ms, 49,705 a frame | 10.8 ms, 7,982 a frame |
+
+**The +121% here against the brief's +17% on the real board is not a discrepancy**, and the brief's
+figure is the one to quote. This fixture rasterizes in 10 ms where board A's frame is 288 ms and 77%
+rasterization (overview S1c), so the same absolute rebuild is a much larger share of it. The counters
+are the part that transfers: a micro-zoom frame rebuilds **nothing**, where it used to rebuild
+everything.
+
+### Gates
+
+Six, in `tests/Ui.Tests/LayoutHairlineFillTests.cs`, and **not one asserts a duration**: the key is
+constant across a bucket and steps at the rung; the widening is never narrower than the raw allowance
+at any zoom across eleven decades (and never more than an eighth-octave wider); a micro-zoom frame
+reports `PathsConstructed == 0`; crossing a rung rebuilds once and the frame after it rebuilds
+nothing; a pan still rebuilds nothing; and the differential render above, bounded at 6% — which is
+what separates the shipped ladder from the next coarser one, so a quiet re-coarsening goes red.
+
+Verified to bite, not assumed: with the old raw expression restored, the two counter gates fail. With
+a quarter-octave ladder installed, the ladder gates fail.
+
+### Two things found on the way
+
+- **`OctaveMantissas.Length` IS `BucketsPerOctave`.** The first draft had the count as its own
+  constant beside an eight-entry mantissa table, and the measurement sweep that produced the table
+  above silently measured a ladder that was neither four- nor eight-per-octave — a four-entry count
+  read against an eight-entry table gives plausible-looking numbers for a ladder nobody chose. Tying
+  the count to the table's length is why the second sweep's numbers are the ones recorded.
+- **The placed-cell path has the same defect and is deliberately untouched.**
+  `LayoutRenderer.Instances.cs`' `CompiledChunk.Elided` and `CompiledLayerGeometry.Coarse` are both
+  keyed on `grow`, a raw float function of zoom, so a continuous zoom misses them every frame too. It
+  is out of this brief's scope (one expression in `DrawLayer`) and it is not a mechanical extension:
+  `grow` also decides which chunks *collapse*, so bucketing it changes a tier decision and not just a
+  cache key. It costs per chunk rather than per shape, and the reported board has no instances, so it
+  was never in these measurements.
+
+### One test failure attributed, not fixed
+
+`LayoutFlatDocumentInstanceQueryTests.FlatDocument_SteadyStateFrame_IssuesExactlyOneSpatialQuery` (the
+RF1 gate) failed once under the full `Layout|Render` filter and passes alone and on a re-run of the
+same filter (3,451/3,451). Nothing here touches the spatial index or that guard. Load-dependent, and
+recorded rather than chased.

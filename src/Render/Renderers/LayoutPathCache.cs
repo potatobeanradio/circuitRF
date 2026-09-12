@@ -53,10 +53,12 @@ public sealed class LayoutPathCache
 
         /// <summary>The stroke-elision tier's widened outline for this shape, and the widening it was
         /// built at (DBU). Mirrors <c>LayoutRenderer.CompiledChunk.Elided</c> exactly: the widening is
-        /// a device-pixel allowance expressed in DBU, so it is a function of ZOOM alone — which is
-        /// what makes caching it worthwhile. A pan holds zoom fixed, so every frame of the gesture
-        /// this exists to make smooth is a hit; only a zoom step rebuilds. Null until a frame actually
-        /// asks, so a document that never engages the tier pays nothing for it.</summary>
+        /// a device-pixel allowance expressed in DBU and BUCKETED to a rung of
+        /// <c>LayoutRenderDetail.WidenDbu</c>'s ladder, so it is a coarse function of ZOOM alone — which
+        /// is what makes caching it worthwhile. A pan holds zoom fixed, so every frame of the gesture
+        /// this exists to make smooth is a hit; a zoom rebuilds only when it crosses a rung, not on every
+        /// frame of the gesture. Null until a frame actually asks, so a document that never engages the
+        /// tier pays nothing for it.</summary>
         public SKPath? WidenedPath;
         public long WidenedAtDbu = -1;
         public long WidenedDetailDbu = -1;
@@ -112,17 +114,31 @@ public sealed class LayoutPathCache
     /// shape-LOCAL space (and against the same reference point) <see cref="GetOrBuild"/> uses, so both
     /// are drawn under the identical translate.
     ///
-    /// <para><b>Why a widened FILL is the exact substitution here, not an approximation.</b> A
-    /// <see cref="PathShape"/>'s fill IS its centreline stroked at <c>Width</c>; drawing that fill and
-    /// then outlining it with a pen of <c>w</c> device pixels covers precisely the same region as
-    /// filling the centreline stroked at <c>Width + w</c>. So one filled path replaces a fill plus an
-    /// outline pass with no geometric change — which is what makes this worth doing at all, given the
-    /// outline pass is what a stroke-per-segment Gerber makes ruinous (Skia's stroker runs over every
-    /// sub-path in the batch, and there can be tens of thousands of them on one copper layer).</para>
+    /// <para><b>Why a widened FILL stands in for the pair at all.</b> A <see cref="PathShape"/>'s fill
+    /// IS its centreline stroked at <c>Width</c>; drawing that fill and then outlining it with a pen of
+    /// <c>w</c> device pixels covers precisely the same region as filling the centreline stroked at
+    /// <c>Width + w</c>. So one filled path replaces a fill plus an outline pass — which is what makes
+    /// this worth doing at all, given the outline pass is what a stroke-per-segment Gerber makes ruinous
+    /// (Skia's stroker runs over every sub-path in the batch, and there can be tens of thousands of them
+    /// on one copper layer).</para>
     ///
-    /// <para>Keyed on <paramref name="widenDbu"/>: it is a device-pixel allowance converted to DBU, so
-    /// it changes with zoom and only with zoom. A pan is all hits; a zoom step rebuilds the working set
-    /// once. Returns null only if the shape has no buildable outline.</para>
+    /// <para><b>That identity was exact until 2026-09-12 and is now a BOUNDED OVER-COVER, which is the
+    /// price of the key below being cacheable.</b> <paramref name="widenDbu"/> no longer arrives as the
+    /// pen converted to DBU; it arrives bucketed UP an eighth-octave ladder
+    /// (<c>LayoutRenderDetail.WidenDbu</c>), so it is between 1x and 2^(1/8) = 1.0905x the pen. The
+    /// substitution therefore covers the pair's region and at most 0.09 device pixels more of margin on
+    /// each side — never less, which is the direction that matters, since a widening under the pen would
+    /// draw hairline artwork thinner than the frame meant to. Measured as ink coverage on separated
+    /// one-mil traces, the worst zoom in a bucket over-covers by 4.3% and the frames either side of a
+    /// rung differ by that much; the gate is
+    /// <c>LayoutHairlineFillTests.TheOverCoverAtARung_StaysWithinTheDocumentedBound</c>.</para>
+    ///
+    /// <para>Keyed on <paramref name="widenDbu"/>: it is a device-pixel allowance converted to DBU and
+    /// then bucketed, so it changes with zoom, only with zoom, and only once per bucket of it. A pan is
+    /// all hits; a continuous zoom inside one bucket rebuilds NOTHING, and crossing a rung rebuilds the
+    /// working set once. (Read straight from the zoom, as it was, "once" meant once per FRAME of a pinch
+    /// gesture — 192,680 paths a frame on an imported raster-fill board, and this comment saying "a zoom
+    /// step" is what let that survive.) Returns null only if the shape has no buildable outline.</para>
     /// </summary>
     internal (SKPath? LocalPath, long RefX, long RefY) GetOrBuildWidened(
         int index, PathShape shape, long widenDbu, double dbuToUm, long detailDbu, LayoutFrameCounters? counters)

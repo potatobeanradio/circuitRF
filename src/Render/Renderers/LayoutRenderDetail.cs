@@ -33,6 +33,11 @@ namespace CircuitRF.Render;
 /// anything is rebuilt, and the effective tolerance stays inside [half, one] x the requested pixel
 /// budget, so the error bound is unchanged. This is the same trick <c>LayoutRenderer.ComputeOrigin</c>
 /// already uses to keep the per-frame path-space anchor from moving on every pan.</para>
+///
+/// <para>The same file owns <see cref="WidenDbu"/>, which buckets the STROKE-ELISION tier's widening
+/// allowance — a different tier, cached in the same <see cref="LayoutPathCache"/>, for the identical
+/// reason, and bucketed in the OPPOSITE direction. Read that method before assuming the two are
+/// symmetric.</para>
 /// </summary>
 internal static class LayoutRenderDetail
 {
@@ -59,6 +64,105 @@ internal static class LayoutRenderDetail
         if (octave < 0) return 0;
         if (octave > 62) octave = 62;
         return 1L << octave;
+    }
+
+    /// <summary>The largest widening this will ever hand back. Only a degenerate zoom can reach it;
+    /// it exists so the ladder below cannot overflow.</summary>
+    private const long MaxWidenDbu = 1L << 62;
+
+    /// <summary><b>This table IS the widening ladder</b>, and its LENGTH is
+    /// <see cref="BucketsPerOctave"/> — 2^(r/8) for r in [0,8), so a rung is one multiply and a ceiling
+    /// rather than a <c>Math.Pow</c>. Written this way round because a separate count and a separate
+    /// table disagree silently: a four-entry count read against an eight-entry table produces a ladder
+    /// that is neither, and every number it gives back looks entirely plausible.</summary>
+    private static readonly double[] OctaveMantissas =
+    [
+        1.0, 1.0905077326652577, 1.1892071150027210, 1.2968395546510096,
+        1.4142135623730951, 1.5422108254079407, 1.6817928305074290, 1.8340080864093424,
+    ];
+
+    /// <summary>
+    /// How many buckets <see cref="WidenDbu"/> divides a zoom octave into — the one tuning number in
+    /// this file chosen by differential render rather than by argument. The full table is in
+    /// <c>src/Render/RESOLVED.md</c> and the gate is
+    /// <c>LayoutHairlineFillTests.TheOverCoverAtARung_StaysWithinTheDocumentedBound</c>.
+    ///
+    /// <para><b>It is not 1, and the brief that asked for this expected it to be.</b> A whole-octave
+    /// bucket is the right shape for <see cref="ToleranceDbu"/>, whose error only ever tightens. Here
+    /// the bucket is a WIDENING, and a whole octave of it is up to 2x the pen — 4 device pixels of
+    /// widening where the frame wanted 2. Measured as ink coverage on separated one-mil traces, the
+    /// frames either side of a rung then differ by <b>45.8%</b>. Plainly visible, so plainly not a
+    /// candidate. Halving to quarter-octaves (the brief's own fallback) still measures 8.6%.
+    /// Eighth-octaves measure <b>4.3%</b> — a 0.18 device-pixel step in drawn width, the band this
+    /// tier's own threshold constant already calls antialiasing-level — and give up almost nothing:
+    /// against the gesture that provoked all this (0.1% zoom per frame) the working set rebuilds once
+    /// every ~90 frames instead of once every frame.</para>
+    ///
+    /// <para>Finer than this starts costing what the bucketing bought, so it is not a free knob to
+    /// turn down. A brisk pinch — an octave in a second, ~1.2% a frame — rebuilds 8 times here against
+    /// 60 unbucketed; at sixteenths it rebuilds 16, and the rebuild is the expensive event this exists
+    /// to make rare.</para>
+    /// </summary>
+    private static readonly int BucketsPerOctave = OctaveMantissas.Length;
+
+    /// <summary>
+    /// The stroke-elision tier's widening allowance in DBU for a frame drawn at
+    /// <paramref name="devicePxPerDbu"/> — the amount a hairline <c>PathShape</c>'s stored
+    /// <c>Width</c> is grown by so that one filled path can stand in for fill-plus-outline
+    /// (<c>LayoutRenderer.DrawLayer</c>'s hairline tier, <see cref="LayoutPathCache.GetOrBuildWidened"/>).
+    /// 0 means "the tier cannot run at this zoom".
+    ///
+    /// <para><b>Bucketed for the reason <see cref="ToleranceDbu"/> is</b>, and it was not until
+    /// 2026-09-12. The widening is <see cref="LayoutPathCache"/>'s key for the widened outline, so taken
+    /// straight from the zoom it is a new key every frame of a continuous gesture and therefore a 100%
+    /// miss. Measured on an imported raster-fill board at board fit, a 0.1% zoom change — well inside
+    /// one frame of a trackpad pinch — rebuilt 192,680 paths and cost 17% on top of the frame. Bucketed,
+    /// a zoom crosses a whole bucket before anything is rebuilt.</para>
+    ///
+    /// <para><b>UP, which is the opposite direction to <see cref="ToleranceDbu"/>, and the asymmetry is
+    /// the part worth reading twice.</b> The tolerance bucketed DOWN is safe because it only ever makes
+    /// the decimation finer than asked — the error bound tightens. This is not an error bound, it is a
+    /// VISIBILITY SUBSTITUTION: the widened fill stands in for a fill plus the pen that would have
+    /// outlined it, so a widening that came out SMALLER than that pen draws hairline geometry thinner
+    /// than the frame would otherwise have drawn it, and sub-pixel artwork starts to disappear — the
+    /// exact class of defect this tier exists to prevent. So the answer is always &gt;= the raw value,
+    /// and the price is paid as a bounded over-cover instead (see
+    /// <see cref="LayoutPathCache.GetOrBuildWidened"/> for what bounds it, and
+    /// <see cref="BucketsPerOctave"/> for how big it was allowed to be and why).</para>
+    /// </summary>
+    internal static long WidenDbu(double strokeDevicePixels, double devicePxPerDbu)
+    {
+        if (strokeDevicePixels <= 0 || devicePxPerDbu <= 0 || double.IsNaN(devicePxPerDbu)) return 0;
+
+        double raw = strokeDevicePixels / devicePxPerDbu;
+        if (double.IsNaN(raw)) return 0;
+        if (raw >= MaxWidenDbu) return MaxWidenDbu;
+
+        // The ceiling FIRST, and the rung is then chosen against the INTEGER — so "never narrower than
+        // the raw allowance" is arithmetic rather than a property of how Math.Log2 happened to round.
+        // Under one DBU the widening is one DBU, exactly what the unbucketed ceiling already produced.
+        long ceil = (long)Math.Ceiling(raw);
+        if (ceil <= 1) return 1;
+
+        // Log2 only PROPOSES the rung; the two walks settle it, so a boundary that floating point
+        // rounds the wrong side of is corrected rather than trusted. They also collapse the duplicate
+        // rungs the ladder has at very small values (ceil(2^(1/8)) = ceil(2^(7/8)) = 2), which is what
+        // keeps the answer constant across a whole bucket there too.
+        int j = (int)Math.Ceiling(Math.Log2(raw) * BucketsPerOctave);
+        if (j < 1) j = 1;
+        while (j > 1 && Rung(j - 1) >= ceil) j--;
+        while (Rung(j) < ceil) j++;
+        return Rung(j);
+    }
+
+    /// <summary>Rung <paramref name="j"/> of the widening ladder: ceil(2^(j / BucketsPerOctave)).</summary>
+    private static long Rung(int j)
+    {
+        if (j <= 0) return 1;
+        int octave = j / BucketsPerOctave, r = j % BucketsPerOctave;
+        if (octave >= 62) return MaxWidenDbu;
+        double v = OctaveMantissas[r] * (double)(1L << octave);
+        return v >= MaxWidenDbu ? MaxWidenDbu : (long)Math.Ceiling(v);
     }
 
     /// <summary>

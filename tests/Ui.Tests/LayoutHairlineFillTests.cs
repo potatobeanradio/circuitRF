@@ -62,6 +62,13 @@ public class LayoutHairlineFillTests
     /// A <c>PathShape</c>'s fill IS its centreline stroked at <c>Width</c>, so filling it at
     /// <c>Width + the pen</c> covers exactly what fill-plus-outline covers. That claim is the entire
     /// licence for the tier, so it is asserted as PIXEL IDENTITY rather than as a tolerance.
+    ///
+    /// <para><b>Identity holds because this fixture's zoom sits where the widening bucket is nearly
+    /// exact, not because the widening is exact everywhere.</b> Since 2026-09-12 the allowance is
+    /// bucketed up an eighth-octave ladder so it can be a cache key, which makes the footprint a
+    /// bounded OVER-cover rather than an equality — the bound is what
+    /// <see cref="TheOverCoverAtARung_StaysWithinTheDocumentedBound"/> gates. Here it is 1.06x the pen,
+    /// i.e. a fourteenth of a device pixel, so the two rasterizations still agree pixel for pixel.</para>
     /// </summary>
     [Fact]
     public void AHairlinePath_RendersIdentically_WithTheTierOnAndOff()
@@ -195,6 +202,180 @@ public class LayoutHairlineFillTests
         Assert.True(first.ShapesDrawn > count / 2, $"the fixture must actually reach the merge tier; drew {first.ShapesDrawn}");
         Assert.True(first.PathsConstructed > 0, "the first frame must build the paths it caches");
         Assert.Equal(0, second.PathsConstructed);
+    }
+
+    // ── The widening is BUCKETED, so a continuous zoom is not a continuous cache miss ──────────
+    //
+    // brief-rasterfill-2-widen-key-bucketing.md. The widening is the cache key for the widened
+    // outline, and it was computed straight from the zoom — so every frame of a trackpad pinch carried
+    // a new key and rebuilt every hairline path on every visible layer. Measured on the reported board
+    // at board fit: a 0.1% zoom change, a visible set that is for practical purposes identical,
+    // rebuilt 192,680 paths and cost 17% on top of the frame.
+    //
+    // The rungs below are LayoutRenderDetail.WidenDbu's own ladder (eighth-octaves) written out, so a
+    // change to BucketsPerOctave fails these rather than silently re-tuning them.
+
+    /// <summary>Rung 2^16 of the widening ladder, and the rung below it — the pair every gate here is
+    /// positioned against. A widening of <c>w</c> DBU is asked for by the zoom <c>2 / w</c>, since the
+    /// allowance is <see cref="LayoutRenderer"/>'s 2-device-pixel pen converted to DBU.</summary>
+    private const long Rung16 = 65_536, RungBelow16 = 60_097;
+
+    private static LayoutView RoutedHairlines(int n = 12)
+    {
+        // Separated one-mil traces, not an abutting pour: the widening changes each trace's drawn
+        // width outright here, where in a pour the strokes overlap and only the pour's rim moves. This
+        // is the fixture that can actually see an over-wide substitution.
+        var view = MakeView();
+        for (int i = 0; i < n; i++)
+        {
+            long y = 2_000_000 + i * 350_000L;
+            view.Shapes.Add(new PathShape
+            {
+                Layer = LayerA, Xy = [1_000_000, y, 9_000_000, y], Width = 25_400, End = PathEndStyle.Round,
+            });
+        }
+        return view;
+    }
+
+    /// <summary>Mean ink coverage of a frame (1 - luminance), the same oracle the detail tier's own
+    /// density work uses — a pixel count alone cannot tell a shifted edge from a fatter shape.</summary>
+    private static double Ink(byte[] px)
+    {
+        double acc = 0;
+        for (int i = 0; i < px.Length; i += 4) acc += 1.0 - (px[i] + px[i + 1] + px[i + 2]) / 765.0;
+        return acc / (px.Length / 4);
+    }
+
+    private static LayoutRenderResult Frame(
+        LayoutView view, Technology tech, double zoom, LayoutPathCache cache, long originY = 1_800_000)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        return LayoutRenderer.Draw(surface.Canvas, view, tech, new LayoutViewport(0, originY, zoom, W, H),
+            Opts(hairline: 0, cache));
+    }
+
+    /// <summary>Gate 1 — the key is constant across a whole bucket of zoom, which is the entire point:
+    /// a gesture moves through the bucket before anything is rebuilt.</summary>
+    [Fact]
+    public void TheWidening_IsConstantAcrossABucketOfZoom_AndStepsAtTheRung()
+    {
+        const double pen = 2.0;
+
+        // Every zoom whose raw allowance lands in (RungBelow16, Rung16] must give the SAME answer…
+        Assert.Equal(Rung16, LayoutRenderDetail.WidenDbu(pen, pen / Rung16));
+        Assert.Equal(Rung16, LayoutRenderDetail.WidenDbu(pen, pen / 63_000.0));
+        Assert.Equal(Rung16, LayoutRenderDetail.WidenDbu(pen, pen / (RungBelow16 + 1.0)));
+
+        // …and the zoom that reaches the rung below must step to it, not to something arbitrary.
+        Assert.Equal(RungBelow16, LayoutRenderDetail.WidenDbu(pen, pen / RungBelow16));
+    }
+
+    /// <summary>Gate 4 — the bucket may only ever WIDEN. Bucketing down would make the widened fill
+    /// narrower than the pen it stands in for, which draws hairline artwork thinner than the frame
+    /// would have drawn it and is the one failure this tier exists to prevent. (It is the asymmetry
+    /// with <c>ToleranceDbu</c>, which buckets down safely because its error bound only tightens.)</summary>
+    [Fact]
+    public void TheWidening_IsNeverNarrowerThanTheRawAllowance_AtAnyZoom()
+    {
+        const double pen = 2.0;
+        for (double zoom = 1e-8; zoom < 1e3; zoom *= 1.037)
+        {
+            long raw = (long)System.Math.Ceiling(pen / zoom);
+            long bucketed = LayoutRenderDetail.WidenDbu(pen, zoom);
+            Assert.True(bucketed >= raw, $"zoom {zoom:E3}: bucketed {bucketed} is narrower than the raw {raw}");
+            Assert.True(bucketed <= System.Math.Max(1, raw) * 1.1,
+                $"zoom {zoom:E3}: bucketed {bucketed} over-covers the raw {raw} by more than one eighth-octave");
+        }
+
+        Assert.Equal(0, LayoutRenderDetail.WidenDbu(2.0, 0));        // degenerate zoom: the tier cannot run
+        Assert.Equal(0, LayoutRenderDetail.WidenDbu(0, 1e-4));       // no pen to stand in for
+        Assert.Equal(1, LayoutRenderDetail.WidenDbu(2.0, 10.0));     // finer than one DBU: one DBU, as the bare ceiling gave
+    }
+
+    /// <summary>Gate 2 — the brief in one assertion. A frame that changes zoom by 0.1% is a frame a
+    /// pinch gesture produces dozens of, and it must rebuild nothing.</summary>
+    [Fact]
+    public void AMicroZoomFrame_RebuildsNothing()
+    {
+        var view = RoutedHairlines();
+        var tech = MakeTech();
+        var cache = new LayoutPathCache(capacity: 1_000);
+
+        double zoom = 2.0 / 68_000.0;                 // comfortably inside a bucket
+        var first = Frame(view, tech, zoom, cache);
+        Assert.True(first.PathsConstructed > 0, "the first frame must build what it caches");
+        Assert.True(first.ShapesDrawn >= 12, $"the fixture must reach the hairline tier; drew {first.ShapesDrawn}");
+
+        Assert.Equal(0, Frame(view, tech, zoom * 1.001, cache).PathsConstructed);
+    }
+
+    /// <summary>Gate 3 — crossing a rung rebuilds the working set, and the frame after it does not.
+    /// A rebuild per rung is the price; a rebuild per frame was the defect.</summary>
+    [Fact]
+    public void CrossingARung_RebuildsOnce_AndOnlyOnce()
+    {
+        var view = RoutedHairlines();
+        var tech = MakeTech();
+        var cache = new LayoutPathCache(capacity: 1_000);
+
+        double justAbove = 2.0 / (Rung16 + 64.0);     // one rung up from Rung16
+        double justBelow = 2.0 / (Rung16 - 67.0);     // the same bucket as Rung16 — a 0.2% zoom step
+        Assert.NotEqual(LayoutRenderDetail.WidenDbu(2.0, justAbove), LayoutRenderDetail.WidenDbu(2.0, justBelow));
+
+        Assert.True(Frame(view, tech, justAbove, cache).PathsConstructed > 0);
+        Assert.True(Frame(view, tech, justBelow, cache).PathsConstructed > 0, "crossing a rung must rebuild");
+        Assert.Equal(0, Frame(view, tech, justBelow * 1.001, cache).PathsConstructed);
+    }
+
+    /// <summary>Gate 6 — a pan holds zoom fixed, so it was all hits before this change and must stay
+    /// all hits after it.</summary>
+    [Fact]
+    public void APan_RebuildsNothing()
+    {
+        var view = RoutedHairlines();
+        var tech = MakeTech();
+        var cache = new LayoutPathCache(capacity: 1_000);
+
+        double zoom = 2.0 / 68_000.0;
+        Assert.True(Frame(view, tech, zoom, cache).PathsConstructed > 0);
+        Assert.Equal(0, Frame(view, tech, zoom, cache, originY: 1_900_000).PathsConstructed);
+    }
+
+    /// <summary>
+    /// Gate 5 — what the over-cover actually looks like, measured rather than argued.
+    ///
+    /// <para>Bucketing UP means the widened fill is no longer exactly the pen it replaces: it is up to
+    /// one eighth-octave wider, so the substitution over-covers. The bound below is the thing a viewer
+    /// would see as a POP while zooming — the frames either side of a rung — and it is stated as ink
+    /// coverage, because a pixel count cannot tell a shifted antialiased edge from a fatter shape.</para>
+    ///
+    /// <para><b>Measured on this fixture, at the worst zoom in the bucket: 4.3%</b> — a 0.18
+    /// device-pixel step in drawn width. The bound is 6% because that is what separates the ladder this
+    /// uses from the next coarser one: the same measurement is 8.6% at quarter-octaves, 19.0% at
+    /// half-octaves and 45.8% at whole octaves, and the last of those is what the brief that asked for
+    /// this expected to be imperceptible. None of them may creep back in.</para>
+    /// </summary>
+    [Fact]
+    public void TheOverCoverAtARung_StaysWithinTheDocumentedBound()
+    {
+        var view = RoutedHairlines();
+        var tech = MakeTech();
+
+        static double OverCover(LayoutView view, Technology tech, double zoom)
+        {
+            var vp = new LayoutViewport(0, 1_800_000, zoom, W, H);
+            double off = Ink(RenderBytes(view, tech, vp, Opts(hairline: -1)));   // the real fill + pen
+            double on = Ink(RenderBytes(view, tech, vp, Opts(hairline: 0)));     // the substitution
+            return (on - off) / off;
+        }
+
+        double above = OverCover(view, tech, 2.0 / (Rung16 + 64.0));
+        double below = OverCover(view, tech, 2.0 / (Rung16 - 67.0));
+
+        Assert.True(System.Math.Abs(above) <= 0.06, $"over-cover above the rung was {above:P1}");
+        Assert.True(System.Math.Abs(below) <= 0.06, $"over-cover below the rung was {below:P1}");
+        Assert.True(System.Math.Abs(above - below) <= 0.06,
+            $"the step across the rung was {System.Math.Abs(above - below):P1} — that is the pop a zoom gesture shows");
     }
 
     /// <summary>

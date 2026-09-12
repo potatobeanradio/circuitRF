@@ -1099,10 +1099,11 @@ public static partial class LayoutRenderer
     /// tier and <see cref="LayoutPathCache.GetOrBuildWidened"/>).
     ///
     /// <para><b>One pixel, and the value was measured rather than assumed — a bigger one is visibly
-    /// wrong.</b> The substitution is exact in FOOTPRINT at any width (fill-then-outline and
-    /// fill-at-Width-plus-the-pen cover the identical region), but not in ALPHA: the widened fill is
-    /// painted at the stroke's solid opacity throughout, where the real pair paints a solid rim around
-    /// an interior at the layer's own (usually partial) fill opacity. Below one device pixel that
+    /// wrong.</b> The substitution is right in FOOTPRINT at any width to within the widening bucket
+    /// (fill-then-outline and fill-at-Width-plus-the-pen cover the same region, and since 2026-09-12 the
+    /// pen is rounded up to a ladder rung — see <c>LayoutRenderDetail.WidenDbu</c>), but not in ALPHA:
+    /// the widened fill is painted at the stroke's solid opacity throughout, where the real pair paints
+    /// a solid rim around an interior at the layer's own (usually partial) fill opacity. Below one device pixel that
     /// interior cannot be resolved and the two are indistinguishable. Above it they are not, and the
     /// error grows fast — swept on the owner's 4-up panel at Zoom-to-Fit, admitting the 10-mil traces
     /// (1.03 px wide there) moved 41% of the board's pixels and dropped its mean red from 145 to 104,
@@ -1287,8 +1288,12 @@ public static partial class LayoutRenderer
         // output this tier has to match.
         double hairlineThreshold = opts.HairlineFillPixelThreshold != 0
             ? opts.HairlineFillPixelThreshold : DefaultHairlineWidthDevicePixels;
-        long widenDbu = devicePxPerDbu > 0
-            ? (long)System.Math.Ceiling(GeometryStrokeDevicePixels / devicePxPerDbu) : 0;
+        // The frame's hairline-widening allowance, bucketed to an eighth-octave of zoom — UP, not down,
+        // which is the opposite direction to detailDbu just above; LayoutRenderDetail.WidenDbu states
+        // why the symmetry with ToleranceDbu is a trap, and why the ladder is that fine. Unbucketed this
+        // was a cache key that changed on every frame of a pinch gesture, so the widened outlines were a
+        // 100% miss and the whole working set was rebuilt each frame.
+        long widenDbu = LayoutRenderDetail.WidenDbu(GeometryStrokeDevicePixels, devicePxPerDbu);
 
         foreach (var (index, original) in shapes)
         {
@@ -1411,14 +1416,17 @@ public static partial class LayoutRenderer
             //   * a pour painted that way saturates to solid outline colour at full extent, hiding
             //     the silkscreen and the traces underneath it.
             //
-            // Filling the same centreline at Width + one stroke-width instead is not an approximation:
-            // a PathShape's fill IS its centreline stroked at Width, so fill-then-outline and
-            // fill-at-Width-plus-the-pen cover the identical region (see
-            // LayoutPathCache.GetOrBuildWidened). One filled path replaces a fill plus a stroker pass.
+            // Filling the same centreline at Width + one stroke-width instead: a PathShape's fill IS its
+            // centreline stroked at Width, so fill-then-outline and fill-at-Width-plus-the-pen cover the
+            // identical region (see LayoutPathCache.GetOrBuildWidened). One filled path replaces a fill
+            // plus a stroker pass.
             //
-            // The FOOTPRINT is exact at any width; the ALPHA is only indistinguishable below about one
-            // device pixel, which is what DefaultHairlineWidthDevicePixels is set from and why it is
-            // not the instance tier's 4.0 — read that constant before widening this gate.
+            // The FOOTPRINT is a bounded OVER-cover at any width, not an equality — widenDbu is bucketed
+            // up an eighth-octave so it can be a cache key, so it is between 1x and 1.0905x the pen and
+            // never under it; GetOrBuildWidened states the bound and what it measures. The ALPHA is only
+            // indistinguishable below about one device pixel, which is what
+            // DefaultHairlineWidthDevicePixels is set from and why it is not the instance tier's 4.0 —
+            // read that constant before widening this gate.
             //
             // Scoped to PathShape deliberately. It is the only shape kind that HAS a width to be
             // hairline in, and the only one this substitution is exact for — a thin polygon would need
