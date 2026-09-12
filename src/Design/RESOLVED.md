@@ -1,5 +1,163 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## RF3 — a painted pour arrives as a region, not as 29,000 scanlines (2026-09-12)
+
+`docs/sonnet-briefs/brief-rasterfill-3-coalesce-raster-fill-on-import.md`. `LayoutRasterFillCoalesce`
+(new, in `src/Design/Layout`) turns a raster-filled layer back into the `PolygonShape`s it paints;
+`GerberImport` step 7b and `PcbImport.Coalesce` call it, `circuitrf convert --no-coalesce` and the
+Settings ▸ General ▸ Import checkbox turn it off. **On by default**, which is the owner's own ask and
+the brief's R-rf3-7: the coalesced document is the one that can be simulated, and the import had
+already been telling people in words to go and do the merge by hand. Gates:
+`tests/Ui.Tests/RasterFillCoalesceTests.cs` (18) plus one in `ConvertCliVerbTests.cs`.
+
+### What it buys, measured
+
+Two measurements, both on a **synthetic stand-in built to the overview's §1a counts** — the real
+boards are not in the repo and nothing here names one. Scratch console harness in Release, not a
+`Category=Benchmark` test.
+
+One pour layer, 22,740 one-mil scanlines tiled over a 49 × 52 mm board:
+
+| | strokes | shapes out | outline vertices | region vertices | union |
+|---|---|---|---|---|---|
+| a raster-filled layer | 22,740 | **1** | 636,720 | **45,506** | 129 ms |
+
+And the whole board (44,571 shapes as authored, 3,153 coalesced), real `LayoutRenderer.Draw` against a
+CPU `SKSurface` with a persistent `LayoutPathCache` sized as `LayoutCanvas` sizes it:
+
+| | repaint | pan | one zoom step in (2×) |
+|---|---|---|---|
+| as authored, 1600×1000 | 47.9 ms | 37.6 ms | 24.8 ms |
+| **coalesced**, 1600×1000 | **4.9 ms** | **5.5 ms** | 19.5 ms |
+| as authored, 3200×2000 | 52.0 ms | 50.4 ms | 63.3 ms |
+| **coalesced**, 3200×2000 | **11.0 ms** | **12.8 ms** | 35.4 ms |
+
+**The absolute figures are NOT the overview's** — this harness does not reproduce §1b's 288 ms
+baseline on this machine, and no claim is made that it should. What it measures is one board class
+before and after, in one process, and that comparison is what §5.4 asks for: **pan falls 6.8× at
+1× and 3.9× at 2× DPI**, and the 2×-DPI column — the one that matched the original report — crosses
+from roughly 20 fps to roughly 78 fps.
+
+**What this says about brief 4 (the tiled raster cache).** The 77% is gone at the source, and the
+remaining cost is no longer rasterization of painted area. What is left is the ZOOM column: 35.4 ms for one
+2× step at 2× DPI against 12.8 ms to pan, on a document that is now 3,153 shapes. That is a
+cache-rebuild cost, which is brief **2**'s subject (`widenDbu` is an unbucketed cache key), not
+brief 4's. Brief 4 is still the only thing that helps a board **already imported** — but on a board
+imported after this change its threshold is a long way off, and it should be re-judged after brief 2
+rather than before.
+
+### Clipper2, not `SKPath.Simplify`, and it is one pass either way
+
+R-rf3-1 is right that the union must be one pass — pairwise booleans over 29,000 shapes are quadratic
+and will not finish — and wrong only about which primitive. `LayoutClipper` is already this repo's
+single boolean seam: its arithmetic is exact on DBU integers with no scaling step, its `PolyTree64`
+output already carries the hole nesting R-rf3-2 asks for, and `ToClipperPaths` already builds a
+`PathShape`'s outline through `InflatePaths` **with the cap style R-rf3 warns against discarding**.
+`Simplify` would have meant a second geometry pipeline, in float, beside it.
+
+### The brief's own counting rule cannot fire, and the fix is to compare like for like
+
+R-rf3-4 says to compare "the candidate group's stored vertex count against the union's" and replace
+when the union is materially smaller. **Measured on the brief's own gate-1 fixture — 1,750 abutting
+scanlines painting a 40 × 40 mm rectangle — that rule says KEEP:**
+
+| stored centreline vertices | stroked-outline vertices | union vertices |
+|---|---|---|
+| 3,500 | 49,000 | 35,008 |
+
+A scanline stores **two** vertices and stroke-to-fills to about **twenty-eight**, so the literal
+comparison pits a centreline against an outline and the tier can never pass on anything. The union is
+in fact 1.4× smaller than the geometry it replaces — 14× smaller on the board-scale fixture above —
+but only when both sides are counted as what every consumer actually derives: the outline. That is
+what `LayoutRasterFillCoalesce` compares.
+
+### The rule that decides, and the fixture that first got it wrong
+
+Two counted conditions, both required:
+
+1. **`group.Count >= 50 * regions.Count`** — how many strokes one region absorbed. It is a RATIO, not
+   the stroke-count threshold R-rf3-4 forbids: a 300-stroke pour collapsing to one region scores 300
+   and is treated exactly like a 30,000-stroke one.
+2. **`regionVertices <= strokeOutlineVertices`** — the union is not more complex than what it replaces.
+
+Measured scores, three orders of magnitude apart:
+
+| fixture | strokes | regions | score | decision |
+|---|---|---|---|---|
+| painted rectangle, 0–50 % overlap | 1,575–3,150 | 1 | 1,575–3,150 | coalesce |
+| board-A-scale pour | 22,740 | 1 | 22,740 | coalesce |
+| 500 nets × 6 connected traces | 3,000 | 500 | 6.0 | keep |
+| 30,000 traces, no overlap | 30,000 | 30,000 | 1.0 | keep |
+| one trace | 1 | 1 | 1.0 | keep |
+
+**An AREA-overlap rule was tried first and abandoned.** It looks like the obvious discriminator and
+the brief's "what not to do" names overlap explicitly — but gate 1 requires a rectangle painted at
+**zero** overlap (just touching) to coalesce, and at zero overlap `Σ strokeArea / unionArea` is
+exactly 1.0, which is also what a trace network scores. The measure cannot separate the two cases it
+has to separate.
+
+**The trace fixture that first "failed" was the fixture's fault, and it is worth recording.** A random
+walk of 200 nets × 6 segments in a 40 × 40 mm area put 1,200 strokes into **two** regions — a score of
+600 — because randomly placed traces cross each other everywhere. Real traces on one layer do not:
+they are DRC-clean by construction, so a net is a region and the score is its segment count. Laying
+the same fixture out on a 20-mil pitch drops it to 6.0. A fixture that does not obey the design rules
+the input obeys measures nothing.
+
+### The polarity trap, and why nothing here has to remember it
+
+R-rf3-3's hazard is real and silent: a CLEAR (`%LPC*%`) stroke REMOVES copper, and unioning it with a
+dark one paints the hole solid with a perfectly plausible-looking result. Nothing in the coalescer
+filters for it — instead **a layer that painted any clear object is COMPOSITED by `GerberReader`
+already** (R-L4e-13), and `GerberImport` skips every composited read wholesale. So "never union across
+polarity" is true by construction rather than by a check that could be forgotten, and the composited
+layer's geometry is exact anyway.
+
+Grouping is **per READ**, which is narrower than R-rf3-3's "per layer" and deliberately so: two files
+can land on one layer and they are different artwork, which is the same hazard `CarveClaimedPads`
+records for itself. The rest of the key is everything else that makes two strokes interchangeable —
+layer, net, aperture function, component, pin — so a `GND` pour and a `VCC` pour on one layer stay two
+pours.
+
+### The tolerance is stated because it is the only approximation
+
+R-rf3-5. The union of stroked outlines is exact in principle; a round end cap's arc flattening is not.
+`ToClipperPaths` gained an optional `arcTolDbu` (**default 0 = Clipper2's own default, so no existing
+caller's geometry moves by a byte**) and the coalescer passes 0.1 µm, which the import note prints.
+
+The three candidates, on a 12,700 DBU offset:
+
+| tolerance | segments per cap circle | 29,000-stroke union input |
+|---|---|---|
+| Clipper2's default (~1 DBU) | ~250 | ~7,000,000 points |
+| **0.1 µm (100 DBU)** | **25** | **~800,000 points** |
+| `LayoutFlattener.DefaultTolDbu`, 1 µm | 8 | ~290,000 points |
+
+1 µm is the model's fallback and it is **too coarse here**: on a one-mil scanline that is a 4% chord
+error, and the pour boundary is exactly where a DRC clearance is measured. Clipper2's own default is
+accurate past anything downstream can use and costs an order of magnitude more. Gate 9 asserts the
+consequence rather than the number — a clearance `DrcEngine` reports on the un-coalesced document is
+reported identically on the coalesced one, and one it passes still passes.
+
+### Two things that would have been silent
+
+* **`CarveClaimedPads` and `DrillViaPairing` still work** because only `PathShape` is a candidate. A
+  flash stays a flash, so the pads via pairing measures against are untouched — and that is also why
+  coalescing sits *after* the attributes ride onto the shapes and *before* step 8.
+* **`PcbImport` coalesces after `ResolveViaLayers`, not before.** That method pairs `sources[i]` with
+  `reconciled[i]` **by index**, and coalescing changes the list's length. Before it, every via on the
+  board would have been given some other shape's layers.
+
+### What changed in an existing gate, and why it is not a re-baseline
+
+`ConvertCliVerbTests`' byte-identity comparisons are unchanged — its fixtures are flashes and traces
+with no painted fill in them, which is a property of those fixtures and not an exemption; the new test
+beside them carries both sides of the flag. The one gate that did move is
+`GerberImportTests.AVectorFilledPour_NamesTheLayer_TheCount_AndTheMergeAction`: R-L4g-16's "select
+them and use the editor's Merge action" advice is now given **only when coalescing is off**, because
+when it is on the import has already performed exactly that merge. Both halves are asserted, so the
+message stays reachable rather than quietly dying with the default.
+
+
 ## RC-12 — the longer note on a history entry, and where a note is allowed to live (2026-09-11)
 
 `docs/design/revision-control.md` §5.12. Both recording dialogs and the correction dialog now carry a

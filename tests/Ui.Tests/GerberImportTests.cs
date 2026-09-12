@@ -1105,6 +1105,13 @@ public class GerberImportTests : IDisposable
 
     // -- R-L4g-16: the stroke count is actionable, not decorative ----------------------------------
 
+    /// <summary>
+    /// <b>CHANGED BY R-rf3, deliberately — this is not a re-baseline.</b> The advice R-L4g-16 gives
+    /// ("select them and use the editor's Merge action") is now given only when coalescing is OFF,
+    /// because when it is on the import has already performed exactly that Merge and telling somebody
+    /// to do it again is the one way this advice becomes noise. Both halves are asserted here, so the
+    /// message stays reachable rather than quietly dying with the default.
+    /// </summary>
     [Fact]
     public void AVectorFilledPour_NamesTheLayer_TheCount_AndTheMergeAction()
     {
@@ -1116,11 +1123,18 @@ public class GerberImportTests : IDisposable
         body.Append("M02*\n");
         Write(dir, "board.gtl", body.ToString());
 
-        var result = Import(dir, _root, "pour_import");
-
-        Assert.Contains(result.Messages, m =>
+        var asAuthored = GerberImport.Import(
+            FilesIn(dir), _root, "pour_import_as_authored", null, 1000, coalesceRasterFill: false);
+        Assert.Contains(asAuthored.Messages, m =>
             m.Contains("Top Copper arrived as 250 separate strokes", StringComparison.Ordinal) &&
             m.Contains("Merge action", StringComparison.Ordinal));
+
+        // With coalescing on — the default — the same pour is reported as what the import DID to it.
+        var coalesced = Import(dir, _root, "pour_import");
+        Assert.Contains(coalesced.Messages, m =>
+            m.Contains("Top Copper", StringComparison.Ordinal) &&
+            m.Contains("coalesced into", StringComparison.Ordinal));
+        Assert.DoesNotContain(coalesced.Messages, m => m.Contains("Merge action", StringComparison.Ordinal));
     }
 
     // -- R-L4g-17: say what comes next, once ------------------------------------------------------

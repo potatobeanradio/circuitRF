@@ -69,6 +69,18 @@ SAYS clay, so the inference stays and the SHAPE is what is refused, with the dir
 message. Collapsing to a single file was the alternative and is worse: an import that produced a
 hierarchy has no one file to collapse to, so the rule would work for the flat case and discard the
 other silently.
+
+**`convert --no-coalesce` keeps a painted pour's individual strokes** (R-rf3-7). A CAM tool may
+express a copper pour by PAINTING it with thousands of abutting one-mil scanline strokes rather than
+emitting a filled region; the import turns those back into the region they paint, **by default, both here and in the
+GUI** — because the region is the shape the renderer, the
+mesher, the DRC engine and every writer want, and a layer that arrived as 29,000 strokes is neither
+editable copper nor meshable. The flag exists for the one case the default cannot serve: comparing an
+import against its CAM source, or chasing an import bug, where the primitives have to arrive exactly
+as authored. Either way the import SAYS what it did, per layer, with both counts and the flattening
+tolerance — on stderr with the rest of the import's notes, never on stdout, which stays the result
+document. The GUI's own switch is Settings ▸ General ▸ Import; detail and the two counted conditions
+that decide it are in `src/Design/RESOLVED.md`.
 | `reference` | **nothing at all** | reports what a caller may WRITE: the shipped reference pages, plus four topics generated from the live registries and readers — the component catalogue, the analysis directives, and the `.cdd` and `.ctech` formats | **nothing** — §12 |
 
 **`new` is one verb with a noun, not three** (`brief-automation-3-authoring-verbs.md` R-aut3-13): the

@@ -165,6 +165,8 @@ public partial class SettingsView : Window
 
             CheckDrcOnExportCheck.IsChecked = prefs.CheckDrcOnExport ?? true;
 
+            CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
+
             MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
             MsgTimestampCombo.SelectedIndex = (int)(prefs.MessageTimestamp ?? MessageTimestampMode.Time);
 
@@ -223,6 +225,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CheckDrcOnExport = CheckDrcOnExportCheck.IsChecked);
+    }
+
+    private void OnCoalesceRasterFillChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.CoalesceRasterFillOnImport = CoalesceRasterFillCheck.IsChecked);
     }
 
     private void OnWireClearanceChanged(object? sender, NumericUpDownValueChangedEventArgs e)

@@ -358,7 +358,8 @@ internal static class CliDiagnostics
     public static Diagnostic ConvertUsage() => new(
         "convert.args.usage", DiagnosticSeverity.Error,
         "Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]\n" +
-        "       formats: clay | gdsii | dxf | gerber | board");
+        "       formats: clay | gdsii | dxf | gerber | board\n" +
+        "       --no-coalesce  keep a painted pour's individual strokes");
 
     public static Diagnostic ConvertListCellsNotApplicable() => new(
         "convert.args.list-cells-not-applicable", DiagnosticSeverity.Error,

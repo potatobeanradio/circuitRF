@@ -42,13 +42,18 @@ public static class PcbImport
     /// <param name="resolveLayerMapping">The shared L1g layer-mapping dialog, exactly as
     /// <c>GdsiiImport</c>/<c>DxfImport</c> take it. Returning null aborts the whole import and creates
     /// nothing.</param>
+    /// <param name="coalesceRasterFill">R-rf3-7, on <c>GerberImport.Import</c>'s terms and for the
+    /// same reason — a board file converted from painted artwork carries the same tens of thousands
+    /// of abutting strokes, and they are the same problem for the same consumers. True is the
+    /// default; false gives the primitives exactly as authored.</param>
     public static ImportResult Import(
         Stream stream,
         string parentDir,
         string boardName,
         Technology? destTech,
         int destDbuPerMicron,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null)
+        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
+        bool coalesceRasterFill = true)
     {
         using var textReader = new StreamReader(stream, System.Text.Encoding.UTF8);
         string text = textReader.ReadToEnd();
@@ -131,6 +136,15 @@ public static class PcbImport
             [.. sourceLayers.Select(l => l.Key).Concat(destTech?.Layers.Select(l => l.Key) ?? [])],
             destDbuPerMicron);
 
+        // What to CALL a layer in a message — both the source key and whatever reconciliation mapped
+        // it to, since a coalescing note names the layer the shapes ended up on.
+        var layerNameByKey = new Dictionary<LayerKey, string>();
+        foreach (var (name, key) in keyByName)
+        {
+            layerNameByKey.TryAdd(key, name);
+            if (ResolveKey(keyByName, choices, name) is { } resolved) layerNameByKey.TryAdd(resolved, name);
+        }
+
         // ── Cell folders ────────────────────────────────────────────────────────────────────────
         var cellsByKey = board.FootprintCells.Values.ToList();
 
@@ -196,6 +210,7 @@ public static class PcbImport
                 view.Pins.Add(pin);
             }
 
+            Coalesce(view, destTech, destDbuPerMicron, coalesceRasterFill, messages, layerNameByKey);
             WriteCell(dirByContentKey[cell.ContentKey], view);
         }
 
@@ -225,6 +240,7 @@ public static class PcbImport
                 Mag = 1.0,
             });
         }
+        Coalesce(boardView, destTech, destDbuPerMicron, coalesceRasterFill, messages, layerNameByKey);
         WriteCell(boardDir, boardView);
 
         // ── Stackup ─────────────────────────────────────────────────────────────────────────────
@@ -255,6 +271,48 @@ public static class PcbImport
             "region you intend to simulate and crop it before setting up EM ports.");
 
         return new ImportResult(false, createdDirs, boardDir, layersToAdd, stackup.Stackup, messages, viaSpans.NewEntries);
+    }
+
+    /// <summary>
+    /// R-rf3: a painted pour becomes the region it paints, in place, on one cell's shapes.
+    ///
+    /// <para><b>After <see cref="ResolveViaLayers"/>, and that is not an accident</b> — that method
+    /// pairs <c>sources[i]</c> with <c>reconciled[i]</c> BY INDEX, and coalescing changes the length
+    /// of the list. It is also why nothing here can touch a <see cref="ViaShape"/>: only
+    /// <c>PathShape</c> is a candidate, so the vias whose layers were just settled are carried
+    /// through untouched.</para>
+    ///
+    /// <para>The group key is layer, net, component and pin — everything a board file states about a
+    /// track that makes two of them interchangeable. There is no polarity here: the format has no
+    /// clear-polarity concept, so every shape is additive by construction.</para>
+    /// </summary>
+    private static void Coalesce(
+        LayoutView view, Technology? destTech, int destDbuPerMicron, bool enabled,
+        List<string> messages, IReadOnlyDictionary<LayerKey, string> layerNameByKey)
+    {
+        if (!enabled || view.Shapes.Count < LayoutRasterFillCoalesce.MinStrokesPerRegion) return;
+
+        long tol = destTech is { DefaultFlattenTolDbu: > 0 } tech
+            ? tech.DefaultFlattenTolDbu
+            : LayoutRasterFillCoalesce.DefaultToleranceDbu(destDbuPerMicron);
+
+        var candidates = new List<LayoutRasterFillCoalesce.Candidate>(view.Shapes.Count);
+        foreach (var shape in view.Shapes)
+        {
+            if (shape is not PathShape) continue;
+            candidates.Add(new LayoutRasterFillCoalesce.Candidate(
+                shape,
+                string.Join('\u0001', shape.Layer.Layer, shape.Layer.Datatype, shape.Net, shape.Component, shape.Pin),
+                layerNameByKey.TryGetValue(shape.Layer, out string? n) ? n : $"layer {shape.Layer.Layer}/{shape.Layer.Datatype}"));
+        }
+
+        var plan = LayoutRasterFillCoalesce.Build(candidates, tol);
+        if (plan.IsEmpty) return;
+
+        var coalesced = plan.Apply(view.Shapes);
+        view.Shapes.Clear();
+        view.Shapes.AddRange(coalesced);
+        foreach (string note in plan.Notes(destDbuPerMicron)) messages.Add(note);
     }
 
     private static string UniqueName(IReadOnlyDictionary<string, string> names, string proposed, int index)

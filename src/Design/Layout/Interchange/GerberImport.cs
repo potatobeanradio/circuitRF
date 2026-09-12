@@ -115,6 +115,13 @@ public static class GerberImport
     /// runs the import unobserved and uncancellable, which is what makes this an additive parameter.
     /// See <see cref="ImportUnobserved"/> for where the ticks are and where cancellation stops being
     /// answered.</param>
+    /// <param name="coalesceRasterFill">R-rf3-7. <b>True — the default — turns a painted pour back
+    /// into the region it paints</b>, which is the shape the renderer, the mesher, the DRC engine and
+    /// every writer actually want; see step 7b for what is grouped and what is counted. Pass false to
+    /// get the primitives exactly as the CAM tool authored them, which is what someone comparing
+    /// against the source or chasing an import bug needs. The default is on rather than off because
+    /// the coalesced document is the one that can be simulated: 29,000 scanline strokes are neither
+    /// editable copper nor meshable, and the import already had to say so in words.</param>
     public static ImportResult Import(
         IReadOnlyList<string> filePaths,
         string parentDir,
@@ -124,13 +131,15 @@ public static class GerberImport
         Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
         ResolveDrillFormat? resolveDrillFormat = null,
         RunControl? control = null,
-        OfferArchive? offerArchive = null)
+        OfferArchive? offerArchive = null,
+        bool coalesceRasterFill = true)
     {
         var messages = new List<string>();
         try
         {
             return ImportUnobserved(filePaths, parentDir, importName, destTech, destDbuPerMicron,
-                                    resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive);
+                                    resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive,
+                                    coalesceRasterFill);
         }
         catch (OperationCanceledException)
         {
@@ -173,7 +182,8 @@ public static class GerberImport
         ResolveDrillFormat? resolveDrillFormat,
         RunControl? control,
         List<string> messages,
-        OfferArchive? offerArchive)
+        OfferArchive? offerArchive,
+        bool coalesceRasterFill)
     {
         // ── 1. What is in the set at all (R-L4g-1) ──────────────────────────────────────────────
         // Indeterminate: the classifier reads every candidate file's CONTENT (R-L4g-1 decides by
@@ -241,7 +251,8 @@ public static class GerberImport
                     // agreed to.
                     var inner = ImportUnobserved(
                         extracted.Files, parentDir, importName, destTech, destDbuPerMicron,
-                        resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive: null);
+                        resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive: null,
+                        coalesceRasterFill);
                     if (inner.CellDir is not null) return inner;
                 }
         }
@@ -673,15 +684,23 @@ public static class GerberImport
         // pad may be carved out of. Two files can land on one layer, so "everything on this layer" is
         // not the same set and would re-polygonise a neighbour's untouched artwork.
         var compositedShapes = new HashSet<LayoutShape>(ReferenceEqualityComparer.Instance);
+        // Which slice of `artwork` each read contributed — what the raster-fill coalescing below
+        // groups within, and the reason its notes can name a FILE and not just a layer.
+        var artworkByRead = new (int Start, int Count)[reads.Count];
         {
             int at = 0;
-            foreach (var (_, read) in reads)
+            for (int ri = 0; ri < reads.Count; ri++)
+            {
+                var read = reads[ri].Read;
+                int start = artwork.Count;
                 foreach (var imported in read.Shapes)
                 {
                     var shape = reconciled.Shapes[at++];
                     artwork.Add(imported with { Shape = shape });
                     if (read.Composited) compositedShapes.Add(shape);
                 }
+                artworkByRead[ri] = (start, artwork.Count - start);
+            }
         }
 
         // The FINAL key each file's layer landed on — what the new technology must define, and what a
@@ -707,6 +726,82 @@ public static class GerberImport
         {
             imported.Shape.Component = imported.Component;
             imported.Shape.Pin = imported.Pin;
+        }
+
+        // ── 7b. Raster fill becomes the region it paints (R-rf3) ────────────────────────────────
+        //
+        // A CAM tool may express a copper pour by PAINTING it with thousands of abutting scanline
+        // strokes rather than emitting a G36/G37 region. The reader is right to keep each one a
+        // stroke; what nothing downstream wants is 29,000 overlapping stroked outlines where the
+        // board has one pour — the renderer rasterizes all of them every frame, PlanarExtractor
+        // meshes all of them, DrcEngine measures clearances against all of them, and L4c's writer
+        // writes them all back out.
+        //
+        // WHY IT IS GROUPED PER READ AND NOT PER LAYER. R-rf3-3 asks for "same layer and same
+        // polarity". Per FILE is strictly narrower than per layer and buys two things: two files CAN
+        // land on one layer and they are different artwork (the note on CarveClaimedPads below makes
+        // the same point about the same hazard), and a composited read is excluded wholesale — which
+        // is what settles polarity, since compositing is the only branch in which a clear object
+        // reaches a shape at all, and a read that never painted one is uniformly dark by
+        // construction. The rest of the key is everything else that makes two strokes
+        // interchangeable: layer, net, aperture function, component and pin.
+        //
+        // The TOLERANCE is the round end cap's arc flattening and it is the only approximation in
+        // any of this (R-rf3-5). The destination technology's own default is honoured when it states
+        // one; otherwise it is 0.1 µm, and either way the note below says which.
+        var coalescedByRead = new Dictionary<int, LayoutRasterFillCoalesce.Plan>();
+        if (coalesceRasterFill)
+        {
+            control?.SetStageLabel("coalescing painted fill");
+            long coalesceTol = destTech is { DefaultFlattenTolDbu: > 0 } dtech
+                ? dtech.DefaultFlattenTolDbu
+                : LayoutRasterFillCoalesce.DefaultToleranceDbu(destDbuPerMicron);
+
+            for (int ri = 0; ri < reads.Count; ri++)
+            {
+                if (reads[ri].Read.Composited) continue;
+                var (start, count) = artworkByRead[ri];
+                if (count < LayoutRasterFillCoalesce.MinStrokesPerRegion) continue;
+
+                string layerName = identities[ri].LayerName;
+                var candidates = new List<LayoutRasterFillCoalesce.Candidate>(count);
+                for (int i = start; i < start + count; i++)
+                {
+                    var imported = artwork[i];
+                    if (imported.Shape is not PathShape) continue;
+                    candidates.Add(new LayoutRasterFillCoalesce.Candidate(
+                        imported.Shape,
+                        string.Join('\u0001',
+                            imported.Shape.Layer.Layer, imported.Shape.Layer.Datatype,
+                            imported.Shape.Net, imported.AperFunction, imported.Component, imported.Pin),
+                        layerName));
+                }
+
+                var plan = LayoutRasterFillCoalesce.Build(candidates, coalesceTol);
+                if (!plan.IsEmpty) coalescedByRead[ri] = plan;
+            }
+
+            if (coalescedByRead.Count > 0)
+            {
+                var regionsByFirst = new Dictionary<LayoutShape, IReadOnlyList<LayoutShape>>(ReferenceEqualityComparer.Instance);
+                var replacedStrokes = new HashSet<LayoutShape>(ReferenceEqualityComparer.Instance);
+                foreach (var plan in coalescedByRead.Values)
+                {
+                    foreach (var (shape, regions) in plan.RegionsByFirstReplaced) regionsByFirst[shape] = regions;
+                    replacedStrokes.UnionWith(plan.Replaced);
+                }
+
+                var rebuilt = new List<GerberImportedShape>(artwork.Count);
+                foreach (var imported in artwork)
+                {
+                    if (regionsByFirst.TryGetValue(imported.Shape, out var regions))
+                        foreach (var region in regions) rebuilt.Add(imported with { Shape = region });
+                    else if (!replacedStrokes.Contains(imported.Shape))
+                        rebuilt.Add(imported);
+                }
+                artwork.Clear();
+                artwork.AddRange(rebuilt);
+            }
         }
 
         // ── 8. Vias (R-L4f) ─────────────────────────────────────────────────────────────────────
@@ -1060,8 +1155,10 @@ public static class GerberImport
 
         // ── 11. What the user is told (R-L4g-15, -16, -17) ──────────────────────────────────────
         var layerReports = new List<LayerReport>(reads.Count);
+        int reportIndex = -1;
         foreach (var ((file, read), identity) in reads.Zip(identities))
         {
+            reportIndex++;
             bool orderGuessed = identity.IsConductor && identity.CopperIndex is null;
             layerReports.Add(new LayerReport(
                 file.FileName, identity.LayerName, identity.Rung,
@@ -1076,10 +1173,21 @@ public static class GerberImport
             if (read.Composited && read.CompositeReason is { Length: > 0 } reason)
                 messages.Add($"{file.FileName}: {reason}");
 
+            // R-rf3-6: a structural change to somebody's artwork is reported, per layer, with both
+            // counts — never silently, however much of an improvement it is. This is also the line
+            // that makes the whole tier diagnosable from a log when a board comes back looking wrong.
+            if (coalescedByRead.TryGetValue(reportIndex, out var coalescePlan))
+                foreach (string note in coalescePlan.Notes(destDbuPerMicron))
+                    messages.Add($"{file.FileName}: {note}");
+
             // R-L4g-16: the stroke count is ACTIONABLE, not decorative. A pour that arrived as N
             // parallel strokes is correct artwork that is neither editable copper nor meshable, and the
             // fix already exists in the editor. Name the layer, the count and the action.
-            if (read.StrokeCount >= VectorFillStrokeThreshold)
+            //
+            // NOT said about a layer R-rf3 has just coalesced: the Merge it asks for has already
+            // happened, and telling someone to perform an action the import performed for them is the
+            // one way this advice becomes noise.
+            else if (read.StrokeCount >= VectorFillStrokeThreshold)
                 messages.Add(
                     $"{identity.LayerName} arrived as {read.StrokeCount:N0} separate strokes — that is a " +
                     "vector-filled pour, which is correct artwork but is neither editable copper nor " +

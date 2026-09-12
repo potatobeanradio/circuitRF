@@ -4471,7 +4471,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                             .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Board", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
-                    });
+                    },
+                    // R-rf3-7. The user's own preference, read at the moment of the import rather than
+                    // cached, so changing it in Settings applies to the very next import.
+                    coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true);
             });
         }
         catch (Exception ex)
@@ -4822,7 +4825,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         offerArchive: archives => Dispatcher.UIThread
                             .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.GerberArchiveOfferDialog(archives)
                                 .ShowDialog<bool>(window))
-                            .GetAwaiter().GetResult()));
+                            .GetAwaiter().GetResult(),
+                        // R-rf3-7. The user's own preference, read at the moment of the import rather
+                        // than cached, so changing it in Settings applies to the very next import.
+                        coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true));
             }
             catch (Exception ex)
             {

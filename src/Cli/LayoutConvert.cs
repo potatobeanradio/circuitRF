@@ -52,6 +52,12 @@ public static class LayoutConvert
 
         // GI4 R-gi4-10. A dialog's question becomes a flag, never a guess.
         public bool OpenArchives;
+
+        // R-rf3-7. Coalescing raster fill is ON by default — the region is what every consumer of an
+        // imported board wants, and the strokes are neither editable copper nor meshable. The flag
+        // exists for the case the default cannot serve: comparing against the CAM source, or chasing
+        // an import bug, where the primitives have to arrive exactly as authored.
+        public bool NoCoalesce;
     }
 
     public static int Run(string[] args)
@@ -117,6 +123,7 @@ public static class LayoutConvert
                 }
                 case "--accept-inferred-drill-format": o.AcceptInferredDrillFormat = true; break;
                 case "--open-archives": o.OpenArchives = true; break;
+                case "--no-coalesce": o.NoCoalesce = true; break;
 
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ConvertUnknownOption(a)); return Usage(); }
@@ -371,7 +378,8 @@ public static class LayoutConvert
     private static Source? ImportBoard(Options o, string staging, Technology? destTech, string name)
     {
         using var stream = File.OpenRead(o.Input!);
-        var r = PcbImport.Import(stream, staging, name, destTech, o.DbuPerMicron);
+        var r = PcbImport.Import(stream, staging, name, destTech, o.DbuPerMicron,
+            coalesceRasterFill: !o.NoCoalesce);
         Report(r.Messages);
         if (r.Cancelled) return Refused();
 
@@ -396,7 +404,8 @@ public static class LayoutConvert
 
         var r = GerberImport.Import(files, staging, importName, destTech, o.DbuPerMicron,
             resolveDrillFormat: (fileName, inferred, crossCheck, _) => ResolveDrillFormat(o, fileName, inferred, crossCheck),
-            offerArchive: archives => OfferArchive(o, archives));
+            offerArchive: archives => OfferArchive(o, archives),
+            coalesceRasterFill: !o.NoCoalesce);
         Report(r.Messages);
         if (r.Cancelled) return Refused();
         if (r.CellDir is null) { JsonRun.Report(CliDiagnostics.ConvertNoCell()); return null; }
@@ -796,6 +805,7 @@ public static class LayoutConvert
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
         Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board");
+        Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;
     }

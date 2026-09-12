@@ -27,10 +27,16 @@ public static class LayoutClipper
     /// <c>LayoutRenderer.BuildPathOutline</c> keeps using the Skia stroker + Simplify so a curved
     /// trace still renders with adaptive, zoom-correct curves. Two outlines, two purposes; do not
     /// unify them.</summary>
-    public static Paths64 ToClipperPaths(LayoutShape shape, long tolDbu)
+    /// <param name="arcTolDbu">How finely a round join or end cap is flattened, in DBU. <b>Zero — the
+    /// default, and what every caller but the raster-fill coalescer passes — leaves Clipper2's own
+    /// default in force</b>, so this parameter changes no existing geometry anywhere. It exists
+    /// because that default resolves to roughly 1 DBU on a 12,700 DBU offset, i.e. ~250 segments per
+    /// cap circle: correct, and unaffordable when 29,000 painted scanlines are being unioned at once
+    /// (<see cref="LayoutRasterFillCoalesce"/>, R-rf3-5, which states the tolerance it passes).</param>
+    public static Paths64 ToClipperPaths(LayoutShape shape, long tolDbu, double arcTolDbu = 0)
     {
         if (shape is PathShape path)
-            return PathOutlinePaths(path, tolDbu);
+            return PathOutlinePaths(path, tolDbu, arcTolDbu);
 
         var rings = LayoutFlattener.Flatten(shape, tolDbu);
         var paths = new Paths64(rings.Count);
@@ -104,7 +110,7 @@ public static class LayoutClipper
 
     // ── PathShape -> geometry outline via InflatePaths ────────────────────────
 
-    private static Paths64 PathOutlinePaths(PathShape path, long tolDbu)
+    private static Paths64 PathOutlinePaths(PathShape path, long tolDbu, double arcTolDbu = 0)
     {
         var centerline = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tolDbu);
         if (centerline.Length < 4) return [];   // fewer than 2 points — no outline to build
@@ -118,7 +124,7 @@ public static class LayoutClipper
             PathEndStyle.Extended => EndType.Square,   // same offset amount as Square — see LayoutRenderer.ExtendedCenterline
             _                    => EndType.Butt,       // Flush
         };
-        return Clipper.InflatePaths(subject, delta, JoinType.Round, endType);
+        return Clipper.InflatePaths(subject, delta, JoinType.Round, endType, 2.0, arcTolDbu);
     }
 
     // ── R-L1e-0 / §3.1a R10b: enforce hole validity on any non-Clipper2 construction path ─────────

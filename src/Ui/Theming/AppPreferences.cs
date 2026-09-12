@@ -100,6 +100,18 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckDrcOnExport { get; set; }
 
+    // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
+    // of abutting scanline strokes — back into the region it paints. Null means the default, which is
+    // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and
+    // a board that arrived as 29,000 strokes is neither editable copper nor meshable, which the import
+    // already had to say in words. It is here rather than nowhere because the one case the default
+    // cannot serve is real — comparing an import against its CAM source, or chasing an import bug,
+    // needs the primitives exactly as authored. Per USER for CheckDrcOnExport's own reason: it is a
+    // working habit, not a property of any design.
+    [JsonPropertyName("coalesce_raster_fill_on_import")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CoalesceRasterFillOnImport { get; set; }
+
     // The built-in wire-to-wire clearance, in MIL — the one number circuitRF's own assembly rule set
     // states, applied when a wirebond design references no `.wasm`. Null means the default (0.5 mil).
     // Per USER for CheckDrcOnExport's own reason, and stored in mil because mil is the unit it is

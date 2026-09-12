@@ -420,6 +420,70 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
             $"the .clay's TechRef '{view.TechRef}' does not resolve to {techPath}");
     }
 
+    // ── R-rf3-7: the verb exposes coalescing, and its default is ON ───────────────────────────────
+
+    /// <summary>
+    /// <b>Read this beside R-rf3-8 before taking any expected-bytes change in this file for a
+    /// re-baseline.</b> The import now turns a PAINTED pour — a copper fill expressed as thousands of
+    /// abutting scanline strokes — back into the region it paints, by default. Every other fixture in
+    /// this file is flashes and traces with no painted fill in it, so the matrix's expected bytes are
+    /// unchanged and the byte-identity gates above still compare exactly what they compared before;
+    /// that is a property of those fixtures, not an exemption. This test is the one that carries the
+    /// new behaviour, and it carries BOTH sides of the flag so neither can rot.
+    /// </summary>
+    [Fact]
+    public void ConvertingARasterFilledSet_CoalescesByDefault_AndNoCoalesceGivesTheStrokesBack()
+    {
+        string source = RasterFilledGerberSet();
+
+        var (onCode, _, onErr) = RunCli("convert", source, "-o", Path.Combine(_root, "on"), "--to", "clay");
+        output.WriteLine(onErr);
+        Assert.Equal(0, onCode);
+
+        var (offCode, _, offErr) = RunCli("convert", source, "-o", Path.Combine(_root, "off"), "--to", "clay",
+                                          "--no-coalesce");
+        output.WriteLine(offErr);
+        Assert.Equal(0, offCode);
+
+        var on = ShapesOf(Path.Combine(_root, "on"));
+        var off = ShapesOf(Path.Combine(_root, "off"));
+
+        Assert.Equal(220, off.Count);
+        Assert.All(off, sh => Assert.IsType<PathShape>(sh));
+
+        Assert.True(on.Count <= 4, $"the default should have coalesced the pour; it wrote {on.Count} shape(s)");
+        Assert.All(on, sh => Assert.IsType<PolygonShape>(sh));
+
+        // What it did is on stderr with the rest of the import's notes, never on stdout — stdout is
+        // the result document (cli.md §3.1's split), and it stays the paths written.
+        Assert.Contains("coalesced into", onErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("coalesced into", offErr, StringComparison.Ordinal);
+    }
+
+    /// <summary>The one <c>.clay</c> a <c>--to clay</c> conversion of a single-layer set wrote, found
+    /// by walking rather than by assuming a depth — the import nests a cell folder inside an import
+    /// folder, and the shape of that nesting is not this test's subject.</summary>
+    private static IReadOnlyList<LayoutShape> ShapesOf(string clayDir) =>
+        LayoutPersistence.LoadFromFile(
+            Directory.EnumerateFiles(clayDir, "*.clay", SearchOption.AllDirectories).Single()).Shapes;
+
+    /// <summary>A copper layer painted the way a CAM tool's raster fill paints one: 220 abutting
+    /// one-mil scanlines with a 10% overlap, drawn rather than filled. Synthetic, per R-rf3's §4 — no
+    /// vendor board is committed anywhere.</summary>
+    private string RasterFilledGerberSet()
+    {
+        string dir = Path.Combine(_root, "raster-fill");
+        Directory.CreateDirectory(dir);
+
+        var body = new System.Text.StringBuilder(
+            "%FSLAX46Y46*%\n%MOMM*%\n%TF.FileFunction,Copper,L1,Top,Signal*%\n%ADD10C,0.025400*%\nD10*\n");
+        for (int i = 0; i < 220; i++)
+            body.Append($"X0Y{i * 22_860}D02*\n").Append($"X5000000Y{i * 22_860}D01*\n");
+        File.WriteAllText(Path.Combine(dir, "copper.gbr"), body.Append("M02*\n").ToString());
+
+        return dir;
+    }
+
     // ── Fixtures ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One cell with a rectangle, a via and a label — enough to exercise the three things
