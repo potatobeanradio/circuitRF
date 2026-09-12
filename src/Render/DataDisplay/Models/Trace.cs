@@ -1304,6 +1304,41 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         private readonly List<int> _pointSample = new();
 
+        /// <summary>
+        /// <b>Which cube samples the run actually SOLVED</b> — one entry per sample of the bound
+        /// cube's swept axis, or null when the source says nothing about the question, which is the
+        /// ordinary case and means every sample is one. Set by <see cref="SetCubeData"/> from
+        /// <see cref="RfCore.Data.SampleProvenance"/>; read only by <see cref="PointIsSolved"/>.
+        /// </summary>
+        private bool[]? _sampleSolved;
+
+        /// <summary>
+        /// <b>True when <see cref="Points"/>[<paramref name="p"/>] stands on a sample the run
+        /// produced</b>, false when it was modelled from the ones that were.
+        ///
+        /// <para>This is what a point MARKER is drawn on, and nothing else: a marker is the one
+        /// piece of plot furniture that asserts "a sample is here", so drawing it on an interpolated
+        /// point claims a solve that never happened. The LINE still runs through every published
+        /// point — that is the curve the run stands behind, modelled parts included — and the
+        /// distinction stays visible instead of being hidden by dropping them (owner, 2026-09-11).</para>
+        ///
+        /// <para>True for every point of every trace whose source carries no mask, so a Touchstone
+        /// file and a circuit analysis are unchanged.</para>
+        /// </summary>
+        public bool PointIsSolved(int p)
+        {
+            // The cube path's mask first, then the NETWORK's own — a trace bound to an SNP (which is
+            // what "add a trace" seeds from any source carrying an S cube, and therefore what the
+            // owner's s-parameter plot actually was) never goes near SetCubeData.
+            var solved = _sampleSolved ?? Data.SolvedMask;
+            if (solved is null) return true;
+            if (IsFamily || _pointSample.Count != Points.Count) return true;
+            if (p < 0 || p >= _pointSample.Count) return true;
+            int s = _pointSample[p];
+            if (s < 0) s = ~s;                       // the back branch of a whole-plane cut
+            return s < 0 || s >= solved.Length || solved[s];
+        }
+
         public List<Vector2> StabilityCircleCentres     { get; private set; } = new();
         public List<double>  StabilityCircleRadii       { get; private set; } = new();
         public List<bool>    StabilityCircleStableInside { get; private set; } = new();
@@ -1819,15 +1854,23 @@ namespace CircuitRF.Render.DataDisplay
         /// other call site, which is what clears a stale branch from a previous gather.</param>
         /// <param name="backReal">The real form of the same, for a real cube.</param>
         /// <param name="backPhiDeg">That half's own &#966;, for the label.</param>
+        /// <param name="sampleSolved">Which samples the run SOLVED, one entry per X sample, or null
+        /// when the source says nothing about it (every other call site, and every source but an
+        /// adaptively sampled EM sweep). See <see cref="PointIsSolved"/>.</param>
         public void SetCubeData(double[] xValues, Complex[]? complexValues, double[]? realValues,
                                 string xAxisName, string? xUnit,
                                 PlotType plotType, FreqUnit freqUnit, string[]? xLabels = null,
                                 bool transformBaked = false,
                                 Complex[]? backComplex = null, double[]? backReal = null,
-                                double backPhiDeg = double.NaN)
+                                double backPhiDeg = double.NaN,
+                                bool[]? sampleSolved = null)
         {
             _cubeIsScalar      = false;
             _transformBaked    = transformBaked;
+            // Set before the path is built and cleared by every call that does not carry one, for
+            // the same reason the back branch is: it describes THIS data, and a mask left over from
+            // the cube a trace used to be bound to would hide markers at samples that were solved.
+            _sampleSolved      = sampleSolved is { Length: > 0 } ? sampleSolved : null;
             SetPatternBackBranch(backComplex, backReal, backPhiDeg);
             SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
                                                          // re-applies it for a single-curve pinned trace)
@@ -1856,6 +1899,7 @@ namespace CircuitRF.Render.DataDisplay
         {
             _cubeIsScalar      = true;
             _transformBaked    = false;
+            _sampleSolved      = null;
             SetPatternBackBranch(null, null, double.NaN);
             SetPinnedSpectral(null, null, double.NaN);                           // reset derived state
             _cubeXValues       = new[] { 0.0 };                                  // synthetic 1-row anchor
@@ -2166,6 +2210,9 @@ namespace CircuitRF.Render.DataDisplay
         private void BuildMatrixPath(PlotType plotType, FreqUnit freqUnit)
         {
             Points.Clear();
+            // The network path keeps the map too, so PointIsSolved can read the SNP's own mask. Its
+            // "sample" is the frequency index, which is the same thing one axis further out.
+            _pointSample.Clear();
             StabilityCircleCentres.Clear();
             StabilityCircleRadii.Clear();
 
@@ -2219,6 +2266,7 @@ namespace CircuitRF.Render.DataDisplay
                     }
                     if (!float.IsFinite(y)) continue;
                     Points.Add(new Vector2(x, y));
+                    _pointSample.Add(fi);
                 }
                 return;
             }
@@ -2271,12 +2319,14 @@ namespace CircuitRF.Render.DataDisplay
 
                 if (!float.IsFinite(y)) continue;
                 Points.Add(new Vector2(x, y));
+                _pointSample.Add(fi);
             }
         }
 
         private void BuildDerivedPath(PlotType plotType, FreqUnit freqUnit)
         {
             Points.Clear();
+            _pointSample.Clear();
             StabilityCircleCentres.Clear();
             StabilityCircleRadii.Clear();
             StabilityCircleStableInside.Clear();
@@ -2307,7 +2357,10 @@ namespace CircuitRF.Render.DataDisplay
                 double[] xData = Data.Frequencies.Select(f => f * freqUnit.Scale()).ToArray();
                 for (int i = 0; i < xData.Length && i < yData.Length; i++)
                     if (double.IsFinite(yData[i]))
+                    {
                         Points.Add(new Vector2((float)xData[i], (float)yData[i]));
+                        _pointSample.Add(i);
+                    }
             }
             else
             {

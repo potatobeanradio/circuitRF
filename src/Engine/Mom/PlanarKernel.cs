@@ -482,6 +482,18 @@ public sealed class PlanarKernel
         for (int i = 0; i < nf; i++) addedBySearch[i] = sweep.Points[i].AddedBySearch ? 1 : 0;
         ds.AddToGroup(DiagnosticsGroup, "PointAddedBySearch", new DataCube(Ax1(), addedBySearch));
 
+        // ── Which published points were SOLVED, and which came out of the interpolant ──────────
+        //
+        // 1 = the full-wave kernel produced this matrix, 0 = it was modelled from the points that
+        // were. All ones when adaptive sampling is off, which is why this is emitted
+        // unconditionally — see SampleProvenance for what the silence used to cost. A point the
+        // resonance search ADDED was solved, so it reads 1 here and 1 in the cube above; the two
+        // answer different questions and neither implies the other.
+        var solvedF = new List<double>(sweep.SolvedFrequencies);
+        foreach (double f in sweep.AddedFrequencies) solvedF.Add(f);
+        ds.AddToGroup(DiagnosticsGroup, SampleProvenance.SolvedCubeName,
+                      SampleProvenance.BuildSolvedCube(new Axis("freq", freqs, "Hz"), solvedF));
+
         AddResonances(ds, sweep.Resonances);
 
         AddFarField(ds, sweep.FarField);

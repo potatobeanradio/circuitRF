@@ -2193,3 +2193,29 @@ halves agreeing is the point.
 Gate: `tests/Engine.Tests/Mom/PlanarPortOnANotchTests.cs`. `PlanarFillTests.Grid` gained an optional
 metal mask so a fixture can have a row whose metal stops somewhere other than the mesh's own edge;
 every caller before it passes null and gets the mesh it always did.
+
+## The published sweep now says which of its points were SOLVED (2026-09-11)
+
+`PlanarSolveResult` has carried `SolvedPointCount` and `SolvedFrequencies` since L9e, and the run
+report has said "N solved by the full-wave kernel and the rest modelled from those" since then. None
+of that reached the DataSet, and the DataSet is the only thing that leaves the process — so anything
+reading `results/<key>.npy` saw one frequency axis with two kinds of number on it and no way to tell
+them apart. An owner who stopped a run after six points got a hundred published points and a plot
+that marked all hundred (see `src/Render/RESOLVED.md` for the half that lives there).
+
+`PlanarKernel.BuildDataSet` now emits `planar.PointSolved` through
+`RfCore.Data.SampleProvenance` — rank 1, on the sweep's own frequency axis, 1 = the full-wave kernel
+produced this matrix, 0 = it came out of the interpolant. Unconditional, so a non-adaptive run says
+"all of them" rather than saying nothing.
+
+**A point the resonance search ADDED reads 1 here and 1 in `PointAddedBySearch` beside it**: it was
+solved, and it was not asked for. The two cubes answer different questions and neither implies the
+other, which is why the solved list handed to the mask is `SolvedFrequencies` ∪ `AddedFrequencies`.
+
+**Matched by VALUE, not by index.** The published list and the solved list are two orderings of
+frequencies out of the same array, and the index correspondence between them stops being true the
+moment the search splices a found point in.
+
+Gate: `tests/Engine.Tests/Mom/SolvedPointCubeTests.cs` — routine tier (~3 s on the coarse FR-4 line):
+the flags match `SolvedFrequencies` point for point on a sweep that exercises both kinds, a plain
+sweep is all ones, and the cube sits on the sweep's own axis.

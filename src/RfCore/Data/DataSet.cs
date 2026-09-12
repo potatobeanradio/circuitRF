@@ -535,6 +535,10 @@ namespace RfCore.Data
             return new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, refZ0)
             {
                 Z0PerPort = perPortZ0,
+                // Carried here rather than stamped by each consumer: an SNP built from a DataSet is
+                // the ONE place the two facts are in the same hand, and every path that reads the
+                // network — the Data Display's own matrix-bound traces included — reads this object.
+                SolvedMask = SampleProvenance.SolvedMaskFor(ds, cube.Axes[0]),
             };
         }
     }

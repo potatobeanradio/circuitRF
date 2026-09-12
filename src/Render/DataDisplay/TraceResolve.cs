@@ -410,7 +410,13 @@ public static class TraceResolve
                 t.SetSpectrumFundamentals(null);
                 // The multi-cube expression text already encodes any transform — mark the values baked so a
                 // real result renders as-is (the transform combo must not double-apply on top of it).
-                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true);
+                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true,
+                              // A "versus" X is somebody else's axis, so the mask — which is indexed
+                              // by the sample, not by the coordinate — is the Y side's only when the
+                              // X side is this cube's own sweep.
+                              sampleSolved: t.IsVersus
+                                  ? null
+                                  : SampleProvenance.SolvedMaskFor(ds, new Axis(xName, xVals, xUnit ?? "")));
                 if (!t.IsVersus)
                 {
                     ApplyPinnedSpectral(t, ds);
@@ -612,7 +618,10 @@ public static class TraceResolve
             t.SetSpectrumFundamentals(null);
             // No unit: cube VALUES carry none anywhere in the data model (only axes do), so a versus
             // X axis is labelled by its spec text alone — same as every Y label already is.
-            t.SetCubeData(vx, complexValues, realValues, t.XSpec!, null, plotType, freqUnit);
+            // The mask indexes SAMPLES of the cube's own swept axis, which is what vx re-coordinates
+            // — so it still applies when the X values come from somewhere else.
+            t.SetCubeData(vx, complexValues, realValues, t.XSpec!, null, plotType, freqUnit,
+                          sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis));
             ApplyPinnedAxisDisplay(t, ds, freqUnit);
             return;
         }
@@ -648,7 +657,10 @@ public static class TraceResolve
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length, probe));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels,
-                      backComplex: backComplex, backReal: backReal, backPhiDeg: backPhi);
+                      backComplex: backComplex, backReal: backReal, backPhiDeg: backPhi,
+                      // Which of these samples the run SOLVED, when the source says — null for every
+                      // source that does not, which leaves every marker exactly where it was.
+                      sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis));
         ApplyPinnedSpectral(t, ds);
         ApplyPinnedAxisDisplay(t, ds, freqUnit);
     }

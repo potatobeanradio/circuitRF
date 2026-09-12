@@ -125,8 +125,20 @@ namespace CircuitRF.Render.DataDisplay
                     IsAntialias = true
                 };
 
-                foreach (var pt in trace.Points)
+                // ── A MARKER MEANS "A SAMPLE IS HERE" (owner, 2026-09-11) ────────────────────
+                //
+                //  An adaptively sampled EM sweep publishes the whole requested grid but solves only
+                //  part of it, so a run STOPPED after six points still returns a hundred. Marking all
+                //  hundred asserted ninety-four solves that never happened — and a marker is exactly
+                //  the furniture a reader counts samples with. The LINE is unchanged and still runs
+                //  through every published point; only the claim that each one was computed is
+                //  withdrawn. Trace.PointIsSolved is true for every point of every source that says
+                //  nothing about it, which is every Touchstone file and every circuit analysis.
+                for (int k = 0; k < trace.Points.Count; k++)
                 {
+                    if (!trace.PointIsSolved(k)) continue;
+
+                    var pt   = trace.Points[k];
                     var px   = tf.ToCanvas(pt.X, pt.Y, useSecondary);
                     var rect = new SKRect(px.X - ms, px.Y - ms, px.X + ms, px.Y + ms);
 

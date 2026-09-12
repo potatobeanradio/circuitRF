@@ -1338,3 +1338,67 @@ Gates: `tests/Ui.Tests/DataDisplay/Pattern3DDrawPathTests.cs` — the SVG still 
 elements, the PDF grows by >100 kB when a surface is on it, and the mesh and the paths raster to the
 same silhouette (drawn area within 2%), the same colours (mean |Δ| < 2 of 765) and the same region
 (fewer than 1% of pixels more than a rim apart). Nothing here times anything.
+
+## A marker stands on a SAMPLE, never on an interpolated point (2026-09-11)
+
+An EM run was stopped from the Messages progress bar after six frequency points. The s-parameter
+plot, with the trace card's marker shape set to Square, drew about a hundred markers — and the owner
+read the picture the only way it can be read: a hundred markers is a hundred simulated points.
+
+**Neither half was a bug on its own, which is why nothing had caught it.** An adaptively sampled
+planar sweep publishes the WHOLE requested grid and models every point it did not solve (R-adf-2, and
+the Messages row already said "6 solved by the full-wave kernel and the rest modelled from those").
+The renderer, for its part, drew a marker at every point the trace had, which is correct for every
+other source there is. Put together they assert ninety-four solves that never happened, in the one
+piece of plot furniture whose entire meaning is "a sample is here".
+
+**The line was never the problem and is unchanged.** The modelled points are the run's own answer at
+the frequencies the user asked for; withdrawing them would be a different claim, not a truer one. What
+is withdrawn is only the assertion that each one was computed — which is exactly the division the
+owner asked for: smoothing may be in the line, it may not be a marker.
+
+**The mask is a CUBE, not a note beside the data.** `RfCore.Data.SampleProvenance` owns the one
+spelling (`PointSolved`, rank 1, on the swept axis, 1 = solved / 0 = modelled) and the planar kernel
+emits it into its own diagnostics group beside `PointAddedBySearch`. A note could not have worked:
+the window reads no engine object at all — the run writes `results/<key>.npy` and the Data Display
+opens that file — so anything that does not survive the round trip is something nobody ever sees. It
+is emitted **unconditionally**, all ones when nothing was modelled, for ANT-9's own reason: a reader
+gets "all of them" rather than a missing cube to interpret.
+
+**AN S-PARAMETER TRACE IS NOT A CUBE TRACE, and covering only the cube path fixed nothing.** The
+first cut wired the mask through `TraceResolve` alone; the owner tested it and reported no change at
+all, which is exactly right — `PlotInspectorViewModel.AddTrace` seeds a NETWORK-bound trace from any
+source carrying an S network (`new Trace(snp, MatrixType.S, …)`), and a network-bound trace never
+goes near `SetCubeData`. It draws through `BuildMatrixPath` off `Trace.Data.Frequencies`. So the mask
+rides **the `SNP` itself** (`SNP.SolvedMask`), filled in `DataSetBuilder.ToSnp` — the one place a
+DataSet becomes a network, and therefore the one place the two facts are in the same hand. No
+stamping site to forget: `Trace.PointIsSolved` reads the cube-path mask first and the network's own
+second, and `BuildMatrixPath`/`BuildDerivedPath` now record the sample map the cube path already
+kept. The lesson is not about this feature — it is that "which code path does the WINDOW actually
+take" is a question to answer before writing the fix, not after shipping it.
+
+**The mask is found by axis NAME, LENGTH and VALUES, in any group.** The name alone is not enough —
+one result can carry several axes called `freq` of different lengths (a far-field grid is one), and a
+mask applied to the wrong axis would hide markers at frequencies that WERE solved, which is the same
+class of silent wrongness this whole change exists to end. It is also cleared by every `SetCubeData`
+that does not carry one, so a mask cannot outlive the cube it described.
+
+**A source that says nothing is unchanged**, which is every Touchstone file and every circuit
+analysis: `Trace.PointIsSolved` returns true with no mask, for a family curve, and for any point whose
+sample cannot be identified.
+
+Gates: `tests/Ui.Tests/DataDisplay/SolvedPointMarkerTests.cs` — **both trace kinds**, cube-bound and
+network-bound: the point list is still the whole published grid while the marked set is exactly the
+solved one, the mask survives `ResultsWriter` → `DataSetImporter` → `ToSnp`, re-binding to an
+unmasked source clears it, and the RENDERER is checked on the bitmap for each kind — marker ink at
+every solved point's own canvas position and at no other (verified to go red when the rule is
+removed). The engine half is `tests/Engine.Tests/Mom/SolvedPointCubeTests.cs`.
+
+**An existing result file cannot be repaired.** The mask is written by the run; a `.npy` from before
+this change carries none, so it draws every point as a sample exactly as it used to. The sweep has to
+be re-run for the distinction to exist at all.
+
+**What is still not distinguishable, deliberately: the `.sNp`.** Touchstone holds S and nothing else,
+so the file a schematic references carries no mask and every point in it is drawn as a sample. The
+`.npy` is the file that can answer the question, and it is the one the EM run opens a Data Display
+over.

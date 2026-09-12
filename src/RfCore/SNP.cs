@@ -152,6 +152,25 @@ namespace RfCore
         /// </summary>
         public Complex[]? Z0PerPort { get; set; }
 
+        /// <summary>
+        /// <b>Which of these frequency points the producer actually SOLVED</b> — one entry per
+        /// <see cref="Frequencies"/> entry — or null whenever the question does not arise, which is
+        /// every Touchstone file and almost every computed network.
+        ///
+        /// <para><b>Why an SNP needs this.</b> An adaptively sampled EM sweep publishes the whole
+        /// requested grid and models the points it did not solve, so a run stopped after six points
+        /// returns a hundred. Every number in the matrices is the run's own answer at the frequency
+        /// asked for and none of them is wrong — but a reader that draws a MARKER at each one says
+        /// "here is a sample" a hundred times over six solves, and nobody can see that it is wrong
+        /// (owner report, 2026-09-11). See <see cref="RfCore.Data.SampleProvenance"/>, which owns
+        /// the convention this is populated from.</para>
+        ///
+        /// <para><b>It does not survive Touchstone</b>, which holds S and nothing else. It rides
+        /// the SNP from the <c>.npy</c> that does carry it, through
+        /// <c>DataSetBuilder.ToSnp</c>.</para>
+        /// </summary>
+        public bool[]? SolvedMask { get; set; }
+
         /// <summary>Comments read from the source file (optional).</summary>
         public List<CommentEntry> Comments { get; } = new();
 
