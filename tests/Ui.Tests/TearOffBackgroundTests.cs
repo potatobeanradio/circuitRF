@@ -45,7 +45,9 @@ public class TearOffBackgroundTests
         var factorySrc = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "ViewModels", "Dock", "CircuitRfDockFactory.cs"));
         var shellCodeBehindSrc = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Views", "WorkspaceWindow.axaml.cs"));
 
-        Assert.Contains("new CrfHostWindow()", factorySrc);
-        Assert.Contains("new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow()", shellCodeBehindSrc);
+        // The TYPE is what this pins, not the call's punctuation: both sites now carry an object
+        // initializer that stamps the float's owning workspace, so neither spells an empty argument list.
+        Assert.Contains("new CrfHostWindow", factorySrc);
+        Assert.Contains("new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow", shellCodeBehindSrc);
     }
 }

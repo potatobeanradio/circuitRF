@@ -578,6 +578,41 @@ public class CircuitRfDockFactory : Factory
         else                           host?.Exit();
     }
 
+    /// <summary>
+    /// Closes every floating window of the current root that no longer SHOWS anything.
+    ///
+    /// <para><b>The invariant this keeps: an emptied floating window is never left on screen.</b> Owner,
+    /// 2026-09-12, for the Workspace panel — undocked, then closed: the contents went and the window
+    /// stayed. It is the 2026-08-17 report's shape, and by then it had been fixed twice at the two routes
+    /// that were known to produce it (the panel toggle, then the chrome's ✕). This is the same thing said
+    /// once as a POST-CONDITION instead, because the list of routes is what keeps turning out to be
+    /// incomplete: a float can also be emptied by Dock's own close cascade, by a tab's context menu, or by
+    /// a hide that filed the panel under the FLOAT's root rather than the shell's — and none of those pass
+    /// through this codebase's own close paths at all. Whatever emptied it, the window goes.</para>
+    ///
+    /// <para>Asked of every float, not only tool floats: an empty DOCUMENT float is the blank window
+    /// <see cref="CarryOverDocumentWindows"/> already refuses to carry, for the same reason.</para>
+    ///
+    /// <para>Headless-safe, like <see cref="CloseFloatingWindow"/> it delegates to: a window that was
+    /// built but never presented has no <c>Host</c>, so nothing here touches Avalonia.</para>
+    /// </summary>
+    /// <returns>How many windows were closed — nothing in the app reads it, the tests do.</returns>
+    public int CloseEmptiedFloatingWindows()
+    {
+        if (_currentRoot?.Windows is not { Count: > 0 } windows) return 0;
+
+        var closed = 0;
+        foreach (var window in windows.ToList())
+        {
+            if (window is null) continue;
+            if (HasContent(window.Layout)) continue;
+
+            CloseFloatingWindow(_currentRoot, window);
+            closed++;
+        }
+        return closed;
+    }
+
     /// <summary>The root this factory's layout is currently built on, for callers that need to reach its
     /// floating windows (the panel toggle) without re-deriving it.</summary>
     public IRootDock? CurrentRoot => _currentRoot;
@@ -804,10 +839,17 @@ public class CircuitRfDockFactory : Factory
         return window;
     }
 
-    /// <summary>True when the tree holds at least one real dockable (not just empty container docks).</summary>
+    /// <summary>
+    /// True when the tree holds at least one real dockable (not just empty container docks).
+    ///
+    /// <para>A SPLITTER is not content. It is a real dockable, so the plain "not a dock" test below would
+    /// count it — and an emptied proportional dock keeps its splitters, so a window holding nothing but
+    /// grab-handles would read as occupied and be kept on screen.</para>
+    /// </summary>
     internal static bool HasContent(IDockable? dockable)
     {
         if (dockable is null) return false;
+        if (dockable is ISplitter) return false;
         if (dockable is not IDock dock) return true;
         if (dock.VisibleDockables is null) return false;
 

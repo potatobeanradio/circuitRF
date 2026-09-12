@@ -43,7 +43,15 @@ public partial class WorkspaceWindow : Window
         // both Dock dispatch paths (factory locator and DockControl) produce a CrfHostWindow,
         // which neutralizes the OS close box for TOOL tear-offs (whose close path crashes
         // Dock's teardown); document tear-offs still close normally.
-        MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow();
+        //
+        // STAMPED with this window's workspace, like the factory's own locator does (MW1 R-mw1-11) and
+        // for the same reason: a float's owner must be a fact, not a guess from position or z-order. Read
+        // inside the lambda because it runs when a tab is dragged out, not now — DataContext is still
+        // null at construction, so capturing it here would stamp every tear-off with nothing.
+        MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow
+        {
+            OwningWorkspace = DataContext as WorkspaceViewModel,
+        };
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
         // A DOCKED tool panel's ✕ is the same dead Dock button as a floated one's, and the first fix
         // reached only the float (owner, 2026-09-02). Same helper, registered on this TopLevel too; no

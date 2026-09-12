@@ -1,5 +1,68 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-12 — the Workspace panel, undocked then closed: the contents went and the window stayed
+
+Same shape as the 2026-08-17 report (*"their window contents disappears and the window is not closed"*),
+and that is the finding. **It had already been fixed twice, each time at the route that was known to
+produce it** — the P/A panel toggle in 2026-08-17, the tool chrome's ✕ in 2026-09-02. What keeps being
+wrong is the LIST of routes, not the handling of any one of them.
+
+**What was measured, against the real `CircuitRfDockFactory` and Dock 12.0.0.2's own operations.** Every
+model-level path a floated Workspace panel can be closed by already ends with the window closed:
+
+| path | result |
+|---|---|
+| tear off the TAB, then `CloseToolPanel` | float found with its window, `HoldsOtherTools` false → `CloseFloatingWindow` |
+| tear off the whole `LeftToolDock0` (Workspace **and** Library are one dock by default), then close the front tab | co-tenant found, `ForceCloseDockable`, and `ActiveDockable` correctly moves to Library |
+| auto-hide it first, then float it from the strip or from the flyout | **the pin is cleared by the float** — `RemoveDockable` calls `UnpinDockable` — so the auto-hide branch is not reached |
+| Dock's own close cascade (`ForceCloseDockable`) on a single-tool float | `RemoveDockable` → `CollapseDock` walks up to `RemoveWindow`; the window is deregistered by Dock itself |
+
+So the specific report is **not reproduced from the model**, and the cause of that one instance is still
+open — the owner's own history here is that this area defeats code reading twice in a row and yields to a
+traced click. Two candidate mechanisms were ruled out rather than guessed at: a stale pin (refuted above)
+and `FactoryBase.CloseDockable`'s `HideToolsOnClose` branch, which would hide a tool instead of removing
+it — the property is an auto-property defaulting to false and this codebase never sets it.
+
+**The fix is the rule, stated once as a post-condition: an emptied floating window is closed.**
+`CircuitRfDockFactory.CloseEmptiedFloatingWindows` closes every float of the current root that no longer
+shows anything, and it is raised from `_factory.DockableClosed` as well as from this file's own close
+paths — because the routes that do NOT pass through them are exactly the ones that keep producing the
+report: Dock's own cascade, a tab's context menu, a hide that files the panel under the FLOAT's root
+rather than the shell's. Whatever emptied the window, the window goes. Suppressed while
+`_layoutRebuildDepth > 0`: a rebuild empties and refills windows on its way through, and a window that is
+momentarily empty mid-rebuild is not an emptied window.
+
+Three things fell out of it, all of them real on their own:
+
+- **`CloseToolPanel` asked the shell root's PINNED lists before it asked the live tree.** A panel that is
+  in a float and also named in a pinned list would have been `HideDockable`d — and Dock files a floating
+  tool's hide under the float's own root, which IS the reported symptom. Nothing is supposed to leave such
+  an entry behind, and nothing measurably does; it is also exactly the kind of bookkeeping that goes stale
+  without anyone noticing. The tree is now resolved first and the pinned question asked only of a panel
+  that is in no tree at all — which is the only case it was ever about.
+- **A SPLITTER counted as content.** `HasContent` returned true for anything that is not an `IDock`, and an
+  emptied proportional dock keeps its splitters — so a window holding nothing but grab-handles read as
+  occupied. `CarryOverDocumentWindows` asks the same question about a blank document float.
+- **A float torn off by a DRAG was never stamped with its workspace, and the `HostWindowFactory` beside
+  it is not the belt-and-braces its comment claims — it is the ONLY locator a drag reaches.** Decompiled,
+  not assumed. `FactoryBase.GetHostWindow` consults `HostWindowLocator` **by window id** before falling
+  through to `DefaultHostWindowLocator`; `DockControl.OnLayoutChanged` installs
+  `HostWindowLocator["IDockWindow"] = ResolveDefaultHostWindow` (it leaves `DefaultHostWindowLocator`
+  alone, because ours is already set), and `ResolveDefaultHostWindow` calls the control's
+  `HostWindowFactory`. Dock's own `CreateWindowFrom` — every drag tear-off — names its window
+  `"IDockWindow"`, so it hits that entry every time; this codebase's hand-built floats name theirs
+  `"FloatingWindow"`, which has no entry and so reaches the factory's own stamped locator. **So a restored
+  float carried `OwningWorkspace` and a dragged one never did**, which is exactly the asymmetry that makes
+  a bug like this invisible. With one window open the `WorkspaceLocator` fallback guess happens to agree;
+  with two, MW1 R-mw1-11's whole point is that ownership must be a fact. Read inside the lambda, not
+  captured at construction — `DataContext` is still null when the window is built.
+
+Gate: `tests/Ui.Tests/EmptiedFloatingWindowTests.cs` — the sweep against the real factory (a hide into the
+float's root, a splitter-only window, a float that still shows a panel, a docked close that must not
+disturb a float), Dock's own cascade pinned as the measurement it is, and source scans for the ordering,
+the `DockableClosed` wiring and the drag stamp.
+
+
 ## Owner report, 2026-09-11 — auto-hiding the Project Tree and saving the workspace lost the panel entirely
 
 Auto-hide (Dock's own feature: the panel collapses to a labelled strip at the edge of the window and

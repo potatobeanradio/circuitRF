@@ -267,7 +267,7 @@ public partial class WorkspaceViewModel
     private void ToggleToolPanel(string? panelId)
     {
         try { ToggleToolPanelCore(panelId); }
-        finally { RaiseToolPanelVisibilityChanged(); }
+        finally { CloseEmptiedFloatingToolWindows(); RaiseToolPanelVisibilityChanged(); }
     }
 
     private void ToggleToolPanelCore(string? panelId)
@@ -463,11 +463,21 @@ public partial class WorkspaceViewModel
         {
             if (tool.Id is not { Length: > 0 } id) return false;
 
+            // WHERE THE PANEL IS decides what closing it means, and the live tree is asked FIRST.
+            //
+            // The auto-hide question below reads the SHELL root's pinned lists, and it used to be asked
+            // first. A panel that is in a floating window and also named in one of those lists — which
+            // nothing is supposed to leave behind, and which is exactly the kind of bookkeeping that goes
+            // stale without anyone noticing — would then be HIDDEN, and Dock files a floating tool's hide
+            // under the FLOAT's own root: the contents vanish and the window stays on screen. That is the
+            // 2026-08-17 report, and it is what this ordering makes unreachable.
+            var inTree = _factory.TryFindTool(tool, out var parent, out var window) && parent is not null;
+
             // AUTO-HIDDEN, and the ✕ is on its flyout: the panel is in no tree, so TryFindTool refuses
             // and the button would do nothing at all. HideDockable un-hides it first (Dock's own
             // UnpinDockable), so the strip goes with the panel rather than being left behind pointing at
             // nothing.
-            if (_factory.IsToolAutoHidden(tool))
+            if (!inTree && _factory.IsToolAutoHidden(tool))
             {
                 RememberPanelHome(id, tool);
                 try { DockPanelHiding.Hide(_factory, tool); }
@@ -479,7 +489,7 @@ public partial class WorkspaceViewModel
                 return true;
             }
 
-            if (!_factory.TryFindTool(tool, out var parent, out var window) || parent is null) return false;
+            if (!inTree) return false;
 
             RememberPanelHome(id, tool);
 
@@ -507,6 +517,7 @@ public partial class WorkspaceViewModel
         }
         finally
         {
+            CloseEmptiedFloatingToolWindows();
             RaiseToolPanelVisibilityChanged();
         }
     }
@@ -1128,11 +1139,37 @@ public partial class WorkspaceViewModel
         _factory.DockableDocked    += (_, _) => OnDockArrangementChanged();
         _factory.DockableUndocked  += (_, _) => OnDockArrangementChanged();
         _factory.DockableClosed    += (_, _) => OnDockArrangementChanged();
+
+        // AND the post-condition: whatever route a panel left by, a floating window it has emptied is
+        // closed rather than left on screen. Here as well as in this file's own close paths because the
+        // routes that do NOT pass through them are the ones that keep producing the report — Dock's own
+        // close cascade, a tab's context menu, a hide that filed the panel under the float's own root.
+        // See CircuitRfDockFactory.CloseEmptiedFloatingWindows.
+        _factory.DockableClosed    += (_, _) => CloseEmptiedFloatingToolWindows();
         _factory.DockableMoved     += (_, _) => OnDockArrangementChanged();
         _factory.DockableSwapped   += (_, _) => OnDockArrangementChanged();
         _factory.WindowMoveDragEnd += (_, _) => OnDockArrangementChanged();
         _factory.WindowOpened      += (_, _) => OnDockArrangementChanged();
         _factory.WindowClosed      += (_, _) => OnDockArrangementChanged();
+    }
+
+    /// <summary>
+    /// Closes any floating window this workspace owns that has just been emptied — the one place the
+    /// invariant "an empty floating window is not a window worth keeping" is enforced after the fact.
+    ///
+    /// <para><b>Suppressed during a layout rebuild</b>, which empties and refills windows on its way
+    /// through: a window that is momentarily empty mid-rebuild is not an emptied window, and closing it
+    /// would take the panels being re-hosted into it with it.</para>
+    /// </summary>
+    internal void CloseEmptiedFloatingToolWindows()
+    {
+        if (_layoutRebuildDepth > 0) return;
+
+        try { _factory.CloseEmptiedFloatingWindows(); }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not close an emptied floating panel window: {ex.Message}");
+        }
     }
 
     private void OnDockArrangementChanged()
