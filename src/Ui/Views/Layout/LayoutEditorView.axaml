@@ -431,11 +431,34 @@
                         <!-- EM (owner request, 2026-08-09): the only EM entry point outside the .cem
                              editor itself. Opens this layout's own EM setup, creating it (named after
                              the layout file) the first time. Sits beside Check Design Rules because
-                             both are "run something over this whole layout" actions. -->
+                             both are "run something over this whole layout" actions.
+
+                             IT IS LETTERED, not a pictogram (owner, 2026-09-11). This is the only way
+                             into the EM setup outside the .cem editor itself, so a new user has to find
+                             it without knowing it exists — and it used to draw MaterialIcon SineWave,
+                             which the wBond Touchstone export button three positions to its left ALSO
+                             draws. One shape on two buttons, and neither of them the one being looked
+                             for. "EM" in an outlined tile is the only lettering on the row, so it reads
+                             at a glance, while the outline keeps it speaking the toolbar's own drawing
+                             convention rather than shouting over it.
+
+                             The tile inherits the button's Foreground, so it follows the theme and the
+                             disabled state with no per-theme brush of its own; the 16x16 Panel keeps the
+                             footprint identical to the MaterialIcon neighbours, which is what stops this
+                             one button setting the row's height. -->
                         <Button Click="OnOpenEmSetup"
                                 ToolTip.Tip="EM Setup for this layout — opens it, creating it the first time"
                                 Padding="6,3">
-                            <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                            <Panel Width="16" Height="16">
+                                <Border Width="16" Height="12" CornerRadius="2"
+                                        BorderThickness="1.2"
+                                        BorderBrush="{Binding $parent[Button].Foreground}"
+                                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="EM" FontSize="8" FontWeight="Bold"
+                                               LetterSpacing="-0.3"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Panel>
                         </Button>
 
                         <!-- The two mesh overlays, immediately RIGHT of EM Setup (owner, 2026-08-17)
