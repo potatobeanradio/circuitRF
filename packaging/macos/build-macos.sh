@@ -277,6 +277,14 @@ DIST="${ROOT}/dist"
 mkdir -p "$DIST"
 BUILT=""
 
+# ── PASS 1: BUILD EVERYTHING ──────────────────────────────────────────────────
+#
+# EVERY ARCHITECTURE IS COMPILED AND VERIFIED BEFORE ANYTHING IS NOTARISED. The two halves of this
+# script cost completely different things: compiling is minutes of every core this machine has,
+# while notarisation is minutes of waiting on Apple's service with the CPU idle. Interleaving them
+# left the machine alternating between the two; doing all the compiling first means the expensive
+# work is over, and a build that is going to fail (a missing helper, a wrong-architecture binary, a
+# mismatched guest kernel) fails before a single submission has been sent.
 for ARCH in $ARCHES; do
     case "$ARCH" in
         arm64) RID="osx-arm64"; MACHO_ARCH="arm64"  ;;
@@ -384,6 +392,23 @@ if got != want:
              f"match the host that boots it; delete tools/macos-vmhost/build and build again.")
 KPY
     fi
+done
+
+
+# ── PASS 2: NOTARISE, STAPLE AND WRITE THE DISK IMAGES ────────────────────────
+#
+# Nothing here compiles. Every bundle referenced below was built and checked in pass 1, so from this
+# point on the script is waiting on Apple and on hdiutil.
+for ARCH in $ARCHES; do
+    case "$ARCH" in
+        arm64) RID="osx-arm64" ;;
+        x64)   RID="osx-x64"   ;;
+    esac
+
+    APP_BUNDLE="${ROOT}/src/Ui/bin/Release/net10.0/${RID}/${NAME}.app"
+
+    echo ""
+    echo "══ ${NAME} · ${ARCH} · packaging ═══════════════════════════════════════"
 
     # ── Notarise and STAPLE THE .app, before it goes into the image ───────────
     #
