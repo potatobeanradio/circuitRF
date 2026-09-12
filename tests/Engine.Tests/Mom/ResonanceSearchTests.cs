@@ -552,6 +552,173 @@ public sealed class ResonanceSearchTests
     }
 
     /// <summary>
+    /// A progress sink that runs ON the reporting thread. <see cref="Progress{T}"/> posts through
+    /// the captured synchronisation context, so a stop armed from inside one arrives an unknown
+    /// number of work units late — which is the one thing a test counting work units after a stop
+    /// cannot tolerate. <see cref="IProgress{T}"/> is an interface for exactly this reason.
+    /// </summary>
+    private sealed class SyncProgress(Action<RunProgress> on) : IProgress<RunProgress>
+    {
+        public void Report(RunProgress value) => on(value);
+    }
+
+    /// <summary>
+    /// <b>A stop is answered inside a refinement ROUND, not at the end of one</b> (owner report,
+    /// 2026-09-11: Stop was pressed and the solver went on solving frequencies).
+    ///
+    /// <para>The adaptive refinement's outer loop reads the stop once per round, and a round is not
+    /// one solve — every interval that fails its tolerance splits in two, so the probe list doubles
+    /// and a late round is dozens of full-wave points. Reading the stop only between rounds meant
+    /// waiting for all of them. This counts SOLVES, not seconds: with the stop armed at the fourth,
+    /// a run that reads it per probe cannot get past the fifth, while the same run left alone solves
+    /// far more.</para>
+    /// </summary>
+    [Fact]
+    public void AStoppedAdaptiveSweep_TakesNoFurtherProbesInTheRoundItWasStoppedIn()
+    {
+        var (p, m, ports) = ResonantFixture();
+        double[] freqs = Grid(2e9, 6e9, 17);
+
+        // A tolerance this fixture cannot meet on this grid, so refinement keeps splitting and the
+        // rounds really do grow — without that there is no batch for a stop to land inside of.
+        var st = new PlanarSolveSettings(
+            Deembed: false, Adaptive: new PlanarAdaptiveSettings(Tolerance: 1e-4));
+
+        var free = PlanarSolve.Run(p, m, ports, freqs, st);
+
+        // PAST the five seed points on purpose: what is being gated is the refinement BATCH, which
+        // is where the reported run would not stop. The seed loop has a stop of its own and a floor
+        // of two nodes under it, and arming inside it would test that instead.
+        const int ArmAt = 6;
+        RunControl? control = null;
+        control = new RunControl
+        {
+            // No throttle: the gate is the COUNT of solves after the stop, so every tick has to be
+            // seen. The default 40 ms floor would hide the very ticks being counted.
+            MinReportIntervalMs = 0,
+            Progress = new SyncProgress(pr => { if (pr.Completed >= ArmAt) control!.RequestStop(); }),
+        };
+
+        var stopped = PlanarSolve.Run(p, m, ports, freqs, st, control);
+
+        _out.WriteLine($"free: {free.SolvedPointCount} solved of {freqs.Length}");
+        _out.WriteLine($"stopped: {stopped.SolvedPointCount} solved, armed at {ArmAt}");
+
+        // The stop is read BEFORE each probe, so the solve that armed it is the last one.
+        Assert.InRange(stopped.SolvedPointCount, 2, ArmAt + 1);
+        Assert.True(free.SolvedPointCount > ArmAt + 1,
+                    $"the unstopped run must actually do more work than the gate allows the stopped " +
+                    $"one, or this proves nothing (it solved {free.SolvedPointCount})");
+
+        // A stopped adaptive run is still a COMPLETE result on the user's own grid — and it says so.
+        Assert.Equal(freqs.Length, stopped.Points.Count);
+        var note = stopped.Notes.FirstOrDefault(n => n.StartsWith("STOPPED EARLY", StringComparison.Ordinal));
+        Assert.NotNull(note);
+
+        // And it claims NO convergence verdict: refinement was cut short, so the worst disagreement
+        // it had measured is a maximum over intervals it reached and says nothing about the rest.
+        Assert.Null(stopped.AdaptiveConverged);
+        Assert.DoesNotContain("CONVERGED", note, StringComparison.Ordinal);
+        _out.WriteLine(note);
+        _out.WriteLine(note);
+    }
+
+    /// <summary>
+    /// <b>A stop asked for before the first point still publishes ONE.</b> The mesh and the core
+    /// fill run before any point does and on a large board are minutes of their own, so a stop can
+    /// genuinely arrive with nothing solved. Publishing a sweep of no points is not "keep what you
+    /// solved" — and the empty result would be written straight over the last good `.snp` at the
+    /// setup's own predictable path.
+    /// </summary>
+    [Fact]
+    public void AStopAskedForBeforeTheFirstPoint_StillPublishesOne()
+    {
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 5);
+
+        var control = new RunControl { MinReportIntervalMs = 0 };
+        control.RequestStop();                      // before the run has taken a single point
+
+        var run = PlanarSolve.Run(p, m, ports, freqs, new PlanarSolveSettings(Deembed: false), control);
+
+        Assert.Single(run.Points);
+        Assert.Equal(freqs[0], run.Points[0].FrequencyHz);
+        var note = run.Notes.FirstOrDefault(n => n.StartsWith("STOPPED EARLY", StringComparison.Ordinal));
+        Assert.NotNull(note);
+        _out.WriteLine(note);
+    }
+
+    /// <summary>
+    /// <b>A STOPPED run still has a far field, and it is a whole one</b> (owner instruction,
+    /// 2026-09-11: stopping an EM simulation must still produce far-field output that can be
+    /// plotted — the first cut of the stop declined the remaining patterns and handed back
+    /// s-parameters alone).
+    ///
+    /// <para>The block solves NOTHING. Every pattern in it is an exact sum over the basis currents
+    /// of a point that is already solved, so it is the processing of what the run has rather than
+    /// more of the work the stop declined — and on an antenna it is usually the reason the run
+    /// exists. What a stop changes is how many SOLVED points there are to take a pattern at, which
+    /// is the same thing it changes about the s-parameters.</para>
+    /// </summary>
+    [Fact]
+    public void AStoppedRun_StillPublishesAFarFieldAtEverySolvedPoint()
+    {
+        var (p, m, ports) = Fixture();
+        double[] freqs = Grid(2e9, 6e9, 9);
+
+        // A coarse pattern grid: this gates the CONTROL FLOW around the block, and a 1 degree
+        // hemisphere would pay for angular resolution no assertion here reads.
+        var st = new PlanarSolveSettings(
+            Deembed: false,
+            Adaptive: new PlanarAdaptiveSettings(Tolerance: 1e-4),
+            FarField: new PlanarFarFieldSettings(PlanarFarFieldGrid.Hemisphere(30, 45), freqs));
+
+        // ── The reported case: Stop pressed while it is still SOLVING ─────────────────────────
+        RunControl? solving = null;
+        solving = new RunControl
+        {
+            MinReportIntervalMs = 0,
+            Progress = new SyncProgress(pr => { if (pr.Completed >= 4) solving!.RequestStop(); }),
+        };
+        var stoppedSolving = PlanarSolve.Run(p, m, ports, freqs, st, solving);
+
+        _out.WriteLine($"stopped while solving: {stoppedSolving.SolvedPointCount} solved, " +
+                       $"{stoppedSolving.FarField?.FrequenciesHz.Count ?? 0} pattern frequency(ies)");
+
+        // The whole point of the correction: there IS a far field, and one pattern per solved point.
+        Assert.NotNull(stoppedSolving.FarField);
+        Assert.NotNull(stoppedSolving.Metrics);
+        Assert.Equal(stoppedSolving.SolvedPointCount, stoppedSolving.FarField!.FrequenciesHz.Count);
+        Assert.Equal(freqs.Length, stoppedSolving.Points.Count);
+        Assert.Contains(stoppedSolving.Notes,
+                        n => n.StartsWith("The far field was taken in full", StringComparison.Ordinal));
+
+        // ── And a stop landing INSIDE the block does not truncate it either ───────────────────
+        RunControl? inBlock = null;
+        inBlock = new RunControl
+        {
+            MinReportIntervalMs = 0,
+            Progress = new SyncProgress(pr =>
+            {
+                if (pr.Stage.StartsWith("far field", StringComparison.Ordinal) && pr.StageCompleted >= 1)
+                    inBlock!.RequestStop();
+            }),
+        };
+        var stoppedInBlock = PlanarSolve.Run(p, m, ports, freqs, st, inBlock);
+        var free           = PlanarSolve.Run(p, m, ports, freqs, st);
+
+        _out.WriteLine($"stopped in the block: {stoppedInBlock.FarField?.FrequenciesHz.Count ?? 0} " +
+                       $"of {free.FarField?.FrequenciesHz.Count ?? 0} pattern frequency(ies)");
+
+        Assert.NotNull(free.FarField);
+        Assert.True(free.FarField!.FrequenciesHz.Count > 1,
+                    "the unstopped run must take more than one pattern or this proves nothing");
+        Assert.Equal(free.FarField.FrequenciesHz.Count,
+                     stoppedInBlock.FarField?.FrequenciesHz.Count);
+        Assert.Equal(free.FarField.Patterns.Count, stoppedInBlock.FarField!.Patterns.Count);
+    }
+
+    /// <summary>
     /// <b>A stopped SWEEP publishes the prefix it solved and names what is missing.</b> The fixed-grid
     /// half of the same request: nothing downstream distinguishes a stopped result from a completed
     /// one — same DataSet, same cubes, same `.snp` — which is exactly why the note is mandatory.

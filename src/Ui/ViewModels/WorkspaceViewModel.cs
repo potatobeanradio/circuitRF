@@ -7223,7 +7223,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         EmRunResult result;
         using (var cts = new CancellationTokenSource())
         {
-            var control = new RunControl
+            // Declared before it is built so the progress sink can read the run's OWN stop flag —
+            // the rows then say "stopping" from the moment it is asked for, with that fact living in
+            // exactly one place rather than being mirrored into a second field beside it.
+            RunControl? control = null;
+            control = new RunControl
             {
                 Token = cts.Token,
                 // Adaptive sampling decides how many points it actually solves as it goes, so there
@@ -7231,7 +7235,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // rather than against a budget the run will usually stop well short of.
                 Total    = adaptive ? 0 : pointCount,
                 Progress = new Progress<RunProgress>(
-                    p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive)),
+                    p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive,
+                                          control!.StopRequested)),
             };
 
             // ONE handle, THREE surfaces: the panel's Cancel button, the sweep row's bar and the
@@ -7522,22 +7527,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// The stage row is the one exception and it is deliberate: its text is the changing part (it
     /// IS the answer to "what is it doing"), so its own counter stays fixed-width instead.</para>
     /// </summary>
+    /// <param name="stopping">Whether Stop has been asked for and the run is finishing (owner
+    /// report, 2026-09-11). It is on BOTH rows because the complaint was that a stopped run looked
+    /// like a run that had not heard: the bars go on moving — correctly, since the work already in
+    /// flight still has to finish — and with nothing on them saying so, the only evidence the button
+    /// did anything was one Messages line already scrolling away above them.
+    /// <para>It rides in the TRAILING counter on the sweep row, never in the text left of the bar,
+    /// for the reason the remark above gives: text that grows to the left moves the bar. The stage
+    /// row's label is the changing part by design, so there it goes in the label.</para></param>
     internal static void ReportEmProgress(
         IProgressMessage sweepLive, IProgressMessage stageLive,
-        string setupName, RunProgress p, bool adaptive)
+        string setupName, RunProgress p, bool adaptive, bool stopping = false)
     {
         if (p.Total > 0)
             sweepLive.Update($"EM '{setupName}'",
-                             FormatCounter(p.Completed, p.Total),
+                             FormatCounter(p.Completed, p.Total) + (stopping ? " — stopping" : ""),
                              100.0 * p.Completed / p.Total);
         else
             sweepLive.Update($"EM '{setupName}'",
                              adaptive
-                                 ? $"{p.Completed.ToString("N0", CultureInfo.CurrentCulture)} point(s) solved"
-                                 : null,
+                                 ? $"{p.Completed.ToString("N0", CultureInfo.CurrentCulture)} point(s) solved" +
+                                   (stopping ? " — stopping" : "")
+                                 : stopping ? "stopping" : null,
                              indeterminate: true);
 
         string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        if (stopping) what += " (stopping)";
         if (p.StageTotal > 0)
             stageLive.Update($"EM '{setupName}' — {what}",
                              FormatCounter(p.StageCompleted, p.StageTotal),

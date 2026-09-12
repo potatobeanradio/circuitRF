@@ -73,6 +73,52 @@ public sealed class EmRunProgressTests
         Assert.Equal([25.0, 50.0, 75.0, 100.0], seen);
     }
 
+    /// <summary>
+    /// <b>A run that has been asked to Stop SAYS so on both rows</b> (owner report, 2026-09-11: Stop
+    /// was pressed and the run appeared to carry on regardless). Work already in flight still has to
+    /// finish, so the bars go on moving and must — what was missing is any sign on them that the
+    /// button was heard.
+    ///
+    /// <para>On the sweep row it is in the trailing counter, not in the text left of the bar: that
+    /// text is constant for the whole run precisely so the bar never shifts under the pointer.</para>
+    /// </summary>
+    [Fact]
+    public void OnceStopIsAskedFor_BothRowsSaySo_AndTheSweepRowsLeftTextStillDoesNotMove()
+    {
+        var (sweep, sweepEntry) = NewLive();
+        var (stage, stageEntry) = NewLive();
+        var p = new RunProgress("10 GHz — solving the structure", 3, 101, 3, 4);
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "MLin", p, adaptive: false);
+        Assert.Equal("3 / 101", sweepEntry.ProgressText);
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "MLin", p, adaptive: false, stopping: true);
+
+        Assert.Equal("EM 'MLin'", sweepEntry.Text);                 // still constant left of the bar
+        Assert.Equal("3 / 101 — stopping", sweepEntry.ProgressText);
+        Assert.Equal("EM 'MLin' — 10 GHz — solving the structure (stopping)", stageEntry.Text);
+        Assert.Equal(100.0 * 3 / 101, sweepEntry.ProgressValue, 6); // and the bar is where it was
+    }
+
+    /// <summary>The adaptive sweep row has no denominator to put it beside, so it goes after the
+    /// live solved count — and with neither, the counter is the word on its own rather than nothing.</summary>
+    [Fact]
+    public void AnIndeterminateSweepRow_CarriesTheStoppingWordToo()
+    {
+        var (sweep, sweepEntry) = NewLive();
+        var (stage, _) = NewLive();
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "MLin",
+            new RunProgress("20 GHz — solving the structure", 7, 0, 2, 4),
+            adaptive: true, stopping: true);
+        Assert.Equal("7 point(s) solved — stopping", sweepEntry.ProgressText);
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "MLin",
+            new RunProgress("20 GHz — solving the structure", 7, 0, 2, 4),
+            adaptive: false, stopping: true);
+        Assert.Equal("stopping", sweepEntry.ProgressText);
+    }
+
     [Fact]
     public void AdaptiveSampling_ReportsTheSweepIndeterminate_WithALiveSolvedCount()
     {

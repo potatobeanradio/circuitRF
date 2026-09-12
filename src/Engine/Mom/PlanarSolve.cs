@@ -1601,12 +1601,26 @@ public static class PlanarSolve
         // same `.snp`. What it is not is SILENT — every branch adds its own sentence.
         bool stoppedEarly = false;
 
+        // Stopping during REFINEMENT is a different fact from stopping after it, and only this one
+        // is recorded where it happens. `worstStopped` is a max over the intervals refinement
+        // actually reached, so on a run cut short it is a max over a set that stopped growing — it
+        // reads as a converged verdict when what really happened is that nobody looked. A stop
+        // pressed after refinement finished takes nothing away from the model and must not be
+        // reported as though it did.
+        bool refinementStopped = false;
+
         if (st.Adaptive is null)
         {
             // L8d's own loop, untouched but for the stop check at its own point boundary.
             foreach (double f in freqs)
             {
-                if (control?.StopRequested == true) { stoppedEarly = true; break; }
+                // ONE point is the floor, for the same reason the adaptive path's floor is two: a
+                // stop pressed before the first point has finished — during the mesh or the core
+                // fill, which on a large board is minutes of its own — would otherwise publish a
+                // sweep of NO points. That is not "keep what you solved", it is an empty answer, and
+                // it would be written straight over whatever `.snp` the last good run left at the
+                // setup's own predictable path.
+                if (points.Count >= 1 && control?.StopRequested == true) { stoppedEarly = true; break; }
                 var (kernel, raw, currents, y, kernelMs, dutMs, standardsMs) = SolveRawAt(f);
 
                 if (capturePort >= 0 && points.Count == captureAt)
@@ -1731,7 +1745,17 @@ public static class PlanarSolve
                 return outp;
             }
 
-            foreach (int i in PlanarAdaptiveSweep.SeedIndices(freqs.Length, ad.InitialPoints)) Solve(i);
+            foreach (int i in PlanarAdaptiveSweep.SeedIndices(freqs.Length, ad.InitialPoints))
+            {
+                // The seeds are full-wave points like every other, so the stop is read between them
+                // too. TWO is the floor rather than zero: everything below this line — the
+                // refinement, the search, and the interpolant the requested grid is published from —
+                // needs at least two nodes to be a curve rather than a single value, and a result
+                // that cannot be published is not what "keep what you have solved" means.
+                if (solved.Count >= 2 && control?.StopRequested == true)
+                { stoppedEarly = refinementStopped = true; break; }
+                Solve(i);
+            }
             var byIndex = Replay();
 
             var work = new List<(int Lo, int Hi)>();
@@ -1762,6 +1786,23 @@ public static class PlanarSolve
                 foreach (var p in probes)
                 {
                     if (solved.Count >= budget) break;
+
+                    // ── THE BOUNDARY THE STOP WAS MISSING (owner report, 2026-09-11) ──────────
+                    //
+                    // The `while` above reads the stop once per ROUND, and a round is not one solve:
+                    // every interval that failed its tolerance splits in two, so the probe list
+                    // doubles each time and a late round is sixteen or thirty-two full-wave points,
+                    // tens of seconds each. A stop pressed inside one of those rounds was therefore
+                    // answered only when the whole round finished — which is exactly the "it kept
+                    // solving frequencies and would not stop" that was reported. The stop belongs
+                    // where the WORK is, which is per probe.
+                    //
+                    // Breaking here leaves the round half-taken and that is well-formed: `taken`
+                    // carries only the probes that were actually solved, the replay below runs over
+                    // `solved` as it now stands, and the error test that follows reads each taken
+                    // probe's own solved matrix. The `while` then sees the stop and exits.
+                    if (control?.StopRequested == true) { refinementStopped = true; break; }
+
                     Solve(p.Mid);
                     taken.Add(p);
                 }
@@ -1787,7 +1828,13 @@ public static class PlanarSolve
                 work = next;
             }
 
-            if (control?.StopRequested == true) stoppedEarly = true;
+            if (control?.StopRequested == true)
+            {
+                stoppedEarly = true;
+                // Work still on the list when the loop let go: those intervals were never probed,
+                // so no verdict below covers them.
+                if (work.Count > 0) refinementStopped = true;
+            }
 
             solvedCount   = solved.Count;
             worstAdaptive = worstStopped;
@@ -1797,7 +1844,9 @@ public static class PlanarSolve
             // out of grid or budget. `worstStopped` is the max over both, so this one comparison is
             // the verdict — and it is computed here rather than inferred from the note, because
             // ANT-9 §4's whole complaint is that a reader was left to infer it.
-            converged = !(worstStopped > ad.Tolerance);
+            // A run that was stopped mid-refinement has NO verdict — not a false one and not a
+            // true one. Null is what the result type already has for "not answered".
+            converged = refinementStopped ? null : !(worstStopped > ad.Tolerance);
 
             // ANT-4 on the adaptive path. A requested point that the sampler never solved has no
             // basis currents, so the pattern is taken at the nearest point that WAS solved and the
@@ -1831,6 +1880,22 @@ public static class PlanarSolve
                 // outer counter is deliberately left alone — it counts points SOLVED, and none are.
                 // (The climb the reporter saw afterwards is the search's own probes, which do solve.)
                 control?.BeginStage($"far field ({chosen.Count} pattern(s))", chosen.Count);
+                // ── THE STOP DOES NOT REACH INTO THIS BLOCK, AND THAT IS DELIBERATE ───────────
+                //
+                // Owner instruction, 2026-09-11: stopping an EM run must still produce far-field
+                // output the user can plot. It was written the other way first — a stop declined the
+                // remaining patterns — and that is wrong about what this block IS. It solves
+                // nothing. Every pattern here is an exact sum over the basis currents of a point
+                // that is ALREADY SOLVED, so this is not more work in the sense Stop declines: it is
+                // the PROCESSING of what the run has, which is precisely what "finish now and keep
+                // what you have solved" asks for. On an antenna the pattern is usually the reason
+                // the run exists, and a Stop that silently returned s-parameters and nothing else
+                // would hand back the half of the answer nobody was waiting for.
+                //
+                // It is bounded by the same stop that shortened the sweep: `chosen` is one pattern
+                // per SOLVED point, so a run stopped early has fewer solved points and therefore a
+                // shorter block. The rows say "(stopping)" throughout, so the extra time reads as
+                // the run finishing rather than as the button being ignored.
                 foreach (int i in chosen)
                 {
                     farWanted.Add(i);
@@ -1847,6 +1912,19 @@ public static class PlanarSolve
                     control?.TickStage(nextLabel:
                         $"far field ({chosen.Count} pattern(s)) — {FormatHz(freqs[i])}");
                 }
+
+                // A stopped run's far field is a COMPLETE far field over a SHORTER set of solved
+                // points, which is a different thing from a truncated one and has to be said so
+                // — the cubes look identical either way.
+                if (stoppedEarly)
+                    notes.Add($"The far field was taken in full despite the stop: {chosen.Count} " +
+                              $"pattern(s), one at every point the run had actually solved. Nothing " +
+                              $"here was declined — a pattern solves nothing, it is an exact sum " +
+                              $"over basis currents the run already had — so every radiation " +
+                              $"quantity is published exactly as a completed run publishes it. What " +
+                              $"the stop changed is how many SOLVED points there are to take one " +
+                              $"at, which is the same thing it changed about the s-parameters.");
+
                 if (moved.Count > 0)
                     notes.Add($"{moved.Count} requested far-field frequency point(s) were not solved " +
                               $"by the adaptive sampler; the pattern was taken at the nearest SOLVED " +
@@ -1904,6 +1982,23 @@ public static class PlanarSolve
                 notes.Add(searchOutcome.Note);
                 if (searchOutcome.StoppedEarly) stoppedEarly = true;
             }
+            else if (ad.Search is not null && freqs.Length >= 2 && solved.Count >= 2
+                     && control?.StopRequested == true)
+            {
+                // A search that was never STARTED still has to be accounted for. The condition above
+                // declines it silently, and a user who asked for a resonance search and got a run
+                // with no resonances in it would have no way to tell that from a run that looked and
+                // found none — which is the opposite of what the search is for.
+                notes.Add("The resonance search was NOT run: the stop was asked for before it began. " +
+                          "No resonance in this result means none was looked for, not that none is " +
+                          "there — and no frequency was added between the ones you asked for.");
+            }
+
+            // A stop that arrives after refinement — during the far field, or while the search was
+            // being declined above — sets nothing on its own, and a result that says nothing about
+            // it looks exactly like a run nobody touched. Everything it changed is described by the
+            // notes around it; this is what guarantees there is a sentence saying it happened.
+            if (control?.StopRequested == true) stoppedEarly = true;
 
             // ── Publish on the USER'S grid (R-adf-2). A solved point carries its own solved matrix
             //    byte for byte; everything else is the interpolant's value.
@@ -2026,12 +2121,25 @@ public static class PlanarSolve
                 ? "barycentric rational" : "complex cubic spline";
 
             var adaptiveNote = new System.Text.StringBuilder();
-            adaptiveNote.Append("Adaptive frequency sampling ")
-                        .Append(didConverge ? "CONVERGED" : "DID NOT CONVERGE")
-                        .Append(": the worst disagreement refinement stopped at is |ΔS| = ")
-                        .Append(worstStopped.ToString("G3"))
-                        .Append(didConverge ? ", inside " : ", against ")
-                        .Append("a tolerance of ").Append(ad.Tolerance.ToString("G3")).Append(". ");
+            if (refinementStopped)
+                // Neither verdict is available here, so neither is printed. The number still is —
+                // it just has to be said what it is a maximum OVER, because an unprobed interval
+                // contributes nothing to it and there is no way to tell from the value alone.
+                adaptiveNote.Append("Adaptive frequency sampling was STOPPED at the user's request " +
+                                    "before it reached a verdict: the worst disagreement it had " +
+                                    "measured by then is |ΔS| = ")
+                            .Append(worstStopped.ToString("G3"))
+                            .Append(", against a tolerance of ")
+                            .Append(ad.Tolerance.ToString("G3"))
+                            .Append(" — but that is a maximum over the intervals it had reached, " +
+                                    "and the ones it never probed are not in it at all. ");
+            else
+                adaptiveNote.Append("Adaptive frequency sampling ")
+                            .Append(didConverge ? "CONVERGED" : "DID NOT CONVERGE")
+                            .Append(": the worst disagreement refinement stopped at is |ΔS| = ")
+                            .Append(worstStopped.ToString("G3"))
+                            .Append(didConverge ? ", inside " : ", against ")
+                            .Append("a tolerance of ").Append(ad.Tolerance.ToString("G3")).Append(". ");
 
             adaptiveNote.Append(solved.Count).Append(" of ").Append(freqs.Length)
                         .Append(" requested point(s) were solved (")
@@ -2049,7 +2157,10 @@ public static class PlanarSolve
                 adaptiveNote.Append("; the rest are modelled by a ").Append(modelName)
                             .Append(" interpolant through them. ");
 
-            if (!didConverge)
+            // Not on a stopped run: the remedy there is not a finer grid, it is not stopping, and
+            // sending a user to change their sweep over a result they cut short themselves is
+            // advice that costs them a re-run to discover was never needed.
+            if (!didConverge && !refinementStopped)
             {
                 adaptiveNote.Append("What would help: a FINER requested grid, because the feature " +
                                     "refinement could not resolve is narrower than the spacing of " +
@@ -2094,10 +2205,19 @@ public static class PlanarSolve
                   $"interpolated and nothing is approximate."
                 : $"STOPPED EARLY at the user's request after {solvedCount} solved point(s). The " +
                   $"full requested grid IS published — that is what adaptive sampling does at every " +
-                  $"budget, modelling the points it did not solve from the ones it did — but it is " +
-                  $"modelled from FEWER nodes than the tolerance asked for, so read the adaptive " +
-                  $"note beside this one for the disagreement that was actually reached rather than " +
-                  $"assuming the requested tolerance was met.");
+                  $"budget, modelling the points it did not solve from the ones it did — " +
+                  // The stop is only a TRUNCATION OF THE MODEL if refinement still had work to do.
+                  // A stop pressed after the last interval had already met the tolerance took
+                  // nothing away from the s-parameters, and claiming it did would send a reader
+                  // hunting for missing accuracy that is not missing — the thing it actually
+                  // declined is whatever followed, and each of those says so in its own note.
+                  (converged == true && !refinementStopped
+                      ? "and refinement had already met its tolerance before the stop, so the model " +
+                        "is the one a completed run would have published. What the stop declined is " +
+                        "the work that comes AFTER refinement; each part of it has its own note here."
+                      : "but it is modelled from FEWER nodes than the tolerance asked for, so read " +
+                        "the adaptive note beside this one for the disagreement that was actually " +
+                        "reached rather than assuming the requested tolerance was met."));
 
         if (st.Deembed && PassivityNote(points, z0) is { } passivity) notes.Add(passivity);
 

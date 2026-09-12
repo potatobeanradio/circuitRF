@@ -4737,3 +4737,102 @@ Callers that read the cube as a fraction have to divide by 100; the ones in this
 `PlanarMetricsTests` (the η·P_accepted = P_radiated identity and the TRP arithmetic) and
 `AntennaExampleTests`, both of which now assert the percentage's unit and the dB cube's agreement
 with it as well.
+
+## Stop was advisory in four places it should have been binding — 2026-09-11
+
+Owner report, the day after the Stop control shipped: Stop was selected from the Messages progress
+bar during an EM run and the solver went on solving many more frequencies and would not stop.
+
+Stop was read in the right places on the SEARCH (`PlanarResonanceSearch` checks it before every
+probe, in both stages) and at the top of the fixed-grid point loop. What it was not read at was the
+work in between — and all of it is full-wave points.
+
+### 1. The refinement BATCH, which is where the reported wait came from
+
+`PlanarSolve`'s adaptive refinement loop read the stop once per ROUND:
+
+```
+while (work.Count > 0 && solved.Count < budget && control?.StopRequested != true)
+    foreach (var p in probes) { ...; Solve(p.Mid); }      // <- no stop check
+```
+
+A round is not one solve. Every interval that fails its tolerance splits in two, so the probe list
+doubles each round and a late one is sixteen or thirty-two full-wave points at tens of seconds each.
+Pressing Stop inside such a round meant waiting for every remaining probe in it. Measured on the
+gate's own fixture, with the stop armed at the fourth solve: **9 points solved before, 6 after** —
+and that is a 17-point grid on a coarse mesh, where a round is small.
+
+Breaking mid-round is well formed: `taken` carries only the probes that were solved, the replay runs
+over `solved` as it then stands, and each taken probe's error test reads its own solved matrix.
+
+### 2. The SEED loop, with a floor of two
+
+Seeds are full-wave points like any other. The floor is two rather than zero because everything
+below — refinement, the search, and the interpolant the requested grid is published from — needs at
+least two nodes to be a curve rather than a value.
+
+### 3. The fixed grid, with a floor of one
+
+A stop can genuinely arrive with nothing solved: the mesh and the core fill run before the first
+point and on a large board are minutes of their own. Verified before the fix — the run did not
+throw, it published **zero points**, which is not "keep what you solved" but an empty answer, and
+`EmRunService.ResolveSnpPath` is predictable by design, so it would have been written straight over
+whatever `.snp` the last good run left there.
+
+### 4. The FAR FIELD — written as a stop first, and that was WRONG
+
+The block had no stop check either, and because its stage row walks the frequencies
+(`far field (N pattern(s)) — 5.8 GHz`) it also LOOKED like a run still solving them. It was first
+made to decline the remaining patterns, on the reasoning that a pattern is work and Stop declines
+work. The owner's correction, same day: **stopping an EM simulation must still produce far-field
+output that can be plotted.**
+
+That is right, and the reasoning behind the first cut was wrong about what the block is. **It solves
+nothing.** Every pattern is an exact sum over the basis currents of a point that is ALREADY SOLVED —
+it is the PROCESSING of what the run has, which is exactly what "finish now and keep what you have
+solved" asks for. On an antenna the pattern is usually the reason the run exists, so a Stop that
+returned s-parameters alone hands back the half nobody was waiting for.
+
+It is bounded by the same stop that shortened the sweep: `chosen` is one pattern per SOLVED point,
+so a stopped run has fewer solved points and a correspondingly shorter block. A stopped run's far
+field is therefore a COMPLETE far field over a SHORTER set of points — a different thing from a
+truncated one, and the cubes look identical either way, so the run says which it is.
+
+### The convergence verdict a stopped run must not claim
+
+`worstStopped` is a maximum over the intervals refinement actually reached. On a run cut short that
+is a maximum over a set that stopped growing, and `converged = !(worstStopped > tolerance)` read it
+as CONVERGED — on the first gate run, a sweep stopped during SEEDING (`worstStopped` still 0)
+reported "refinement had already met its tolerance". `refinementStopped` is now recorded where it
+happens, `AdaptiveConverged` is **null** on such a run, and the note reports the number it has
+together with what it is a maximum over. The "what would help: a finer grid" advice is suppressed
+there too: the remedy on a stopped run is not to change the sweep, and sending someone to do that
+costs them a re-run to discover it was never needed.
+
+### And the rows say "stopping"
+
+Part of "would not stop" is that nothing on screen said otherwise. Work in flight still has to
+finish, so the bars go on moving — correctly — and the only evidence the button had been heard was
+one Messages line already scrolling away above them. `ReportEmProgress` now takes the run's own
+`StopRequested`: on the sweep row it rides in the TRAILING counter (`3 / 101 — stopping`), never in
+the text left of the bar, because text that grows to the left moves the bar; on the stage row, whose
+label is the changing part by design, it goes in the label.
+
+### Two things a stop must not do silently
+
+A stop arriving after refinement — during the far field, or just before the search — used to set
+nothing at all, so the run published a complete-looking result with no sentence saying the button had
+been pressed. Worse, the search's own guard (`control?.StopRequested != true`) declined it silently:
+a user who asked for a resonance search and got a result with no resonances in it had no way to tell
+that from a run that looked and found none. Both are said outright now, and `stoppedEarly` is set
+once more before publishing so the STOPPED EARLY sentence is never missing.
+
+### Gates
+
+`ResonanceSearchTests` — `AStoppedAdaptiveSweep_TakesNoFurtherProbesInTheRoundItWasStoppedIn`
+(verified to catch the regression: reverting the one check takes it from 6 solved to 9),
+`AStopAskedForBeforeTheFirstPoint_StillPublishesOne`, and
+`AStoppedRun_StillPublishesAFarFieldAtEverySolvedPoint` (a stop while SOLVING still yields one
+pattern per solved point; a stop landing inside the block does not truncate it).
+`EmRunProgressTests` covers the two rows' "stopping" readout and that the sweep row's left text and
+bar position do not move when it appears. All four are routine-tier — the slowest is 3.9 s.
