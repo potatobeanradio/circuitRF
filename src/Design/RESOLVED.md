@@ -5382,3 +5382,110 @@ for the numbers.
 bounds-shrinking and rebalancing, so after deleting the last instance the root's bounds still span the
 placement until R-L2b-2's churn-triggered rebuild. RF1's brief assumed otherwise; a test asserting the
 brief's wording fails identically with RF1 reverted.
+
+## RP-3 — a return plane ABOVE the levels: solve the stack upside down (2026-09-12)
+
+**Reported by the owner**, from a 4-layer board imported out of a Gerber set with its ground plane
+on an inner layer and structure on the bottom conductor. The EM Setup note said the signal level was
+below every ground-designated conductor, that none of them could be its return path, and that the
+plane had been taken from `Stackup.Bottom = Ground` instead — "further away than the technology's
+own plane, and will read as a higher impedance". The question was the right one to ask: *why can a
+port on the bottom conductor not simply return through the plane above it?*
+
+### The note was about the medium, not the port
+
+The rule "a port returns through a plane BENEATH the conductor it feeds" is not a statement about
+ports. It is where the boundary is in this formulation: the layered Green's function terminates on
+**one** laterally infinite PEC, and every meshed level lives above it. A plane above the lowest
+level cannot be that boundary — and it is worse than unused, because `BuildMediumStack` absorbs a
+conductor that is neither a level nor the boundary into a neighbouring dielectric. The plane in the
+report was not modelled as a poor reference; **it was modelled as 18 µm of FR-4.**
+
+Nothing about the structure is unusual, though, and nothing about the physics forbids it.
+**Reflecting a structure in a horizontal plane is an exact symmetry of an isotropic medium** — the
+artwork's x and y are untouched, every material and every thickness is what it was, and the
+s-parameters of the mirrored structure are the s-parameters of the original. The answer the kernel
+wants was one z-arithmetic flip away the whole time.
+
+The alternative the user was left with — hand-authoring a second `.ctech` whose stackup is typed in
+backwards — is a copy of the process data that nothing keeps in step with the original.
+
+### What is flipped, and the two things that are not
+
+`PlanarExtractor` now builds the mirrored band set in place, after the level set is decided and
+before the return plane is resolved. Two deliberate departures from a pure geometric reflection:
+
+* **`Band.Index` is carried through untouched.** It is the stackup position, and *every* downstream
+  match is made on it — the classified conductor shapes, the ground pour's own band, the shapes a
+  level's polygons are gathered from. Renumbering would silently re-point all of them. (The
+  patterned-dielectric rebuild a few lines above already relies on the same property and says so.)
+  `Stackup.Layers` itself is never rewritten; the technology object the caller handed in is not
+  touched, which matters because `TechnologyCache` hands back a shared instance.
+* **The analysis sheet stays on the same NAMED surface of its own band** — bottom stays bottom —
+  which *in the flipped frame* is the surface facing the plane, so the modelled height comes out as
+  the substrate thickness exactly as `ConductorSheetSurface`'s own documentation says it should. A
+  pure reflection would put the sheet on the far side of the metal and quietly add a conductor
+  thickness to every height (35 µm on 900 µm — 3.8%, and invisible).
+
+`Stackup.Bottom` is read through a local that becomes `Stackup.Top` when the frame is flipped, so
+the fallback branch and `InferredWouldHaveBeen` both describe the boundary actually being solved.
+
+### When it fires — and the one case no orientation can express
+
+Only when the flipped frame resolves a **usable** plane (a positive slab) and the stackup's own
+orientation does not, or resolves only the `Stackup.Bottom` boundary where the flip finds a
+conductor the technology actually designates. `ResolvesAUsablePlane` restates the resolution order
+narrowly for this one decision; it answers only *is there a plane*, never which one, so a
+disagreement with the block below can cost a flip that was available but can never produce a plane
+the run did not resolve. An ordinary microstrip reaches none of it and is bit-identical.
+
+**A plane BETWEEN the levels is not helped by a flip, and that is not a limitation of the kernel:**
+through an unbroken plane the metal above and the metal below are two decoupled structures, not one
+problem. This is the shape the report actually had — a Gerber import brings in the artwork of every
+copper layer, so both outer conductors become levels with the plane sandwiched between them, and
+neither the ports nor the structure asked for that. The surviving note now diagnoses it and points
+at the **level set** rather than at a stackup that is already correct; "designate a conductor below
+this level as a ground reference" was sending users to edit process data that was right.
+
+### `SheetAt` and `PresentWithLayer` stand the flip down
+
+MIM-6 names a surface of a band and MIM-7 ties a film to the plate *above* it. Both are written in
+the stackup's own orientation, and reflecting them is a modelling decision rather than an arithmetic
+one — `PatternedDielectric.Beneath` would look the wrong way, for one. The flip declines when either
+appears and **says so in a warning**, because a run that silently declined to fix itself is
+indistinguishable from one that never could.
+
+### The gate
+
+`tests/Ui.Tests/Em/FlippedStackReturnPlaneTests.cs`. The fixture's two dielectrics differ in both
+thickness and permittivity on purpose: **on a symmetric board every mirror-arithmetic mistake still
+lands on the right number**, which is exactly the sort of fixture that cannot fail. (The reporter's
+own board is symmetric — 0.9 mm either side of the plane — and both orientations read 953/1853 µm.)
+
+The test that carries the promise is `TheFlippedRun_AndAHandMirroredTechnology_AreTheSameMedium`:
+the same artwork through the flip and through a technology whose stackup is reversed and whose
+boundary conditions are swapped must give the same slab, the same level z's, the same medium regions
+and interfaces, the same vias. Anything less and the feature is an approximation of the workaround
+it replaces.
+
+### Three existing tests changed, all of them pinning behaviour this replaces
+
+* `ReturnPlaneOverrideTests.AConductorAtOrAboveTheLowestLevel_IsRefusedWithBothHeights` →
+  `AConductorBetweenTheLevels_…`. **RP-1's field must not be strictly weaker than the rule it
+  overrides**: a plane above every level is the case the flip now solves, and refusing the explicit
+  spelling of what the automatic path does silently is indefensible. R-rp1-3 survives for the
+  mid-stack case, which is what the fixture now builds.
+* `FourLayerGroundReferenceTests.ASignalBelowEveryDesignatedGround_…` — re-pointed to metal on
+  **both** sides of the plane, the only place that note is still reachable.
+* `FourLayerGroundReferenceTests.TheBottomConductorAsASignal_…` — every designation comes off, since
+  with a plane anywhere above it that refusal is no longer right.
+
+### Also worth knowing, from the same board
+
+Two things the reporter's file hit that are not this bug. Its `Drill` stackup entry spans Top Copper
+→ Bottom Copper, so with the levels restricted to one conductor **all 327 through-holes are ignored**
+("spans a conductor that is neither an analysis level nor the ground plane"); re-spanning the entry
+to the plane turns them into backside/attachment vias, at the cost of doing it to every hole on that
+drill layer. And a Gerber set carries no stackup at all, so its dielectric thicknesses are the
+import's defaults — 0.9 mm either side of the plane, i.e. a 1.8 mm board — which is nowhere near a
+real 1.6 mm 4-layer and moves the impedance far more than anything above.

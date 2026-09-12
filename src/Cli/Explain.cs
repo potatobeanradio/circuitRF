@@ -473,13 +473,20 @@ internal static class Explain
 
         if (planar.ReturnPlane is not { } rp) return;
 
+        string why = rp.Overridden
+            ? "named by this EM setup, overriding R-em-4's inferred choice"
+            : "R-em-4: the top surface of the highest ground-designated conductor below the " +
+              "lowest analysis level";
+        if (rp.Flipped)
+            why += " — resolved with the stackup MIRRORED, because the plane lies above the " +
+                   "analysis levels as the technology lists them; the height is measured downward " +
+                   "from the top surface of the stackup, not up from its bottom";
+
         walks.Add(new ResolutionStepJson(
             "return plane", from,
-            $"{rp.ConductorName ?? "Stackup.Bottom = Ground"} at {rp.TopM * 1e6:G4} µm",
-            rp.Overridden
-                ? "named by this EM setup, overriding R-em-4's inferred choice"
-                : "R-em-4: the top surface of the highest ground-designated conductor below the " +
-                  "lowest analysis level"));
+            $"{rp.ConductorName ?? "Stackup.Bottom = Ground"} at {rp.TopM * 1e6:G4} µm" +
+            (rp.Flipped ? " (flipped stack)" : ""),
+            why));
 
         ExplainPortReturns(setup, source, planar.Problem!, walks);
     }

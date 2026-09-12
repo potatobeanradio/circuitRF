@@ -35,12 +35,17 @@ public class FourLayerGroundReferenceTests
 
     /// <summary>A 400 × 14 mil trace on one conductor's own drawing layer, and nothing else.</summary>
     private static PlanarExtractionResult OnConductor(Technology tech, int index)
+        => OnConductors(tech, index);
+
+    /// <summary>The same trace on each of several conductors — which is what a board import
+    /// produces, and the only way to reach a run whose levels STRADDLE a plane.</summary>
+    private static PlanarExtractionResult OnConductors(Technology tech, params int[] indices)
         => PlanarExtractor.Extract(
-            [new RectShape
+            [.. indices.Select(i => new RectShape
             {
-                Layer = Conductors(tech)[index].DrawingLayers[0],
+                Layer = Conductors(tech)[i].DrawingLayers[0],
                 X1 = 0, Y1 = 0, X2 = Mil(400), Y2 = Mil(14),
-            }],
+            })],
             tech, Dbu);
 
     // ── The starter: every conductor reaches an answer someone can act on ─────────────────────
@@ -96,9 +101,18 @@ public class FourLayerGroundReferenceTests
 
     // ── The messages, on the stackups that reach them ─────────────────────────────────────────
 
-    /// <summary>The false claim, pinned. Un-tick Bottom Copper and Inner 2 has a designated ground
-    /// ABOVE it and none below — the exact shape the old message called "no conductor layer is
-    /// marked as a ground reference".</summary>
+    /// <summary>
+    /// The false claim, pinned. Un-tick Bottom Copper and Inner 2 has a designated ground ABOVE it
+    /// and none below — the exact shape the old message called "no conductor layer is marked as a
+    /// ground reference".
+    ///
+    /// <para><b>RP-3 moved where this is reachable from.</b> A level set entirely below the plane is
+    /// now solved with the stack MIRRORED rather than reported against the Stackup.Bottom boundary,
+    /// so the note survives only where a flip cannot help: metal on BOTH sides of the plane, which
+    /// is what a Gerber import of a 4-layer board produces and is exactly how the case was
+    /// reported. The message's own defect — claiming the technology designates no ground while the
+    /// Stackup tab plainly shows one ticked — is what this test is about, and it is unchanged.</para>
+    /// </summary>
     [Fact]
     public void ASignalBelowEveryDesignatedGround_IsNotToldItsTechnologyHasNone()
     {
@@ -106,7 +120,7 @@ public class FourLayerGroundReferenceTests
         var conductors = Conductors(tech);
         conductors[3].IsGroundReference = false;
 
-        var r = OnConductor(tech, 2);
+        var r = OnConductors(tech, 0, 2);     // Top Copper and Inner 2, straddling Inner 1
 
         Assert.True(r.Ok, r.Refusal);
         var note = Assert.Single(r.Notes, n => n.Contains("Stackup.Bottom = Ground", StringComparison.Ordinal));
@@ -115,6 +129,10 @@ public class FourLayerGroundReferenceTests
         Assert.Contains("is BELOW every ground-designated conductor", note, StringComparison.Ordinal);
         Assert.Contains(conductors[1].Name, note, StringComparison.Ordinal);   // names the one it found
         Assert.Contains("higher impedance", note, StringComparison.Ordinal);   // says what it costs
+
+        // RP-3: and it must send the user to the LEVEL SET, not to a stackup that is already right.
+        Assert.Contains("lies BETWEEN this run's analysis levels", note, StringComparison.Ordinal);
+        Assert.Contains("conductors on ONE side", note, StringComparison.Ordinal);
     }
 
     /// <summary>The other branch is still reachable and must keep its original wording: strip EVERY
@@ -133,15 +151,21 @@ public class FourLayerGroundReferenceTests
                        StringComparison.Ordinal));
     }
 
-    /// <summary>The bottom conductor sitting on the Stackup.Bottom boundary has a zero-height slab.
-    /// "Check the stackup order" was the advice, and the order is not wrong — nothing is misordered
-    /// on a correctly built board whose bottom layer is simply not a signal level.</summary>
+    /// <summary>
+    /// The bottom conductor sitting on the Stackup.Bottom boundary has a zero-height slab. "Check
+    /// the stackup order" was the advice, and the order is not wrong — nothing is misordered on a
+    /// correctly built board whose bottom layer is simply not a signal level.
+    ///
+    /// <para><b>RP-3:</b> with a designated plane anywhere above it this is no longer a refusal at
+    /// all — the stack is mirrored and the plane is used. The refusal is right only when the
+    /// technology offers no plane in EITHER orientation, so every designation comes off here.</para>
+    /// </summary>
     [Fact]
     public void TheBottomConductorAsASignal_IsNotBlamedOnTheStackupOrder()
     {
         var tech = Tech();
         var conductors = Conductors(tech);
-        conductors[3].IsGroundReference = false;   // make it a signal level so it reaches the slab check
+        foreach (var c in conductors) c.IsGroundReference = false;
 
         var r = OnConductor(tech, 3);
 

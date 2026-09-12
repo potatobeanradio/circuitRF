@@ -35,7 +35,12 @@ namespace CircuitRF.Design.Layout.Em;
 /// <c>Stackup.Bottom = Ground</c> rather than from a conductor.</param>
 /// <param name="TopM">The z the medium terminates at, in metres — a conductor's TOP surface.</param>
 /// <param name="Overridden">True when the <c>.cem</c> named it, false when R-em-4 inferred it.</param>
-public sealed record PlanarReturnPlane(string? ConductorName, double TopM, bool Overridden);
+/// <param name="Flipped">RP-3: true when this run was solved with the stackup MIRRORED, because the
+/// plane lies above the analysis levels in the technology's own orientation. <see cref="TopM"/> is
+/// then measured in the flipped frame — downward from the top surface of the stackup — so a caller
+/// reporting it must say so rather than print it against the Stackup tab.</param>
+public sealed record PlanarReturnPlane(string? ConductorName, double TopM, bool Overridden,
+                                       bool Flipped = false);
 
 /// <summary>Either a <see cref="PlanarProblem"/>, or a refusal that names what is missing and where
 /// the capability arrives — the same R-mom-17 shape every other refusal in this area uses.</summary>
@@ -461,6 +466,105 @@ public static class PlanarExtractor
             // by `Band.Index`, which is the stackup position and is unchanged by the rebuild.
         }
 
+        // ── RP-3 — A RETURN PLANE ABOVE THE LEVELS: SOLVE THE STACK UPSIDE DOWN ──────────────
+        //
+        // R-em-4 asks for a ground-designated conductor BELOW the lowest level, and that is not a
+        // preference — the layered Green's function terminates on ONE laterally infinite plane and
+        // every meshed level lives above it. A trace on the BOTTOM conductor of a board whose ground
+        // plane is an inner layer breaks that rule while being an entirely ordinary structure, and
+        // until this block the only answers were a fallback to `Stackup.Bottom = Ground` (a plane
+        // further away than the real one, reported as a note and wrong by the ratio of the two
+        // heights) or a refusal when the level sat on that boundary and the slab came out zero.
+        //
+        // Neither is necessary. Reflecting a structure in a horizontal plane is an EXACT symmetry of
+        // an isotropic medium — the artwork's x and y are untouched, every material and every
+        // thickness is what it was, and the s-parameters of the mirrored structure are the
+        // s-parameters of the original. Flipping the stack puts the plane where the kernel needs it
+        // and solves the problem the user actually drew. User-reported, 2026-09-12: the alternative
+        // was hand-authoring a second `.ctech` whose stackup is typed in backwards, which is a copy
+        // of the process data that nothing keeps in step with the original.
+        //
+        // WHAT IS FLIPPED, AND WHAT IS NOT. Only the z ARITHMETIC: each band keeps its stackup
+        // `Index`, so every downstream match (`conductorShapes`, `groundShapes`, the via spans, which
+        // are resolved by NAME) is untouched, and `Stackup.Layers` itself is never rewritten. The
+        // one thing that is deliberately NOT a pure geometric reflection is the analysis SHEET: it
+        // stays on the bottom of its own band IN THE FLIPPED FRAME, which is the surface facing the
+        // plane, so the modelled height comes out as the substrate thickness — exactly the rule
+        // `ConductorSheetSurface`'s own documentation states, applied in the frame being solved.
+        //
+        // WHEN IT FIRES. Only when the flipped frame resolves a usable plane and the stackup's own
+        // orientation does not — or resolves only the `Stackup.Bottom` boundary where the flip finds
+        // a conductor the technology actually designates. An ordinary microstrip run reaches none of
+        // this and is bit-identical. A plane sitting BETWEEN the levels is not helped by a flip and
+        // is not one problem: through an unbroken plane the two halves are decoupled, and the note
+        // further down says so.
+        bool flipped = false;
+        double flipDatumM = stack[^1].TopM;
+        var bottomBoundary = tech.Stackup.Bottom;
+
+        bool directOk = ResolvesAUsablePlane(
+            stack, levels, bottomBoundary, settings, out bool directDesignated);
+        if (!directOk || !directDesignated)
+        {
+            var mirroredStack  = MirrorStack(stack, flipDatumM);
+            var mirroredLevels = (List<Band>)
+                [.. levels.Select(b => mirroredStack.First(x => x.Index == b.Index)).OrderBy(b => b.SheetM)];
+
+            if (ResolvesAUsablePlane(mirroredStack, mirroredLevels, tech.Stackup.Top, settings,
+                                     out bool mirroredDesignated)
+                && (!directOk || mirroredDesignated))
+            {
+                // MIM-6/MIM-7 are the one thing a flip cannot carry, and a silently wrong capacitor
+                // is worse than the fallback this block replaces. `SheetAt` names a surface of a
+                // band and `PresentWithLayer` ties a film to the plate ABOVE it; both are written in
+                // the stackup's own orientation, and reflecting them is a modelling decision this
+                // has no measurement to make. Say so rather than flip, and rather than stay silent.
+                var blockers = stack
+                    .Where(b => b.Layer.SheetAt is not null || b.Layer.PresentWithLayer is { Length: > 0 })
+                    .Select(b => $"'{b.Layer.Name}'")
+                    .ToList();
+
+                if (blockers.Count > 0)
+                    notes.Add(
+                        $"WARNING: the analysis levels ({levelList}) sit BELOW every plane they could " +
+                        "return through, which this run would normally solve by mirroring the whole " +
+                        $"stack — but {string.Join(", ", blockers)} " +
+                        $"{(blockers.Count == 1 ? "carries a reference-surface or patterned-film tie" : "carry reference-surface or patterned-film ties")} " +
+                        "written in the stackup's own orientation, and reflecting those is a " +
+                        "modelling decision rather than an arithmetic one. The stack was left as " +
+                        "authored, so the note below applies and the plane it names is not the one " +
+                        "this structure is referenced to.");
+                else
+                {
+                    string wouldHave = directOk
+                        ? "fallen back to the Stackup.Bottom = Ground boundary at the bottom of the " +
+                          "stack, which is further away than the plane this structure is actually " +
+                          "referenced to and reads as a higher impedance"
+                        : "been refused for having no usable plane beneath its levels";
+
+                    stack  = mirroredStack;
+                    levels = mirroredLevels;
+                    bottomBoundary = tech.Stackup.Top;
+                    flipped = true;
+
+                    notes.Insert(0,
+                        "THIS RUN IS SOLVED WITH THE STACKUP FLIPPED. The analysis levels " +
+                        $"({levelList}) sit BELOW the conductor they return through in technology " +
+                        $"'{tech.Name}', and the layered Green's function terminates on one laterally " +
+                        "infinite plane BENEATH every meshed level — so in the stackup's own " +
+                        $"orientation the run would have {wouldHave}. Reflecting the whole stack in a " +
+                        "horizontal plane is an EXACT symmetry of an isotropic medium: the same " +
+                        "structure, the same s-parameters, with the plane where the kernel needs it. " +
+                        "Nothing was written and nothing else moved — the technology, the layout and " +
+                        "the artwork's x/y are untouched, and this applies to this run alone. " +
+                        "EVERY HEIGHT BELOW IS MEASURED IN THE FLIPPED STACK: downward from the TOP " +
+                        $"surface of the stackup as the technology lists it, over a stack " +
+                        $"{flipDatumM * 1e6:G4} µm thick. Subtract a height from that total to read it " +
+                        "against the Stackup tab.");
+                }
+            }
+        }
+
         var signal = levels[0];       // the LOWEST level — the one the slab's top surface is
 
         // ── R-em-4: ground is the TOP SURFACE of the highest ground-designated conductor below ──
@@ -618,7 +722,7 @@ public static class PlanarExtractor
             notes.Add(overridden
                 ? $"{opener} '{groundBand.Layer.Name}' at " +
                   $"{groundBand.TopM * 1e6:G4} µm, because THIS EM SETUP names it as the return " +
-                  $"plane — {InferredWouldHaveBeen(inferredGround, tech, stack)}. The signal level " +
+                  $"plane — {InferredWouldHaveBeen(inferredGround, bottomBoundary, stack)}. The signal level " +
                   $"sits at {signal.SheetM * 1e6:G4} µm. " + planeClause + " Clear this setup's " +
                   "return plane to go back to the automatic choice."
                 : $"{opener} '{groundBand.Layer.Name}', the ground-designated " +
@@ -661,7 +765,7 @@ public static class PlanarExtractor
                     "untick its \"Ground reference\" in the technology editor so it is meshed as " +
                     "ordinary metal.");
         }
-        else if (tech.Stackup.Bottom == BoundaryCondition.Ground)
+        else if (bottomBoundary == BoundaryCondition.Ground)
         {
             groundTopM = stack[0].BottomM;
 
@@ -678,6 +782,34 @@ public static class PlanarExtractor
                 .OrderBy(b => b.TopM)
                 .ToList();
 
+            // ── RP-3 — SAY WHY THE FLIP DID NOT RESCUE THIS ONE ─────────────────────────────
+            //
+            // Reaching this note at all now means the mirrored frame could not resolve a plane
+            // either, and there is one shape that accounts for nearly every instance of it: the
+            // designated plane lies BETWEEN the analysis levels. No orientation of the stack puts a
+            // mid-stack plane beneath all of them, and the reason is not a limitation of the
+            // kernel — through an unbroken plane the metal above and the metal below are two
+            // decoupled structures. The remedy is therefore about the LEVEL SET and not about the
+            // technology, and "designate a conductor below this level as a ground reference" (the
+            // advice that stood here alone) sends the user to edit a stackup that is already right.
+            //
+            // A Gerber import is how this arrives in practice: it brings in the artwork of every
+            // copper layer, so both outer layers become levels with the plane sandwiched between
+            // them, and neither the ports nor the structure asked for that.
+            var between = above.Where(b => b.BottomM < levels[^1].SheetM - 1e-15).ToList();
+            string betweenLevels = between.Count > 0
+                ? $"{string.Join(", ", between.Select(b => $"'{b.Layer.Name}'"))} " +
+                  $"{(between.Count == 1 ? "lies" : "lie")} BETWEEN this run's analysis levels " +
+                  $"({levelList}), so no orientation of the stack puts " +
+                  $"{(between.Count == 1 ? "it" : "them")} beneath all of them — and that is not a " +
+                  "limitation of the kernel: through an unbroken plane the metal above and the metal " +
+                  "below are two decoupled structures, not one problem. Restrict this EM setup's " +
+                  "analysis levels to the conductors on ONE side of it. With only the levels ABOVE " +
+                  "it, it becomes this run's return plane; with only the levels BELOW it, the run is " +
+                  "solved with the stack mirrored and it becomes the return plane that way."
+                : "Either designate a conductor below this level as a ground reference, or run this " +
+                  "level's structure against the plane it is actually referenced to.";
+
             notes.Add(above.Count == 0
                 ? $"No conductor layer in technology '{tech.Name}' is marked as a ground reference, so " +
                   "the ground plane was taken from Stackup.Bottom = Ground at the bottom of the stack. " +
@@ -688,9 +820,7 @@ public static class PlanarExtractor
                   "so none of them can be its return path — a port returns through a plane BENEATH the " +
                   "conductor it feeds. The ground plane was taken from Stackup.Bottom = Ground at the " +
                   "bottom of the stack instead, which is further away than the technology's own plane " +
-                  "and will read as a higher impedance. Either designate a conductor below this level " +
-                  "as a ground reference, or run this level's structure against the plane it is " +
-                  "actually referenced to.");
+                  "and will read as a higher impedance. " + betweenLevels);
         }
         else
         {
@@ -1100,7 +1230,7 @@ public static class PlanarExtractor
                           : "No via joins them, so the levels couple only through the medium."));
 
         return PlanarExtractionResult.Yes(problem, notes,
-            new PlanarReturnPlane(groundBand?.Layer.Name, groundTopM, overridden));
+            new PlanarReturnPlane(groundBand?.Layer.Name, groundTopM, overridden, flipped));
     }
 
     /// <summary>
@@ -1582,10 +1712,11 @@ public static class PlanarExtractor
     /// references cannot otherwise see which one they moved away from. All three outcomes of the
     /// inferred rule are spelled out, the third included: an override can be the only reason a run
     /// happened at all.</summary>
-    private static string InferredWouldHaveBeen(Band? inferred, Technology tech, List<Band> stack)
+    private static string InferredWouldHaveBeen(Band? inferred, BoundaryCondition bottom,
+                                                List<Band> stack)
         => inferred is not null
             ? $"R-em-4 would otherwise have chosen '{inferred.Layer.Name}' at {inferred.TopM * 1e6:G4} µm"
-            : tech.Stackup.Bottom == BoundaryCondition.Ground
+            : bottom == BoundaryCondition.Ground
                 ? "no conductor below that level is designated as a ground reference, so the run " +
                   $"would otherwise have taken Stackup.Bottom = Ground at {stack[0].BottomM * 1e6:G4} µm"
                 : "no conductor below that level is designated as a ground reference and " +
@@ -1601,6 +1732,76 @@ public static class PlanarExtractor
         .Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference && b.TopM <= sheetM)
         .OrderByDescending(b => b.TopM)
         .FirstOrDefault();
+
+    /// <summary>
+    /// <b>RP-3 — does the return-plane resolution below reach a USABLE plane in this frame?</b>
+    /// Usable means a positive slab: a plane at or above the lowest level leaves nothing to solve
+    /// on, which is the zero-height refusal further down rather than an answer.
+    ///
+    /// <para>It restates the resolution order deliberately and narrowly — the <c>.cem</c>'s own
+    /// name first, then R-em-4, then the stackup boundary — because the flip decision has to be
+    /// made BEFORE that block runs and asked of a frame that does not exist yet. It answers only
+    /// "is there a plane", never which one: every refusal, every note and the plane itself still
+    /// come from the one block below, so a disagreement here can cost a flip that was available
+    /// but can never produce a plane the run did not resolve.</para>
+    ///
+    /// <para><paramref name="designated"/> separates a plane the TECHNOLOGY states (a
+    /// ground-designated conductor, or one this setup named) from the <c>Stackup.Bottom</c>
+    /// boundary fallback — which is what lets a flip that finds a real conductor win over an
+    /// orientation that merely finds the bottom of the stack.</para>
+    /// </summary>
+    private static bool ResolvesAUsablePlane(
+        List<Band> stack, List<Band> levels, BoundaryCondition bottom,
+        EmExtractionSettings settings, out bool designated)
+    {
+        designated = false;
+        var lowest = levels[0];
+
+        if (settings.GroundStackupLayerName is { Length: > 0 } wanted)
+        {
+            var named = stack.FirstOrDefault(b =>
+                b.Layer.Kind == StackupKind.Conductor &&
+                string.Equals(b.Layer.Name, wanted, StringComparison.Ordinal));
+
+            // A name the technology does not have, and a name that is also an analysis level, are
+            // both REFUSALS below and neither is helped by a flip — report no plane in either
+            // frame so the refusal is the one the user reads.
+            if (named is null || levels.Any(b => b.Index == named.Index)) return false;
+
+            designated = true;
+            return named.TopM < lowest.SheetM - 1e-15;
+        }
+
+        if (HighestGroundBelow(stack, lowest.SheetM) is { } ground)
+        {
+            designated = true;
+            return ground.TopM < lowest.SheetM - 1e-15;
+        }
+
+        return bottom == BoundaryCondition.Ground && stack[0].BottomM < lowest.SheetM - 1e-15;
+    }
+
+    /// <summary>
+    /// <b>RP-3 — the same stack, reflected in a horizontal plane.</b> Every band's z is measured
+    /// from <paramref name="datumM"/> downward instead of from the bottom up, so the stackup's top
+    /// surface becomes the new zero and the order reverses.
+    ///
+    /// <para><b>Two things are deliberately NOT mirrored.</b> <see cref="Band.Index"/> is the
+    /// stackup position and is carried through untouched — every downstream match (the classified
+    /// shapes, the ground pour, a via's terminals) is made on it, and renumbering would silently
+    /// re-point all of them. And the analysis SHEET stays on the same NAMED surface of its own band
+    /// — bottom stays bottom — which in the flipped frame is the surface facing the plane, so the
+    /// modelled height reads as the substrate thickness exactly as
+    /// <see cref="ConductorSheetSurface"/> says it should. A pure geometric reflection would put it
+    /// on the far side of the metal and quietly add a conductor thickness to every height.</para>
+    /// </summary>
+    private static List<Band> MirrorStack(List<Band> stack, double datumM) =>
+        [.. stack
+            .Select(b => new Band(
+                b.Layer, datumM - b.TopM, datumM - b.BottomM, b.Index,
+                SurfaceOf(b.Layer) == ConductorSheetSurface.Top ? datumM - b.BottomM
+                                                                : datumM - b.TopM))
+            .OrderBy(b => b.BottomM)];
 
     /// <summary>The non-ground conductor band a drawing layer binds to, if any — the same question
     /// the classification loop asks of every artwork shape, asked the same way so a port and the

@@ -274,21 +274,31 @@ public sealed class ReturnPlaneOverrideTests : IDisposable
         Assert.Contains("untick it in this setup's analysis levels", r.Refusal!, StringComparison.Ordinal);
     }
 
-    /// <summary>R-rp1-3 — R-em-4's own physics, not a limitation of the override. The message says
-    /// which level and BOTH heights, because the user is looking at a stackup table and cannot see
-    /// the analysis levels from there.</summary>
+    /// <summary>
+    /// R-rp1-3 — R-em-4's own physics, not a limitation of the override. The message says which
+    /// level and BOTH heights, because the user is looking at a stackup table and cannot see the
+    /// analysis levels from there.
+    ///
+    /// <para><b>RP-3 narrowed what reaches this refusal, and the fixture moved with it.</b> A plane
+    /// above EVERY level is no longer refused — it is the case the flipped-stack path now solves,
+    /// and an override refusing what the automatic rule does silently would make the explicit
+    /// spelling strictly weaker than the inferred one. What survives is the case no orientation of
+    /// the stack can express: a plane BETWEEN the levels, which is two decoupled structures rather
+    /// than one problem. Named here as Inner 1, with metal above it and below it.</para>
+    /// </summary>
     [Fact]
-    public void AConductorAtOrAboveTheLowestLevel_IsRefusedWithBothHeights()
+    public void AConductorBetweenTheLevels_IsRefusedWithBothHeights()
     {
         var tech   = Tech();
         var conds  = Conductors(tech);
+        var top    = conds[0].DrawingLayers[0];
         var inner2 = conds[2].DrawingLayers[0];
 
         var r = PlanarExtractor.Extract(
-            [Patch(inner2), Port(inner2, 0, 15000)], tech, Dbu, 10e9, Ground(conds[0].Name));
+            [Patch(top), Patch(inner2), Port(inner2, 0, 15000)], tech, Dbu, 10e9, Ground(conds[1].Name));
 
         Assert.False(r.Ok);
-        Assert.Contains($"'{conds[0].Name}'", r.Refusal!, StringComparison.Ordinal);   // Top Copper
+        Assert.Contains($"'{conds[1].Name}'", r.Refusal!, StringComparison.Ordinal);   // Inner 1
         Assert.Contains($"'{conds[2].Name}'", r.Refusal!, StringComparison.Ordinal);   // Inner 2
         Assert.Contains("BENEATH the conductor it feeds", r.Refusal!, StringComparison.Ordinal);
 
