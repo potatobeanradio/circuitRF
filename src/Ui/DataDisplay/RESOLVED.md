@@ -2359,3 +2359,40 @@ columns do not depend on anything the trace is. **Two hosts of one view is the l
 and worth knowing about:** `DataDisplayView.axaml` gives `PlotInspectorView` a fixed `Width="430"`
 inside the document, and `PropertiesView.axaml` gives it whatever the docked Properties panel is —
 so the same trace card is genuinely two different widths depending on which one you are looking at.
+
+---
+
+## A re-run kept the PREVIOUS run's solved-point mask, so a complete 101-point sweep drew 3 markers
+
+**Reported 2026-09-11.** A full-wave EM sweep of 101 points finished, S11 was plotted with point
+markers on, and three markers appeared. Closing and reopening the `.cdd` showed all 101.
+
+**Nothing was wrong with the run or the file.** The Messages rows said `101 point(s) solved` (the
+stop arrived later, during the far field at 71/101), and the written
+`results/<key>_em.npy` carries `PointSolved` = 101 ones — I rendered both of the reporter's own
+saved displays headlessly through `CircuitRF.Render`, the renderer the window paints with, and both
+drew 101 distinct marker positions. So the file and the renderer agreed; the open display did not.
+
+**The stale value was on the SNP INSTANCE, and staleness there is by design.** After a run,
+`WorkspaceViewModel.RefreshOpenDataDisplaysAsync` → `DataSourceLibraryViewModel.ReloadChangedAsync`
+→ `DataSourceEntryViewModel.RefreshNpy` reloads the file and calls `SNP.RefreshFrom(newSnp)` rather
+than replacing the object — deliberately, so that every open trace bound to that SNP keeps its
+binding across a re-run (the same guarantee `RefreshNetworkViewPreservingIdentity` makes one level
+up). `RefreshFrom` copies field by field, and it was written before `SolvedMask` existed. So the
+mask was never copied: a display whose FIRST load had been a sweep somebody stopped early kept that
+run's three-solved-point mask over every later run, for as long as the document stayed open. A
+reopen builds a fresh SNP, which is why it looked like a rendering bug that "fixed itself".
+
+**The general rule, now stated on the method: every field describing the data has to be listed in
+`RefreshFrom`.** An omission there does not reset to the new file's value — it keeps the old file's,
+silently, and only in a session that has already loaded something else. `Z0PerPort` was the same
+defect one field along and had not been reported yet; both are now copied from the source, including
+when the source's value is null, so a reload onto a file that says nothing CLEARS what the previous
+one said.
+
+This is also the worst-shaped kind of stale state to find by eye: everything visible updates except
+the one thing nobody is watching. The gate is two tests in
+`tests/Ui.Tests/DataDisplay/SolvedPointMarkerTests.cs` that drive the real post-run path —
+export → `LoadFileAsync` → bind a trace to the library's live SNP → overwrite the same path →
+`ReloadChangedAsync` — in both directions (a re-run that solves MORE points, and one that solves
+fewer). Both fail without the two added lines.

@@ -300,6 +300,17 @@ namespace RfCore
         /// preserving the FilePath.  Used by the SNP library reload operation so
         /// that Trace objects that reference this SNP instance see fresh data
         /// without needing their own Data reference updated.
+        ///
+        /// <para><b>EVERY field that describes the data has to be listed here, including the ones
+        /// that are usually null.</b> The whole point of this method is that the INSTANCE survives a
+        /// reload so live traces keep their binding — which means a field left out is not reset to
+        /// the new file's value, it keeps the OLD file's, silently, for as long as the display stays
+        /// open. <see cref="SolvedMask"/> was the one that bit: a re-run whose first load had been a
+        /// stopped adaptive sweep kept that run's three-solved-point mask over a complete 101-point
+        /// result, so the new sweep drew three markers and only a close-and-reopen fixed it (owner
+        /// report, 2026-09-11). <see cref="Z0PerPort"/> was the same defect one field along, not yet
+        /// reported. Both are set from the null-safe source value, so reloading a file that says
+        /// nothing CLEARS what the previous one said rather than leaving it standing.</para>
         /// </summary>
         internal void RefreshFrom(SNP source)
         {
@@ -310,6 +321,8 @@ namespace RfCore
             _freqUnit        = source._freqUnit;
             FreqUnitIsStated = source.FreqUnitIsStated;
             Z0          = source.Z0;
+            Z0PerPort   = source.Z0PerPort;
+            SolvedMask  = source.SolvedMask;
             Comments.Clear();
             Comments.AddRange(source.Comments);
             // FilePath intentionally not overwritten

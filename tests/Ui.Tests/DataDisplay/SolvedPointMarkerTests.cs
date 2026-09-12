@@ -17,10 +17,13 @@
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using CircuitRF.Design.Results;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
@@ -260,6 +263,97 @@ public sealed class SolvedPointMarkerTests
             var px = tf.PrimaryToCanvas(t.Points[i].X, t.Points[i].Y);
             bool expected = SolvedAt.Contains(i);
             Assert.Equal(expected, InkAt(bmp, px));
+        }
+    }
+
+    // ── A RE-RUN REPLACES THE MASK ON A DISPLAY THAT IS ALREADY OPEN ──────────────────────────
+    //
+    //  Owner report, 2026-09-11: a complete 101-point EM sweep plotted three markers, and closing
+    //  and reopening the .cdd showed all 101. The data was never wrong — the mask was, and it was
+    //  the PREVIOUS run's: that display had first loaded a sweep somebody stopped early.
+    //
+    //  The cause is what the post-run reload is for. `SNP.RefreshFrom` copies the new file's data
+    //  onto the SNP INSTANCE the open traces are bound to, so the bindings survive a re-run; a
+    //  field it does not list therefore keeps the old file's value for as long as the display stays
+    //  open, and SolvedMask was added to the type long after that method was written. It is the
+    //  worst shape of stale state: everything on screen updates except the one thing nobody is
+    //  watching, and only a reopen clears it.
+
+    private static DataSet MakeNetworkDs(IReadOnlyList<double> solvedFreqs)
+    {
+        var ds = MakeNetworkDs(withMask: false);
+        ds.AddToGroup("planar", SampleProvenance.SolvedCubeName,
+                      SampleProvenance.BuildSolvedCube(
+                          new Axis("freq", (double[])Freqs.Clone(), "Hz"), solvedFreqs));
+        return ds;
+    }
+
+    [Fact]
+    public async Task ARerunOverTheSamePath_ReplacesTheMaskOnTheOpenTrace()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"crf_solved_rerun_{Guid.NewGuid():N}.npy");
+        try
+        {
+            // 1. The run that was STOPPED: the whole grid published, four points solved.
+            DataSetExporter.Export(MakeNetworkDs(SolvedAt.Select(i => Freqs[i]).ToArray()),
+                                   path, ExportFormat.Npy);
+
+            var lib = new DataSourceLibraryViewModel();
+            await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
+
+            // The trace binds to the library's live SNP instance — which is what an open plot holds
+            // and what the reload below deliberately keeps rather than replaces.
+            var snp = lib.Entries[0].Snp!;
+            var t   = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Db);
+            t.BuildPath(PlotType.Rect, FreqUnit.GHz);
+            Assert.Equal(SolvedAt, Enumerable.Range(0, t.Points.Count).Where(t.PointIsSolved).ToArray());
+
+            // 2. The re-run: the same path, every point solved this time.
+            DataSetExporter.Export(MakeNetworkDs(Freqs), path, ExportFormat.Npy);
+            await lib.ReloadChangedAsync([path]);
+
+            t.BuildPath(PlotType.Rect, FreqUnit.GHz);
+            Assert.Equal(Freqs.Length, t.Points.Count);
+            Assert.All(Enumerable.Range(0, t.Points.Count), i => Assert.True(t.PointIsSolved(i),
+                       $"point {i} is marked as modelled by the PREVIOUS run's mask"));
+        }
+        finally
+        {
+            try { File.Delete(path); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// The other direction, which is the one that draws a marker on a point nobody solved: a
+    /// display first opened on a complete run, then reloaded onto a stopped one.
+    /// </summary>
+    [Fact]
+    public async Task ARerunThatSolvesFEWERPoints_NarrowsTheMarkersOnTheOpenTrace()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"crf_solved_rerun_{Guid.NewGuid():N}.npy");
+        try
+        {
+            DataSetExporter.Export(MakeNetworkDs(Freqs), path, ExportFormat.Npy);
+
+            var lib = new DataSourceLibraryViewModel();
+            await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
+
+            var t = new Trace(lib.Entries[0].Snp!, MatrixType.S, 1, 0, DependentVarFormat.Db);
+            t.BuildPath(PlotType.Rect, FreqUnit.GHz);
+            Assert.All(Enumerable.Range(0, t.Points.Count), i => Assert.True(t.PointIsSolved(i)));
+
+            DataSetExporter.Export(MakeNetworkDs(SolvedAt.Select(i => Freqs[i]).ToArray()),
+                                   path, ExportFormat.Npy);
+            await lib.ReloadChangedAsync([path]);
+
+            t.BuildPath(PlotType.Rect, FreqUnit.GHz);
+            Assert.Equal(SolvedAt, Enumerable.Range(0, t.Points.Count).Where(t.PointIsSolved).ToArray());
+        }
+        finally
+        {
+            try { File.Delete(path); } catch (IOException) { }
         }
     }
 }
