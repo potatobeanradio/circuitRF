@@ -2242,10 +2242,92 @@ public static partial class LayoutRenderer
         if (outline.Simplify(simplified))
         {
             outline.Dispose();
-            return AsWinding(simplified, counters);
+            return NormalizeOutlineWinding(AsWinding(simplified, counters));
         }
         simplified.Dispose();
-        return outline;   // degenerate input (e.g. zero-width / duplicate-point) — fall back rather than dropping the trace
+        return NormalizeOutlineWinding(outline);   // degenerate input (e.g. zero-width / duplicate-point) — fall back rather than dropping the trace
+    }
+
+    /// <summary>
+    /// Turns a built <see cref="PathShape"/> outline so its OUTER contour runs in the same absolute
+    /// direction every other shape kind's does — the last half of <see cref="NormalizeOuterWinding"/>'s
+    /// guarantee, for the one shape kind that method cannot serve.
+    ///
+    /// <para><b>Why <see cref="AsWinding"/> is not already enough.</b> That call makes a simplified
+    /// outline correct <i>as a path of its own</i>: it orients a hole against the contour that
+    /// encloses it, so the path reads identically under either fill rule. It says nothing about which
+    /// way the OUTER contour runs, because for a path drawn alone that is unobservable — and
+    /// <c>SkPathOps</c> answers in even-odd, where orientation carries no meaning, so what comes out
+    /// is whatever the union happened to produce. Measured on this file: a 2-point centreline strokes
+    /// to a POSITIVE outer contour and a 3-point one to a NEGATIVE one, from the same builder.</para>
+    ///
+    /// <para><b>What that costs once the outline is batched.</b> <see cref="NormalizeOuterWinding"/>
+    /// exists because two overlapping outer contours of opposite winding cancel to nothing under
+    /// Skia's non-zero rule inside ONE <c>SKPath</c>, and it normalizes Polygon/Curve to the fixed
+    /// direction Skia's own <c>AddRect</c>/<c>AddCircle</c> primitives use. It deliberately skips
+    /// <c>Path</c> — a stroked centreline has no outer-ring vertex list to take a signed area from —
+    /// which left the one shape kind whose direction is decided by <c>SkPathOps</c> as the only one
+    /// with no fixed direction at all. Owner report, 2026-09-12, on an imported board: zoomed out,
+    /// pads and trace stubs vanished wherever they crossed a Rect on the same layer, and the missing
+    /// region was exactly the INTERSECTION of the two — which is what a boolean cancel looks like. It
+    /// showed only when zoomed out because that is when the layer has enough shapes on screen to pass
+    /// <see cref="DefaultMergeShapeCountThreshold"/> and batch at all.</para>
+    ///
+    /// <para>The convention is a POSITIVE signed area in path space, which is what <c>AddRect</c>,
+    /// <c>AddCircle</c>, <c>AddRoundRect</c> and <c>Via</c>'s pad circle produce, and what
+    /// <see cref="NormalizeOuterWinding"/>'s "reverse unless <c>SignedArea &lt; 0</c> in DBU" already
+    /// resolves to once path space's Y flip is applied. Reversal is Skia's own
+    /// <c>AddPathReverse</c> over the WHOLE path, for the reason that method already states: it flips
+    /// every contour together, so a hole keeps its relationship to the ring it belongs to.</para>
+    /// </summary>
+    private static SKPath NormalizeOutlineWinding(SKPath outline)
+    {
+        if (SignedAreaOf(outline) >= 0) return outline;
+
+        var reversed = new SKPath { FillType = outline.FillType };
+        reversed.AddPathReverse(outline);
+        outline.Dispose();
+        return reversed;
+    }
+
+    /// <summary>
+    /// The signed area of every contour in <paramref name="path"/>, summed.
+    ///
+    /// <para>Its SIGN is the outer contour's, which is the only thing asked of it: after
+    /// <see cref="AsWinding"/> a hole runs against the ring enclosing it and is strictly smaller, so
+    /// the sum can never out-vote the outers — and where a path carries several disjoint outer
+    /// contours they all run the same way, so their sum carries that direction too.</para>
+    ///
+    /// <para>A curved segment is measured across its endpoints rather than integrated. That is an
+    /// approximation of the AREA and an exact answer for the SIGN at the sizes this runs on: a round
+    /// cap or join is a bulge on a contour whose chord polygon already encircles it the same way.</para>
+    /// </summary>
+    private static double SignedAreaOf(SKPath path)
+    {
+        using var it = path.CreateRawIterator();
+        var pts = new SKPoint[4];
+        double twiceArea = 0;
+        SKPoint start = default, cur = default;
+
+        SKPathVerb verb;
+        while ((verb = it.Next(pts)) != SKPathVerb.Done)
+        {
+            switch (verb)
+            {
+                case SKPathVerb.Move:  twiceArea += Cross(cur, start); start = pts[0]; cur = pts[0]; break;
+                case SKPathVerb.Line:  twiceArea += Cross(cur, pts[1]); cur = pts[1]; break;
+                case SKPathVerb.Quad:
+                case SKPathVerb.Conic: twiceArea += Cross(cur, pts[2]); cur = pts[2]; break;
+                case SKPathVerb.Cubic: twiceArea += Cross(cur, pts[3]); cur = pts[3]; break;
+                case SKPathVerb.Close: twiceArea += Cross(cur, start); cur = start; break;
+            }
+        }
+        // An unclosed final contour still has to be closed back to its own start, exactly as the
+        // Close verb would have.
+        twiceArea += Cross(cur, start);
+        return twiceArea / 2.0;
+
+        static double Cross(SKPoint a, SKPoint b) => (double)a.X * b.Y - (double)b.X * a.Y;
     }
 
     /// <summary>

@@ -1,5 +1,56 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## User report, 2026-09-12 — Top Copper went missing when zoomed out, "like some kind of XOR"
+
+**It was a boolean cancel, and the description was exact.** On an imported Gerber board, zooming out
+made pads and trace stubs on Top Copper disappear; what vanished was precisely the INTERSECTION of a
+trace with the pad it ran onto, leaving the rest of both shapes drawn. Reproduced headlessly with
+`circuitrf render --detail screen` against `--detail full` (13,013 pixels of copper turned to
+background at a 30 mm window, 947 at full extent) and isolated to ONE tier by disabling each of the
+seven in turn: the L2c merge tier, and nothing else.
+
+**Root cause: a `PathShape`'s outline was the one shape kind with no fixed absolute winding.**
+`BuildPathOutline` strokes a centreline and unions the result with `SKPath.Simplify`, which is
+`SkPathOps` and always answers in EVEN-ODD — a rule under which the direction a contour runs in
+carries no meaning, so what comes back is whatever the union happened to produce. `AsWinding` then
+re-winds it so a HOLE reads as a hole, which makes the path correct *on its own*; it says nothing
+about which way the OUTER contour runs. Measured on this file: from the same builder, a 2-point
+centreline strokes to a POSITIVE outer contour and a 3-point one to a NEGATIVE one.
+
+Every other shape kind does have a fixed direction — `Rect`/`RoundedRect`/`Circle`/`Via` from Skia's
+own primitives, `Polygon`/`Curve` from `NormalizeOuterWinding`, which deliberately skips `Path`
+because a stroked centreline has no outer-ring vertex list to take a signed area from. So inside any
+batched non-zero `SKPath` a negative outline cancelled the material it overlapped: +1 and -1 sum to
+zero and the intersection is not drawn.
+
+**Why only when zoomed out.** `DrawLayer` batches a layer once more than
+`MergeShapeCountThreshold` of its shapes are ON SCREEN, so zooming out is what puts the trace and the
+pad into one path. Zoomed in, each shape composites alone and any winding fills identically. The same
+file therefore read correctly up close and wrong from further away — and a placed cell shows it at
+every zoom, because `CompileCell` always merges.
+
+**The fix: `NormalizeOutlineWinding`, immediately after `AsWinding`.** The convention is a POSITIVE
+signed area in path space, which is what `AddRect`/`AddCircle` produce and what
+`NormalizeOuterWinding`'s "reverse unless `SignedArea < 0` in DBU" already resolves to once path
+space's Y flip is applied. A negative outline is reversed with Skia's own `AddPathReverse` over the
+WHOLE path — the reason that method already gives: every contour flips together, so a hole keeps its
+relationship to the ring it belongs to. The sign is read from the summed signed area of all contours,
+which after `AsWinding` is the outer contours' sign, since a hole runs against the ring enclosing it
+and is strictly smaller. Curved segments are measured across their endpoints: an approximation of the
+area, an exact answer for the sign.
+
+**What this did NOT change, and what still differs between the tiers.** A merged fill composites an
+overlap ONCE where the individual tier composites it twice, so at partial `FillOpacity` a
+trace-over-pad overlap reads lighter when batched. That is the merge tier working as designed
+(`IsRingGeometry`'s own note says the same about same-layer overlap) and it is the whole of the
+remaining `--detail screen` vs `--detail full` difference on this board — after the fix, zero pixels
+of geometry are missing at any zoom tested.
+
+Gate: `tests/Ui.Tests/LayoutOutlineWindingTests.cs` — the reported geometry to scale, through the
+merge tier, through a placement, at the source with no renderer around it, plus the
+drawn-individually control that was never wrong. Verified to fail before the change: 3 of the 4 red,
+the control green.
+
 ## User report, 2026-09-12 — "the top layer is being masked by the layer below" (placed cells only)
 
 **The direction of the convention is not the bug, and it is the opposite of the one in the report.**
