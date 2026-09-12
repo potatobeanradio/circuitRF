@@ -655,9 +655,12 @@ public class UpdateSwapTests : IDisposable
         string body = startup[from..to];
         Assert.Contains("HandOverTo(result.NewExecutable", body);
 
-        // Windows has no execv, so the hand-over cannot be an exec alone.
+        // Windows has no execv, so the hand-over cannot be an exec alone: the successor is started
+        // and this process leaves. It leaves through NativeLaunch.Exit, which is Environment.Exit on
+        // Windows and `_exit` where an exchanged bundle makes a managed shutdown unsafe — see
+        // HandOverAfterBundleExchangeTests.
         Assert.Contains("Process.Start", startup);
-        Assert.Contains("Environment.Exit(0)", startup);
+        Assert.Contains("NativeLaunch.Exit(0)", startup);
     }
 
     [Fact]

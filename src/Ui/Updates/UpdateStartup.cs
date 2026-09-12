@@ -64,6 +64,16 @@ public static class UpdateStartup
             UpdateState state = UpdateStateIo.Load();
             string running    = UpdateReclaimer.RunningDirectoryName();
 
+            // BEFORE the exchange, and this write is why it is here rather than beside its partner
+            // below. Setting the flag touches CircuitRF.Diagnostics, and a session that has already
+            // exchanged its own bundle cannot LOAD an assembly for the first time — the bundle it
+            // would read it from has just been replaced (NativeLaunch carries the measurement). This
+            // launch is about to replace the bundle it was started from, so it says so now and
+            // corrects itself below; nothing reads the flag in between, and nothing is refused this
+            // early.
+            if (site.Shape == InstallShape.MacOsBundle)
+                CircuitRF.Diagnostics.FileAccessDiagnostics.AppBundleReplacedThisSession = true;
+
             SwapResult result = UpdateSwap.ApplyAtLaunch(site, state, UpdatePaths.Root, running);
 
             // From here on this process may no longer be trusted to touch a protected folder on
@@ -71,8 +81,8 @@ public static class UpdateStartup
             // the system resolves a Documents/Desktop grant against. HandOverTo leaves rather than let
             // that session continue — this flag is the belt for anything that gets past it, so a
             // refusal explains itself instead of sending the user to Privacy & Security.
-            if (ThisSessionReplacedItsOwnBundle(site, result))
-                CircuitRF.Diagnostics.FileAccessDiagnostics.AppBundleReplacedThisSession = true;
+            CircuitRF.Diagnostics.FileAccessDiagnostics.AppBundleReplacedThisSession =
+                ThisSessionReplacedItsOwnBundle(site, result);
 
             switch (result.Outcome)
             {
@@ -216,8 +226,12 @@ public static class UpdateStartup
 
         if (HandsOverThroughLaunchServicesOnly(executable))
         {
+            // NativeLaunch.Exit, not Environment.Exit: the bundle this process reads its own
+            // assemblies from has just been exchanged, so raising ProcessExit — a hook any part of
+            // the application may have taken — is a managed call this session can no longer make
+            // safely. See NativeLaunch for the measurement that establishes it.
             if (AppRelaunch.TryRelaunchBundle(executable, args, out string? refusal))
-                Environment.Exit(0);
+                NativeLaunch.Exit(0);
 
             LeaveTheUpdateForTheNextLaunch(refusal);   // never returns
             return;
@@ -226,7 +240,10 @@ public static class UpdateStartup
         // Returns only on failure; on success this process has already become the new one.
         UpdateSwap.ExecReplace(executable, args);
 
-        if (StartSuccessor(executable, args)) Environment.Exit(0);
+        // Windows has no `_exit` to call and NativeLaunch falls back to Environment.Exit there, which
+        // is the right answer: nothing has replaced the file this process reads its assemblies from.
+        // Linux after a pointer flip HAS, so it leaves the same way macOS does.
+        if (StartSuccessor(executable, args)) NativeLaunch.Exit(0);
 
         Diagnostics.CrashReporter.ResumeAfterExec();
     }
@@ -270,7 +287,7 @@ public static class UpdateStartup
         }
         catch (Exception) { /* a notice is not worth failing an exit over */ }
 
-        Environment.Exit(0);
+        NativeLaunch.Exit(0);
     }
 
     /// <summary>
@@ -312,7 +329,7 @@ public static class UpdateStartup
         if (!ThisSessionReplacedItsOwnBundle(site, result)) return;
 
         if (notice is not null) LeaveTheUpdateForTheNextLaunch(notice);   // never returns
-        Environment.Exit(0);
+        NativeLaunch.Exit(0);
     }
 
     /// <summary>

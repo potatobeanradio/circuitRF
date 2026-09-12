@@ -1,5 +1,97 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — the Relaunch button after an update quit circuitRF, and macOS reported a crash
+
+Updating beta.17 → beta.18 on macOS: the update installed, Relaunch closed the application, no new
+version appeared, and the system reported that circuitRF had quit unexpectedly. Launching it by hand
+gave beta.18, correctly installed.
+
+**The session that applied the exchange died of `SIGABRT` 115 ms into its launch, and it had never
+started the successor.** From the system crash report (`circuitRF-2026-09-11-204620.ips`): pid 56098,
+launched by launchd through `open -n -a … --args --relaunch-wait 56023` exactly as
+`AppRelaunch.StartSuccessor` intends, `EXC_CRASH (SIGABRT)`, `abort() called`, and a stack whose only
+managed frame is `Main` with `ThePreStub` / `PreStubWorker` above it — the runtime preparing a method
+for the first time and throwing. The unified log shows the bundle WAS exchanged (the inode of
+`/Applications/circuitRF.app` changes between 20:46:19 and the next launch, with FSEvents to match)
+and shows **no `open` process at all** in that window.
+
+### The cause is the shape of what we ship, not the updater's logic
+
+circuitRF is published as a .NET **single-file bundle**: every managed assembly lives inside the
+executable, and the runtime **re-opens that executable BY PATH, lazily, the first time each assembly
+is needed**. `UpdateSwap.SwapBundle` exchanges `/Applications/circuitRF.app` while this process is
+running, so from that instant the path resolves to a **different file with a different internal
+layout**, and every assembly the process has not already loaded fails:
+
+```
+System.IO.FileNotFoundException: Could not load file or assembly
+  'System.Diagnostics.Process, Version=10.0.0.0, …'. The system cannot find the file specified.
+```
+
+So `HandOverTo` could not spawn `/usr/bin/open` — `Process.Start` is in one of those assemblies. The
+exception escaped `AskOnce`'s untried call into `RunBeforeUi`'s catch-all, which swallowed it and
+returned; `Main` carried on to `Security.ExternalWorkerPolicy.Install()`, whose preparation needed
+another assembly, and that one had no handler. No crash log of our own was written because
+`HandOverTo` tells `CrashReporter` the session is over *before* the hand-over, which is correct and
+is also why the only record was the system's.
+
+**This also closes the 2026-09-10 mystery** recorded above and in the memory file: that investigation
+established `open` had never run and could not say why. This is why. The fall-back to `execv` is what
+hid it then — the exec left a running application, denied every protected folder, instead of a crash.
+
+### Measured, not reasoned about
+
+A pair of single-file .NET apps in `.app`-shaped directories, exchanged with the updater's own
+`renamex_np(RENAME_SWAP)` and then asked to do things:
+
+| after the exchange | result |
+|---|---|
+| `File`/`Directory` I/O, reflection (System.Private.CoreLib) | works |
+| `libc` P/Invoke — including entry points **never called before** the exchange | works |
+| `Process.Start` (System.Diagnostics.Process) | `FileNotFoundException` |
+| `JsonSerializer` (System.Text.Json), if not already loaded | `FileNotFoundException` |
+
+The second row is the load-bearing one: the runtime builds a marshalling stub on the spot with no
+assembly load, so a native call needs no warm-up. That is what makes the fix a small one.
+
+### The rule, and the fix
+
+**After the exchange this process may run only code whose assembly is already loaded** — the core
+library, and `libc`. Nothing warms a list of assemblies; the post-exchange path is simply made small
+enough to be safe.
+
+* `NativeLaunch` (new) — `posix_spawn` + `waitpid` + `_exit`, the same shape as the existing
+  `NativeExec`/`NativeFileOps` primitives. `AppRelaunch.OpenNewInstance` asks Launch Services through
+  it. It is the **only** spawn on this path, used by the Messages panel's Relaunch button as well, so
+  the primitive that has to work in the hard case is the one that runs on every update.
+* `UpdateStartup` leaves through `NativeLaunch.Exit` rather than `Environment.Exit`, which raises
+  `ProcessExit` — a hook any part of the application may have taken. On Windows there is no `_exit`
+  and it falls back to `Environment.Exit`, which is right: nothing there has replaced the file this
+  process reads its assemblies from.
+* `FileAccessDiagnostics.AppBundleReplacedThisSession` is set **before** `ApplyAtLaunch` and corrected
+  immediately after. That write is the first touch of `CircuitRF.Diagnostics`, and it sat one
+  statement after the exchange.
+* `UpdateStateIo` is safe after the exchange because `RunBeforeUi` reads `state.json` on the way in
+  and `SwapBundle` persists `SwapInProgress` immediately before the exchange — System.Text.Json is
+  loaded twice over by then. Both `Save` and `Load` swallow, so a record that cannot be written is a
+  lost record, never a crash.
+
+**Unchanged, deliberately: the hand-over is still Launch Services and nothing else, and a session that
+replaced its own bundle still never carries on.** That is the 2026-09-10 protected-folder fix and this
+one does not weaken it — `open -n -a` is still the only way the successor starts, and the failure path
+still records a notice and leaves.
+
+**Gates:** `HandOverAfterBundleExchangeTests` — the spawn primitive against real children (exit code,
+argv delivery, ENOENT as a reported refusal) plus comment-stripped source scans holding the rule: no
+`System.Diagnostics.Process` in the Launch Services request, no `Environment.Exit` on the way out of an
+exchanged bundle, and the diagnostics flag written before the swap rather than after it.
+
+**When it first takes effect:** the outgoing version performs the hand-over, so the first update this
+can act on is the one AFTER the release that contains it. Updating *into* the release carrying this fix
+still runs the old code and can still crash at Relaunch; the installed version is correct either way,
+and a hand launch gets it.
+
+
 ## Owner report, 2026-09-11 — delete a shape, click the same spot, and an unrelated shape is selected
 
 Click a geometry in the layout editor, press Delete, then click the SAME spot to pick up whatever is

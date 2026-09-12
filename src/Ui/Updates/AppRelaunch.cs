@@ -313,40 +313,48 @@ public static class AppRelaunch
         return pid;
     }
 
+    /// <summary>
+    /// The request itself.
+    ///
+    /// <para><b>Spawned through <c>libc</c> rather than <c>System.Diagnostics.Process</c>, and that is
+    /// a correctness requirement on one of the two callers.</b> The update hand-over reaches this
+    /// method having just EXCHANGED the application bundle it is running from, and a single-file .NET
+    /// application re-opens that bundle by path every time it loads an assembly it has not loaded yet
+    /// — so <c>Process.Start</c> is exactly the kind of call that cannot be made there. It threw, the
+    /// exception escaped into a catch-all, and the launch died a few statements later reporting
+    /// nothing (owner report, 2026-09-11). <see cref="NativeLaunch"/> carries the measurement and the
+    /// rule. The live-GUI caller could still use either; it uses this one so the primitive that has to
+    /// work in the hard case is the primitive that runs every day.</para>
+    /// </summary>
     private static bool OpenNewInstance(string bundle, IReadOnlyList<string> args, out string? refusal)
     {
         refusal = null;
 
-        try
+        var argv = new List<string>(4 + args.Count) { "-n", "-a", bundle };
+
+        // `--args` with nothing after it is accepted but pointless, and an empty argument list is
+        // the overwhelmingly common case — a launch from the Dock or from Finder.
+        if (args.Count > 0)
         {
-            var psi = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false };
-            psi.ArgumentList.Add("-n");
-            psi.ArgumentList.Add("-a");
-            psi.ArgumentList.Add(bundle);
-
-            // `--args` with nothing after it is accepted but pointless, and an empty argument list is
-            // the overwhelmingly common case — a launch from the Dock or from Finder.
-            if (args.Count > 0)
-            {
-                psi.ArgumentList.Add("--args");
-                foreach (string a in args) psi.ArgumentList.Add(a);
-            }
-
-            using Process? p = Process.Start(psi);
-            if (p is null) { refusal = "open could not be started"; return false; }
-
-            if (!p.WaitForExit(LaunchServicesTimeoutMs)) return true;
-            if (p.ExitCode == 0) return true;
-
-            refusal = $"open exited {p.ExitCode}";
-            return false;
+            argv.Add("--args");
+            argv.AddRange(args);
         }
-        catch (Exception e)
+
+        int errno = NativeLaunch.TrySpawn("/usr/bin/open", argv, out int pid);
+        if (errno != 0)
         {
             // No /usr/bin/open, no permission to spawn, a full process table. Named rather than
             // swallowed: this is the branch that took a log reconstruction to rule out.
-            refusal = $"open could not be started: {e.GetType().Name}: {e.Message}";
+            refusal = $"open could not be started: posix_spawn errno {errno}";
             return false;
         }
+
+        // A timeout is ACCEPTED: open is a child of this process, not its parent, so exiting does not
+        // cancel it, and the failure direction that matters is never starting the successor at all.
+        if (!NativeLaunch.TryWaitForExit(pid, LaunchServicesTimeoutMs, out int code)) return true;
+        if (code == 0) return true;
+
+        refusal = $"open exited {code}";
+        return false;
     }
 }
