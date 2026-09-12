@@ -103,14 +103,12 @@
                              user whose designs are clean can still find and change it. -->
                         <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
                                    Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto">
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto">
                             <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
                                        Name="CheckDrcOnExportCheck"
-                                       Content="Check design rules before exporting" FontSize="12"
-                                       IsCheckedChanged="OnCheckDrcOnExportChanged"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
-                                       Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                                       Text="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
+                                       Content="Run DRC before exporting" FontSize="12"
+                                       IsCheckedChanged="OnCheckDrcOnExportChanged"
+                                       ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
                         </Grid>
 
                         <!-- Import — R-rf3-7. ON by default: an imported board whose pours arrived as
@@ -120,14 +118,12 @@
                              its CAM source, or chasing an import bug. -->
                         <TextBlock Text="Import" FontSize="11" FontWeight="SemiBold"
                                    Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto">
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto">
                             <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
                                        Name="CoalesceRasterFillCheck"
                                        Content="Coalesce painted fill into regions" FontSize="12"
-                                       IsCheckedChanged="OnCoalesceRasterFillChanged"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
-                                       Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                                       Text="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
+                                       IsCheckedChanged="OnCoalesceRasterFillChanged"
+                                       ToolTip.Tip="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
                         </Grid>
 
                         <!-- Messages section -->
@@ -408,7 +404,7 @@
                         </Grid>
 
                         <!-- The built-in assembly rule set's one number. It lives on the WIREBONDS tab
-                             rather than beside "Check design rules before exporting" because what a
+                             rather than beside "Run DRC before exporting" because what a
                              user is looking for here is a wire dimension, and it sits next to the
                              other four. -->
                         <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
