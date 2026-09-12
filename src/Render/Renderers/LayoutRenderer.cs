@@ -113,6 +113,36 @@ public readonly struct LayoutRenderOptions
     /// own it itself.</summary>
     public LayoutPathCache? PathCache { get; init; }
 
+    /// <summary>
+    /// RF4 / L2d (docs/sonnet-briefs/brief-rasterfill-4-tiled-raster-cache.md) — the tiled raster cache
+    /// for committed top-level geometry, or <c>null</c> to disable the tier entirely.
+    ///
+    /// <para><b>Null is the default, and that is what makes R-rf4-8 structural rather than a flag</b>:
+    /// every export, every one-shot render and every existing test passes none and gets exactly
+    /// today's renderer, so <c>render --detail full</c> cannot acquire a raster tier by accident. Owned
+    /// by the CALLER for the lifetime of one open document, on <see cref="PathCache"/>'s own terms —
+    /// <see cref="LayoutRenderer.Draw"/> is a stateless static method and a cache that does not survive
+    /// a frame does nothing at all.</para>
+    /// </summary>
+    public LayoutTileCache? TileCache { get; init; }
+
+    /// <summary>
+    /// RF4 — how many CANDIDATE shapes a frame must be showing before the tile tier engages. 0 (the
+    /// default) means <see cref="LayoutRenderer.DefaultTileShapeCountThreshold"/>; a NEGATIVE value
+    /// disables the tier outright, which is the contract every other tier here carries and how a test
+    /// pins the un-tiled output this one has to match.
+    ///
+    /// <para><b>A candidate count is a GATE, not a cost model</b>, and the difference matters because
+    /// the overview this brief belongs to says in as many words that reasoning about a raster-fill
+    /// board from its shape count is wrong — its cost tracks painted area. It is the right gate anyway:
+    /// what the tier trades is a tile build against re-rasterizing the same geometry next frame, and
+    /// the only thing the gate has to avoid is paying for a surface on a document whose frame was
+    /// already cheap. Over-engaging costs one offscreen surface; under-engaging leaves today's
+    /// behaviour. See <see cref="LayoutRenderer.DefaultTileShapeCountThreshold"/> for the measurement
+    /// behind the value.</para>
+    /// </summary>
+    public int TileShapeCountThreshold { get; init; }
+
     /// <summary>L3a (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md) — the absolute directory a
     /// relative <see cref="LayoutInstance.CellRef"/> resolves against: the directory of the currently
     /// open <c>.clay</c>. Null for a not-yet-saved (scratch) document — instances simply cannot resolve
@@ -373,7 +403,14 @@ public readonly record struct LayoutRenderResult(
     /// count for them would report a number this renderer never produced. A <c>Rect</c> contributes its
     /// four corners, which is literally what it is.</para>
     /// </summary>
-    int VerticesEmitted = 0);
+    int VerticesEmitted = 0,
+    /// <summary>RF4 — tiles this frame rasterized into <see cref="LayoutRenderOptions.TileCache"/>.
+    /// <b>Zero on every frame of a steady-state pan</b>, which is the whole feature and gate 1.</summary>
+    int TilesBuilt = 0,
+    /// <summary>RF4 — cached tiles this frame blitted. Zero when the tier did not engage, which is
+    /// every export, every one-shot render and any document under
+    /// <see cref="LayoutRenderOptions.TileShapeCountThreshold"/>.</summary>
+    int TilesBlitted = 0);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -396,6 +433,13 @@ internal sealed class LayoutFrameCounters
     /// every later frame at the same zoom, while DrawCalls answers "what did this frame issue to the
     /// canvas" — one blit per placement. Zero on a frame that hit the cache, which is what a pan is.</summary>
     public int InstanceRastersBuilt;
+
+    /// <summary>RF4 — tiles this frame RASTERIZED, and tiles it blitted. Kept apart on exactly the
+    /// terms <see cref="InstanceRastersBuilt"/> states: a build is amortized over every later frame at
+    /// this zoom, while a blit is what this frame issued to the canvas. Gate 1 of the brief is one
+    /// assertion over these two numbers on a steady-state pan.</summary>
+    public int TilesBuilt;
+    public int TilesBlitted;
 }
 
 /// <summary>
@@ -564,52 +608,70 @@ public static partial class LayoutRenderer
             // Resolved once and shared, rather than re-indexed here and again in DrawBitmapShapes —
             // two independent reads of a list that is moving underneath is two chances to disagree,
             // and it was the second one that actually crashed.
-            var shapesNow = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(view.Shapes);
-            var live = new List<(int Index, LayoutShape Shape)>(candidates.Count);
-            foreach (var i in candidates)
-            {
-                // Null-checked as well as bounds-checked: List<T>.RemoveAt clears the vacated slot,
-                // so a span captured before a delete can hand back a null where a shape used to be.
-                if ((uint)i < (uint)shapesNow.Length && shapesNow[i] is { } s) live.Add((i, s));
-            }
-
-            var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
-            foreach (var (i, shape) in live)
-            {
-                if (shape is BitmapShape) continue;
-                if (!byLayer.TryGetValue(shape.Layer, out var list))
-                    byLayer[shape.Layer] = list = [];
-                list.Add((i, shape));
-            }
-
             var layerMap = tech?.Layers.ToDictionary(l => l.Key);
             var unknownLayers = new HashSet<LayerKey>();
-            var resolved = new List<(LayerDef Def, List<(int Index, LayoutShape Shape)> Shapes)>(byLayer.Count);
-            foreach (var (key, shapes) in byLayer)
+
+            // ── CANDIDATE INDICES -> SHAPES, GROUPED BY RESOLVED LAYER, FOR ANY DOCUMENT REGION ──
+            //
+            // A local function because RF4 needs it TWICE: once for the viewport, and once per tile
+            // for that tile's own region. A tile's core reaches up to a full tile beyond the viewport,
+            // so filtering the VIEWPORT's candidates down to a tile leaves the part of the tile that
+            // was off-screen when it was built permanently empty — and a cached tile keeps that hole
+            // for as long as its key is valid, which is what "a shape partially outside the viewport
+            // does not render" actually was (owner report, 2026-09-12). A tile is a render of a
+            // document REGION and has to ask the index about that region.
+            (List<(int Index, LayoutShape Shape)> Live,
+             List<(LayerDef Def, List<(int Index, LayoutShape Shape)> Shapes)> Resolved)
+                ResolveRegion(IReadOnlyList<int> forCandidates)
             {
-                LayerDef def;
-                if (layerMap is not null && layerMap.TryGetValue(key, out var found))
-                    def = found;
-                else
+                var shapesNow = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(view.Shapes);
+                var regionLive = new List<(int Index, LayoutShape Shape)>(forCandidates.Count);
+                foreach (var i in forCandidates)
                 {
-                    if (tech is not null) unknownLayers.Add(key);   // tech resolved but this key is absent — a real gap
-                    def = FallbackPalette.For(key);
+                    // Null-checked as well as bounds-checked: List<T>.RemoveAt clears the vacated slot,
+                    // so a span captured before a delete can hand back a null where a shape used to be.
+                    if ((uint)i < (uint)shapesNow.Length && shapesNow[i] is { } s) regionLive.Add((i, s));
                 }
-                resolved.Add((def, shapes));
+
+                var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
+                foreach (var (i, shape) in regionLive)
+                {
+                    if (shape is BitmapShape) continue;
+                    if (!byLayer.TryGetValue(shape.Layer, out var list))
+                        byLayer[shape.Layer] = list = [];
+                    list.Add((i, shape));
+                }
+
+                var regionResolved = new List<(LayerDef Def, List<(int Index, LayoutShape Shape)> Shapes)>(byLayer.Count);
+                foreach (var (key, shapes) in byLayer)
+                {
+                    LayerDef def;
+                    if (layerMap is not null && layerMap.TryGetValue(key, out var found))
+                        def = found;
+                    else
+                    {
+                        if (tech is not null) unknownLayers.Add(key);   // tech resolved but this key is absent — a real gap
+                        def = FallbackPalette.For(key);
+                    }
+                    regionResolved.Add((def, shapes));
+                }
+                // Ascending ZOrder — the LAST layer painted is the topmost one, which is the convention
+                // docs/design/layout-view.md §2.1 states and every shipped technology is authored to (Top
+                // Copper carries the highest ZOrder of its .ctech). Ties break on the key because List.Sort
+                // is NOT stable and `byLayer` is a Dictionary: two layers sharing one ZOrder would
+                // otherwise paint in whatever order that dictionary walked, which is not something a
+                // technology author can see or control.
+                regionResolved.Sort(static (a, b) =>
+                {
+                    int c = a.Def.ZOrder.CompareTo(b.Def.ZOrder);
+                    if (c != 0) return c;
+                    c = a.Def.Key.Layer.CompareTo(b.Def.Key.Layer);
+                    return c != 0 ? c : a.Def.Key.Datatype.CompareTo(b.Def.Key.Datatype);
+                });
+                return (regionLive, regionResolved);
             }
-            // Ascending ZOrder — the LAST layer painted is the topmost one, which is the convention
-            // docs/design/layout-view.md §2.1 states and every shipped technology is authored to (Top
-            // Copper carries the highest ZOrder of its .ctech). Ties break on the key because List.Sort
-            // is NOT stable and `byLayer` is a Dictionary: two layers sharing one ZOrder would
-            // otherwise paint in whatever order that dictionary walked, which is not something a
-            // technology author can see or control.
-            resolved.Sort(static (a, b) =>
-            {
-                int c = a.Def.ZOrder.CompareTo(b.Def.ZOrder);
-                if (c != 0) return c;
-                c = a.Def.Key.Layer.CompareTo(b.Def.Key.Layer);
-                return c != 0 ? c : a.Def.Key.Datatype.CompareTo(b.Def.Key.Datatype);
-            });
+
+            var (live, resolved) = ResolveRegion(candidates);
 
             // ── Path-space origin + transform (R-L1a-1/2) ───────────────────────
             double centerX = vp.PanX + vp.Width  / (2.0 * vp.Zoom);
@@ -626,17 +688,7 @@ public static partial class LayoutRenderer
             double transY  = vp.Height - (originY - vp.PanY) * vp.Zoom;
             var matrix = SKMatrix.CreateScaleTranslation((float)scaleUm, (float)scaleUm, (float)transX, (float)transY);
 
-            canvas.Save();
-            try
-            {
-                canvas.Concat(in matrix);
-
-                // R-bmp-2: bitmaps ALWAYS render first — beneath every layer, regardless of the
-                // layer's own ZOrder. This is the one deliberate exception to "Layer determines both
-                // visibility and paint order" every other shape follows.
-                DrawBitmapShapes(canvas, live, layerMap, unknownLayers, tech, dragOverrides, ps, theme, counters);
-
-                // Built once per frame, not per port: an EM port's marker needs the conductor it sits
+            // Built once per frame, not per port: an EM port's marker needs the conductor it sits
                 // on, and that conductor may be a placed INSTANCE's artwork rather than a top-level
                 // shape (a schematic-generated layout has no top-level shapes at all).
                 var conductorAt = LayoutPortDirection.LookupFor(view, tech, opts.BaseDir ?? "");
@@ -698,17 +750,65 @@ public static partial class LayoutRenderer
                         opts.OutlineVertexBudget > 0 ? opts.OutlineVertexBudget : DefaultOutlineVertexBudget,
                         opts.BaseDir ?? "");
 
-                // Every port glyph the layer loop meets, drawn AFTER all of them — see DrawLayer's
-                // own note and DrawPortGlyphs.
-                var deferredPorts = new List<DeferredPort>();
+            // Every port glyph the layer loop meets, drawn AFTER all of them — see DrawLayer's
+            // own note and DrawPortGlyphs.
+            var deferredPorts = new List<DeferredPort>();
 
-                foreach (var (def, shapes) in resolved)
+            // RF4 — which layers use the merge tier INSIDE a tile, by their document-wide shape count
+            // rather than by this frame's candidate count. See LayerMergeMap for why it cannot be the
+            // per-frame number. Built lazily and once, on the first frame that actually rasterizes a
+            // tile: it is a walk of the shape list, and a frame that only blits must not pay for it.
+            Dictionary<LayerKey, bool>? tileMergeByLayer = null;
+
+            // ── THE COMMITTED-GEOMETRY PASS, DEFINED ONCE ───────────────────────────────────────
+            //
+            // RF4 (docs/sonnet-briefs/brief-rasterfill-4-tiled-raster-cache.md). This closure is what
+            // a frame draws directly AND what a tile rasterizes, for the same reason the instance
+            // raster tier runs the caller's own cell-drawing closure into its offscreen surface: the
+            // blitted pixels and the live pixels must not be able to become two different definitions
+            // of the same geometry. Everything ABOVE it here is a frame fact (the candidates, the
+            // outline decision, the conductor lookup) computed once and shared; everything BELOW it is
+            // per-frame chrome and is never cached — R-rf4-2.
+            //
+            // `tileDoc` is the tile's own padded document rect on a tile build, or null for the whole
+            // frame. `layerMergesFromFrame` is the load-bearing part of that: the merge tier's
+            // engagement is a per-FRAME decision (a layer's candidate count in the viewport), and a
+            // tile holds only the shapes that reach it, so a tile left to decide for itself would
+            // composite a layer differently from the frame it is standing in for — per-shape fills
+            // darken where they overlap and one merged path does not. The frame decides; the tile is
+            // told; and the decision is part of the tile's key, so a pan that genuinely changes it
+            // rebuilds rather than shows something stale.
+            void DrawCommitted(SKCanvas c, Bbox? tileDoc, SKRect? tilePathRect, LayoutFrameCounters ctr,
+                               List<DeferredPort> ports, HashSet<LayerKey> unknown, HashSet<string> missing,
+                               HashSet<int>? drawnIndices)
+            {
+                // ── A TILE RESOLVES ITS OWN REGION; THE FRAME RESOLVES THE VIEWPORT ──────────────
+                // Never the viewport's candidates filtered down to the tile — see ResolveRegion for
+                // the defect that was.
+                var passLive = live;
+                var passResolved = resolved;
+                if (tileDoc is { } td)
+                    (passLive, passResolved) =
+                        ResolveRegion(view.SpatialIndex.QueryIntersecting(view.Shapes, td));
+
+                // R-bmp-2: bitmaps ALWAYS render first — beneath every layer, regardless of the
+                // layer's own ZOrder. This is the one deliberate exception to "Layer determines both
+                // visibility and paint order" every other shape follows.
+                DrawBitmapShapes(c, passLive, layerMap, unknown, tech, dragOverrides, ps, theme, ctr);
+
+                foreach (var (def, shapes) in passResolved)
                 {
                     if (!def.Visible) continue;
-                    counters.LayersVisited++;
-                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters,
-                              deferredPorts,
-                              tech?.FindFillPattern(def.FillPattern), view.DbuPerMicron, drawOutlines);
+                    ctr.LayersVisited++;
+                    if (shapes.Count == 0) continue;
+                    if (drawnIndices is not null) foreach (var e in shapes) drawnIndices.Add(e.Index);
+                    DrawLayer(c, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, ctr,
+                              ports,
+                              tech?.FindFillPattern(def.FillPattern), view.DbuPerMicron, drawOutlines,
+                              tileDoc is null
+                                  ? null
+                                  : (tileMergeByLayer ??= LayerMergeMap(view, opts))
+                                        .TryGetValue(def.Key, out var m) && m);
                 }
 
                 if (counters.InstancesExamined > 0)
@@ -718,12 +818,27 @@ public static partial class LayoutRenderer
                     // inside a compiled cell. Computed here, from the one viewport already resolved
                     // for this frame, rather than re-derived down there from a second copy of the rule
                     // that decides what is on screen.
-                    var visiblePathRect = NormalizedRect(
+                    var visiblePathRect = tilePathRect ?? NormalizedRect(
                         ps.X(vp.VisibleMinX - marginDbu), ps.Y(vp.VisibleMinY - marginDbu),
                         ps.X(vp.VisibleMaxX + marginDbu), ps.Y(vp.VisibleMaxY + marginDbu));
-                    DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps,
-                                  scaleUm, visiblePathRect, counters, missingCellRefs, drawOutlines);
+                    DrawInstances(c, view, tech, instanceCandidates, instanceDragOverrides, opts, ps,
+                                  scaleUm, visiblePathRect, ctr, missing, drawOutlines);
                 }
+            }
+
+            canvas.Save();
+            try
+            {
+                // RF4 — the tier, or today's renderer. TryDrawTiled returns false for every reason
+                // there is not to tile (no cache supplied, a negative threshold, a document under it,
+                // a drag in progress, a zoom still changing, a document with placed cells), and every
+                // one of those falls through to the identical call below.
+                bool tiled = TryDrawTiled(canvas, view, tech, vp, opts, ps, matrix, scaleUm, originX, originY,
+                                          drawOutlines, resolved, counters, deferredPorts, unknownLayers,
+                                          missingCellRefs, DrawCommitted, out var frameMatrix);
+                canvas.Concat(in frameMatrix);
+                if (!tiled)
+                    DrawCommitted(canvas, null, null, counters, deferredPorts, unknownLayers, missingCellRefs, null);
 
                 // L8b D5 — the plan-view surface mesh. Drawn INSIDE the path-space transform (it is
                 // in the same (x, y) plane as the artwork, which is the whole reason this overlay can
@@ -860,7 +975,9 @@ public static partial class LayoutRenderer
                 MissingInstanceCellRefs: missingCellRefs.Count == 0 ? [] : missingCellRefs.ToArray(),
                 FillPaintsBuilt: counters.FillPaintsBuilt,
                 InstanceRastersBuilt: counters.InstanceRastersBuilt,
-                VerticesEmitted: counters.VerticesEmitted);
+                VerticesEmitted: counters.VerticesEmitted,
+                TilesBuilt: counters.TilesBuilt,
+                TilesBlitted: counters.TilesBlitted);
         }
         finally
         {
@@ -1199,7 +1316,8 @@ public static partial class LayoutRenderer
         PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
         LayoutRenderOptions opts, LayoutFrameCounters counters, List<DeferredPort> deferredPorts,
         FillPattern? fillPattern = null,
-        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, bool drawOutlines = true)
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, bool drawOutlines = true,
+        bool? layerMergesFromFrame = null)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
@@ -1273,7 +1391,12 @@ public static partial class LayoutRenderer
 
         double lodThreshold = EffectiveLodPixelThreshold(opts);
         int mergeThreshold = EffectiveMergeShapeCountThreshold(opts);
-        bool layerMerges = opts.ForceMergeTier || shapes.Count > mergeThreshold;
+        // RF4 — on a tile build this is the FRAME's decision, handed down, never re-derived from the
+        // handful of shapes that reach this tile. See the DrawCommitted closure in Draw for why: the
+        // merge tier changes how a layer COMPOSITES (per-shape fills darken where they overlap, one
+        // merged path does not), so a tile that decided for itself would not be the frame it stands in
+        // for.
+        bool layerMerges = layerMergesFromFrame ?? (opts.ForceMergeTier || shapes.Count > mergeThreshold);
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
 
         // The frame's decimation tolerance (LayoutRenderDetail). Bucketed to a zoom octave so a
@@ -1359,7 +1482,7 @@ public static partial class LayoutRenderer
                 // marker.
                 if (label.IsPort)
                 {
-                    deferredPorts.Add(new DeferredPort(effective, color, portKind));
+                    deferredPorts.Add(new DeferredPort(index, effective, color, portKind));
                     continue;
                 }
 
@@ -3030,7 +3153,17 @@ public static partial class LayoutRenderer
     /// <summary>One port met by the layer loop, held back for <see cref="DrawPortGlyphs"/>. The
     /// colour is its LAYER's, unmodified — the contrast tint is applied once, inside the marker, and
     /// the name now takes the same one so the whole glyph is a single colour.</summary>
-    private readonly record struct DeferredPort(LabelShape Label, SKColor LayerColor, PlanarPortKind? Kind);
+    /// <summary>
+    /// One port met by the layer pass, held back for the frame's own top pass.
+    ///
+    /// <para><b><paramref name="Index"/> is the shape's index in the document</b>, carried for RF4:
+    /// a tiled frame gathers its ports from the tiles it blits, and a port's conservative bbox is
+    /// deliberately unbounded (<see cref="LayoutSpatialIndex.ConservativeBboxOf"/> — an edge port's
+    /// mark is drawn at the conductor end, an arbitrary distance from its anchor), so every tile
+    /// collects every port. Drawing one twice is not invisible: a glyph drawn over itself
+    /// antialiases darker. The index is what lets the gather drop the duplicates exactly.</para>
+    /// </summary>
+    internal readonly record struct DeferredPort(int Index, LabelShape Label, SKColor LayerColor, PlanarPortKind? Kind);
 
     /// <summary>
     /// Every port glyph in the frame, drawn above all of its geometry.
@@ -3059,7 +3192,7 @@ public static partial class LayoutRenderer
         LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron)
     {
         using var knockout = new SKPath();
-        foreach (var (label, _, _) in ports)
+        foreach (var (_, label, _, _) in ports)
         {
             if (PortNameKnockout(label, ps, scaleUm) is not { } k) continue;
             knockout.AddPath(k);
@@ -3068,12 +3201,12 @@ public static partial class LayoutRenderer
 
         canvas.Save();
         if (!knockout.IsEmpty) canvas.ClipPath(knockout, SKClipOperation.Difference, antialias: true);
-        foreach (var (label, layerColor, kind) in ports)
+        foreach (var (_, label, layerColor, kind) in ports)
             DrawPortMarker(canvas, label, conductorAt, ps, scaleUm, layerColor,
                            opts.Theme.Background, counters, kind, opts.PlanarMesh, dbuPerMicron);
         canvas.Restore();
 
-        foreach (var (label, layerColor, _) in ports)
+        foreach (var (_, label, layerColor, _) in ports)
             DrawLabelText(canvas, label, ps,
                           TintForContrast(layerColor, opts.Theme.Background, PortMarkerContrastTintAmount),
                           centred: true);

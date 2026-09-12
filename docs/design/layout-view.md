@@ -647,6 +647,17 @@ Two further options, deferred until measured: a **tiled raster cache** (re-raste
 a stable zoom) and background/incremental rendering for the pathological case. Do not build these
 speculatively.
 
+> **The tiled raster cache is no longer deferred — it shipped on 2026-09-12, and what discharged the
+> condition above was a measurement, not a decision.** An imported Gerber board whose copper pours are
+> stored as 41,420 abutting one-mil scanline strokes panned at 3.3 FPS at 1600×1000 and 2.4 FPS at 2×
+> DPI with every existing tier already fully engaged — `PathsConstructed` 0 on every frame, a
+> 29,274-shape layer down to 4 draw calls, outlines already off — because 77% of the frame was Skia
+> rasterizing painted area, which none of those tiers touches. That is the shortfall
+> `brief-L2c-lod-merge-and-caching.md` gate 10 said to wait for. With the tier on, the same board pans
+> in 9.0 ms and 7.0 ms. See `src/Render/RESOLVED.md` ("RF4") for the measurements, the seam approach,
+> the zoom decision and its own measurement, and the tile-memory cap with its steady-state figure.
+> Background/incremental rendering remains deferred and unmeasured.
+
 ### 5.4 Measure it
 
 **R12. A synthetic-layout benchmark harness ships with L2 and runs in CI.** Generate 1k / 50k / 500k

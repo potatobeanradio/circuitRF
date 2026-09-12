@@ -1709,3 +1709,324 @@ a quarter-octave ladder installed, the ladder gates fail.
 RF1 gate) failed once under the full `Layout|Render` filter and passes alone and on a re-run of the
 same filter (3,451/3,451). Nothing here touches the spatial index or that guard. Load-dependent, and
 recorded rather than chased.
+
+## RF4 (= L2d) — the tiled raster cache, and the three things that were not the seam (2026-09-12)
+
+`docs/sonnet-briefs/brief-rasterfill-4-tiled-raster-cache.md`, the last of the raster-fill series and
+the tier `docs/design/layout-view.md` §5.3 deferred "until measured". The measurement is below and
+that deferral is now discharged; background/incremental rendering stays deferred and unmeasured.
+
+`LayoutTileCache` (new) is the cache; `LayoutRenderer.Tiles.cs` (new) is what goes into a tile.
+`LayoutCanvas` owns one per open document. **The tier is off unless the CALLER supplies a cache**, so
+every export, every one-shot render and every existing test is untouched by construction — which is
+what makes R-rf4-8 and gate 7 structural rather than a flag someone has to remember.
+
+### The condition the brief opened with, discharged: the shortfall is undiminished
+
+The brief forbids building this before re-measuring after briefs 1, 2 and 3. Re-measured on the
+reported board itself (52,230 shapes, 11 layers, zero instances — the overview's §1a counts to the
+shape), Release scratch console against a CPU `SKSurface`, fitted to the board with every layer
+visible:
+
+| board A, pan | overview §1b (pre-series) | after RF1+RF2+RF3 | **with RF4** |
+|---|---|---|---|
+| 1600×1000 | 282 ms (3.5 FPS) | **300 ms (3.3 FPS)** | **9.0 ms (111 FPS)** |
+| 3200×2000 (2× DPI) | 459 ms (2.2 FPS) | **408 ms (2.4 FPS)** | **7.0 ms (143 FPS)** |
+| repaint 1600×1000 | 288 ms | 300 ms | **9.5 ms** |
+| repaint 3200×2000 | 441 ms | 419 ms | **7.9 ms** |
+
+RF1 and RF2 were never going to move this and did not: RF1's own note already records the frame as
+rasterization-bound, and RF2 is about a zoom gesture. **RF3 removes the geometry at the source but
+only on IMPORT** — a board already sitting in a workspace still has its 41,420 strokes, which is the
+case this tier exists for and the reason the brief calls it "the only thing that helps a board already
+in a workspace". Board B (33,283 shapes, the same class) goes from 105 ms to 5.2 ms at 1× and 194 ms
+to 5.5 ms at 2× DPI.
+
+**Against §5.1's targets: pan and repaint now meet 60 fps at both DPIs, on both raster-filled boards,
+with room to spare. A continuous ZOOM gesture is unimproved** — see the R-rf4-4 decision below, which
+is a deliberate choice with a measurement behind it and not an oversight.
+
+### How a tile is placed, which is the whole of R-rf4-1
+
+The grid is laid over `u = (dbu - origin) * zoom` — the frame's device coordinate with its
+translation removed — so tile `tx` covers `u ∈ [tx*512, (tx+1)*512)`, a function of the origin and the
+zoom alone and therefore **identical at every pan position**. A pan slides across tile boundaries
+instead of re-anchoring the grid. Gate 1 is one assertion on that: a pan back across ground already
+rasterized reports `TilesBuilt == 0` and blits what is on screen. Measured on board A, the pan that
+re-visits its own ground builds 0 tiles and blits 12 (1×) or 35 (2× DPI) per frame.
+
+A tile is blitted at a **whole device pixel**, and the frame's own matrix is snapped with it. A raster
+reusable across a pan cannot follow the pan's sub-pixel phase; snapping per tile would put a one-pixel
+step down every seam, so the frame's translation is rounded ONCE and every tile offsets from it by an
+exact multiple of the pitch. The whole committed layer — and the rulers, ports, selection outlines and
+handles drawn over it, which share the snapped matrix — is then displaced together by under half a
+pixel, and a drag-pan advances it in whole pixels with no jitter (the displacement is `frac(transX)`,
+and a pan changes `transX` by whole device pixels). Leaving the overlays on the unsnapped transform
+was the first draft and is worse: a selection outline half a pixel off the shape it is around is
+something a user can see, in exchange for agreeing with a frame nobody is drawing.
+
+### R-rf4-7 is the hard part, and the honest answer has three parts
+
+The seam approach is **rasterize a padded region and blit only the core** (8 device pixels of pad, 6.3%
+more area). A tile clipped at its own edge antialiases every shape against that edge and two such tiles
+composited leave a lighter line down the join; with the padding, the pixels at the core's edge were
+produced with the neighbouring geometry present. **That part works, and it is measured rather than
+argued:** on every fixture the differing pixels are no denser at a seam than away from one, and with
+the padding set to 0 the gate goes red at **2.6% of pixels on the seams against 0.014% off them**.
+
+What full-frame bit identity actually turns out to be, after three separate causes were found and two
+of them fixed:
+
+| geometry | tiled vs un-tiled |
+|---|---|
+| axis-aligned edges | **bit-identical**, at every pan offset, across seams |
+| a diagonal edge | every edge pixel differs a little — one triangle, 1,185 of 1,600,000 px, max delta 23 |
+| a curve | same — one circle, ~600 of 1,600,000 px, all on the curve |
+| board A (round caps everywhere) | 45–345 px of 1,600,000 (**0.003–0.022%**) at whole-pixel pan offsets |
+
+**Neither residual is a seam and neither is fixable here.** A curve is tessellated *adaptively at the
+current transform* — which this renderer relies on deliberately (`LayoutRenderer`'s own header says so)
+— and a tile's transform carries a different translation. A diagonal is clipped to the device bounds
+before rasterizing, and a clipped diagonal's fixed-point slope is not quite the unclipped one; more
+padding does not change it, and the difference is identical at every pan offset. So the gates assert
+**identity for axis-aligned geometry** and a **bound plus a not-at-the-seams profile** for the rest,
+and this note says that rather than claiming more.
+
+### The three things that were NOT the seam, all of which looked like one
+
+Each was found by a pixel comparison and none of them would have been visible in a screenshot.
+
+* **Compositing into a transparent tile is not associative in bytes.** The first draft cleared each
+  tile to transparent and composited the tile onto the frame's background. That is exact in real
+  arithmetic and is not in 8-bit premultiplied: a 35%-opacity layer is stored as `round(C * 0.35)`, and
+  eleven of them over one another accumulate an error the un-tiled frame never pays, because it starts
+  from an opaque background and never holds a partially transparent intermediate. **0.2–0.8% of pixels
+  differed, by up to 34 of 255, spread evenly over the frame.** The fix is that a tile starts from the
+  same opaque background the frame does — which makes the arithmetic identical step for step and takes
+  the figure to 0.017%.
+* **The grid had to come inside the tile, and then be in the right place.** An opaque tile would
+  otherwise paint over the frame's grid. R-rf4-2 puts the grid outside the cache and this is the one
+  place that requirement has to be read for what it is *for*: chrome describing a gesture in progress,
+  which a stale tile would freeze. A grid is nothing of the kind — its pitch is a function of the snap
+  step and the zoom, both of which are in the tile key, and its dots sit at document multiples of that
+  pitch. The first draft folded the frame's whole-pixel snap into the tile's grid viewport as well as
+  into the blit, **applying it twice** and putting the grid a couple of hundred pixels off the metal:
+  nothing threw, and **5.6% of the frame differed**, which is about what a whole grid in the wrong place
+  comes to. Nothing in a tile may reference the pan; that is the rule, and the grid viewport is derived
+  from the tile's own grid position only.
+* **A label's stored bbox is a zero-size POINT, and a port's is unbounded.** The per-tile shape filter
+  first asked `LayoutGeometry.BboxOf`, whose label answer is the anchor — correct for the marquee
+  predicate it exists for, and here it dropped exactly the text whose anchor fell outside a tile while
+  its glyphs reached well inside, which showed up as a four-pixel diagonal of a glyph stroke missing
+  and nothing else anywhere. Switching to `LayoutSpatialIndex.ConservativeBboxOf` (defined as
+  never-too-small, which is the right property for this question) fixed it and **immediately made
+  things worse**, because a PORT's conservative box is `Everywhere`: every tile then collected every
+  port, the frame's top pass drew each glyph once per tile, and a glyph drawn over itself antialiases
+  darker. `DeferredPort` now carries the shape index and the gather dedupes on it.
+
+### R-rf4-4: measured both, shipped "re-tile on settle"
+
+Tiles are keyed on the **exact** zoom. A frame at a zoom the previous frame was not at finds no tiles
+and draws live, exactly as today; the first frame that repeats a zoom is the one that tiles. This needs
+no gesture plumbing at all — which matters, because there are several ways to zoom and only some of
+them are a gesture — and it is the only one of the two answers that can satisfy R-rf4-7.
+
+The alternative was measured rather than argued away. Rasterizing at the octave base and scaling the
+blit within the octave, board A:
+
+| into the octave | live frame (1×) | scaled blit | ink error | **edge sharpness retained** |
+|---|---|---|---|---|
+| ×1.09 | 333 ms | 4.0 ms | 0.48% | **88.4%** |
+| ×1.41 | 265 ms | 2.3 ms | 1.65% | **84.4%** |
+| ×1.99 | 167 ms | 2.3 ms | 3.24% | **79.3%** |
+
+**The ink error is not the number that decides it.** At 0.5–3% it sits in the same band RF2's own
+differential render called antialiasing-level. What decides it is the last column: a mid-octave frame
+has lost 12–21% of the frame's edge energy, and the artwork in question is one-mil traces, where the
+edge IS the trace. So the gesture would be 70–100× cheaper and would show a visibly softer picture of
+exactly the geometry the user is looking at, and no frame during it would be one the renderer would
+otherwise have drawn.
+
+**What that costs, stated plainly: a continuous pinch on this board is exactly as slow as it was.** A
+discrete zoom (a wheel click, a zoom box, a keyboard step) pays one live frame and is fast from the
+next one — the settled frame at 2× measures 2.2 ms at 1× and 5.4 ms at 2× DPI. **The obvious follow-up
+is a hybrid** — scaled tiles *while the zoom is moving* and exact tiles once it settles, so the
+softness lasts only as long as the gesture — and it is deliberately not built here: it is the riskier
+half of an already high-risk brief, and it is now a decision with numbers behind it rather than a
+guess.
+
+### Memory: 96 MB cap, 16.6 MB and 43.4 MB held
+
+R-rf4-5, and the owner asked directly during the instance-raster work whether that tier's problem was
+memory. It was not, and this one has not made the answer yes. The cap is on BYTES rather than a tile
+count, because a tile's size follows the device scale and counting tiles would cap two different
+amounts of memory on two different displays. Board A, one viewport's worth in steady state:
+
+| | tiles held | held | cap |
+|---|---|---|---|
+| 1600×1000 | 15 | **16.6 MB** | 96 MB |
+| 3200×2000 (2× DPI) | 40 | **43.4 MB** | 96 MB |
+
+96 MB is 48 tiles at 528 square in RGBA8888 — about four viewports at 1× and two at 2× DPI, so a pan
+has somewhere to pan back to.
+
+**A fourth thing that would have been silent, and it is a use-after-free rather than a wrong pixel:**
+a `Put` can EVICT, and an eviction disposes the tile's `SKImage`. Storing each freshly built tile as it
+was built therefore freed images that earlier tiles of the same frame were still waiting to be
+blitted — reachable only with a cache too small to hold one viewport, which is exactly what an
+undersized cache is. The frame now builds every tile, blits every tile, and only then stores them, so
+an eviction can reach only a tile this frame has finished with. Gate 8 pins it by rendering through a
+two-tile cache and requiring the same bytes a cold cache produces.
+
+An `SKImage` owns native pixels and every eviction path disposes it;
+`LayoutCanvas` disposes the whole cache when the document rebinds and when the canvas detaches, and
+re-creates it on re-attach (a dock rebuild would otherwise leave the tier permanently off with no
+symptom but a slow frame).
+
+### Invalidation rides `LayoutChangeInfo`, and has to drop BOTH ends of a move
+
+R-rf4-6. No second notification path: `LayoutCanvas.OnModelChanged` already calls
+`LayoutPathCache.Apply` and now calls `LayoutTileCache.Apply` beside it, inside the `RenderLock` the
+frame itself holds. A theme, technology or layer-visibility change needs no call at all — all three are
+folded into the tile's `VisualKey`, so the affected tiles are simply not found.
+
+**The subtlety is that `LayoutChangeInfo` carries INDICES, not geometry, and by the time a subscriber
+is told, the shape has already moved.** The destination comes from the shape's current bbox; the
+SOURCE is findable only by asking which tiles drew that index, so each tile records its own padded
+candidate set (about 12 bytes per candidate, counted against the cap). Invalidating only the
+destination leaves the old pixels behind — the ghost-left-behind defect `LayoutPathCache`'s comment
+documents, one level up and inside an image where it is harder to see; only the source leaves a hole.
+Gate 9 asserts both, the second by rendering the edited document from a warm cache and from a cold one
+and requiring the same bytes.
+
+### Two scope lines, both deliberate, both stated as tests
+
+* **A document with placed cells does not tile.** `DrawInstances` paints screen-space chrome inline
+  with a placement's geometry — PCell pins, the interface-changed mark, the moved-cell mark — and
+  R-rf4-2 forbids baking a fixed-device-size glyph into a raster. Separating them is a larger job than
+  this brief, and a document with placements already has a raster tier of its own: the instance raster
+  tier this one was modelled on. Every board in the class RF4 was written for has zero instances.
+  `ADocumentWithPlacedCells_DoesNotTile` is the gate, so this cannot be broken silently.
+* **The merge tier's decision is the FRAME's, handed down.** Whether a layer uses the batched path is a
+  per-frame question (its candidate count in the viewport), and a tile holds only the shapes that reach
+  it — so a tile left to decide for itself would composite a layer differently from the frame it stands
+  in for, because per-shape fills darken where they overlap and one merged path does not. The frame
+  decides, `DrawLayer` is told, and the decision is part of the tile key so a pan that genuinely changes
+  it rebuilds rather than showing something stale.
+
+### Gates
+
+`tests/Ui.Tests/LayoutTileCacheTests.cs` — twelve, and **not one asserts a millisecond figure.** That
+is the owner's call on the brief's §3 standing conflict: L2c's completion note asked for routine 500k
+*timing* coverage as part of L2d's gate, and the standing instruction since is that a timing test
+measures the machine; the structural property goes on a counter and the 500k timing sweep stays where
+it already lives, in `Category=Benchmark`, needing no new test to be run.
+
+The twelve: a steady-state pan builds nothing; a zoom gesture builds nothing until it settles and then
+builds once; bit identity with the tier disabled, both by supplying no cache and by a negative
+threshold; bit identity with it enabled at 28 pan offsets chosen to put geometry across seams; the
+bounded, not-at-the-seams profile for curves and diagonals; a moved selection reuses every tile and
+still tracks; a dragged shape renders live at its dragged position; memory under the cap with eviction
+disposing; exact invalidation at both ends of a move; the grid inside the tile and in the same place as
+the metal; a document with placed cells refusing; and a comment-stripped source scan proving the tile
+file draws no geometry of its own — it runs the caller's committed-geometry pass, the same rule the
+instance raster tier states, so the blitted and the live pixels cannot become two definitions of one
+thing.
+
+Verified to bite, not assumed: with the tile padding set to 0 the seam gate goes red; with an
+axis-aligned-only fixture it does not, which is why the diagonal and curve fixture exists and is
+recorded here — an axis-aligned rectangle cannot feel a clip on a pixel boundary, so a rectangles-only
+seam test would have passed a genuinely broken implementation.
+
+Gate 7 needed no new test: `RenderCliVerbTests`' byte-for-byte comparison already covers it and is
+green, and `render --detail full` cannot reach the tier at all — it supplies no cache, and a negative
+`DetailPixelThreshold` refuses independently.
+
+## Owner report, 2026-09-12 — "a shape partially outside the viewport doesn't render at all"
+
+> "When some shapes are partially outside the viewport, the entire shape doesn't seem to render. If I
+> pan a little more to get the full shape into view, then it will render." Reproduced on the
+> raster-fill board above with **Top Copper alone visible**, which is the detail that made it findable.
+
+RF4's defect, and **two** of them: one that loses pixels and one that hid it.
+
+### The tile was rasterized from the FRAME's candidates, not from its own region
+
+A tile's core reaches up to a full tile — 512 device pixels — BEYOND the viewport, because the grid is
+anchored in document space and the viewport lands wherever it lands on it. The first version filtered
+the frame's candidate list (the viewport plus an eight-pixel margin) down to each tile, so **the part
+of a tile that was off-screen when the tile was built contained nothing at all** — and a cached tile
+keeps that hole for as long as its key is valid. Panning onto that ground showed blank, and panning
+further eventually invalidated the tile and the content appeared.
+
+A tile is a render of a document REGION, so it has to ask the spatial index about that region.
+`LayoutRenderer.Draw`'s candidate → live → by-layer → resolved pipeline is now a local function
+(`ResolveRegion`) called once for the viewport and once per tile build. Measured on the reported
+board, Top Copper alone, warm cache at one pan against a cold cache at the next:
+
+| pan | before | after |
+|---|---|---|
+| 1% of a screen | 0 px | 0 px |
+| 2% | 24 px | **0** |
+| 4% | 3,133 px (0.20%) | **0** |
+| 6% | 6,233 px (0.39%) | **0** |
+| 10% | 16,884 px (1.06%) | **0** |
+| 15% | 46,417 px (2.90%) | **0** |
+
+**The error grows with the pan distance**, which is the signature: the further you pan, the more of a
+cached tile's never-rasterized margin you are looking at.
+
+### And the reason it took a single layer to see it: the key churned
+
+The tile key carried two things that move with the VIEWPORT — the frame's per-layer candidate COUNT
+(folded in to carry the merge tier's decision) and the frame's resolved layer LIST (whose membership
+changes as layers scroll in and out). At a zoomed-in view on an eleven-layer board both move on nearly
+every pan frame, so **every tile was invalidated and rebuilt every frame**. That is a cache doing
+negative work — and it refilled the holes before anyone could see them. With one layer visible the key
+stopped moving, the tiles were genuinely reused, and the defect became plain.
+
+Both are gone. `VisualKeyFor` now hashes the TECHNOLOGY's own layer table rather than the frame's
+resolved list (a layer the technology does not declare falls back to `FallbackPalette.For`, a pure
+function of the key, so nothing is lost), and the merge decision comes from `LayerMergeMap` — the
+layer's **document-wide** visible shape count, one pass over the shape list on a frame that actually
+builds a tile, never on a frame that only blits. Measured on the reported board at 4× zoom, a 25% pan:
+**12 tiles rebuilt before, 3 after** — the three that are genuinely new.
+
+**Where the document-wide merge count diverges** from the un-tiled frame is a zoom deep enough that a
+layer's VISIBLE count falls below `DefaultMergeShapeCountThreshold` while its total stays above: the
+un-tiled frame darkens same-layer overlap there and the tiled one does not. That is the price of a
+tile being a function of the document rather than of the viewport, and it is the right trade — the
+alternative is a key that cannot survive a pan.
+
+### What this says about the earlier gates, which all passed
+
+Every gate in the file passed throughout, and none of them could have caught this: gate 1 asserts
+counters on a pan and never compares the pixels; gate 4 compares a tiled frame against an un-tiled one
+**at the same viewport**, where the frame's candidate set is exactly right and the hole is off-screen.
+The defect needs a pan ACROSS two frames with the tile surviving between them, and nothing was testing
+that. Two tests now do:
+
+* `PanningOntoGroundACachedTileCovers_ShowsWhatIsThere` — warm at one pan, render at the next, compare
+  against a cold cache at that same pan. **Both halves are load-bearing**: without also requiring that
+  some of the offsets were served entirely from tiles that already existed, a frame that rebuilt
+  everything would match for the wrong reason, which is precisely what hid this.
+* `PanningAtAFixedZoom_DoesNotInvalidateTilesItStillNeeds` — the churn, as its own gate, because it is
+  a performance defect in its own right as well as a mask.
+
+Verified to bite: restricting a tile's query back to the viewport's candidates makes the first go red;
+mixing any viewport-dependent term into the key makes the second (and gate 1) go red.
+
+### A third oracle, kept because it found nothing and that is worth knowing
+
+Rendering the same world region inside a viewport enlarged by 600 pixels on every side and cropping
+back is a culling oracle that does not care which code path is at fault. Post-fix it reads **0.000% at
+every zoom tested, including 10×**, where the UN-tiled renderer reads 0.98% to 29.9% — not a bug
+there, but the merge tier and the outline budget legitimately deciding differently for a bigger
+viewport. It is a neat confirmation that a tile is now a pure function of its document region and of
+the zoom, and of nothing else.
+
+### Cost of the fix
+
+Board A, all layers, Release scratch console: pan **9.1 → 10.4 ms** at 1600×1000 and **7.1 → 9.1 ms**
+at 3200×2000 — the per-tile spatial query, paid on build frames only. Against 300 ms and 408 ms
+un-tiled, and the identity figures above are unchanged.

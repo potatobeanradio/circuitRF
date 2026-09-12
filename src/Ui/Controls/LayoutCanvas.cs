@@ -51,11 +51,30 @@ public sealed class LayoutCanvas : Control
     /// notification the L2b spatial index already consumes — no second notification path.</summary>
     private LayoutPathCache? _pathCache;
 
+    /// <summary>
+    /// RF4 (docs/sonnet-briefs/brief-rasterfill-4-tiled-raster-cache.md) — the tiled raster cache,
+    /// on <see cref="_pathCache"/>'s terms exactly: one per bound document, a fresh instance whenever
+    /// <see cref="ViewModel"/> changes, and invalidated incrementally from the same
+    /// <see cref="LayoutChangeInfo"/> notification. It holds native Skia images, so the OLD one is
+    /// disposed rather than dropped.
+    ///
+    /// <para>It engages only on a frame showing more than
+    /// <c>LayoutRenderer.DefaultTileShapeCountThreshold</c> candidate shapes, so an ordinary document
+    /// never allocates a tile and this field costs nothing but itself. A theme, technology or
+    /// layer-visibility change needs no call here: all three are folded into the tile key, so the
+    /// affected tiles are simply not found and the new ones take their place.</para>
+    /// </summary>
+    private LayoutTileCache? _tileCache;
+
     public LayoutEditorViewModel? ViewModel
     {
         get => _viewModel;
         set
         {
+            // The model the tiles currently held belong to, captured before the field moves on — it is
+            // that model's render lock the disposal has to take, not the incoming one's.
+            var previousModel = _viewModel?.Model;
+
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged -= OnVmPropertyChanged;
@@ -64,6 +83,8 @@ public sealed class LayoutCanvas : Control
 
             SetAndRaise(ViewModelProperty, ref _viewModel, value);
             _pathCache = _viewModel is not null ? new LayoutPathCache(PathCacheCapacityFor(_viewModel.Model)) : null;
+            DisposeTiles(previousModel);
+            _tileCache = _viewModel is not null ? new LayoutTileCache() : null;
 
             if (_viewModel is not null)
             {
@@ -117,9 +138,29 @@ public sealed class LayoutCanvas : Control
     private static int PathCacheCapacityFor(LayoutView model) =>
         Math.Clamp(model.Shapes.Count + model.Shapes.Count / 4, 50_000, MaxPathCacheCapacity);
 
+    /// <summary>
+    /// Disposes the tile cache <b>under the model's render lock</b> and clears the field.
+    ///
+    /// <para>This runs on the UI thread and a tile is a native <c>SKImage</c> the RENDER thread may be
+    /// blitting at this instant — freeing it underneath that is a torn process, not a wrong pixel. The
+    /// lock is the one <c>LayoutDrawOperation</c> already holds for the whole frame and that
+    /// <c>LayoutView.NotifyChanged</c> already takes for the same reason. <c>_pathCache</c> does not
+    /// need this because it is dropped for the garbage collector rather than disposed; a tile cache is
+    /// disposed on purpose (R-rf4-5) and therefore has to be disposed safely.</para>
+    /// </summary>
+    private void DisposeTiles(LayoutView? model)
+    {
+        var tiles = _tileCache;
+        _tileCache = null;
+        if (tiles is null) return;
+        if (model is null) { tiles.Dispose(); return; }
+        lock (model.RenderLock) tiles.Dispose();
+    }
+
     private void OnModelChanged(object? sender, LayoutChangeInfo e)
     {
         _pathCache?.Apply(e);
+        if (_viewModel is { } vm) _tileCache?.Apply(e, vm.Model);
         InvalidateVisual();
     }
 
@@ -401,11 +442,18 @@ public sealed class LayoutCanvas : Control
         base.OnAttachedToVisualTree(e);
         ThemeService.ThemeChanged += OnThemeChanged;
         _activeTheme = ThemeService.Active;
+        // Re-attached after a dock rebuild or a tear-off, with the same view model still bound: the
+        // detach disposed the tiles, and nothing else will put them back.
+        if (_viewModel is not null) _tileCache ??= new LayoutTileCache();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ThemeService.ThemeChanged -= OnThemeChanged;
+        // The tiles are native Skia images and this canvas is going away — a dock rebuild, a tear-off
+        // or a closed document. Rebinding ViewModel disposes the old cache too; this covers the case
+        // where nothing rebinds because the canvas itself is what ended.
+        DisposeTiles(_viewModel?.Model);
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -424,7 +472,7 @@ public sealed class LayoutCanvas : Control
         var vp = CurrentViewport;
         var opts = new LayoutRenderOptions
         {
-            Theme = theme, ShowGrid = true, PathCache = _pathCache,
+            Theme = theme, ShowGrid = true, PathCache = _pathCache, TileCache = _tileCache,
             // The zoom window rides on the frame's own marquee slot rather than a second rubber-band
             // path: it IS a marquee, and the editor already draws one. Applied to a COPY of the view
             // model's overlay (LayoutOverlay is a record) — never to the instance the view model
