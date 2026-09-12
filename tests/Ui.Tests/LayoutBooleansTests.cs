@@ -396,6 +396,116 @@ public class LayoutBooleansTests
         Assert.Equal(1, result.OperandsRemoved);
     }
 
+    // ── R-clip-10: point-anchored operands (via, label) ───────────────────────
+
+    /// <summary>
+    /// The owner-reported defect: clipping an imported board left every via on it standing, including
+    /// the 125 of 189 that lay far outside the stencil. A via was not an operand at all, so "keep what
+    /// is inside" silently meant "keep every via anywhere".
+    /// </summary>
+    [Fact]
+    public void Clip_KeepsOnlyTheViasInsideTheStencil_AndCutOutKeepsOnlyTheOnesOutside()
+    {
+        var stencil = Rect(0, 0, 100_000, 100_000);
+        ViaShape Via(long x, long y) => new() { Layer = Layer1, X = x, Y = y, PadSize = 20_000, DrillSize = 10_000 };
+
+        var inside = Via(50_000, 50_000);
+        var outside = Via(500_000, 500_000);
+        // Straddling the edge: the via is AT a point, so its pad hanging over the boundary decides
+        // nothing — the anchor is inside, so it is kept whole.
+        var onEdge = Via(99_000, 99_000);
+
+        var clipped = LayoutBooleans.Clip([inside, outside, onEdge], stencil, null);
+        Assert.Equal([inside, onEdge], clipped.Shapes);
+        Assert.Equal(1, clipped.OperandsRemoved);
+        Assert.Equal(2, clipped.OperandsUntouched);
+        Assert.Equal(0, clipped.OperandsChanged);   // never rebuilt, never polygonized
+
+        var cut = LayoutBooleans.CutOut([inside, outside, onEdge], stencil, null);
+        Assert.Equal([outside], cut.Shapes);
+        Assert.Equal(2, cut.OperandsRemoved);
+    }
+
+    /// <summary>A label is point-anchored for the same reason and by the same code path.</summary>
+    [Fact]
+    public void Clip_KeepsOnlyTheLabelsInsideTheStencil()
+    {
+        var stencil = Rect(0, 0, 100_000, 100_000);
+        var inside = new LabelShape { Layer = Layer1, X = 10_000, Y = 10_000, Text = "IN" };
+        var outside = new LabelShape { Layer = Layer1, X = -10_000, Y = 10_000, Text = "OUT" };
+
+        var result = LayoutBooleans.Clip([inside, outside], stencil, null);
+
+        Assert.Equal([inside], result.Shapes);
+    }
+
+    /// <summary>The stencil's HOLE is real for a via too — the bbox alone would keep it. This is what
+    /// the probe-square test buys over a bounding-box containment shortcut on a non-Rect stencil.</summary>
+    [Fact]
+    public void Clip_AViaInsideAHoleOfAPolygonStencil_IsRemoved()
+    {
+        // A 100k square with a 40k..60k square hole.
+        var stencil = new PolygonShape
+        {
+            Layer = Layer1,
+            Xy = [0, 0, 100_000, 0, 100_000, 100_000, 0, 100_000],
+            Holes = [[40_000, 40_000, 40_000, 60_000, 60_000, 60_000, 60_000, 40_000]],  // wound opposite the outer ring
+        };
+        var inHole = new ViaShape { Layer = Layer1, X = 50_000, Y = 50_000, PadSize = 2_000, DrillSize = 1_000 };
+        var inSolid = new ViaShape { Layer = Layer1, X = 20_000, Y = 20_000, PadSize = 2_000, DrillSize = 1_000 };
+
+        var result = LayoutBooleans.Clip([inHole, inSolid], stencil, null);
+
+        Assert.Equal([inSolid], result.Shapes);
+        Assert.Equal(1, result.OperandsRemoved);
+    }
+
+    /// <summary>Clip and Cut Out stay exact complements over the point-anchored kinds too — every
+    /// operand lands in exactly one of the two results, and never in both.</summary>
+    [Fact]
+    public void ClipAndCutOut_ArePartitionsOverPointAnchoredOperands()
+    {
+        var stencil = new PolygonShape
+        {
+            Layer = Layer1,
+            Xy = [0, 0, 100_000, 0, 100_000, 100_000, 0, 100_000],
+            Holes = [[40_000, 40_000, 40_000, 60_000, 60_000, 60_000, 60_000, 40_000]],  // wound opposite the outer ring
+        };
+        var operands = new List<LayoutShape>();
+        for (long x = -20_000; x <= 120_000; x += 10_000)
+            for (long y = -20_000; y <= 120_000; y += 10_000)
+                operands.Add(new ViaShape { Layer = Layer1, X = x, Y = y, PadSize = 2_000, DrillSize = 1_000 });
+
+        var kept = LayoutBooleans.Clip(operands, stencil, null).Shapes;
+        var dropped = LayoutBooleans.CutOut(operands, stencil, null).Shapes;
+
+        Assert.Equal(operands.Count, kept.Count + dropped.Count);
+        Assert.Empty(kept.Intersect(dropped));
+        Assert.Equal(operands.OrderBy(o => o.GetHashCode()), kept.Concat(dropped).OrderBy(o => o.GetHashCode()));
+    }
+
+    /// <summary>The two operand tests are deliberately different, and this states which is which: a via
+    /// can be decided in or out of a region but can never be flattened INTO one, so it is a clip
+    /// operand and not a clipper operand. Sharing one test is what caused the defect above.</summary>
+    [Fact]
+    public void IsClipOperand_AddsThePointAnchoredKinds_ButNotTheBitmap()
+    {
+        var via = new ViaShape { Layer = Layer1, X = 0, Y = 0, PadSize = 2_000, DrillSize = 1_000 };
+        var label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "L1" };
+        var bitmap = new BitmapShape { Layer = Layer1, X = 0, Y = 0, W = 1_000, H = 1_000 };
+
+        Assert.True(LayoutBooleans.IsClipOperand(via));
+        Assert.True(LayoutBooleans.IsClipOperand(label));
+        Assert.False(LayoutBooleans.IsClipperOperand(via));
+        Assert.False(LayoutBooleans.IsClipperOperand(label));
+
+        // A bitmap has extent and no anchor — clipping one would mean cropping the image (R-bmp-3).
+        Assert.False(LayoutBooleans.IsClipOperand(bitmap));
+
+        // Every region kind is still a clip operand.
+        Assert.True(LayoutBooleans.IsClipOperand(Rect(0, 0, 10, 10)));
+    }
+
     /// <summary>§10's property test: Clip and Cut Out are COMPLEMENTS. For any operand and stencil,
     /// Clip ∪ Cut Out reconstructs the operand and their intersection is empty — one assertion that
     /// catches a fill-rule or hole-nesting mistake in either.</summary>

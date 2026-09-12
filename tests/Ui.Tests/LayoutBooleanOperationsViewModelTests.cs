@@ -727,6 +727,61 @@ public class LayoutBooleanOperationsViewModelTests
         Assert.Contains(nonRegion, model.Shapes);
     }
 
+    /// <summary>
+    /// R-clip-10, VM half — the owner-reported defect, at the gesture level: select everything,
+    /// right-click a rect, Clip. Before the fix the vias were not in the operand set, so every one of
+    /// them survived wherever it sat and the Messages count did not even mention them.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Clip_OverASelectionOfViasAndPolygons_RemovesTheViasOutsideTheStencil(bool cutOut)
+    {
+        var model = FreshModel();
+        var stencil = new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 100_000, Y2 = 100_000 };
+        model.Shapes.Add(stencil);
+        var inside = new ViaShape { Layer = Layer1, X = 50_000, Y = 50_000, PadSize = 20_000, DrillSize = 10_000 };
+        var outside = new ViaShape { Layer = Layer1, X = 900_000, Y = 900_000, PadSize = 20_000, DrillSize = 10_000 };
+        model.Shapes.Add(inside);
+        model.Shapes.Add(outside);
+
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.SelectAllCommand.Execute(null);
+        int stencilIndex = vm.FindClipStencil(50_000, 50_000, ClipTol) ?? -1;
+        Assert.Equal(0, stencilIndex);
+        Assert.True(vm.ClipAvailability(50_000, 50_000, ClipTol).CanExecute);
+
+        if (cutOut) vm.ApplyCutOut(stencilIndex); else vm.ApplyClip(stencilIndex);
+
+        Assert.Contains(stencil, model.Shapes);                        // R-clip-2: the stencil survives
+        Assert.Equal(cutOut, !model.Shapes.Contains(inside));
+        Assert.Equal(cutOut, model.Shapes.Contains(outside));
+
+        // R-clip-7: one undo entry puts both vias back.
+        vm.UndoRedo.Undo();
+        Assert.Contains(inside, model.Shapes);
+        Assert.Contains(outside, model.Shapes);
+    }
+
+    /// <summary>A via-only selection is a legitimate clip, not a disabled command — before the fix its
+    /// operand set was empty and the menu item said "select the shapes to clip" over a selection of
+    /// 189 of them.</summary>
+    [Fact]
+    public void Clip_WithOnlyViasSelected_IsEnabled()
+    {
+        var model = FreshModel();
+        model.Shapes.Add(new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 100_000, Y2 = 100_000 });
+        model.Shapes.Add(new ViaShape { Layer = Layer1, X = 900_000, Y = 900_000, PadSize = 20_000, DrillSize = 10_000 });
+
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.SelectAllCommand.Execute(null);   // the stencil is swept up too and excluded (R-clip-1)
+
+        Assert.True(vm.ClipAvailability(50_000, 50_000, ClipTol).CanExecute);
+
+        vm.ApplyClip(stencilIndex: 0);
+        Assert.Single(model.Shapes);         // only the stencil is left; the outside via is gone
+    }
+
     [Fact]
     public void ClipStencil_IsNeverALabelAViaOrABitmap()
     {

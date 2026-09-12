@@ -147,6 +147,56 @@ public static class LayoutBooleans
     /// stencil only when the stencil is convex and hole-free, which a <c>RectShape</c> is and an
     /// arbitrary <c>PolygonShape</c> is not — so it is restricted to a Rect stencil.</para>
     /// </summary>
+    /// <summary>
+    /// The anchor of a POINT-ANCHORED shape — a <see cref="ViaShape"/> or a <see cref="LabelShape"/> —
+    /// or null for anything else.
+    ///
+    /// <para><b>R-clip-10 — these are clip operands even though they are not clipper operands.</b>
+    /// <see cref="IsClipperOperand"/> asks whether a shape can be FLATTENED into a region, which a via
+    /// and a label cannot, and that is the right question for Union/Intersect/Difference/Xor/Offset:
+    /// combining a drill hole with a polygon means nothing. Clip and Cut Out ask a different question —
+    /// "is this shape in the region I am keeping?" — and a shape that sits at a point has an exact
+    /// answer to it. Excluding them from the operand set answered it as "always yes, keep it", so a
+    /// clip of a whole imported board left every via on it standing, scattered far outside the
+    /// stencil, with nothing in Messages to say 189 shapes had been skipped.</para>
+    ///
+    /// <para>All-or-nothing by construction: a via is never split, never rebuilt, and never becomes a
+    /// polygon. It is kept as the SAME OBJECT or removed, so <c>OperandsChanged</c> can never count
+    /// one. A <see cref="BitmapShape"/> is deliberately NOT here — it has real extent and no anchor,
+    /// and clipping one would mean cropping the image (R-bmp-3 keeps it out of every boolean).</para>
+    /// </summary>
+    private static Point64? AnchorOf(LayoutShape shape) => shape switch
+    {
+        ViaShape v   => new Point64(v.X, v.Y),
+        LabelShape l => new Point64(l.X, l.Y),
+        _            => null,
+    };
+
+    /// <summary>Whether a shape may enter a <see cref="Clip"/>/<see cref="CutOut"/> operand set — the
+    /// clipper operands plus the point-anchored kinds <see cref="AnchorOf"/> names. Wider than
+    /// <see cref="IsClipperOperand"/> on purpose; see that method's note for why the two differ.</summary>
+    public static bool IsClipOperand(LayoutShape shape) =>
+        IsClipperOperand(shape) || AnchorOf(shape) is not null;
+
+    /// <summary>Point-in-stencil under the SAME fill rule the clip itself uses — a 2-DBU probe square
+    /// intersected with the stencil, rather than a second containment predicate that could disagree
+    /// with <see cref="LayoutClipper.Rule"/> about a stencil with holes. 2 DBU is 2 nm at a typical
+    /// board database unit of 1,000 DBU/µm; a via exactly on the stencil's edge reads as inside.</summary>
+    private static bool PointInStencil(Point64 pt, Paths64 stencilPaths)
+    {
+        var probe = new Paths64(1)
+        {
+            new Path64(4)
+            {
+                new Point64(pt.X - 1, pt.Y - 1), new Point64(pt.X + 1, pt.Y - 1),
+                new Point64(pt.X + 1, pt.Y + 1), new Point64(pt.X - 1, pt.Y + 1),
+            },
+        };
+        var tree = new PolyTree64();
+        Clipper.BooleanOp(ClipType.Intersection, probe, stencilPaths, tree, LayoutClipper.Rule);
+        return tree.Count > 0;
+    }
+
     private static LayoutClipResult ClipCore(
         ClipType clipType, IReadOnlyList<LayoutShape> operands, LayoutShape stencil, Technology? tech)
     {
@@ -164,6 +214,22 @@ public static class LayoutBooleans
 
         foreach (var operand in operands)
         {
+            if (AnchorOf(operand) is { } anchor)
+            {
+                // R-clip-10: all-or-nothing on the anchor. The bbox test short-circuits the common
+                // case (a via nowhere near the stencil) without building the stencil's paths at all.
+                bool inside = stencilBox.Contains(anchor.X, anchor.Y);
+                if (inside)
+                {
+                    stencilPaths ??= LayoutClipper.ToClipperPaths(stencil, LayoutFlattener.ResolveTolDbu(stencil, tech));
+                    inside = stencilIsItsBox || PointInStencil(anchor, stencilPaths);
+                }
+
+                if (inside == keepInside) { shapes.Add(operand); untouched++; }
+                else removed++;
+                continue;
+            }
+
             var box = LayoutGeometry.BboxOf(operand);
 
             if (!box.Intersects(stencilBox))
@@ -215,6 +281,11 @@ public static class LayoutBooleans
     /// other two. Listed positively, a new non-region shape kind is excluded by default rather than
     /// crashing. A via wanted as artwork has <c>Convert to Via</c>'s inverse; a label has
     /// <c>Flatten to Polygon</c>, the supported route from text to a region.</para>
+    ///
+    /// <para><b>This is NOT the Clip/Cut Out operand test — that one is
+    /// <see cref="IsClipOperand"/>.</b> "Can be flattened into a region" and "can be decided in or out
+    /// of a region" are different questions, and a via answers no to the first and yes to the second;
+    /// see <see cref="AnchorOf"/> for what sharing one test cost.</para>
     /// </summary>
     public static bool IsClipperOperand(LayoutShape shape) =>
         shape is RectShape or PolygonShape or RoundedRectShape or CircleShape or CurveShape or PathShape;

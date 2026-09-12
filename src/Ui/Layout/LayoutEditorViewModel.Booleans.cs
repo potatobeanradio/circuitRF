@@ -262,7 +262,14 @@ public sealed partial class LayoutEditorViewModel
     /// itself. §4 — the operands may sit on any mix of layers: Clip combines nothing, so the same-layer
     /// rule the other booleans need has no meaning here.</summary>
     private IReadOnlyList<int> ClipOperandIndices(int stencilIndex) =>
-        GeometricSelectedIndices.Where(i => i != stencilIndex).ToList();
+        ClipSelectedIndices.Where(i => i != stencilIndex).ToList();
+
+    /// <summary>R-clip-10 — Clip and Cut Out take a WIDER operand set than the other booleans:
+    /// <see cref="LayoutBooleans.IsClipOperand"/>, which adds the point-anchored kinds (a via, a
+    /// label) to the region kinds. Sharing <see cref="GeometricSelectedIndices"/> with Union/Offset/
+    /// Flatten is what silently exempted every via on an imported board from a clip of it.</summary>
+    private IReadOnlyList<int> ClipSelectedIndices =>
+        ValidSelectedIndices.Where(i => LayoutBooleans.IsClipOperand(Model.Shapes[i])).ToList();
 
     /// <summary>
     /// §7's table, in its stated order. Deliberately NOT <see cref="BooleanOpAvailability"/>: that
@@ -274,7 +281,7 @@ public sealed partial class LayoutEditorViewModel
     public LayoutCommandAvailability ClipAvailability(double wx, double wy, long tolDbu)
     {
         if (ShapeOnlyBlockReason("Clip and Cut Out") is { } r) return LayoutCommandAvailability.Disabled(r);
-        if (GeometricSelectedIndices.Count == 0)
+        if (ClipSelectedIndices.Count == 0)
             return LayoutCommandAvailability.Disabled(
                 "Select the shapes to clip, then right-click the shape to clip them to");
         if (FindClipStencil(wx, wy, tolDbu) is not { } stencil)

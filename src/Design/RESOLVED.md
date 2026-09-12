@@ -5489,3 +5489,46 @@ to the plane turns them into backside/attachment vias, at the cost of doing it t
 drill layer. And a Gerber set carries no stackup at all, so its dielectric thicknesses are the
 import's defaults — 0.9 mm either side of the plane, i.e. a 1.8 mm board — which is nowhere near a
 real 1.6 mm 4-layer and moves the impedance far more than anything above.
+
+## Clip and Cut Out silently exempted every via and label on the board (2026-09-12)
+
+Reported against a Gerber-imported board simplified with **Clip**: most artwork clipped correctly, but
+"some of the Drill (thruhole) Via primitives are not getting clipped out." The reporter's `.clay` is the
+whole story — 612 shapes, of which **189 are `Via` on the drill layer**, and after a Clip to a
+`Rect` stencil spanning X 36,569,108..51,838,224 DBU every Poly on the board had been trimmed to
+exactly that span while **all 189 vias were still there, 125 of them entirely outside it**.
+
+**Cause: one operand test was answering two different questions.** `LayoutBooleans.IsClipperOperand`
+asks *can this shape be flattened into a region* — the right question for Union/Intersect/Difference/
+Xor/Offset, where combining a drill hole with a polygon means nothing, and the reason R-clip-8 made it
+a positive test in the first place (a `ViaShape` or `LabelShape` reaching `LayoutFlattener.Flatten`
+threw `ArgumentOutOfRangeException` out of a context-menu click). Clip and Cut Out ask a *different*
+question — *is this shape inside the region I am keeping* — and a shape anchored at a point has an
+exact answer to it. Sharing the one filter answered it as "always keep", so a via was never an
+operand, never removed, and **never counted**: the Messages line reported the clip over 422 operands
+with nothing anywhere saying 189 shapes had been skipped.
+
+**Fix: `LayoutBooleans.IsClipOperand`** — the clipper operands *plus* the point-anchored kinds
+(`AnchorOf`: a via's `X,Y`, a label's `X,Y`). `ClipCore` decides those **all-or-nothing on the
+anchor** before it touches the region path: kept as the SAME OBJECT or removed, so `OperandsChanged`
+can never count one and a via is never split, never rebuilt and never polygonized. The other five
+operations keep `IsClipperOperand` unchanged — the two tests now differ on purpose and each says so.
+
+Three things that decided the details:
+
+* **The containment test is the same fill rule as the clip itself.** A 2-DBU probe square intersected
+  with the stencil's own Clipper paths, not a second point-in-polygon predicate that could disagree
+  with `LayoutClipper.Rule` about a stencil with holes — which is a real case here, a clip to a copper
+  pour keeps nothing in the pour's own voids. A `Rect` stencil short-circuits to its bbox, and so does
+  an anchor outside the stencil's bbox, so the common case builds no paths at all.
+* **A `BitmapShape` stays out.** It has extent and no anchor; clipping one means cropping the image,
+  which R-bmp-3 keeps out of every boolean. It is the one kind that still survives a clip silently.
+* **A via straddling the stencil edge is kept whole.** Its pad hanging over the boundary decides
+  nothing — the via is *at* a point, and the copper the pad sits on was already trimmed by the same
+  clip.
+
+**Trap, for anyone writing a holed-stencil fixture:** `LayoutFlattener.WithHoles` passes hole rings
+through in the order they are stored and `RingToPath64` does not orient them, so under `NonZero` a
+hole wound the SAME way as its outer ring is not a hole at all — it just adds winding, and the test
+reads as "the hole was ignored". Real holes arrive correctly wound (from `FromClipperTree`, or through
+`EnsureValidHoles` on load); a hand-written one in a test must be wound opposite the outer ring.
