@@ -206,6 +206,12 @@ public class CircuitRfDockFactory : Factory
             WBondInductanceTool ??= new WBondInductanceTool();
         }
 
+        // Every tool instance is about to be given a new home in a brand-new tree, so whatever the LAST
+        // tree recorded about where it came from is stale. OriginalOwner is Dock's "put it back here"
+        // field — it is set below for an auto-hidden panel and read by the un-hide — and a pointer left
+        // over from a discarded tree would send a panel into a dock that is no longer on screen.
+        foreach (var stale in AllTools()) if (stale is not null) stale.OriginalOwner = null;
+
         ITool? ToolFor(string id) => id switch
         {
             DockPanelIds.ProjectTree => ProjectTreeTool,
@@ -253,6 +259,10 @@ public class CircuitRfDockFactory : Factory
         // A panel the saved layout never heard of (added in a later build) gets its default spot.
         state = DockLayoutDefaults.WithMissingPanelsFilled(state);
 
+        // Auto-hidden panels, collected while the sides are built and attached to the root's own pinned
+        // lists once it exists. (side the strip is on, the tool, the home dock it returns to.)
+        var autoHidden = new List<(string Side, ITool Tool, IToolDock Home)>();
+
         // ── Tool docks, per side ──────────────────────────────────────────────
         //
         // `inboard` splits each side into its TWO possible columns: the outer one at the window edge, and
@@ -271,11 +281,24 @@ public class CircuitRfDockFactory : Factory
             foreach (var group in groups)
             {
                 var ordered = group.OrderBy(p => p.Order).ToList();
-                var tools   = ordered.Select(p => ToolFor(p.Id)).OfType<IDockable>().ToList();
-                if (tools.Count == 0) continue;
 
-                var activePanel = ordered.FirstOrDefault(p => p.Active) ?? ordered[0];
-                var active      = ToolFor(activePanel.Id) as IDockable ?? tools[0];
+                // An AUTO-HIDDEN panel is a member of this group without being a tab in it: it belongs to
+                // the strip at the edge of the window, and this dock is only the home it returns to. So it
+                // is placed nowhere in the tab strip, but it still KEEPS this dock alive — building the
+                // dock empty is exactly what Dock itself leaves behind when the last tool in one is
+                // auto-hidden, and without it the panel has no group, no width and nowhere to go back to.
+                var shown  = ordered.Where(p => !p.AutoHidden).ToList();
+                var hidden = ordered.Where(p =>  p.AutoHidden)
+                                    .Select(p => (Panel: p, Tool: ToolFor(p.Id)))
+                                    .Where(x => x.Tool is not null)
+                                    .ToList();
+
+                var tools = shown.Select(p => ToolFor(p.Id)).OfType<IDockable>().ToList();
+                if (tools.Count == 0 && hidden.Count == 0) continue;
+
+                var activePanel = shown.FirstOrDefault(p => p.Active) ?? shown.FirstOrDefault();
+                var active      = activePanel is null ? null
+                                : ToolFor(activePanel.Id) as IDockable ?? tools.FirstOrDefault();
 
                 var proportion = ordered[0].Proportion;
                 if (proportion is <= 0.0 or > 1.0) proportion = 1.0 / Math.Max(1, groups.Count());
@@ -291,7 +314,13 @@ public class CircuitRfDockFactory : Factory
                     GripMode         = GripMode.Visible,
                 };
 
-                if (tools.Contains(ProjectTreeTool!)) _projectTreeDock = toolDock;
+                // Attached to the root once it exists — the pinned lists hang off the root, which is built
+                // several steps below this one.
+                foreach (var h in hidden) autoHidden.Add((h.Panel.Side, h.Tool!, toolDock));
+
+                if (tools.Contains(ProjectTreeTool!) || hidden.Any(h => ReferenceEquals(h.Tool, ProjectTreeTool)))
+                    _projectTreeDock = toolDock;
+
                 docks.Add(toolDock);
             }
             return docks;
@@ -419,6 +448,14 @@ public class CircuitRfDockFactory : Factory
         root.VisibleDockables = CreateList<IDockable>(outerLayout);
         root.ActiveDockable   = outerLayout;
         root.DefaultDockable  = outerLayout;
+
+        // ── Auto-hidden panels ────────────────────────────────────────────────
+        // The strips at the edges of the window. Attached here rather than during BuildSide because they
+        // hang off the ROOT, not off the tree — which is the whole reason they were invisible to the
+        // layout capture until 2026-09-11. InitLayout walks these lists as well as the tree, so the tools
+        // get their Owner, their Factory and their Pinned docking state with nothing further from here.
+        foreach (var (side, tool, home) in autoHidden)
+            DockAutoHide.Pin(this, root, side, tool, home);
 
         // ── Floating tool windows ─────────────────────────────────────────────
         foreach (var saved in state.FloatingWindows)
@@ -631,6 +668,33 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.WBondInductance => WBondInductanceTool,
         _                        => null,
     };
+
+    /// <summary>Every tool panel instance this factory owns, in <see cref="DockPanelIds.All"/> order.</summary>
+    private IEnumerable<ITool?> AllTools() =>
+    [
+        ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool,
+        WBondProfileTool, WBondInductanceTool, HistoryTool,
+    ];
+
+    // ── Auto-hidden panels ────────────────────────────────────────────────────
+    //
+    // Asked by everything that decides whether a panel is "there": an auto-hidden panel is in none of
+    // the trees TryFindTool searches, so without these it reads as closed and the caller opens a SECOND
+    // copy of a panel that is already in the window. See DockAutoHide.
+
+    /// <summary>Whether <paramref name="tool"/> is collapsed to a strip at the edge of the shell.</summary>
+    public bool IsToolAutoHidden(ITool? tool) => DockAutoHide.IsAutoHidden(_currentRoot, tool);
+
+    /// <summary>Whether an auto-hidden <paramref name="tool"/> is flown out over the canvas right now.</summary>
+    public bool IsAutoHiddenToolShowing(ITool? tool) => DockAutoHide.IsFlyoutShowing(_currentRoot, tool);
+
+    /// <summary>
+    /// Flies an auto-hidden panel out, or puts it away again — the same thing clicking its strip tab
+    /// does. The panel STAYS auto-hidden either way, which is what makes it the right answer for a
+    /// toolbar toggle: a press that un-hid the panel instead would silently undo a setting the user
+    /// chose, and there would be no press that simply looks at it.
+    /// </summary>
+    public void ToggleAutoHiddenTool(ITool tool) => TogglePreviewPinnedDockable(tool);
 
     /// <summary>
     /// Locates a tool that is currently shown, whether docked in the shell or in a floating window.

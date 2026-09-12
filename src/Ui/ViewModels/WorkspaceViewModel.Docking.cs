@@ -191,12 +191,20 @@ public partial class WorkspaceViewModel
     /// closed by its own tab X, dragged into a float, tabbed behind a sibling, or replaced wholesale by a
     /// layout restore — and none of those pass through the button.</para>
     /// </summary>
-    public bool IsToolPanelShowing(string? panelId) =>
-        panelId is not null
-        && _factory.ToolById(panelId) is { } tool
-        && _factory.TryFindTool(tool, out var parent, out _)
-        && parent is not null
-        && IsFrontTab(tool, parent);
+    public bool IsToolPanelShowing(string? panelId)
+    {
+        if (panelId is null || _factory.ToolById(panelId) is not { } tool) return false;
+
+        // AUTO-HIDDEN: in the window as a strip, but in view only while it is flown out. Answered first
+        // because such a panel is in none of the trees TryFindTool searches — it hangs off the root's own
+        // pinned lists (DockAutoHide) — so the test below would report it as closed and the toggle bound
+        // to this would then open a SECOND copy of a panel that is already there.
+        if (_factory.IsToolAutoHidden(tool)) return _factory.IsAutoHiddenToolShowing(tool);
+
+        return _factory.TryFindTool(tool, out var parent, out _)
+            && parent is not null
+            && IsFrontTab(tool, parent);
+    }
 
     /// <summary>
     /// Whether <paramref name="tool"/> is the tab in front of <paramref name="parent"/>.
@@ -265,6 +273,18 @@ public partial class WorkspaceViewModel
     private void ToggleToolPanelCore(string? panelId)
     {
         if (panelId is null || _factory.ToolById(panelId) is not { } tool) return;
+
+        // AUTO-HIDDEN: fly it out, or put it away — and it stays auto-hidden either way. Every branch
+        // below is about a panel that is in the tree or is gone from it, and an auto-hidden panel is
+        // neither: it would fall through to "not in the tree", be restored to its home from the remembered
+        // placement, and the setting the user chose would be silently undone by a press meant to look at
+        // the panel. Worse, ShowToolPanel's float would add the tool to a second container while it is
+        // still in a pinned list.
+        if (_factory.IsToolAutoHidden(tool))
+        {
+            _factory.ToggleAutoHiddenTool(tool);
+            return;
+        }
 
         // Not in the tree at all: put it back where it was last (see RestorePanelToItsHome), falling
         // through to ShowToolPanel's float only when there is nowhere remembered.
@@ -442,6 +462,23 @@ public partial class WorkspaceViewModel
         try
         {
             if (tool.Id is not { Length: > 0 } id) return false;
+
+            // AUTO-HIDDEN, and the ✕ is on its flyout: the panel is in no tree, so TryFindTool refuses
+            // and the button would do nothing at all. HideDockable un-hides it first (Dock's own
+            // UnpinDockable), so the strip goes with the panel rather than being left behind pointing at
+            // nothing.
+            if (_factory.IsToolAutoHidden(tool))
+            {
+                RememberPanelHome(id, tool);
+                try { DockPanelHiding.Hide(_factory, tool); }
+                catch (Exception hideFailed)
+                {
+                    Messages.Warning($"Could not close the {tool.Title} panel: {hideFailed.Message}");
+                    return false;
+                }
+                return true;
+            }
+
             if (!_factory.TryFindTool(tool, out var parent, out var window) || parent is null) return false;
 
             RememberPanelHome(id, tool);
@@ -513,6 +550,10 @@ public partial class WorkspaceViewModel
             if (live.Panels.FirstOrDefault(p => p.Id == panelId) is { } p)
             {
                 p.Open = false;   // recorded as a PLACE, not as something showing
+                // …and a place to come back VISIBLE to. A panel put away and asked for again is being
+                // asked for, so restoring it as another strip at the edge would answer with nothing on
+                // screen. The home dock this names is the same one either way.
+                p.AutoHidden = false;
                 docked = p;
             }
             else if (live.FloatingWindows.FirstOrDefault(w => w.Panels.Contains(panelId)) is { } w)
@@ -711,6 +752,17 @@ public partial class WorkspaceViewModel
 
         try
         {
+            // AUTO-HIDDEN: a menu item named after a panel means "show me that panel", so fly the strip
+            // out. TryFindTool cannot see it (DockAutoHide), and the fall-through below would float a
+            // SECOND copy of a tool that is still in a pinned list — one dockable in two containers,
+            // which no later operation can undo.
+            if (_factory.IsToolAutoHidden(tool))
+            {
+                if (!_factory.IsAutoHiddenToolShowing(tool)) _factory.ToggleAutoHiddenTool(tool);
+                ShellWindow()?.Activate();
+                return;
+            }
+
             if (_factory.TryFindTool(tool, out var parent, out var window))
             {
                 if (parent is not null)
@@ -978,6 +1030,7 @@ public partial class WorkspaceViewModel
             existing.Inboard    = place.Inboard;
             existing.Proportion = place.Proportion;
             existing.Active     = false;
+            existing.AutoHidden = false;   // a closed panel is closed; see RememberPanelHome
             return;
         }
 

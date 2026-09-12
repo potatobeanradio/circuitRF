@@ -113,7 +113,13 @@ public partial class WorkspaceViewModel
     /// <summary>Opens a panel this layout already places, leaving its placement untouched.</summary>
     private static void Open(CwsDockLayout live, string panelId)
     {
-        if (live.Panels.FirstOrDefault(p => p.Id == panelId) is { } panel) panel.Open = true;
+        if (live.Panels.FirstOrDefault(p => p.Id == panelId) is not { } panel) return;
+
+        panel.Open = true;
+        // …and NOT as a strip at the edge of the window. The caller has just generated a wirebond and is
+        // pointing the user at this panel; leaving it auto-hidden would carry out the request with
+        // nothing appearing on screen. Its placement — the dock it belongs to — is untouched either way.
+        panel.AutoHidden = false;
     }
 
     /// <summary>

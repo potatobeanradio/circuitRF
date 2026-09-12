@@ -82,6 +82,32 @@ public sealed class CwsDockPanel
     /// exactly as it did.</para>
     /// </summary>
     public bool Inboard { get; set; }
+
+    /// <summary>
+    /// <b>The panel is AUTO-HIDDEN</b> — collapsed to a labelled strip on its own side of the window,
+    /// from which it flies out on demand. Dock's own name for it is <i>pinned</i>
+    /// (<c>IRootDock.LeftPinnedDockables</c> and its three siblings); the schema uses the name the
+    /// user sees on the button.
+    ///
+    /// <para><b>Auto-hidden is a kind of OPEN, not a kind of closed</b> — <see cref="Open"/> stays
+    /// true. That is the whole shape of the bug this field exists for (owner, 2026-09-11: auto-hiding
+    /// the Project Tree and saving the workspace lost the panel completely on reopen). A pinned
+    /// dockable is not in the dock TREE at all — it hangs off the root's own pinned list — so the
+    /// capture walk never saw it, and the "panel we did not find" fallback wrote it down as closed.
+    /// A panel recorded as closed is one the builder places nowhere.</para>
+    ///
+    /// <para><see cref="Side"/> is the side the STRIP is on, read from the pinned list the dockable
+    /// is actually in, because that is what Dock keys the strip and the later un-hide off. The other
+    /// four fields describe its HOME — the tool dock it came from and returns to — which the builder
+    /// rebuilds (empty) so the panel has somewhere to go back to, and which is where its group, its
+    /// tab order and its column width come from. The home dock is left in the tree exactly as Dock
+    /// itself leaves it when the last tool of a dock is pinned.</para>
+    ///
+    /// <para>Additive and defaulted false, so a <c>.cws</c> written before this existed reads back
+    /// exactly as it did, and no version bump is needed: an older build ignores the property and
+    /// restores the panel docked, which is the behaviour it has always had.</para>
+    /// </summary>
+    public bool AutoHidden { get; set; }
 }
 
 /// <summary>

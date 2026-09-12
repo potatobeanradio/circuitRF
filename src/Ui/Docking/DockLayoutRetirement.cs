@@ -129,5 +129,6 @@ public static class DockLayoutRetirement
         Order      = panel.Order,
         Active     = panel.Active,
         Inboard    = panel.Inboard,
+        AutoHidden = panel.AutoHidden,
     };
 }

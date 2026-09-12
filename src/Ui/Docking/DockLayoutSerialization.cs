@@ -129,6 +129,12 @@ public static class DockLayoutSerialization
                 // Inboard only means something on the left and right — top and bottom panels are inside
                 // the document column by construction. See CwsDockPanel.Inboard.
                 if (p.Side is not (DockSide.Left or DockSide.Right)) p.Inboard = false;
+                // Auto-hidden is a kind of OPEN (see CwsDockPanel.AutoHidden). A closed entry claiming it
+                // would give the builder two contradictory instructions — place nothing, and place a strip
+                // — and the one it acted on would depend on which branch it reached first.
+                if (!p.Open) p.AutoHidden = false;
+                // A panel that is not in a tab strip cannot be the tab in front of one.
+                if (p.AutoHidden) p.Active = false;
                 return p;
             })
             .ToList();

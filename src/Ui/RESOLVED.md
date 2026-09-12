@@ -1,5 +1,91 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — auto-hiding the Project Tree and saving the workspace lost the panel entirely
+
+Auto-hide (Dock's own feature: the panel collapses to a labelled strip at the edge of the window and
+flies out when its tab is clicked) was not persisted at all, and the failure was not "the setting was
+forgotten" but "the panel was gone" — reopening a workspace saved with the Project Tree auto-hidden
+produced a window with no Project Tree anywhere, strip or otherwise.
+
+**One fact explains everything.** An auto-hidden panel is **not in the dock tree**. `PinDockable` takes
+the dockable out of its `ToolDock.VisibleDockables` and puts it in one of four lists hanging directly
+off the root — `IRootDock.LeftPinnedDockables` and its three siblings. Every walker in this codebase
+descends `VisibleDockables`, so every one of them was blind to it:
+
+- `DockLayoutCapture.Capture` never saw the panel, and its own closed-panel fallback — *a panel of the
+  default layout we did not find in the tree must be closed* — wrote it into the `.cws` as
+  `Open = false`. **A closed entry is one `BuildSide` places nowhere**, which is the disappearance.
+- `CircuitRfDockFactory.TryFindTool` reported it as absent, so `IsToolPanelShowing` said "not showing",
+  and both the toolbar toggle and View ▸ Panels would have opened a **second copy** of a panel that was
+  already in the window — one dockable in two containers, which no later operation undoes. (That path
+  was unreachable before this work only because the panel never survived to be asked about.)
+
+### What was added
+
+`src/Ui/Docking/DockAutoHide.cs` is the one named place that knows where Dock keeps these, so the next
+walker added has something to call rather than a fifth private guess. `CwsDockPanel.AutoHidden` carries
+it in the `.cws`, **additive with no version bump**: an older build ignores the property and restores
+the panel docked, which is exactly what it has always done.
+
+**Auto-hidden is a kind of OPEN.** `Open` stays true, and the reader enforces that a closed entry
+cannot also claim it — two contradictory instructions to the builder, resolved by whichever branch it
+reached first, is the shape of the original bug repeated.
+
+**`Side` is the pinned list's, everything else is the HOME dock's.** The side is what Dock draws the
+strip from and what its un-hide reads, so a home dock whose own side disagrees must not be allowed to
+move the strip. Group, tab order, column width and the inboard flag describe the tool dock the panel
+came from and returns to.
+
+### Three things that are not obvious and are load-bearing
+
+- **The builder does NOT call `PinDockable`.** That method performs the gesture on a *live* tree: it
+  needs the dockable to be in a tool dock and reachable from the root by its `Owner` chain, which is
+  only true after `InitLayout` — i.e. after the window is already showing the panel docked. Restoring
+  and then re-arranging is visible. `DockAutoHide.Pin` assembles the same end state directly: the tool
+  is never put in the tab strip at all, so there is nothing to take out of it. `InitLayout` finishes
+  the job for free — `InitDockable` on a root walks the four pinned lists as well as the tree, so the
+  tool gets its `Owner`, its `Factory` and its `Pinned` docking state with nothing further from us.
+- **The home dock is rebuilt even when every panel in it is auto-hidden.** That is precisely what Dock
+  itself leaves behind when the last tool of a dock is pinned (`RemoveVisibleDockable` does not
+  collapse, and `CollapseDock` explicitly refuses on a side that has pinned dockables), and an empty
+  tool dock lays out at 0 px — the measured fact `DockPanelHiding` already records. Without it the
+  panel has no group, no width and nowhere to return to.
+- **The home is read from BOTH `Owner` and `OriginalOwner`, because the two routes into the state
+  record it in different places.** The user's own gesture leaves `Owner` pointing at the dock it came
+  from; a restore writes the dock to `OriginalOwner` (which is also the field Dock's un-hide reads) and
+  `InitLayout` then re-points `Owner` at the root. Reading only one of them works on the first save and
+  quietly falls back to the default placement on the second —
+  `SecondSaveOfARestoredLayout_SaysTheSameThingAsTheFirst` is the gate.
+
+### A second bug found on the way, in the same method
+
+`Capture` recorded `Active` as `ReferenceEquals(toolDock.ActiveDockable, dockable)`. **Auto-hiding a
+panel does not touch `ActiveDockable`**, so a dock whose front tab had just been auto-hidden still
+named it — and the captured group had no tab in front at all, which restores as a dock showing nothing.
+The front tab is now the dock's own answer only when it is still one of the tabs, and the first
+surviving tab otherwise.
+
+### What the rest of the application now does
+
+A panel that is auto-hidden is *in the window but not in view*, and a flown-out one is in view — two
+separate questions (`IsToolAutoHidden` / `IsAutoHiddenToolShowing`), because conflating them makes a
+toggle bound to the panel stop working. So `IsToolPanelShowing` answers with the flyout, the toolbar
+toggle and View ▸ Panels fly the strip out rather than floating a duplicate, and the chrome ✕ on a
+flyout hides the panel (Dock's `HideDockable` un-hides it first, so the strip goes with it rather than
+being left pointing at nothing). **The panel stays auto-hidden across all of that** — a press meant to
+look at a panel must not silently undo a setting the user chose. The two places that deliberately DO
+clear it are the ones that mean "show me this": a remembered place for a *closed* panel, and the wBond
+panels a generated wirebond points the user at — restoring either as a strip would carry out the
+request with nothing appearing on screen.
+
+`TryFindTool` still does not find an auto-hidden panel, and a test pins that: it is in no tree, and
+"fixing" it to find one would quietly re-enable the float-a-second-copy path.
+
+Gate: `tests/Ui.Tests/DockAutoHidePersistenceTests.cs` (14 tests), which auto-hides through the REAL
+`Factory.PinDockable` — the user's own click — rather than by writing to a pinned list, since a test
+that wrote the list itself would agree with the restore by construction and prove nothing about the
+gesture.
+
 ## Owner report, 2026-09-11 — the Relaunch button after an update quit circuitRF, and macOS reported a crash
 
 Updating beta.17 → beta.18 on macOS: the update installed, Relaunch closed the application, no new

@@ -17,6 +17,14 @@ namespace CircuitRF.Ui.Docking;
 public static class DockLayoutCapture
 {
     /// <summary>
+    /// Where one tool dock sits, as the schema describes it. Held only for the length of a capture, so
+    /// the auto-hidden pass can describe a panel's HOME in exactly the terms the docked pass used —
+    /// same side, same inboard flag, same group number off the same counter.
+    /// </summary>
+    /// <param name="VisibleCount">How many tool panels the dock has in its own tab strip.</param>
+    private sealed record DockPlace(string Side, bool Inboard, int Group, int VisibleCount, double Proportion);
+
+    /// <summary>
     /// Captures the current arrangement.
     /// </summary>
     /// <param name="root">The shell's root dock.</param>
@@ -51,6 +59,13 @@ public static class DockLayoutCapture
         // an inboard panel and an outer one would be told they are in the same group and rebuilt into
         // one column, which is the reported bug in a second form.
         var groupsBySide = new Dictionary<(string Side, bool Inboard), int>();
+
+        // Where each tool dock ended up, so the auto-hidden pass below can describe an auto-hidden
+        // panel's HOME without walking the tree a second time and without re-deriving the group
+        // numbering — which has to agree exactly, or a restored panel rejoins the wrong column.
+        var placeOfDock = new Dictionary<IToolDock, DockPlace>(ReferenceEqualityComparer.Instance as IEqualityComparer<IToolDock>
+                                                              ?? EqualityComparer<IToolDock>.Default);
+
         foreach (var toolDock in EnumerateToolDocks(root))
         {
             var side = SideOf(toolDock, root);
@@ -64,12 +79,25 @@ public static class DockLayoutCapture
             int group = groupsBySide.TryGetValue((side, inboard), out var g) ? g : 0;
             groupsBySide[(side, inboard)] = group + 1;
 
-            int order = 0;
-            foreach (var dockable in toolDock.VisibleDockables ?? Enumerable.Empty<IDockable>())
-            {
-                if (dockable is not ITool tool) continue;
-                if (!DockPanelIds.All.Contains(tool.Id)) continue;
+            // The tabs this dock actually has. A dockable that is ALSO in a pinned list is auto-hidden,
+            // and the pass below owns it: recording it here too would name the panel twice, and R-dock-1
+            // makes the id the identity — the reader keeps the first entry, which would be the wrong one.
+            var tabs = (toolDock.VisibleDockables ?? Enumerable.Empty<IDockable>())
+                        .OfType<ITool>()
+                        .Where(t => DockPanelIds.All.Contains(t.Id) && !DockAutoHide.IsAutoHidden(root, t))
+                        .ToList();
 
+            // Which tab is in FRONT, and it is not always the one the dock says. Auto-hiding a panel
+            // takes it out of the tab strip without touching ActiveDockable, so a dock whose front tab
+            // was just auto-hidden still names it — and capturing that verbatim would record a group
+            // with no tab in front at all, which restores as a dock showing nothing.
+            var front = toolDock.ActiveDockable is { } a && tabs.Any(t => ReferenceEquals(t, a))
+                        ? a
+                        : tabs.FirstOrDefault();
+
+            int order = 0;
+            foreach (var tool in tabs)
+            {
                 layout.Panels.Add(new CwsDockPanel
                 {
                     Id         = tool.Id,
@@ -78,8 +106,53 @@ public static class DockLayoutCapture
                     Proportion = FiniteProportion(toolDock.Proportion),
                     Group      = group,
                     Order      = order++,
-                    Active     = ReferenceEquals(toolDock.ActiveDockable, dockable),
+                    Active     = ReferenceEquals(front, tool),
                     Inboard    = inboard,
+                });
+            }
+
+            placeOfDock[toolDock] = new DockPlace(side, inboard, group, order, FiniteProportion(toolDock.Proportion));
+        }
+
+        // ── Auto-hidden tool panels ───────────────────────────────────────────
+        //
+        // These are the reason this pass exists at all: an auto-hidden panel is NOT in the tree, so
+        // everything above is blind to it and the closed-panel fallback at the end of this method would
+        // write it down as closed — which is a panel the builder places nowhere (owner, 2026-09-11).
+        // See DockAutoHide for where Dock actually keeps them.
+        //
+        // The SIDE is the pinned list's own, never the home dock's: it is what Dock draws the strip from
+        // and what its un-hide reads, so a home dock that disagrees (possible only for a dock this code
+        // did not build) must not be allowed to move the strip. Everything else describes the home.
+        foreach (var (side, pinned) in DockAutoHide.Lists(root))
+        {
+            int index = 0;
+            foreach (var dockable in pinned)
+            {
+                int atIndex = index++;
+                if (dockable is not ITool tool || !DockPanelIds.All.Contains(tool.Id)) continue;
+
+                var home = DockAutoHide.HomeOf(root, tool);
+                var place = home is not null && placeOfDock.TryGetValue(home, out var p) && p.Side == side
+                            ? p
+                            : null;
+
+                layout.Panels.Add(new CwsDockPanel
+                {
+                    Id         = tool.Id,
+                    Open       = true,
+                    AutoHidden = true,
+                    Side       = side,
+                    // After the dock's own visible tabs, in strip order: an auto-hidden panel is not in
+                    // the tab strip, so it has no index there to record, and appending is where Dock's
+                    // own un-hide puts it back.
+                    Order      = (place?.VisibleCount ?? 0) + atIndex,
+                    Group      = place?.Group ?? 0,
+                    Proportion = place?.Proportion ?? 0.0,
+                    Inboard    = place?.Inboard ?? false,
+                    // Never the active tab of a dock it is not in. A restored dock whose only entry said
+                    // Active would have no tab showing at all.
+                    Active     = false,
                 });
             }
         }
@@ -108,10 +181,22 @@ public static class DockLayoutCapture
                 {
                     if (dockable is not ITool tool) continue;
                     if (!DockPanelIds.All.Contains(tool.Id)) continue;
+                    if (DockAutoHide.IsAutoHidden(winLayout, tool)) continue;
                     panels.Add(tool.Id);
                     if (ReferenceEquals(toolDock.ActiveDockable, dockable)) active ??= tool.Id;
                 }
             }
+
+            // A float has its own root and therefore its own four pinned lists, so a panel can be
+            // auto-hidden INSIDE a torn-off window. It is recorded as an ordinary member of the window
+            // rather than given a strip of its own: the schema describes a float by its rectangle and
+            // its tab list, and a one-panel window whose one panel is a strip is not something a user
+            // can get back to. Recording it at all is the point — a panel left out here is one the
+            // window loop drops, and then the closed-panel fallback writes down as closed.
+            foreach (var (_, pinned) in DockAutoHide.Lists(winLayout))
+                foreach (var dockable in pinned)
+                    if (dockable is ITool pinnedTool && DockPanelIds.All.Contains(pinnedTool.Id))
+                        panels.Add(pinnedTool.Id);
 
             var geom = windowGeometry?.Invoke(window)
                        ?? new ScreenRect(window.X, window.Y, window.Width, window.Height);
