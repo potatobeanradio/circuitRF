@@ -1,5 +1,51 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## User report, 2026-09-12 — "the top layer is being masked by the layer below" (placed cells only)
+
+**The direction of the convention is not the bug, and it is the opposite of the one in the report.**
+Every part of circuitRF agrees that a HIGHER `ZOrder` paints LATER and therefore sits on TOP:
+`docs/design/layout-view.md` §2.1 calls the field paint order, `LayoutRenderer` sorts its layer
+buckets ASCENDING and draws them in that order, `LayoutHitTest` cycles `ZOrder` DESCENDING for
+"topmost first", the layer picker lists ascending, and every shipped `.ctech` is authored to it —
+Top Copper carries the highest number in its file (8 of 8 on the 2-layer PCBs, 11 of 11 on the
+4-layer, and the MMIC's MIM plate metal takes 10 for the same reason, stated in its own comment).
+Nothing anywhere reads the field the other way round.
+
+**What was actually wrong: a placed cell did not sort at all.** `CompileCell` buckets a sub-cell's
+geometry into a `Dictionary<LayerKey, …>`, so `CompiledCellGeometry.Layers` came back in
+FIRST-ENCOUNTER order — the order the shapes happen to sit in the `.clay` — and `DrawInstances`
+painted it that way. A cell whose bottom-copper shape is stored after its top-copper one therefore
+painted the bottom layer over the top one. Reproduced and pinned: two overlapping opaque rects, the
+same two layers, differing only in which line comes first; the flat render is right both ways and
+the PLACED render was right for one storage order and inverted for the other.
+
+That is why it reads as intermittent to a user and unreproducible to anyone drawing a test case by
+hand — it is invisible on top-level geometry (always sorted), and on a placed cell it depends on a
+file's line order, not on any setting. It reaches everything whose artwork lives in a cell: a
+schematic-generated layout (which has no top-level shapes at all), an imported board placed as a
+cell, and PCell artwork.
+
+**Sorted in `DrawInstances`, NOT in `CompileCell`** — the compile cache is keyed on the cell and the
+detail tolerance only, never on the technology, so an order baked into the compiled geometry would
+survive a `ZOrder` edit in the technology editor and repaint nothing.
+
+**Ties now break on the layer key, at both levels.** `List<T>.Sort` is not stable and both sides sort
+a list built from a Dictionary walk, so two layers sharing one `ZOrder` painted in an order no
+technology author could see or control. The shipped technologies have no duplicates; a hand-edited or
+imported one can.
+
+Gate: `tests/Ui.Tests/LayoutInstanceLayerOrderTests.cs` — both storage orders, flat and placed, plus
+the equality of the two. Verified to fail before the change (the placed render came back blue, the
+`ZOrder`-1 layer, where flat came back red).
+
+**Unchanged and worth knowing, because it is the next thing a similar report will turn out to be:**
+instances are drawn AFTER every top-level layer, whatever their layers' `ZOrder`, and each placement
+is drawn whole before the next one starts. So a top-level shape on the topmost layer still sits under
+any instance artwork that overlaps it, and one footprint's bottom-layer copper still paints over a
+neighbouring footprint's top-layer copper. Bitmaps are the mirror exception, always first (R-bmp-2).
+Both are deliberate; neither is what this report was.
+
+
 ## Owner report, 2026-09-11 — the layout ruler's y-axis labels were cut off past ~3.5 characters
 
 The left ruler writes its label HORIZONTALLY across a strip that was the same 22 px the top ruler is

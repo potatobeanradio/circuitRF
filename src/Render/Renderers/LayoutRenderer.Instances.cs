@@ -953,10 +953,36 @@ public static partial class LayoutRenderer
             visualKey.Add(elisionThreshold);
             visualKey.Add(coarseCoverage);
             visualKey.Add(opts.Theme.Warning.ToString());
-            foreach (var layer in compiled.Layers)
+            // ── PAINT ORDER IS ZOrder, NEVER THE ORDER THE CELL'S SHAPES HAPPEN TO BE STORED IN ──
+            // CompileCell buckets a cell's geometry into a Dictionary keyed by LayerKey, so
+            // compiled.Layers comes back in FIRST-ENCOUNTER order — the order the shapes sit in the
+            // .clay, which has nothing to do with the technology. Drawn that way, a placed cell whose
+            // bottom-copper shape happened to be stored after its top-copper one painted the BOTTOM
+            // layer over the top one: exactly the "my top layer is masked by the layer below" report,
+            // and it flipped on nothing but the order of two lines in a file. Top-level shapes never
+            // had it — DrawLayer's caller sorts — so the same design read correctly until its geometry
+            // was placed as a cell.
+            //
+            // Sorted HERE rather than inside CompileCell because the compile cache is keyed on the
+            // cell and the detail tolerance ONLY, not on the technology: an order baked in there would
+            // survive a ZOrder edit in the technology editor and repaint nothing. Ties break on the
+            // key so two layers sharing a ZOrder still paint in one fixed order rather than in
+            // whatever order the dictionary walked.
+            var orderedLayers = new List<(CompiledLayerGeometry Layer, LayerDef Def)>(compiled.Layers.Count);
+            foreach (var compiledLayer in compiled.Layers)
+                orderedLayers.Add((compiledLayer,
+                    layerMap is not null && layerMap.TryGetValue(compiledLayer.Key, out var found)
+                        ? found : FallbackPalette.For(compiledLayer.Key)));
+            orderedLayers.Sort(static (x, y) =>
             {
-                LayerDef def = layerMap is not null && layerMap.TryGetValue(layer.Key, out var found)
-                    ? found : FallbackPalette.For(layer.Key);
+                int c = x.Def.ZOrder.CompareTo(y.Def.ZOrder);
+                if (c != 0) return c;
+                c = x.Layer.Key.Layer.CompareTo(y.Layer.Key.Layer);
+                return c != 0 ? c : x.Layer.Key.Datatype.CompareTo(y.Layer.Key.Datatype);
+            });
+
+            foreach (var (layer, def) in orderedLayers)
+            {
                 if (!def.Visible) continue;
                 var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
                 // The same rule DrawLayer states one level up: A SUBSTITUTION REPRODUCES WHAT THE

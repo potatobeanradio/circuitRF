@@ -597,7 +597,19 @@ public static partial class LayoutRenderer
                 }
                 resolved.Add((def, shapes));
             }
-            resolved.Sort(static (a, b) => a.Def.ZOrder.CompareTo(b.Def.ZOrder));
+            // Ascending ZOrder — the LAST layer painted is the topmost one, which is the convention
+            // docs/design/layout-view.md §2.1 states and every shipped technology is authored to (Top
+            // Copper carries the highest ZOrder of its .ctech). Ties break on the key because List.Sort
+            // is NOT stable and `byLayer` is a Dictionary: two layers sharing one ZOrder would
+            // otherwise paint in whatever order that dictionary walked, which is not something a
+            // technology author can see or control.
+            resolved.Sort(static (a, b) =>
+            {
+                int c = a.Def.ZOrder.CompareTo(b.Def.ZOrder);
+                if (c != 0) return c;
+                c = a.Def.Key.Layer.CompareTo(b.Def.Key.Layer);
+                return c != 0 ? c : a.Def.Key.Datatype.CompareTo(b.Def.Key.Datatype);
+            });
 
             // ── Path-space origin + transform (R-L1a-1/2) ───────────────────────
             double centerX = vp.PanX + vp.Width  / (2.0 * vp.Zoom);
