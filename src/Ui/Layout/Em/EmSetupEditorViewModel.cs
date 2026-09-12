@@ -1139,9 +1139,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// <para><b>A null here is the CONTROL talking, never the user.</b> A ComboBox clears its
+    /// selection when its item source changes under it, and the two-way binding writes that null
+    /// straight back. Committing it would record an edit nobody made, blank a document field whose
+    /// own type says it is never null, and re-enter <see cref="Refresh"/> from inside the control's
+    /// own selection update. The collection is no longer replaced (see
+    /// <see cref="BuildConductorChoices"/>), so this should not be reachable — it stays because the
+    /// cost of being wrong about that is an unbounded recursion, not a wrong value.</para>
+    /// </summary>
     partial void OnSignalLayerChoiceChanged(string value)
     {
         if (_suppressCommit) return;
+        if (value is null) return;
         string wanted = value == InferSignalLayer ? "" : value;
         if (wanted == Working.SignalStackupLayerName) return;
         var before = SnapshotJson();
@@ -1157,7 +1167,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     partial void OnReturnPlaneChoiceChanged(EmReturnPlaneChoice? value)
     {
         if (_suppressCommit) return;
-        string wanted = value?.Name ?? "";
+        // A cleared selection is the control talking — see OnSignalLayerChoiceChanged. Here it
+        // would read as "(automatic)" and silently discard a named return plane, which is the one
+        // answer R-rp1-2 exists to keep visible.
+        if (value is null) return;
+        string wanted = value.Name;
         if (wanted == Working.GroundStackupLayerName) return;
         var before = SnapshotJson();
         Working.GroundStackupLayerName = wanted;
@@ -2145,15 +2159,57 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         }
     }
 
+    // ── THESE TWO LISTS ARE SYNCED IN PLACE, AND NEVER REPLACED ────────────────────────────────
+    //
+    // Both feed a ComboBox's ItemsSource, and Refresh() runs on every edit — so the obvious
+    // spelling, building a fresh ObservableCollection and assigning it, hands the bound ComboBox a
+    // NEW SelectionModel.Source each time. Avalonia clears the selection when that happens, the
+    // two-way SelectedItem binding writes the cleared value straight back into the view model, the
+    // setter commits it and calls Refresh(), and Refresh() replaces the collection again: an
+    // unbounded recursion through the control. It surfaced as red text under the "Signal conductor"
+    // combo reading "Cannot change source while update is in progress." — Avalonia's own guard,
+    // thrown out of SelectionModel.SetSource and rendered by the ComboBox's DataValidationErrors —
+    // the moment the analysis kind was changed from full-wave planar to uniform transmission line
+    // (owner report, 2026-09-12).
+    //
+    // Syncing in place fixes it at both ends: an unchanged list (the overwhelmingly common case,
+    // since these depend only on the technology's stackup) touches the collection NOT AT ALL, so
+    // there is no selection change to write back; and a genuinely changed one arrives as ordinary
+    // CollectionChanged, which the SelectionModel is built to absorb and which never reassigns its
+    // Source.
     private void BuildConductorChoices(Technology tech)
     {
-        var choices = new ObservableCollection<string> { InferSignalLayer };
+        var wanted = new List<string> { InferSignalLayer };
         foreach (var l in tech.Stackup.Layers)
             if (l.Kind == StackupKind.Conductor && !l.IsGroundReference)
-                choices.Add(l.Name);
-        ConductorLayerChoices = choices;
+                wanted.Add(l.Name);
+        SyncInPlace(ConductorLayerChoices, wanted);
         BuildReturnPlaneChoices(tech);
         BuildAnalysisLevelRows(tech);
+    }
+
+    /// <summary>Makes <paramref name="live"/> hold exactly <paramref name="wanted"/>, and — the part
+    /// that matters — leaves it completely untouched when it already does. See the note above
+    /// <see cref="BuildConductorChoices"/> for why replacing the instance instead is not an
+    /// option.</summary>
+    private static void SyncInPlace<T>(ObservableCollection<T> live, IReadOnlyList<T> wanted)
+    {
+        var eq = EqualityComparer<T>.Default;
+
+        if (live.Count == wanted.Count)
+        {
+            bool same = true;
+            for (int i = 0; i < wanted.Count; i++)
+                if (!eq.Equals(live[i], wanted[i])) { same = false; break; }
+            if (same) return;
+        }
+
+        for (int i = live.Count - 1; i >= wanted.Count; i--) live.RemoveAt(i);
+        for (int i = 0; i < wanted.Count; i++)
+        {
+            if (i >= live.Count) live.Add(wanted[i]);
+            else if (!eq.Equals(live[i], wanted[i])) live[i] = wanted[i];
+        }
     }
 
     // ── RP-1 — which conductor every port returns through ──────────────────────────────────────
@@ -2170,15 +2226,22 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     // one asks what the medium terminates on. Their legal sets are near-complements.
     private void BuildReturnPlaneChoices(Technology tech)
     {
-        var rows = new ObservableCollection<EmReturnPlaneChoice>
-        {
-            new("", AutomaticReturnPlane),
-        };
+        var rows = new List<EmReturnPlaneChoice> { new("", AutomaticReturnPlane) };
         foreach (var l in tech.Stackup.Layers)
             if (l.Kind == StackupKind.Conductor)
                 rows.Add(new EmReturnPlaneChoice(
                     l.Name, l.IsGroundReference ? $"{l.Name}  — ground reference" : l.Name));
-        ReturnPlaneChoices = rows;
+
+        // The row SyncReturnPlaneChoice would otherwise append is built here instead, so that an
+        // in-place sync does not delete it and put it straight back on every refresh. Its reason is
+        // that method's own: R-rp1-2 refuses a name the technology no longer has BY NAME, and a
+        // panel that quietly dropped the setting back to "(automatic)" would hide the disagreement
+        // the refusal exists to report.
+        string want = Working.GroundStackupLayerName;
+        if (want.Length > 0 && !rows.Any(c => string.Equals(c.Name, want, StringComparison.Ordinal)))
+            rows.Add(new EmReturnPlaneChoice(want, $"{want}  — not in this technology"));
+
+        SyncInPlace(ReturnPlaneChoices, rows);
         SyncReturnPlaneChoice();
     }
 

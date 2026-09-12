@@ -812,3 +812,70 @@ looking for a saving that was never available:
 `EmPanelDeclutterTests.RunStartText_NeverHedges_AndSaysWhyWhenItContradictsTheCheckbox` (the hedge
 cannot come back, and the contradiction case must carry its reason) and
 `EmRunProgressTests.WhenAdaptiveSolvedEveryRequestedPoint_TheRowSaysSo_AndDoesNotPromiseModelledPoints`.
+
+## Changing the analysis kind failed the Conductors section — a recursion through the ComboBox (2026-09-12)
+
+Owner report: changing a `.cem` from **Full-wave planar** to **Uniform transmission line** made the
+EM Setup panel's Conductors section fail and render red text under the **Signal conductor** combo —
+`Cannot change source while update is in progress.`, out of
+`Avalonia.Controls.Selection.SelectionModel.SetSource`.
+
+### The mechanism — a view-model loop that only closes when a real control is bound
+
+`Refresh()` rebuilt `ConductorLayerChoices` and `ReturnPlaneChoices` as **brand new**
+`ObservableCollection`s and assigned them. Each assignment hands the bound ComboBox a new
+`SelectionModel.Source`; Avalonia clears the selection when the source is replaced; the two-way
+`SelectedItem` binding writes the cleared value straight back into the view model;
+`OnSignalLayerChoiceChanged` commits it as an edit and calls `Refresh()`; and `Refresh()` replaces
+the collection again. **An unbounded recursion whose cycle runs through the control**, which is why
+nothing in this project could see it: every headless test of the panel drives the view model, where
+the loop does not exist.
+
+Avalonia's own re-entrancy guard is what the user sees — `SelectionModel.SetSource` refuses a source
+change while a batch update is open, and the ComboBox's `DataValidationErrors` renders the exception
+in red beneath the control.
+
+**It only fires when the selection is not already the first row**, because that is the row the reset
+lands on. `(infer from the drawn geometry)` therefore looked perfectly healthy and a named conductor
+did not — verified both ways, on the reported board, before the fix.
+
+### Two silent losses had the same cause
+
+- **Picking a signal conductor did not stick.** The pick committed, `Refresh()` replaced the list,
+  the write-back cleared it straight back to `(infer …)` and committed *that* — so the combo snapped
+  back with no error. Measured on the reported board.
+- **A named return plane was discarded by any analysis-kind change.** `OnReturnPlaneChoiceChanged`
+  read a null selection as `""`, which is `(automatic)` — quietly dropping the one setting R-rp1-2
+  exists to keep visible.
+
+### The fix
+
+`BuildConductorChoices` and `BuildReturnPlaneChoices` **sync their collections in place and never
+replace the instance** (`SyncInPlace`). An unchanged list — the overwhelmingly common case, since
+both depend only on the technology's stackup — is touched **not at all**, so there is no selection
+change to write back; a genuinely changed one arrives as ordinary `CollectionChanged`, which a
+`SelectionModel` absorbs without its `Source` moving. The "not in this technology" row R-rp1-2 adds
+is built in `BuildReturnPlaneChoices` rather than appended afterwards, so the sync does not delete
+and re-add it on every refresh.
+
+Both choice setters additionally ignore a null: **a cleared selection is the control talking, never
+the user.** That is belt to the braces — with the collections stable it should be unreachable — but
+the cost of being wrong about "unreachable" here is an unbounded recursion, not a wrong value.
+
+### What else was checked
+
+The same shape (a view-model collection bound to a selector's `ItemsSource` *and* reassigned) was
+swept across `src/Ui`. Only three other sites reassign such a collection at all, and none is live:
+`LayerMappingDialog.MapTargets` (constructor), `PCellParamRowViewModel.Choices` (a populate, and only
+when the staged value is genuinely absent from the list), and
+`ParameterRowViewModel.SetRuntimeChoices` (which already early-outs on `SequenceEqual`).
+
+### Gate
+
+`tests/Ui.Tests/Em/EmSetupChoiceListsAreSyncedInPlaceTests.cs` — the collection instances outlive
+every `Refresh()` including an analysis-kind change, a changed technology still updates the rows in
+that same instance, a named signal conductor and a named return plane both survive the reported
+change, and a null from a control commits nothing. The property asserted is the **structural** one,
+because this suite may not call Avalonia runtime APIs; the loop itself was reproduced in a throwaway
+headless Avalonia host driving the real `EmSetupEditorView`, on the reported board and on
+`testdata/antenna`, and confirmed gone there after the fix.
