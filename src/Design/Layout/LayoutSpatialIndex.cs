@@ -82,11 +82,23 @@ public sealed class LayoutSpatialIndex
     private int _syncedInstanceCount = -1;
     private bool _instancesDirty;
     private long _syncedResolutionVersion = -1;
+    // R-rf1-3 — the combined query's result-list size estimate, carried from the previous call.
+    // A size HINT only: it is never read as data, and being wrong costs a List resize and nothing
+    // else. Written under _gate like everything else here.
+    private int _lastCombinedMatchCount;
+    private double _lastCombinedRectArea;
 
     // ── Test/diagnostic hooks (internal, InternalsVisibleTo CircuitRF.Ui.Tests) ──────────────────
     internal int FullRebuildCount { get; private set; }
     internal int IncrementalApplyCount { get; private set; }
     internal int InstanceRefreshCount { get; private set; }
+
+    /// <summary>How many times each overload of <see cref="QueryIntersecting(IReadOnlyList{LayoutShape},
+    /// Bbox)"/> has actually run. RF1's gate is "a frame on a flat document issues exactly ONE spatial
+    /// query" — a structural property, asserted on these rather than on a clock, per the repo's
+    /// standing rule against timing tests.</summary>
+    internal int ShapeQueryCount { get; private set; }
+    internal int CombinedQueryCount { get; private set; }
 
     private bool IsBuilt => _root is not null && _syncedCount >= 0;
 
@@ -166,6 +178,7 @@ public sealed class LayoutSpatialIndex
     {
         lock (_gate)
         {
+            ShapeQueryCount++;
             if (!IsBuilt || _syncedCount != shapes.Count)
                 RebuildFullShapes(shapes);
 
@@ -227,8 +240,42 @@ public sealed class LayoutSpatialIndex
                     // whose index the live list no longer has.
                     if (instancesStale) RefreshInstances(instanceBoxes!, resolutionVersion);
 
-                    var result = new List<LayoutSpatialEntry>();
+                    CombinedQueryCount++;
+
+                    // ── R-rf1-3: PRE-SIZED. This is an allocation fix, not a traversal fix ────────
+                    // On a board-fit frame of a 52,230-shape flat import this list reaches 51,378
+                    // entries. Grown from empty that is ~17 reallocations, the last several of them
+                    // Large Object Heap copies, and it measured 1,026 KB per call — against the
+                    // 403 KB the entries themselves occupy. Measured best-of-30, the traversal and
+                    // sort are ~1.8 ms per call either way; the 12.4 ms this call was averaging is
+                    // GC of the copies, which is why the fix is worth making and why it does not
+                    // show up as a faster query.
+                    //
+                    // The estimate is LAST CALL'S match count, scaled by the ratio of this rect's
+                    // area to that call's. Two cheaper-looking seeds were tried and are worse:
+                    //   - A counting walk first is EXACT but costs a second full traversal — measured
+                    //     +1.1 ms per call at 51,378 entries, which is more than it saves.
+                    //   - _syncedCount + _syncedInstanceCount over-allocates the whole document on
+                    //     every zoomed-in query — 418 KB to hold 538 entries on this board.
+                    // The area scale is what keeps the consumers from poisoning each other: without
+                    // it, a render frame's 51,378 would seed the next hit-test's 3-entry query at
+                    // 51,378 and allocate 400 KB on a pointer move. Local density is a far better
+                    // assumption between two nearby rects than global density is, and a wrong
+                    // estimate only ever costs a resize.
+                    var result = new List<LayoutSpatialEntry>(EstimateMatches(rect));
                     if (_root is not null) QueryNodeAll(_root, rect, result);
+                    _lastCombinedMatchCount = result.Count;
+                    _lastCombinedRectArea = AreaOf(rect);
+
+                    // ── R-rf1-4 WAS MEASURED AND REJECTED — THE DELEGATE STAYS ────────────────────
+                    // The brief's expectation was that a struct IComparer, sorted through
+                    // MemoryExtensions.Sort<T, TComparer>, would remove ~800,000 indirect calls that
+                    // this delegate costs on a 51,378-element sort. It does the opposite: measured on
+                    // board A it is ~2.5x SLOWER at every result size (51,378 entries: 10.1 ms
+                    // against 4.0 ms; 24,352: 1.27 ms against 0.79 ms; 9,846: 0.47 ms against
+                    // 0.22 ms). List<T>.Sort(Comparison<T>) reaches an introsort specialized on the
+                    // delegate; the generic-comparer span sort did not specialize the same way here.
+                    // Do not "optimize" this back without re-measuring it.
                     result.Sort(static (a, b) => a.Index != b.Index ? a.Index.CompareTo(b.Index) : a.Kind.CompareTo(b.Kind));
                     return result;
                 }
@@ -236,6 +283,34 @@ public sealed class LayoutSpatialIndex
 
             instanceBoxes = ResolveInstanceBoxes(instances, instanceBboxOf);
         }
+    }
+
+    /// <summary>
+    /// R-rf1-1 — "this document has nothing on the instance side, and the index already agrees".
+    /// A renderer that gets <c>true</c> here may skip the combined query entirely for this frame.
+    ///
+    /// <para><b>Both halves are required, and the one-half version is a silent bug.</b>
+    /// <c>instances.Count == 0</c> alone is NOT sufficient: a document whose last instance was just
+    /// deleted has an empty live list and a dirty index, and skipping there would leave that
+    /// instance's entry in the tree — still drawn, and still widening <see cref="Extent"/>. The
+    /// second half (<c>_syncedInstanceCount == 0</c>, not dirty, same resolution version) is exactly
+    /// the staleness question the combined query's own locked section asks, which is why it is asked
+    /// HERE rather than re-derived in the renderer where the two could drift apart.</para>
+    ///
+    /// <para>Note the asymmetry with <see cref="InstanceSideLooksStale"/>: that one is racy on
+    /// purpose because the lock re-decides. This one IS the decision, so it is the locked read.
+    /// It stays correct under a race anyway — every transition it could miss (an instance added, the
+    /// resolver ticking, an explicit dirty mark) only turns a <c>true</c> stale, and a stale
+    /// <c>true</c> costs one frame of lag, which is what a shape-side self-heal already costs.</para>
+    /// </summary>
+    public bool InstanceSideIsEmptyAndClean(IReadOnlyList<LayoutInstance> instances, long resolutionVersion)
+    {
+        lock (_gate)
+            return IsBuilt
+                && instances.Count == 0
+                && _syncedInstanceCount == 0        // -1 = never refreshed, or discarded by a shape rebuild
+                && !_instancesDirty
+                && _syncedResolutionVersion == resolutionVersion;
     }
 
     /// <summary>The same staleness question the locked section asks, read cheaply so the expensive
@@ -282,6 +357,17 @@ public sealed class LayoutSpatialIndex
         {
             foreach (var c in node.Children!) QueryNodeAll(c, rect, result);
         }
+    }
+
+    private static double AreaOf(Bbox b) =>
+        b.IsEmpty ? 0 : System.Math.Max(0.0, (double)(b.MaxX - b.MinX)) * System.Math.Max(0.0, (double)(b.MaxY - b.MinY));
+
+    private int EstimateMatches(Bbox rect)
+    {
+        int total = System.Math.Max(0, _syncedCount) + System.Math.Max(0, _syncedInstanceCount);
+        if (_lastCombinedRectArea <= 0 || _lastCombinedMatchCount <= 0) return 0;
+        double scaled = _lastCombinedMatchCount * (AreaOf(rect) / _lastCombinedRectArea);
+        return (int)System.Math.Clamp(scaled, 0, total);
     }
 
     /// <summary>Removes every currently-tracked Instance-kind entry, then inserts a fresh one per

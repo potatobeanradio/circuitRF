@@ -5165,3 +5165,62 @@ first is the one that answers the report:
 Gate: three tests in `tests/Ui.Tests/GerberImportTests.cs` — the row carries the file name, the minted
 names are `board` / `board (ly2)` / `board (ly3)` rather than one name three times, and the five
 mirrored extensions land on their own layers with no copper claimed.
+
+## `LayoutSpatialIndex` — the empty-instance-side predicate, and a list that sized itself (2026-09-12)
+
+RF1 (`docs/sonnet-briefs/brief-rasterfill-1-instance-query-on-flat-documents.md`). The renderer's half
+and the measurements are in `src/Render/RESOLVED.md`; this is what the index itself gained.
+
+**`InstanceSideIsEmptyAndClean(instances, resolutionVersion)`** — public, locked, O(1). Answers "this
+document has nothing on the instance side, **and the index already agrees**", which is the condition a
+per-frame consumer needs before it may skip the combined query entirely.
+
+**Both halves are required and the one-half version is a silent bug.** `instances.Count == 0` alone is
+not sufficient: a document whose last instance was just deleted has an empty live list and a *dirty*
+index, and skipping there means `RefreshInstances` never runs, so the entry that placement owned is
+never evicted and `_instancesDirty` stays set indefinitely. The second half is exactly the staleness
+question the combined query's own locked section asks — which is why it is asked **here** rather than
+re-derived at the call site, where the two could drift apart.
+
+Note the deliberate asymmetry with `InstanceSideLooksStale` beside it: that one is racy on purpose
+because the lock re-decides. This one **is** the decision, so it is the locked read. It stays correct
+under a race regardless — every transition it could miss (an instance added, the resolver's generation
+ticking, an explicit dirty mark) only turns a `true` stale, and a stale `true` costs one frame of lag,
+which is what a shape-side self-heal already costs.
+
+**Two test-only counters**, `ShapeQueryCount` and `CombinedQueryCount`, beside the existing
+`FullRebuildCount` / `IncrementalApplyCount` / `InstanceRefreshCount`. "A frame on a flat document
+issues exactly ONE spatial query" is a structural property and is gated on these, never on a clock.
+
+### The combined query's result list is pre-sized — and the obvious ways to do it are both worse
+
+At board fit on a 52,230-shape import the result reaches 51,378 entries. Grown from empty that is ~17
+reallocations, several of them Large Object Heap copies, and it measured **1,026 KB per call** against
+the 403 KB the entries actually occupy. **This is an allocation fix and not a traversal fix**: timed
+best-of-30 the query is ~1.8 ms either way.
+
+The estimate is **last call's match count, scaled by the ratio of this rect's area to that call's**.
+Both cheaper-looking seeds the brief offered were implemented and measured, and both are worse:
+
+- **A counting walk first** is exact but is a second full traversal — **+1.1 ms per call** at 51,378
+  entries, more than it saves.
+- **`_syncedCount + _syncedInstanceCount`** over-allocates the whole document on every zoomed-in
+  query — 418 KB to hold 538 entries on this board.
+
+**The area scale is what keeps the consumers from poisoning each other.** Without it, a render frame's
+51,378 would seed the very next hit-test's 3-entry query at 51,378 and allocate 400 KB on a pointer
+move — hit-test, marquee and snapping all call this same overload deliberately. With it, a hit-test
+sized query after a full-extent one allocates **0.8 KB** (measured; it was 2.2 KB before this change).
+Local density between two nearby rects is a far better assumption than global density, and a wrong
+estimate only ever costs a `List` resize.
+
+**Pinned in code beside the sort: do not replace the comparison delegate with a struct `IComparer`.**
+The brief asked for it (R-rf1-4) and it is ~2.5x slower at every size — see `src/Render/RESOLVED.md`
+for the numbers.
+
+### Pre-existing behaviour this work confirmed rather than changed
+
+**`Extent` does not shrink when an entry is removed**, and never has. `RemoveEntry` deliberately skips
+bounds-shrinking and rebalancing, so after deleting the last instance the root's bounds still span the
+placement until R-L2b-2's churn-triggered rebuild. RF1's brief assumed otherwise; a test asserting the
+brief's wording fails identically with RF1 reverted.

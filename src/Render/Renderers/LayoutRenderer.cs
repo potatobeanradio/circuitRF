@@ -656,9 +656,36 @@ public static partial class LayoutRenderer
                 // renders of one viewport. Drawing order is untouched: this gathers, DrawInstances
                 // below still paints after every layer.
                 Bbox InstanceBboxFor(LayoutInstance inst) => CellHierarchy.InstanceBbox(inst, opts.BaseDir ?? "");
-                var instanceCandidates = view.SpatialIndex.QueryIntersecting(
-                    view.Shapes, view.Instances, InstanceBboxFor, CellLayoutResolver.Generation, viewportRect);
-                counters.InstancesExamined = instanceCandidates.Count(e => e.Kind == SpatialEntryKind.Instance);
+
+                // ── …AND SKIPPED ENTIRELY WHEN THE INSTANCE SIDE IS EMPTY AND THE INDEX AGREES ──
+                // RF1 (docs/sonnet-briefs/brief-rasterfill-1-instance-query-on-flat-documents.md).
+                // The overload above returns EVERY entry in the rect, shapes included, and a flat
+                // import — the normal shape of a Gerber/PCB document, which has no instances at all —
+                // paid a second full R-tree traversal, a 51,378-entry list and a 51,378-element sort
+                // every frame to be handed the number zero. On a 52,230-shape board it allocated
+                // 1,026 KB per frame — 24% of the whole frame's allocation.
+                //
+                // What it does NOT buy is the 12.4 ms the brief sized it at: that figure was a MEAN
+                // including the GC of the list, and the traversal and sort themselves are ~1.8 ms
+                // best-of-30. The real all-layers frame is rasterization-bound and measured
+                // unchanged by this (284 -> 282 ms at board fit). The win here is the allocation and
+                // the GC jitter it caused — before this, the same do-nothing frame measured either
+                // 4.3 ms or 19.4 ms depending on whether a gen0 collection landed in it.
+                //
+                // The guard is the index's own two-part staleness question, asked on the index rather
+                // than re-derived here: view.Instances.Count == 0 ALONE would be wrong, because a
+                // document whose last instance was just deleted has an empty list and a dirty index,
+                // and skipping there would leave the entry in the tree to be drawn and to widen
+                // Extent. Nothing above changes when it fires: InstancesExamined is 0 either way,
+                // DrawInstances is already gated on it, and CanAffordOutlines reads the same Extent
+                // because with nothing on the instance side the extent IS the shape extent.
+                IReadOnlyList<LayoutSpatialEntry> instanceCandidates = [];
+                if (!view.SpatialIndex.InstanceSideIsEmptyAndClean(view.Instances, CellLayoutResolver.Generation))
+                {
+                    instanceCandidates = view.SpatialIndex.QueryIntersecting(
+                        view.Shapes, view.Instances, InstanceBboxFor, CellLayoutResolver.Generation, viewportRect);
+                    counters.InstancesExamined = instanceCandidates.Count(e => e.Kind == SpatialEntryKind.Instance);
+                }
                 var instanceDragOverrides = opts.Overlay?.InstanceDragOverrides ?? EmptyInstanceDragOverrides;
 
                 // ONE outline decision for the whole frame — never per layer, never per shape. See

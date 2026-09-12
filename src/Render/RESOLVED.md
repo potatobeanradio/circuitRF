@@ -1499,3 +1499,107 @@ be re-run for the distinction to exist at all.
 so the file a schematic references carries no mask and every point in it is drawn as a sample. The
 `.npy` is the file that can answer the question, and it is the one the EM run opens a Data Display
 over.
+
+## RF1 — a flat document paid 1 MB a frame to be told it has no instances (2026-09-12)
+
+`docs/sonnet-briefs/brief-rasterfill-1-instance-query-on-flat-documents.md`, the first of the
+raster-fill series. `LayoutRenderer.Draw` queried the spatial index **twice** per frame. The second
+call is the combined overload, which returns every entry in the rect — **shapes included** — so on an
+imported board (52,230 shapes, **zero instances**, which is the normal shape of a Gerber import) it
+built a 51,378-entry list and sorted it every frame to produce the number zero.
+
+`Draw` now skips that call when the index's own two-part predicate says the instance side is empty
+**and clean** — `LayoutSpatialIndex.InstanceSideIsEmptyAndClean`, described in `src/Design/RESOLVED.md`
+beside the index's other entries.
+
+### What it actually buys, which is not what the brief sized it at
+
+The brief costed this call at **12.42 ms per frame**. That figure is a **mean including the GC of the
+list it throws away**. Timed best-of-30 on the same board and viewport, the traversal and the sort
+together are **~1.8 ms**, before and after — pre-sizing a list does not make a tree walk faster. The
+12 ms was garbage collection, and what the fix removes is the garbage.
+
+Board A (52,230 shapes, 11 layers, board fit), Release scratch harness against a CPU `SKSurface`:
+
+| all layers visible | before | after |
+|---|---|---|
+| allocation per frame (1600x1000 **and** 3200x2000) | 4,345 KB | **3,319 KB** (-1,026 KB, -23.6%) |
+| repaint 1600x1000 | 284-295 ms | 281-285 ms |
+| pan 1600x1000 | 282-285 ms | 282-286 ms |
+| repaint 3200x2000 (2x DPI) | 437-452 ms | 431-457 ms |
+| one zoom step in (2x), 1600x1000 | 137-139 ms | 135-136 ms |
+
+**The real frame is time-neutral and that is expected**: it is rasterization-bound (overview S1c — the
+two copper pours are 77% of it), so removing 1 MB of allocation from it does not move the clock. The
+overview's S1b table is otherwise **re-measured unchanged** (it reads 288 / 282 / 135 and 441 / 459 /
+812; this harness reads 284 / 282 / 137 and 452 / 451 / 828), so **briefs 3 and 4 are still sized
+against a valid baseline.**
+
+### The number the fix really moves is frame-time CONSISTENCY
+
+With every layer hidden — the do-nothing floor, a diagnostic configuration and not a user state:
+
+| | before | after |
+|---|---|---|
+| allocation per frame | 4,332 KB | **3,307 KB** |
+| minimum frame at board fit | **4.3 ms, or 19.4 ms** | **6.6 ms, invariant** |
+
+The before column is **bimodal**, and that is the finding: whether a gen0 collection lands inside the
+sampled frame decides between 4.3 ms and 19.4 ms. It is also configuration-sensitive in a way real
+work never is — give that same before build a larger gen0 budget (`DOTNET_GCgen0size`) or server GC
+and its 19.4 ms becomes 4.4 ms, while the after build reads 6.5-6.8 ms under **all three** GC
+configurations. The overview's 19.1 ms floor is the GC-landed mode.
+
+**The after build's minimum floor frame is genuinely ~2 ms SLOWER, and the cause is the fix itself.**
+This was chased rather than waved away, because doing less work and getting a slower frame is not
+something to record as noise. Order-independent, reproducible across 7 launches each way, and
+bisected: the index changes alone cost nothing (4.2 ms vs 4.4 ms), and a build that **evaluates the
+guard and then runs the query anyway** measures 4.5 ms — so the predicate is free and the slowdown
+comes from *not allocating*. Fewer gen0 collections leave the bump allocator walking colder pages for
+the ~822 KB `live` list the very next statement builds. It does not appear on any frame that draws
+anything, and it is an artefact of a floor test, not a cost the application pays.
+
+**A methodological trap worth keeping**: the floor frame's wall clock is bimodal *per process launch*
+— the same binary on the same input measured x2 0.4 ms apart across two launches. Single-run A/B
+comparisons of it are worthless; only the allocation counter is stable to the byte (identical in
+every launch), which is exactly why the brief put the gate on allocation and not on a clock.
+
+### Two things the brief asserts that measurement refuted
+
+**R-rf1-4 was measured and rejected — the comparison delegate stays.** The brief expected a struct
+`IComparer` sorted through `MemoryExtensions.Sort<T, TComparer>` to remove ~800,000 indirect calls.
+It is **~2.5x slower** at every result size (51,378 entries: 10.1 ms against 4.0 ms; 24,352: 1.27 ms
+against 0.79 ms; 9,846: 0.47 ms against 0.22 ms). `List<T>.Sort(Comparison<T>)` reaches an introsort
+specialized on the delegate; the generic-comparer span sort did not specialize the same way here. The
+rejection is recorded in the code beside the sort so nobody "optimizes" it back.
+
+**The naive one-part guard's failure is NOT observable the way the brief describes.** The brief says
+skipping on `view.Instances.Count == 0` alone would leave stale entries "to be drawn and to widen
+`Extent`". Neither half holds as written:
+
+- **Not drawn.** The renderer draws what the *query returned*, and a guard that skips the query
+  returns nothing — so `InstancesDrawn` is 0 either way.
+- **`Extent` does not shrink on delete in the first place**, with this guard or without it.
+  `RemoveEntry` deliberately never shrinks an ancestor node's bounds ("no bounds-shrinking /
+  rebalancing here" — an over-large bbox costs query efficiency, never correctness, and R-L2b-2's
+  churn-triggered rebuild is the backstop). Asserting the brief's wording fails **identically with
+  this change reverted** — verified, not assumed.
+
+The guard is still the right one, and the one-part version is still wrong: what it actually breaks is
+that the **eviction never happens** and `_instancesDirty` stays set indefinitely. That is what gate 2
+pins, on `InstanceRefreshCount`. Getting there took two wrong assertions, both recorded in the test:
+`InstancesDrawn` does not discriminate, and **querying the index to look for the stale entry repairs
+it** — the combined query refreshes on the way in, so the probe destroys the state it came to observe.
+Both wrong versions were confirmed to pass with a naive guard installed; the final one goes red.
+
+### Gates
+
+`tests/Ui.Tests/LayoutFlatDocumentInstanceQueryTests.cs` — six, and **not one asserts a millisecond
+figure**: the query count (the whole brief in one assertion), the eviction above, an instance-bearing
+document whose counters and pixels are untouched, the frame-one extent flicker S3 names, an allocation
+ceiling, and the ordering contract over randomised rects of wildly different selectivity. Gates 1 and 2
+were both verified to go **red** against a deliberately-installed one-part guard.
+
+The class sits in `CellStatGlobalsCollection` rather than the typeface one: its fixtures carry no
+label, but every render in it resolves placed cells and each test invalidates the resolver, which is
+the process-global traffic that collection exists to serialize.
