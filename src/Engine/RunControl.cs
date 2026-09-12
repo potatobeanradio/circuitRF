@@ -18,8 +18,18 @@ namespace CircuitRF.Engine;
 /// <param name="StageCompleted">Sub-units finished WITHIN the current stage.</param>
 /// <param name="StageTotal">Sub-units in the current stage; 0 = the stage has no honest denominator,
 /// which is also what every caller that does not use stage progress leaves it at.</param>
+/// <param name="StageUnit">What ONE sub-unit of the current stage is, as a noun a reader can put
+/// after the counter — "pattern(s)", "port(s)", "point(s)". Empty is the default and renders the
+/// counter bare, exactly as every caller that does not set it always did.
+/// <para><b>It exists because a bare "71 / 101" is not readable</b> (owner report, 2026-09-11). An
+/// EM run reported a sweep row saying "101 point(s) solved" and, directly beneath it, a stage row
+/// ending "71 / 101" — two different 101s, one of them the requested frequency grid and the other
+/// the far-field pattern count that happens to equal it, with nothing on the second row saying
+/// which. Naming the denominator's unit where the stage declares it is the fix: the stage knows
+/// what it is counting, and the row that renders the counter does not have to guess.</para></param>
 public sealed record RunProgress(
-    string Stage, long Completed, long Total, long StageCompleted = 0, long StageTotal = 0);
+    string Stage, long Completed, long Total, long StageCompleted = 0, long StageTotal = 0,
+    string StageUnit = "");
 
 /// <summary>
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller
@@ -50,6 +60,7 @@ public sealed class RunControl
     private long _completed;
     private long _stageCompleted;
     private long _stageTotal;
+    private string _stageUnit = "";
     private readonly Stopwatch _sinceLastReport = Stopwatch.StartNew();
     private string _stage = "";
 
@@ -126,10 +137,15 @@ public sealed class RunControl
     /// <para>Reports immediately: a stage change is the one event a user is always waiting to see.
     /// <paramref name="stageTotal"/> of 0 leaves the stage indeterminate.</para>
     /// </summary>
-    public void BeginStage(string name, long stageTotal = 0)
+    /// <param name="unit">What one sub-unit IS — see <see cref="RunProgress.StageUnit"/>. It is set
+    /// here and nowhere else, and it survives every <see cref="TickStage"/> relabel within the
+    /// stage, because the unit is a property of what is being counted rather than of the label that
+    /// happens to be showing.</param>
+    public void BeginStage(string name, long stageTotal = 0, string unit = "")
     {
         Interlocked.Exchange(ref _stageCompleted, 0);
         Interlocked.Exchange(ref _stageTotal, Math.Max(stageTotal, 0));
+        _stageUnit = unit ?? "";
         _stage = name ?? "";
         ReportNow();
     }
@@ -204,6 +220,6 @@ public sealed class RunControl
         _sinceLastReport.Restart();
         Progress?.Report(new RunProgress(
             _stage, done, Total,
-            Interlocked.Read(ref _stageCompleted), Interlocked.Read(ref _stageTotal)));
+            Interlocked.Read(ref _stageCompleted), Interlocked.Read(ref _stageTotal), _stageUnit));
     }
 }

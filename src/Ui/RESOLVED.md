@@ -25477,3 +25477,56 @@ length changes with the plot type is a menu whose items move under the pointer.
 **Add Marker is gated in `RefreshAddMarkerSubmenu`, not in `ApplyMenuAvailability`**, because its
 enablement also depends on whether the plot carries a trace to put one on, and two writers on one
 flag would make the answer depend on which ran last. Both are called on every open.
+
+### A workspace switch or a quit during an EM run said nothing at all
+
+Asked for on 2026-09-11: File ▸ New Workspace, File ▸ Close Workspace and File ▸ Quit must not throw
+away an EM simulation without a word. They did. **Nothing anywhere in `src/Ui` tracked a run in
+flight**, and `HasAnyDirtyWork` — the only thing standing between those gestures and their
+destructive half — does not cover one: a `.cem` saved before Simulate was pressed is CLEAN, so a
+sweep of hours took the no-prompt fast path in silence.
+
+**What actually happened to the run is worth writing down, because "the results are lost" is only
+half true and the other half is worse.** `RunEmSetupAsync` resolves `baseDir`/`resultsRoot` from
+`CurrentWorkspacePath` BEFORE the await, so the solve carries on on the pool and still writes its
+Touchstone into the workspace it belongs to. What it loses is every surface, and it loses them
+invisibly:
+
+- `sweepLive`/`stageLive` were created by the OUTGOING `MessagesTool`, and `CreateDefaultLayout`
+  builds a new one — so `Complete`/`Finish` update rows in a collection nothing renders any more.
+  The run's own progress silently stops existing; its Stop and Cancel go with it.
+- `Messages.Info(n)` for the engine's notes resolves `_factory.MessagesTool` AT CALL TIME, so the
+  descriptive output of a run belonging to the OLD workspace lands in the NEW one's Messages panel.
+- `AutoOpenOrCreateDataDisplayAsync(baseDir, …)` would then open a Data Display over the old
+  workspace's `results/` inside the new workspace — a document across the boundary the project tree
+  is built on.
+
+**It is a warning with a Continue button, not a refusal** (owner: background continuation is
+acceptable). The first draft refused; what the owner wanted was to be told. So
+`WorkspaceViewModel.ConfirmDespiteEmWork` returns "may I go ahead", asks nothing when nothing is in
+flight, and is called by the seven gestures that replace or close the workspace plus
+`WorkspaceWindow.ConfirmCloseAsync`. Three things it does that are not obvious:
+
+- **The consequence sentence differs by gesture, and two of them are not the shared one.** Quit ENDS
+  the run (the process goes; an EM sweep writes nothing until it finishes, so everything solved is
+  discarded) — a materially different outcome from a workspace switch, and the `quitting` flag on
+  `ConfirmCloseAsync` is what tells them apart. **Rename Workspace** is the other: it MOVES the
+  folder the run resolved before the move, so the Touchstone lands under the old name.
+- **`_emWorkInFlight` is tracked on the workspace, not read back off the open documents.** A run is
+  started from an `EmSetupDocument` but does not belong to it — the document can be closed or torn
+  off while the sweep is still on the pool, and a guard that walked the open documents would find
+  nothing and wave the gesture through, which is precisely the case it exists for. Both writers sit
+  on the synchronous side of an await, so it stays a UI-thread-only list; the release is in the
+  `finally` because the run has four early returns and two catch blocks after the add.
+- **Meshing counts too.** A planar mesh of a real board is minutes of work that exists only in memory
+  until it is adopted, and Simulate is disabled while it runs — so it is the same loss by a different
+  button.
+
+The tail of `RunEmSetupAsync` now compares `CurrentWorkspacePath` against the `owningWorkspace` it
+captured, and on a mismatch skips the Data Display and says where the file actually is. The run is
+never cancelled by any of this: the gesture is the user's to make, and the solve is theirs to keep.
+
+Gate: `tests/Ui.Tests/EmRunInFlightGuardTests.cs` — the sentence builder directly, the wiring by
+comment-stripped source scan (a guard named only in a doc-comment earns nothing), including the
+ordering assertion that each command asks BEFORE it calls `WorkspaceCreate.Create` /
+`SwitchToWorkspaceReporting` / `ResetToBlankShell`.

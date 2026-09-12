@@ -4779,24 +4779,42 @@ throw, it published **zero points**, which is not "keep what you solved" but an 
 `EmRunService.ResolveSnpPath` is predictable by design, so it would have been written straight over
 whatever `.snp` the last good run left there.
 
-### 4. The FAR FIELD — written as a stop first, and that was WRONG
+### 4. The FAR FIELD — it took three cuts, and the middle one is the instructive failure
 
 The block had no stop check either, and because its stage row walks the frequencies
-(`far field (N pattern(s)) — 5.8 GHz`) it also LOOKED like a run still solving them. It was first
-made to decline the remaining patterns, on the reasoning that a pattern is work and Stop declines
-work. The owner's correction, same day: **stopping an EM simulation must still produce far-field
-output that can be plotted.**
+(`far field (N pattern(s)) — 5.8 GHz`) it also LOOKED like a run still solving them.
 
-That is right, and the reasoning behind the first cut was wrong about what the block is. **It solves
-nothing.** Every pattern is an exact sum over the basis currents of a point that is ALREADY SOLVED —
-it is the PROCESSING of what the run has, which is exactly what "finish now and keep what you have
-solved" asks for. On an antenna the pattern is usually the reason the run exists, so a Stop that
-returned s-parameters alone hands back the half nobody was waiting for.
+**Cut 1** declined the remaining patterns outright, on the reasoning that a pattern is work and Stop
+declines work. Refused the same day: stopping an EM simulation must still produce far-field output
+that can be plotted, and a Stop returning s-parameters alone hands back the half nobody on an
+antenna was waiting for.
 
-It is bounded by the same stop that shortened the sweep: `chosen` is one pattern per SOLVED point,
-so a stopped run has fewer solved points and a correspondingly shorter block. A stopped run's far
-field is therefore a COMPLETE far field over a SHORTER set of points — a different thing from a
-truncated one, and the cubes look identical either way, so the run says which it is.
+**Cut 2** took the whole block regardless of the stop, on the reasoning that it **solves nothing** —
+every pattern is an exact sum over the basis currents of a point that is ALREADY SOLVED, so it is
+the PROCESSING of what the run has rather than more of the work Stop declines. That premise is true.
+**The conclusion does not follow, and the number that refutes it was already written thirty lines
+away in `EmRunService`**: ANT-12 measured a 1° × 1° hemisphere at N = 1,611 costing **~6.4 s per
+pattern against ~4.6 s for the de-embedded solve it rides on**. At one pattern per solved point the
+far field is therefore the LONGEST block in the run, not a tail on it. Reported 2026-09-11 on a
+101-point patch antenna (N = 2,705): Stop pressed ~25 minutes in, with the block at **71 of 101**
+and still climbing — the same "I pressed Stop and it kept going" for the second time, now caused by
+the fix for the first.
+
+**"It solves nothing" answers the wrong question.** Stop is not about what KIND of work is
+outstanding, it is about how long the user waits after pressing it. A block that is minutes long is
+work whatever it is made of.
+
+**Cut 3, shipped:** the stop is read at the PATTERN boundary, with a floor of ONE. That floor is
+what survives of the refusal of cut 1 — a stopped antenna run still publishes a far field somebody
+can plot — and everything above it is what the stop is for. `farPatterns` is keyed by index and
+everything downstream walks its KEYS, so a short set was already well formed; the fixed-grid path
+has always published a subset this way.
+
+Which of the two happened has to be SAID, because the cubes are indistinguishable — a far field over
+every solved point and one over the first few of them differ only in how many slices the frequency
+axis carries. The CUT SHORT note names the count, the band actually covered, and the fact that
+patterns are taken in ASCENDING frequency, so what is missing is the top of the band — on a resonant
+structure quite possibly the resonance itself.
 
 ### The convergence verdict a stopped run must not claim
 
@@ -4808,6 +4826,37 @@ happens, `AdaptiveConverged` is **null** on such a run, and the note reports the
 together with what it is a maximum over. The "what would help: a finer grid" advice is suppressed
 there too: the remedy on a stopped run is not to change the sweep, and sending someone to do that
 costs them a re-run to discover it was never needed.
+
+### A bare counter is not readable, and the far-field row proved it
+
+Same report. The two rows read:
+
+```
+EM 'square_patch_antenna_gerber' 101 point(s) solved — stopping
+EM 'square_patch_antenna_gerber' — far field (101 pattern(s)) — 7.3 GHz (stopping) 71 / 101
+```
+
+Three numbers, **two of them the same by coincidence** — the sweep's 101 is the requested frequency
+grid, the far field's 101 is its pattern count, equal only because `EmRunService` asks for a pattern
+at every requested frequency — and the one the eye lands on, the trailing `71 / 101`, carries no
+noun at all. The reasonable reading, and the one reported, was that the second row was the resonance
+search announcing a total it cannot possibly know.
+
+Two changes, and they are separable on purpose:
+
+- **`RunProgress.StageUnit`** — a stage declares what ONE of its sub-units IS (`BeginStage("far
+  field", n, "pattern(s)")`), and the row renders `71 / 101 pattern(s)`. It survives every
+  `TickStage(nextLabel:)` relabel because the unit belongs to what is being COUNTED, not to the
+  label that happens to be showing. Empty is the default, so every caller that does not set one
+  renders exactly as before. It does not fight `FormatCounter`'s fixed-width right alignment: the
+  suffix is constant for the whole stage, so the `/` and the denominator stay pinned, inset by one
+  constant word.
+- **The count came OUT of the label.** Saying `101` twice on one row is what made the reader look
+  for two different meanings. The label is the changing part of the stage row by design, so it is
+  now just `far field — 7.3 GHz`.
+
+`replaying calibration` and the per-point `far field at <f>` block declare `point(s)` and `port(s)`
+for the same reason.
 
 ### And the rows say "stopping"
 
@@ -4832,7 +4881,9 @@ once more before publishing so the STOPPED EARLY sentence is never missing.
 `ResonanceSearchTests` — `AStoppedAdaptiveSweep_TakesNoFurtherProbesInTheRoundItWasStoppedIn`
 (verified to catch the regression: reverting the one check takes it from 6 solved to 9),
 `AStopAskedForBeforeTheFirstPoint_StillPublishesOne`, and
-`AStoppedRun_StillPublishesAFarFieldAtEverySolvedPoint` (a stop while SOLVING still yields one
-pattern per solved point; a stop landing inside the block does not truncate it).
-`EmRunProgressTests` covers the two rows' "stopping" readout and that the sweep row's left text and
-bar position do not move when it appears. All four are routine-tier — the slowest is 3.9 s.
+`AStoppedRun_KeepsTheFarFieldItTook_AndStopsTakingMore` (a stop while SOLVING still yields a
+pattern — the floor; a stop landing inside the block leaves it strictly shorter than the free run's,
+every pattern in it whole, and the CUT SHORT note present).
+`EmRunProgressTests` covers the two rows' "stopping" readout, that the sweep row's left text and bar
+position do not move when it appears, and that the stage counter carries its declared noun while a
+stage declaring none renders exactly as before. All routine-tier — the slowest is 3.9 s.

@@ -801,6 +801,13 @@ that were solved (which is what adaptive sampling does at every budget); the not
 disagreement actually reached rather than the tolerance you asked for;</li>
 <li>on a fixed grid, the sweep is <strong>the prefix that was solved</strong> and the note names the frequencies that
 are not in it. Nothing is interpolated and nothing is approximate.</li>
+<li>if a radiation pattern was asked for, <strong>the patterns already taken are kept and no more are
+started</strong>. A pattern costs about as much as the full-wave point it rides on, so at one per solved
+point the pattern block is the longest part of the run and a Stop has to reach into it. They are
+taken in ascending frequency, so what a stop leaves out is the top of the band — on a resonant
+structure, quite possibly the resonance — and the note says how many were taken and over what
+span. Every pattern in the result is a whole one, and the s-parameters are untouched: they are
+finished before the first pattern begins.</li>
 </ul>
 <h2 id="pattern">Reading the pattern</h2>
 <p><strong>θ spans 0…90° only, and the axis stops there rather than being padded.</strong> With an infinite ground plane

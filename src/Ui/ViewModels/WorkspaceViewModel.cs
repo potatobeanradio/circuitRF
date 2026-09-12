@@ -1293,6 +1293,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(owner);
         if (window is null) return;
 
+        // Owner request, 2026-09-11 — BEFORE the save prompt and before the dialog, because this is
+        // a refusal rather than a question: there is nothing to ask about work that cannot be moved.
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Creating a new workspace closes this one, which " + LossSentence,
+                "Create it anyway",
+                "Open a new window instead — circuitRF will ask there for the new workspace's name "
+                + "and folder, and this window keeps the run, its progress and its Stop button.",
+                "New Window",
+                NewWorkspaceInNewWindow))
+            return;
+
         if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "creating a new workspace", includeFloated: false))
             return;
 
@@ -1421,6 +1433,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var window = ResolveOwner(owner);
         if (window is null) return;
+
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Opening another workspace closes this one, which " + LossSentence,
+                "Open it anyway",
+                "Open it in a new window instead — the other workspace opens beside this one and the "
+                + "run keeps its panel, its progress and its Stop button.",
+                "Open in New Window",
+                () => _ = OpenWorkspaceInNewWindowCommand.ExecuteAsync(window)))
+            return;
 
         if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "opening a workspace", includeFloated: false))
             return;
@@ -1561,6 +1583,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // A copy is built from what is on DISK — so unsaved work is offered up first, through the
         // same prompt and for the same reason as Archive Workspace…: copying over the top of unsaved
         // edits produces a copy of a design nobody has, and nobody finds out until they open it.
+        // Save As switches this window to the COPY, so it closes the workspace the run belongs to.
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Saving a copy switches this window to it, which closes this workspace and " + LossSentence,
+                "Save the copy anyway"))
+            return;
+
         if (HasAnyDirtyWork(includeFloated: false) &&
             !await PromptSaveBeforeClose(window, "saving a copy of the workspace", includeFloated: false))
             return;
@@ -1781,6 +1810,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Warning("That archive holds no .cws, so there is no workspace to open.");
             return;
         }
+
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Opening the unarchived workspace closes this one, which " + LossSentence,
+                "Open it anyway"))
+            return;
 
         if (HasAnyDirtyWork(includeFloated: false) &&
             !await PromptSaveBeforeClose(window, "opening the unarchived workspace", includeFloated: false))
@@ -2691,6 +2726,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (cwsPath is null) return;
 
+        if (IsEmWorkInFlight && ResolveOwner(null) is { } emOwner
+            && !await ConfirmDespiteEmWork(
+                emOwner,
+                "Opening another workspace closes this one, which " + LossSentence,
+                "Open it anyway",
+                "Open it in a new window instead — the other workspace opens beside this one and the "
+                + "run keeps its panel, its progress and its Stop button.",
+                "Open in New Window",
+                () => App.OpenWorkspaceInNewWindow(cwsPath)))
+            return;
+
         if (HasAnyDirtyWork(includeFloated: false))
         {
             var window = ResolveOwner(null);
@@ -2752,6 +2798,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (CurrentWorkspacePath is null) return;
         var window = ResolveOwner(null);
         if (window is null) return;
+
+        // Owner request, 2026-09-11 — the same warning New Workspace makes, and for the same reason.
+        // No alternative is offered: "close this workspace" has no second-window spelling.
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Closing the workspace " + LossSentence,
+                "Close it anyway"))
+            return;
 
         if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "closing the workspace", includeFloated: false))
             return;
@@ -7175,6 +7229,101 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }, DispatcherPriority.Background);
     }
 
+    // ---- EM work in flight, and the gestures it refuses -----------------------
+    //
+    // Owner request, 2026-09-11: pressing File ▸ New Workspace (or Close Workspace) during an EM
+    // simulation must not silently destroy the run.
+
+    /// <summary>
+    /// What EM work this window has in flight, one descriptor per operation — "the EM run 'Filter'",
+    /// "the mesh of 'Filter'" — in the form <see cref="DescribeEmWorkInFlight"/> joins.
+    ///
+    /// <para><b>Tracked here rather than read back off the open documents.</b> A run is started FROM
+    /// an <c>EmSetupDocument</c> but does not belong to it: the document can be closed, torn off or
+    /// replaced while the sweep is still on the pool, and a guard that walked the open documents
+    /// would then find nothing and wave the gesture through — which is exactly the case the guard
+    /// exists for. Touched only on the UI thread: both writers sit on the synchronous side of an
+    /// <c>await</c> in the run they belong to.</para>
+    /// </summary>
+    private readonly List<string> _emWorkInFlight = [];
+
+    /// <summary>True while any EM run or mesh started from this window is still going.</summary>
+    internal bool IsEmWorkInFlight => _emWorkInFlight.Count > 0;
+
+    /// <summary>
+    /// The half of the warning that is the same whichever workspace gesture made it. Written once so
+    /// seven call sites cannot drift into seven accounts of the same consequence; each supplies only
+    /// its own opening clause.
+    ///
+    /// <para>It says what actually happens rather than "the run will be lost" (owner, 2026-09-11:
+    /// background continuation is acceptable): the solve keeps going on the pool and still writes its
+    /// Touchstone into the workspace it belongs to. What it loses is every surface — the progress
+    /// rows, Stop, Cancel — and the Data Display that would have opened on the results.</para>
+    /// </summary>
+    private const string LossSentence =
+        "leaves it running with nowhere to report to: its progress rows, its Stop and its Cancel go "
+        + "with this workspace, and no Data Display opens on the result. The solve does finish, and "
+        + "still writes its Touchstone into the workspace it belongs to.";
+
+    /// <summary>
+    /// The subject of the refusal's first sentence — "the EM run 'Filter'", or "the EM run 'Filter'
+    /// and the mesh of 'Board'" when two are somehow in flight at once. Separate from the dialog so
+    /// the wording is testable without a window.
+    /// </summary>
+    internal static string DescribeEmWorkInFlight(IReadOnlyList<string> work) => work.Count switch
+    {
+        0 => "",
+        1 => work[0],
+        2 => $"{work[0]} and {work[1]}",
+        _ => string.Join(", ", work.Take(work.Count - 1)) + $" and {work[^1]}",
+    };
+
+    /// <summary>
+    /// The guard every gesture that replaces this window's workspace, closes the window or quits
+    /// calls first. Returns <b>true when the caller may go ahead</b> — which is the ordinary case,
+    /// since it asks nothing at all when no EM work is in flight.
+    ///
+    /// <para>Nothing is written and the run is not touched by the question itself. The optional
+    /// alternative is invoked only if the user takes it, and the caller still stops.</para>
+    /// </summary>
+    internal async Task<bool> ConfirmDespiteEmWork(
+        Window  window,
+        string  consequence,
+        string  continueLabel,
+        string? alternativeSentence = null,
+        string? alternativeLabel    = null,
+        Action? alternative         = null)
+    {
+        if (!IsEmWorkInFlight) return true;
+
+        var choice = await Views.Dialogs.EmRunInFlightDialog.ShowAsync(
+            window, DescribeEmWorkInFlight(_emWorkInFlight), consequence, continueLabel,
+            alternativeSentence, alternativeLabel);
+
+        if (choice == Views.Dialogs.EmRunInFlightDialog.Choice.Alternative)
+            alternative?.Invoke();
+
+        return choice == Views.Dialogs.EmRunInFlightDialog.Choice.Continue;
+    }
+
+    /// <summary>
+    /// File ▸ New Workspace's alternative: a second window, already asking for the new workspace's
+    /// name and folder. Posted at Background so it lands after the new window's own deferred
+    /// <c>ApplyLayoutPreferences</c> — that call REBUILDS the dock, and a New Workspace running
+    /// against a dock that is about to be replaced is the same defect in a smaller box.
+    /// </summary>
+    private static void NewWorkspaceInNewWindow()
+    {
+        var window = App.NewWorkspaceWindow();
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (window.DataContext is WorkspaceViewModel vm)
+                    _ = vm.NewWorkspaceCommand.ExecuteAsync(window);
+            },
+            DispatcherPriority.Background);
+    }
+
     /// <summary>
     /// R-em-18 — <c>RunSchematicDocAsync</c>'s five steps with a different middle: background
     /// <c>Task.Run</c>, <c>Messages</c> for warnings FIRST, then the results write,
@@ -7189,6 +7338,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? Path.GetDirectoryName(cws)!
             : _recovery.SessionDir;
         var resultsRoot = Path.Combine(baseDir, "results");
+
+        // Which workspace this run BELONGS to, as opposed to whichever one the window is showing when
+        // it finishes. The two can differ: a workspace switch mid-run is warned about, not refused
+        // (owner, 2026-09-11), and `baseDir`/`resultsRoot` are resolved here — so the Touchstone still
+        // lands in the right workspace, and the tail of this method has to know that it did.
+        var owningWorkspace = CurrentWorkspacePath;
 
         var source = ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef);
         var setup  = vm.Working.Clone();
@@ -7219,6 +7374,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
         var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
+
+        var emWorkDescriptor = $"the EM run '{setup.Name}'";
 
         EmRunResult result;
         using (var cts = new CancellationTokenSource())
@@ -7287,6 +7444,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // is enforced in one place.
                 vm.StopRequested   = cancellation.Stop;
                 vm.IsRunning       = true;
+                // The workspace-level record of this run, for the gestures that would otherwise
+                // close the workspace out from under it (RefusedWhileEmWorkInFlight). Added on the
+                // synchronous side of the await below, removed in the finally, so the window is
+                // exactly the interval in which the run has a surface to lose.
+                _emWorkInFlight.Add(emWorkDescriptor);
                 // R-emp-6/R-emcli-3 — the core cap is a MACHINE preference, so it is read HERE, on the
                 // UI side that owns the preferences file, and handed to the run service as an
                 // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
@@ -7302,6 +7464,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             finally
             {
                 cancellation.Finish();
+                _emWorkInFlight.Remove(emWorkDescriptor);
                 vm.IsRunning       = false;
                 vm.IsCancelling    = false;
                 vm.IsStopping      = false;
@@ -7398,6 +7561,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
         if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
 
+        // The window moved to another workspace while this was solving. The write above is still
+        // correct — it went to the workspace the run was started in — but the Data Display below is
+        // not: it would open a document over ANOTHER workspace's results inside this one, which is
+        // the boundary the whole project tree is built on. So it is skipped, and the message says
+        // where the result actually is rather than leaving the user to wonder why nothing appeared.
+        if (!string.Equals(CurrentWorkspacePath, owningWorkspace, StringComparison.OrdinalIgnoreCase))
+        {
+            Messages.Info(
+                $"This window moved to another workspace while '{setup.Name}' was solving, so no Data "
+                + $"Display was opened for it. The results are in {Path.Combine(baseDir, "results")} — "
+                + "open that workspace to plot them.");
+            return;
+        }
+
         if (result.NpyPath is { } npy)
         {
             await RefreshOpenDataDisplaysAsync([npy]);
@@ -7425,6 +7602,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string name = vm.Working.Name;
         var live = Messages.BeginProgress($"Meshing '{name}'");
 
+        var meshWorkDescriptor = $"the mesh of '{name}'";
+
         using var cts = new CancellationTokenSource();
         var control = new RunControl
         {
@@ -7446,6 +7625,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             vm.CancelMeshRequested = cancellation.Cancel;
             vm.IsMeshing           = true;
+            // Same record as the run's, and for the same reason: a planar mesh of a real board is
+            // minutes of work that exists only in memory until it is adopted below.
+            _emWorkInFlight.Add(meshWorkDescriptor);
 
             // THREE PHASES, and the boundaries are load-bearing (owner report, 2026-08-09: "I
             // pressed the mesh button but got: the calling thread cannot access this object because a
@@ -7491,6 +7673,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         finally
         {
             cancellation.Finish();
+            _emWorkInFlight.Remove(meshWorkDescriptor);
             vm.IsMeshing           = false;
             vm.IsCancelling        = false;
             vm.CancelMeshRequested = null;
@@ -7563,10 +7746,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (stopping) what += " (stopping)";
         if (p.StageTotal > 0)
             stageLive.Update($"EM '{setupName}' — {what}",
-                             FormatCounter(p.StageCompleted, p.StageTotal),
+                             StageCounter(p),
                              100.0 * p.StageCompleted / p.StageTotal);
         else
             stageLive.Update($"EM '{setupName}' — {what}", indeterminate: true);
+    }
+
+    /// <summary>
+    /// The stage row's trailing counter, with the NOUN the stage declared for its own sub-units:
+    /// "71 / 101 pattern(s)" rather than "71 / 101".
+    ///
+    /// <para><b>Why the noun is worth the width</b> (owner report, 2026-09-11). An EM run showed a
+    /// sweep row reading "101 point(s) solved" and, immediately beneath it, a stage row ending
+    /// "71 / 101" — where that 101 was the far-field PATTERN count, equal to the sweep's only
+    /// because a pattern was asked for at every requested frequency. Two identical numbers counting
+    /// two different things, one of them unlabelled, is worse than either alone: the reader's
+    /// reasonable reading was that the second row was the resonance search reporting a total it
+    /// cannot possibly know.</para>
+    ///
+    /// <para>It does not fight the fixed-width right alignment <see cref="FormatCounter"/> describes:
+    /// the suffix is constant for the whole stage, so it pins at the right edge and the "/" and the
+    /// denominator stay put exactly as before, just inset by one constant word.</para>
+    /// </summary>
+    internal static string StageCounter(RunProgress p)
+    {
+        string counter = FormatCounter(p.StageCompleted, p.StageTotal);
+        return string.IsNullOrEmpty(p.StageUnit) ? counter : $"{counter} {p.StageUnit}";
     }
 
     /// <summary>
@@ -11392,6 +11597,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             msg.ToString(), saveLabel: "Rename", dontSaveLabel: null, cancelLabel: "Cancel",
             title: "Rename Workspace").ShowDialog<SaveChangesResult>(window);
         if (confirm != SaveChangesResult.Save) return;
+
+        // The one workspace gesture where "it keeps running in the background" is NOT the whole
+        // story: a rename MOVES the folder the run is going to write its Touchstone into, so the
+        // write at the end of the sweep lands on a path that no longer exists — or, worse, recreates
+        // the old folder beside the renamed one. Said in the warning rather than left to be found.
+        if (!await ConfirmDespiteEmWork(
+                window,
+                "Renaming the workspace moves its folder while the run is still going. The run "
+                + "keeps solving, but it resolved its results folder before the move, so its "
+                + "Touchstone is written under the OLD name — and the rename reopens the workspace, "
+                + "which " + LossSentence,
+                "Rename it anyway"))
+            return;
 
         // Unsaved work is offered up first: the reopen below reads what is on DISK, so anything not
         // saved would be silently dropped by a gesture that reads like a rename.

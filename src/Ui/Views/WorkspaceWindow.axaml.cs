@@ -366,7 +366,11 @@ public partial class WorkspaceWindow : Window
         // macOS is where it shows because closing the last window there does not end the process
         // (ShutdownMode.OnExplicitShutdown — the app stays resident with its Dock icon), so a second
         // WorkspaceViewModel is built while the first one's remnants are still on disk.
-        if (!_vm.HasAnyDirtyWork())
+        //
+        // An EM analysis in flight is NOT clean-exit work either (owner, 2026-09-11), and it is not
+        // covered by HasAnyDirtyWork — a .cem that was saved before Simulate was pressed is not
+        // dirty, so a run of hours sailed straight through this branch with nothing said.
+        if (!_vm.IsEmWorkInFlight && !_vm.HasAnyDirtyWork())
         {
             _vm.OnCleanExit();
             _closingConfirmed = true;
@@ -403,10 +407,28 @@ public partial class WorkspaceWindow : Window
     /// window the user was trying to keep. Idempotent: a window that has already confirmed says yes
     /// without asking again.</para>
     /// </summary>
-    internal async Task<bool> ConfirmCloseAsync()
+    internal async Task<bool> ConfirmCloseAsync(bool quitting = false)
     {
         if (_closingConfirmed) return true;
         if (_vm is null) return true;
+
+        // FIRST, and before the save prompt: an EM run is the one piece of work in this window that
+        // cannot be saved and picked up again — an EM sweep writes nothing until it finishes, so
+        // whatever it has solved exists only in the process that is about to end. Asked once per
+        // window, like the save prompt, and on the same two-pass quit path, so cancelling here leaves
+        // every window open (MW1 R-mw1-18).
+        if (_vm.IsEmWorkInFlight && !await _vm.ConfirmDespiteEmWork(
+                this,
+                quitting
+                    ? "Quitting circuitRF ENDS it. An EM sweep writes nothing until it finishes, so "
+                      + "everything it has solved so far — minutes to hours of full-wave points — is "
+                      + "discarded, and no Touchstone is written."
+                    : "Closing this window takes the run's progress rows, its Stop and its Cancel with "
+                      + "it. The solve itself keeps going until circuitRF exits — and on Windows and "
+                      + "Linux, closing the last window IS exiting, which discards everything it has "
+                      + "solved so far.",
+                quitting ? "Quit anyway" : "Close it anyway"))
+            return false;
 
         if (!_vm.HasAnyDirtyWork())
         {

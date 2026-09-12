@@ -451,6 +451,43 @@ public sealed class EmRunProgressTests
         Assert.NotEmpty(vm.PlanarMeshNotes.Count > 0 ? vm.PlanarMeshNotes : ["ran"]);
     }
 
+    // ── The counter says WHAT it is counting ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Owner report, 2026-09-11. An EM run showed a sweep row reading "101 point(s) solved" and,
+    /// directly beneath it, a stage row ending "71 / 101" — the far-field PATTERN count, equal to
+    /// the requested grid only because a pattern was asked for at every frequency in it. Two
+    /// identical numbers counting two different things, one of them unlabelled; the reasonable
+    /// reading was that the second row was the resonance search reporting a total it cannot know.
+    /// </summary>
+    [Fact]
+    public void TheStageCounter_CarriesTheNounTheStageDeclared()
+    {
+        var (sweep, sweepEntry) = NewLive();
+        var (stage, stageEntry) = NewLive();
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "patch",
+            new RunProgress("far field — 7.3 GHz", 101, 0, 71, 101, "pattern(s)"),
+            adaptive: true, stopping: true);
+
+        // The sweep row's own number keeps its own noun, and the two are now distinguishable.
+        Assert.Equal("101 point(s) solved — stopping", sweepEntry.ProgressText);
+        Assert.Equal("71 / 101 pattern(s)", stageEntry.ProgressText);
+        Assert.Equal("EM 'patch' — far field — 7.3 GHz (stopping)", stageEntry.Text);
+    }
+
+    [Fact]
+    public void AStageThatDeclaresNoUnit_RendersTheCounterExactlyAsBefore()
+    {
+        var (sweep, _)          = NewLive();
+        var (stage, stageEntry) = NewLive();
+
+        WorkspaceViewModel.ReportEmProgress(sweep, stage, "MLin",
+            new RunProgress("10 GHz — de-embedding", 3, 101, 1, 2), adaptive: false);
+
+        Assert.Equal("1 / 2", stageEntry.ProgressText);
+    }
+
     [Fact]
     public void TheMeshRowReadsFromTheStageCounter_NotTheOuterOne()
     {

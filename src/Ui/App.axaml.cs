@@ -1096,7 +1096,7 @@ public partial class App : Application
         foreach (var w in windows)
         {
             bool clear;
-            try { clear = await w.ConfirmCloseAsync(); }
+            try { clear = await w.ConfirmCloseAsync(quitting: true); }
             catch { clear = false; }
 
             if (clear) continue;

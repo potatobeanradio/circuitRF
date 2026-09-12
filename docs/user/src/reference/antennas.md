@@ -139,6 +139,13 @@ not in it:
   disagreement actually reached rather than the tolerance you asked for;
 - on a fixed grid, the sweep is **the prefix that was solved** and the note names the frequencies that
   are not in it. Nothing is interpolated and nothing is approximate.
+- if a radiation pattern was asked for, **the patterns already taken are kept and no more are
+  started**. A pattern costs about as much as the full-wave point it rides on, so at one per solved
+  point the pattern block is the longest part of the run and a Stop has to reach into it. They are
+  taken in ascending frequency, so what a stop leaves out is the top of the band — on a resonant
+  structure, quite possibly the resonance — and the note says how many were taken and over what
+  span. Every pattern in the result is a whole one, and the s-parameters are untouched: they are
+  finished before the first pattern begins.
 
 ## Reading the pattern {#pattern}
 

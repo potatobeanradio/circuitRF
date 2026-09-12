@@ -1703,7 +1703,7 @@ public static class PlanarSolve
                 var outp = new Dictionary<int, (Mat<Complex>, List<PlanarPortCalibration>, double)>();
                 // One stage for the whole replay — most of it is cache hits, so per-point stages here
                 // would flicker through every frequency for no information.
-                control?.BeginStage("replaying calibration", solved.Count);
+                control?.BeginStage("replaying calibration", solved.Count, "point(s)");
                 foreach (int i in solved)
                 {
                     outp[i] = DeembedAt(freqs[i], rawByIndex[i], () => kernelByIndex[i], ownStage: false);
@@ -1734,7 +1734,7 @@ public static class PlanarSolve
                 foreach (var c in calibrators) c.RestartBranchContinuation();
                 flaggedBand.Clear();
                 var outp = new Dictionary<double, (Mat<Complex>, List<PlanarPortCalibration>, double)>();
-                control?.BeginStage("replaying calibration", all.Count);
+                control?.BeginStage("replaying calibration", all.Count, "point(s)");
                 foreach (double f in all)
                 {
                     outp[f] = gridIndexOf.TryGetValue(f, out int gi)
@@ -1879,25 +1879,40 @@ public static class PlanarSolve
                 // this is the one part of a sweep whose cost is a known number of equal pieces. The
                 // outer counter is deliberately left alone — it counts points SOLVED, and none are.
                 // (The climb the reporter saw afterwards is the search's own probes, which do solve.)
-                control?.BeginStage($"far field ({chosen.Count} pattern(s))", chosen.Count);
-                // ── THE STOP DOES NOT REACH INTO THIS BLOCK, AND THAT IS DELIBERATE ───────────
+                // The COUNT is not in the label. It used to be — "far field (101 pattern(s))" —
+                // and the row then ended in a bare "71 / 101" with the same 101 already said once
+                // to its left, directly under a sweep row reading "101 point(s) solved". Three
+                // numbers, two of them the same by coincidence, and nothing saying which was which
+                // (owner report, 2026-09-11). The denominator's unit belongs to the COUNTER, which
+                // is where `unit` puts it; the label is then free to be the changing part it is
+                // meant to be.
+                control?.BeginStage("far field", chosen.Count, "pattern(s)");
+                // ── THE STOP REACHES INTO THIS BLOCK, AT THE PATTERN BOUNDARY ─────────────────
                 //
-                // Owner instruction, 2026-09-11: stopping an EM run must still produce far-field
-                // output the user can plot. It was written the other way first — a stop declined the
-                // remaining patterns — and that is wrong about what this block IS. It solves
-                // nothing. Every pattern here is an exact sum over the basis currents of a point
-                // that is ALREADY SOLVED, so this is not more work in the sense Stop declines: it is
-                // the PROCESSING of what the run has, which is precisely what "finish now and keep
-                // what you have solved" asks for. On an antenna the pattern is usually the reason
-                // the run exists, and a Stop that silently returned s-parameters and nothing else
-                // would hand back the half of the answer nobody was waiting for.
+                // This was written the other way first, and the argument for that was: a pattern
+                // SOLVES nothing, it is an exact sum over basis currents the run already had, so
+                // finishing the block is the "keep what you have solved" a Stop asks for rather
+                // than more work it declines. The premise is true and the conclusion does not
+                // follow, because the block is not cheap — ANT-12's own measurement, thirty lines
+                // up in EmRunService, says a 1 degree x 1 degree hemisphere at N = 1,611 costs
+                // ~6.4 s per pattern against ~4.6 s for the de-embedded SOLVE it rides on. At one
+                // pattern per solved point that makes the far field the LONGEST block in the run,
+                // and a Stop that declined every frequency and then sat through a hundred patterns
+                // is a Stop that did not stop (owner report, 2026-09-11 — the second report of the
+                // same complaint, on a 101-point patch antenna where the block was still climbing
+                // through 71 of 101 long after the button was pressed).
                 //
-                // It is bounded by the same stop that shortened the sweep: `chosen` is one pattern
-                // per SOLVED point, so a run stopped early has fewer solved points and therefore a
-                // shorter block. The rows say "(stopping)" throughout, so the extra time reads as
-                // the run finishing rather than as the button being ignored.
+                // ONE pattern is the floor, and that is what survives of the earlier instruction:
+                // a stopped antenna run must still publish a far field somebody can plot, and it
+                // does. What it no longer does is take the other hundred. `farPatterns` is keyed by
+                // index and everything downstream walks its KEYS, so a short set is already a
+                // well-formed one — the non-adaptive path has always published a subset this way.
+                bool farStopped = false;
                 foreach (int i in chosen)
                 {
+                    if (farPatterns.Count >= 1 && control?.StopRequested == true)
+                    { farStopped = true; break; }
+
                     farWanted.Add(i);
                     // ANT-12 — the de-embedded S of this same point, which `byIndex` already holds
                     // because the refinement loop replayed the calibration over every solved index
@@ -1909,21 +1924,32 @@ public static class PlanarSolve
                     farPatterns[i] = pats;
                     farMetrics[i]  = mets;
                     farPol[i]      = pols;
-                    control?.TickStage(nextLabel:
-                        $"far field ({chosen.Count} pattern(s)) — {FormatHz(freqs[i])}");
+                    control?.TickStage(nextLabel: $"far field — {FormatHz(freqs[i])}");
                 }
 
-                // A stopped run's far field is a COMPLETE far field over a SHORTER set of solved
-                // points, which is a different thing from a truncated one and has to be said so
-                // — the cubes look identical either way.
-                if (stoppedEarly)
+                // Which of the two things happened has to be SAID, because the cubes look identical
+                // either way: a far field over every solved point, and a far field over the first
+                // few of them, differ only in how many slices the frequency axis carries.
+                if (farStopped)
+                {
+                    var took = farPatterns.Keys.OrderBy(k => k).ToArray();
+                    notes.Add($"The far field was CUT SHORT by the stop: {took.Length} of " +
+                              $"{chosen.Count} pattern(s), covering " +
+                              $"{FormatHz(freqs[took[0]])} to {FormatHz(freqs[took[^1]])}. Patterns " +
+                              $"are taken in ascending frequency, so the ones missing are the top " +
+                              $"of the band — including, on a resonant structure, quite possibly " +
+                              $"the resonance. Each pattern that WAS taken is complete and exact: " +
+                              $"nothing here is interpolated or partial. The s-parameters are " +
+                              $"unaffected — they were finished before this block began.");
+                }
+                else if (stoppedEarly)
                     notes.Add($"The far field was taken in full despite the stop: {chosen.Count} " +
-                              $"pattern(s), one at every point the run had actually solved. Nothing " +
-                              $"here was declined — a pattern solves nothing, it is an exact sum " +
-                              $"over basis currents the run already had — so every radiation " +
-                              $"quantity is published exactly as a completed run publishes it. What " +
-                              $"the stop changed is how many SOLVED points there are to take one " +
-                              $"at, which is the same thing it changed about the s-parameters.");
+                              $"pattern(s), one at every point the run had actually solved. The " +
+                              $"stop arrived after this block, or never had a pattern left to " +
+                              $"decline, so every radiation quantity is published exactly as a " +
+                              $"completed run publishes it. What the stop changed is how many " +
+                              $"SOLVED points there are to take one at, which is the same thing it " +
+                              $"changed about the s-parameters.");
 
                 if (moved.Count > 0)
                     notes.Add($"{moved.Count} requested far-field frequency point(s) were not solved " +
@@ -2357,7 +2383,8 @@ public static class PlanarSolve
         // ownStage false when the CALLER is running a block of these and counting them itself — the
         // adaptive path's far-field block. Beginning a stage per pattern there resets a bar that is
         // measuring the whole block, and on a one-port it reset it to "1 of 1" every time.
-        if (ownStage) control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count);
+        if (ownStage)
+            control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count, "port(s)");
         var made    = new PlanarFarFieldPattern[ports.Count];
         var metrics = new PlanarMetricReport[ports.Count];
         var pol     = new PlanarPolarizationPattern[ports.Count];

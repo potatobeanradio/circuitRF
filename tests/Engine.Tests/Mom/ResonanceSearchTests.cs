@@ -649,19 +649,26 @@ public sealed class ResonanceSearchTests
     }
 
     /// <summary>
-    /// <b>A STOPPED run still has a far field, and it is a whole one</b> (owner instruction,
-    /// 2026-09-11: stopping an EM simulation must still produce far-field output that can be
-    /// plotted — the first cut of the stop declined the remaining patterns and handed back
-    /// s-parameters alone).
+    /// <b>A STOPPED run still has a far field, and the stop reaches INTO the block</b> (owner
+    /// report, 2026-09-11 — the second report of "I pressed Stop and it kept going", this time on a
+    /// 101-point patch antenna whose far-field block was still climbing through 71 of 101 patterns
+    /// long after the button was pressed).
     ///
-    /// <para>The block solves NOTHING. Every pattern in it is an exact sum over the basis currents
-    /// of a point that is already solved, so it is the processing of what the run has rather than
-    /// more of the work the stop declined — and on an antenna it is usually the reason the run
-    /// exists. What a stop changes is how many SOLVED points there are to take a pattern at, which
-    /// is the same thing it changes about the s-parameters.</para>
+    /// <para><b>Both halves of that are requirements and the first cut had each of them alone.</b>
+    /// The cut before this one declined the remaining patterns outright and handed back
+    /// s-parameters with no pattern at all, which is the half of the answer nobody on an antenna was
+    /// waiting for. The cut after it took the whole block on the grounds that a pattern SOLVES
+    /// nothing — true, and irrelevant to how long it takes: ANT-12 measured ~6.4 s per pattern at
+    /// N = 1,611 against ~4.6 s for the de-embedded solve it rides on, so at one pattern per solved
+    /// point the block is the LONGEST part of the run and sitting through all of it is not
+    /// stopping.</para>
+    ///
+    /// <para>So: patterns are taken until the stop, with a floor of ONE, and the note says which of
+    /// the two happened — the cubes are indistinguishable otherwise, differing only in how many
+    /// slices the frequency axis carries.</para>
     /// </summary>
     [Fact]
-    public void AStoppedRun_StillPublishesAFarFieldAtEverySolvedPoint()
+    public void AStoppedRun_KeepsTheFarFieldItTook_AndStopsTakingMore()
     {
         var (p, m, ports) = Fixture();
         double[] freqs = Grid(2e9, 6e9, 9);
@@ -673,7 +680,12 @@ public sealed class ResonanceSearchTests
             Adaptive: new PlanarAdaptiveSettings(Tolerance: 1e-4),
             FarField: new PlanarFarFieldSettings(PlanarFarFieldGrid.Hemisphere(30, 45), freqs));
 
-        // ── The reported case: Stop pressed while it is still SOLVING ─────────────────────────
+        var free = PlanarSolve.Run(p, m, ports, freqs, st);
+        Assert.NotNull(free.FarField);
+        Assert.True(free.FarField!.FrequenciesHz.Count > 1,
+                    "the unstopped run must take more than one pattern or this proves nothing");
+
+        // ── Stop pressed while it is still SOLVING ────────────────────────────────────────────
         RunControl? solving = null;
         solving = new RunControl
         {
@@ -685,15 +697,14 @@ public sealed class ResonanceSearchTests
         _out.WriteLine($"stopped while solving: {stoppedSolving.SolvedPointCount} solved, " +
                        $"{stoppedSolving.FarField?.FrequenciesHz.Count ?? 0} pattern frequency(ies)");
 
-        // The whole point of the correction: there IS a far field, and one pattern per solved point.
+        // There IS a far field — that is the floor, and it is what a stopped antenna run can plot.
         Assert.NotNull(stoppedSolving.FarField);
         Assert.NotNull(stoppedSolving.Metrics);
-        Assert.Equal(stoppedSolving.SolvedPointCount, stoppedSolving.FarField!.FrequenciesHz.Count);
+        Assert.NotEmpty(stoppedSolving.FarField!.FrequenciesHz);
+        // And the s-parameters are untouched: the whole requested grid is still published.
         Assert.Equal(freqs.Length, stoppedSolving.Points.Count);
-        Assert.Contains(stoppedSolving.Notes,
-                        n => n.StartsWith("The far field was taken in full", StringComparison.Ordinal));
 
-        // ── And a stop landing INSIDE the block does not truncate it either ───────────────────
+        // ── Stop landing INSIDE the block: it takes the one it is on, then no more ────────────
         RunControl? inBlock = null;
         inBlock = new RunControl
         {
@@ -705,17 +716,22 @@ public sealed class ResonanceSearchTests
             }),
         };
         var stoppedInBlock = PlanarSolve.Run(p, m, ports, freqs, st, inBlock);
-        var free           = PlanarSolve.Run(p, m, ports, freqs, st);
 
         _out.WriteLine($"stopped in the block: {stoppedInBlock.FarField?.FrequenciesHz.Count ?? 0} " +
-                       $"of {free.FarField?.FrequenciesHz.Count ?? 0} pattern frequency(ies)");
+                       $"of {free.FarField.FrequenciesHz.Count} pattern frequency(ies)");
 
-        Assert.NotNull(free.FarField);
-        Assert.True(free.FarField!.FrequenciesHz.Count > 1,
-                    "the unstopped run must take more than one pattern or this proves nothing");
-        Assert.Equal(free.FarField.FrequenciesHz.Count,
-                     stoppedInBlock.FarField?.FrequenciesHz.Count);
-        Assert.Equal(free.FarField.Patterns.Count, stoppedInBlock.FarField!.Patterns.Count);
+        Assert.NotNull(stoppedInBlock.FarField);
+        Assert.NotEmpty(stoppedInBlock.FarField!.FrequenciesHz);
+        Assert.True(stoppedInBlock.FarField.FrequenciesHz.Count < free.FarField.FrequenciesHz.Count,
+                    "a stop inside the far-field block must stop it taking patterns");
+        Assert.Contains(stoppedInBlock.Notes,
+                        n => n.StartsWith("The far field was CUT SHORT", StringComparison.Ordinal));
+
+        // Every pattern that WAS taken is a whole one — the block is truncated, never a pattern.
+        Assert.Equal(stoppedInBlock.FarField.FrequenciesHz.Count * ports.Count,
+                     stoppedInBlock.FarField.Patterns.Count);
+        Assert.Equal(free.FarField.Patterns.Count / free.FarField.FrequenciesHz.Count,
+                     stoppedInBlock.FarField.Patterns.Count / stoppedInBlock.FarField.FrequenciesHz.Count);
     }
 
     /// <summary>
