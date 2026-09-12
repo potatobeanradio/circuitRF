@@ -293,6 +293,148 @@ public sealed class DockAutoHidePersistenceTests
         Assert.True (factory.IsToolAutoHidden(factory.PaletteTool!));
     }
 
+    // ── The width it flies out at ─────────────────────────────────────────────
+    //
+    // Owner, 2026-09-11 (the follow-up to the report above): auto-hide itself survived, but the panel
+    // flew out at the library's own default width rather than the width it had. The flyout is not in
+    // the dock tree and takes no share of any column — Dock sizes it from a PIXEL rectangle kept on the
+    // dockable (GetPinnedBounds/SetPinnedBounds), seeded from the panel's docked size by PinDockable's
+    // own UpdatePinnedBoundsFromVisible and rewritten whenever the flyout's splitter is dragged. The
+    // restore assembles the pinned state directly and never goes past that line, so nothing was setting
+    // it and CwsDockPanel had nowhere to record it.
+
+    /// <summary>Gives a tool the bounds a laid-out window would have given it. Headless there is no
+    /// layout pass, and Dock's own seeding reads exactly these.</summary>
+    private static void AsLaidOutAt(IDockable tool, double width, double height) =>
+        tool.SetVisibleBounds(0.0, 0.0, width, height);
+
+    private static (double W, double H) Flyout(IDockable tool)
+    {
+        tool.GetPinnedBounds(out _, out _, out var w, out var h);
+        return (w, h);
+    }
+
+    /// <summary>
+    /// The reported bug. Auto-hide a panel that is 317 px wide, save, reopen: it flies back out at
+    /// 317 px.
+    /// </summary>
+    [Fact]
+    public void FlyoutWidth_SurvivesSaveAndReopen()
+    {
+        var (factory, root) = NewShell();
+        AsLaidOutAt(factory.ProjectTreeTool!, 317.0, 640.0);
+
+        factory.PinDockable(factory.ProjectTreeTool!);
+        Assert.Equal((317.0, 640.0), Flyout(factory.ProjectTreeTool!));   // the gesture seeded it
+
+        var saved = RoundTripThroughJson(Capture(root));
+        var entry = Panel(saved, DockPanelIds.ProjectTree);
+        Assert.Equal(317.0, entry.AutoHiddenWidth);
+        Assert.Equal(640.0, entry.AutoHiddenHeight);
+
+        var next = new CircuitRfDockFactory();
+        var reopened = next.CreateLayoutFromState(saved);
+        next.InitLayout(reopened);
+
+        Assert.True(next.IsDockablePinned(next.ProjectTreeTool!, reopened));
+        Assert.Equal((317.0, 640.0), Flyout(next.ProjectTreeTool!));
+    }
+
+    /// <summary>
+    /// A width the user set by dragging the FLYOUT's own splitter — which is a different write from the
+    /// one the auto-hide gesture makes, and the only one there is once the panel is already a strip.
+    /// </summary>
+    [Fact]
+    public void AWidthSetOnTheFlyoutItself_IsWhatComesBack()
+    {
+        var (factory, root) = NewShell();
+        AsLaidOutAt(factory.ProjectTreeTool!, 200.0, 640.0);
+        factory.PinDockable(factory.ProjectTreeTool!);
+
+        // Dock writes exactly this when the flyout's splitter drag completes.
+        factory.ProjectTreeTool!.SetPinnedBounds(0.0, 0.0, 455.0, 640.0);
+
+        var reopened = Reopen(RoundTripThroughJson(Capture(root)));
+        var tool = ((CircuitRfDockFactory)reopened.Factory!).ProjectTreeTool!;
+        Assert.Equal((455.0, 640.0), Flyout(tool));
+    }
+
+    /// <summary>
+    /// Every side, because top and bottom strips size on the HEIGHT of that same rectangle and a fix
+    /// that carried only the width would pass on the left and do nothing along the bottom.
+    /// </summary>
+    [Theory]
+    [InlineData(DockSide.Left)]
+    [InlineData(DockSide.Right)]
+    [InlineData(DockSide.Top)]
+    [InlineData(DockSide.Bottom)]
+    public void FlyoutSize_SurvivesOnEverySide(string side)
+    {
+        var f = new CircuitRfDockFactory();
+        var root = f.CreateLayoutFromState(new CwsDockLayout
+        {
+            Panels =
+            [
+                new CwsDockPanel { Id = DockPanelIds.ProjectTree, Side = DockSide.Left, Group = 0, Order = 0, Active = true, Proportion = 1.0 },
+                new CwsDockPanel { Id = DockPanelIds.Properties,  Side = side, Group = side == DockSide.Left ? 1 : 0, Order = 0, Active = true, Proportion = 0.4 },
+            ],
+        });
+        f.InitLayout(root);
+
+        AsLaidOutAt(f.PropertiesTool!, 289.0, 173.0);
+        f.PinDockable(f.PropertiesTool!);
+
+        var next = new CircuitRfDockFactory();
+        var reopened = next.CreateLayoutFromState(RoundTripThroughJson(Capture(root)));
+        next.InitLayout(reopened);
+
+        Assert.Equal((289.0, 173.0), Flyout(next.PropertiesTool!));
+    }
+
+    /// <summary>
+    /// Stable across repeated cycles. The restore is what puts the rectangle back on the dockable, so if
+    /// it did not, the SECOND save would record nothing and the third session would be back to the
+    /// default width — the failure mode that looks fixed until the user closes the workspace twice.
+    /// </summary>
+    [Fact]
+    public void FlyoutWidth_StillSaysTheSameThingOnTheThirdSave()
+    {
+        var (factory, root) = NewShell();
+        AsLaidOutAt(factory.ProjectTreeTool!, 333.0, 512.0);
+        factory.PinDockable(factory.ProjectTreeTool!);
+
+        var first  = RoundTripThroughJson(Capture(root));
+        var second = RoundTripThroughJson(Capture(Reopen(first)));
+        var third  = RoundTripThroughJson(Capture(Reopen(second)));
+
+        foreach (var l in new[] { first, second, third })
+        {
+            Assert.Equal(333.0, Panel(l, DockPanelIds.ProjectTree).AutoHiddenWidth);
+            Assert.Equal(512.0, Panel(l, DockPanelIds.ProjectTree).AutoHiddenHeight);
+        }
+    }
+
+    /// <summary>
+    /// Nothing measured is recorded as nothing — <c>double.NaN</c> is Dock's own unset value here, and it
+    /// would reach System.Text.Json and take the WHOLE layout block down with it (the hazard
+    /// <c>FiniteProportion</c> already guards for proportions, on a field that had no guard).
+    /// </summary>
+    [Fact]
+    public void AnUnmeasuredFlyout_IsRecordedAsZero_NotNaN()
+    {
+        var (factory, root) = NewShell();
+        factory.PinDockable(factory.ProjectTreeTool!);        // headless: no layout pass, so no bounds
+
+        Assert.True(double.IsNaN(Flyout(factory.ProjectTreeTool!).W));
+
+        var captured = Capture(root);
+        Assert.Equal(0.0, Panel(captured, DockPanelIds.ProjectTree).AutoHiddenWidth);
+
+        // …and the block still writes and reads, which is the part that was actually at risk.
+        var saved = RoundTripThroughJson(captured);
+        Assert.True(Panel(saved, DockPanelIds.ProjectTree).AutoHidden);
+    }
+
     // ── Reading a file ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -323,5 +465,46 @@ public sealed class DockAutoHidePersistenceTests
         var reopened = Reopen(saved);
         Assert.Empty(reopened.LeftPinnedDockables ?? []);
         Assert.Empty(reopened.BottomPinnedDockables ?? []);
+    }
+
+    /// <summary>
+    /// A flyout rectangle with only one dimension, or a nonsensical one, is dropped entirely rather than
+    /// half-applied: Dock treats such a rectangle as "not measured yet" and overwrites BOTH dimensions
+    /// from the flyout's actual bounds on the first layout pass, so applying half of one is
+    /// indistinguishable from applying none of it — except that it looks like it worked.
+    ///
+    /// <para>NaN is not among the cases here because it cannot reach a reader: JSON has no spelling for
+    /// it, and the write side refuses it outright (which is why the capture folds it to 0 —
+    /// <see cref="AnUnmeasuredFlyout_IsRecordedAsZero_NotNaN"/>). The reader still guards it, for an
+    /// in-memory layout that never went through a file.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(400.0, 0.0)]
+    [InlineData(0.0, 400.0)]
+    [InlineData(-12.0, 400.0)]
+    public void AHalfSetOrNonsensicalFlyoutRectangle_IsDropped(double w, double h)
+    {
+        var read = RoundTripThroughJson(new CwsDockLayout
+        {
+            Panels = [new CwsDockPanel { Id = DockPanelIds.Messages, AutoHidden = true, Side = DockSide.Bottom,
+                                         AutoHiddenWidth = w, AutoHiddenHeight = h }],
+        });
+
+        var entry = Panel(read, DockPanelIds.Messages);
+        Assert.Equal(0.0, entry.AutoHiddenWidth);
+        Assert.Equal(0.0, entry.AutoHiddenHeight);
+    }
+
+    /// <summary>A panel that is not auto-hidden carries no flyout rectangle — there is no flyout.</summary>
+    [Fact]
+    public void ADockedPanel_CarriesNoFlyoutRectangle()
+    {
+        var read = RoundTripThroughJson(new CwsDockLayout
+        {
+            Panels = [new CwsDockPanel { Id = DockPanelIds.Messages, AutoHidden = false, Side = DockSide.Bottom,
+                                         AutoHiddenWidth = 400.0, AutoHiddenHeight = 200.0 }],
+        });
+
+        Assert.Equal(0.0, Panel(read, DockPanelIds.Messages).AutoHiddenWidth);
     }
 }

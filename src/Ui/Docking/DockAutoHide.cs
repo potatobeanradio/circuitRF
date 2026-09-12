@@ -90,8 +90,19 @@ public static class DockAutoHide
     /// <para><c>InitLayout</c> finishes the job: <c>InitDockable</c> on a root walks the four pinned
     /// lists as well as the tree, so the tool gets its <c>Owner</c>, its <c>Factory</c> and its
     /// <c>DockingState</c> of <c>Pinned</c> with nothing further from us.</para>
+    ///
+    /// <para><paramref name="flyoutWidth"/>/<paramref name="flyoutHeight"/> are the size the panel
+    /// flies out at, in logical pixels, and they are the one piece of auto-hide state the user's own
+    /// gesture sets that a rebuilt layout does not. <c>PinDockable</c> calls Dock's internal
+    /// <c>UpdatePinnedBoundsFromVisible</c> on the way past, seeding the rectangle from the panel's
+    /// docked size; this method assembles the end state directly and never goes past that line, so
+    /// without this the rectangle stays unset and every reopened flyout is the library's default width
+    /// however wide the user had made it (owner, 2026-09-11). Both dimensions or neither — see
+    /// <see cref="CwsDockPanel.AutoHiddenWidth"/> for why a half-set rectangle is overwritten on the
+    /// first layout pass.</para>
     /// </summary>
-    public static void Pin(IFactory factory, IRootDock root, string side, IDockable tool, IDock? home)
+    public static void Pin(IFactory factory, IRootDock root, string side, IDockable tool, IDock? home,
+                           double flyoutWidth = 0.0, double flyoutHeight = 0.0)
     {
         var list = side switch
         {
@@ -104,6 +115,11 @@ public static class DockAutoHide
         if (list.Contains(tool)) return;
 
         tool.OriginalOwner = home;
+
+        if (double.IsFinite(flyoutWidth)  && flyoutWidth  > 0.0
+         && double.IsFinite(flyoutHeight) && flyoutHeight > 0.0)
+            tool.SetPinnedBounds(0.0, 0.0, flyoutWidth, flyoutHeight);
+
         list.Add(tool);
     }
 

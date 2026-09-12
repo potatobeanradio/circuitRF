@@ -135,6 +135,17 @@ public static class DockLayoutSerialization
                 if (!p.Open) p.AutoHidden = false;
                 // A panel that is not in a tab strip cannot be the tab in front of one.
                 if (p.AutoHidden) p.Active = false;
+                // The flyout rectangle means nothing for a panel that has no strip, and a half-set or
+                // non-finite one means nothing at all — Dock overwrites the first from the measured
+                // bounds on the first layout pass, and the second would reach System.Text.Json as NaN
+                // and take the whole block down on the next save. Both, or neither.
+                if (!p.AutoHidden
+                    || !double.IsFinite(p.AutoHiddenWidth)  || p.AutoHiddenWidth  <= 0.0
+                    || !double.IsFinite(p.AutoHiddenHeight) || p.AutoHiddenHeight <= 0.0)
+                {
+                    p.AutoHiddenWidth  = 0.0;
+                    p.AutoHiddenHeight = 0.0;
+                }
                 return p;
             })
             .ToList();

@@ -260,8 +260,9 @@ public class CircuitRfDockFactory : Factory
         state = DockLayoutDefaults.WithMissingPanelsFilled(state);
 
         // Auto-hidden panels, collected while the sides are built and attached to the root's own pinned
-        // lists once it exists. (side the strip is on, the tool, the home dock it returns to.)
-        var autoHidden = new List<(string Side, ITool Tool, IToolDock Home)>();
+        // lists once it exists. (side the strip is on, the tool, the home dock it returns to, and the
+        // pixel size of its flyout — see CwsDockPanel.AutoHiddenWidth for why that is not a proportion.)
+        var autoHidden = new List<(string Side, ITool Tool, IToolDock Home, double FlyoutW, double FlyoutH)>();
 
         // ── Tool docks, per side ──────────────────────────────────────────────
         //
@@ -316,7 +317,9 @@ public class CircuitRfDockFactory : Factory
 
                 // Attached to the root once it exists — the pinned lists hang off the root, which is built
                 // several steps below this one.
-                foreach (var h in hidden) autoHidden.Add((h.Panel.Side, h.Tool!, toolDock));
+                foreach (var h in hidden)
+                    autoHidden.Add((h.Panel.Side, h.Tool!, toolDock,
+                                    h.Panel.AutoHiddenWidth, h.Panel.AutoHiddenHeight));
 
                 if (tools.Contains(ProjectTreeTool!) || hidden.Any(h => ReferenceEquals(h.Tool, ProjectTreeTool)))
                     _projectTreeDock = toolDock;
@@ -454,8 +457,8 @@ public class CircuitRfDockFactory : Factory
         // hang off the ROOT, not off the tree — which is the whole reason they were invisible to the
         // layout capture until 2026-09-11. InitLayout walks these lists as well as the tree, so the tools
         // get their Owner, their Factory and their Pinned docking state with nothing further from here.
-        foreach (var (side, tool, home) in autoHidden)
-            DockAutoHide.Pin(this, root, side, tool, home);
+        foreach (var (side, tool, home, flyoutW, flyoutH) in autoHidden)
+            DockAutoHide.Pin(this, root, side, tool, home, flyoutW, flyoutH);
 
         // ── Floating tool windows ─────────────────────────────────────────────
         foreach (var saved in state.FloatingWindows)

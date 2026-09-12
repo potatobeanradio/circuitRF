@@ -137,6 +137,11 @@ public static class DockLayoutCapture
                             ? p
                             : null;
 
+                // The FLYOUT's size, which is a pixel rectangle Dock keeps on the dockable and nowhere
+                // else — see CwsDockPanel.AutoHiddenWidth. It is not derivable from anything else in this
+                // block, so a capture that skips it loses the width the user set, every time.
+                tool.GetPinnedBounds(out _, out _, out var flyoutW, out var flyoutH);
+
                 layout.Panels.Add(new CwsDockPanel
                 {
                     Id         = tool.Id,
@@ -153,6 +158,8 @@ public static class DockLayoutCapture
                     // Never the active tab of a dock it is not in. A restored dock whose only entry said
                     // Active would have no tab showing at all.
                     Active     = false,
+                    AutoHiddenWidth  = PositiveSize(flyoutW),
+                    AutoHiddenHeight = PositiveSize(flyoutH),
                 });
             }
         }
@@ -387,6 +394,16 @@ public static class DockLayoutCapture
     /// geometry included.</para>
     /// </summary>
     private static double FiniteProportion(double p) => double.IsFinite(p) ? p : 0.0;
+
+    /// <summary>
+    /// A measured pixel size on its way into the block, or 0 for "nothing measured".
+    ///
+    /// <para>Dock's own unset value here is <c>double.NaN</c>, and NaN would reach System.Text.Json and
+    /// throw — the same hazard <see cref="FiniteProportion"/> guards, with the same consequence (the
+    /// whole layout block lost behind a generic warning). Non-positive is folded into the same 0 because
+    /// a zero-width flyout is not a size anyone could have set.</para>
+    /// </summary>
+    private static double PositiveSize(double v) => double.IsFinite(v) && v > 0.0 ? v : 0.0;
 
     /// <summary>Depth-first walk of every <see cref="IToolDock"/> under <paramref name="dockable"/>.</summary>
     public static IEnumerable<IToolDock> EnumerateToolDocks(IDockable dockable)

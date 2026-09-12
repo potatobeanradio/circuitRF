@@ -1,5 +1,46 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — an auto-hidden panel flies back out at the wrong width after reopening
+
+The follow-up to the same day's *auto-hide is lost entirely on reopen* report. Auto-hide itself now
+survived; the Project Tree's flyout came back at the docking library's default width however wide the
+user had made it.
+
+**The flyout's size is not a proportion and is not in the layout tree.** A panel flying out over the
+canvas takes no share of any column — Dock sizes it from a **pixel rectangle stored on the dockable
+itself**, `IDockable.GetPinnedBounds`/`SetPinnedBounds` (a `TrackingAdapter` field, nothing to do with
+`IDock.Proportion`). `RootDockControl.ApplyPinnedDockSize` reads the width of that rectangle into the
+flyout grid's column for a left/right strip, and its HEIGHT for a top/bottom one. Nothing in `.cws`
+described it, so there was nowhere to record it and nothing to restore.
+
+**Why the restore could not have inherited it by accident.** The user's gesture goes through
+`FactoryBase.PinDockable`, whose first act is `UpdatePinnedBoundsFromVisible` — it seeds the rectangle
+from the panel's currently-docked size. `DockAutoHide.Pin` deliberately does **not** call `PinDockable`
+(it assembles the pinned end state directly on a layout being built, for the reasons in its own
+remarks), so it never passes that line. The rectangle stayed unset, and Dock fell back to its default.
+
+**The trap, and why both dimensions are stored when only one is ever read.**
+`RootDockControl.UpdatePinnedDockableBounds` decides whether the stored rectangle is worth keeping with
+`IsValidSize(width) && IsValidSize(height)` — **both**. Restore a width alone and the first layout pass
+treats the rectangle as unmeasured and overwrites it from the flyout's actual (default) bounds, so a
+half-set rectangle behaves exactly like no rectangle at all. `CwsDockPanel.AutoHiddenWidth`/`Height`
+are therefore written and applied as a pair, and the reader drops the pair if either half is missing.
+
+**Second trap, the one that would have shipped looking fixed.** The restore is what puts the rectangle
+back on the dockable, so it is also what makes the NEXT capture able to read it. Had the restore only
+been able to *read* the field, the first reopen would have been right and the second save would have
+recorded nothing — a bug that appears only after closing the workspace twice.
+`FlyoutWidth_StillSaysTheSameThingOnTheThirdSave` is the gate for that.
+
+`double.NaN` is Dock's own "unset" here, and it reaches System.Text.Json as a value it refuses to
+write — the identical hazard `DockLayoutCapture.FiniteProportion` already guards for proportions, on a
+field that had no guard. `PositiveSize` folds it (and any non-positive size) to 0 on the way into the
+block, so an un-flown-out strip cannot take the whole layout block down with it on save.
+
+Gate: `tests/Ui.Tests/DockAutoHidePersistenceTests.cs`, the *"width it flies out at"* section — all
+four sides, the splitter-drag write as well as the auto-hide seed, and three save/reopen cycles.
+
+
 ## Owner report, 2026-09-12 — the Workspace panel, undocked then closed: the contents went and the window stayed
 
 Same shape as the 2026-08-17 report (*"their window contents disappears and the window is not closed"*),

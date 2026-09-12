@@ -108,6 +108,34 @@ public sealed class CwsDockPanel
     /// restores the panel docked, which is the behaviour it has always had.</para>
     /// </summary>
     public bool AutoHidden { get; set; }
+
+    /// <summary>
+    /// How wide the auto-hidden panel's <b>flyout</b> is, in logical pixels — the width it takes over
+    /// the canvas when its strip tab is clicked. Zero when there is nothing recorded, which leaves the
+    /// docking library's own default in force.
+    ///
+    /// <para><b>Why this is not <see cref="Proportion"/>.</b> A flyout is not in the dock tree and takes
+    /// no share of any column: the library sizes it from a PIXEL rectangle it keeps on the dockable
+    /// itself (<c>IDockable.GetPinnedBounds</c>/<c>SetPinnedBounds</c>), which it seeds from the panel's
+    /// docked width at the moment the user auto-hides it and rewrites whenever they drag the flyout's
+    /// splitter. <see cref="Proportion"/> describes the empty home dock the panel returns to when it is
+    /// un-hidden, which is a different measurement of a different thing — and recording only that is
+    /// what the owner saw on 2026-09-11: auto-hide came back, the flyout came back at the library's
+    /// default width every time.</para>
+    ///
+    /// <para><b>Both dimensions are stored, and both must be.</b> Left and right strips size on the
+    /// width and top and bottom on the height, so only one of the two is ever read — but the library
+    /// treats a rectangle with either dimension unset as "not measured yet" and OVERWRITES the whole
+    /// thing from the flyout's actual bounds on the first layout pass. Restoring a width alone is
+    /// therefore indistinguishable from restoring nothing.</para>
+    ///
+    /// <para>Additive and defaulted to 0, so a <c>.cws</c> written before this existed reads back
+    /// exactly as it did.</para>
+    /// </summary>
+    public double AutoHiddenWidth { get; set; }
+
+    /// <summary>The flyout's height in logical pixels. See <see cref="AutoHiddenWidth"/>.</summary>
+    public double AutoHiddenHeight { get; set; }
 }
 
 /// <summary>
