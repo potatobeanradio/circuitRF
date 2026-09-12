@@ -44,9 +44,15 @@
             <Setter Property="Padding" Value="4,3"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <!-- 4,2 and not the TextBox's 4,3: a ComboBox lays its selected-item text out inside the
+             padding box and then CENTRES it, so an odd vertical padding leaves the line a rounded
+             half-pixel off and the combos here disagreed with each other by 1 px. The even one puts
+             every combobox in this panel — these, and the ones on the application default that
+             Styles/CircuitRfStyles.axaml now pads 12,2,0,2 — on the same line. The horizontal 4 is
+             this panel's own: these are narrow unit pickers, and the global 12 would crowd them. -->
         <Style Selector="ComboBox.cell">
             <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="Padding" Value="4,2"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
@@ -962,7 +968,6 @@
                           ItemsSource="{Binding ViewModel.SolveCoreChoices}"
                           SelectedItem="{Binding ViewModel.SelectedSolveCores}"
                           DisplayMemberBinding="{Binding Label}"
-                          VerticalContentAlignment="Center"
                           ToolTip.Tip="How many cores the full-wave solver may use at once. Automatic uses the whole machine. Lowering it leaves cores free for other work and makes the run slower; it never changes the answer."/>
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.SolveCoresNote}"/>

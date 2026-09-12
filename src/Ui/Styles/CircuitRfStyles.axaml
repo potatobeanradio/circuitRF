@@ -362,6 +362,31 @@
         <Style Selector="NumericUpDown">
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
+
+        <!-- AND THE SAME BUG ONE CONTROL FURTHER AGAIN (owner-reported 2026-09-11, against the EM
+             Setup panel: the text in a lot of its comboboxes does not sit in the vertical middle).
+
+             This one is NOT VerticalContentAlignment — the theme already template-binds that and it
+             already says Center. It is the theme's own default PADDING, which is vertically
+             ASYMMETRIC: 12,1,0,3. That is the upstream theme's own optical nudge, sized for a 32 px control
+             carrying 14 px text, and at this application's compact density (24 px, 12 px text) it simply
+             pushes the line up. Measured on the live EmSetupEditorView rather than assumed: every
+             combo left on the theme default rendered its text 3 px from the top and 6 px from the
+             bottom — 1.5 px high — while the TextBox beside it was exact, and the five combos that
+             had been given a symmetric padding by hand were within half a pixel.
+
+             Only the vertical numbers change here. 12 and 0 are the theme's own horizontal values
+             and are repeated deliberately: the right side is 0 because the chevron lives in its own
+             grid column, and moving the left one would shift the text of every combobox in the
+             application sideways to fix an axis nobody reported.
+
+             Application scope for the reason the three notes above give: the EM Setup panel is where
+             it was SEEN, not where it lives — the Data Display trace cards, the technology editor and
+             every dialog with a unit picker all inherit the same default. Fixing it per view is how
+             it comes back. -->
+        <Style Selector="ComboBox">
+            <Setter Property="Padding" Value="12,2,0,2"/>
+        </Style>
         <Style Selector="MenuItem">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
         </Style>

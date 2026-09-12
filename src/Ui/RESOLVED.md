@@ -1,5 +1,44 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — combobox text does not sit in the vertical middle
+
+Reported against the EM Setup panel. Measured on the live `EmSetupEditorView`, headless, by walking
+every realised `ComboBox` and translating its selected-item `TextBlock` into the control's own
+coordinates — eleven of them, five of which rendered **3 px from the top and 6 px from the bottom**
+of a 24 px control while the `TextBox` beside them was exact.
+
+**It is not `VerticalContentAlignment`.** The Fluent ComboBox theme already template-binds it and it
+already resolves to `Center`, which is why the one combobox here that had been given an explicit
+`VerticalContentAlignment="Center"` by hand (the core cap) sat exactly as wrong as its neighbours.
+That attribute has been removed rather than left in place looking like the fix.
+
+**It is the theme's own default `Padding`, `12,1,0,3`** — an optical nudge sized for a 32 px control
+carrying 14 px text. At this application's compact density (24 px, 12 px text) it is just a
+1.5 px lift. The five combos that looked right were the ones this panel had already given a
+hand-written symmetric padding.
+
+Fixed once, application-wide, in `Styles/CircuitRfStyles.axaml` — the same policy, and the same
+place, as the `Button` / `CheckBox` / `TextBox` / `NumericUpDown` notes already sitting there: the EM
+Setup panel is where it was *seen*, not where it lives, and every unit picker in every other view
+inherits the identical default. Only the vertical numbers move (`12,2,0,2`); 12 and 0 are the
+theme's own, the 0 because the chevron has its own grid column.
+
+**The half-pixel that is left is layout rounding, not a second bug.** A 15 px line in a 24 px box
+wants 4.5 px of clearance and integer layout cannot give it, so the padding also has to be *even* or
+adjacent comboboxes round apart and disagree with each other by a whole pixel — which is what the
+panel's own `4,3` was doing. It is `4,2` now, and all eleven sit at 4 / 5.
+
+**Found on the way, not fixed, because it changes how the application looks rather than whether it
+is aligned:** a ComboBox's `FontSize` never reaches its selected-item text. The global
+`Style Selector="TextBlock"` sets `FontSize` from the `FontSize` resource, and a style beats an
+inherited value — so the `TextBlock` a `ContentPresenter` builds for the selected item renders at 12
+no matter what the ComboBox says. Every combobox in the EM Setup panel asks for 11 and draws 12,
+one point larger than the TextBox beside it. Worth a decision, not a silent change.
+
+Gate: `tests/Ui.Tests/Em/ComboBoxTextIsVerticallyCentredTests.cs`, verified by putting `12,1,0,3`
+back and watching it go red.
+
+
 ## Owner report, 2026-09-11 — an auto-hidden panel flies back out at the wrong width after reopening
 
 The follow-up to the same day's *auto-hide is lost entirely on reopen* report. Auto-hide itself now
