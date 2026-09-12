@@ -920,15 +920,55 @@ public partial class App : Application
     /// question "which one" has one honest answer, and it is the one in front.</para>
     /// </summary>
     private string? ActiveWorkspaceDirectory()
+        => ActiveWorkspaceWindow()?.DataContext is WorkspaceViewModel { CurrentWorkspacePath: { } cws }
+            ? Path.GetDirectoryName(cws)
+            : null;
+
+    /// <summary>
+    /// The workspace window the user is looking at: the active one, else any VISIBLE one.
+    /// </summary>
+    private WorkspaceWindow? ActiveWorkspaceWindow()
     {
         if (_desktop is null) return null;
 
         var windows = _desktop.Windows.OfType<WorkspaceWindow>().Where(w => w.IsVisible).ToList();
-        var chosen  = windows.FirstOrDefault(w => w.IsActive) ?? windows.FirstOrDefault();
+        return windows.FirstOrDefault(w => w.IsActive) ?? windows.FirstOrDefault();
+    }
 
-        return chosen?.DataContext is WorkspaceViewModel { CurrentWorkspacePath: { } cws }
-            ? Path.GetDirectoryName(cws)
-            : null;
+    /// <summary>
+    /// <see cref="OwnerWindowForDialog"/> for callers that are not the application object — a dialog
+    /// raised from a menu or a key binding, where <c>$parent[Window]</c> resolves to null on macOS.
+    /// </summary>
+    internal static Window? DialogOwner() => (Current as App)?.OwnerWindowForDialog();
+
+    /// <summary>
+    /// A window fit to OWN a dialog, or null when there is none and the dialog must stand alone.
+    ///
+    /// <para><b>Visible is the whole point.</b> <c>Window.Show(owner)</c> and
+    /// <c>ShowDialog(owner)</c> throw <c>InvalidOperationException("Cannot show window with
+    /// non-visible owner")</c> on an owner that is merely hidden, and the lifetime's window list
+    /// keeps a hidden window in it — only CLOSING removes one. So <c>Windows.FirstOrDefault()</c>
+    /// hands back a window that was hidden minutes ago, and the throw lands on the dispatcher where
+    /// no call-site try/catch can reach it: the process goes down. The two hidden windows this
+    /// application actually has are <c>_bgMenuWindow</c>, hidden the moment a workspace window
+    /// opens, and any floating tool window between its close box and the later dispatcher pass that
+    /// tears it down.</para>
+    ///
+    /// <para><b>_bgMenuWindow is excluded even when it IS visible.</b> It is 1×1, fully transparent
+    /// and parked off-screen to hold the macOS menu bar up, and it is hidden again as soon as a
+    /// workspace window appears — a dialog owned by it would be positioned against nothing and
+    /// would go with it.</para>
+    /// </summary>
+    private Window? OwnerWindowForDialog()
+    {
+        if (_desktop is null) return null;
+
+        if (ActiveWorkspaceWindow() is { } workspace) return workspace;
+
+        var others = _desktop.Windows
+                             .Where(w => w.IsVisible && !ReferenceEquals(w, _bgMenuWindow))
+                             .ToList();
+        return others.FirstOrDefault(w => w.IsActive) ?? others.FirstOrDefault();
     }
 
     private void WireAppMenuItems()
@@ -950,8 +990,7 @@ public partial class App : Application
             }
             _appSettingsWindow = new Views.Dialogs.SettingsView(ActiveWorkspaceDirectory());
             _appSettingsWindow.Closed += (_, _) => _appSettingsWindow = null;
-            var owner = (_desktop as IClassicDesktopStyleApplicationLifetime)
-                            ?.Windows.FirstOrDefault();
+            var owner = OwnerWindowForDialog();
             if (owner is not null)
                 _appSettingsWindow.Show(owner);
             else

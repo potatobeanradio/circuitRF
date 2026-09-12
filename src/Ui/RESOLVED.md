@@ -25634,3 +25634,40 @@ Gate: `tests/Ui.Tests/EmRunInFlightGuardTests.cs` — the sentence builder direc
 comment-stripped source scan (a guard named only in a doc-comment earns nothing), including the
 ordering assertion that each command asks BEFORE it calls `WorkspaceCreate.Create` /
 `SwitchToWorkspaceReporting` / `ResetToBlankShell`.
+
+## ⌘, during an EM run killed the process — a hidden window is still in `desktop.Windows` (owner, 2026-09-11)
+
+`Unhandled exception. System.InvalidOperationException: Cannot show window with non-visible owner`,
+out of `App.WireAppMenuItems`' Settings… handler. Nothing to do with the EM run; that only supplied
+the long session in which the precondition could accumulate.
+
+**The window list keeps HIDDEN windows — only closing one removes it.** So
+`desktop.Windows.FirstOrDefault()`, which is what that handler owned its dialog to, hands back a
+window that was hidden minutes ago, and `Window.Show(owner)` refuses it. Two windows here are hidden
+and deliberately not closed: **`_bgMenuWindow`**, the 1×1 transparent off-screen window that holds
+the macOS menu bar up while no workspace is open — it enters the list the first time the user closes
+their last window, and is *hidden, not closed*, the moment a new one opens, so from then on it is
+first in the list forever — and a **floating tool window** between its close box and the later
+dispatcher pass that tears it down (`CrfHostWindow`, deliberately asynchronous to stay out of Dock's
+crashing cascade).
+
+**The throw is unreachable by any try/catch at the call site**: it arrives through
+`NativeMenuItem.RaiseClicked` on the dispatcher, like the `DoLayoutReset` case the backstop above it
+was written for. There is no degraded mode — the process goes.
+
+Fixed at the choice, not at the throw: `App.OwnerWindowForDialog()` is now the one place a dialog
+owner is picked, and both filters are load-bearing.
+
+- **Visible**, for the reason above.
+- **Never `_bgMenuWindow`, even when it IS visible.** In the no-workspace state it is visible by
+  design, and it is 1×1, fully transparent and parked at (-2,-2) — a dialog owned by it is positioned
+  against nothing and goes when it is hidden, which happens the instant the user opens a window.
+
+`ActiveWorkspaceDirectory` and the owner now come from the same pick (`ActiveWorkspaceWindow`), so
+Settings is owned by the window whose workspace it is showing rather than by whichever window the
+list happened to start with. `PCellTrustDialog.ShowAsync` had the same unfiltered fallback — it takes
+`App.DialogOwner()` now; its `ShowDialog` would have thrown identically.
+
+Gate: `tests/Ui.Tests/DialogOwnerVisibilityTests.cs`. The load-bearing one is the scan that fails on
+**any** unfiltered `.Windows.FirstOrDefault()` / `.First()` / `[0]` in `src/Ui` — that is the defect
+verbatim, and it was verified by putting the old line back and watching it go red.

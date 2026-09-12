@@ -36,10 +36,9 @@ public partial class PCellTrustDialog : Window
 
         // $parent[Window] resolves to null on macOS for menu- and key-binding-sourced calls, and this
         // one is raised from a workspace open rather than from a control at all — find the shell.
-        owner ??= (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
-                  ?.Windows.FirstOrDefault(w => w.IsActive)
-                  ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
-                  ?.Windows.FirstOrDefault();
+        // App.DialogOwner picks a VISIBLE one: the lifetime's list keeps hidden windows, and
+        // ShowDialog on a hidden owner throws on the dispatcher and takes the process down.
+        owner ??= App.DialogOwner();
 
         // No window to own the prompt means nobody can be asked. Record nothing and ask again later —
         // never fall through to running the scripts on the strength of a question that was not put.
