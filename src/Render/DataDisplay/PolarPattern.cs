@@ -22,6 +22,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using RfCore.Data;
 
 namespace CircuitRF.Render.DataDisplay;
 
@@ -213,6 +214,74 @@ public static class PolarPatternAngle
         }
 
         factor = double.NaN;
+        return false;
+    }
+
+    /// <summary>
+    /// <b>Why a quantity is greyed in the picker of a dB-radial POLAR plot, or null when it can be
+    /// drawn there.</b>
+    ///
+    /// <para>A pattern plot's compass is the trace's own swept axis, so a cube that is not a
+    /// function of DIRECTION has nothing to draw on one: it resolves to
+    /// <c>Trace.PatternAxisInvalid</c> and reads "&lt;invalid&gt;" beside a picture with no curve in
+    /// it. Most of a far-field run's registry is per-frequency and per-port — the directivity, the
+    /// gains, the efficiencies, TRP, peak EIRP — and not one of them has an angle axis, so the
+    /// polar plot was offering a long list of quantities it could not draw (owner, 2026-09-11).
+    /// That is the same report <see cref="SurfaceResolve.DisabledReasonOn"/> answers for the 3D
+    /// surface, and it is answered here the same way rather than differently.</para>
+    ///
+    /// <para>They are offered DISABLED WITH A REASON rather than dropped, which is this
+    /// repository's rule everywhere a plot kind cannot take a quantity: a row that vanishes cannot
+    /// be told apart from a quantity the run did not publish, and those are very different
+    /// facts.</para>
+    ///
+    /// <para><paramref name="cube"/> is null for an item that has no cube to test — a derived
+    /// network metric, a WSProbe quantity — and the answer for those is the same sentence, because
+    /// none of them is a function of direction either.</para>
+    /// </summary>
+    public static string? DisabledReasonOnPattern(DataCube? cube)
+    {
+        if (cube is not null && TryFindAngleAxis(cube, out _)) return null;
+        return NotOnAPatternRefusal;
+    }
+
+    /// <summary>The sentence <see cref="DisabledReasonOnPattern"/> gives. Says what a pattern plot
+    /// IS before it says what this quantity is not, and names the plots that draw it perfectly well
+    /// — nothing is wrong with the quantity.</summary>
+    public const string NotOnAPatternRefusal =
+        "A polar pattern plot draws one quantity around its own swept ANGLE — a polar angle (theta " +
+        "or el), an azimuth (phi or az) or a cut plane — with the radius in dB. This one is not " +
+        "swept over an angle, so there is no cut to draw from it. Put it on a rectangular plot or " +
+        "a table, where it reads normally.";
+
+    /// <summary>
+    /// The first axis of <paramref name="cube"/> that can be the compass — an ANGLE on
+    /// <see cref="TryDegreesPerUnit"/>'s own test, which is the test the trace itself applies to its
+    /// X axis, so the picker and the picture cannot disagree about what an angle is.
+    ///
+    /// <para><b>ONE axis, not two</b> — that is the whole difference from
+    /// <see cref="SurfaceResolve.TryFindAngleAxes"/>: a cut is a single plane, and a cube carrying
+    /// only θ has a cut in it even though it has no surface. Which of its angle axes the trace
+    /// finally sweeps is the slice's business; this asks only whether it has one to sweep.</para>
+    ///
+    /// <para><b>An angle axis of a single sample does not count</b>, which is the same length rule
+    /// the surface finder applies and is here for the same reason: it draws a lone point at one
+    /// bearing, and a dot on a disc is not a cut. It is a case a real run reaches — ANT-5's
+    /// beamwidth is per-CUT, and a run with one cut plane publishes <c>BeamwidthDeg</c> over a
+    /// <c>cut</c> axis of length 1 — so the refusal says "not SWEPT over an angle" rather than "has
+    /// no angle axis", which would be untrue of exactly that cube.</para>
+    /// </summary>
+    internal static bool TryFindAngleAxis(DataCube cube, out int angleDim)
+    {
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            var ax = cube.Axes[d];
+            if (ax.Length < 2) continue;
+            if (!TryDegreesPerUnit(ax.Name, ax.Unit, out _)) continue;
+            angleDim = d;
+            return true;
+        }
+        angleDim = -1;
         return false;
     }
 

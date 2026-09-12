@@ -1,5 +1,57 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — the polar plot offered far-field metrics it cannot draw
+
+A trace card on a polar plot listed the whole of a far-field run's `farfield` group — 22 rows on the
+`PatternFixture` solve — of which **7** can actually be drawn there. The other 15 are per-frequency,
+per-port quantities: the directivity, the gains, the efficiencies, TRP, peak EIRP, the power budget,
+the beamwidth. Picking one gave a trace labelled `<invalid>` and an empty disc.
+
+**It is the same defect ANT-10's own round fixed on the 3D surface, one plot kind over, and it is
+fixed with the same mechanism rather than a second one.** A pattern plot's compass is the trace's
+own swept axis — `Trace.BuildCubePath` refuses with `PatternAxisInvalid` when
+`PolarPatternAngle.TryDegreesPerUnit` says the X axis is not an angle — so the question the picker
+has to ask is whether the cube has an angle axis at all. `SurfaceResolve.DisabledReasonOn` already
+asked exactly that for the surface and was the only shape gate the picker had; the polar half was
+missing, so `_parent.PlotType is Polar` fell through to the KIND gate alone (`isComplexPlot`), which
+in dB radial mode is off — and everything was offered.
+
+**One axis, not two, and that is the whole difference from the surface.** A cut is a single plane: a
+cube carrying only θ has a cut in it and has no surface. `PolarPatternAngle.TryFindAngleAxis` is the
+one-axis sibling of `SurfaceResolve.TryFindAngleAxes`, over the same
+`TryDegreesPerUnit` test the trace itself applies, so the picker and the picture cannot disagree
+about what an angle is. `TraceRowViewModel.ShapeReasonOn` picks between the two by plot kind and is
+now what both cube paths call — the ordinary cube loop and `AddNetworkParamElementItems`, whose N²
+S(i,j) rows are functions of frequency and are greyed on a pattern plot for the same reason.
+
+**The gate is asked only in the dB RADIAL MODE.** A linear polar plot is a locus in the complex
+plane — its angle is the value's own argument, not an axis — so an angle axis means nothing there
+and `RealOnComplexPlotReason` stays its gate, unchanged. `PolarRadialIsDb` already rebuilt every
+row's picker when the mode moved, which is why nothing new had to be wired for the switch.
+
+**`BeamwidthDeg` is the one cube that lands on the length rule, and it is a real case rather than a
+hypothetical.** ANT-5 publishes it per CUT, so a run with a single cut plane gives it a `cut` axis
+of length 1 — an angle axis by name and unit, with one sample on it. The renderer happily puts one
+dot on the disc; the picker greys it, on the same `Length < 2` rule the surface finder applies,
+because a dot at one bearing is not a pattern. That is the only place picker and renderer
+deliberately part company, so the refusal is worded **"this one is not swept over an angle"** rather
+than "has no angle axis", which would be untrue of exactly that cube, and
+`EveryGreyedCubeIsOneNoChoiceOfAxisCanDraw` asserts the case **by name** rather than leaving it as an
+unexplained gap in a count.
+
+**What is NOT part of this.** The default slice still puts `freq` on X for every cube, so picking
+`farfield.U` on a pattern plot still opens `<invalid>` until θ is promoted to X in the axis-role
+editor. That is a separate defect — a default, not an offering — and greying rows does not touch it.
+The derived network metrics keep their own gate too: a stability circle is still offered on a
+dB-radial polar plot, where its Γ-plane disc is not the disc being drawn. Both are worth a look and
+neither was reported.
+
+Gate: `tests/Ui.Tests/DataDisplay/AntennaFeedbackRound4Tests.cs` — the rule over a real solve's own
+group, the real trace card against a real loaded file in all three modes (dB polar / linear polar /
+rect), the radial-mode switch, and the measured agreement: every cube resolved on every one of its
+axes as X, against a real dB-radial plot, with "draws a curve under some choice" required to match
+"is offered" exactly.
+
 ## Owner report, 2026-09-11 — a marker read its impedance in decibels
 
 A marker on S(1,1) in a Rect plot printed "impedance=… dB ∠…° Ω" — a decibel impedance, which is not

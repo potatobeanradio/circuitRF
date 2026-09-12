@@ -3025,10 +3025,11 @@ public partial class TraceRowViewModel : ViewModelBase
                     if (rank == 0 && !_parent.IsTablePlot) continue;   // scalars are Table-only
 
                     // Two reasons a cube can be greyed here, and they are asked in the order a
-                    // reader would: the 3D plot's is about the cube's SHAPE (no angle axes, no
-                    // surface), the Smith/polar one about its KIND. A cube can fail either.
-                    string? surfaceReason = SurfaceResolve.DisabledReasonOn(_parent.PlotType, cube);
-                    bool isEnabled = surfaceReason is null
+                    // reader would: a PATTERN plot's is about the cube's SHAPE (no angle axis, no
+                    // cut or surface), the Smith/linear-polar one about its KIND. A cube can fail
+                    // either.
+                    string? shapeReason = ShapeReasonOn(cube);
+                    bool isEnabled = shapeReason is null
                                   && (!isComplexPlot || cube.DataKind == DataKind.Complex);
                     // Default- and measurements-group cubes are bare-resolvable — emit their bare
                     // name so the picker yields `PDC`/`V`, matching typed input. Analysis cubes
@@ -3044,7 +3045,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
                     _allSignals.Add(new TraceDataItem(entry, qualified, defaultSlice, bareName, isEnabled)
                                     { Group = cubeGroup,
-                                      DisabledReason = surfaceReason ?? RealOnComplexPlotReason(isEnabled) });
+                                      DisabledReason = shapeReason ?? RealOnComplexPlotReason(isEnabled) });
                 }
             }
         }
@@ -3616,10 +3617,11 @@ public partial class TraceRowViewModel : ViewModelBase
 
         int nPorts = cube.Axes[iDim].Length;
         string qualified = $"{group}.{bareName}";
-        // An S/Z/Y matrix element is a function of frequency, never of direction — so on a 3D plot
-        // every one of these N² rows is greyed, for the same reason and with the same sentence.
-        string? surfaceReason = SurfaceResolve.DisabledReasonOn(_parent.PlotType, cube);
-        bool isEnabled = surfaceReason is null
+        // An S/Z/Y matrix element is a function of frequency, never of direction — so on EITHER
+        // pattern plot, the 3D surface and the polar cut alike, every one of these N² rows is
+        // greyed, for the same reason and with the same sentence.
+        string? shapeReason = ShapeReasonOn(cube);
+        bool isEnabled = shapeReason is null
                       && (!isComplexPlot || cube.DataKind == DataKind.Complex);
         AxisSlice[] baseSlice = BuildDefaultSlice(cube);
 
@@ -3633,9 +3635,32 @@ public partial class TraceRowViewModel : ViewModelBase
             string label = $"{bareName}({i + 1},{j + 1})";
             _allSignals.Add(new TraceDataItem(entry, qualified, slice, label, isEnabled)
                             { Group = cubeGroup,
-                              DisabledReason = surfaceReason ?? RealOnComplexPlotReason(isEnabled) });
+                              DisabledReason = shapeReason ?? RealOnComplexPlotReason(isEnabled) });
         }
     }
+
+    /// <summary>
+    /// <b>Why a cube cannot be drawn on this plot because of its SHAPE</b>, or null when nothing
+    /// about its shape stops it — the gate the two PATTERN plots share and that no other plot kind
+    /// has. ANT-10's 3D surface needs TWO angle axes; the polar plot's dB radial mode needs ONE,
+    /// because its compass is the trace's own swept axis. Both questions are asked of the resolve's
+    /// own finder, so the picker can never offer a quantity the picture then refuses.
+    ///
+    /// <para><b>The polar half is asked only in the dB RADIAL MODE.</b> A LINEAR polar plot is a
+    /// locus in the complex plane — its angle is the value's own argument, not an axis — so an angle
+    /// axis means nothing there and its gate is the KIND one
+    /// (<see cref="RealOnComplexPlotReason"/>) instead.</para>
+    ///
+    /// <para>Reported 2026-09-11: a polar plot offered the whole of a far-field run's metric
+    /// registry, of which only the per-direction cubes could be drawn. The per-frequency, per-port
+    /// ones — directivity, the gains, the efficiencies, TRP, peak EIRP — resolve to
+    /// <c>&lt;invalid&gt;</c> on a compass, which is the same defect the 3D surface had and is
+    /// answered with the same mechanism rather than a second one.</para>
+    /// </summary>
+    private string? ShapeReasonOn(RfCore.Data.DataCube? cube)
+        => _parent.IsPolarDbPlot
+            ? PolarPatternAngle.DisabledReasonOnPattern(cube)
+            : SurfaceResolve.DisabledReasonOn(_parent.PlotType, cube);
 
     /// <summary>
     /// Why a cube item is greyed on a Smith or linear-polar plot, or null when it is not greyed.
