@@ -770,4 +770,73 @@ public sealed class ResonanceSearchTests
         for (int i = 0; i < run.Points.Count; i++)
             Assert.Equal(freqs[i], run.Points[i].FrequencyHz);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // The far field AT the found resonance (owner report, 2026-09-11).
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>The run published a pattern at every solved grid point and none at the frequency the
+    /// search went and found.</b> The far-field block runs over the grid BEFORE the search, and its
+    /// stores were keyed by grid index, so a found point had nowhere to put one — which on an
+    /// antenna is the one frequency both switches were turned on for.
+    ///
+    /// <para>The gate is a frequency that is in the far-field set and is NOT on the requested grid:
+    /// that can only have come from the search. Asserting merely "more slices than before" would
+    /// pass on an extra grid point, and asserting on a pattern's CONTENT would be gating this
+    /// change on the physics of the fixture rather than on the plumbing it actually fixes.</para>
+    /// </summary>
+    [Fact]
+    public void AFoundResonance_GetsAFarFieldPatternOfItsOwn_AtAFrequencyNotOnTheGrid()
+    {
+        var (p, m, ports) = ResonantFixture();
+        double[] freqs = Grid(2e9, 6e9, 11);
+
+        // A COARSE pattern grid. The direction count is the whole cost of a pattern and none of the
+        // subject of this test — the subject is which FREQUENCIES get one.
+        var far = new PlanarFarFieldSettings(
+            Grid: PlanarFarFieldGrid.Hemisphere(30, 60), FrequenciesHz: freqs);
+
+        var adaptive = new PlanarAdaptiveSettings(Tolerance: 1e-2)
+        {
+            Search = PlanarResonanceSettings.Default with { MaxAddedPoints = 4 },
+        };
+
+        var run = PlanarSolve.Run(p, m, ports, freqs,
+                                  new PlanarSolveSettings(Deembed: false, Adaptive: adaptive,
+                                                          FarField: far));
+
+        Assert.NotEmpty(run.Resonances);
+        Assert.NotNull(run.FarField);
+
+        var farF   = run.FarField!.FrequenciesHz;
+        var offGrid = farF.Where(f => !freqs.Contains(f)).ToArray();
+
+        _out.WriteLine($"{farF.Count} far-field slice(s); {offGrid.Length} off the requested grid");
+        foreach (var r in run.Resonances)
+            _out.WriteLine($"  resonance {r.FrequencyHz / 1e9:F5} GHz Q = {r.Q:F2} {r.Kind}");
+        foreach (double f in offGrid) _out.WriteLine($"  extra pattern at {f / 1e9:F5} GHz");
+
+        // The fix itself: at least one pattern at a frequency the user did not ask for, which is
+        // only reachable through the search.
+        Assert.NotEmpty(offGrid);
+
+        // And it is AT a resonance — within the bracket the search reports having located it to,
+        // never somewhere else that merely happens to be off-grid.
+        foreach (double f in offGrid)
+            Assert.Contains(run.Resonances,
+                            r => Math.Abs(r.FrequencyHz - f) <= Math.Max(r.LocatedToHz, 1e-6 * r.FrequencyHz));
+
+        // The set is still ascending and still carries one slice per port per frequency.
+        Assert.Equal(farF.OrderBy(f => f), farF);
+        Assert.Equal(farF.Count * run.FarField.PortNumbers.Count, run.FarField.Patterns.Count);
+
+        // Every requested grid point that was SOLVED still has its own slice — the resonance
+        // patterns are additions, never replacements.
+        foreach (double f in run.SolvedFrequencies.Where(freqs.Contains))
+            Assert.Contains(f, farF);
+
+        Assert.Contains(run.Notes, n => n.Contains("AT the resonance", StringComparison.Ordinal));
+    }
+
 }

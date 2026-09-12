@@ -7797,7 +7797,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? $"{pointCount.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
             : "a frequency sweep whose point count could not be resolved";
 
-        string sampling = kernel != Engine.Mom.EmAnalysisKind.Planar
+        bool planar = kernel == Engine.Mom.EmAnalysisKind.Planar;
+
+        string sampling = !planar
             ? setup.AdaptiveSampling
                 ? "adaptive frequency sampling is on, but it applies to the full-wave analysis only " +
                   "and this run is the cross-section analysis — every point is solved"
@@ -7807,7 +7809,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 ? "adaptive frequency sampling is on — it solves a subset and models the rest"
                 : "adaptive frequency sampling is off — every point is solved";
 
-        return $"EM analysis started: '{setup.Name}' over {points}. {sampling}.";
+        var plan = new System.Text.StringBuilder($"EM analysis started: '{setup.Name}' over {points}. {sampling}.");
+
+        // ── THE BLOCKS AFTER THE SWEEP, NAMED BEFORE THEY RUN (owner report, 2026-09-11) ────────
+        //
+        // Both of these post their OWN progress rows with their OWN denominators, and a user who
+        // was never told they were coming reads those denominators as more frequency points. The
+        // report was exactly that: a far-field row counting to 75 beside a sweep row reading
+        // "75 point(s) solved", read as the run deciding it needed another 75 points. It needed
+        // none — the far field solves nothing — and the resonance search, the only block that adds
+        // frequencies at all, had not started.
+        //
+        // ONE SHORT CLAUSE EACH, in the order they run, and no duration: a full-wave point's cost is
+        // the machine's, not ours, and a number here would be wrong on somebody's box.
+        if (planar && setup.RadiationPattern)
+            plan.Append(" Then the far field: one pattern per SOLVED point — no new frequencies.");
+
+        if (planar && setup.ResonanceSearch)
+            plan.Append(setup.AdaptiveSampling
+                ? " Then the resonance search — the only block that adds frequencies, up to " +
+                  $"{Engine.Mom.PlanarResonanceSettings.Default.MaxAddedPoints}" +
+                  (setup.RadiationPattern ? ", each located resonance getting a pattern." : ".")
+                : " The resonance search is off: it needs adaptive sampling.");
+
+        return plan.ToString();
     }
 
     /// <summary>The sweep row's own outcome, appended to the end of the row it already owns — so the

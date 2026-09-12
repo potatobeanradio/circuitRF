@@ -490,6 +490,65 @@ public class EmPanelDeclutterTests
     }
 
     /// <summary>
+    /// <b>Owner report, 2026-09-11: "why does it think it needs an extra 75 points?"</b> It did not.
+    /// The far field posts its own progress row with its own denominator — one PATTERN per solved
+    /// point, no new frequencies — and it sat under a sweep row reading "75 point(s) solved", so the
+    /// two 75s read as 150 points. The resonance search, the only block that adds a frequency at
+    /// all, had not started.
+    ///
+    /// <para>The blocks are now NAMED before they run, in the order they run. Short clauses, and no
+    /// duration in any of them — a full-wave point's cost belongs to the machine.</para>
+    /// </summary>
+    [Fact]
+    public void RunStartText_NamesTheBlocksThatFollowTheSweep_AndQuotesNoDuration()
+    {
+        var setup = new EmSetup
+        {
+            Name = "patch", AdaptiveSampling = true,
+            RadiationPattern = true, ResonanceSearch = true,
+        };
+
+        string t = ViewModels.WorkspaceViewModel.EmRunStartText(setup, 81, EmAnalysisKind.Planar);
+
+        // The far field solves nothing, and that is the sentence the report was missing.
+        Assert.Contains("far field", t, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("per SOLVED point", t, StringComparison.Ordinal);
+        Assert.Contains("no new frequencies", t, StringComparison.OrdinalIgnoreCase);
+
+        // The search is the ONLY block that adds frequencies, and its cap is named up front so its
+        // own counter cannot be read as unbounded.
+        Assert.Contains("resonance search", t, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("only block that adds frequencies", t, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(PlanarResonanceSettings.Default.MaxAddedPoints.ToString(),
+                        t, StringComparison.Ordinal);
+
+        // No duration, in any spelling. The machine decides that, not us.
+        foreach (string banned in new[] { " s ", "second", "minute", "hour", "~" })
+            Assert.DoesNotContain(banned, t, StringComparison.OrdinalIgnoreCase);
+
+        // Both blocks are off by default, and a setup with neither says nothing about either.
+        string bare = ViewModels.WorkspaceViewModel.EmRunStartText(
+            new EmSetup { Name = "x", AdaptiveSampling = true }, 81, EmAnalysisKind.Planar);
+        Assert.DoesNotContain("far field", bare, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("resonance search", bare, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The one combination the panel can express and the engine declines: the search seeds itself
+    /// from the interpolant adaptive sampling builds. The engine already warns; the start line says
+    /// it BEFORE the run rather than after, because that is when it can still be acted on.
+    /// </summary>
+    [Fact]
+    public void RunStartText_SaysTheSearchIsOffWhenAdaptiveIsOff()
+    {
+        var setup = new EmSetup { Name = "x", AdaptiveSampling = false, ResonanceSearch = true };
+        string t = ViewModels.WorkspaceViewModel.EmRunStartText(setup, 81, EmAnalysisKind.Planar);
+
+        Assert.Contains("resonance search is off", t, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("needs adaptive", t, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Owner report, 2026-08-29: the started line hedged with "will be used if the full-wave analysis
     /// is chosen" on a run that was already under way. The kernel is RESOLVED by the time the line is
     /// posted, so the line states an outcome — and where that outcome contradicts the checkbox, it

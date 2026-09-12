@@ -4887,3 +4887,62 @@ every pattern in it whole, and the CUT SHORT note present).
 `EmRunProgressTests` covers the two rows' "stopping" readout, that the sweep row's left text and bar
 position do not move when it appears, and that the stage counter carries its declared noun while a
 stage declaring none renders exactly as before. All routine-tier — the slowest is 3.9 s.
+
+---
+
+## The far field ran BEFORE the search, so a found resonance had no pattern (2026-09-11)
+
+Owner report on an 81-point patch with adaptive sampling, the resonance search and the radiation
+pattern all on. Two separate things came out of it.
+
+### The pattern at the resonance — a real hole, now filled
+
+`PlanarSolve.Run` takes its far field over the grid and only THEN runs the resonance search. The
+three pattern stores were keyed by grid INDEX, and a found point is by definition not on the grid, so
+it had nowhere to put one. The run therefore published a pattern at every point the sampler happened
+to solve and **none at the frequency the search went and found** — which on an antenna is the one
+frequency both switches were turned on for.
+
+Filled additively: a second set of stores keyed by FREQUENCY, one pattern per located resonance taken
+after the search, merged into the published set by a stable sort. Two things this deliberately is
+not:
+
+* **Not "move the far-field block below the search".** That block maps each REQUESTED far-field
+  frequency onto the nearest solved point, so with the found points in the solved set a requested
+  grid frequency would start being answered by a pattern taken somewhere the user never asked for,
+  silently, and the pattern set would stop being reproducible from the request alone.
+* **Not a pattern AT f₀.** f₀ is a root located BETWEEN solved points; a pattern is an exact sum over
+  basis currents and there are none there. It is taken at the nearest SOLVED frequency — inside the
+  search's own reported bracket — and the offset is reported against that resonance's half-power
+  bandwidth.
+
+The currents and raw admittance of a search-added point were being dropped on the floor
+(`Probe` stored only Raw/Kernel/Time); `extraCurrents`/`extraY` keep them, which is what makes any of
+this possible.
+
+### The three numbers that read as one number
+
+The report was "why does it think it needs an extra 75 points?" It did not. The far-field row counts
+PATTERNS — one per already-solved point, zero new solves — and it sat under a sweep row reading
+"75 point(s) solved", so the two 75s read as 150 points. The resonance search, the only block that
+adds a frequency at all, had not started; it runs last and is capped.
+
+The counter was already honest and that was not enough: nothing had said the block was coming. The
+start line now names the blocks after the sweep, in the order they run, one short clause each —
+and quotes **no duration**, because a full-wave point's cost belongs to the machine.
+
+Worth knowing, and NOT a defect: adaptive sampling saved 6 points of 81 here. Refinement bisects grid
+indices and stops only when the interpolant's prediction at a midpoint matches the solve to within
+the tolerance; across a patch resonance adjacent samples of an 81-point grid differ by far more than
+that, so nearly every interval splits to the floor. Adaptive pays off when the grid OVERSAMPLES
+relative to how fast S moves. `EmRunSummary` already says this at the end of the run.
+
+### Gates
+
+`ResonanceSearchTests.AFoundResonance_GetsAFarFieldPatternOfItsOwn_AtAFrequencyNotOnTheGrid` — the
+gate is a far-field frequency that is **not on the requested grid**, which can only have come from
+the search, and which must lie inside a reported resonance bracket. "More slices than before" would
+have passed on an extra grid point. Measured on the mismatched-line fixture: 11 grid slices plus one
+at 3.5750 GHz for the resonance located at 3.56511 GHz. Routine tier.
+`EmPanelDeclutterTests.RunStartText_NamesTheBlocksThatFollowTheSweep_AndQuotesNoDuration` holds the
+plan clauses and scans the sentence for any spelling of a duration.

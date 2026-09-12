@@ -1424,6 +1424,23 @@ public static class PlanarSolve
         var farMetrics  = new Dictionary<int, PlanarMetricReport[]>();
         var farPol      = new Dictionary<int, PlanarPolarizationPattern[]>();
 
+        // ── THE PATTERN AT A FOUND RESONANCE, KEYED BY FREQUENCY (owner report, 2026-09-11) ─────
+        //
+        // Everything above is keyed by GRID INDEX, and a resonance the search locates is by
+        // definition not on the grid. The consequence, until this store existed, was the worst
+        // ordering an antenna tool could have: the resonance search would locate f0 to a hair, and
+        // the one frequency the whole run was for had no radiation pattern at it — because the
+        // far-field block had already run, over the grid, before the search began.
+        //
+        // A SECOND STORE rather than re-keying the first. `freqs` is sorted but NOT de-duplicated
+        // (the publish step below says so in its own words), so one frequency can name two grid
+        // positions and a frequency-keyed merge of the existing store would silently drop a slice.
+        // Kept separate, the grid half stays index arithmetic and is byte for byte what it was with
+        // the search off, which is the property this file defends everywhere else.
+        var farResPatterns = new SortedDictionary<double, PlanarFarFieldPattern[]>();
+        var farResMetrics  = new SortedDictionary<double, PlanarMetricReport[]>();
+        var farResPol      = new SortedDictionary<double, PlanarPolarizationPattern[]>();
+
         // ── One frequency's raw DUT solve, lifted out of the loop so the adaptive driver below
         //    reaches EXACTLY the same arithmetic. R-adf-1's bit-identity when adaptive is off is a
         //    property of this being one implementation, not of two that agree.
@@ -1677,6 +1694,13 @@ public static class PlanarSolve
             var extraRaw    = new SortedDictionary<double, Mat<Complex>>();
             var extraKernel = new Dictionary<double, PlanarFrequencyKernel>();
             var extraTime   = new Dictionary<double, (double K, double D, double S)>();
+            // The basis currents and the raw admittance of a found point, kept for the same reason
+            // `currentsByIndex`/`yByIndex` keep the grid's: a far-field pattern is an exact sum over
+            // them, and without them a resonance the search located is a frequency no pattern can be
+            // taken at. They were dropped on the floor until 2026-09-11 — see the far-field block
+            // below the search for what that cost.
+            var extraCurrents = new Dictionary<double, Vec<Complex>[]>();
+            var extraY        = new Dictionary<double, Mat<Complex>>();
             var gridIndexOf = new Dictionary<double, int>();
             for (int i = 0; i < freqs.Length; i++) gridIndexOf.TryAdd(freqs[i], i);
 
@@ -1982,9 +2006,11 @@ public static class PlanarSolve
                     {
                         var r = SolveRawAt(f);
                         control?.Tick();
-                        extraRaw[f]    = r.Raw;
-                        extraKernel[f] = r.Kernel;
-                        extraTime[f]   = (r.KernelMs, r.DutMs, r.StandardsMs);
+                        extraRaw[f]      = r.Raw;
+                        extraKernel[f]   = r.Kernel;
+                        extraTime[f]     = (r.KernelMs, r.DutMs, r.StandardsMs);
+                        extraCurrents[f] = r.Currents;
+                        extraY[f]        = r.Y;
                     }
                     var all = UnionAscending();
                     byFreq = ReplayAll(all);
@@ -2007,6 +2033,122 @@ public static class PlanarSolve
                 resonances = searchOutcome.Resonances;
                 notes.Add(searchOutcome.Note);
                 if (searchOutcome.StoppedEarly) stoppedEarly = true;
+
+                // ══════════════════════════════════════════════════════════════════════════════
+                // A PATTERN AT EACH FOUND RESONANCE (owner report, 2026-09-11)
+                // ══════════════════════════════════════════════════════════════════════════════
+                //
+                // The far-field block above ran over the grid, BEFORE the search, so on a patch
+                // antenna the run published a pattern at every point the sampler happened to solve
+                // and none at the frequency the search then went and found. That is the one
+                // frequency the user turned both switches on for.
+                //
+                // THE FIX IS ADDITIVE, AND THAT IS DELIBERATE. Moving the whole far-field block
+                // below the search was the other candidate and it is worse: the block maps each
+                // REQUESTED far-field frequency onto the nearest solved point, so with the found
+                // points in the solved set a requested grid frequency would start being answered by
+                // a pattern taken at some frequency the user never asked for, quietly, and the
+                // pattern set would stop being reproducible from the request alone. Here the grid
+                // half is untouched and the resonances are EXTRA slices that announce their own
+                // frequency.
+                //
+                // "AT f0" MEANS AT THE NEAREST SOLVED POINT TO f0, never at f0 itself, and that is
+                // the same rule the grid half already states: a pattern is an exact sum over basis
+                // currents, and f0 is a ROOT located between two solved ends rather than a point
+                // anybody solved. The search brackets it to PlanarResonanceSettings.FrequencyTolerance,
+                // so the point this lands on is inside that bracket — which is what makes the
+                // substitution worth making rather than worth refusing. The distance is REPORTED.
+                if (farSettings is not null && farVerdict.Ok && searchOutcome.Resonances.Count > 0)
+                {
+                    // Every frequency the run has basis currents for: the solved grid points and the
+                    // points the search added. An interpolated point is not a candidate and never
+                    // can be — it has no currents behind it.
+                    var haveCurrents = new List<double>(solved.Count + extraCurrents.Count);
+                    foreach (int i in solved) haveCurrents.Add(freqs[i]);
+                    haveCurrents.AddRange(extraCurrents.Keys);
+
+                    var resMoved = new List<(double F0, double At)>();
+                    var resOnGrid = new List<double>();
+                    bool resStopped = false;
+
+                    // Which ones actually need a pattern computed, worked out BEFORE the stage is
+                    // begun so the denominator is the real count rather than the resonance count —
+                    // a resonance that landed on a grid point the far-field block already covered
+                    // costs nothing and must not be counted as work.
+                    var todo = new List<(double F0, double At)>();
+                    foreach (var r in searchOutcome.Resonances)
+                    {
+                        double at = haveCurrents[0];
+                        foreach (double f in haveCurrents)
+                            if (Math.Abs(f - r.FrequencyHz) < Math.Abs(at - r.FrequencyHz)) at = f;
+
+                        // Already drawn by the grid block? Then the resonance is served and there is
+                        // nothing to add. This is the good case and it is silent on purpose.
+                        if (gridIndexOf.TryGetValue(at, out int gi) && farPatterns.ContainsKey(gi))
+                        { resOnGrid.Add(r.FrequencyHz); continue; }
+
+                        if (farResPatterns.ContainsKey(at) || todo.Any(t => t.At == at)) continue;
+                        todo.Add((r.FrequencyHz, at));
+                    }
+
+                    if (todo.Count > 0)
+                    {
+                        control?.BeginStage("far field at the resonance", todo.Count, "pattern(s)");
+                        foreach (var (f0, at) in todo)
+                        {
+                            // The stop reaches in here for the same reason it reaches into the grid
+                            // block: a pattern is not cheap, and a Stop that then sat through a
+                            // further set of them is a Stop that did not stop. There is no floor of
+                            // one here — the grid block has already published a far field somebody
+                            // can plot, so declining all of these still leaves a well-formed result.
+                            if (control?.StopRequested == true) { resStopped = true; break; }
+
+                            var cur = gridIndexOf.TryGetValue(at, out int gi2) && currentsByIndex.TryGetValue(gi2, out var cc)
+                                        ? cc : extraCurrents[at];
+                            var yy  = gridIndexOf.TryGetValue(at, out int gi3) && yByIndex.TryGetValue(gi3, out var yv)
+                                        ? yv : extraY[at];
+
+                            // The DE-EMBEDDED S of this same frequency, out of the union replay —
+                            // RealizedGainDbi's only input, and ANT-12 measured that reading the raw
+                            // self-admittance instead runs it 15 dB low at a de-embedded edge port.
+                            var (pats, mets, pols) = FarFieldAt(problem, mesh, cur, yy, byFreq![at].S,
+                                                                ports, at, farSettings, cap, control,
+                                                                ownStage: false);
+                            farResPatterns[at] = pats;
+                            farResMetrics[at]  = mets;
+                            farResPol[at]      = pols;
+                            if (Math.Abs(at - f0) > 0) resMoved.Add((f0, at));
+                            control?.TickStage(nextLabel: $"far field at the resonance — {FormatHz(at)}");
+                        }
+                    }
+
+                    if (farResPatterns.Count > 0)
+                        notes.Add($"{farResPatterns.Count} additional far-field pattern(s) were taken " +
+                                  $"AT the resonance(s) the search located, over and above the one per " +
+                                  $"solved grid point above. The grid block runs before the search, so " +
+                                  $"without these a run that located a resonance would carry no " +
+                                  $"radiation pattern at it. These slices are extra frequencies in the " +
+                                  $"far-field set, not replacements for any requested one.");
+
+                    foreach (var (f0, at) in resMoved)
+                        notes.Add($"The pattern for the resonance at {FormatHz(f0)} was taken at " +
+                                  $"{FormatHz(at)}, the nearest SOLVED frequency — a pattern needs " +
+                                  $"basis currents and f0 is a root located BETWEEN solved points, " +
+                                  $"not a point anybody solved. The offset is " +
+                                  $"{FormatHz(Math.Abs(at - f0))}; compare it against that " +
+                                  $"resonance's own half-power bandwidth before reading the pattern " +
+                                  $"as the pattern at resonance.");
+
+                    if (resOnGrid.Count > 0)
+                        notes.Add($"{resOnGrid.Count} located resonance(s) fell on a solved grid point " +
+                                  $"that already had a pattern, so no extra one was taken.");
+
+                    if (resStopped)
+                        notes.Add($"The resonance far field was CUT SHORT by the stop: " +
+                                  $"{farResPatterns.Count} of {todo.Count} pattern(s). The " +
+                                  $"s-parameters and the located resonances are unaffected — both " +
+                                  $"were finished before this block began.");
+                }
             }
             else if (ad.Search is not null && freqs.Length >= 2 && solved.Count >= 2
                      && control?.StopRequested == true)
@@ -2271,14 +2413,30 @@ public static class PlanarSolve
             // diagnostic it cannot produce, and the reason is the engine's own wording.
             notes.Add("No far field was computed. " + farVerdict.Reason);
         }
-        else if (farPatterns.Count > 0)
+        else if (farPatterns.Count > 0 || farResPatterns.Count > 0)
         {
-            var idx = farPatterns.Keys.OrderBy(i => i).ToArray();
-            var flat = new List<PlanarFarFieldPattern>(idx.Length * ports.Count);
-            foreach (int i in idx) flat.AddRange(farPatterns[i]);
+            // ── ONE ASCENDING LIST, OUT OF TWO STORES ───────────────────────────────────────
+            //
+            // The grid half is walked in INDEX order (see the store's own comment for why it is
+            // not re-keyed by frequency) and the resonance half in frequency order; the two are
+            // then merged by a STABLE sort, so a duplicated grid frequency keeps its index order
+            // and a resonance slice lands between the grid slices that bracket it. With the
+            // resonance search off the second store is empty and this produces the same list,
+            // in the same order, that the index walk produced on its own.
+            var slices = new List<(double F, PlanarFarFieldPattern[] P, PlanarMetricReport[] M,
+                                   PlanarPolarizationPattern[] L)>();
+            foreach (int i in farPatterns.Keys.OrderBy(i => i))
+                slices.Add((freqs[i], farPatterns[i], farMetrics[i], farPol[i]));
+            foreach (var (f, pats) in farResPatterns)
+                slices.Add((f, pats, farResMetrics[f], farResPol[f]));
+            slices = slices.OrderBy(x => x.F).ToList();
+
+            var farF = slices.Select(x => x.F).ToArray();
+            var flat = new List<PlanarFarFieldPattern>(slices.Count * ports.Count);
+            foreach (var x in slices) flat.AddRange(x.P);
             farSet = new PlanarFarFieldSet(
                 farSettings!.EffectiveGrid,
-                idx.Select(i => freqs[i]).ToArray(),
+                farF,
                 ports.Select(pp => pp.Number).ToArray(),
                 flat);
 
@@ -2291,10 +2449,10 @@ public static class PlanarSolve
 
             // ── ANT-5 — the metrics. Every refusal is said ONCE, in the registry's own wording, and
             //    the sweep is never thrown away for one of them (present and refused).
-            var flatMetrics = new List<PlanarMetricReport>(idx.Length * ports.Count);
-            foreach (int i in idx) flatMetrics.AddRange(farMetrics[i]);
+            var flatMetrics = new List<PlanarMetricReport>(slices.Count * ports.Count);
+            foreach (var x in slices) flatMetrics.AddRange(x.M);
             metricSet = PlanarMetricSet.From(
-                idx.Select(i => freqs[i]).ToArray(),
+                farF,
                 ports.Select(pp => pp.Number).ToArray(),
                 flatMetrics);
 
@@ -2307,10 +2465,10 @@ public static class PlanarSolve
             // ── ANT-6 — polarization. The reference angle is REPORTED whether it was named or
             //    derived (R-ant-9), and the mesh-limited cross-pol floor is said wherever a cross-pol
             //    number is (R-ant-11) rather than left for a user to discover.
-            var flatPol = new List<PlanarPolarizationPattern>(idx.Length * ports.Count);
-            foreach (int i in idx) flatPol.AddRange(farPol[i]);
+            var flatPol = new List<PlanarPolarizationPattern>(slices.Count * ports.Count);
+            foreach (var x in slices) flatPol.AddRange(x.L);
             polSet = PlanarPolarizationSet.From(
-                idx.Select(i => freqs[i]).ToArray(),
+                farF,
                 ports.Select(pp => pp.Number).ToArray(),
                 flatPol);
 
