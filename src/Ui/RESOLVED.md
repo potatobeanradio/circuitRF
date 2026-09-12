@@ -25710,3 +25710,43 @@ list happened to start with. `PCellTrustDialog.ShowAsync` had the same unfiltere
 Gate: `tests/Ui.Tests/DialogOwnerVisibilityTests.cs`. The load-bearing one is the scan that fails on
 **any** unfiltered `.Windows.FirstOrDefault()` / `.First()` / `[0]` in `src/Ui` — that is the defect
 verbatim, and it was verified by putting the old line back and watching it go red.
+
+## A metric in the far-field group was born in decibels (owner, 2026-09-11)
+
+Adding a `farfield.RadiationEfficiency` trace seeded the transform `dB10`. It should have been
+`None` — the cube is published in PERCENT, and 10·log₁₀(92) is not a quantity.
+
+**The GROUP is what routes a cube to the pattern seed, and the group is not only the pattern.**
+`TraceRowViewModel.DefaultTransformFor` sends anything whose name starts `farfield.` to
+`DefaultPatternTransform`, which was written for ANT-4's three pattern cubes — `Etheta`/`Ephi`
+(V, complex, 20·log₁₀) and `U` (W/sr, real, 10·log₁₀). But ANT-5's per-point metrics and ANT-6's
+polarization land in the same group, and they carry units decibels do not apply to at all: `%`
+(`RadiationEfficiency`), `deg` (`BeamwidthDeg`, `DirectivityPeakThetaDeg`) and `1`
+(`PolarizationSense`).
+
+**The defect was the shape of the last branch, not a missing unit.** The method read the unit for
+a field and for a power and then fell through to a DataKind guess — complex → dB20, real → dB10.
+That guess is documented as existing for a cube with NO unit, which is every result file written
+before ANT-7 §8 put units on these cubes; it was reaching every cube whose unit was simply not one
+of the four it knew. So a cube that had **said what it is** was overruled by a guess written for
+cubes that say nothing. The fix is one line — a stated unit that is neither a field nor a power
+returns `None`, and the DataKind case is now reachable only when the unit string is empty. No
+metric reaches it, because a metric has carried a unit since it was introduced.
+
+`PolarizationSense` is the case that shows the guess was never sound: it is SIGNED, −1…+1, and its
+sign is the handedness, so a dB of it discards the half of the cube that carries the answer.
+
+**A second symptom, invisible unless you knew to look for it.** `TraceLabeler` appends `(%)` only
+to an untransformed percentage — deliberately, since a transform replaces the unit with its own
+scale and "dB10 (%)" would be a lie. So the wrong default also suppressed the unit that had just
+been added to stop 92 being read as a ratio.
+
+**What did NOT change: the picker.** dB10 and dB20 are wanted on some of these metrics, just not as
+what the trace is born with — the seed and the transform list are separate decisions, and
+`TransformEntryEnabled` keys on plot type and DataKind, never on the unit the seed reads. Every
+transform stays selectable on a real cube on a Rect plot. `farfield.U` still seeds `dB10`, which is
+its own pinned case.
+
+Gate: `AntennaFeedbackRound2Tests.APatternTrace_IsBornWithTheRightDecibel` (four new rows) and
+`AMetricsDefaultIsNone_ButEveryDecibelIsStillOffered`, which asserts the seed and the picker in one
+test so a later narrowing of either cannot pass alone.

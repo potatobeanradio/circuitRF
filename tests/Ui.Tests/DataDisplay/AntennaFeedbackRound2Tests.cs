@@ -523,6 +523,18 @@ public sealed class AntennaFeedbackRound2Tests(ITestOutputHelper output)
     [InlineData("farfield.U",      "", false, CubeTransform.dB10)]
     [InlineData("farfield.Ephi",   "", true,  CubeTransform.dB20)]
     [InlineData("farfield.AxialRatioDb", "", false, CubeTransform.None)]
+    // Reported 2026-09-11: RadiationEfficiency was born dB10. The far-field GROUP is what routes a
+    // cube here, and the group holds ANT-5's per-point metrics and ANT-6's polarization as well as
+    // the pattern — so a stated unit that is neither a field nor a power is a quantity decibels do
+    // not apply to, and the DataKind guess (which exists only for a unit-less legacy file) must not
+    // reach it. A percentage is the one with a visible second symptom: the labeller appends "(%)"
+    // only to an untransformed percentage, so the wrong default suppressed the unit too.
+    [InlineData("farfield.RadiationEfficiency",    "%",   false, CubeTransform.None)]
+    [InlineData("farfield.BeamwidthDeg",           "deg", false, CubeTransform.None)]
+    [InlineData("farfield.DirectivityPeakThetaDeg", "deg", false, CubeTransform.None)]
+    // Signed, and in −1…+1: its dB would be of the MAGNITUDE, which discards the half of the cube
+    // that carries the answer (the sign IS the handedness).
+    [InlineData("farfield.PolarizationSense",      "1",   false, CubeTransform.None)]
     public void APatternTrace_IsBornWithTheRightDecibel(string name, string unit, bool complex,
                                                         CubeTransform want)
     {
@@ -533,6 +545,37 @@ public sealed class AntennaFeedbackRound2Tests(ITestOutputHelper output)
 
         Assert.Equal(want, TraceRowViewModel.DefaultPatternTransform(cube, name));
         output.WriteLine($"{name} [{unit}] {(complex ? "complex" : "real")} -> {want}");
+    }
+
+    /// <summary>
+    /// <b>A metric's default is None, and None is only the DEFAULT.</b> Said by the owner on
+    /// 2026-09-11, alongside the RadiationEfficiency report: dB10 or dB20 IS wanted on some of
+    /// these metrics, just not as what the trace is born with. The seed and the picker are separate
+    /// decisions and this holds them apart — the one thing a default must never do is take a
+    /// transform away, and the transform list is keyed on the plot type and the DataKind, never on
+    /// the unit the seed reads.
+    /// </summary>
+    [Theory]
+    [InlineData("%")]
+    [InlineData("deg")]
+    [InlineData("1")]
+    public void AMetricsDefaultIsNone_ButEveryDecibelIsStillOffered(string unit)
+    {
+        var axes = new[] { new Axis("freq", [1e9, 2e9], "Hz") };
+        var cube = new DataCube(axes, new[] { 92.0, 93.0 }) { Unit = unit };
+
+        Assert.Equal(CubeTransform.None,
+                     TraceRowViewModel.DefaultTransformFor(cube, PlotType.Rect,
+                                                           "farfield.RadiationEfficiency"));
+
+        var items = TraceRowViewModel.BuildTransformItems(
+            isCubeBound: true, PlotType.Rect, isComplexData: false);
+
+        foreach (var want in new[] { CubeTransform.dB10, CubeTransform.dB20, CubeTransform.dB,
+                                     CubeTransform.Mag,  CubeTransform.None })
+            Assert.True(items.Single(i => i.Transform == want).Enabled, $"{want} was not offered");
+
+        output.WriteLine($"[{unit}] seeds None and still offers dB10 / dB20 / dB");
     }
 
     /// <summary>

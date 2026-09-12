@@ -3736,6 +3736,16 @@ public partial class TraceRowViewModel : ViewModelBase
             cube.DataKind == RfCore.Data.DataKind.Complex, IsParameterCube(cube), cubeName);
     }
 
+    /// <summary>Whether a cube spec names something in the run's far-field group — the group whose
+    /// PATTERN quantities are read in decibels. It is not the case that every cube in it is: the
+    /// group also carries ANT-5's per-point metrics and ANT-6's polarization, which include
+    /// percentages, angles and a signed ratio. What the group decides is that
+    /// <see cref="DefaultPatternTransform"/> gets to answer; that method decides which cubes are dB.
+    /// </summary>
+    internal static bool IsFarFieldCube(string? cubeName) =>
+        cubeName is not null
+        && cubeName.StartsWith(CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal);
+
     /// <summary>
     /// <b>What a cube has to be transformed by to be a pattern RADIUS.</b> Seeded when a trace is
     /// bound on a pattern plot, because the alternative is what the owner hit on 2026-09-11: a
@@ -3743,19 +3753,22 @@ public partial class TraceRowViewModel : ViewModelBase
     /// — plausible and wrong — and an <c>Etheta</c> one is born <c>&lt;invalid&gt;</c> with the
     /// only cure being to type a transform into the spec box.
     ///
-    /// <para><b>Three cases, in order, and none of them is a guess about magnitudes.</b> A cube
+    /// <para><b>Four cases, in order, and none of them is a guess about magnitudes.</b> A cube
     /// that is ALREADY in decibels takes no transform. A FIELD is 20·log₁₀ and a POWER is
     /// 10·log₁₀ — read off the cube's own unit where it has one, which is what ANT-7 §8 put
-    /// units on these cubes FOR. Where it has none (every result file written before that), the
-    /// DataKind is the discriminator and it is exact for the cubes that matter: <c>Etheta</c> and
-    /// <c>Ephi</c> are complex fields, <c>U</c> is a real intensity.</para>
+    /// units on these cubes FOR. <b>Any OTHER stated unit takes no transform either</b>, and that
+    /// is the third case rather than a fall-through: the far-field group holds ANT-5's per-point
+    /// metrics and ANT-6's polarization alongside the pattern, so a stated unit of <c>%</c>
+    /// (<c>RadiationEfficiency</c>), <c>deg</c> (<c>BeamwidthDeg</c>,
+    /// <c>DirectivityPeakThetaDeg</c>) or <c>1</c> (<c>PolarizationSense</c>, which is SIGNED and
+    /// whose dB would be of its magnitude) is a quantity decibels do not apply to at all. Reported
+    /// on 2026-09-11: <c>farfield.RadiationEfficiency</c> was born <c>dB10</c>, which also
+    /// suppresses the <c>(%)</c> the labeller appends only to an untransformed percentage.
+    /// Only where a cube states NO unit (every result file written before ANT-7 §8) does the
+    /// DataKind decide, and it is exact for the cubes that matter: <c>Etheta</c> and <c>Ephi</c>
+    /// are complex fields, <c>U</c> is a real intensity. A metric cube has carried a unit since it
+    /// was introduced, so no metric reaches that last case.</para>
     /// </summary>
-    /// <summary>Whether a cube spec names something in the run's far-field group — the one group
-    /// whose every quantity is read in decibels.</summary>
-    internal static bool IsFarFieldCube(string? cubeName) =>
-        cubeName is not null
-        && cubeName.StartsWith(CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal);
-
     internal static CubeTransform DefaultPatternTransform(RfCore.Data.DataCube cube, string? cubeName)
     {
         string unit = cube.Unit ?? "";
@@ -3771,6 +3784,11 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (unit is "V" or "A")        return CubeTransform.dB20;   // a field
         if (unit is "W" or "W/sr")     return CubeTransform.dB10;   // a power
+
+        // A stated unit that is neither a field nor a power is not a decibel quantity. The
+        // DataKind guess below exists for a cube with NO unit and must not reach one that has said
+        // what it is.
+        if (unit.Length != 0)          return CubeTransform.None;
 
         return cube.DataKind == RfCore.Data.DataKind.Complex
             ? CubeTransform.dB20
