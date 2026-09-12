@@ -104,6 +104,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public Action? CancelRequested { get; set; }
 
     /// <summary>
+    /// Finishes the run in flight early, keeping everything solved so far. Set and cleared by the
+    /// host exactly as <see cref="CancelRequested"/> is, and null when the host offers no such thing
+    /// — a run with no stop simply has an inert menu item rather than a second code path.
+    /// </summary>
+    public Action? StopRequested { get; set; }
+
+    /// <summary>
     /// Runs the Mesh button's work off the UI thread, with a progress row and a Cancel. Set by the
     /// host; when it is null the command falls back to meshing synchronously, which is what every
     /// headless caller and test does.
@@ -154,12 +161,43 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         CancelMeshCommand.NotifyCanExecuteChanged();
         CancelSimulateCommand.NotifyCanExecuteChanged();
+        StopSimulateCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CancelButtonText));
+        OnPropertyChanged(nameof(StopButtonText));
     }
 
-    /// <summary>What both Cancel buttons say. Bound rather than literal so the pending stop is
-    /// visible on whichever button started the work.</summary>
+    /// <summary>
+    /// True from the moment a STOP is asked for until the run actually ends — the same
+    /// state-not-instant argument <see cref="IsCancelling"/> makes, for the other kind of halt.
+    ///
+    /// <para>Separate from <see cref="IsCancelling"/> because the two are different promises and the
+    /// button has to say which one was made: a stop KEEPS what has been solved, a cancel throws it
+    /// away. "Cancelling…" over a run that is about to publish its points would be the wrong
+    /// sentence.</para>
+    /// </summary>
+    [ObservableProperty] private bool _isStopping;
+
+    partial void OnIsStoppingChanged(bool value)
+    {
+        StopSimulateCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(StopButtonText));
+    }
+
+    /// <summary>What the MESH Cancel says. Meshing has no stop — there is no partial mesh worth
+    /// keeping — so this one is unchanged.</summary>
     public string CancelButtonText => IsCancelling ? "Cancelling…" : "Cancel";
+
+    /// <summary>
+    /// What the running SIMULATE button says. <b>Stop, not Cancel</b> (owner request, 2026-09-11):
+    /// the button offered while a sweep is running is the one a user presses because they have seen
+    /// enough, and finishing now with the solved points kept is what they mean by it. Cancel is
+    /// still reachable — it is the button's context menu — because "this should not have been
+    /// started" is a real second case, just the rarer one.
+    ///
+    /// <para>An escalation reads correctly: a cancel asked for after a stop says "Cancelling…",
+    /// because the stronger request is the one that will happen.</para>
+    /// </summary>
+    public string StopButtonText => IsCancelling ? "Cancelling…" : IsStopping ? "Stopping…" : "Stop";
 
     [RelayCommand(CanExecute = nameof(CanCancelMesh))]
     public void CancelMesh() => CancelMeshRequested?.Invoke();
@@ -174,6 +212,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         SimulateCommand.NotifyCanExecuteChanged();
         CancelSimulateCommand.NotifyCanExecuteChanged();
+        StopSimulateCommand.NotifyCanExecuteChanged();
         BuildActiveMeshCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsBusy));
     }
@@ -1961,6 +2000,28 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public void CancelSimulate() => CancelRequested?.Invoke();
 
     private bool CanCancelSimulate() => IsRunning && !IsCancelling;
+
+    /// <summary>
+    /// <b>Finishes the run now and KEEPS what it has solved</b> (owner request, 2026-09-11) — the
+    /// primary button while a sweep is running, where Cancel used to be.
+    ///
+    /// <para>The two are not alternatives and the difference is the whole point. Cancel throws the
+    /// run away, which is right when it should not have been started. Stop publishes: the requested
+    /// frequency grid comes out of the points already solved, exactly as adaptive sampling always
+    /// publishes it, and the notes say how far the refinement actually got. An EM sweep is the one
+    /// operation in the application where "I have seen enough" is an ordinary thing to want — a
+    /// resonance search keeps adding full-wave points, tens of seconds each, long after the
+    /// resonance a user came for is on screen.</para>
+    ///
+    /// <para>Like Cancel, it lands at a work boundary rather than instantly, which is why the button
+    /// goes to "Stopping…" rather than waiting silently.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanStopSimulate))]
+    public void StopSimulate() => StopRequested?.Invoke();
+
+    // A cancel after a stop is still allowed — the stronger request wins and the host's own
+    // RunCancellation enforces the ordering — so this is gated on the stop, not on both.
+    private bool CanStopSimulate() => IsRunning && !IsCancelling && !IsStopping;
 
     /// <summary>A Simulate run meshes as a side effect, so its report is adopted here rather than
     /// making the user press Mesh again to see the same mesh the answer came from.</summary>

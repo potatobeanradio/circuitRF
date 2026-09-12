@@ -292,17 +292,37 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Same as the mesh Cancel: once the stop is asked for — here or by right-clicking
-                     either of the run's two progress bars in the Messages panel — this says so and
-                     goes inert until the run actually ends. -->
-                <Button Name="CancelSimulateButton" Margin="4,0,0,0"
+                <!-- STOP, not Cancel (owner request, 2026-09-11). The button a user reaches for
+                     while a sweep is running is the one they press because they have seen enough,
+                     and what they mean by it is "finish now and keep what you solved" — which is
+                     what Stop does and the opposite of what Cancel does. Cancel is still here, in
+                     this button's own context menu, because "this should not have been started" is a
+                     real case; it is just the rarer one, and it is the destructive one.
+
+                     Same pending behaviour as the mesh Cancel: once either halt is asked for — here,
+                     from the menu, or by right-clicking either of the run's two progress bars in the
+                     Messages panel — the button says which one was asked for and goes inert until
+                     the run actually ends. -->
+                <Button Name="StopSimulateButton" Margin="4,0,0,0"
                         IsVisible="{Binding ViewModel.IsRunning}"
-                        Command="{Binding ViewModel.CancelSimulateCommand}"
-                        ToolTip.Tip="Stop the EM run. It stops at the next work boundary and writes nothing.">
+                        Command="{Binding ViewModel.StopSimulateCommand}"
+                        ToolTip.Tip="Finish the EM run now and KEEP the points already solved. It stops at the next work boundary. Right-click to cancel instead, which throws the run away.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="Stop" Width="14" Height="14"/>
-                        <TextBlock Text="{Binding ViewModel.CancelButtonText}"/>
+                        <TextBlock Text="{Binding ViewModel.StopButtonText}"/>
                     </StackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Name="CancelSimulateMenuItem"
+                                      Header="Cancel"
+                                      Command="{Binding ViewModel.CancelSimulateCommand}"
+                                      ToolTip.Tip="Throw the run away. It stops at the next work boundary and writes nothing.">
+                                <MenuItem.Icon>
+                                    <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Button.ContextMenu>
                 </Button>
 
                 <Button Margin="8,0,0,0" Command="{Binding ViewModel.UndoCommand}"
@@ -982,7 +1002,7 @@
                 <Grid ColumnDefinitions="Auto,Auto" Margin="22,4,0,0"
                       IsEnabled="{Binding ViewModel.ReferenceInputPowerEnabled}">
                     <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center"
-                               Margin="0,0,6,0" Text="Reference input power"/>
+                               Margin="0,0,6,0" Text="Reference input power (dBm)"/>
                     <NumericUpDown Grid.Column="1" Width="110" FontSize="11" Padding="5,2"
                                    Minimum="-100" Maximum="100" Increment="1"
                                    FormatString="0.##"

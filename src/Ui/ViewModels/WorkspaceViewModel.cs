@@ -7270,6 +7270,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     : "Stopping the EM analysis at the next work boundary. Everything solved so far " +
                       "is KEPT — the sweep is published over the frequency points already solved, " +
                       "and the run's notes name the ones that are not in it.");
+                vm.IsStopping = true;
                 control!.RequestStop();
             });
             sweepLive.BindCancellation(cancellation);
@@ -7280,6 +7281,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             try
             {
                 vm.CancelRequested = cancellation.Cancel;
+                // The panel's primary button while a run is in flight. It routes through the SAME
+                // RunCancellation the two Messages bars do, so a stop asked for anywhere greys out
+                // every surface and the ordering rule (a cancel outranks a stop, never the reverse)
+                // is enforced in one place.
+                vm.StopRequested   = cancellation.Stop;
                 vm.IsRunning       = true;
                 // R-emp-6/R-emcli-3 — the core cap is a MACHINE preference, so it is read HERE, on the
                 // UI side that owns the preferences file, and handed to the run service as an
@@ -7298,7 +7304,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 cancellation.Finish();
                 vm.IsRunning       = false;
                 vm.IsCancelling    = false;
+                vm.IsStopping      = false;
                 vm.CancelRequested = null;
+                vm.StopRequested   = null;
             }
         }
 
