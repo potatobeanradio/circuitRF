@@ -319,4 +319,45 @@ public class LayoutSnapGestureTests
         var result = (RectShape)model.Shapes[0];
         Assert.Equal(original, (result.X1, result.Y1));
     }
+
+    // ── A DELETE INVALIDATES THE SNAP-MARKER CYCLE, NOT JUST A POINTER MOVE ─────────────────────
+    //
+    // Owner report, 2026-09-11: select a shape, press Delete, click the SAME spot to pick up what is
+    // underneath — and a different shape is selected. _snapCycleCache was invalidated only by the
+    // cursor moving past snap tolerance, so a gesture that keeps the mouse still carried the pre-edit
+    // stack across the edit: the second press ADVANCED that stack instead of re-querying, and
+    // SnapCandidate.OwnerIndex (a bare index into Model.Shapes) had shifted down by one under it. The
+    // entry therefore stayed in range and named a real — but unrelated — shape, which is why the
+    // range guards inside TryBeginSnapMarkerDrag could never catch it.
+    //
+    // The three corners are deliberately at DIFFERENT distances from the click, so "nearest candidate"
+    // has one unambiguous answer at each press and the assertion cannot be satisfied by luck. The
+    // rects are large so only their near corner is within tolerance.
+    [Fact]
+    public void DeleteThenPressTheSameSpot_SelectsWhatIsActuallyThere_NotTheNextStaleCycleEntry()
+    {
+        var model = FreshModel();
+        model.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 =    0, Y1 =    0, X2 = 50_000, Y2 = 50_000 }); // 0 — nearest
+        model.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 1000, Y1 = 1000, X2 = 51_000, Y2 = 51_000 }); // 1 — next nearest
+        model.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 2000, Y1 = 2000, X2 = 52_000, Y2 = 52_000 }); // 2 — furthest
+        var vm = SelectVm(model);
+
+        // Press outside every rect's own hit-test, but within SnapTol of all three near corners: the
+        // click-through marker grabs the closest, shape 0's (0,0).
+        vm.OnPointerPressed(-200, -200, KeyModifiers.None, 1, 40, 0, SnapTol);
+        vm.OnPointerReleased(-200, -200, KeyModifiers.None);
+        Assert.Equal([0], vm.SelectedIndices);
+
+        vm.DeleteSelectedGeometry();
+        Assert.Equal(2, model.Shapes.Count);
+
+        // Same spot, no intervening pointer move — the only thing that used to clear this cache.
+        vm.OnPointerPressed(-200, -200, KeyModifiers.None, 1, 40, 0, SnapTol);
+
+        // The nearest corner is now the (1000,1000) rect, which the delete shifted to index 0.
+        // Before the fix this advanced the stale stack instead and selected index 1 — the
+        // (2000,2000) rect — so asserting on the GEOMETRY, not just the index, is what pins it.
+        Assert.Equal([0], vm.SelectedIndices);
+        Assert.Equal(1000, ((RectShape)model.Shapes[vm.SelectedIndices[0]]).X1);
+    }
 }

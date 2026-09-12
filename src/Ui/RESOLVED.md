@@ -1,5 +1,49 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Owner report, 2026-09-11 — delete a shape, click the same spot, and an unrelated shape is selected
+
+Click a geometry in the layout editor, press Delete, then click the SAME spot to pick up whatever is
+underneath it: a different shape is selected, and (with no modifier) a move drag starts on it.
+
+**The overlap-cycling cache was never the problem — the geometry-snap one was.** `LayoutEditorViewModel`
+holds two `ClickCycleCache`s, and only one of them was on the model-mutation hook. `_cycleCache`
+(shape-selection overlap cycling) is cleared in the `Model.Changed` subscription, so every draw, move,
+delete, undo and redo invalidates it. `_snapCycleCache` (R-snp-9 snap-candidate cycling) was cleared in
+exactly two places: `HandleSelectMove`, when the cursor travels past snap tolerance, and
+`TryBeginSnapMarkerDrag` itself when a fresh query returns nothing. **A gesture that keeps the mouse
+still across an edit passes neither**, and the reported gesture is precisely that one.
+
+Two things then go wrong at the next press, both inside `TryBeginSnapMarkerDrag` — which runs **ahead
+of** the ordinary hit-test and the overlap cycle, so it decides the selection before the correctly
+invalidated cache is ever consulted:
+
+* `Matches()` succeeds against the stale click point, so the press **advances** to the next entry of a
+  stack built against shapes that no longer exist, rather than re-querying.
+* `SnapCandidate.OwnerIndex` is a bare index into `LayoutView.Shapes`, and `DeleteShapesCommand`
+  removes by `RemoveAt` — so every higher index shifts down by one. The stale entry stays **in range**
+  and names a real but entirely unrelated shape.
+
+That second point is why the guards already in `TryBeginSnapMarkerDrag`
+(`OwnerIndex >= 0 && OwnerIndex < Model.Shapes.Count`) cannot catch it: an off-by-one index is a valid
+index. A validity test at the grab would not fix this either — the whole stack is stale, its
+coordinates describing pre-edit geometry, not just its owners.
+
+**Fix:** clear `_snapCycleCache` in the same `Model.Changed` block that clears `_cycleCache` and
+`_pickedVertexIndex`. One line, on the hook that already exists for exactly this class of staleness.
+
+*Ruled out along the way, so nobody re-walks them:* the spatial index is correct here —
+`DeleteShapesCommand` calls the no-argument `LayoutView.NotifyChanged()`, which is `LayoutChangeKind.Full`
+and forces a full STR rebuild, so the index never carries shifted indices (`RemovedTrailing`, which
+would, is only ever used where nothing shifts). `DeleteSelection` does clear the selection and the
+overlap cache. `LayoutSnapFeatureIndex` is invalidated on the same hook already.
+
+**Gate:** `LayoutSnapGestureTests.DeleteThenPressTheSameSpot_SelectsWhatIsActuallyThere_NotTheNextStaleCycleEntry`
+— three overlapping rects whose near corners sit at deliberately different distances from one click
+point, so "nearest candidate" has one unambiguous answer at each press. Verified to fail without the
+fix with the reported symptom exactly (selected index 1 — the furthest rect — instead of 0), not just
+assumed to.
+
+
 ## Owner report, 2026-09-11 — "Quit circuitRF", and why every earlier attempt produced two of them
 
 On macOS the application menu's last item read a bare **"Quit"**, while its own neighbour three rows

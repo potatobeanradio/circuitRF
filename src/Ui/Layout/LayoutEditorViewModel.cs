@@ -524,6 +524,26 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             _cycleCache.Clear();
             _pickedVertexIndex = null;
 
+            // ── AND THE SNAP-MARKER CYCLE, FOR THE SAME REASON AND ON THE SAME HOOK ──────────────
+            //
+            // Owner report, 2026-09-11: click a shape, press Delete, click the SAME spot to pick up
+            // whatever is underneath — and a different shape entirely is selected and starts moving.
+            //
+            // _snapCycleCache was invalidated ONLY by the pointer moving past snap tolerance
+            // (HandleSelectMove), never by a model mutation — so a gesture that keeps the mouse still
+            // across an edit carried the pre-edit stack over it. Two things then go wrong at the next
+            // press, both inside TryBeginSnapMarkerDrag, which runs AHEAD of the ordinary hit-test and
+            // therefore decides the selection before the cycle above is ever consulted:
+            //   * Matches() succeeds on the stale click point, so the press ADVANCES to entry 1 of a
+            //     stack built against shapes that no longer exist, instead of re-querying;
+            //   * SnapCandidate.OwnerIndex is a bare index into Model.Shapes, and deleting a shape
+            //     shifts every higher index down by one — so the entry still passes its own range
+            //     check and names a REAL but entirely unrelated shape. The range guards in
+            //     TryBeginSnapMarkerDrag cannot catch this; an off-by-one index is in range.
+            // Clearing here is the fix rather than a validity test at the grab, because the stack is
+            // stale as a whole — its coordinates describe pre-edit geometry, not just its owners.
+            _snapCycleCache.Clear();
+
             // brief-snap-distance-and-geometry-snap.md R-snp-12's second invalidation hook: the
             // ACTIVELY EDITED top-level document's own shape edits never route through
             // WorkspaceViewModel.OnCellLayoutLiveViewChanged (that seam only fires for a cell reached
