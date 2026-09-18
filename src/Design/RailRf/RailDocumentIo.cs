@@ -84,6 +84,7 @@ public static class RailDocumentIo
         {
             CopperTemperatureCelsius      = d.Settings.CopperTemperatureCelsius,
             ViaPlatingThicknessMicrometres = d.Settings.ViaPlatingThicknessMicrometres,
+            ViaTemperatureRiseCelsius      = d.Settings.ViaTemperatureRiseCelsius,
         },
         Rails = d.Rails.Count > 0 ? [.. d.Rails.Select(ToFile)] : null,
         // Deterministic order, so a document saved twice with no edit in between is the same bytes
@@ -184,6 +185,8 @@ public static class RailDocumentIo
             {
                 CopperTemperatureCelsius      = f.Settings?.CopperTemperatureCelsius ?? 20.0,
                 ViaPlatingThicknessMicrometres = f.Settings?.ViaPlatingThicknessMicrometres,
+                ViaTemperatureRiseCelsius      = f.Settings?.ViaTemperatureRiseCelsius
+                                              ?? PdnViaCurrentLimit.ReferenceRiseCelsius,
             },
         };
 
@@ -301,6 +304,7 @@ public static class RailDocumentIo
     {
         public double? CopperTemperatureCelsius       { get; set; }
         public double? ViaPlatingThicknessMicrometres { get; set; }
+        public double? ViaTemperatureRiseCelsius      { get; set; }
     }
 
     private sealed class CrailRail

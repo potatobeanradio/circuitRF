@@ -335,6 +335,16 @@ public static class RailDcRun
         var sources = SourceShares(rail, pdn, solution);
         var breakdown = Breakdown(request, pdn, solution);
 
+        // §2.4's via check. It reads the currents this solve already produced — brief 3 stamped each
+        // barrel as its own element and nothing about a group is special-cased anywhere — so the
+        // unequal split is a RESULT rather than a model, and the flag is on the WORST via of a
+        // transition rather than on its mean.
+        var viaCheck = PdnViaCheck.Run(
+            pdn, voltages, request.Document.Settings.ViaTemperatureRiseCelsius, request.DbuPerMicron);
+
+        foreach (var flag in viaCheck.Flags) findings.Add(flag.Describe());
+        notes.AddRange(viaCheck.Notes);
+
         // R-rail5-11, and it is one line on the report rather than a setting, a sweep or a derating.
         notes.Add(
             $"Everything is computed at {pdn.Provenance.CopperTemperatureCelsius:0.#} °C and railRF " +
@@ -387,6 +397,7 @@ public static class RailDcRun
             Data           = DcResultPacker.Pack(solution.AsDcResult(), nl),
             NodeVoltages   = voltages,
             Breakdown      = breakdown,
+            ViaCheck       = viaCheck,
             Ports          = ports,
             Sources        = sources,
             Regulators     = regulators,

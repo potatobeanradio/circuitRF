@@ -92,6 +92,11 @@ public readonly record struct PdnCellRef(
 /// breakdown sorts on.</param>
 /// <param name="LengthMetres">The run this element represents, for the breakdown's own sentence.</param>
 /// <param name="WidthMetres">The conductor width it represents, same reason.</param>
+/// <param name="Barrel">The plated barrel this element IS, on a <see cref="PdnOriginKind.Via"/> and
+/// null on everything else. <b>Structured rather than only in <paramref name="Description"/></b>,
+/// because brief 6's via check computes a current limit from the drill, the plating, the plating's
+/// own basis and the span — and a check that had to parse those back out of a sentence would be a
+/// second reading of the geometry that could disagree with the first one.</param>
 public sealed record PdnElementOrigin(
     int ComponentIndex,
     PdnOriginKind Kind,
@@ -101,7 +106,8 @@ public sealed record PdnElementOrigin(
     string? Refdes,
     double? ResistanceOhms,
     double? LengthMetres = null,
-    double? WidthMetres = null);
+    double? WidthMetres = null,
+    PdnViaBarrel? Barrel = null);
 
 /// <summary>
 /// One observation port of the extraction, and the anchor a user actually typed.
@@ -200,6 +206,16 @@ public sealed record PdnProvenance
 
     /// <summary>Which node the whole answer is measured from, and why it is that one.</summary>
     public required string ReferencePoint { get; init; }
+
+    /// <summary>
+    /// How many holes carry no barrel because their layer span could not be resolved (R-rail3-10).
+    ///
+    /// <para><b>A COUNT rather than a diagnostic sentence, because brief 6 has to act on it.</b>
+    /// R-rail6-5: a transition whose span is unresolved gets no flag and a NOTE — a limit computed
+    /// from an assumed 1.6 mm span is a number with no basis at all. The via check reads the result,
+    /// and the extraction's diagnostics do not travel on the result, so the fact does.</para>
+    /// </summary>
+    public int UnresolvedViaSpans { get; init; }
 
     /// <summary>Everything the extraction WORKED OUT that the document did not state — a defaulted
     /// plating thickness, a span it could not resolve, a refinement it applied. Never mixed with

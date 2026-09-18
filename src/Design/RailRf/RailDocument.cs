@@ -28,6 +28,17 @@ public sealed class RailSettings
     /// table as a sanity band — and <b>every flag says which basis produced it</b>. A defaulted
     /// number here would make all three indistinguishable on the report.</para></summary>
     public double? ViaPlatingThicknessMicrometres { get; set; }
+
+    /// <summary>
+    /// The temperature rise a via's current limit is stated at, in KELVIN of rise (°C of rise).
+    ///
+    /// <para><b>This is a budget, not a temperature</b> (§2.7, brief 6 §5). There is no thermal model
+    /// anywhere in railRF and this is not one: the via check computes a limit from the barrel's own
+    /// annulus, its span and this number, and <b>nothing else in railRF reads it</b>. 10 °C is what
+    /// review's own drill-size table is quoted at, which is why it is the value the setting opens
+    /// on — see <see cref="PdnViaCurrentLimit"/> for what the table turns out to be a table OF.</para>
+    /// </summary>
+    public double ViaTemperatureRiseCelsius { get; set; } = PdnViaCurrentLimit.ReferenceRiseCelsius;
 }
 
 /// <summary>

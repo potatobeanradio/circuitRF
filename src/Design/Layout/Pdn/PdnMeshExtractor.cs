@@ -343,6 +343,7 @@ public static class PdnMeshExtractor
             MeshedAreaSquareMetres = mesh.MeshedAreaSquareDbu / (dbuPerMetre * dbuPerMetre),
             IslandReport = regions.IslandReport,
             ReferencePoint = asm.ReferencePoint,
+            UnresolvedViaSpans = asm.UnresolvedViaSpans,
             Notes = notes,
         };
 

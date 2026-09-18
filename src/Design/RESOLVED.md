@@ -7237,3 +7237,111 @@ rather than by stashing.
 - **`RailOrder` keeps declaration order among independent rails**, so two runs of one document do not
   report their rails in different orders for no visible reason. A refdes that is both a load and a
   source on ONE rail is its own refusal rather than a self-loop reported as "a rail depends on itself".
+
+## railRF brief 6 — the via current check, and what review's own table turns out to be a table OF (2026-09-18)
+
+`brief-railrf-6-via-check.md`. `PdnViaCurrentLimit` + `PdnViaCheck`/`PdnViaFlag` in
+`src/Design/Layout/Pdn/`, gated by `tests/Ui.Tests/RailRf/PdnViaCheckTests.cs` (7 tests, ~4 s).
+
+### 1. The drill-size table is a 10 µm-PLATING table, and that is the whole finding
+
+§4.2 already knew the table disagrees with its own separately-quoted "0.3 mm at 20 µm → 0.8–1.0 A" by
+about a factor of two, and that plating is the term that differs. What the implementation turned up is
+sharper than that: **one current density reproduces the entire table at 10–12 µm of plating**, and the
+same density puts the separately-quoted 20 µm figure at 0.880 A, inside its own band.
+
+At 50 A/mm² through the annulus, on a 1.6 mm board at a 10 °C rise:
+
+| drill | A at 10 µm | limit | the table's row | A at 12 µm | limit |
+|---|---|---|---|---|---|
+| 0.2 mm | 0.00597 mm² | 0.298 A | 0.3–0.5 A | 0.00709 mm² | 0.354 A |
+| 0.3 mm | 0.00911 mm² | 0.456 A | 0.3–0.5 A | 0.01086 mm² | 0.543 A |
+| 0.4 mm | 0.01225 mm² | 0.613 A | 0.7–1.0 A | 0.01463 mm² | 0.731 A |
+| 0.5 mm | 0.01539 mm² | 0.770 A | 0.7–1.0 A | 0.01840 mm² | 0.920 A |
+| 0.6 mm | 0.01854 mm² | 0.927 A | 1.0–1.5 A | 0.02217 mm² | 1.108 A |
+| 0.8 mm | 0.02482 mm² | 1.241 A | 1.0–1.5 A | 0.02971 mm² | 1.485 A |
+| 1.0 mm | 0.03110 mm² | 1.555 A | 1.5–2.5 A | 0.03724 mm² | 1.862 A |
+| 1.2 mm | 0.03739 mm² | 1.869 A | 1.5–2.5 A | 0.04478 mm² | 2.239 A |
+
+So the constant is a READING of review's answer rather than a number picked to fit it, and the
+"factor of two" is not a discrepancy in the table — it is the table stating a thinner barrel than
+anyone building a board today would plate. That is exactly why the table ships as a **sanity band**
+and never as the rule, and why a computed limit outside its band is reported as outside rather than
+clamped: a 20 µm board is outside it by construction.
+
+### 2. The limit is LINEAR in the annulus, and that is a decision, not an oversight
+
+Every energy argument gives `I ∝ √A` — the heating is I²R however the heat leaves, so a rule derived
+from a rise gives a square root. §4.2's own sentence does not: *"twice the copper annulus … and
+roughly twice the current"*, which is a CURRENT DENSITY and is what a table indexed on drill size
+cannot express. The two readings disagree by 1.93 vs 1.39 on exactly the comparison the note is
+making, so the choice had to be made rather than derived, and railRF takes the note's.
+
+The rise budget and the span DO enter as square roots (`√(ΔT/ΔT₀)` and `√(h₀/h)`), because they move
+the allowable density rather than the area and that part is ordinary I²R. The rule is therefore a
+stated allowable density with two corrections, not a thermal model — §2.7 — and the code says so.
+
+### 3. A "transition" had to be a via FIELD, and neither obvious key works
+
+Both readings that suggest themselves are wrong in a way that only shows up on a real board:
+
+- **The layer pair alone** makes every through via on a four-layer board one transition. "Ten would
+  clear it" then says nothing about the part that is over.
+- **The netlist node pair** — which is what the ranked breakdown of brief 5 already groups vias by —
+  splits a real field into one group per barrel the moment the mesh is refined under it. A group of
+  one cannot share unequally, and the check's whole subject disappears.
+
+So a transition is one layer pair plus one spatial cluster: single-linkage within
+`FieldLinkageDrillMultiple` (5) drill diameters, through a bucket grid so a board with thousands of
+holes costs no pairwise sweep. Five because a via field's pitch is 2–3 drills and two unrelated
+fields on a board are not.
+
+### 4. The count that clears the flag CANNOT assume the split stays as uneven as it is
+
+The natural extrapolation — hold the peaking factor constant, so `m = ⌈n·I_worst/limit⌉` — is
+measurably optimistic, and the gate caught it. On its six-via fixture the field peaks at **1.91×** an
+equal split; that formula asks for **nine**, and re-solving with nine leaves the flag standing,
+because densifying a field over the same footprint makes it share **worse**, not better: peaking rose
+from 1.912 to 2.299 and the worst via only fell from 4.46 A to 3.58 A against a 3.32 A limit.
+
+The rule that survives is calibrated by the field's own measurement rather than by a constant:
+
+    m = ⌈n · (I_worst / limit) ^ p⌉,   p = the measured peaking factor, clamped to [1, 6]
+
+which collapses to the exact `n·ratio` at `p = 1` (a field that already shares evenly does improve in
+proportion to its count) and is deliberately conservative above it. On the same fixture it asks for
+**eleven**, and eleven clears. **A count that leaves the flag standing is worse than one that adds a
+via too many** — the first is a wrong instruction and the second is a cheap one.
+
+### 5. `Defaulted` plating is what selects the TABLE basis — the two provenances line up exactly
+
+`PdnPlatingBasis` already had three values and brief 6 needed two bases, which looked like an
+impedance mismatch until the mapping fell out: `StackupViaEntry` and `Setting` are the two sources
+R-rail6-3 calls legitimate, and both give `PdnViaLimitBasis.Computed`. `Defaulted` — nobody stated it
+— is precisely the case where the annulus rests on a number no one checked and is worth a factor of
+two, so it is the case that falls back to the drill-size table and says so. `PdnViaModel`'s own
+25 µm default still prices the barrel's RESISTANCE (a defaulted resistance is wrong by a bounded
+amount); it may not price its LIMIT.
+
+### 6. Two plumbing facts a later brief will trip over
+
+- **The barrel travels on the origin in STRUCTURE now** (`PdnElementOrigin.Barrel`, a `PdnViaBarrel`
+  that had been declared since brief 3 and never constructed). The drill, plating, plating basis and
+  span were only ever in the origin's `Description` sentence, and a check that parsed them back out
+  would be a second reading of the geometry that could disagree with the first.
+- **`PdnProvenance.UnresolvedViaSpans` is a COUNT, not a diagnostic sentence.** R-rail6-5 needs the
+  via check to make a note and no flag for holes whose span brief 3 refused to assume, and the check
+  reads the RESULT — the extraction's `Diagnostics` do not travel on it.
+- `PdnAssembly.LayerOfNode` reports WHICH of a stackup conductor's drawing layers a barrel landed on.
+  Keying a transition on the conductor's first declared layer instead would merge two fields that are
+  not the same transition, on any stackup that declares more than one drawing layer per conductor.
+
+### 7. The symmetric gate needs a 0.05 mm mesh, and the convergence is the reason
+
+Four identical vias across a uniform flow do not read as an exactly equal split on a coarse mesh: the
+share of the worst reads **4.2 % high at 0.25 mm, 1.6 % at 0.1 mm and inside 1 % at 0.05 mm**. It is
+discretization and it converges from above — the differential path resistance that separates the four
+is about **0.15 of one square**, well under a cell. So the fixture that gates "each carries I/n to
+under 1 %" is deliberately fine and deliberately small (a 4 mm run rather than a 12 mm one), while the
+asymmetric fixture that measures a 1.57× and a 1.91× peaking runs at 0.2 mm — the noise the first one
+has to chase is two orders below the effect the second one measures.

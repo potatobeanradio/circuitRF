@@ -78,7 +78,8 @@ internal sealed record PdnStaged(
     Dictionary<string, Value> Params, ComponentModel Model,
     PdnOriginKind Kind, string Description,
     PdnCellRef? From, PdnCellRef? To, string? Refdes,
-    double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null);
+    double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null,
+    PdnViaBarrel? Barrel = null);
 
 internal sealed class PdnAssembly
 {
@@ -99,6 +100,15 @@ internal sealed class PdnAssembly
     private ElaboratedNetlist? _netlist;
 
     public string ReferencePoint { get; private set; } = "";
+
+    /// <summary>
+    /// How many holes carry no barrel because their layer span could not be resolved.
+    ///
+    /// <para><b>Carried onto the provenance, not only into a diagnostic sentence</b> — R-rail6-5's
+    /// via check reads the RESULT, and a transition whose span is unresolved must produce a note and
+    /// no flag rather than a flag computed from an assumed 1.6 mm span.</para>
+    /// </summary>
+    public int UnresolvedViaSpans { get; private set; }
 
     public PdnAssembly(
         PdnExtractionRequest req, IPdnNodeSource nodes,
@@ -229,9 +239,17 @@ internal sealed class PdnAssembly
                 new ResistorModel(), PdnOriginKind.Via,
                 $"a {drill * 1e3:0.###} mm plated via over {span * 1e3:0.###} mm, " +
                 PdnViaModel.DescribePlating(plating, basis),
-                CellOf(na), CellOf(nb), null, r));
+                CellOf(na), CellOf(nb), null, r,
+                // The barrel travels with the element in STRUCTURE, because brief 6 computes a
+                // current limit from these four terms and the sentence above cannot be read back.
+                // fromKeys/toKeys are layer LISTS; the barrel names the one each end landed on.
+                Barrel: new PdnViaBarrel(
+                    via.X, via.Y, LayerOfNode(fromKeys, via.X, via.Y), LayerOfNode(toKeys, via.X, via.Y),
+                    drill, plating, basis, span, r)));
             stamped++;
         }
+
+        UnresolvedViaSpans = unresolved;
 
         if (stamped > 0 && bases.Contains(PdnPlatingBasis.Defaulted))
             _notes.Add(
@@ -290,6 +308,22 @@ internal sealed class PdnAssembly
             if (n >= 0) return n;
         }
         return -1;
+    }
+
+    /// <summary>
+    /// WHICH of a conductor's drawing layers the barrel actually landed on — the same walk
+    /// <see cref="NodeOn"/> makes, reporting the key rather than the node.
+    ///
+    /// <para>A stackup conductor may declare several drawing layers, and brief 6 groups barrels into
+    /// transitions by the layer pair they join: a group keyed on the conductor's FIRST declared layer
+    /// rather than the one this hole landed on would merge two transitions that are not the same
+    /// one.</para>
+    /// </summary>
+    private LayerKey LayerOfNode(IReadOnlyList<LayerKey> keys, long x, long y)
+    {
+        foreach (var key in keys)
+            if (_nodes.NodeOnLayer(key, x, y) >= 0) return key;
+        return keys.Count > 0 ? keys[0] : default;
     }
 
     // ── §4.3 ───────────────────────────────────────────────────────────────────────────────
@@ -645,7 +679,7 @@ internal sealed class PdnAssembly
 
             _origins.Add(new PdnElementOrigin(
                 componentIndex, s.Kind, s.Description, s.From, s.To, s.Refdes,
-                s.ResistanceOhms, s.LengthMetres, s.WidthMetres));
+                s.ResistanceOhms, s.LengthMetres, s.WidthMetres, s.Barrel));
         }
 
         if (dropped > 0)

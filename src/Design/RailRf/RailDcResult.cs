@@ -126,6 +126,17 @@ public sealed class RailDcResult
     /// <summary>§2.4's ranked table, aggregated by origin (R-rail5-3, R-rail5-4).</summary>
     public required IReadOnlyList<PdnBreakdownRow> Breakdown { get; init; }
 
+    /// <summary>
+    /// §2.4's via check: every layer transition, the current in EACH of its vias, and the ones whose
+    /// WORST via is over its limit (brief 6).
+    ///
+    /// <para><b>Part of the answer rather than a separate run</b>, because the currents it reads are
+    /// the ones this solve already produced — brief 3 stamped each barrel as its own element and
+    /// nothing about a group is special-cased anywhere, so the split is a result rather than a
+    /// model. <see cref="PdnViaCheckResult.Empty"/> on a rail with no vias.</para>
+    /// </summary>
+    public PdnViaCheckResult ViaCheck { get; init; } = PdnViaCheckResult.Empty;
+
     /// <summary>Every observation port, in declaration order — including the ones that draw
     /// nothing.</summary>
     public required IReadOnlyList<RailPortDrop> Ports { get; init; }

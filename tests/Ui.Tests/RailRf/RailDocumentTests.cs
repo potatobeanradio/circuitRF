@@ -35,7 +35,11 @@ public class RailDocumentTests
             ArtworkCellRef = "cells/evk_board",
             TechnologyRef  = "stackup.ctech",
             PartLibraryRef = "parts/library.csv",
-            Settings = new RailSettings { ViaPlatingThicknessMicrometres = 25.0 },
+            Settings = new RailSettings
+            {
+                ViaPlatingThicknessMicrometres = 25.0,
+                ViaTemperatureRiseCelsius      = 15.0,
+            },
         };
 
         var input = new RailSpec
@@ -146,6 +150,7 @@ public class RailDocumentTests
         Assert.Equal(doc.PartLibraryRef, back.PartLibraryRef);
         Assert.Equal(doc.Settings.CopperTemperatureCelsius,       back.Settings.CopperTemperatureCelsius);
         Assert.Equal(doc.Settings.ViaPlatingThicknessMicrometres, back.Settings.ViaPlatingThicknessMicrometres);
+        Assert.Equal(doc.Settings.ViaTemperatureRiseCelsius,      back.Settings.ViaTemperatureRiseCelsius);
 
         Assert.Equal(doc.Rails.Count, back.Rails.Count);
         foreach (var (a, b) in doc.Rails.Zip(back.Rails))
