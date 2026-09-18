@@ -88,6 +88,47 @@ public static class WorkspaceTechnologyChoices
         return choices;
     }
 
+    /// <summary>
+    /// Which offered row stands for the technology the layout is using RIGHT NOW — an index into
+    /// <paramref name="choices"/>, or -1 meaning "(Workspace default)".
+    ///
+    /// <para><b>The picker used to open on "(Workspace default)" for every layout</b>, whatever the
+    /// layout's own <c>TechRef</c> said. That is the wrong answer to the only question the dialog
+    /// exists to answer, and it is wrong most visibly for an imported board: a Gerber import writes
+    /// its own <c>.ctech</c> beside the cell and points the new <c>.clay</c> at it, so opening this
+    /// dialog to check WHICH technology a board uses reported the workspace's instead. Confirming
+    /// that reading then made it true — <c>TechRef</c> is cleared and the layout follows the
+    /// workspace default from then on, which in a workspace holding several imports is another
+    /// board's technology.</para>
+    ///
+    /// <para>A null (or empty) <paramref name="layoutTechRef"/> IS the workspace default (L0c's
+    /// convention, §5A.2), so it answers -1 without looking at anything else.
+    /// <paramref name="resolvedTechPath"/> is what the layout's ref actually resolved to — compared
+    /// as a full path, case-insensitively, exactly as <see cref="TechnologyCache"/> keys it. A ref
+    /// that resolved to a file OUTSIDE the workspace matches no row and answers -1; the dialog adds
+    /// a row for it rather than pre-selecting a technology the layout is not using.</para>
+    /// </summary>
+    public static int IndexOfCurrent(
+        IReadOnlyList<TechChoice> choices, string? layoutTechRef, string? resolvedTechPath)
+    {
+        if (layoutTechRef is not { Length: > 0 })    return -1;
+        if (resolvedTechPath is not { Length: > 0 }) return -1;
+
+        string target;
+        try   { target = Path.GetFullPath(resolvedTechPath); }
+        catch { return -1; }
+
+        for (int i = 0; i < choices.Count; i++)
+        {
+            string candidate;
+            try   { candidate = Path.GetFullPath(choices[i].AbsolutePath); }
+            catch { continue; }
+
+            if (string.Equals(candidate, target, StringComparison.OrdinalIgnoreCase)) return i;
+        }
+        return -1;
+    }
+
     /// <summary>The file relative to the workspace root — the short, meaningful half of the path,
     /// since the root is the same for every row, and the only half that is guaranteed to differ
     /// between two rows. Falls back to the bare file name if the path cannot be made relative.</summary>

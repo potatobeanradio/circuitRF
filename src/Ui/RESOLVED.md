@@ -1,5 +1,54 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## "Change Technology…" opened on the workspace default for every layout (2026-09-17)
+
+Owner report: after a second Gerber import, the new `.clay` "does not use the `.ctech` that was just
+created — it points at the other one".
+
+**The import is not where that comes from, and the files it writes are right.** `GerberImport` writes
+`<importdir>/<name>.ctech` and sets the new view's `TechRef` to `Path.GetRelativePath(layoutDir,
+techPath)` in the same `try` block, from the same two variables — there is no branch in which they
+can disagree. Confirmed three ways rather than by reading: a harness driving `GerberImport.Import`
+repeatedly into one workspace (including a second import taken AFTER the first import's technology
+was made the workspace default, which is the only workspace state a second import sees differently,
+and including the layer-mapping dialog answered with its own pre-selected defaults), and a scan of
+every `.clay` on the reporting machine — each Gerber-imported layout resolves to the `.ctech` beside
+its own cell.
+
+**What did report the wrong technology is the picker that exists to report it.**
+`ChangeTechnologyDialog` built its rows and then set `SelectedIndex = 0` unconditionally, so it
+opened on **(Workspace default)** whatever the layout's own `TechRef` said. For a hand-made cell
+that is right — a null ref IS the workspace default — and for an imported board it is wrong, which is
+why an import is where anyone notices. **Confirming that reading made it true:** `Change` with row 0
+selected writes `TechRef = null`, and the board then follows the workspace default, which in a
+workspace holding several imports is another board's technology. Nothing warned, because from the
+dialog's side the user had just chosen the workspace default.
+
+**Still open, and deliberately recorded as such.** The report also included two symptoms this does
+not account for: the imported board drew with another board's layers, and the bottom bar's `Edit…`
+opened another board's `.ctech` showing that board's layer table. Neither was reproducible
+afterwards, and the workspace they happened in is correct on disk — the import's `.ctech`/`.clay`
+pairs are written in the same second and every `TechRef` still resolves through `LayoutRef` to the
+file beside its own cell, which `circuitrf explain` confirms. What that combination points at is a
+session-only state: a technology the cache is holding for a path that is not what the file says,
+which is what a live (unsaved) override is, and which leaves nothing behind when the process exits.
+The one workspace artifact consistent with it is a `.ctech` saved eleven minutes after its own
+import — the only technology in that workspace that was ever edited. If it recurs, the cheap
+discriminator is to SAVE the layout while it is wrong: a `TechRef` that comes out null or naming
+another board puts the fault in the resolve/open path, and one that comes out correct puts it in the
+technology object the session holds for that path.
+
+The rule now lives in `WorkspaceTechnologyChoices.IndexOfCurrent` — beside `Enumerate`, and for the
+reason that class already exists: it can be driven by a test without standing up a window. A null (or
+empty) `TechRef` still answers "(Workspace default)" without looking at anything else; otherwise the
+row whose file IS `ResolvedTechPath` is the one that opens selected, compared as a full path and
+case-insensitively, as `TechnologyCache` keys it. An explicit reference to a technology outside the
+workspace matches no enumerated row, so the dialog appends a row for it rather than pre-selecting one
+the layout is not using. The "Current:" line also names the FILE now, workspace-relative — the
+technology's own `Name` does not say which of several `.ctech` files a layout resolved to, and two
+files can carry the same name.
+
+
 ## The Technology Editor's Name column can be dragged wider (2026-09-17)
 
 The layer table's ten fixed columns already fill a default-sized window on their own, so the

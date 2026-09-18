@@ -10,7 +10,8 @@
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
 
-        <TextBlock x:Name="CurrentText" Grid.Row="0" FontSize="12" Opacity="0.7" Margin="0,0,0,10"/>
+        <TextBlock x:Name="CurrentText" Grid.Row="0" FontSize="12" Opacity="0.7" Margin="0,0,0,10"
+                   TextWrapping="Wrap"/>
 
         <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="220" FontSize="12"/>
 

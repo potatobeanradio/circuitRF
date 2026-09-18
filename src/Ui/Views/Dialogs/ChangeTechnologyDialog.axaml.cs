@@ -38,7 +38,7 @@ public partial class ChangeTechnologyDialog : Window
 
     public ChangeTechnologyDialog(LayoutEditorViewModel vm) : this()
     {
-        CurrentText.Text = $"Current: {vm.TechSummaryText}";
+        CurrentText.Text = $"Current: {vm.TechSummaryText}{CurrentFileSuffix(vm)}";
 
         var items = new List<ListBoxItem>
         {
@@ -47,11 +47,34 @@ public partial class ChangeTechnologyDialog : Window
                 + "written into the layout."),
         };
 
-        foreach (var choice in WorkspaceTechnologyChoices.Enumerate(vm.WorkspaceRootDir, vm.WorkspaceTechDir))
+        var choices = WorkspaceTechnologyChoices.Enumerate(vm.WorkspaceRootDir, vm.WorkspaceTechDir);
+        foreach (var choice in choices)
             items.Add(Row(choice.Label, choice.AbsolutePath, choice.AbsolutePath));
 
+        // The dialog OPENS ON WHAT THE LAYOUT IS USING — see WorkspaceTechnologyChoices.IndexOfCurrent
+        // for why that is not "(Workspace default)" for every layout, and for what confirming that
+        // wrong reading used to do to an imported board's explicit TechRef. Row 0 is the workspace
+        // default, so a choice at index i is item i + 1.
+        int selected = 0;
+        int match = WorkspaceTechnologyChoices.IndexOfCurrent(choices, vm.Model.TechRef, vm.ResolvedTechPath);
+        if (match >= 0)
+        {
+            selected = match + 1;
+        }
+        else if (vm.Model.TechRef is { Length: > 0 } && vm.ResolvedTechPath is { Length: > 0 } outside)
+        {
+            // An explicit reference to a technology that lives outside this workspace — reachable
+            // only through Browse…, so it is in no enumerated row. Offered as its own row rather
+            // than left unrepresented, because the alternative is pre-selecting something the
+            // layout is not using.
+            items.Add(Row($"{Path.GetFileNameWithoutExtension(outside)}  —  outside this workspace",
+                          outside, outside));
+            selected = items.Count - 1;
+        }
+
         ChoiceList.ItemsSource = items;
-        ChoiceList.SelectedIndex = 0;
+        ChoiceList.SelectedIndex = selected;
+        ChoiceList.ScrollIntoView(items[selected]);
 
         BrowseButton.Click += async (_, _) => await OnBrowseAsync();
         OkButton.Click      += (_, _) => Close(BuildResult());
@@ -95,6 +118,25 @@ public partial class ChangeTechnologyDialog : Window
         var row = new ListBoxItem { Content = label, Tag = absolutePath };
         if (tooltip is { Length: > 0 }) ToolTip.SetTip(row, tooltip);
         return row;
+    }
+
+    /// <summary>
+    /// The FILE behind the current technology, appended to the "Current:" line, workspace-relative
+    /// where it can be — the name alone does not say which of several <c>.ctech</c> files a layout
+    /// resolved to, and two files can legitimately carry the same internal name. Empty when nothing
+    /// resolved (the line already says so) or when the path cannot be made relative.
+    /// </summary>
+    private static string CurrentFileSuffix(LayoutEditorViewModel vm)
+    {
+        if (vm.ResolvedTechPath is not { Length: > 0 } path) return "";
+        try
+        {
+            string label = vm.WorkspaceRootDir is { Length: > 0 } root
+                ? Path.GetRelativePath(root, path).Replace('\\', '/')
+                : Path.GetFileName(path);
+            return $"  ·  {label}";
+        }
+        catch { return $"  ·  {Path.GetFileName(path)}"; }
     }
 
     private ChangeTechnologyResult BuildResult() =>

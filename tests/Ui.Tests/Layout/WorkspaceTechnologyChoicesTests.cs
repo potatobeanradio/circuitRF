@@ -134,4 +134,56 @@ public sealed class WorkspaceTechnologyChoicesTests : IDisposable
         Assert.Empty(WorkspaceTechnologyChoices.Enumerate(null, null));
         Assert.Empty(WorkspaceTechnologyChoices.Enumerate(Path.Combine(_root, "nope"), null));
     }
+
+    // -- Which row the picker opens on (owner report, 2026-09-17) ---------------------------------
+    //
+    // It opened on "(Workspace default)" for every layout, so the dialog answered its own question
+    // wrongly for any layout carrying an explicit TechRef — a Gerber-imported board being the case
+    // that made it visible, since the import writes a .ctech beside the cell and points the new
+    // .clay at it. Confirming that reading cleared the ref and handed the board the workspace's
+    // technology, which in a workspace holding several imports is another board's.
+
+    [Fact]
+    public void TheLayoutsOwnTechnologyIsTheRowThePickerOpensOn_NotTheWorkspaceDefault()
+    {
+        WriteTech("tech/house.ctech", "House");
+        string imported = WriteTech("boardB/boardB.ctech", "boardB");
+
+        var choices = WorkspaceTechnologyChoices.Enumerate(_root, TechDir);
+
+        int index = WorkspaceTechnologyChoices.IndexOfCurrent(choices, "../../boardB.ctech", imported);
+
+        Assert.Equal("boardB", choices[index].Label);
+    }
+
+    [Fact]
+    public void ANullTechRefIsTheWorkspaceDefault_AndSelectsIt()
+    {
+        string house = WriteTech("tech/house.ctech", "House");
+        var choices = WorkspaceTechnologyChoices.Enumerate(_root, TechDir);
+
+        // Even though a technology DID resolve — through the workspace default, which is what a null
+        // ref means. The resolved file matching a row must not promote it to an explicit choice.
+        Assert.Equal(-1, WorkspaceTechnologyChoices.IndexOfCurrent(choices, null, house));
+    }
+
+    [Fact]
+    public void ATechnologyOutsideTheWorkspaceMatchesNoRow_SoTheDialogAddsOneRatherThanPreSelecting()
+    {
+        WriteTech("tech/house.ctech", "House");
+        var choices = WorkspaceTechnologyChoices.Enumerate(_root, TechDir);
+
+        string outside = Path.Combine(Path.GetTempPath(), "elsewhere", "vendor.ctech");
+
+        Assert.Equal(-1, WorkspaceTechnologyChoices.IndexOfCurrent(choices, "../vendor.ctech", outside));
+    }
+
+    [Fact]
+    public void AnUnresolvableTechRefSelectsNoRow_TheCurrentLineAlreadySaysNothingResolved()
+    {
+        WriteTech("tech/house.ctech", "House");
+        var choices = WorkspaceTechnologyChoices.Enumerate(_root, TechDir);
+
+        Assert.Equal(-1, WorkspaceTechnologyChoices.IndexOfCurrent(choices, "../../gone.ctech", null));
+    }
 }
