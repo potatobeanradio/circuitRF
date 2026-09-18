@@ -1,6 +1,7 @@
 # railRF — Power Integrity on Real Board Shapes, from DC Up
 
-**Status:** Proposal — rev 4, **for external review** · **Date:** 2026-09-18 · **Phase:** unstarted
+**Status:** **APPROVED** — rev 4, amended 2026-09-18 · **Date:** 2026-09-18 · **Phase:** briefed, unstarted
+**Implementation:** [`docs/sonnet-briefs/brief-railrf-0-overview.md`](../sonnet-briefs/brief-railrf-0-overview.md) — 17 briefs across P0…P3
 **Reads with:** `docs/design/match.md` §9 (the UI this one is modelled on), `docs/design/data-display.md`
 (the plot layer this reuses), `docs/design/mom-engine.md` (the full-wave solver this deliberately does
 *not* use, and why), `docs/design/layout-view.md` and `src/Design/Layout/Interchange/` (the Gerber /
@@ -51,7 +52,10 @@ Q-20 … Q-22 replace them.
 **The name is decided** — railRF, following the house pattern (`harmonicaRF`, `wBond`), and the only one
 of the four candidates that covers a DC voltage drop and a PDN impedance equally well.
 
-**No code is written until this note is approved.**
+**This note is approved** (owner, 2026-09-18) and the brief series above is the implementation. **Two
+amendments have been made since rev 4 went out for review, both on 2026-09-18 and both marked in place:**
+Q-18's reference package is **deferred to manual testing** and no longer blocks P0 (§8.5), and §7's
+importer gate is correspondingly **two-tier**. Nothing else in rev 4 has changed.
 
 ---
 
@@ -835,9 +839,15 @@ Each phase is gated against something that is not our own arithmetic.
 - **Mounting inductance** against a closed-form partial-inductance calculation for a via pair.
 - **The A/B report** against two synthetic boards differing in exactly one known way, where the correct
   answer is constructed rather than solved for.
-- **The importers against real files.** Review will supply a reference-design package and the layout tool's
-  own placement and BOM exports; each reader is gated on those bytes, and on a refusal where a required
-  field (the placement origin, the Excellon format) is absent.
+- **The importers against real files, in two tiers** (amended 2026-09-18, per Q-18's deferral). Review will
+  supply a reference-design package and the layout tool's own placement and BOM exports; each reader is
+  gated on those bytes, and on a refusal where a required field (the placement origin, the Excellon
+  format) is absent. Because that package now arrives at **manual testing** rather than before P0, the
+  gate is built in two tiers and both ship: a **committed synthetic tier** that runs on every clone, and a
+  **guarded real-bytes tier** that skips with a stated reason until the files land. The synthetic tier is
+  honest about its own limit — it proves a reader parses its own output and nothing more — and it carries
+  a case per §8.5 shape allowance, so those cases are already green or red on the day the package
+  arrives.
 - **Navigation parity with the layout editor**, and it is a comparison rather than a checklist. Every
   gesture in §11.6's table is driven on the railRF board view and on a layout editor view holding the same
   geometry, and the two resulting viewports must be identical — pan offsets, zoom, and the framing Zoom to
@@ -854,9 +864,9 @@ Each phase is gated against something that is not our own arithmetic.
 
 # 8. Questions — what is settled, and what is left
 
-Numbered so the thread survives iteration. **Q-1 … Q-19 are all closed or decided except Q-18**; their
-answers are recorded below because the reasoning behind a closed question is what stops it reopening by
-accident. **Q-20 … Q-22 are new in rev 4.**
+Numbered so the thread survives iteration. **Q-1 … Q-19 are all closed or decided, Q-18 by deferral**
+(§8.5, 2026-09-18 — it no longer blocks P0); their answers are recorded below because the reasoning behind
+a closed question is what stops it reopening by accident. **Q-20 … Q-22 are new in rev 4.**
 
 ## 8.1 Closed in the rev-1 review
 
@@ -1000,14 +1010,46 @@ the DC load analysis is a separate layout-review step taken once the topology is
 comparison and the removal rankings are the deliverable, the DC comparison rides along inside P3, and the
 DC-only early version rev 3 offered is not worth building (§2.5, §6).
 
-## 8.5 Open in rev 4
+## 8.5 Open in rev 4 — and Q-18's disposition
 
-**Q-18 — How much of the reference package can we have? — CARRIED FORWARD, and now the only thing between
-this note and P0.** §7 gates the three new readers on real bytes rather than on invented ones. A complete
-supplier reference package — Gerbers, drill, the netlist Q-13 confirmed, BOM, placement — and one of your
-own designs' exports would settle the importers outright and become the acceptance fixtures. *(They would
-be committed anonymised: the repo carries no company, vendor or product names, so part numbers and library
-prefixes in a fixture are rewritten to the same shape.)*
+*Q-18 is settled by deferral (2026-09-18) and is kept here rather than moved, because the
+reasoning behind it is what the implementation is shaped around. Q-20 … Q-22 are genuinely open.*
+
+**Q-18 — How much of the reference package can we have? — DEFERRED TO MANUAL TESTING, and it no longer
+blocks P0** (owner, 2026-09-18). §7 gates the three new readers on real bytes rather than on invented
+ones. A complete supplier reference package — Gerbers, drill, the netlist Q-13 confirmed, BOM, placement —
+and one of your own designs' exports would settle the importers outright and become the acceptance
+fixtures. *(They would be committed anonymised: the repo carries no company, vendor or product names, so
+part numbers and library prefixes in a fixture are rewritten to the same shape.)*
+
+**The owner's decision is that the package arrives during manual testing, once the briefs are
+implemented.** Rev 4 called this question the only thing between the note and P0; that is no longer the
+case, and this paragraph supersedes it. What makes the deferral safe rather than a gamble is that Q-18
+bundles **two** asks and only one of them is on the critical path:
+
+| | What it is | Deferring it |
+|---|---|---|
+| **(a) The fixtures** | a package to gate against, committed anonymised | **Defers cleanly.** The importer gate becomes two-tier (§7): a committed synthetic tier that runs always, and a guarded real-bytes tier that skips *with a reason* until the package lands — the arrangement `RfCore.Tests`' own unavailable fixtures already use. |
+| **(b) The format shape** | what a real placement file, BOM and netlist *look like* — column names, header form, units, whether there is a header at all | **Does not defer cheaply.** A shape surprise is not a bug fix; it changes the BOM row type, the refdes join or the recognition rule, and each of those propagates into the extractor, the parts table and the A/B matcher. |
+
+So the implementation **allows for (b) rather than assuming it away.** Four shapes a real export plausibly
+has are treated as supported from the start, because each is cheap to allow now and expensive to retrofit:
+a **one-to-many** BOM-to-placement join (§2.2's own list of approved manufacturers behind one part number
+makes a row per manufacturer ordinary); a refdes cell carrying a **range or a list** rather than one
+reference; **no header row at all**, which must fail into a refusal naming the flag and never into a
+positional guess; and the ordinary text-file mechanics — encoding, line endings, quoted delimiters, a
+leading byte order mark.
+
+**The cheap way to close (b) early, if it is ever convenient:** the first twenty or so lines of one file of
+each kind. Not a package, not anonymised, nothing committed — enough to read the header, the delimiter,
+the units and the column names. That also answers **Q-21** outright, which is worth doing before P0's gate
+rather than at it, since a netlist flavour that is not IPC-D-356 is a fourth reader and a phase of its own.
+
+**What the synthetic tier proves, stated plainly so a green suite is not misread:** it proves the readers
+parse their own output. It does not prove they parse a real export. That is the whole reason the guarded
+tier exists, and the reason the first thing pointed at the package when it arrives is `circuitrf rail` run
+as a process — one command exercises every reader, both extractors and the whole solve, with no window
+and with every refusal legible in a terminal.
 
 **Q-20 — The rail chain: what does a regulator need typed?** railRF will solve the rails in dependency
 order so a regulator's input voltage is the upstream answer rather than a nominal (§2.2). Two things that
