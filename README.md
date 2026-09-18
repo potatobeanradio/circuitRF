@@ -69,23 +69,23 @@ These install for you alone, need no administrator rights, and update themselves
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.24-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.24-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.24-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.25-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.25-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.25-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.24-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.24-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.25-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.25-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.24-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.24-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.24/circuitRF-1.0.0-beta.24-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.25-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.25-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.25/circuitRF-1.0.0-beta.25-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.24-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.24/install.sh
+tar xzf circuitRF-1.0.0-beta.25-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.25/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
