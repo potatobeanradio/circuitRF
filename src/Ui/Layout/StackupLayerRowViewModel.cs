@@ -482,11 +482,33 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         RefreshFromModel();
     }
 
+    /// <summary>
+    /// A stored length as the text of an EDITABLE box, at the one precision that survives being
+    /// parsed back (<see cref="LayoutUnits.SpellDecimals"/>).
+    ///
+    /// <para><b>Not <see cref="LayoutUnits.Format"/>'s default of four places</b>, which is a display
+    /// precision and is COARSER than the stored value in two of the five units: four places of a mil
+    /// is 2.54 nm and of an inch is 2.54 um, against a 1 nm DBU. The box then showed a rounded number
+    /// and <see cref="CommitThickness"/> — which parses this very string — wrote the rounding back on
+    /// a focus round trip with nothing typed. Owner report, 2026-09-17: a thickness entered as 35 um
+    /// read "1.378" after the display unit was changed to mil, and came back as 35.001 um; the second
+    /// attempt "worked", because by then the stored value WAS the rounded one. Trailing zeros are
+    /// trimmed, so a round number is still spelled round — 57.68 mil stays "57.68".</para>
+    ///
+    /// <para>The read-only labels on this tab (<c>StackTotalText</c>, <c>BoardThicknessText</c> and
+    /// the stack-height difference) deliberately keep the four-place display precision: nothing parses
+    /// them back, and a total is easier to read at four places than at six.</para>
+    /// </summary>
+    private string LengthText(long dbu) =>
+        LayoutUnits.Format(
+            dbu, _owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron,
+            LayoutUnits.SpellDecimals(_owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron));
+
     public void RefreshFromModel()
     {
         _isRefreshing = true;
         StagedName          = Layer.Name;
-        StagedThicknessText  = LayoutUnits.Format(Layer.ThicknessDbu, _owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron);
+        StagedThicknessText  = LengthText(Layer.ThicknessDbu);
         ThicknessError       = null;
         // Invariant, to match the Commit* parses below. These four are NOT display text: the same
         // string is written here and read back there, so the format and the parse are two halves of
@@ -530,9 +552,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             SelectedSpanTo      = Layer.SpanToLayer   is { Length: > 0 } t ? t : SpanNone;
             SelectedFill        = Layer.Fill ?? ViaFillKind.Plated;
             OnPropertyChanged(nameof(IsPlated));
-            StagedWallThickness = Layer.WallThicknessDbu is { } w
-                ? LayoutUnits.Format(w, _owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron)
-                : "";
+            StagedWallThickness = Layer.WallThicknessDbu is { } w ? LengthText(w) : "";
             OnPropertyChanged(nameof(SpanChoices));
             OnPropertyChanged(nameof(IsPlatedVia));
         }

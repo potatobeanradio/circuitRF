@@ -583,7 +583,6 @@ public static class GerberImport
         // ── 6. Layer order (R-L4g-10) ───────────────────────────────────────────────────────────
         control?.SetStageLabel("working out the layer stack");
         var conductors = identities.Where(i => i.IsConductor).ToList();
-        var guessedOrder = conductors.Where(c => c.CopperIndex is null).ToList();
         // GI1 R-gi1-4. A numeric prefix in the file names, when EVERY conductor has one and they are
         // all distinct, is what a production output set uses to say its own stack order — and it is a
         // far better tiebreak than the alphabetical one it replaces here ("Layer_10" sorts before
@@ -599,6 +598,11 @@ public static class GerberImport
             .ThenBy(InnerRank)                                  // "Inner 2" before "Inner 10"
             .ThenBy(c => c.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // AFTER the order and BEFORE the report, because the report must name the layers as the rest
+        // of the import will call them. See NameBottomConductor.
+        NameBottomConductor(identities, copperTopToBottom, destTech, messages);
+        var guessedOrder = copperTopToBottom.Where(c => c.CopperIndex is null).ToList();
 
         if (conductors.Count > 0 && guessedOrder.Count == 0)
             messages.Add(
@@ -1544,6 +1548,69 @@ public static class GerberImport
         "Bot" => int.MaxValue - 1,
         _ => int.MaxValue / 2,
     };
+
+    /// <summary>
+    /// Names the bottom-most conductor "Bottom Copper" when the set numbers its copper from the top
+    /// and therefore never spells the word.
+    ///
+    /// <para><b>Why this is needed.</b> The rung-3 table reads <c>Layer&lt;n&gt;</c> as inner copper
+    /// at <c>n - 1</c>, which is right for a mid layer and wrong for the LAST one: on a two-layer
+    /// board "layer 2" is the bottom, so the board came out as "Top Copper" plus "Inner 1" and had no
+    /// bottom copper at all. That is not only a label — it is the ground plane on most two-layer
+    /// boards, and it is the layer someone then has to find in order to set the stackup's ground
+    /// reference and its bottom boundary condition.</para>
+    ///
+    /// <para><b>Why only the bottom, and only under these conditions.</b> The rename asserts a fact
+    /// about the stack, so it is allowed exactly where the stack is already known: the ORDER is
+    /// resolved, the TOP is identified by something other than this guess, there are at least two
+    /// conductors, nothing else claims the bottom, and the layer being renamed was itself a rung-3
+    /// guess. A declared <c>Copper,L2,Inr</c> is never touched. The symmetric "first one must be the
+    /// top" rule is deliberately NOT here: a set spelling its outer layers with no side word at all
+    /// fails the <c>MinIndex</c> floor on layer 1, so its first FILE is not among the conductors and
+    /// the first conductor is genuinely an inner layer — renaming it would be confidently wrong in
+    /// the one case the rule was meant to catch.</para>
+    ///
+    /// <para>Reported, because it is a guess — and reported as a rename, since the name it replaces
+    /// is the one the file's own name argues for.</para>
+    /// </summary>
+    private static void NameBottomConductor(
+        List<GerberLayerIdentity> identities, List<GerberLayerIdentity> copperTopToBottom,
+        Technology? destTech, List<string> messages)
+    {
+        const string BottomName = "Bottom Copper";
+
+        if (copperTopToBottom.Count < 2) return;
+        if (!string.Equals(copperTopToBottom[0].Side, "Top", StringComparison.Ordinal)) return;
+        if (copperTopToBottom.Any(c => string.Equals(c.Side, "Bot", StringComparison.Ordinal))) return;
+
+        var last = copperTopToBottom[^1];
+        if (last.Rung != GerberLayerRung.Heuristic || last.CopperIndex is not null) return;
+        // A name already spoken for is a collision, and two drawing layers sharing one name is worse
+        // than the label this is trying to correct.
+        if (identities.Any(i => string.Equals(i.LayerName, BottomName, StringComparison.OrdinalIgnoreCase))) return;
+
+        var renamed = last with
+        {
+            LayerName = BottomName,
+            Side = "Bot",
+            // Re-resolved, never carried over: the old key was looked up by the OLD name, and a
+            // renamed layer pointing at the technology layer its former name found is the silent
+            // half of this mistake.
+            DestLayer = destTech?.Layers
+                .FirstOrDefault(l => string.Equals(l.Name, BottomName, StringComparison.OrdinalIgnoreCase))?.Key,
+        };
+
+        copperTopToBottom[^1] = renamed;
+        int at = identities.IndexOf(last);
+        if (at >= 0) identities[at] = renamed;
+
+        messages.Add(
+            $"{last.FileName} was GUESSED to be \"{last.LayerName}\" from its name, but it is the " +
+            $"bottom-most copper layer in the resolved stack, so it was renamed \"{BottomName}\". A set " +
+            "that numbers its copper from the top carries no separate word for the outer layers, and on " +
+            "a two-layer board this layer is usually the ground plane. The stack ORDER is unchanged — " +
+            "only the name is.");
+    }
 
     /// <summary>The extensions that identify exactly ONE file in this set — the only ones that can
     /// serve as a per-layer <c>GerberSuffix</c> alias. See <see cref="BuildSourceLayers"/>'s own note

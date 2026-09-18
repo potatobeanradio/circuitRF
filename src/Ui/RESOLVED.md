@@ -28547,3 +28547,50 @@ an in-app drag is the only way `R` itself works, and it breaks dragging onto a d
 its own window: `MouseDevice` takes an IMPLICIT pointer capture on press
 (`_pointer.Capture(source, CaptureSource.Implicit)`), and a captured pointer does not cross OS
 windows. The OS drag image goes with it.
+
+## A stackup thickness changed when the display unit was changed and changed back (2026-09-17)
+
+Reported alongside the Gerber import defects in `src/Design/RESOLVED.md`, and unrelated to them: a
+designer entered a dielectric thickness in mil, switched the Technology editor's display unit to
+microns to type a copper thickness, switched back to mil, and found a value had moved. They also
+reported that repeating the edit worked — which is the part that identifies the mechanism.
+
+`StackupLayerRowViewModel.RefreshFromModel` formatted the thickness with `LayoutUnits.Format`'s
+default of four decimal places, and `CommitThickness` parses THAT SAME STRING back. Four places is a
+display precision. It is COARSER than the stored value in two of the five units: four places of a mil
+is 2.54 nm and of an inch is 2.54 µm, against a 1 nm DBU. So the box showed a rounded number, and
+committing the field — which happens on a focus round trip, with nothing typed — wrote the rounding
+into the design.
+
+Measured through the real view model:
+
+```
+type 35, display unit µm   → 35000 dbu,  box "35"
+switch to mil              → 35000 dbu,  box "1.378"      (1.37795… truncated)
+click into the box and out → 35001 dbu,  box "1.378"      ← silently changed
+switch back to µm          → 35001 dbu,  box "35.001"     ← what was reported
+repeat the whole sequence  → 35001 dbu,  stable           ← "it worked the second time"
+```
+
+It settles after one round trip because the stored value is by then the rounded one, which is why the
+second attempt looks correct and why this is easy to dismiss as a mis-type.
+
+**The fix is to format an editable box at the precision it is PARSED at**, which
+`LayoutUnits.SpellDecimals` already derives — and already documents with this exact argument for
+`Spell`. It is public now for that reason. `Format` trims trailing zeros, so a round number is still
+spelled round: 57.68 mil stays "57.68", and only a value that genuinely does not land on a round mil
+shows the extra digits, which is the truth about it.
+
+**The read-only labels on the same tab keep four places** (`StackTotalText`, `BoardThicknessText` and
+the stack-height difference). Nothing parses those back, and a total reads better at four places than
+at six — the rule is about text that makes a round trip, not about display.
+
+**The general shape, which is the part worth carrying forward:** wherever a value is rendered into an
+editable field and that same field is parsed back, the rendering has to be lossless or the editor
+quietly rewrites the design every time the field is focused. A no-op commit is not a no-op if the
+format loses information. The other four fields on this row (`Epsr`, `TanD`, `Mur`, `SigmaSm`) use
+fixed `0.####`/`0.######` spellings against `double` values and are the same shape of exposure, left
+alone here only because no report names them.
+
+Gate: `AThicknessSurvivesARoundTripThroughAnotherDisplayUnit` in
+`tests/Ui.Tests/GerberRunTogetherNamesTests.cs`, which does the focus round trip with nothing typed.

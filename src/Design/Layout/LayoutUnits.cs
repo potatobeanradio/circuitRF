@@ -149,8 +149,19 @@ public static class LayoutUnits
     public static string Spell(long dbu, LayoutUnit unit, int dbuPerMicron)
         => Format(dbu, unit, dbuPerMicron, SpellDecimals(unit, dbuPerMicron)) + AsciiSuffix(unit);
 
-    /// <summary>How many decimal places <see cref="Spell"/> needs to resolve one DBU, plus one.</summary>
-    private static int SpellDecimals(LayoutUnit unit, int dbuPerMicron)
+    /// <summary>
+    /// How many decimal places are needed to resolve one DBU in <paramref name="unit"/>, plus one —
+    /// the count at which <see cref="Format"/> and <see cref="TryParse"/> are a LOSSLESS round trip.
+    ///
+    /// <para><b>Public because an EDITABLE field needs it as much as <see cref="Spell"/> does.</b>
+    /// Anything that formats a stored length into a box and parses that same box back must format at
+    /// this count: at <see cref="Format"/>'s default of four places, a mil is quantised to 2.54 nm —
+    /// coarser than the value being displayed — so the box shows a rounded number and committing the
+    /// field writes the rounding back. Measured: 35 um entered, the display unit changed to mil, and
+    /// a focus in and out with nothing typed turned it into 35.001 um. See
+    /// <c>StackupLayerRowViewModel.RefreshFromModel</c>.</para>
+    /// </summary>
+    public static int SpellDecimals(LayoutUnit unit, int dbuPerMicron)
     {
         double dbuPerUnit = NmPerUnit(unit) * (double)Math.Max(1, dbuPerMicron) / 1000.0;
         return Math.Clamp((int)Math.Ceiling(Math.Log10(Math.Max(1.0, dbuPerUnit))) + 1, 1, 15);

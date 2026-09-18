@@ -305,6 +305,12 @@ public static class GerberLayerCascade
         new([["edge"], ["cut", "cuts"]], "Outline", UnidentifiedPurpose, null),
         new([["board"], ["shape"]], "Outline", UnidentifiedPurpose, null),
         new([["mechanical"]], "Mechanical", UnidentifiedPurpose, null),
+        // The score lines a panel is broken along. It has a FileFunction of its own (KindNames spells
+        // it "V-Cut"), so the name here is that one — a set declaring it and a set merely naming it
+        // must land on the same layer. "vcut" clears ContainsWord's floor; the two-group row catches
+        // the spellings that separate the letter, which Signature has already split apart.
+        new([["vcut", "vscore"]], "V-Cut", UnidentifiedPurpose, null),
+        new([["v"], ["cut", "score", "groove"]], "V-Cut", UnidentifiedPurpose, null),
         new([["copper"], TopWords], "Top Copper", ConductorPurpose, "Top"),
         new([["copper"], BotWords], "Bottom Copper", ConductorPurpose, "Bot"),
         new([TopWords, ["layer"]], "Top Copper", ConductorPurpose, "Top"),
@@ -450,20 +456,63 @@ public static class GerberLayerCascade
         };
     }
 
-    /// <summary>Lower-cases and turns every non-alphanumeric run into a single space, so a name can be
-    /// searched for WORDS rather than substrings — without this "topology" contains "top".</summary>
+    /// <summary>
+    /// Lower-cases and turns every non-alphanumeric run into a single space, so a name can be
+    /// searched for WORDS rather than substrings — without this "topology" contains "top".
+    ///
+    /// <para><b>A run-together name is split where its CASE or its digits change</b>, so
+    /// <c>EtchLayer1Top</c> reads as "etch layer 1 top". Without that split it is one word, and
+    /// <see cref="ContainsWord"/>'s four-character floor then makes the table ASYMMETRIC in a way
+    /// nothing announces: "bottom", "back", "mask", "silk", "paste", "copper" and "layer" all clear
+    /// the floor and match inside a word, while "top" and "bot" are three characters and can only
+    /// match as whole words. So a set spelling its layers <c>SoldermaskTop</c>/<c>SoldermaskBottom</c>
+    /// had every BOTTOM-side file identified and every TOP-side file dropped to the mapping dialog —
+    /// measured on a real two-layer set, where it also cost the board its second conductor and
+    /// therefore its only dielectric, since <c>GerberStackupMapping</c> builds a dielectric only
+    /// BETWEEN two conductors. The rows below were written twice to guard against exactly this
+    /// asymmetry (see <see cref="TopWords"/>) and it came back through the floor instead.</para>
+    ///
+    /// <para><b>Splitting is the fix rather than lowering the floor</b>, because the floor is load
+    /// bearing: "solderstopmask" — a real spelling — ENDS the word "stop" with the letters "top", so
+    /// any rule that let a short word match inside a word would read a side off a file that states
+    /// none. Split first and "stop" is its own word, which is both correct and what the floor was
+    /// always trying to express.</para>
+    /// </summary>
     private static string Signature(string text)
     {
-        var sb = new System.Text.StringBuilder(text.Length + 2);
+        var sb = new System.Text.StringBuilder(text.Length * 2 + 2);
         sb.Append(' ');
         bool lastWasSpace = true;
-        foreach (char c in text.ToLowerInvariant())
+        for (int i = 0; i < text.Length; i++)
         {
-            if (char.IsAsciiLetterOrDigit(c)) { sb.Append(c); lastWasSpace = false; }
-            else if (!lastWasSpace) { sb.Append(' '); lastWasSpace = true; }
+            char c = text[i];
+            if (!char.IsAsciiLetterOrDigit(c))
+            {
+                if (!lastWasSpace) { sb.Append(' '); lastWasSpace = true; }
+                continue;
+            }
+
+            if (!lastWasSpace && StartsAWord(text, i)) sb.Append(' ');
+            sb.Append(char.ToLowerInvariant(c));
+            lastWasSpace = false;
         }
         if (!lastWasSpace) sb.Append(' ');
         return sb.ToString();
+    }
+
+    /// <summary>Whether position <paramref name="i"/> is where a space would have gone in a
+    /// run-together name — the three boundaries a name carries when it was written without
+    /// separators. The last of them is the tail of an acronym: "PCBTop" breaks before the "T", not
+    /// before the "B".</summary>
+    private static bool StartsAWord(string text, int i)
+    {
+        char prev = text[i - 1], c = text[i];
+        if (!char.IsAsciiLetterOrDigit(prev)) return false;         // a separator already spaced it
+
+        if (char.IsAsciiDigit(c) != char.IsAsciiDigit(prev)) return true;       // layer1 -> layer 1
+        if (char.IsAsciiLetterUpper(c) && char.IsAsciiLetterLower(prev)) return true;   // etchLayer
+        return char.IsAsciiLetterUpper(prev) && char.IsAsciiLetterUpper(c) &&
+               i + 1 < text.Length && char.IsAsciiLetterLower(text[i + 1]);            // PCBTop
     }
 
     private static bool ContainsWord(string signature, string word) =>

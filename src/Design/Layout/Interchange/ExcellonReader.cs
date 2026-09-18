@@ -535,23 +535,52 @@ public sealed partial class ExcellonReader
         return found;
     }
 
-    /// <summary>§2 evidence source 1 — an explicit format comment, <c>;FILE_FORMAT=2:4</c>. Also the
+    /// <summary>
+    /// §2 evidence source 1 — an explicit format comment, <c>;FILE_FORMAT=2:4</c>. Also the
     /// <c>; #@!</c> attribute comments, which say nothing about the format and must not be mistaken
-    /// for one.</summary>
+    /// for one.
+    ///
+    /// <para><b>Three spellings, because the digit counts are the part a header most often states
+    /// only here</b> (owner report, 2026-09-17: a two-layer board refused to import at all because
+    /// its drill file's format "was not settled", while the file's own header said
+    /// <c>; Format  : 3.3 / Absolute / MM / Leading</c>). The key may be separated from its value by
+    /// <c>=</c> or by <c>:</c>, the two digit counts by <c>:</c> or by <c>.</c>, and the value may be
+    /// followed by further fields this does NOT read. So all of <c>;FILE_FORMAT=2:4</c>,
+    /// <c>;FORMAT=3.3</c> and <c>; Format : 3.3 / Absolute / MM / Leading</c> settle the digits.</para>
+    ///
+    /// <para><b>Only the digits, deliberately.</b> That trailing prose names the units and a zero
+    /// convention too, and both are already settled by the <c>METRIC</c>/<c>INCH</c> line and its
+    /// <c>LZ</c>/<c>TZ</c> word — which are STATEMENTS in the format's own grammar, where the prose is
+    /// a comment whose vocabulary no one agreed on. Worse, the word there is ambiguous in exactly the
+    /// direction that costs orders of magnitude: "Leading" reads as "leading zeros kept" against
+    /// Excellon's own <c>LZ</c> and as "leading zeros suppressed" against Gerber's <c>%FSL</c>, and
+    /// this file's header explains why that inversion is the one trap here. A second, weaker source
+    /// that could contradict the first is not worth a refusal it cannot resolve.</para>
+    /// </summary>
     private static void ScanFormatComment(string line, DrillFormatDeclarations found)
     {
         if (line.Contains("#@!", StringComparison.Ordinal)) return;
 
+        // Whichever separator comes first: ";FILE_FORMAT=2:4" splits on its '=', "; Format : 3.3" on
+        // its ':'. Taking ':' unconditionally would cut ";FILE_FORMAT=2:4" into a key of
+        // "FILE_FORMAT=2" and lose the integer count.
         int eq = line.IndexOf('=');
-        if (eq < 0) return;
-        string key = line[1..eq].Trim();
+        int sep = line.IndexOf(':');
+        if (eq >= 0 && (sep < 0 || eq < sep)) sep = eq;
+        if (sep <= 0) return;
+
+        string key = line[1..sep].Trim();
         if (!key.Contains("FORMAT", StringComparison.OrdinalIgnoreCase)) return;
 
-        string value = line[(eq + 1)..].Trim();
-        int colon = value.IndexOf(':');
-        if (colon <= 0) return;
-        if (int.TryParse(value[..colon].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int ints) &&
-            int.TryParse(value[(colon + 1)..].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int decs))
+        // The first whitespace- or slash-delimited field only — everything after it is prose.
+        string value = line[(sep + 1)..].Trim();
+        int end = value.IndexOfAny([' ', '\t', '/', ',', ';']);
+        if (end >= 0) value = value[..end];
+
+        int split = value.IndexOfAny([':', '.']);
+        if (split <= 0) return;
+        if (int.TryParse(value[..split], NumberStyles.None, CultureInfo.InvariantCulture, out int ints) &&
+            int.TryParse(value[(split + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out int decs))
         {
             found.IntegerDigits = ints;
             found.DecimalDigits = decs;

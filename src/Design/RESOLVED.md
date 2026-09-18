@@ -6503,3 +6503,86 @@ A/B'd on the mask alone with identical level lists, and the two new notes),
 `MimCapacitorTests`, `ShippedTechnologiesTests`, `SheetReferenceSurfaceTests` and
 `PdkPCellExampleTests` (the mask is drawn and encloses the plate). Every MIM fixture in the suite now
 draws nitride, because that is what a layout off `KIT_MIMCAP` contains.
+
+## A two-layer board imported with one conductor, no dielectric, and five layers asked about by hand (2026-09-17)
+
+A designer reported three things about one Gerber set and they turned out to be three separate
+defects plus one consequence. Their own workaround — renaming every file before importing — was the
+right move for the wrong reason, which is worth stating first because it is what the next person will
+also conclude.
+
+**The extension was never the problem.** Every file in the set carried the same artwork extension,
+and classification here is BY CONTENT and never branches on an extension (`GerberFileClassifier`'s
+own header). All nine artwork files classified correctly with no renaming at all. What the renaming
+actually bought was LAYER IDENTITY, which is a different rung and does read the name.
+
+### 1. `ContainsWord`'s four-character floor made the rung-3 table asymmetric
+
+`Signature` lower-cased a name and split it on non-alphanumerics only, so a run-together name such as
+`SoldermaskTop` was ONE word. `ContainsWord` then matched a pattern word inside a word only when the
+word was four characters or longer. "bottom", "back", "mask", "silk", "paste", "copper" and "layer"
+all clear that floor. "top" and "bot" are three characters and could only match as whole words.
+
+So every row naming the bottom matched and every row naming the top did not. On the reported set:
+`SoldermaskBottom` identified, while `EtchLayer1Top`, `SoldermaskTop`, `SilkscreenTop` and
+`SolderPasteTop` all fell to rung 4 and the mapping dialog. The table was written twice over
+specifically to guard against this asymmetry — `TopWords`/`BotWords` exist because "bot" had once
+been missing from every row — and it came back through the floor instead of through the word lists.
+
+**The fix is to split the name where its case or its digits change**, so `EtchLayer1Top` reads as
+"etch layer 1 top". **Lowering the floor was considered and is wrong**: "solderstopmask" is a real
+spelling and it ends the word "stop" with the letters "top", so any rule letting a three-letter side
+word match inside a word reads a side off a file that states none. Splitting first makes "stop" its
+own word, which is both correct and what the floor was always trying to express.
+
+### 2. That is why the board had no dielectric
+
+`GerberStackupMapping.Skeleton` emits a dielectric only BETWEEN two conductors. With the top copper
+unidentified the set had ONE conductor, so the loop never ran and the technology came out with no
+substrate. The reported symptom was the missing dielectric; nothing about the dielectric code was
+wrong. Worth remembering as a shape: **a stackup complaint on a Gerber import is usually an identity
+complaint one step upstream.**
+
+### 3. The bottom-most copper layer of a top-numbered set was called an inner layer
+
+Separately, the rung-3 table reads `Layer<n>` as inner copper at `n - 1`, which is right for a mid
+layer and wrong for the last one — on a two-layer board "layer 2" IS the bottom. The stack ORDER was
+right, so an EM run would have been geometrically correct, but the board had no bottom copper by
+name, and on most two-layer boards that layer is the ground plane and the one someone has to find in
+order to set the ground reference and the bottom boundary condition.
+
+`GerberImport.NameBottomConductor` renames it after the order is resolved. **Only the bottom, and
+only under four conditions** (top already identified by something other than this guess, at least two
+conductors, nothing else claiming the bottom, and the layer itself a rung-3 guess). The symmetric
+"the first one must be the top" rule is deliberately absent: a set spelling its outer layers with no
+side word fails the `MinIndex` floor on layer 1, so its first FILE is not among the conductors at all
+and the first conductor really is an inner layer — renaming it would be confidently wrong in exactly
+the case the rule would exist for.
+
+### 4. The import refused at the first drill file, which had stated its format
+
+`ScanFormatComment` recognised one spelling, `;FILE_FORMAT=2:4`. The set's drill files stated
+`; Format  : 3.3 / Absolute / MM / Leading` — key separated by a colon, digit counts separated by a
+dot, trailing prose. The refusal itself is correct policy (an unstated Excellon format is a refusal,
+never a guess, because leading versus trailing suppression differ by four orders of magnitude), and
+the inference it offered happened to be right — but the file was not silent and the whole import
+stopped. All three spellings are now read.
+
+**Only the digit counts are taken from that comment, deliberately.** The trailing prose also names
+units and a zero convention, and both are already settled by the `METRIC`/`INCH` line and its
+`LZ`/`TZ` word — statements in the format's own grammar, where the prose is a comment whose
+vocabulary nobody agreed on. The word there is ambiguous in the expensive direction: "Leading" reads
+as "leading zeros kept" against Excellon's `LZ` and as "leading zeros suppressed" against Gerber's
+`%FSL`. A second, weaker source that can contradict the first is not worth a refusal it cannot
+resolve.
+
+### Also, while in the table
+
+There was no rung-3 row for a V-cut, though `KindNames` had carried its `FileFunction` spelling all
+along, so a score-line file went to the dialog. Two rows added, on the same name it gets when the set
+declares it.
+
+**Result on the reported set: 9 of 9 layers identified and 0 asked about by hand, against 4 and 5;
+two conductors and one dielectric; and no drill override needed.** Gate:
+`tests/Ui.Tests/GerberRunTogetherNamesTests.cs`. Its fixtures name no tool, vendor or product — only
+the SHAPE of the names, which is the whole content of the first defect.

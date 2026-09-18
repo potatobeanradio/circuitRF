@@ -4900,10 +4900,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             AllowMultiple  = false,
             FileTypeFilter =
             [
+                // A CONVENIENCE, never a decision: what a file IS is settled by content
+                // (GerberFileClassifier), so nothing here can admit or exclude a file from the import
+                // — a set whose artwork this list misses still imports correctly once picked through
+                // "All Files". The list is worth keeping current anyway, because a set that shows up
+                // as an empty folder reads as "circuitRF cannot open this" and the user never reaches
+                // the second filter. `.gdo` (artwork) and `.ncd` (drill) were added on that basis
+                // after a two-layer board arrived with every file spelled that way, 2026-09-17.
                 new FilePickerFileType("Gerber / Drill")
                 {
-                    Patterns = ["*.gbr", "*.gbrjob", "*.gtl", "*.gbl", "*.gts", "*.gbs", "*.gto", "*.gbo",
-                                "*.gtp", "*.gbp", "*.gko", "*.gm1", "*.drl", "*.xln", "*.txt"],
+                    Patterns = ["*.gbr", "*.gbrjob", "*.gdo", "*.gtl", "*.gbl", "*.gts", "*.gbs",
+                                "*.gto", "*.gbo", "*.gtp", "*.gbp", "*.gko", "*.gm1",
+                                "*.drl", "*.ncd", "*.xln", "*.txt"],
                 },
                 new FilePickerFileType("All Files") { Patterns = ["*.*"] },
             ],
