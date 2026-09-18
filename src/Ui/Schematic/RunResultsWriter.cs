@@ -78,6 +78,35 @@ public static class RunResultsWriter
     }
 
     /// <summary>
+    /// The Data Display files a finished run should look for, in the order it should look — the
+    /// AUTHORED display beside the bench first, then the auto-created one under <c>results/</c>.
+    /// Both are absolute; the pair collapses to one entry when the two resolve to the same file.
+    ///
+    /// <para><b>Why the authored one wins.</b> <c>results/</c> is regenerable by definition — the
+    /// examples' <c>.gitignore</c> drops it whole, and so does the packaging item group — so a
+    /// display that is meant to SHIP beside its bench can only live at <paramref name="baseDir"/>.
+    /// That is also where the project tree lists a loose <c>.cdd</c> and where Save Data Display
+    /// puts one. A display found under <c>results/</c> is one this application wrote itself.</para>
+    ///
+    /// <para><b>Owner-reported, 2026-09-17:</b> simulating a bench that already had a display laid
+    /// out beside it created a SECOND, empty one in <c>results/</c> rather than opening the authored
+    /// display. The lookup had only ever needed to find the file this application itself wrote, so
+    /// it searched <c>results/</c> alone — the first example to SHIP a <c>.cdd</c> was the first
+    /// caller for which that was not the same question. Kept here rather than in the view model
+    /// because it is a path convention, which is what this type owns, and because a convention with
+    /// one copy in a view model is one no test can reach.</para>
+    /// </summary>
+    public static IReadOnlyList<string> AutoDisplayCandidates(
+        string baseDir, string resultsDir, string schematicKey)
+    {
+        var authored = Path.GetFullPath(Path.Combine(baseDir,    schematicKey + ".cdd"));
+        var created  = Path.GetFullPath(Path.Combine(resultsDir, schematicKey + ".cdd"));
+        return string.Equals(authored, created, StringComparison.Ordinal)
+            ? [authored]
+            : [authored, created];
+    }
+
+    /// <summary>
     /// Sanitizes a user- or key-derived results file name COMPONENT (never a path): strips path
     /// separators (on every platform, regardless of what <see cref="Path.GetInvalidFileNameChars"/>
     /// reports locally) and every other character the local filesystem disallows in a plain file name,

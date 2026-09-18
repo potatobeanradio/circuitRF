@@ -1097,6 +1097,11 @@ public static class SParameterEngine
                 var bias = BuildBias(ec, dcNodeVoltages);
                 if (passive) ec.StampLinearizedPassive(mna, omega, bias);
                 else         ec.StampLinearized(mna, omega, bias);
+                // The nonlinear arm drained nothing, so a model that reports through
+                // IReportsWarnings was heard only while it was linear. A System block with a passive
+                // intermod level on it is exactly that case: it is Nonlinear, and its passivity
+                // report would have been queued and never collected.
+                netlist.DrainModelWarnings(ec.Model);
                 continue;
             }
 

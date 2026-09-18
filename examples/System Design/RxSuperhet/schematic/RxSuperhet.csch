@@ -1,0 +1,974 @@
+{
+  "FormatVersion": 2,
+  "CellName": "RxSuperhet.csch",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -3000,
+      "Y": -1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Prf",
+          "Expression": "-70",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PloRx",
+          "Expression": "7",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Frf1",
+          "Expression": "2440",
+          "Unit": "MHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Frf2",
+          "Expression": "2441",
+          "Unit": "MHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Flo",
+          "Expression": "2066",
+          "Unit": "MHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SWil",
+          "Expression": "0.5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SWiso",
+          "Expression": "28",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SWrl",
+          "Expression": "26",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PANT",
+      "Symbol": "PnTone",
+      "X": -2900,
+      "Y": 100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Freq[1]",
+          "Expression": "Frf1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl[1]",
+          "Expression": "Prf",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Phase[1]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Freq[2]",
+          "Expression": "Frf2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl[2]",
+          "Expression": "Prf",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Phase[2]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -2900,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "SW1",
+      "Symbol": "SwitchD",
+      "X": -2200,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "State",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Throws",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "SWil",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Isolation",
+          "Expression": "SWiso",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "OffState",
+          "Expression": "Absorptive",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "RL",
+          "Expression": "SWrl",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Rtx",
+      "Symbol": "Resistor",
+      "X": -1900,
+      "Y": -600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          -180,
+          -325
+        ],
+        [
+          -180,
+          -325
+        ],
+        [
+          -180,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": -1900,
+      "Y": -800,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "FPRE",
+      "Symbol": "Filter",
+      "X": -1400,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Elliptic",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "F1",
+          "Expression": "2400",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "2483.5",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Astop",
+          "Expression": "45",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "2.0",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LNA1",
+      "Symbol": "Amp",
+      "X": -600,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "16",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "5",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "A2",
+      "Symbol": "Amp",
+      "X": 200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "14",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "12",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MX1",
+      "Symbol": "Mixer",
+      "X": 1000,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "ConvGain",
+          "Expression": "-7",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Plo",
+          "Expression": "PloRx",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IIP3",
+          "Expression": "10",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IsoLO_RF",
+          "Expression": "35",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IsoLO_IF",
+          "Expression": "30",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PLO",
+      "Symbol": "P1Tone",
+      "X": 1000,
+      "Y": 1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Freq",
+          "Expression": "Flo",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl",
+          "Expression": "PloRx",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 1000,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "FIF",
+      "Symbol": "Filter",
+      "X": 1800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Chebyshev",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "F1",
+          "Expression": "364",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "384",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "2.5",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "A3",
+      "Symbol": "Amp",
+      "X": 2600,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "20",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "20",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "AT1",
+      "Symbol": "Atten",
+      "X": 3400,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Loss",
+          "Expression": "6",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "A4",
+      "Symbol": "Amp",
+      "X": 4200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "20",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "22",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 5100,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 5100,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "MeasGain",
+      "Symbol": "Meas",
+      "X": -3000,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Prf_dBm",
+          "Expression": "Prf                                  ; drive per carrier, into measurement scope",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pif1_dBm",
+          "Expression": "dB(HB1.V(\u0022ifo\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pif2_dBm",
+          "Expression": "dB(HB1.V(\u0022ifo\u0022,\u0022(0,1,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Gain_dB",
+          "Expression": "(Pif1_dBm - Prf_dBm)                 ; antenna to IF output",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MeasLin",
+      "Symbol": "Meas",
+      "X": -3000,
+      "Y": 2600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pim3_dBm",
+          "Expression": "dB(HB1.V(\u0022ifo\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_dBc",
+          "Expression": "(Pif1_dBm - Pim3_dBm)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "OIP3_dBm",
+          "Expression": "Pif1_dBm \u002B IM3_dBc/2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IIP3_dBm",
+          "Expression": "(OIP3_dBm - Gain_dB)                 ; compare CascadeBudget",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -1900,
+          -200
+        ],
+        [
+          -1900,
+          -400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -2900,
+          -100
+        ],
+        [
+          -2500,
+          -100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1900,
+          0
+        ],
+        [
+          -1600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1200,
+          0
+        ],
+        [
+          -900,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -300,
+          0
+        ],
+        [
+          -100,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          500,
+          0
+        ],
+        [
+          700,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          0
+        ],
+        [
+          1600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          0
+        ],
+        [
+          2300,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2900,
+          0
+        ],
+        [
+          3100,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3700,
+          0
+        ],
+        [
+          3900,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4500,
+          0
+        ],
+        [
+          5100,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          300
+        ],
+        [
+          1000,
+          800
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": -1900,
+      "Y": -320,
+      "Name": "txarm",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": -2700,
+      "Y": -120,
+      "Name": "ant",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": -1750,
+      "Y": -20,
+      "Name": "rxarm",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 600,
+      "Y": -20,
+      "Name": "rfin",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    },
+    {
+      "X": 4800,
+      "Y": -20,
+      "Name": "ifo",
+      "OwnerWireIndex": 10,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": -20
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "hb",
+      "Name": "HB1",
+      "Enabled": true,
+      "ToneExpr": "Frf1",
+      "NumFreqsExpr": "3",
+      "ToneExprs": [
+        "Frf1",
+        "Frf2",
+        "Flo"
+      ],
+      "ToneUnits": [
+        "Hz",
+        "Hz",
+        "Hz"
+      ],
+      "MaxMixOrderExpr": "4",
+      "MaxHarmonicExpr": "3",
+      "FFTOverSampleExpr": "1",
+      "TolExpr": "1e-8",
+      "DriveSteppingExpr": "IfNecessary",
+      "GuardHarmonicExpr": "0",
+      "LambdaExpr": "1",
+      "MaxIterExpr": "100"
+    },
+    {
+      "Type": "sweep",
+      "Name": "HB1_sweep_Prf",
+      "Enabled": true,
+      "PsaVarName": "Prf",
+      "PsaInnerName": "HB1",
+      "PsaMode": "StepSize",
+      "PsaStart": -78,
+      "PsaStop": -30,
+      "PsaStepOrCount": 4,
+      "PsaKind": "Linear"
+    }
+  ]
+}

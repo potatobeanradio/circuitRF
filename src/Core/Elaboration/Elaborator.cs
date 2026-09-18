@@ -842,6 +842,17 @@ public sealed class Elaborator
                     foreach (var w in tsm.GetZeroHzToneWarnings(childPath))
                         netlist.AddWarningOnce($"zero-hz-tone:{childPath}", w);
 
+                // Every System block but the amplifier DECLARES itself passive, and that is a claim
+                // about numbers a user typed: the family builds its S from real, in-phase amplitudes,
+                // so an insertion loss, a return loss and an isolation that are each plausible on
+                // their own can still sum above unity. Asked HERE because elaboration is the one
+                // point every engine agrees on — a block carrying a passive-intermod level is
+                // Nonlinear, and the DC engine and the HB linear extractor both route it away from
+                // the stamp where the frequency-dependent half of this check lives.
+                if (model is IdealSBlockModel sys
+                    && sys.PlacedPassivityWarning(childPath) is var (key, message))
+                    netlist.AddWarningOnce(key, message);
+
                 // Reference node: null RefNetBinding → ground (0); otherwise resolve the named net.
                 var refNode = inst.RefNetBinding is null
                               ? 0

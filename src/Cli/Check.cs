@@ -11,6 +11,7 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Mom;
+using CircuitRF.Render.DataDisplay;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
@@ -194,6 +195,8 @@ internal static class Check
             case DocumentKind.AssemblyRules:
                                           Scoped(path, kind, f, () => CheckAssemblyRules(path, f)); break;
             case DocumentKind.Touchstone: Scoped(path, kind, f, () => CheckTouchstone(path, f)); break;
+            case DocumentKind.DataDisplay:
+                                          Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
 
             case DocumentKind.Interchange:
                 f.Begin(path, kind);
@@ -613,6 +616,68 @@ internal static class Check
     /// application itself uses. A rule living only in the CLI is one the plot would not enforce.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// A data display (<c>.cdd</c>): does it parse, does it hold anything, and do the result files
+    /// it names exist?
+    ///
+    /// <para><b>A missing result is a NOTE, never an error</b>, and that is the whole shape of this
+    /// arm. A display is a view of a run, the run is not a document, and <c>examples/</c> ships
+    /// displays with no results beside them on purpose — reporting that as a defect would make
+    /// `check` exit 1 on a workspace with nothing wrong with it, which is how a check stops being
+    /// run. What IS a defect is a document that cannot be read or that draws nothing, and those are
+    /// reported as themselves.</para>
+    ///
+    /// <para>The reader is <see cref="DataDisplayConfig"/> through <see cref="DataDisplayJson"/> —
+    /// the same deserialization <c>render</c> and the display window perform, so a file that opens
+    /// checks clean and one that does not is named here rather than at the moment somebody
+    /// double-clicks it.</para>
+    /// </summary>
+    private static void CheckDataDisplay(string path, Findings f)
+    {
+        DataDisplayConfig? config;
+        try
+        {
+            config = System.Text.Json.JsonSerializer.Deserialize<DataDisplayConfig>(
+                File.ReadAllText(path), DataDisplayJson.Options);
+        }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        if (config is null) { f.Add(CliDiagnostics.CheckUnreadable(path, "it is not JSON")); return; }
+
+        // v1 kept its plots at the top level and v2 keeps them in tabs. Both are read, for the
+        // reason `render` reads both: the format is the contract and a caller did not choose the
+        // version of a file somebody handed them.
+        var tabs = config.Tabs.Count > 0
+            ? config.Tabs
+            : config.Plots.Count > 0
+                ? [new TabConfig { Name = "Tab 1", Plots = config.Plots }]
+                : (IReadOnlyList<TabConfig>)Array.Empty<TabConfig>();
+
+        int plots  = tabs.Sum(tb => tb.Plots.Count);
+        int traces = tabs.Sum(tb => tb.Plots.Sum(p => p.Traces.Count));
+
+        if (plots == 0) { f.Add(CliDiagnostics.CheckDataDisplayEmpty(path)); return; }
+
+        var (sources, searched) = CddSources.Describe(path, config, tabs);
+
+        f.Add(CliDiagnostics.CheckDataDisplaySummary(path, tabs.Count, plots, traces, sources.Count));
+
+        foreach (var (reference, resolved) in sources)
+            if (resolved is null)
+                f.Add(CliDiagnostics.CheckDataDisplaySourceNotRun(
+                    path, reference, string.Join(", ", searched)));
+
+        // A trace that names neither a cube nor an expression draws nothing and says nothing about
+        // why — the one defect in a display that survives being opened.
+        foreach (var tab in tabs)
+        foreach (var pc in tab.Plots)
+        foreach (var tc in pc.Traces)
+            if (string.IsNullOrWhiteSpace(tc.CubeName) && string.IsNullOrWhiteSpace(tc.Expression)
+                && tc.WsProbe is null && tc.ContourTrace is null && tc.SummaryColumn is null)
+                f.Add(CliDiagnostics.CheckDataDisplayEmptyTrace(
+                    path, pc.CustomTitle is { Length: > 0 } ? pc.CustomTitle : tab.Name));
+    }
+
     private static void CheckTouchstone(string path, Findings f)
     {
         SNP snp;

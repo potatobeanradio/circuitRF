@@ -1,0 +1,7 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "PrimarySchematic": "TxSuperhet.csch",
+  "IsTestBench": true,
+  "NumPorts": 0
+}

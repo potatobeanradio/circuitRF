@@ -2267,3 +2267,48 @@ Two reporting consequences, both fixed with it:
 Gate: `SolvedPointCubeTests.ThePointsTheConductionSolveAnswered_AndBothEndsOfTheGrid_ArePublishedAsSolved`
 (routine tier, ~2 s on the coarse FR-4 line) — 0 Hz, a 1 kHz sub-floor point and both ends of the
 full-wave grid read 1, with interior points still modelled so the assertion is evidence of something.
+
+
+## Every engine diagnostic raised inside a parametric sweep was discarded (2026-09-17)
+
+Found while wiring the System-block passivity report to the Messages panel: it appeared on an
+unswept `.cnl` and on nothing the System Design example ships, because every bench there is swept.
+
+**`ParametricSweepEngine.Run` elaborates a fresh netlist per point and disposes it.** That is a
+correctness requirement, not hygiene — the re-elaboration is how a swept variable reaches the
+circuit at all, and the `using` is what returns an external provider's device instances (a 201 × 101
+sweep otherwise asks a worker for 20,502 instances of the 4,096 it holds). But the netlist every
+engine writes its warnings and notes to is that per-point one, and the caller is left holding the
+netlist it elaborated in order to PICK the analysis — which nothing ever stamped.
+
+Both CLI run verbs (`PrintWarnings(nl)`) and `SchematicRunService` (`DrainWarnings(nl)`) read that
+one. So a swept run reported **no engine diagnostics at all**: not `hb-dc-nonconverge`, not
+`sparam-regularization`, not `dc-worst-unsettled`, not a microstrip outside its validity range, not
+a block that is not passive. An unswept run of the same circuit reported all of them, which is the
+shape that keeps this invisible — the bench nobody sweeps behaves.
+
+Fixed with an optional `diagnosticsInto` parameter and `MergeDiagnosticsFrom` per point, before the
+netlist goes out of scope. `MergeDiagnosticsFrom` already dedups on the same keys `AddWarningOnce`
+does, so a condition every point raises is reported once rather than once per point — which is why
+the parameter takes a netlist rather than a list. A **nested** sweep passes the current point's own
+netlist down, so a message raised three levels deep arrives once at the top.
+
+Null keeps the old behaviour, which is what every test caller wants; the three production call sites
+(both CLI run verbs, `SchematicRunService`) pass their own.
+
+Gate: `tests/Engine.Tests/Parametric/SweepDiagnosticsReachTheCallerTests.cs`. Its fixture raises
+`sparam-zero-bias`, which only the S-parameter engine can produce — a passivity report would not do,
+because that one IS raised at elaboration and the caller would hold it either way, so the test would
+pass against the bug.
+
+
+## The HB linear extractor drained no model warnings (2026-09-17)
+
+Found in the same pass. `IReportsWarnings`' own remarks name `HbLinearExtractor` as one of the three
+call sites that must drain a model after stamping it, and it did not — `StampInto` stamped every
+linear component and collected nothing. Neither did `SParameterEngine`'s NONLINEAR arm, which
+`continue`s past the drain that follows the linear one.
+
+So in a harmonic-balance run, a microstrip line outside its validity range reported nothing, and a
+System block whose S is not passive queued a message that was never collected. Both are one line
+each; the HB one also means every `IReportsWarnings` model is heard in HB for the first time.

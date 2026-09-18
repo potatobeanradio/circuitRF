@@ -2142,3 +2142,73 @@ cannot have: memory-else-disk, so an unsaved tab is what a GUI run sees.
   and a well-formed `.npy` were all true. `tests/Ui.Tests/Cli/CliHierarchyExtractionTests.cs`
   asserts on the GAIN for that reason, plus a byte-for-byte comparison of the headless netlist
   against the window's own resolver.
+
+
+## `check` called a `.cdd` a file circuitRF does not read (2026-09-17)
+
+Found running `circuitrf check` over the System Design example, which is the first workspace to ship
+data displays.
+
+`DocumentKinds.Classify` has mapped `.cdd` to `DocumentKind.DataDisplay` since RND-4, and `Check.cs`
+had no arm for it. `CheckPath`'s `default:` case therefore fired, and its message is a claim rather
+than a shrug:
+
+```
+error: .../TxSuperhet.cdd: Nothing circuitRF reads is named '.../TxSuperhet.cdd' — check takes a
+workspace, a cell folder, or a .csch, .csym, .clay, .ctech, .cem, .cnl, .wasm or a Touchstone .sNp.
+```
+
+That is false about a document the application opens, renders and exports, and it fired once per
+display: `check` on a six-bench workspace reported **6 errors and exited 1** with nothing wrong with
+it. The folder WALK skips what it does not recognise (`Unknown`, `Interchange`, `Touchstone`), so the
+kind being recognised-but-unhandled is what made it loud.
+
+**Two decisions in the arm that was added, and the second is the load-bearing one.**
+
+- **The reader is the renderer's**, `JsonSerializer.Deserialize<DataDisplayConfig>` through
+  `DataDisplayJson.Options`, with the same v1-plots/v2-tabs fallback `RenderDataDisplay.Draw` makes.
+  A `.cdd` that opens checks clean and one that does not is named here rather than at the moment
+  somebody double-clicks it. No second reader, per R-aut4-2.
+- **A result file the display names and cannot find is a NOTE.** A display is a view of a run and a
+  run is not a document; `examples/` ships displays with no results beside them deliberately, and
+  `.gitignore` excludes `results/` from every workspace in the repo. If the missing `.npy` were an
+  error then every design nobody had simulated yet would fail its own check, which is how a check
+  stops being run. What IS reported as a defect is a document that cannot be read, one that holds no
+  plots, and a trace bound to neither a cube nor an expression — the one broken state that survives
+  being opened, because it draws nothing and says nothing about why.
+
+The reference collection and the beside-it-then-`results/` locator are `CddSources.Describe`, which
+is `Bind` with the loading left out, rather than a second copy in the checker: which references a
+document carries and where a relative one is looked for are decisions that already existed.
+
+Gate: `CheckAndExplainCliVerbTests.ADataDisplayWithNoResultsBesideIt_IsANoteAndNotAnError`, which
+asserts the note's id AND the absence of `check.path.unknown-kind`, since a green exit code alone
+would also pass if the walk had simply been taught to skip `.cdd` entirely.
+
+
+## A run verb's `-o` did not create the folder it was told to write into (2026-09-17)
+
+Exposed by the same example, one change later: the results were removed from what it ships, and the
+command its README documents stopped working.
+
+```
+$ circuitrf hb "TxDirectConversion/schematic/TxDirectConversion.csch" -o results/TxDirectConversion.npy
+Error: Could not find a part of the path '.../System Design/results/TxDirectConversion.npy'.
+```
+
+**The GUI has always created it.** `ResultsWriter.WriteRun` does `Directory.CreateDirectory` on the
+way past, which is why Simulate works on a workspace that has never been run. So the headless path
+was the one that required somebody to have run it already — and the failure was invisible for as
+long as every example shipped a `results/` folder, because the folder was always there.
+
+`netlist`, `render` and `plot` had each solved this locally (`Netlist.cs:88`, `Render.cs:1377`,
+`PlotVerb.cs:298`) — the newer verbs got it right and the run verbs never did. There are four
+distinct writers involved (`DataSetExporter`, `TouchstoneIO.WriteFile`, the loadpull `.spl`/
+`.lpcwave` writers, and `em`'s `SnpOutputPathOverride`), which is why fixing one would not have been
+noticed to leave three. `EnsureOutputDirectory` in `CliEntry.cs` is called at all four, and
+deliberately swallows its own failure: the write that follows is already inside a try/catch that
+names the file, and a folder that cannot be created is one problem, reported once.
+
+Gate: `MissingVerbsCliTests.ARunVerbCreatesTheOutputFolderItWasGiven`, over `sparam` to both
+Touchstone and `.npy` and over `hb`. The destination is **two** levels deep, so a fix that made only
+the immediate parent would still fail it.

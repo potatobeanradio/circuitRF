@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Ui.DataDisplay;
@@ -12,6 +13,7 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Markdown;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.Dock;
+using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 
@@ -1710,6 +1712,59 @@ public partial class WorkspaceViewModel
 
         // A view preference, not a property of the design — it survives the workspace switch.
         ReapplyCollapsedStateIfNeeded();
+
+        ReArrangeDocumentTabStrips();
+    }
+
+    /// <summary>
+    /// Re-arranges the document tab strips after the restore has changed which documents are open.
+    ///
+    /// <para><b>Owner report, 2026-09-17:</b> opening a workspace posted "Opened …/TxDirectConversion.csch"
+    /// and no such tab appeared. The document WAS in the dock and in the right place — captured back
+    /// into the <c>.cwsuser</c> in tab order, and present in the visual tree as a realized
+    /// <c>DocumentTabStripItem</c> arranged at the right x. What was wrong was one number: the strip's
+    /// scroll viewer was ARRANGED at 88px — the width of the Welcome tab that was its only tab a
+    /// moment earlier — while its DesiredSize had already grown to the real 442px. It clips, so
+    /// everything past the first tab was cut away, and the body showed a document whose tab could not
+    /// be seen.</para>
+    ///
+    /// <para><b>Measure is right and arrange is stale, which is why nothing self-corrects.</b> Every
+    /// control from the strip down reports the new DesiredSize and <c>IsArrangeValid</c> true, so the
+    /// layout system believes it is settled: the strip was still arranged minutes later, and
+    /// invalidating MEASURE over the whole subtree changed nothing (re-measuring yields the same 442
+    /// and so asks for no new arrange). Only an arrange invalidation moves it, which is what this
+    /// does — no wait, no timer, no extra frame: the strip is correct on the same idle pass that
+    /// paints the restored tabs.</para>
+    ///
+    /// <para><b>Why the restore and not every open.</b> The documents are added in one synchronous
+    /// burst into a dock whose strip is being laid out for the first time in that same pass — the
+    /// ancestors arrange before the new tab items have measured, and nothing re-arranges them
+    /// afterwards. A workspace that happened to <c>await</c> inside the restore escaped it by
+    /// accident: the examples with a <c>.clay</c> to pre-read came up correct and every other one did
+    /// not, which is exactly how a bug this visible survived.</para>
+    /// </summary>
+    private void ReArrangeDocumentTabStrips()
+    {
+        foreach (var window in WorkspaceWindows())
+            foreach (var strip in window.GetVisualDescendants().OfType<DocumentTabStrip>())
+            {
+                strip.InvalidateArrange();
+                foreach (var child in strip.GetVisualDescendants().OfType<Control>())
+                    child.InvalidateArrange();
+            }
+    }
+
+    /// <summary>This workspace's own windows: the one holding the shell, plus the host window of
+    /// every float in its dock tree. Deliberately NOT every window the process has open — another
+    /// workspace's window is not this view model's to touch.</summary>
+    private IEnumerable<Window> WorkspaceWindows()
+    {
+        if (ResolveOwner(null) is { } owner) yield return owner;
+
+        if (Layout is not IRootDock root || root.Windows is null) yield break;
+        foreach (var dockWindow in root.Windows)
+            if (dockWindow.Host is Window host)
+                yield return host;
     }
 
     /// <summary>

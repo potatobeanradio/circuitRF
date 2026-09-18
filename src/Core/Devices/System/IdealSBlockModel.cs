@@ -90,7 +90,7 @@ namespace CircuitRF.Core.Devices;
 /// standard <see cref="MixerModel"/>'s <c>IsolationOff</c> sets. <see cref="SuppressedAmplitude"/>
 /// is where a stated "off" number becomes an exact zero.</para>
 /// </summary>
-public abstract class IdealSBlockModel : ComponentModel
+public abstract class IdealSBlockModel : ComponentModel, IReportsWarnings
 {
     /// <summary>
     /// At or above this many dB, a SUPPRESSION (a return loss, an isolation) means the term is not
@@ -322,6 +322,86 @@ public abstract class IdealSBlockModel : ComponentModel
     }
 
     /// <summary>
+    // ── The passivity claim, checked ─────────────────────────────────────────
+
+    private readonly List<(string Key, string Message)> _pending = [];
+    private bool   _passivityReported;
+    private double _passivityCheckedOmega = double.NaN;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    {
+        if (_pending.Count == 0) return [];
+        var drained = _pending.ToArray();
+        _pending.Clear();
+        return drained;
+    }
+
+    /// <summary>
+    /// Reports this instance if its own S-matrix is not passive — once, naming the instance.
+    ///
+    /// <para><b>Called from the stamp, because that is where the block is being USED and where it
+    /// has a name.</b> The claim being checked is <see cref="ComponentModel.Activity"/>'s: every
+    /// block in this family except the amplifier says <see cref="Core.Activity.Passive"/>, and that
+    /// is a statement about numbers a user typed. A construction-time check could not make it,
+    /// because a frequency-dependent block has no S until it is asked for one.</para>
+    ///
+    /// <para><b>What it costs.</b> Nothing on a block that is already known bad — one report per
+    /// instance and the check stands down — and nothing on a repeated stamp at the same ω, which is
+    /// what a DC solve followed by a sweep, and every Newton iteration of an HB point, actually do.
+    /// What remains is one cheap norm bound per distinct frequency
+    /// (<see cref="SystemBlockPassivity.ProvablyPassive"/>), and a singular-value decomposition only
+    /// where that bound cannot settle it.</para>
+    /// </summary>
+    private void CheckPassivity(ElaboratedComponent c, double omega)
+    {
+        if (_passivityReported || Activity is not Activity.Passive) return;
+        if (_passivityCheckedOmega.Equals(omega)) return;
+        _passivityCheckedOmega = omega;
+
+        if (SystemBlockPassivity.ExcessOf(SAt(omega), PortCount) is not { } sigma) return;
+
+        _passivityReported = true;
+        _pending.Add(SystemBlockPassivity.Report(
+            c.InstancePath, GetType().Name, sigma, SDependsOnFrequency ? omega : null));
+    }
+
+    /// <summary>
+    /// Whether this block's S changes with <c>ω</c>. Only <see cref="FilterModel"/>'s does; every
+    /// other block in the family computes its matrix once in its constructor.
+    ///
+    /// <para>It is asked for one reason: a block that is the same at every frequency can have its
+    /// passivity settled when it is PLACED, which is the only point every engine agrees on. It also
+    /// decides whether the report quotes a frequency at all.</para>
+    /// </summary>
+    protected virtual bool SDependsOnFrequency => false;
+
+    /// <summary>
+    /// The passivity report this placed instance already deserves, before any engine has stamped it
+    /// — or null, which is the answer for every block that is passive and for every block whose S
+    /// depends on frequency.
+    ///
+    /// <para><b>Why the stamp is not enough on its own.</b> A block carrying a passive-intermod
+    /// level is <see cref="ModelKind.Nonlinear"/>, and the engines route a nonlinear component away
+    /// from the linear stamp: the DC engine skips it outright (it declares no branch equations of
+    /// its own), and the harmonic-balance linear extractor takes only the linear partition. So a
+    /// circulator with a <c>PIM</c> on it — the one in every transmitter of the System Design
+    /// example — was stamped by nobody in an HB run and reported by nobody. Elaboration sees every
+    /// placed component exactly once, whatever runs afterwards.</para>
+    ///
+    /// <para>Reporting here also sets the stamp-time check down, so the two routes cannot both
+    /// speak. <see cref="FilterModel"/> is the one block this cannot answer for, and it is checked
+    /// at every ω a run visits instead.</para>
+    /// </summary>
+    public (string Key, string Message)? PlacedPassivityWarning(string instancePath)
+    {
+        if (_passivityReported || SDependsOnFrequency || Activity is not Activity.Passive) return null;
+        if (SystemBlockPassivity.ExcessOf(SAt(0.0), PortCount) is not { } sigma) return null;
+
+        _passivityReported = true;
+        return SystemBlockPassivity.Report(instancePath, GetType().Name, sigma, omega: null);
+    }
+
     /// The wave-constraint stamp — the linear path, and the ONLY path when passive intermod is off.
     ///
     /// <para>With PIM on — or on a block with a nonlinearity of its own, which is the amplifier —
@@ -331,8 +411,33 @@ public abstract class IdealSBlockModel : ComponentModel
     /// </summary>
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
+        // BEFORE the early return, deliberately. Every engine's linear loop calls Stamp on every
+        // component — the nonlinear ones stand down here and are stamped again through their own
+        // path — so this is the one call site all of them share, and a block that is Nonlinear
+        // because a user gave it a passive-intermod level would otherwise be the only member of the
+        // family nobody checked. The claim does not depend on the overlay: the overlay is built FROM
+        // the linear S this measures.
+        CheckPassivity(c, omega);
+
         if (Kind is ModelKind.Nonlinear) return;
         StampWaveConstraints(mna, c.Nodes, SAt(omega), Z0At(omega), PortBranchIndices);
+    }
+
+    /// <summary>
+    /// The linearised stamp a block takes when it is <see cref="ModelKind.Nonlinear"/> — passive
+    /// intermod on, or the amplifier's own compression — forwarded unchanged, with the passivity
+    /// claim checked on the way past.
+    ///
+    /// <para>It is overridden for that one reason: <see cref="Stamp"/> stands down on a nonlinear
+    /// block, so a circulator with a PIM level on it would otherwise be the one member of this
+    /// family nobody checked. The claim does not depend on the overlay — the overlay is built FROM
+    /// the linear S — so the same S is the right thing to measure either way.</para>
+    /// </summary>
+    public override void StampLinearized(
+        IMnaContext mna, ElaboratedComponent c, double omega, in PortVoltages bias)
+    {
+        CheckPassivity(c, omega);
+        base.StampLinearized(mna, c, omega, bias);
     }
 
     /// <summary>

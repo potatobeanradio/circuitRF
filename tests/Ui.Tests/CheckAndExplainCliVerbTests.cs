@@ -187,6 +187,46 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         Assert.Equal(1, run.ExitCode);
     }
 
+    /// <summary>
+    /// A data display whose run has not been made yet is <b>clean</b>, and a workspace holding one
+    /// still exits 0.
+    ///
+    /// <para><b>The bug this pins.</b> <c>.cdd</c> classifies as <c>DocumentKind.DataDisplay</c> and
+    /// <c>check</c> had no arm for it, so a folder walk fell through to <c>check.path.unknown-kind</c>
+    /// — <i>"Nothing circuitRF reads is named 'X.cdd'"</i>, which is false about a document the
+    /// application opens, renders and ships. It surfaced the moment an example carried displays:
+    /// `check` on that workspace reported six errors and exited 1 with nothing wrong with it.</para>
+    ///
+    /// <para>The second half matters as much as the first. Results are deliberately not shipped
+    /// beside a design — a display is a view of a run, and the run is not a document — so a
+    /// reference to a <c>.npy</c> that is not there is a NOTE. If it were an error, every workspace
+    /// anyone had not yet simulated would fail its own check, which is how a check stops being run.</para>
+    /// </summary>
+    [Fact]
+    public void ADataDisplayWithNoResultsBesideIt_IsANoteAndNotAnError()
+    {
+        string ws = Dir("display-ws");
+        WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"), new CwsFile());
+
+        File.WriteAllText(Path.Combine(ws, "Bench.cdd"), """
+            { "FormatVersion": 2, "SelectedDataSource": "Bench.npy", "SourceAliases": {},
+              "Tabs": [ { "Name": "Tab 1", "Plots": [ { "Left": 0, "Top": 0,
+                          "Width": 660, "Height": 430, "PlotType": "Rect",
+                          "Traces": [ { "SourcePath": "Bench.npy", "CubeName": "Pout_dBm" } ] } ] } ] }
+            """);
+
+        var run = RunCli("check", ws, "--json");
+        output.WriteLine(run.StdErr);
+
+        AssertHasDiagnostic(run, "check.cdd.source-not-run");
+
+        var ids = Json(run).RootElement.GetProperty("diagnostics").EnumerateArray()
+                      .Select(d => d.GetProperty("id").GetString()).ToArray();
+        Assert.DoesNotContain("check.path.unknown-kind", ids);
+
+        Assert.Equal(0, run.ExitCode);
+    }
+
     /// <summary><c>CellSymbolResolver</c>: a schematic component referencing a cell folder that does
     /// not exist. The three states that resolver keeps distinct stay distinct here.</summary>
     [Fact]

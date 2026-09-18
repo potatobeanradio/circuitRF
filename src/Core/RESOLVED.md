@@ -3024,3 +3024,74 @@ Gates: `VerilogACompileTests.ACompilerInstalledWhereTheFinderCannotSeeItIsStillF
 stub named something `PATH` cannot resolve, so it tests the directory tier even on a machine that
 really does have a compiler on `PATH` — the first draft did not, and was won by the real one) and
 `NoCandidateNameMeansNoUnpromptedSearchAtAll`.
+
+
+## A "passive" System block is only passive if the user's numbers are (2026-09-17)
+
+Found while reviewing the System Design example: `CascadeBudget`'s antenna-port match plot read
+**+1.17 dB out of band** — 15 % more power reflected than arrived, from a T/R switch and a
+preselector with no gain between them. It reproduces in four lines and is worth writing down,
+because the symptom appears two components away from the cause.
+
+**The family's S is REAL and IN-PHASE.** `IdealSBlockModel`'s subclasses convert `IL`, `RL`,
+`Isolation`, `Directivity` straight from dB with `10^(−dB/20)` and no phase. In a real part those
+terms arrive at arbitrary phases and do not add; here they do. So a 0.5 dB switch with 18 dB of
+return loss has `S11 = S22 = 0.1259` and `S21 = S12 = 0.9441`, all real and positive:
+
+- **Per port it is passive**: `|S11|² + |S21|² = 0.907`, and every existing test of the family
+  measures exactly that.
+- **As a matrix it is not**: a symmetric reciprocal two-port's singular values are `|S11 ± S21|`, and
+  `0.1259 + 0.9441 = 1.070`. Put a stopband behind it (`Γ_L ≈ 1`) and
+  `Γ_in = S11 + S21·S12/(1 − S22) = 1.145` — the +1.17 dB read off the plot.
+
+`SwitchModel`'s own header already said an open reflective throw "is not passive-by-construction …
+this model refuses only what cannot be stamped", which is the right policy; what was missing was any
+way for a user to find out.
+
+**The check is `σ_max(S) ≤ 1`**, through `RFNetwork.Passivity` — the same routine `SnpModel` applies
+to a Touchstone file and `ChainModel` to its evaluated ABCD. One passivity routine, not three.
+`SystemBlockPassivity` adds only the cheap accept in front of it: `σ_max ≤ √(‖S‖₁·‖S‖∞)` is one pass
+over N² entries against an O(N³) factorization, and it settles a filter in its passband, an
+attenuator and a matched through outright.
+
+**Complex and per-port reference impedances are fine**, despite `RFNetwork.Passivity`'s own warning.
+That caution is about Touchstone data, whose normalization is not guaranteed to be power waves; this
+family's S is defined against Kurokawa power waves by `StampWaveConstraints`, for which
+`P = |a|² − |b|²` holds per port at any complex reference.
+
+**Two routings had to be covered, and missing either one is silent.**
+
+- **Frequency-flat blocks are checked at ELABORATION** (`PlacedPassivityWarning`, called beside the
+  zero-Hz tone warning in `Elaborator`). The stamp is not enough on its own: a block carrying a
+  `PIM` level is `ModelKind.Nonlinear`, and the engines route a nonlinear component away from the
+  linear stamp — `NonlinearDcEngine` skips it outright because `BranchEquationCount` is 0, and
+  `HbLinearExtractor` takes only the linear partition. The circulator in every transmitter of the
+  System Design example is exactly that block: in an HB run it was stamped by nobody.
+- **`FilterModel` is the one block whose S moves with ω**, so it declares `SDependsOnFrequency` and
+  is checked at every frequency a run visits, from `Stamp`/`StampLinearized`. `CheckPassivity` runs
+  BEFORE `Stamp`'s `Kind is Nonlinear` early return, so the one call site every engine's linear loop
+  shares is the one that does the work.
+
+Reported once per instance; the model then stands down, and a repeated stamp at the same ω does
+nothing. Queued through `IReportsWarnings`, which is what carries it to the Messages panel.
+
+**What it found in the shipped example**, and the shape of each fix:
+
+| Block | σ_max | Why |
+|---|---|---|
+| 0.5 dB switch, 18 dB RL | 1.100 | `|S11| + |S21| > 1`; needs `RL ≥ −20·log₁₀(1 − 10^(−IL/20))` = 25.1 dB |
+| 0.4 dB circulator, 22 dB isolation, 20 dB RL | 1.134 | S is circulant, so σ_max is exactly `10^(−IL/20) + 10^(−Iso/20) + 10^(−RL/20)`; the first two already exceed 1, and **no return loss fixes it** |
+| in-phase 3 dB coupler | 1.382 | a matched lossless reciprocal four-port MUST put 90° between its outputs — an in-phase split is only realizable resistively, at 3.01 dB |
+
+The third is a theorem rather than a modelling artifact, and it is worth knowing that
+`Coupler … Phase=0` therefore cannot represent a Wilkinson: that part is a three-port with a
+resistor in it, and this family has no three-port divider.
+
+**A reflective off-state is its own trap.** With `OffState=Reflective` an open throw has `S_pp = 1`
+exactly, and then ANY leakage into it puts the matrix over unity regardless of the other numbers: a
+0.5 dB SPDT with 28 dB of isolation reads σ_max = 1.033 even at infinite return loss. Absorptive is
+the only off-state that can be passive with finite isolation.
+
+Gates: `tests/Core.Tests/Devices/SystemBlockPassivityTests.cs` (the instance is named, a passive
+block and the tile defaults are silent, a PIM-enabled block is still reached, the amplifier is out of
+scope), and `ExampleWorkspacesTests.NoExampleShipsASystemBlockThatIsNotPassive`.

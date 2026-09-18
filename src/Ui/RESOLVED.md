@@ -1,5 +1,106 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A restored tab was reported as opened and had no tab (2026-09-17)
+
+Owner: opening `examples/System Design/.cws` posted `Opened …/TxDirectConversion.csch` and the file
+was nowhere to be seen.
+
+**Everything about the document was right, and one number was wrong.** It was in the document dock,
+in tab order — the `.cwsuser` written straight afterwards captures `DocumentOrder` from the PRIMARY
+dock, so the record itself proves the document was docked where it belonged. It was realized in the
+visual tree as a `DocumentTabStripItem`, arranged at the right x with the right width. What was wrong
+was the strip AROUND it: its `ScrollViewer` and items panel were **arranged at 88px** while their
+`DesiredSize` had already grown to the real 442px. A `ScrollContentPresenter` clips, so everything
+past the first tab was cut away — and since the strip still showed `README.md` while the body showed
+the active `CascadeBudget.csch`, the window read as a document with no tab at all.
+
+**88px is the Welcome tab.** It is the width the strip had one instant earlier, when the stub was its
+only tab; the restore then removes the stub and adds the saved documents in one synchronous burst,
+and the ancestors arrange before the new tab items have measured.
+
+**Measure is right and arrange is stale, which is why it never self-corrects and why the obvious fix
+does not work.** Every control from the strip down reported the new `DesiredSize` with
+`IsArrangeValid` true, so the layout system believed it was settled — the strip was still at 88px
+minutes later, and invalidating MEASURE across the whole subtree changed nothing, because
+re-measuring yields the same 442 and therefore asks for no new arrange. Only an arrange invalidation
+moves it. `FinishRestoredDockLayout` now does exactly that, over this workspace's own windows (the
+shell, plus the host window of every float in its dock tree — another workspace's window is not this
+view model's to touch). **It costs nothing and waits for nothing**: no timer, no extra frame, no
+delayed post — the strip is correct on the same idle pass that paints the restored tabs, which is the
+requirement the owner stated while this was being chased ("simple documents need to load as fast as
+possible, with their tabs showing").
+
+### Two wrong turns worth recording, because both looked right
+
+- **"Give the shell a moment first."** An `await Task.Delay(1)` between the stub removal and the
+  document opens does cure it, reproducibly. It is still the wrong fix — it buys correctness with
+  latency on every workspace open, and it wins a race rather than removing one.
+- **`ShellRenderedAsync` does not do what its name and its comment say.** Its `Background`-priority
+  await returns in ~39ms with the new dock tree **not yet built at all**: probed at that exact point,
+  the window holds no `DocumentControl` and no `DocumentTabStrip`. Neither forcing `UpdateLayout()`
+  nor waiting for a real composition frame via `RequestAnimationFrame` put the shell up either, and
+  neither fixed the tabs — so the phase-one promise from 2026-09-04 ("the panels go where the
+  workspace says they go and are RENDERED, and only then do the documents open") is **not currently
+  kept**. That is a separate defect, left alone here rather than fixed blind, and it is the reason
+  this bug is about arrange and not about ordering.
+
+**Why it survived this long.** A restore that opens ONE document is fine (measured: 107px, correct),
+and so is any workspace that happens to `await` inside the restore — the examples carrying a `.clay`
+pre-read `PreloadRestoredLayoutsAsync` awaits on came up correct, every other one did not. So the
+failure needed a workspace with two or more saved documents and no layout among them, which is
+what `System Design` is and what no shipped example was before it.
+
+**How it was found, and how the fix was checked.** Reading could not settle it — the model was
+correct at every level, so the evidence had to be the window itself. A temporary probe dumped the
+dock model beside the realized visual tree with each control's bounds, `DesiredSize`,
+`IsMeasureValid` and `IsArrangeValid`, and rendered the live window to a PNG through
+`RenderTargetBitmap` (`screencapture` is unavailable without a Screen Recording grant). The before
+picture shows one tab over a schematic body; the after picture shows three. Both probe and the
+temporary auto-switch hook that exercised the workspace-SWITCH path are deleted.
+
+**Gate:** `tests/Ui.Tests/DocumentTabStripRestoreArrangeTests.cs` — a source scan, because the fact is
+a measured-vs-arranged disagreement inside Dock's own template and `Ui.Tests` has no Avalonia
+platform (`DockWindowBehaviourTests` pins its own window facts the same way). It holds the two things
+that reproduce the bug in silence if lost: the call must be on the restore path, and it must be
+ARRANGE. Verified to fail when either is undone.
+
+## Simulate made a second Data Display instead of opening the one beside the bench (2026-09-17)
+
+Owner: simulating a bench in the System Design example did not open the `.cdd` shipped next to it —
+a new, empty one appeared in `results/` instead.
+
+**`AutoOpenOrCreateDataDisplayAsync` looked in `results/` and nowhere else.** It derived one path,
+`<resultsDir>/<schematicKey>.cdd`, asked whether that file existed, and created a display when it did
+not. For every caller it had ever had that was the same question as "does this bench have a display?",
+because the only displays that existed were ones this application had auto-created there itself.
+**The System Design example is the first shipped workspace to carry an authored `.cdd`**, and it is
+the first caller for which the two questions differ.
+
+**An authored display cannot live in `results/`, so looking only there can never find one.** The
+repo-root `.gitignore` drops `examples/*/results/` whole and the `csproj` item group excludes
+`results/**` from build and publish (`ExampleWorkspacesTests`), so a `.cdd` placed there is not in the
+repository and does not ship — the workspace would arrive with no displays at all and re-create empty
+ones on first run. The authored home is the workspace root, which is where the project tree lists a
+loose `.cdd` (`WorkspaceScanner`: *"Loose files at the workspace root (e.g. .cdd, .ccolor)"*), where
+Save Data Display puts one, and what `check` assumes when it resolves a display's data source.
+
+**The lookup is now an ordered pair — authored beside the bench, then auto-created under `results/` —
+and it lives on `RunResultsWriter` rather than in the view model**, beside `SchematicKey` and
+`ResolveResultsRoot`, which are the other path conventions of the same run. That placement is the
+point of the fix as much as the ordering is: the method that held it is private on a class that
+cannot be constructed headlessly, so the existing tests for it (`AutoCreateDataDisplaySinglePlotTests`)
+MIRROR its body rather than call it — and a mirror cannot fail when production drifts. `[^1]` stays the
+creation path, so a display that does not exist yet is still created under `results/`; nothing about
+that changed.
+
+**The comment that had drifted is worth noting on its own.** The save block said *"The .cdd now exists
+on disk as a loose file at the workspace root"* while writing it to `results/`. The comment described
+the layout the lookup should have had, and had been wrong for long enough that it read as
+confirmation.
+
+**Gate:** `tests/Ui.Tests/AutoOpenAuthoredDataDisplayTests.cs`, verified to catch the regression rather
+than assumed to — restoring the "results/ only" return makes 2 of its 3 tests fail immediately.
+
 ## Ctrl/⌘ +/- stepped the zoom in one editor out of three (2026-09-17)
 
 Owner: the schematic and symbol editors do not zoom on Ctrl/⌘ +/-, and the layout editor does — make

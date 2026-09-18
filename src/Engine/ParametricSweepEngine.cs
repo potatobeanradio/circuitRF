@@ -43,6 +43,22 @@ public static class ParametricSweepEngine
     /// along an axis of known length). Progress is ticked only by the INNERMOST sweep of a chain, so
     /// a nested sweep counts leaf points once rather than once per level.
     /// </param>
+    /// <param name="diagnosticsInto">
+    /// The caller's own netlist, to receive the warnings and notes each POINT raises.
+    ///
+    /// <para><b>Without it every engine diagnostic inside a sweep is discarded.</b> A point is one
+    /// re-elaboration plus one inner run, and the re-elaboration is the whole mechanism by which a
+    /// swept variable reaches the circuit — so the netlist that gets stamped, and that every engine
+    /// writes its warnings to, is a fresh one that is disposed at the end of the iteration. The
+    /// caller is left holding the netlist it elaborated to pick the analysis with, which nothing
+    /// ever stamped. Both CLI run verbs and the GUI read THAT one to fill the Messages panel, so a
+    /// swept run reported no engine diagnostics at all: not a non-convergence note, not a microstrip
+    /// out of its validity range, not a block that is not passive.</para>
+    ///
+    /// <para>Merged through <c>MergeDiagnosticsFrom</c>, which dedups on the same keys
+    /// <c>AddWarningOnce</c> uses — so a condition every point raises is reported once, not once per
+    /// point. Null keeps the old behaviour, which is what every test caller wants.</para>
+    /// </param>
     public static DataSet Run(
         ParametricSweepAnalysis sweep,
         Library lib,
@@ -50,8 +66,10 @@ public static class ParametricSweepEngine
         AnalysisSettings? settings = null,
         string? baseDirectory = null,
         RunControl? control = null,
-        HarmonicBalance.HbSmallSignalCache? wspCache = null)
-        => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState(), control, wspCache);
+        HarmonicBalance.HbSmallSignalCache? wspCache = null,
+        ElaboratedNetlist? diagnosticsInto = null)
+        => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState(), control, wspCache,
+               diagnosticsInto);
 
     private static DataSet Run(
         ParametricSweepAnalysis sweep,
@@ -61,7 +79,8 @@ public static class ParametricSweepEngine
         string? baseDirectory,
         OutputWriteState writeState,
         RunControl? control = null,
-        HarmonicBalance.HbSmallSignalCache? wspCache = null)
+        HarmonicBalance.HbSmallSignalCache? wspCache = null,
+        ElaboratedNetlist? diagnosticsInto = null)
     {
         // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
         // transparent — its dimension is dropped and ITS inner runs here instead.
@@ -179,6 +198,9 @@ public static class ParametricSweepEngine
                 datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
                     warmStart ? seed : null, out var nextSeed, innerControl, wspCache));
                 seed = warmStart ? nextSeed : null;
+
+                // Before this netlist goes away with everything the run wrote on it.
+                diagnosticsInto?.MergeDiagnosticsFrom(netlist);
             }
             finally
             {
@@ -394,7 +416,11 @@ public static class ParametricSweepEngine
                 // Recursive: outer override already injected in tb.GlobalVariables.
                 // This call re-elaborates for each of its own sweep values on top of that.
                 // Same writeState threads down so a nested sweep truncates the OutputGrid only once.
-                return Run(psa, lib, tb, settings, baseDirectory, writeState, control, wspCache);
+                // This point's own netlist collects the nested sweep's diagnostics, and is itself
+                // merged into the caller's the moment RunInner returns — so a message raised three
+                // levels down arrives once at the top, deduped by the same key the whole way up.
+                return Run(psa, lib, tb, settings, baseDirectory, writeState, control, wspCache,
+                           diagnosticsInto: netlist);
 
             case LoadpullAnalysis lpa:
             {

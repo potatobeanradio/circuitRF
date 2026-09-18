@@ -331,6 +331,7 @@ static int RunSparam(string[] args)
                 return JsonRun.Fail(CliDiagnostics.SparamUnsupportedExportFormat(
                     output, Path.GetExtension(output)));
 
+            EnsureOutputDirectory(output);
             DataSetExporter.Export(exportDs, output, format, new ExportOptions(Format: format));
             Console.WriteLine($"Wrote {output}");
             JsonRun.AddOutput(JsonRun.KindOf(output), output);
@@ -345,6 +346,7 @@ static int RunSparam(string[] args)
         var snp = RfCore.Data.DataSetBuilder.ToSnp(ds);
 
         var outPath = output ?? Path.ChangeExtension(input, $".s{snp.Ports}p");
+        EnsureOutputDirectory(outPath);
         TouchstoneIO.WriteFile(snp, outPath);
         Console.WriteLine($"Wrote {outPath}");
         JsonRun.AddOutput("touchstone", outPath);
@@ -554,7 +556,11 @@ static int RunHb(string[] args)
                 $"HB sweep '{psa.Name}': {psa.SweepValues.Length} point(s) over {psa.SweepVarName}");
             ds = ParametricSweepEngine.Run(psa, lib, tb, settings,
                                            baseDirectory: Path.GetDirectoryName(Path.GetFullPath(input)),
-                                           control: RunHost.Control);
+                                           control: RunHost.Control,
+                                           // Every point elaborates a netlist of its own and throws it
+                                           // away; without this the warnings printed below are those of
+                                           // a netlist nothing ever stamped.
+                                           diagnosticsInto: nl);
         }
         else
         {
@@ -617,6 +623,7 @@ static int RunHb(string[] args)
         if (exportPath is not null)
         {
             var format = FormatFromExtension(exportPath);
+            EnsureOutputDirectory(exportPath);
             DataSetExporter.Export(fullDs, exportPath, format,
                 new ExportOptions(Format: format), run?.LinearPayload);
             Console.WriteLine($"Wrote {exportPath}");
@@ -790,7 +797,11 @@ static int RunLoadpull(string[] args, bool pursuit)
                 $"{kind} sweep '{psa.Name}': {psa.SweepValues.Length} point(s) over {psa.SweepVarName}");
             ds = ParametricSweepEngine.Run(psa, lib, tb, settings,
                                            baseDirectory: Path.GetDirectoryName(Path.GetFullPath(input)),
-                                           control: RunHost.Control);
+                                           control: RunHost.Control,
+                                           // Every point elaborates a netlist of its own and throws it
+                                           // away; without this the warnings printed below are those of
+                                           // a netlist nothing ever stamped.
+                                           diagnosticsInto: nl);
         }
         else if (pursuit)
         {
@@ -897,6 +908,30 @@ static void ReportLoadpullFindings(DataSet ds)
 }
 
 /// <summary>
+/// Makes sure a <c>-o</c> path's folder exists before anything is written to it.
+///
+/// <para><b>Because the GUI's own writer does.</b> <c>ResultsWriter.WriteRun</c> creates
+/// <c>&lt;workspace&gt;/results</c> on the way past, which is why Simulate works on a workspace that
+/// has never been run; a headless <c>-o results/Cell.npy</c> on the same workspace failed with
+/// <i>"could not find a part of the path"</i>, so the documented command for reproducing a run was
+/// the one command that needed the folder to already be there. `netlist`, `render` and `plot` each
+/// do this already — the run verbs are the ones that did not.</para>
+///
+/// <para>Failure is deliberately not reported here: the write that follows is inside a try/catch
+/// that names the file, and a folder that cannot be created is the same problem reported once
+/// rather than twice.</para>
+/// </summary>
+static void EnsureOutputDirectory(string path)
+{
+    try
+    {
+        string? dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (dir is { Length: > 0 }) Directory.CreateDirectory(dir);
+    }
+    catch { /* the write below reports it, by name */ }
+}
+
+/// <summary>
 /// Writes a loadpull result. <c>.spl</c> and <c>.lpcwave</c> go through the loadpull writers rather
 /// than <see cref="DataSetExporter"/> — those two formats are the loadpull interchange the Data
 /// Display itself reads back, so a headless run can produce a file the GUI opens as a measured
@@ -904,6 +939,7 @@ static void ReportLoadpullFindings(DataSet ds)
 /// </summary>
 static bool ExportLoadpull(DataSet ds, string path)
 {
+    EnsureOutputDirectory(path);
     string ext = Path.GetExtension(path).ToLowerInvariant();
     if (ext is not (".spl" or ".lpcwave"))
     {
@@ -1305,7 +1341,11 @@ static int RunEm(string[] args)
     // would orphan every one of them. -o moves the Touchstone and nothing else — and it goes in
     // through the setup's own override field, the one the panel writes, so there is no second naming
     // rule to keep in step.
-    if (output is not null) setup.SnpOutputPathOverride = Path.GetFullPath(output);
+    if (output is not null)
+    {
+        EnsureOutputDirectory(output);
+        setup.SnpOutputPathOverride = Path.GetFullPath(output);
+    }
 
     // The GUI's results root is <workspace>/results, falling back to the scratch recovery session
     // when no workspace is open. Headless there is no recovery session, so a loose .cem falls back to

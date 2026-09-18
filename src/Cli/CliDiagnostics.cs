@@ -806,6 +806,38 @@ internal static class CliDiagnostics
         "check.view.defect", DiagnosticSeverity.Error,
         "{path}: {defect}", ("path", path), ("view", view), ("defect", defect));
 
+    // ── data display (`.cdd`) ────────────────────────────────────────────────
+
+    /// <summary>What the display holds, so a clean check is a statement rather than a silence.</summary>
+    public static Diagnostic CheckDataDisplaySummary(
+        string path, int tabs, int plots, int traces, int sources) => Diagnostic.Create(
+        "check.cdd.summary", DiagnosticSeverity.Info,
+        "{path}: {plots} plot(s) on {tabs} tab(s), {traces} trace(s), {sources} result file(s) referenced.",
+        ("path", path), ("tabs", tabs), ("plots", plots), ("traces", traces), ("sources", sources));
+
+    /// <summary>A display that draws nothing. It opens, which is why nothing else reports it.</summary>
+    public static Diagnostic CheckDataDisplayEmpty(string path) => Diagnostic.Create(
+        "check.cdd.empty", DiagnosticSeverity.Warning,
+        "{path}: the display holds no plots, so opening it shows an empty canvas.", ("path", path));
+
+    /// <summary>
+    /// A result the display names that is not on disk. <b>A note, deliberately.</b> A display is a
+    /// view of a run and a run is not a document — the analysis has simply not been made yet, which
+    /// is the normal state of a design somebody has just been handed. Nothing is wrong with the
+    /// display, so nothing here may fail the check.
+    /// </summary>
+    public static Diagnostic CheckDataDisplaySourceNotRun(
+        string path, string reference, string searched) => Diagnostic.Create(
+        "check.cdd.source-not-run", DiagnosticSeverity.Info,
+        "{path}: reads '{reference}', which is not in {searched} — run the analysis and it appears.",
+        ("path", path), ("reference", reference), ("searched", searched));
+
+    /// <summary>A trace bound to nothing at all: it draws no curve and reports no reason.</summary>
+    public static Diagnostic CheckDataDisplayEmptyTrace(string path, string where) => Diagnostic.Create(
+        "check.cdd.trace-unbound", DiagnosticSeverity.Warning,
+        "{path}: a trace on '{where}' names no cube and no expression, so it draws nothing.",
+        ("path", path), ("where", where));
+
     public static Diagnostic CheckUnreadable(string path, string message) => Diagnostic.Create(
         "check.file.unreadable", DiagnosticSeverity.Error,
         "{path}: could not be read ({message}).", ("path", path), ("message", message));

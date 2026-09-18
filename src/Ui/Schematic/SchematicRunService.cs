@@ -575,8 +575,11 @@ public static class SchematicRunService
             }
 
             case ParametricSweepAnalysis psa:
+                // `nl` is the netlist this service elaborated to pick the analysis with; a sweep
+                // stamps a fresh one per point and disposes it, so this is the only route from an
+                // engine diagnostic raised inside a sweep to the Messages panel.
                 return ParametricSweepEngine.Run(psa, lib, tb,
-                    baseDirectory: baseDirectory, control: control);
+                    baseDirectory: baseDirectory, control: control, diagnosticsInto: nl);
 
             case DcAnalysis:
             {

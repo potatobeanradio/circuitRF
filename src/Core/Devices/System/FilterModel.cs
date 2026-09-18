@@ -84,6 +84,10 @@ public sealed class FilterModel : IdealSBlockModel
     /// <summary>Two ports, numbered — a filter is reciprocal and its two ends are interchangeable.</summary>
     public override string[] TerminalNames => ["1", "2"];
 
+    /// <summary>The one block in the family whose S is a function of ω, so its passivity cannot be
+    /// settled when it is placed and is checked at every frequency a run visits instead.</summary>
+    protected override bool SDependsOnFrequency => true;
+
     protected override void FillS(double omega, Complex[,] s)
     {
         var (s11, s21, s22) = _network.At(omega);

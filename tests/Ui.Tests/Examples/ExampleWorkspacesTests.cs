@@ -31,6 +31,7 @@
 // ================================================================
 
 using System.Text.Json;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Layout.PCells;
@@ -401,6 +402,63 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
 
         Assert.True(checkedDocs >= 6, $"only {checkedDocs} example schematic(s) were checked");
         output.WriteLine($"{checkedDocs} example schematic(s) extracted cleanly");
+    }
+
+    /// <summary>
+    /// <b>No example ships a System block that is not passive.</b>
+    ///
+    /// <para>The blocks in that family — switch, circulator, coupler, balun, attenuator, filter —
+    /// build their S-matrix from real, in-phase amplitudes converted straight from dB, so an
+    /// insertion loss, a return loss and an isolation that are each individually plausible can add
+    /// coherently past unity. The System Design example shipped three of them: a 0.5 dB switch with
+    /// 18 dB of return loss (σ_max = 1.10), a 0.4 dB circulator with 22 dB of isolation
+    /// (σ_max = 1.13), and an in-phase 3 dB coupler, which cannot be passive at all (σ_max = 1.38 —
+    /// a matched lossless reciprocal four-port must put 90° between its outputs). The first showed
+    /// up as an antenna-port return loss reading +1.2 dB out of band.</para>
+    ///
+    /// <para>Elaboration alone, because that is where the check lives for a frequency-flat block and
+    /// it is the whole cost — no analysis is run here, for the reason the class header already
+    /// gives.</para>
+    /// </summary>
+    [Fact]
+    public void NoExampleShipsASystemBlockThatIsNotPassive()
+    {
+        // Scoped to the schematics that carry one, which is what the claim is about — and is also
+        // why this does not have to elaborate every example in the tree. (It could not: the
+        // Loadpull benches' `Bias=on` is a string parameter the generic resolver refuses, which is
+        // a documented shape in src/Core/CLAUDE.md and has nothing to do with passivity.)
+        SymbolKind[] systemBlocks =
+        [
+            SymbolKind.Atten, SymbolKind.Switch, SymbolKind.SwitchD, SymbolKind.Circulator,
+            SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180, SymbolKind.Balun,
+            SymbolKind.Filter, SymbolKind.Duplexer,
+        ];
+
+        var reported = new List<string>();
+        int checkedDocs = 0;
+
+        foreach (var example in ExampleWorkspaces.All(SourceExamplesRoot()))
+        foreach (string csch in Directory.EnumerateFiles(example.Directory, "*.csch",
+                                                         SearchOption.AllDirectories))
+        {
+            var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+            if (!model.Components.Any(c => systemBlocks.Contains(c.Symbol))) continue;
+            model.SchematicDirectory = Path.GetDirectoryName(csch);
+
+            var extracted = NetExtractor.Extract(model, Path.GetFileNameWithoutExtension(csch),
+                                                 DiskCellResolver.Instance);
+            using var nl = new Elaborator(extracted.Library).Elaborate(extracted.TestBench);
+            checkedDocs++;
+
+            reported.AddRange(nl.Warnings
+                .Where(w => w.Contains("system.block-not-passive", StringComparison.Ordinal))
+                .Select(w => $"{example.Folder}/{Path.GetFileName(csch)}: {w}"));
+        }
+
+        Assert.True(reported.Count == 0, string.Join("\n", reported));
+        Assert.True(checkedDocs >= 6,
+            $"only {checkedDocs} schematic(s) carried a System block — this gate checked nothing.");
+        output.WriteLine($"{checkedDocs} schematic(s) with System blocks: all passive");
     }
 
     /// <summary>

@@ -656,11 +656,21 @@ public sealed class HbLinearExtractor
                 ec.Stamp(new ZeroDriveMna(mna), omega);
             else
                 ec.Stamp(mna, omega);
+
+            // The one drain on the HB side. Every other engine collects a model's queued messages
+            // right after stamping it (IReportsWarnings' own remarks name this file as a call site);
+            // this loop did not, so a microstrip out of its validity range, or a System block whose
+            // S is not passive, reported nothing at all in a harmonic-balance run. Cheap: a list
+            // that is empty on all but the first stamp of the run.
+            _netlist.DrainModelWarnings(ec.Model);
         }
         // Mutual coupling after inductors are stamped.
         foreach (var ec in _netlist.Components)
             if (ec.Model is MutualInductanceModel)
+            {
                 ec.Stamp(mna, omega);
+                _netlist.DrainModelWarnings(ec.Model);
+            }
 
         // Gmin regularization.
         if (_settings.ConductanceRegularization != RegularizationMode.Never)

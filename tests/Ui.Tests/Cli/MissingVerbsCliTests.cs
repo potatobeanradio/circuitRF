@@ -110,6 +110,45 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// A run verb's <c>-o</c> makes the folder it was told to write into.
+    ///
+    /// <para><b>Because the GUI's own writer does.</b> <c>ResultsWriter.WriteRun</c> creates
+    /// <c>&lt;workspace&gt;/results</c> on its way past, which is why Simulate works on a workspace
+    /// that has never been run. Headless, <c>-o results/Cell.npy</c> on that same workspace failed
+    /// with <i>"could not find a part of the path"</i> — so the documented way to reproduce a run
+    /// was the one way that required somebody to have run it already. It went unnoticed for as long
+    /// as every example shipped its results folder.</para>
+    ///
+    /// <para>Every verb, not one: they wrote through four different writers, and `netlist`,
+    /// `render` and `plot` had each solved it separately.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("sparam", "out.s2p")]
+    [InlineData("sparam", "out.npy")]
+    [InlineData("hb",     "out.npy")]
+    public void ARunVerbCreatesTheOutputFolderItWasGiven(string verb, string name)
+    {
+        string cnl = Path.Combine(Dir("mkdir"), "bench.cnl");
+        File.WriteAllText(cnl, """
+            Port:P1 a 0 Num=1 Z=50 Ohm
+            R:R1 a b R=100 Ohm
+            Port:P2 b 0 Num=2 Z=50 Ohm
+            analysis SP1 type=sparam start=1 stop=2 npts=3 Unit=GHz
+            analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=3
+            """);
+
+        // Two levels deep, so the fix cannot be a single mkdir of the immediate parent.
+        string outPath = Path.Combine(_root, "mkdir", "never", "made", name);
+        Assert.False(Directory.Exists(Path.GetDirectoryName(outPath)!));
+
+        var run = RunCli(verb, cnl, "-o", outPath);
+        output.WriteLine(run.StdErr);
+
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+        Assert.True(File.Exists(outPath), $"{verb} reported success and wrote no {outPath}.");
+    }
+
+    /// <summary>
     /// The whole of R-aut11-1's motive, as a refusal. `run` on a document that is neither used to
     /// hand the JSON to <c>CnlReader</c> and report its first key as a missing cell name — a message
     /// that sent a caller looking for a library that was never involved.

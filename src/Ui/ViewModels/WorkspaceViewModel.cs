@@ -13772,26 +13772,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// R-res-8/9/10 — after a successful run, opens (and focuses) the schematic's own
-    /// <c>results/&lt;schematicKey&gt;.cdd</c> with no prompt when it already exists; otherwise creates
-    /// it, pre-populates a non-empty default plot bound to the just-written results file, saves it, and
-    /// opens it — also unprompted. This is a deliberate behavior change from the original "starts empty"
+    /// R-res-8/9/10 — after a successful run, opens (and focuses) the schematic's own Data Display
+    /// with no prompt when one already exists: the AUTHORED <c>&lt;schematicKey&gt;.cdd</c> beside the
+    /// bench, or failing that the auto-created <c>results/&lt;schematicKey&gt;.cdd</c>
+    /// (<see cref="RunResultsWriter.AutoDisplayCandidates"/> owns that order). Otherwise creates the
+    /// results/ one, pre-populates a non-empty default plot bound to the just-written results file,
+    /// saves it, and opens it — also unprompted. This is a deliberate behavior change from the original "starts empty"
     /// Data Display decision: the whole point of the command is that a run "just works."
     /// </summary>
     private async Task AutoOpenOrCreateDataDisplayAsync(string baseDir, string schematicKey, string npyPath)
     {
         var resultsDir = Path.GetDirectoryName(npyPath) ?? Path.Combine(baseDir, "results");
-        var cddPath    = Path.GetFullPath(Path.Combine(resultsDir, schematicKey + ".cdd"));
 
-        if (File.Exists(cddPath))
+        // The AUTHORED display beside the bench first, then the one this application auto-creates
+        // under results/ — RunResultsWriter.AutoDisplayCandidates owns that order and records why.
+        var candidates = RunResultsWriter.AutoDisplayCandidates(baseDir, resultsDir, schematicKey);
+        var cddPath    = candidates[^1];   // where a NEW one is created: always the results/ spelling
+
+        foreach (var candidate in candidates)
         {
-            OpenOrActivateDataDisplay(cddPath);
-            return;
-        }
-        if (_openDocsByPath.TryGetValue(cddPath, out var existingDoc))
-        {
-            ActivateOpenDocument(existingDoc);
-            return;
+            // Open-but-unsaved first: a display auto-created earlier this session is registered in
+            // _openDocsByPath before it is written, so File.Exists alone would miss it and make a
+            // third one. OpenOrActivateDataDisplay dedups too, but only for a path that is on disk.
+            if (_openDocsByPath.TryGetValue(candidate, out var existingDoc))
+            {
+                ActivateOpenDocument(existingDoc);
+                return;
+            }
+            if (File.Exists(candidate))
+            {
+                OpenOrActivateDataDisplay(candidate);
+                return;
+            }
         }
 
         var newVm  = new DataDisplayDocumentViewModel();
@@ -13862,8 +13874,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             await newVm.Window.SaveAllAsync(cddPath, 0, 0, 0, 0);
             newDoc.Materialize(cddPath);
-            // The .cdd now exists on disk as a loose file at the workspace root — refresh the tree
-            // so it appears there immediately, matching every other file-creating command's convention.
+            // The .cdd now exists on disk under results/ — refresh the tree so it appears there
+            // immediately, matching every other file-creating command's convention. (It is created
+            // there, but an authored one BESIDE the bench takes precedence on the next run; see the
+            // lookup at the top of this method.)
             _factory.ProjectTreeTool?.Refresh();
         }
         catch (Exception ex)

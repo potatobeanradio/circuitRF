@@ -185,6 +185,63 @@ internal sealed class CddSources : IPlotDataSources
         return (s, null);
     }
 
+    // ── describing, without binding ──────────────────────────────────────────
+
+    /// <summary>
+    /// Every result file a display asks for, and where each one is — or is not — on disk.
+    ///
+    /// <para><b>Why this lives here rather than in <c>check</c>.</b> Which references a document
+    /// carries, and the two directories a relative one is looked for in, are decisions
+    /// <see cref="Bind"/> already makes; a second copy in the checker would answer a different
+    /// question the first time either changed. This is the same collection and the same locator with
+    /// the loading left out, because <c>check</c> reads no results and refuses nothing over
+    /// them — a display whose run has simply not been made yet is the ordinary state of a shipped
+    /// example.</para>
+    /// </summary>
+    /// <returns>
+    /// One entry per distinct reference, in the order the document names them, each with the
+    /// absolute path it resolves to or null; plus the directories that were searched.
+    /// </returns>
+    public static (IReadOnlyList<(string Reference, string? Path)> Sources,
+                   IReadOnlyList<string> Searched) Describe(
+        string cddPath, DataDisplayConfig config, IReadOnlyList<TabConfig> tabs)
+    {
+        var wanted = new List<string>();
+        void Want(string? sref)
+        {
+            if (string.IsNullOrEmpty(sref)) return;
+            if (!wanted.Contains(sref, StringComparer.Ordinal)) wanted.Add(sref);
+        }
+
+        foreach (var tab in tabs)
+        foreach (var pc in tab.Plots)
+        foreach (var tc in pc.Traces)
+        {
+            Want(tc.SourcePath);
+            Want(tc.XSourcePath);
+        }
+        if (wanted.Contains(DataSourceRef.Selected, StringComparer.Ordinal)
+            || tabs.Any(tb => tb.Plots.Any(p => p.Traces.Any(tc => tc.SummaryColumn is not null))))
+            Want(DataSourceRef.Selected);
+
+        string  cddDir     = Path.GetDirectoryName(Path.GetFullPath(cddPath)) ?? ".";
+        string? wsDir      = WorkspaceRootFinder.FindAncestorCws(cddDir) is { } cws
+                           ? Path.GetDirectoryName(cws)
+                           : null;
+        string? resultsDir = wsDir is not null ? ResultsWriter.ResultsDirectory(wsDir) : null;
+
+        var searched = new List<string> { cddDir };
+        if (resultsDir is not null) searched.Add(resultsDir);
+
+        var found = new List<(string, string?)>();
+        foreach (string sref in wanted)
+            found.Add((sref, sref == DataSourceRef.Selected
+                ? LocateFile(config.SelectedDataSource, cddDir, resultsDir)
+                : LocateFile(sref, cddDir, resultsDir)));
+
+        return (found, searched);
+    }
+
     /// <summary>
     /// A reference as a path on disk: rooted as itself, otherwise beside the `.cdd` and then under
     /// the workspace's <c>results/</c> — which is the flat, shared directory the application's own
