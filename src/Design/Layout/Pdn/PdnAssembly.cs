@@ -1,0 +1,700 @@
+// What hangs on the geometry, and the bookkeeping that turns it into an ElaboratedNetlist
+// (railrf.md §4.3; brief-railrf-3-mesh-extractor.md R-rail3-11 … R-rail3-13,
+//  brief-railrf-4-fast-extractor.md §0 "same currency").
+//
+// ── THIS FILE IS WHY THE FAST MODEL IS NOT A SECOND SIMULATOR ──────────────────────────────────
+//
+// §4.6: the fast reading "produces the same kind of netlist as §4.1, SO THE SOLVER, THE RESULT
+// MODEL, THE TABLES, THE PLOTS AND THE EXPORTS ARE IDENTICAL AND ONLY THE EXTRACTOR DIFFERS. That is
+// the reason the fast path is safe to have at all — it is not a second simulator, it is a second
+// reading of the geometry."
+//
+// The two extractors differ in exactly one thing: HOW THE COPPER IS PRICED. PdnMeshExtractor stages
+// one resistor per cell edge; PdnGraphExtractor stages one per trace section and a coarse mesh over
+// the pours. Everything after that — the vias, the ground choice, the series parts, the shunts, the
+// sources, the load ports, the ties, the island drop and the node numbering — happens HERE, ONCE,
+// for both of them.
+//
+// A SECOND COPY OF THIS CLASS IS THE DEFECT THIS FILE EXISTS AGAINST. Two copies would drift on the
+// first change to any of it, and the symptom would be two answers that differ by something other
+// than the copper — which is precisely the comparison §2.9's fourth rule asks a user to trust.
+//
+// ── IT NEVER SOLVES ANYTHING ───────────────────────────────────────────────────────────────────
+//
+// Brief 5 owns the solve. Nothing here factorises anything (R-rail3-2), and the source scan in
+// tests/Ui.Tests/RailRf/PdnMeshExtractorTests.cs holds it shut.
+
+using CircuitRF.Core;
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
+using CircuitRF.Design.RailRf;
+
+namespace CircuitRF.Design.Layout.Pdn;
+
+/// <summary>
+/// What <see cref="PdnAssembly"/> needs to know about a reading of the copper: how many nodes there
+/// are, where each one sits, and which node a coordinate lands on.
+///
+/// <para><b>Deliberately small, and deliberately says nothing about a grid.</b> A mesh answers these
+/// from cells; the graph answers them from sections, junctions and coarse pour cells. An interface
+/// that mentioned a grid would have forced the graph to pretend to be a mesh — and a
+/// <see cref="PdnCellRef"/> is already the right currency, because briefs 8 and 15 colour a board
+/// from it and a node that cannot name a place cannot be coloured.</para>
+/// </summary>
+internal interface IPdnNodeSource
+{
+    /// <summary>How many nodes this reading handed out. Synthetic nodes (a source's internal node)
+    /// are numbered above it.</summary>
+    int NodeTotal { get; }
+
+    /// <summary>Where a node sits, or null for a node this reading did not hand out.</summary>
+    PdnCellRef? CellOfNode(int node);
+
+    /// <summary>The node of <paramref name="layer"/>'s copper covering the point, or -1. What a via
+    /// resolves its two ends through.</summary>
+    int NodeOnLayer(LayerKey layer, long x, long y);
+
+    /// <summary>Every node covering the point on the conductors of the requested side. More than one
+    /// where a pad's coordinate lands on several layers of the rail.</summary>
+    List<int> NodesAt(long x, long y, bool isReference);
+
+    /// <summary>The nearest reference node to a point, for a return that has no copper directly under
+    /// the pad — an antipad, a split, a keepout. The distance is REPORTED by the caller, never
+    /// silent.</summary>
+    int NearestReferenceNode(long x, long y, out long distanceDbu);
+
+    /// <summary>Every node in this reading's own deterministic order, so a node's NAME is the place a
+    /// reader would point at rather than whichever element happened to mention it first.</summary>
+    IEnumerable<int> NodesInNaturalOrder { get; }
+
+    /// <summary>What to call a node, or null to let the assembly name it as an internal one.</summary>
+    string? NameOfNode(int node);
+}
+
+/// <summary>One element, before node numbering.</summary>
+internal sealed record PdnStaged(
+    string Type, string Path, int[] Raw,
+    Dictionary<string, Value> Params, ComponentModel Model,
+    PdnOriginKind Kind, string Description,
+    PdnCellRef? From, PdnCellRef? To, string? Refdes,
+    double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null);
+
+internal sealed class PdnAssembly
+{
+    private readonly PdnExtractionRequest _req;
+    private readonly IPdnNodeSource _nodes;
+    private readonly double _celsius;
+    private readonly List<string> _notes;
+    private readonly List<string> _diagnostics;
+
+    private readonly List<PdnStaged> _staged = [];
+    private readonly List<PdnPortBinding> _ports = [];
+    private readonly UnionFind _tie;
+    private int _synthetic;
+    private int _ground = -1;
+
+    private readonly List<PdnElementOrigin> _origins = [];
+    private readonly Dictionary<int, PdnCellRef> _nodeCells = [];
+    private ElaboratedNetlist? _netlist;
+
+    public string ReferencePoint { get; private set; } = "";
+
+    public PdnAssembly(
+        PdnExtractionRequest req, IPdnNodeSource nodes,
+        double celsius, List<string> notes, List<string> diagnostics)
+    {
+        _req = req;
+        _nodes = nodes;
+        _celsius = celsius;
+        _notes = notes;
+        _diagnostics = diagnostics;
+
+        _synthetic = nodes.NodeTotal;
+        _tie = new UnionFind(nodes.NodeTotal + 4 * (req.Rail.Sources.Count + req.Rail.Loads.Count) + 16);
+    }
+
+    /// <summary>Null when the netlist was built, or the refusal sentence.</summary>
+    public string? Build()
+    {
+        StampVias();
+
+        if (ChooseGround() is { } groundRefusal) return groundRefusal;
+        if (StampSeriesElements() is { } seriesRefusal) return seriesRefusal;
+        if (StampShunts() is { } shuntRefusal) return shuntRefusal;
+        if (StampSources() is { } sourceRefusal) return sourceRefusal;
+        if (StampLoads() is { } loadRefusal) return loadRefusal;
+
+        Emit();
+        return null;
+    }
+
+    public PdnNetlist Finish(PdnProvenance provenance) => new()
+    {
+        Netlist = _netlist!,
+        Origins = _origins,
+        NodeCells = _nodeCells,
+        Ports = _ports,
+        Provenance = provenance,
+    };
+
+    // ── the copper, which is the ONE thing the two extractors do differently ────────────────────
+
+    /// <summary>
+    /// Stages one resistance of copper — a mesh cell edge from <see cref="PdnMeshExtractor"/>, a
+    /// trace section or a coarse pour edge from <see cref="PdnGraphExtractor"/>.
+    ///
+    /// <para><b>Called BEFORE <see cref="Build"/></b>, because the order elements are staged in is the
+    /// order they appear in the netlist and in the ranked breakdown, and copper comes first in both.
+    /// This is the whole of the two extractors' difference; everything else about a railRF netlist is
+    /// below.</para>
+    /// </summary>
+    public void StageCopper(
+        string path, int a, int b, double ohms,
+        string description, PdnCellRef? from, PdnCellRef? to,
+        PdnOriginKind kind = PdnOriginKind.MeshEdge,
+        double? lengthMetres = null, double? widthMetres = null)
+    {
+        if (!(ohms > 0) || double.IsInfinity(ohms) || a == b) return;
+
+        _staged.Add(new PdnStaged(
+            "R", path, [a, b],
+            new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) },
+            new ResistorModel(), kind, description, from, to, null, ohms, lengthMetres, widthMetres));
+    }
+
+    // ── §4.2 ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One resistor per plated barrel, with NO SPECIAL CASE for a group: twenty vias side by side
+    /// are twenty resistors between the same two cells, which is twenty in parallel because that
+    /// is what the netlist says. And two parts sharing one return via are coupled through it
+    /// because the mesh has a SINGLE NODE there.
+    ///
+    /// <para><b>A via and a plated component hole are distinguished by the NETLIST, never by
+    /// geometry</b> (R-rail3-10). Nothing here reads a diameter to decide what a hole IS —
+    /// <c>DrillViaPairing</c> already applied <c>BoardNetlistFile</c>'s rule when it produced
+    /// these <c>ViaShape</c>s, and re-deriving it from hole size would disagree with the import
+    /// that made them.</para>
+    /// </summary>
+    private void StampVias()
+    {
+        var tech = _req.Technology;
+        var z = ZOf(tech, _req.DbuPerMicron);
+
+        var vias = _req.Shapes.OfType<ViaShape>().ToList();
+        vias.Sort((p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y.CompareTo(q.Y));
+
+        double rho = PdnMeshExtractor.ResistivityAt(CopperSigma(tech), _celsius);
+        int unresolved = 0, nonPlated = 0, stamped = 0;
+        var bases = new HashSet<PdnPlatingBasis>();
+
+        foreach (var via in vias)
+        {
+            var entry = tech.Stackup.Layers.FirstOrDefault(
+                l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(via.Layer));
+
+            if (entry is null) { unresolved++; continue; }
+            if (entry.Plated == false) { nonPlated++; continue; }
+
+            if (entry.SpanFromLayer is not { Length: > 0 } fromName ||
+                entry.SpanToLayer is not { Length: > 0 } toName)
+            {
+                unresolved++;
+                continue;
+            }
+
+            var fromKeys = ConductorKeys(tech, fromName);
+            var toKeys = ConductorKeys(tech, toName);
+            if (fromKeys.Count == 0 || toKeys.Count == 0) { unresolved++; continue; }
+
+            int na = NodeOn(fromKeys, via.X, via.Y);
+            int nb = NodeOn(toKeys, via.X, via.Y);
+            if (na < 0 || nb < 0 || na == nb) continue;
+
+            var (plating, basis) = PdnViaModel.ResolvePlating(
+                entry, _req.DbuPerMicron, _req.Settings.ViaPlatingThicknessMicrometres);
+            bases.Add(basis);
+
+            double drill = via.DrillSize / (_req.DbuPerMicron * 1e6);
+            double span = Math.Abs(z(toName).Far - z(fromName).Near);
+            if (!(span > 0)) span = Math.Abs(z(fromName).Far - z(toName).Near);
+
+            double r = PdnViaModel.BarrelResistanceOhms(drill, plating, span, rho);
+            if (!(r > 0)) continue;
+
+            _staged.Add(new PdnStaged(
+                "R", $"via.{via.X}.{via.Y}",
+                [na, nb], new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
+                new ResistorModel(), PdnOriginKind.Via,
+                $"a {drill * 1e3:0.###} mm plated via over {span * 1e3:0.###} mm, " +
+                PdnViaModel.DescribePlating(plating, basis),
+                CellOf(na), CellOf(nb), null, r));
+            stamped++;
+        }
+
+        if (stamped > 0 && bases.Contains(PdnPlatingBasis.Defaulted))
+            _notes.Add(
+                $"{stamped} via barrel(s) were computed at the default " +
+                $"{PdnViaModel.DefaultPlatingMicrometres:0.#} µm of plating, because neither the " +
+                "stackup's via entry nor this document states one. Plating sets the barrel's whole " +
+                "conducting cross-section, so state it where you know it.");
+
+        if (unresolved > 0)
+            _diagnostics.Add(
+                $"{unresolved} hole(s) could not be resolved to a layer span and carry no barrel " +
+                "resistance. v1 assumes THROUGH vias and reads a span declaration where one exists; " +
+                "a blind or buried span it cannot resolve is reported rather than assumed.");
+
+        if (nonPlated > 0)
+            _diagnostics.Add($"{nonPlated} hole(s) are declared non-plated and are not conductors.");
+    }
+
+    private static double CopperSigma(Technology tech)
+    {
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Conductor && l.SigmaSm > 0) return l.SigmaSm;
+        return 5.8e7;
+    }
+
+    private static List<LayerKey> ConductorKeys(Technology tech, string name)
+    {
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Conductor && string.Equals(l.Name, name, StringComparison.Ordinal))
+                return l.DrawingLayers;
+        return [];
+    }
+
+    /// <summary>The z band each named conductor occupies, top-down, in metres.</summary>
+    private static Func<string, (double Near, double Far)> ZOf(Technology tech, int dbuPerMicron)
+    {
+        var bands = new Dictionary<string, (double, double)>(StringComparer.Ordinal);
+        double zz = 0;
+        foreach (var l in tech.Stackup.Layers)
+        {
+            if (l.Kind == StackupKind.Via) continue;
+            double t = l.ThicknessDbu / (dbuPerMicron * 1e6);
+            if (l.Kind == StackupKind.Conductor && l.Name.Length > 0 && !bands.ContainsKey(l.Name))
+                bands[l.Name] = (zz, zz + t);
+            zz += t;
+        }
+        return name => bands.TryGetValue(name, out var b) ? b : (0, 0);
+    }
+
+    /// <summary>The first cell of any of <paramref name="keys"/> covering the point, or -1.</summary>
+    private int NodeOn(IReadOnlyList<LayerKey> keys, long x, long y)
+    {
+        foreach (var key in keys)
+        {
+            int n = _nodes.NodeOnLayer(key, x, y);
+            if (n >= 0) return n;
+        }
+        return -1;
+    }
+
+    // ── §4.3 ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Where the whole answer is measured from: the reference cells under the FIRST source's own
+    /// pads, tied together exactly as §4.3 ties a load's pin field.
+    ///
+    /// <para>That is the physical reference point — a drop is a drop relative to where the supply
+    /// returns — and it is stated in the provenance rather than being an unwritten convention, so
+    /// a reader can tell which node the numbers are against.</para>
+    /// </summary>
+    private string? ChooseGround()
+    {
+        var anchors = new List<(string What, RailPortAnchor Anchor)>();
+        foreach (var s in _req.Rail.Sources) anchors.Add(("source", s.Anchor));
+        foreach (var l in _req.Rail.Loads) anchors.Add(("load", l.Anchor));
+
+        foreach (var (what, anchor) in anchors)
+        {
+            var nodes = ReferenceNodesFor(anchor, out long away);
+            if (nodes.Count == 0) continue;
+
+            _ground = Merge(nodes);
+            ReferencePoint =
+                $"the reference conductor under {anchor.Describe()}, this rail's first {what}" +
+                (away > 0
+                    ? $" — the nearest reference copper is {away} DBU away, because there is none " +
+                      "directly under that pad"
+                    : "");
+            return null;
+        }
+
+        return
+            $"Rail '{_req.Rail.Name}' has no source or load whose pads sit over its reference " +
+            "conductor, so there is no point to measure a drop from. Anchor a source on the rail, " +
+            "or name a reference layer the rail's pads actually run over.";
+    }
+
+    /// <summary>
+    /// A series part on the path: a resistance between the two pieces of copper it bridges.
+    /// <b>Elements, never annotations</b> — at DC these are the largest terms after the source
+    /// (§4.3), and an annotation does not appear in a ranked breakdown.
+    /// </summary>
+    private string? StampSeriesElements()
+    {
+        for (int k = 0; k < _req.SeriesElements.Count; k++)
+        {
+            var part = _req.SeriesElements[k];
+            string where = $"Series part {part.Refdes} on rail '{_req.Rail.Name}'";
+
+            var a = PowerNodesFor(part.A);
+            var b = PowerNodesFor(part.B);
+
+            if (a.Count == 0)
+                return PdnAttachments.RefusalForUnresolved($"{where}'s first end", part.A, 0);
+            if (b.Count == 0)
+                return PdnAttachments.RefusalForUnresolved($"{where}'s second end", part.B, 0);
+
+            int na = Merge(a), nb = Merge(b);
+            if (na == nb)
+            {
+                _diagnostics.Add(
+                    $"{where} bridges {part.A.Describe()} to {part.B.Describe()}, which are already " +
+                    "one piece of copper. Its resistance is in the netlist and carries no current.");
+            }
+
+            _staged.Add(new PdnStaged(
+                "R", $"series.{part.Refdes}",
+                [na, nb],
+                new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(part.ResistanceOhms) },
+                new ResistorModel(), PdnOriginKind.SeriesElement,
+                $"{part.Refdes} at {part.ResistanceOhms * 1e3:0.###} mΩ ({part.Basis})",
+                CellOf(na), CellOf(nb), part.Refdes, part.ResistanceOhms));
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The decoupling. <b>In the netlist, and carrying no DC path</b> — a capacitor bridges
+    /// nothing at DC, which is correct and occasionally surprising (R-rail3-4). Leaving it out
+    /// would make brief 14's netlist a different netlist from this one.
+    /// </summary>
+    private string? StampShunts()
+    {
+        int unmodelled = 0;
+
+        foreach (var part in _req.ShuntParts)
+        {
+            var power = PowerNodesFor(part.Anchor);
+            if (power.Count == 0)
+            {
+                _diagnostics.Add(
+                    $"{part.Refdes} is anchored at {part.Anchor.Describe()}, which is not on this " +
+                    "rail's copper. It was not added.");
+                continue;
+            }
+
+            if (part.CapacitanceFarads is not { } c || !(c > 0)) { unmodelled++; continue; }
+
+            var reference = ReferenceNodesFor(part.Anchor, out _);
+            if (reference.Count == 0)
+            {
+                _diagnostics.Add(
+                    $"{part.Refdes} has no reference copper under it, so it bridges to nothing. It " +
+                    "was not added.");
+                continue;
+            }
+
+            int np = Merge(power), nr = Merge(reference);
+
+            _staged.Add(new PdnStaged(
+                "C", $"shunt.{part.Refdes}",
+                [np, nr],
+                new Dictionary<string, Value>(StringComparer.Ordinal) { ["C"] = new Value(c) },
+                new CapacitorModel(), PdnOriginKind.Shunt,
+                $"{part.Refdes}, {c * 1e9:0.###} nF — no DC path, by construction",
+                CellOf(np), CellOf(nr), part.Refdes, null));
+        }
+
+        if (unmodelled > 0)
+            _diagnostics.Add(
+                $"{unmodelled} part(s) on this rail have no capacitance in the library and were " +
+                "counted rather than given one. An unstated value is never a defaulted one.");
+
+        return null;
+    }
+
+    /// <summary>
+    /// One branch per source, and NOTHING ELSE (R-rail3-12). Two supplies feeding one net do not
+    /// share in proportion to anything a designer can see; the copper decides, and a second source
+    /// stamped at the wrong node produces a plausible number rather than an error. So there is no
+    /// special case below for the second one.
+    /// </summary>
+    private string? StampSources()
+    {
+        for (int k = 0; k < _req.Rail.Sources.Count; k++)
+        {
+            var src = _req.Rail.Sources[k];
+            string name = src.Anchor.Describe();
+            string where = $"Rail '{_req.Rail.Name}'s source {k + 1} ({name})";
+
+            var power = PowerNodesFor(src.Anchor);
+            if (power.Count == 0)
+                return PdnAttachments.RefusalForUnresolved(where, src.Anchor, 0);
+
+            var reference = ReferenceNodesFor(src.Anchor, out _);
+            if (reference.Count == 0)
+                return $"{where} has no reference copper anywhere under it, so its return has " +
+                       "nowhere to go. Name the layer the return actually runs on.";
+
+            int np = Merge(power), nr = Merge(reference);
+            double? r = src.SeriesResistanceOhms;
+
+            if (src.OpenCircuitVoltageV is not { } volts)
+            {
+                // Null is not zero: a source with no stated voltage is a branch whose IMPEDANCE
+                // is known and whose LEVEL is not. Its resistance goes in — the frequency answer
+                // uses it — and no DC level is invented (railrf.md §2.2).
+                if (r is { } ohms)
+                    _staged.Add(new PdnStaged(
+                        "R", $"source.{k + 1}.r", [np, nr],
+                        new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) },
+                        new ResistorModel(), PdnOriginKind.SourceResistance,
+                        $"{name}'s series resistance, {ohms * 1e3:0.###} mΩ",
+                        CellOf(np), CellOf(nr), src.Anchor.Refdes, ohms));
+
+                _notes.Add(
+                    $"{name} states no open-circuit voltage, so it contributes its impedance and no " +
+                    "DC level. The DC answer is a drop across this rail, not a voltage at its loads.");
+                continue;
+            }
+
+            int internalNode = r is { } series && series > 0 ? _synthetic++ : np;
+
+            _staged.Add(new PdnStaged(
+                "Vdc", $"source.{k + 1}.v", [internalNode, nr],
+                new Dictionary<string, Value>(StringComparer.Ordinal) { ["Vdc"] = new Value(volts) },
+                new VdcModel(), PdnOriginKind.SourceBranch,
+                $"{name} at {volts:0.###} V open circuit",
+                null, CellOf(nr), src.Anchor.Refdes, null));
+
+            if (internalNode != np)
+                _staged.Add(new PdnStaged(
+                    "R", $"source.{k + 1}.r", [internalNode, np],
+                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r!.Value) },
+                    new ResistorModel(), PdnOriginKind.SourceResistance,
+                    $"{name}'s series resistance, {r.Value * 1e3:0.###} mΩ",
+                    null, CellOf(np), src.Anchor.Refdes, r.Value));
+            else
+                _notes.Add(
+                    $"{name} states no series resistance, so it is an ideal source at DC. On an " +
+                    "aged cell that is the largest term on the path and its absence flatters the " +
+                    "answer.");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Each load port across the power and reference nodes of its own pin-field cells, TIED
+    /// TOGETHER — because that is what the die sees (§2.2) — with its DC current as an injection.
+    ///
+    /// <para><b>A port with no stated current contributes an observation port and no current</b>
+    /// (§2.2, Q-16). A defaulted zero and a stated zero are the same number and mean different
+    /// things, and the DC report has to list an observed port AS observed rather than omitting
+    /// it.</para>
+    /// </summary>
+    private string? StampLoads()
+    {
+        for (int k = 0; k < _req.Rail.Loads.Count; k++)
+        {
+            var load = _req.Rail.Loads[k];
+            string name = load.Anchor.Describe();
+            string where = $"Rail '{_req.Rail.Name}'s load {k + 1} ({name})";
+
+            var power = PowerNodesFor(load.Anchor);
+            if (power.Count == 0)
+                return PdnAttachments.RefusalForUnresolved(where, load.Anchor, 0);
+
+            var reference = ReferenceNodesFor(load.Anchor, out _);
+            if (reference.Count == 0)
+                return $"{where} has no reference copper anywhere under it, so there is nothing to " +
+                       "measure its impedance against. Name the layer the return actually runs on.";
+
+            int np = Merge(power), nr = Merge(reference);
+
+            var cells = new List<PdnCellRef>();
+            foreach (int n in power) if (CellOf(n) is { } c) cells.Add(c);
+            foreach (int n in reference) if (CellOf(n) is { } c) cells.Add(c);
+
+            if (load.DcCurrentA is { } amps)
+                _staged.Add(new PdnStaged(
+                    // Injected INTO the reference and drawn OUT of the rail, which is what a load
+                    // does. The engine's current-source convention delivers J to Nodes[0].
+                    "I_1Tone", $"load.{k + 1}.i", [nr, np],
+                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["Idc"] = new Value(amps) },
+                    new CurrentToneSourceModel([], amps), PdnOriginKind.LoadCurrent,
+                    $"{name} drawing {amps * 1e3:0.###} mA",
+                    CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
+
+            _staged.Add(new PdnStaged(
+                "Port", $"port.{k + 1}", [np, nr],
+                new Dictionary<string, Value>(StringComparer.Ordinal) { ["Num"] = new Value(k + 1) },
+                new PortModel(), PdnOriginKind.Port,
+                load.DcCurrentA is null
+                    ? $"{name}, an observation port — it states no current and draws none"
+                    : $"{name}, observed",
+                CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
+
+            _ports.Add(new PdnPortBinding(k, name, load.Anchor, np, nr, cells, load.DcCurrentA));
+        }
+
+        return null;
+    }
+
+    // ── node bookkeeping ───────────────────────────────────────────────────────────────────
+
+    private List<int> PowerNodesFor(RailPortAnchor anchor)
+    {
+        var nodes = new List<int>();
+        foreach (var (x, y) in PdnAttachments.Resolve(anchor, _req.Pads))
+            foreach (int n in _nodes.NodesAt(x, y, isReference: false))
+                if (!nodes.Contains(n)) nodes.Add(n);
+        return nodes;
+    }
+
+    private List<int> ReferenceNodesFor(RailPortAnchor anchor, out long distanceDbu)
+    {
+        distanceDbu = 0;
+        var pads = PdnAttachments.Resolve(anchor, _req.Pads);
+        var nodes = new List<int>();
+
+        foreach (var (x, y) in pads)
+            foreach (int n in _nodes.NodesAt(x, y, isReference: true))
+                if (!nodes.Contains(n)) nodes.Add(n);
+
+        if (nodes.Count > 0 || pads.Count == 0) return nodes;
+
+        // No reference copper directly under the pad — an antipad, a split, a keepout. The
+        // NEAREST reference cell is the honest stand-in and the distance is reported, because a
+        // return that starts 3 mm away is a finding rather than a detail.
+        var (x0, y0) = pads[0];
+        int nearest = _nodes.NearestReferenceNode(x0, y0, out distanceDbu);
+        if (nearest >= 0)
+        {
+            nodes.Add(nearest);
+            _diagnostics.Add(
+                $"There is no reference copper under {anchor.Describe()}; the return was attached " +
+                $"to the nearest reference cell, {distanceDbu} DBU away. The spreading between the " +
+                "two is NOT in this answer.");
+        }
+        return nodes;
+    }
+
+    /// <summary>Ties a set of cells into one node — §4.3's "tied together", and what makes a pin
+    /// field one port rather than six.</summary>
+    private int Merge(List<int> nodes)
+    {
+        int rep = nodes[0];
+        for (int i = 1; i < nodes.Count; i++) _tie.Union(rep, nodes[i]);
+        return _tie.Find(rep);
+    }
+
+    private PdnCellRef? CellOf(int raw) => _nodes.CellOfNode(raw);
+
+    /// <summary>
+    /// Resolves ties, drops what has no DC path to the reference point, numbers what is left, and
+    /// builds the netlist. Nothing here decides anything a solver would — it is bookkeeping.
+    /// </summary>
+    private void Emit()
+    {
+        int groundRep = _tie.Find(_ground);
+
+        // Which nodes are joined by an ELEMENT, which is a different question from which are tied.
+        var reach = new UnionFind(_tie.Capacity);
+        foreach (var s in _staged) reach.Union(_tie.Find(s.Raw[0]), _tie.Find(s.Raw[1]));
+        int groundComponent = reach.Find(groundRep);
+
+        bool Keep(int raw) =>
+            _req.Mesh.IncludeIsolatedRegions || reach.Find(_tie.Find(raw)) == groundComponent;
+
+        var netlist = new ElaboratedNetlist();
+        var final = new Dictionary<int, int> { [groundRep] = 0 };
+        _nodeCells[0] = _nodes.CellOfNode(_ground) ?? default;
+
+        int Index(int raw)
+        {
+            int rep = _tie.Find(raw);
+            if (final.TryGetValue(rep, out int idx)) return idx;
+            idx = netlist.Nodes.GetOrAssign(NameOf(rep, raw));
+            final[rep] = idx;
+            if (_nodes.CellOfNode(raw) is { } cell) _nodeCells[idx] = cell;
+            return idx;
+        }
+
+        // Names in the GEOMETRY's own order first, so a node's name is the cell a reader would
+        // point at rather than whichever element happened to mention it first. The mesh's order is
+        // layer then row then column; the graph's is section then junction. Either way it is the
+        // node source's order and never a dictionary's.
+        foreach (int n in _nodes.NodesInNaturalOrder)
+            if (Keep(n)) Index(n);
+
+        int dropped = 0;
+
+        foreach (var s in _staged)
+        {
+            if (!Keep(s.Raw[0]) || !Keep(s.Raw[1])) { dropped++; continue; }
+
+            int componentIndex = netlist.Components.Count;
+            netlist.AddComponent(new ElaboratedComponent(
+                s.Type, s.Path, [Index(s.Raw[0]), Index(s.Raw[1])], s.Params, s.Model));
+
+            _origins.Add(new PdnElementOrigin(
+                componentIndex, s.Kind, s.Description, s.From, s.To, s.Refdes,
+                s.ResistanceOhms, s.LengthMetres, s.WidthMetres));
+        }
+
+        if (dropped > 0)
+            _diagnostics.Add(
+                $"{dropped} element(s) sit on copper with no DC path to the reference point and " +
+                "were not stamped. That is the island structure, not an error — a capacitor " +
+                "bridges nothing at DC. Set IncludeIsolatedRegions to carry them anyway.");
+
+        _portsFinal.Clear();
+        foreach (var p in _ports)
+            _portsFinal.Add(p with
+            {
+                PowerNode = Keep(p.PowerNode) ? Index(p.PowerNode) : -1,
+                ReferenceNode = Keep(p.ReferenceNode) ? Index(p.ReferenceNode) : -1,
+            });
+
+        _ports.Clear();
+        _ports.AddRange(_portsFinal);
+        _netlist = netlist;
+    }
+
+    private readonly List<PdnPortBinding> _portsFinal = [];
+
+    private string NameOf(int rep, int raw) => _nodes.NameOfNode(raw) ?? $"internal.{rep}";
+
+    /// <summary>Union-find with path halving — local, for the same reason
+    /// <see cref="DrcConnectivity"/>'s is local.</summary>
+    private sealed class UnionFind
+    {
+        private readonly int[] _parent;
+
+        public UnionFind(int n)
+        {
+            _parent = new int[n];
+            for (int i = 0; i < n; i++) _parent[i] = i;
+        }
+
+        public int Capacity => _parent.Length;
+
+        public int Find(int x)
+        {
+            while (_parent[x] != x) { _parent[x] = _parent[_parent[x]]; x = _parent[x]; }
+            return x;
+        }
+
+        public void Union(int a, int b)
+        {
+            int ra = Find(a), rb = Find(b);
+            if (ra != rb) _parent[Math.Max(ra, rb)] = Math.Min(ra, rb);
+        }
+    }
+}

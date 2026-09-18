@@ -20,8 +20,20 @@ namespace CircuitRF.Design.Layout.Pdn;
 /// <summary>What one element of the extraction CAME FROM.</summary>
 public enum PdnOriginKind
 {
-    /// <summary>One cell edge of the mesh — a square of copper on one conductor.</summary>
+    /// <summary>One cell edge of the mesh — a square of copper on one conductor. Also one edge of
+    /// the fast model's COARSE mesh over a region it classified as spreading.</summary>
     MeshEdge,
+
+    /// <summary>
+    /// One trace section of the fast model's graph reading — <c>R = ρ·L/(W·T)</c> between two
+    /// junctions, with L and W integrated ALONG the section rather than sampled at a point
+    /// (R-rail4-1, R-rail4-6).
+    ///
+    /// <para>Distinct from <see cref="MeshEdge"/> on purpose: a ranked breakdown that could not tell
+    /// a closed-form section from a meshed cell could not tell a reader which rows of it carry the
+    /// fast model's own assumption.</para>
+    /// </summary>
+    TraceSection,
 
     /// <summary>A plated barrel joining two conductors (<see cref="PdnViaModel"/>).</summary>
     Via,
@@ -126,9 +138,19 @@ public sealed record PdnPortBinding(
 /// </summary>
 public sealed record PdnProvenance
 {
-    /// <summary>Which of §2.9's two readings produced this — <c>Accurate</c> here. Brief 4's graph
-    /// extractor writes <c>Fast</c> into the same field, which is what makes "a pass in Fast mode is
-    /// reported as a FAST-MODEL pass, never as a pass" enforceable rather than remembered.</summary>
+    /// <summary>
+    /// Which of §2.9's two readings produced this — <b>required, and that is R-rail4-2</b>.
+    ///
+    /// <para>"A pass in Fast mode is reported as a FAST-MODEL pass, never as a pass." That is only
+    /// enforceable if a result cannot be built without saying which model made it: a result object
+    /// that can be constructed without a <see cref="PdnModelKind"/> is a result that can reach a user
+    /// without one. It is carried onto the plot, onto each table, into the status strip and into the
+    /// provenance of every export.</para>
+    /// </summary>
+    public required PdnModelKind ModelKind { get; init; }
+
+    /// <summary>The same fact as a sentence a report prints — "Accurate (mesh)", "Fast (graph)".
+    /// <see cref="ModelKind"/> is what code branches on; this is what a reader reads.</summary>
     public required string Model { get; init; }
 
     /// <summary>The rail this netlist is of. The extractor extracts ONE rail (R-rail3-13).</summary>
@@ -238,6 +260,18 @@ public sealed record PdnExtraction(
     PdnRailRegionSet? Regions,
     IReadOnlyList<string> Diagnostics)
 {
+    /// <summary>
+    /// Which copper the fast model treated as a trace and which it meshed, with the reason for each
+    /// (R-rail4-3). Empty from <see cref="PdnMeshExtractor"/>, which meshes everything and so
+    /// classifies nothing.
+    ///
+    /// <para><b>Carried on a REFUSAL as well as on a result</b>, because the pour-dominated refusal
+    /// of R-rail4-5 is a statement about the classification and a user who cannot see the
+    /// classification cannot act on it — the answer to that refusal is either Accuracy or an
+    /// override on the class tab, and the second one needs this list.</para>
+    /// </summary>
+    public IReadOnlyList<PdnClassification> Classification { get; init; } = [];
+
     internal static PdnExtraction Refused(string why, PdnRailRegionSet? regions = null) =>
         new(why, null, regions, []);
 }

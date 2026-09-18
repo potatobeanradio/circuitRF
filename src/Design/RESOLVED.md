@@ -1,5 +1,146 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 4 — the fast graph extractor, the classification, and the gate (2026-09-18)
+
+`src/Design/Layout/Pdn/` — `PdnModelKind`, `PdnCopperClassifier`, `PdnGraphExtractor`, plus
+`PdnAssembly`, which is brief 3's attachment stamping **lifted out of `PdnMeshExtractor` so both
+readings share it**. Tests in `tests/Ui.Tests/RailRf/PdnFastExtractorTests.cs` (10, ~7 s).
+
+Measured, fast against accurate on one board, loop resistance:
+
+| Board | Fast | Accurate | Δ | Fast elements | Mesh elements |
+|---|---|---|---|---|---|
+| 50 mm × 0.3 mm straight run | 163.78 mΩ | — | **−0.06 % of the closed form** | 5 | — |
+| A: stepped trace, three widths | 77.48 mΩ | 78.69 mΩ | −1.5 % | 5 | 41,793 |
+| B: a T and two stubs | 50.82 mΩ | 51.16 mΩ | −0.7 % | 76 | 102,948 |
+| C: 20 × 15 mm supply polygon | **refused** | 3.31 mΩ | — | — | 827 |
+| C **forced** to `Trace` | 2.44 mΩ | 3.31 mΩ | **−26 %, optimistic** | 42 | 827 |
+| linear taper, 0.2 → 0.8 mm | 22.51 mΩ | 22.94 mΩ | 0.24 % of the closed-form integral | 5 | 41,086 |
+
+### 1. The mesh's assembly had to move before the fast model could exist at all
+
+§4.6's "not a second simulator, a second reading of the geometry" is only true if the two readings
+differ in **one** thing. Brief 3 put the vias, the ground choice, the series parts, the shunts, the
+sources, the load ports, the ties, the island drop and the node numbering inside a private class of
+`PdnMeshExtractor`; a fast extractor that re-implemented them would have drifted on the first change
+to any of it, and the symptom would be two answers differing by something other than the copper —
+precisely the comparison §2.9's fourth rule asks a user to trust.
+
+So `PdnAssembly` is that class, moved verbatim, parameterised on a small `IPdnNodeSource` (node count,
+`PdnCellRef` per node, point → node, nearest reference node, a deterministic order, a name). The mesh
+keeps `StampMesh`; the graph stages sections and coarse pour edges; **`StageCopper` is the whole of
+the difference.** The interface deliberately mentions no grid — one existed and one does not.
+
+### 2. A grid cannot find a trace section. The medial axis can, and it is not ours
+
+A trace two grid cells across is topologically a ladder, not a chain, and no contraction turns it
+into one resistance; a grid coarse enough to make it a chain merges the trace beside it. So a piece
+classified `Trace` is rasterised, thinned by **Zhang-Suen** (CACM 27(3), 1984, unchanged), and walked:
+degree ≠ 2 is a junction, degree-2 chains are sections. Bends, 45°s, T-junctions and stubs all fall
+out; nothing special-cases an orientation.
+
+**The raster is not the model.** It finds the topology and measures the width; what leaves is one
+element per section, which is what makes the netlist a few hundred elements. The tests assert the
+element COUNT and never a wall clock — a timing threshold passes on a fast machine whatever the
+algorithm does.
+
+Three things had to be got right and each was wrong first:
+
+- **Width is area per unit length, and the raster's boundary bias is removed in one multiply.** Every
+  copper pixel is assigned to its nearest skeleton pixel by a breadth walk, so `W = A/Δs` needs no
+  distance transform. A 0.3 mm trace is not an exact number of pixels wide, so the assigned areas are
+  scaled once by (the polygon's true area)/(the raster's). That single correction is what gets the
+  closed form to 0.06 % at six pixels across.
+- **Eight-connected adjacency with the diagonal suppressed where both its legs exist.** Without it a
+  staircase of three pixels is a triangle in which every pixel has degree two — a cycle, not a chain —
+  and the section walk never terminates.
+- **The two ends of a chain carry HALF a step of arc and a WHOLE step of copper.** `R = Σ Δs·d/(σTA)`
+  is then exactly `ρL/(WT)` on a uniform section; the obvious `Σ Δs²/(σTA)` is half a pixel short at
+  each end, which is invisible on a 667-pixel trace and 6 % on a ten-pixel one.
+
+### 3. The section runs from the PAD, not from where thinning stopped — and that is most of the answer
+
+A thinned skeleton stops about half a width short of the copper's end. On a ribbon that is a fraction
+of a percent. **On a region forced to `Trace` it is nearly all of it**: the medial axis of a
+20 × 15 mm rectangle is a 4 mm spine, and reading a section between its two ends alone prices 300 mm²
+of copper as a **dead short** — 0.00 mΩ, reported as an answer, which is the one number this model
+must never produce. Anchoring the chain's arc at the attachment coordinate, with the copper that
+pixel owns, gives 0.91 mΩ against the mesh's 1.66 mΩ: optimistic, which is the point, and not zero.
+It also moves the straight-trace span from 49.66 mm to 49.90 mm — the pads' own separation.
+
+### 4. "Branch points closer together than the copper is wide are one junction" is measured on the
+POSITIONS, not on the chain
+
+Six vias in one 2 × 2 mm land pad must be **one node and six parallel barrels** (R-rail4-6). The
+centreline joining them wanders the length of the pad, so a chain-length test keeps them apart —
+first attempt gave six barrels across three node pairs. Measuring the straight-line distance between
+the two ends' own positions against the section's width gives 0.6 mm on 1.6 mm copper → merged, and
+23 mm on 14 mm copper (the forced pour) → not merged. One rule, both cases, and it is §2.9's sentence
+read literally.
+
+### 5. Two derived numbers, and what each is derived FROM
+
+- **The trace threshold is ten squares** (`PdnCopperClassifier.TraceSquaresThreshold`). The closed
+  form omits a constriction term of about `(1/π)·ln(2W/πd)` squares at each boundary — under half a
+  square for a contact a quarter of the width, so about one square for a section with a boundary at
+  each end. One in ten is 10 %, one in twenty is 5 %, which is §7's own gate.
+- **The frequency ceiling is a tenth of the first cavity mode** (`ShuntBandTopHz`). At `f₁/10` the
+  plane pair is `βa = 18°` long and treating a distributed shunt as absent costs `tan(βa)/βa − 1` =
+  **3.4 %**, inside §7's 5 %; it grows without bound as `f → f₁`. For a 40 mm span in ε_r 4.3 that is
+  **180.7 MHz**, which is the brief's own worked sentence to three figures.
+
+### 6. The classifier measures area and perimeter, and a compact shape has NO ribbon reading
+
+A ribbon of width `W` and centreline length `L` — straight, bent, L-shaped — has `A = W·L` and
+`P ≈ 2(L+W)`, and those invert in closed form: `L` and `W` are the roots of `x² − (P/2)x + A = 0`.
+One area and one perimeter, both exact from Clipper, give the equivalent width and length with no
+medial axis, no orientation and no assumption of axis alignment. `L/W` is then the **number of
+squares**, which is the unit §2.8's whole table is in.
+
+A shape too compact to be a ribbon makes the discriminant negative — there is no real solution, which
+is the cleanest possible statement that it is not a trace, and not a threshold being crossed.
+
+### 7. Three rules whose absence would have been silent
+
+- **Via drawing layers are not classified.** A via's barrel disc reaches the rail through the
+  connectivity walk. Reading it as sheet copper put a compact "spreading" region in the class tab for
+  every via on the board — a decision nobody has to make, hiding the ones that matter.
+- **Two raster-pitch rules, finer wins.** Width/6 is what a real trace needs; `L_eq/32` is what a
+  forced region needs. Width alone rasters a 20 × 15 mm pour eight pixels across and it thins to a
+  single junction.
+- **Two spur-prune bounds, smaller wins.** `1.5 × W_eq` identifies the corner artifact thinning leaves
+  on a rectangle; `L_eq/8` stops that rule eating a whole region — on a forced pour, `1.5 × 15 mm` is
+  longer than the region itself and three rounds of pruning leave nothing.
+
+### 8. The pour refusal is on the RAIL's copper only, and that is deliberate
+
+`PdnGraphExtractor` refuses when a source reaches a load only through copper classified `Spreading`
+(R-rail4-5: "refuse rather than differ"). **The reference return is excluded from that test.** It is a
+plane on every real board and therefore always spreading, so a rule that included it would refuse
+every board and §2.9's "meshed, and coarsely" would mean nothing. What the coarse reference costs is
+stated as a provenance note and measured by rule 4, on the user's own design — which is what rule 4 is
+for. The refusal names Accuracy **and** the class-tab override, because both are answers to it.
+
+### 9. Smaller things
+
+- `PdnProvenance.ModelKind` is `required`. A result that can be constructed without a model kind is a
+  result that can reach a user without one, and §2.9's rule 1 is then a convention rather than a type.
+- `PdnResultsByModel` files a result under the kind its own provenance names, never one the caller
+  supplies — a result filed under the wrong kind is the mislabelling rule 1 exists against.
+- `PdnOriginKind.TraceSection` is distinct from `MeshEdge`: a ranked breakdown that could not tell a
+  closed-form section from a meshed cell could not tell a reader which rows carry the fast model's own
+  assumption.
+- `PdnClassification` carries the copper it is about, so brief 8 draws the decision the extraction
+  used rather than re-deriving one that might differ.
+- The overrides live on `RailDocument` keyed by `PdnRegionRef` (drawing layer + the lowest-then-
+  leftmost vertex of the outer ring). Copper that MOVED gets a different identity, which is correct:
+  an override says "the current through *this* polygon follows a path", and a re-laid-out polygon is
+  not the one the user looked at.
+- `PdnResultsByModel.Add`'s guard is in `tests/Firewall.Tests/user-facing-text-allowlist.txt`. It is
+  an internal invariant — a refusal is reported as a refusal by whoever asked for the extraction and
+  never reaches that method.
+
+
 ## railRF brief 3 — the netlist contract, and the accurate DC extractor (2026-09-18)
 
 `src/Design/Layout/Pdn/` — `PdnNetlist`, `PdnRailRegions`, `PdnViaModel`, `PdnAttachments`,

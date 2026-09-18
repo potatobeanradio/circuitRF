@@ -1,3 +1,5 @@
+using CircuitRF.Design.Layout.Pdn;
+
 namespace CircuitRF.Design.RailRf;
 
 /// <summary>
@@ -85,6 +87,22 @@ public sealed class RailDocument
 
     /// <summary>The settings §11.2 puts behind <c>Settings</c>.</summary>
     public RailSettings Settings { get; set; } = new();
+
+    /// <summary>
+    /// Which regions of copper the user has forced the fast model to read either way
+    /// (<see cref="PdnCopperClass"/>), keyed by region identity — brief 4's R-rail4-3.
+    ///
+    /// <para><b>They live on the DOCUMENT, and that is the whole point.</b> §2.9's rule 2 says the
+    /// classification is visible and correctable; a correction that lived in the window would be lost
+    /// the next time the artwork was re-imported, <i>which is exactly when a classification silently
+    /// changes</i>. <see cref="PdnRegionRef"/> is a drawing layer and a vertex the geometry itself
+    /// determines, so the same copper re-imported keys the same override and copper that MOVED does
+    /// not — a region that has been re-laid out is not the one the user looked at.</para>
+    ///
+    /// <para>Nothing here classifies anything. The decision is
+    /// <see cref="PdnCopperClassifier"/>'s and this is only what overrides it.</para>
+    /// </summary>
+    public Dictionary<PdnRegionRef, PdnCopperClass> ClassOverrides { get; } = [];
 
     /// <summary>The rail this name identifies, or null. Case-insensitive, because <c>--rail +1v8</c>
     /// on a shell that lower-cased it is the same request.</summary>

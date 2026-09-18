@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Pdn;
 
 namespace CircuitRF.Design.RailRf;
 
@@ -85,6 +86,21 @@ public static class RailDocumentIo
             ViaPlatingThicknessMicrometres = d.Settings.ViaPlatingThicknessMicrometres,
         },
         Rails = d.Rails.Count > 0 ? [.. d.Rails.Select(ToFile)] : null,
+        // Deterministic order, so a document saved twice with no edit in between is the same bytes
+        // and revision control has nothing to show.
+        ClassOverrides = d.ClassOverrides.Count > 0
+            ? [.. d.ClassOverrides
+                   .OrderBy(kv => kv.Key.Layer.Layer).ThenBy(kv => kv.Key.Layer.Datatype)
+                   .ThenBy(kv => kv.Key.Y).ThenBy(kv => kv.Key.X)
+                   .Select(kv => new CrailClassOverride
+                   {
+                       Layer    = kv.Key.Layer.Layer,
+                       Datatype = kv.Key.Layer.Datatype,
+                       X        = kv.Key.X,
+                       Y        = kv.Key.Y,
+                       Class    = kv.Value,
+                   })]
+            : null,
     };
 
     private static CrailRail ToFile(RailSpec r) => new()
@@ -172,6 +188,10 @@ public static class RailDocumentIo
         };
 
         foreach (var r in f.Rails ?? []) doc.Rails.Add(FromFile(r));
+
+        foreach (var o in f.ClassOverrides ?? [])
+            doc.ClassOverrides[new PdnRegionRef(new LayerKey(o.Layer, o.Datatype), o.X, o.Y)] = o.Class;
+
         return doc;
     }
 
@@ -260,6 +280,21 @@ public static class RailDocumentIo
         public string?          PartLibraryRef { get; set; }
         public CrailSettings?   Settings       { get; set; }
         public List<CrailRail>? Rails          { get; set; }
+
+        /// <summary>R-rail4-3's overrides. Absent on every document nobody has corrected, which is
+        /// most of them.</summary>
+        public List<CrailClassOverride>? ClassOverrides { get; set; }
+    }
+
+    /// <summary>One forced region — the drawing layer and the vertex that identify it, and what it
+    /// was forced to.</summary>
+    private sealed class CrailClassOverride
+    {
+        public int            Layer    { get; set; }
+        public int            Datatype { get; set; }
+        public long           X        { get; set; }
+        public long           Y        { get; set; }
+        public PdnCopperClass Class    { get; set; }
     }
 
     private sealed class CrailSettings

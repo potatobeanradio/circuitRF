@@ -146,8 +146,24 @@ public sealed class PdnExtractionRequest
     /// <summary>The document's own settings — the copper temperature and the via plating.</summary>
     public RailSettings Settings { get; init; } = new();
 
-    /// <summary>How finely, and where.</summary>
+    /// <summary>How finely, and where. Read by <see cref="PdnMeshExtractor"/>; the fast reading
+    /// takes only <see cref="PdnMeshSettings.IncludeIsolatedRegions"/> from it, which is a question
+    /// about solvability rather than about meshing.</summary>
     public PdnMeshSettings Mesh { get; init; } = new();
+
+    /// <summary>How the fast reading traces and how coarsely it meshes what it will not trace. Read
+    /// by <see cref="PdnGraphExtractor"/> and by nothing else.</summary>
+    public PdnGraphSettings Graph { get; init; } = new();
+
+    /// <summary>
+    /// Which regions the user has forced either way, keyed by region identity (R-rail4-3).
+    ///
+    /// <para><b>They live on the <c>RailDocument</c></b>, so they survive a re-import — which is
+    /// exactly when a classification would otherwise silently change. This is how they reach the
+    /// extraction; nothing here reads a document.</para>
+    /// </summary>
+    public IReadOnlyDictionary<PdnRegionRef, PdnCopperClass> ClassOverrides { get; init; } =
+        new Dictionary<PdnRegionRef, PdnCopperClass>();
 }
 
 /// <summary>Copper in, <c>ElaboratedNetlist</c> out.</summary>
@@ -245,56 +261,9 @@ public static class PdnMeshExtractor
 
         // ── the conductors, and what each square of them costs ─────────────────────────────────
         double celsius = request.Settings.CopperTemperatureCelsius;
-        var conductors = new List<PdnConductor>();
-        var byLayer = new Dictionary<LayerKey, PdnConductor>();
-
-        foreach (var sl in tech.Stackup.Layers)
-        {
-            if (sl.Kind != StackupKind.Conductor) continue;
-            foreach (var key in sl.DrawingLayers)
-            {
-                if (byLayer.ContainsKey(key)) continue;
-                double t = sl.ThicknessDbu / (double)request.DbuPerMicron * 1e-6;
-                double sigma = sl.SigmaSm / (1.0 + CopperAlphaPerCelsius * (celsius - ReferenceTemperatureCelsius));
-                var c = new PdnConductor(sl.Name, key, t, sigma);
-                conductors.Add(c);
-                byLayer[key] = c;
-            }
-        }
-
-        // A conductor with no thickness or no conductivity has no sheet resistance, and a mesh built
-        // on one is a mesh of zero-ohm links — a perfect plane, which is exactly the optimistic
-        // answer §9 warns about and exactly the one nothing reports. Refuse, and name the field.
-        var viaDrawingLayers = tech.Stackup.Layers
-            .Where(l => l.Kind == StackupKind.Via)
-            .SelectMany(l => l.DrawingLayers)
-            .ToHashSet();
-
-        foreach (var layer in RailLayers(regions, referenceLayer))
-        {
-            // A via's BARREL disc is on a via drawing layer and reaches the rail through the
-            // connectivity walk. It is a bridge between conductors rather than sheet copper of its
-            // own, it carries no thickness, and PdnViaModel is what prices it.
-            if (viaDrawingLayers.Contains(layer)) continue;
-
-            if (!byLayer.TryGetValue(layer, out var c))
-                return PdnExtraction.Refused(
-                    $"The rail reaches layer {layer.Layer}/{layer.Datatype}, which no Conductor entry " +
-                    "of the stackup claims. Map that drawing layer onto a conductor in the technology's " +
-                    "stackup, or the copper on it has no thickness and no resistance.", regions);
-
-            if (!(c.ThicknessMetres > 0))
-                return PdnExtraction.Refused(
-                    $"Stackup conductor '{c.StackupName}' states no thickness, so its copper has no " +
-                    "sheet resistance and the mesh on it would be a perfect plane. State its finished " +
-                    "copper thickness.", regions);
-
-            if (!(c.ConductivitySm > 0))
-                return PdnExtraction.Refused(
-                    $"Stackup conductor '{c.StackupName}' states no conductivity, so its copper has no " +
-                    "sheet resistance and the mesh on it would be a perfect plane. State its " +
-                    "conductivity in S/m — copper is 5.8e7 at 20 °C.", regions);
-        }
+        if (ResolveConductors(request, regions, referenceLayer, out var conductors, out var byLayer)
+            is { } conductorRefusal)
+            return PdnExtraction.Refused(conductorRefusal, regions);
 
         // ── the cell size (R-rail3-14) ─────────────────────────────────────────────────────────
         long minFeature = MinimumFeatureWidthDbu(regions.Power);
@@ -318,39 +287,9 @@ public static class PdnMeshExtractor
         // ── the reference extent, applied HERE and stamped (R-rail3-5) ─────────────────────────
         var extent = ExtentOf(regions, anchorSeeds, baseDeltaDbu);
 
-        var referenceCopper = new List<(LayerKey Layer, Paths64 Paths)>();
-        switch (rail.ReferenceExtent)
-        {
-            case RailReferenceExtent.AsImported:
-                foreach (var island in regions.Reference) referenceCopper.AddRange(island.Copper);
-                break;
-
-            case RailReferenceExtent.FilledToOutline:
-                if (request.BoardOutline is not { Count: > 0 } outline)
-                    return PdnExtraction.Refused(
-                        $"Rail '{rail.Name}' asks for its reference to be filled to the board outline, " +
-                        "and this extraction was given no outline. Supply the board outline, or set the " +
-                        "reference extent to 'as imported' and accept the copper that is actually there.",
-                        regions);
-                referenceCopper.Add((referenceLayer, outline));
-                notes.Add("The reference was taken as SOLID within the board outline. That removes " +
-                          "every return constriction the real copper may have, so this answer is " +
-                          "optimistic.");
-                break;
-
-            default:
-                referenceCopper.Add((referenceLayer, RectPaths(extent)));
-                notes.Add("The reference was taken as UNBOUNDED at its own z, realised as a solid " +
-                          "plane over the whole mesh extent. That is an upper bound and the only way " +
-                          "to compare two outlines on equal terms; it is optimistic.");
-                break;
-        }
-
-        if (referenceCopper.Count == 0)
-            return PdnExtraction.Refused(
-                $"Rail '{rail.Name}' names layer {referenceLayer.Layer}/{referenceLayer.Datatype} as " +
-                "its reference and there is no copper on it. Name the layer the return actually runs " +
-                "on, or fill the reference to the board outline.", regions);
+        if (ResolveReferenceCopper(request, regions, referenceLayer, extent, notes,
+                                   out var referenceCopper) is { } extentRefusal)
+            return PdnExtraction.Refused(extentRefusal, regions);
 
         // ── the grid ───────────────────────────────────────────────────────────────────────────
         var refineBands = RefinementBands(rail, request, baseDeltaDbu);
@@ -385,11 +324,13 @@ public static class PdnMeshExtractor
                 regions);
 
         // ── the netlist ────────────────────────────────────────────────────────────────────────
-        var asm = new Assembly(request, regions, mesh, celsius, notes, diagnostics);
+        var asm = new PdnAssembly(request, mesh, celsius, notes, diagnostics);
+        StampMesh(mesh, asm, request.DbuPerMicron);
         if (asm.Build() is { } refusal) return PdnExtraction.Refused(refusal, regions);
 
         var provenance = new PdnProvenance
         {
+            ModelKind = PdnModelKind.Accurate,
             Model = "Accurate (mesh)",
             RailName = rail.Name,
             ReferenceExtent = rail.ReferenceExtent,
@@ -441,7 +382,131 @@ public static class PdnMeshExtractor
         return unioned;
     }
 
-    private static IEnumerable<LayerKey> RailLayers(PdnRailRegionSet regions, LayerKey referenceLayer)
+
+    /// <summary>
+    /// The stackup's conductors, and the four refusals a mesh built on a conductor with no sheet
+    /// resistance would otherwise hide.
+    ///
+    /// <para><b>Shared with <see cref="PdnGraphExtractor"/> on purpose.</b> "A perfect plane" is the
+    /// optimistic answer §9 warns about and exactly the one nothing reports, so the two readings
+    /// refuse on the same terms and in the same words; two copies of this would drift and one of the
+    /// readings would quietly start answering where the other refuses.</para>
+    /// </summary>
+    internal static string? ResolveConductors(
+        PdnExtractionRequest request, PdnRailRegionSet regions, LayerKey referenceLayer,
+        out List<PdnConductor> conductors, out Dictionary<LayerKey, PdnConductor> byLayer)
+    {
+        var tech = request.Technology;
+        double celsius = request.Settings.CopperTemperatureCelsius;
+        conductors = [];
+        byLayer = [];
+
+        foreach (var sl in tech.Stackup.Layers)
+        {
+            if (sl.Kind != StackupKind.Conductor) continue;
+            foreach (var key in sl.DrawingLayers)
+            {
+                if (byLayer.ContainsKey(key)) continue;
+                double t = sl.ThicknessDbu / (double)request.DbuPerMicron * 1e-6;
+                double sigma = sl.SigmaSm / (1.0 + CopperAlphaPerCelsius * (celsius - ReferenceTemperatureCelsius));
+                var c = new PdnConductor(sl.Name, key, t, sigma);
+                conductors.Add(c);
+                byLayer[key] = c;
+            }
+        }
+
+        // A conductor with no thickness or no conductivity has no sheet resistance, and a mesh built
+        // on one is a mesh of zero-ohm links — a perfect plane, which is exactly the optimistic
+        // answer §9 warns about and exactly the one nothing reports. Refuse, and name the field.
+        var viaDrawingLayers = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+
+        foreach (var layer in RailLayers(regions, referenceLayer))
+        {
+            // A via's BARREL disc is on a via drawing layer and reaches the rail through the
+            // connectivity walk. It is a bridge between conductors rather than sheet copper of its
+            // own, it carries no thickness, and PdnViaModel is what prices it.
+            if (viaDrawingLayers.Contains(layer)) continue;
+
+            if (!byLayer.TryGetValue(layer, out var c))
+                return (
+                    $"The rail reaches layer {layer.Layer}/{layer.Datatype}, which no Conductor entry " +
+                    "of the stackup claims. Map that drawing layer onto a conductor in the technology's " +
+                    "stackup, or the copper on it has no thickness and no resistance.");
+
+            if (!(c.ThicknessMetres > 0))
+                return (
+                    $"Stackup conductor '{c.StackupName}' states no thickness, so its copper has no " +
+                    "sheet resistance and the mesh on it would be a perfect plane. State its finished " +
+                    "copper thickness.");
+
+            if (!(c.ConductivitySm > 0))
+                return (
+                    $"Stackup conductor '{c.StackupName}' states no conductivity, so its copper has no " +
+                    "sheet resistance and the mesh on it would be a perfect plane. State its " +
+                    "conductivity in S/m — copper is 5.8e7 at 20 °C.");
+        }
+
+
+        return null;
+    }
+
+
+    /// <summary>
+    /// What the reference conductor is taken to BE, and the note that says so where two of the three
+    /// answers are optimistic (R-rail3-5).
+    ///
+    /// <para><b>Shared with <see cref="PdnGraphExtractor"/></b>: the reference extent is carried on
+    /// every result and stamped on every plot and export, and a reader who does not know which was
+    /// used cannot tell. Two readings of the board that applied it differently would make that
+    /// stamp mean two things.</para>
+    /// </summary>
+    internal static string? ResolveReferenceCopper(
+        PdnExtractionRequest request, PdnRailRegionSet regions, LayerKey referenceLayer,
+        Bbox extent, List<string> notes, out List<(LayerKey Layer, Paths64 Paths)> referenceCopper)
+    {
+        var rail = request.Rail;
+        referenceCopper = [];
+        switch (rail.ReferenceExtent)
+        {
+            case RailReferenceExtent.AsImported:
+                foreach (var island in regions.Reference) referenceCopper.AddRange(island.Copper);
+                break;
+
+            case RailReferenceExtent.FilledToOutline:
+                if (request.BoardOutline is not { Count: > 0 } outline)
+                    return (
+                        $"Rail '{rail.Name}' asks for its reference to be filled to the board outline, " +
+                        "and this extraction was given no outline. Supply the board outline, or set the " +
+                        "reference extent to 'as imported' and accept the copper that is actually there.");
+                referenceCopper.Add((referenceLayer, outline));
+                notes.Add("The reference was taken as SOLID within the board outline. That removes " +
+                          "every return constriction the real copper may have, so this answer is " +
+                          "optimistic.");
+                break;
+
+            default:
+                referenceCopper.Add((referenceLayer, RectPaths(extent)));
+                notes.Add("The reference was taken as UNBOUNDED at its own z, realised as a solid " +
+                          "plane over the whole mesh extent. That is an upper bound and the only way " +
+                          "to compare two outlines on equal terms; it is optimistic.");
+                break;
+        }
+
+        if (referenceCopper.Count == 0)
+            return
+                $"Rail '{rail.Name}' names layer {referenceLayer.Layer}/{referenceLayer.Datatype} as " +
+                "its reference and there is no copper on it. Name the layer the return actually runs " +
+                "on, or fill the reference to the board outline.";
+
+
+
+        return null;
+    }
+
+    internal static IEnumerable<LayerKey> RailLayers(PdnRailRegionSet regions, LayerKey referenceLayer)
     {
         var seen = new HashSet<LayerKey> { referenceLayer };
         yield return referenceLayer;
@@ -450,7 +515,7 @@ public static class PdnMeshExtractor
                 if (seen.Add(layer)) yield return layer;
     }
 
-    private static Bbox ExtentOf(
+    internal static Bbox ExtentOf(
         PdnRailRegionSet regions, IReadOnlyList<(long X, long Y)> anchors, long pad)
     {
         var b = Bbox.Empty;
@@ -461,7 +526,7 @@ public static class PdnMeshExtractor
         return new Bbox(b.MinX - pad, b.MinY - pad, b.MaxX + pad, b.MaxY + pad);
     }
 
-    private static Paths64 RectPaths(Bbox b) =>
+    internal static Paths64 RectPaths(Bbox b) =>
         [[new Point64(b.MinX, b.MinY), new Point64(b.MaxX, b.MinY),
           new Point64(b.MaxX, b.MaxY), new Point64(b.MinX, b.MaxY)]];
 
@@ -512,12 +577,18 @@ public static class PdnMeshExtractor
     internal static long MinimumFeatureWidthDbu(IReadOnlyList<PdnRegion> islands)
     {
         var all = new Paths64();
-        var bounds = Bbox.Empty;
         foreach (var island in islands)
-        {
-            foreach (var (_, paths) in island.Copper) all.AddRange(paths);
-            bounds = bounds.Union(island.Bounds);
-        }
+            foreach (var (_, paths) in island.Copper)
+                all.AddRange(paths);
+        return MinimumFeatureWidthDbu(all);
+    }
+
+    /// <summary>The same measurement over one piece of copper — what
+    /// <see cref="PdnCopperClassifier"/> reports as a region's width variation, and what
+    /// <see cref="PdnGraphExtractor"/> sizes its raster from.</summary>
+    internal static long MinimumFeatureWidthDbu(Paths64 all)
+    {
+        var bounds = DrcRegions.BoundsOf(all);
 
         if (all.Count == 0 || bounds.IsEmpty) return 1;
 
@@ -667,7 +738,7 @@ public static class PdnMeshExtractor
     /// Rasterises copper onto the grid as AREAS, and nothing else. It builds no matrix and owns no
     /// result — see this file's header and R-rail3-2.
     /// </summary>
-    private sealed class MeshBuilder
+    private sealed class MeshBuilder : IPdnNodeSource
     {
         private readonly PdnGrid _grid;
         private readonly IReadOnlyDictionary<LayerKey, PdnConductor> _conductors;
@@ -749,7 +820,7 @@ public static class PdnMeshExtractor
                     }
             }
 
-            NodeTotal = next;
+            _nodeTotal = next;
 
             // The reverse map, built once. A node that cannot name its cell cannot be coloured on a
             // board, and briefs 8 and 15 both draw from it.
@@ -788,7 +859,33 @@ public static class PdnMeshExtractor
             return -1;
         }
 
-        public int NodeTotal { get; private set; }
+        public int NodeTotal { get { Prepare(); return _nodeTotal; } }
+        private int _nodeTotal;
+
+        /// <summary>Layer, then row, then column — the order <see cref="Prepare"/> handed the nodes
+        /// out in, so a node's name is the cell a reader would point at. Nothing here iterates a
+        /// dictionary: an extraction that depended on a hash order would produce a drop map that
+        /// moved between runs.</summary>
+        public IEnumerable<int> NodesInNaturalOrder
+        {
+            get
+            {
+                Prepare();
+                foreach (var ml in _layers)
+                    for (int j = 0; j < _grid.Ny; j++)
+                        for (int i = 0; i < _grid.Nx; i++)
+                        {
+                            int n = ml.Node[j * _grid.Nx + i];
+                            if (n >= 0) yield return n;
+                        }
+            }
+        }
+
+        public string? NameOfNode(int node) =>
+            CellOfNode(node) is { } cell
+                ? $"{(cell.IsReference ? "ref" : "rail")}.{cell.Layer.Layer}_{cell.Layer.Datatype}." +
+                  $"{cell.Ix}.{cell.Iy}"
+                : null;
 
         /// <summary>Copper area per cell, by clipping a row band once and then each cell of it.</summary>
         private double[] Rasterise(Paths64 copper)
@@ -892,695 +989,74 @@ public static class PdnMeshExtractor
         }
     }
 
-    // ── the netlist ────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>One element, before node numbering.</summary>
-    private sealed record Staged(
-        string Type, string Path, int[] Raw,
-        Dictionary<string, Value> Params, ComponentModel Model,
-        PdnOriginKind Kind, string Description,
-        PdnCellRef? From, PdnCellRef? To, string? Refdes,
-        double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null);
+    // ── §4.1 at ω = 0 ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Stages every element of §4.3, ties what §4.3 says is tied, and hands out node indices.
+    /// One resistor per cell edge, on EACH conductor.
     ///
-    /// <para><b>It never solves anything.</b> Brief 5 owns the solve; this class produces the netlist
-    /// and calls nothing that factorises it (R-rail3-2).</para>
+    /// <para>The half-cell harmonic form is this file's header; the factor of two §4.1 states is the
+    /// LOOP's and is paid by meshing both conductors, which is also this file's header. Read both
+    /// before touching the expression below.</para>
+    ///
+    /// <para><b>This is the ONLY thing this extractor does that <see cref="PdnGraphExtractor"/> does
+    /// differently.</b> Everything after it — vias, ground, series parts, shunts, sources, ports,
+    /// ties and node numbering — is <see cref="PdnAssembly"/>'s, shared, and that sharing is what
+    /// makes §4.6's "not a second simulator, a second reading of the geometry" true rather than
+    /// asserted.</para>
     /// </summary>
-    private sealed class Assembly
+    private static void StampMesh(MeshBuilder mesh, PdnAssembly asm, int dbuPerMicron)
     {
-        private readonly PdnExtractionRequest _req;
-        private readonly MeshBuilder _mesh;
-        private readonly double _celsius;
-        private readonly List<string> _notes;
-        private readonly List<string> _diagnostics;
+        var grid = mesh.Grid;
 
-        private readonly List<Staged> _staged = [];
-        private readonly List<PdnPortBinding> _ports = [];
-        private readonly UnionFind _tie;
-        private int _synthetic;
-        private int _ground = -1;
-
-        private readonly List<PdnElementOrigin> _origins = [];
-        private readonly Dictionary<int, PdnCellRef> _nodeCells = [];
-        private ElaboratedNetlist? _netlist;
-
-        public string ReferencePoint { get; private set; } = "";
-
-        public Assembly(
-            PdnExtractionRequest req, PdnRailRegionSet regions, MeshBuilder mesh,
-            double celsius, List<string> notes, List<string> diagnostics)
+        foreach (var ml in mesh.Layers)
         {
-            _req = req;
-            _mesh = mesh;
-            _celsius = celsius;
-            _notes = notes;
-            _diagnostics = diagnostics;
-            _ = regions;
+            double sigmaT = ml.Conductor.ConductivitySm * ml.Conductor.ThicknessMetres;
+            if (!(sigmaT > 0)) continue;
 
-            _synthetic = mesh.NodeTotal;
-            _tie = new UnionFind(mesh.NodeTotal + 4 * (req.Rail.Sources.Count + req.Rail.Loads.Count) + 16);
-        }
+            double dbuPerMetre = dbuPerMicron * 1e6;
+            string side = ml.IsReference ? "reference" : "rail";
 
-        /// <summary>Null when the netlist was built, or the refusal sentence.</summary>
-        public string? Build()
-        {
-            StampMesh();
-            StampVias();
-
-            if (ChooseGround() is { } groundRefusal) return groundRefusal;
-            if (StampSeriesElements() is { } seriesRefusal) return seriesRefusal;
-            if (StampShunts() is { } shuntRefusal) return shuntRefusal;
-            if (StampSources() is { } sourceRefusal) return sourceRefusal;
-            if (StampLoads() is { } loadRefusal) return loadRefusal;
-
-            Emit();
-            return null;
-        }
-
-        public PdnNetlist Finish(PdnProvenance provenance) => new()
-        {
-            Netlist = _netlist!,
-            Origins = _origins,
-            NodeCells = _nodeCells,
-            Ports = _ports,
-            Provenance = provenance,
-        };
-
-        // ── §4.1 at ω = 0 ──────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// One resistor per cell edge, on EACH conductor.
-        ///
-        /// <para>The half-cell harmonic form is this file's header; the factor of two §4.1 states is
-        /// the LOOP's and is paid by meshing both conductors, which is also this file's header. Read
-        /// both before touching the expression below.</para>
-        /// </summary>
-        private void StampMesh()
-        {
-            var grid = _mesh.Grid;
-
-            foreach (var ml in _mesh.Layers)
-            {
-                double sigmaT = ml.Conductor.ConductivitySm * ml.Conductor.ThicknessMetres;
-                if (!(sigmaT > 0)) continue;
-
-                double dbuPerMetre = _req.DbuPerMicron * 1e6;
-                string side = ml.IsReference ? "reference" : "rail";
-
-                for (int j = 0; j < grid.Ny; j++)
-                    for (int i = 0; i < grid.Nx; i++)
-                    {
-                        int k = j * grid.Nx + i;
-                        int a = ml.Node[k];
-                        if (a < 0) continue;
-
-                        if (i + 1 < grid.Nx && ml.Node[k + 1] >= 0)
-                            AddEdge(ml, i, j, i + 1, j, a, ml.Node[k + 1],
-                                    grid.Dx(i), grid.Dx(i + 1), ml.Area[k], ml.Area[k + 1],
-                                    sigmaT, dbuPerMetre, side, "x");
-
-                        if (j + 1 < grid.Ny && ml.Node[k + grid.Nx] >= 0)
-                            AddEdge(ml, i, j, i, j + 1, a, ml.Node[k + grid.Nx],
-                                    grid.Dy(j), grid.Dy(j + 1), ml.Area[k], ml.Area[k + grid.Nx],
-                                    sigmaT, dbuPerMetre, side, "y");
-                    }
-            }
-        }
-
-        private void AddEdge(
-            MeshLayer ml, int i0, int j0, int i1, int j1, int a, int b,
-            long d0Dbu, long d1Dbu, double area0Dbu, double area1Dbu,
-            double sigmaT, double dbuPerMetre, string side, string axis)
-        {
-            // Half a cell of copper each, in series. dx²/(2·σ·T·A) is the half-cell resistance for a
-            // cell of length dx carrying an average width A/dx — the ordinary finite-volume form,
-            // and the reason a trace's resistance is right whether or not the grid lines fall on its
-            // edges.
-            double d0 = d0Dbu / dbuPerMetre, d1 = d1Dbu / dbuPerMetre;
-            double a0 = area0Dbu / (dbuPerMetre * dbuPerMetre), a1 = area1Dbu / (dbuPerMetre * dbuPerMetre);
-            if (!(a0 > 0) || !(a1 > 0)) return;
-
-            double r = d0 * d0 / (2 * sigmaT * a0) + d1 * d1 / (2 * sigmaT * a1);
-            if (!(r > 0) || double.IsInfinity(r)) return;
-
-            var from = _mesh.CellRef(ml, i0, j0);
-            var to = _mesh.CellRef(ml, i1, j1);
-            double length = (d0 + d1) / 2.0;
-            double width = (a0 / d0 + a1 / d1) / 2.0;
-
-            _staged.Add(new Staged(
-                "R", $"mesh.{side}.{ml.Layer.Layer}_{ml.Layer.Datatype}.{i0}.{j0}.{axis}",
-                [a, b], new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
-                new ResistorModel(), PdnOriginKind.MeshEdge,
-                $"{length * 1e3:0.###} mm of {width * 1e3:0.###} mm {ml.Conductor.StackupName} copper",
-                from, to, null, r, length, width));
-        }
-
-        // ── §4.2 ───────────────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// One resistor per plated barrel, with NO SPECIAL CASE for a group: twenty vias side by side
-        /// are twenty resistors between the same two cells, which is twenty in parallel because that
-        /// is what the netlist says. And two parts sharing one return via are coupled through it
-        /// because the mesh has a SINGLE NODE there.
-        ///
-        /// <para><b>A via and a plated component hole are distinguished by the NETLIST, never by
-        /// geometry</b> (R-rail3-10). Nothing here reads a diameter to decide what a hole IS —
-        /// <c>DrillViaPairing</c> already applied <c>BoardNetlistFile</c>'s rule when it produced
-        /// these <c>ViaShape</c>s, and re-deriving it from hole size would disagree with the import
-        /// that made them.</para>
-        /// </summary>
-        private void StampVias()
-        {
-            var tech = _req.Technology;
-            var z = ZOf(tech, _req.DbuPerMicron);
-
-            var vias = _req.Shapes.OfType<ViaShape>().ToList();
-            vias.Sort((p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y.CompareTo(q.Y));
-
-            double rho = ResistivityAt(CopperSigma(tech), _celsius);
-            int unresolved = 0, nonPlated = 0, stamped = 0;
-            var bases = new HashSet<PdnPlatingBasis>();
-
-            foreach (var via in vias)
-            {
-                var entry = tech.Stackup.Layers.FirstOrDefault(
-                    l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(via.Layer));
-
-                if (entry is null) { unresolved++; continue; }
-                if (entry.Plated == false) { nonPlated++; continue; }
-
-                if (entry.SpanFromLayer is not { Length: > 0 } fromName ||
-                    entry.SpanToLayer is not { Length: > 0 } toName)
+            for (int j = 0; j < grid.Ny; j++)
+                for (int i = 0; i < grid.Nx; i++)
                 {
-                    unresolved++;
-                    continue;
+                    int k = j * grid.Nx + i;
+                    int a = ml.Node[k];
+                    if (a < 0) continue;
+
+                    if (i + 1 < grid.Nx && ml.Node[k + 1] >= 0)
+                        AddEdge(mesh, asm, ml, i, j, i + 1, j, a, ml.Node[k + 1],
+                                grid.Dx(i), grid.Dx(i + 1), ml.Area[k], ml.Area[k + 1],
+                                sigmaT, dbuPerMetre, side, "x");
+
+                    if (j + 1 < grid.Ny && ml.Node[k + grid.Nx] >= 0)
+                        AddEdge(mesh, asm, ml, i, j, i, j + 1, a, ml.Node[k + grid.Nx],
+                                grid.Dy(j), grid.Dy(j + 1), ml.Area[k], ml.Area[k + grid.Nx],
+                                sigmaT, dbuPerMetre, side, "y");
                 }
-
-                var fromKeys = ConductorKeys(tech, fromName);
-                var toKeys = ConductorKeys(tech, toName);
-                if (fromKeys.Count == 0 || toKeys.Count == 0) { unresolved++; continue; }
-
-                int na = NodeOn(fromKeys, via.X, via.Y);
-                int nb = NodeOn(toKeys, via.X, via.Y);
-                if (na < 0 || nb < 0 || na == nb) continue;
-
-                var (plating, basis) = PdnViaModel.ResolvePlating(
-                    entry, _req.DbuPerMicron, _req.Settings.ViaPlatingThicknessMicrometres);
-                bases.Add(basis);
-
-                double drill = via.DrillSize / (_req.DbuPerMicron * 1e6);
-                double span = Math.Abs(z(toName).Far - z(fromName).Near);
-                if (!(span > 0)) span = Math.Abs(z(fromName).Far - z(toName).Near);
-
-                double r = PdnViaModel.BarrelResistanceOhms(drill, plating, span, rho);
-                if (!(r > 0)) continue;
-
-                _staged.Add(new Staged(
-                    "R", $"via.{via.X}.{via.Y}",
-                    [na, nb], new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r) },
-                    new ResistorModel(), PdnOriginKind.Via,
-                    $"a {drill * 1e3:0.###} mm plated via over {span * 1e3:0.###} mm, " +
-                    PdnViaModel.DescribePlating(plating, basis),
-                    CellOf(na), CellOf(nb), null, r));
-                stamped++;
-            }
-
-            if (stamped > 0 && bases.Contains(PdnPlatingBasis.Defaulted))
-                _notes.Add(
-                    $"{stamped} via barrel(s) were computed at the default " +
-                    $"{PdnViaModel.DefaultPlatingMicrometres:0.#} µm of plating, because neither the " +
-                    "stackup's via entry nor this document states one. Plating sets the barrel's whole " +
-                    "conducting cross-section, so state it where you know it.");
-
-            if (unresolved > 0)
-                _diagnostics.Add(
-                    $"{unresolved} hole(s) could not be resolved to a layer span and carry no barrel " +
-                    "resistance. v1 assumes THROUGH vias and reads a span declaration where one exists; " +
-                    "a blind or buried span it cannot resolve is reported rather than assumed.");
-
-            if (nonPlated > 0)
-                _diagnostics.Add($"{nonPlated} hole(s) are declared non-plated and are not conductors.");
         }
-
-        private static double CopperSigma(Technology tech)
-        {
-            foreach (var l in tech.Stackup.Layers)
-                if (l.Kind == StackupKind.Conductor && l.SigmaSm > 0) return l.SigmaSm;
-            return 5.8e7;
-        }
-
-        private static List<LayerKey> ConductorKeys(Technology tech, string name)
-        {
-            foreach (var l in tech.Stackup.Layers)
-                if (l.Kind == StackupKind.Conductor && string.Equals(l.Name, name, StringComparison.Ordinal))
-                    return l.DrawingLayers;
-            return [];
-        }
-
-        /// <summary>The z band each named conductor occupies, top-down, in metres.</summary>
-        private static Func<string, (double Near, double Far)> ZOf(Technology tech, int dbuPerMicron)
-        {
-            var bands = new Dictionary<string, (double, double)>(StringComparer.Ordinal);
-            double zz = 0;
-            foreach (var l in tech.Stackup.Layers)
-            {
-                if (l.Kind == StackupKind.Via) continue;
-                double t = l.ThicknessDbu / (dbuPerMicron * 1e6);
-                if (l.Kind == StackupKind.Conductor && l.Name.Length > 0 && !bands.ContainsKey(l.Name))
-                    bands[l.Name] = (zz, zz + t);
-                zz += t;
-            }
-            return name => bands.TryGetValue(name, out var b) ? b : (0, 0);
-        }
-
-        /// <summary>The first cell of any of <paramref name="keys"/> covering the point, or -1.</summary>
-        private int NodeOn(IReadOnlyList<LayerKey> keys, long x, long y)
-        {
-            foreach (var key in keys)
-            {
-                int n = _mesh.NodeOnLayer(key, x, y);
-                if (n >= 0) return n;
-            }
-            return -1;
-        }
-
-        // ── §4.3 ───────────────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Where the whole answer is measured from: the reference cells under the FIRST source's own
-        /// pads, tied together exactly as §4.3 ties a load's pin field.
-        ///
-        /// <para>That is the physical reference point — a drop is a drop relative to where the supply
-        /// returns — and it is stated in the provenance rather than being an unwritten convention, so
-        /// a reader can tell which node the numbers are against.</para>
-        /// </summary>
-        private string? ChooseGround()
-        {
-            var anchors = new List<(string What, RailPortAnchor Anchor)>();
-            foreach (var s in _req.Rail.Sources) anchors.Add(("source", s.Anchor));
-            foreach (var l in _req.Rail.Loads) anchors.Add(("load", l.Anchor));
-
-            foreach (var (what, anchor) in anchors)
-            {
-                var nodes = ReferenceNodesFor(anchor, out long away);
-                if (nodes.Count == 0) continue;
-
-                _ground = Merge(nodes);
-                ReferencePoint =
-                    $"the reference conductor under {anchor.Describe()}, this rail's first {what}" +
-                    (away > 0
-                        ? $" — the nearest reference copper is {away} DBU away, because there is none " +
-                          "directly under that pad"
-                        : "");
-                return null;
-            }
-
-            return
-                $"Rail '{_req.Rail.Name}' has no source or load whose pads sit over its reference " +
-                "conductor, so there is no point to measure a drop from. Anchor a source on the rail, " +
-                "or name a reference layer the rail's pads actually run over.";
-        }
-
-        /// <summary>
-        /// A series part on the path: a resistance between the two pieces of copper it bridges.
-        /// <b>Elements, never annotations</b> — at DC these are the largest terms after the source
-        /// (§4.3), and an annotation does not appear in a ranked breakdown.
-        /// </summary>
-        private string? StampSeriesElements()
-        {
-            for (int k = 0; k < _req.SeriesElements.Count; k++)
-            {
-                var part = _req.SeriesElements[k];
-                string where = $"Series part {part.Refdes} on rail '{_req.Rail.Name}'";
-
-                var a = PowerNodesFor(part.A);
-                var b = PowerNodesFor(part.B);
-
-                if (a.Count == 0)
-                    return PdnAttachments.RefusalForUnresolved($"{where}'s first end", part.A, 0);
-                if (b.Count == 0)
-                    return PdnAttachments.RefusalForUnresolved($"{where}'s second end", part.B, 0);
-
-                int na = Merge(a), nb = Merge(b);
-                if (na == nb)
-                {
-                    _diagnostics.Add(
-                        $"{where} bridges {part.A.Describe()} to {part.B.Describe()}, which are already " +
-                        "one piece of copper. Its resistance is in the netlist and carries no current.");
-                }
-
-                _staged.Add(new Staged(
-                    "R", $"series.{part.Refdes}",
-                    [na, nb],
-                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(part.ResistanceOhms) },
-                    new ResistorModel(), PdnOriginKind.SeriesElement,
-                    $"{part.Refdes} at {part.ResistanceOhms * 1e3:0.###} mΩ ({part.Basis})",
-                    CellOf(na), CellOf(nb), part.Refdes, part.ResistanceOhms));
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// The decoupling. <b>In the netlist, and carrying no DC path</b> — a capacitor bridges
-        /// nothing at DC, which is correct and occasionally surprising (R-rail3-4). Leaving it out
-        /// would make brief 14's netlist a different netlist from this one.
-        /// </summary>
-        private string? StampShunts()
-        {
-            int unmodelled = 0;
-
-            foreach (var part in _req.ShuntParts)
-            {
-                var power = PowerNodesFor(part.Anchor);
-                if (power.Count == 0)
-                {
-                    _diagnostics.Add(
-                        $"{part.Refdes} is anchored at {part.Anchor.Describe()}, which is not on this " +
-                        "rail's copper. It was not added.");
-                    continue;
-                }
-
-                if (part.CapacitanceFarads is not { } c || !(c > 0)) { unmodelled++; continue; }
-
-                var reference = ReferenceNodesFor(part.Anchor, out _);
-                if (reference.Count == 0)
-                {
-                    _diagnostics.Add(
-                        $"{part.Refdes} has no reference copper under it, so it bridges to nothing. It " +
-                        "was not added.");
-                    continue;
-                }
-
-                int np = Merge(power), nr = Merge(reference);
-
-                _staged.Add(new Staged(
-                    "C", $"shunt.{part.Refdes}",
-                    [np, nr],
-                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["C"] = new Value(c) },
-                    new CapacitorModel(), PdnOriginKind.Shunt,
-                    $"{part.Refdes}, {c * 1e9:0.###} nF — no DC path, by construction",
-                    CellOf(np), CellOf(nr), part.Refdes, null));
-            }
-
-            if (unmodelled > 0)
-                _diagnostics.Add(
-                    $"{unmodelled} part(s) on this rail have no capacitance in the library and were " +
-                    "counted rather than given one. An unstated value is never a defaulted one.");
-
-            return null;
-        }
-
-        /// <summary>
-        /// One branch per source, and NOTHING ELSE (R-rail3-12). Two supplies feeding one net do not
-        /// share in proportion to anything a designer can see; the copper decides, and a second source
-        /// stamped at the wrong node produces a plausible number rather than an error. So there is no
-        /// special case below for the second one.
-        /// </summary>
-        private string? StampSources()
-        {
-            for (int k = 0; k < _req.Rail.Sources.Count; k++)
-            {
-                var src = _req.Rail.Sources[k];
-                string name = src.Anchor.Describe();
-                string where = $"Rail '{_req.Rail.Name}'s source {k + 1} ({name})";
-
-                var power = PowerNodesFor(src.Anchor);
-                if (power.Count == 0)
-                    return PdnAttachments.RefusalForUnresolved(where, src.Anchor, 0);
-
-                var reference = ReferenceNodesFor(src.Anchor, out _);
-                if (reference.Count == 0)
-                    return $"{where} has no reference copper anywhere under it, so its return has " +
-                           "nowhere to go. Name the layer the return actually runs on.";
-
-                int np = Merge(power), nr = Merge(reference);
-                double? r = src.SeriesResistanceOhms;
-
-                if (src.OpenCircuitVoltageV is not { } volts)
-                {
-                    // Null is not zero: a source with no stated voltage is a branch whose IMPEDANCE
-                    // is known and whose LEVEL is not. Its resistance goes in — the frequency answer
-                    // uses it — and no DC level is invented (railrf.md §2.2).
-                    if (r is { } ohms)
-                        _staged.Add(new Staged(
-                            "R", $"source.{k + 1}.r", [np, nr],
-                            new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) },
-                            new ResistorModel(), PdnOriginKind.SourceResistance,
-                            $"{name}'s series resistance, {ohms * 1e3:0.###} mΩ",
-                            CellOf(np), CellOf(nr), src.Anchor.Refdes, ohms));
-
-                    _notes.Add(
-                        $"{name} states no open-circuit voltage, so it contributes its impedance and no " +
-                        "DC level. The DC answer is a drop across this rail, not a voltage at its loads.");
-                    continue;
-                }
-
-                int internalNode = r is { } series && series > 0 ? _synthetic++ : np;
-
-                _staged.Add(new Staged(
-                    "Vdc", $"source.{k + 1}.v", [internalNode, nr],
-                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["Vdc"] = new Value(volts) },
-                    new VdcModel(), PdnOriginKind.SourceBranch,
-                    $"{name} at {volts:0.###} V open circuit",
-                    null, CellOf(nr), src.Anchor.Refdes, null));
-
-                if (internalNode != np)
-                    _staged.Add(new Staged(
-                        "R", $"source.{k + 1}.r", [internalNode, np],
-                        new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r!.Value) },
-                        new ResistorModel(), PdnOriginKind.SourceResistance,
-                        $"{name}'s series resistance, {r.Value * 1e3:0.###} mΩ",
-                        null, CellOf(np), src.Anchor.Refdes, r.Value));
-                else
-                    _notes.Add(
-                        $"{name} states no series resistance, so it is an ideal source at DC. On an " +
-                        "aged cell that is the largest term on the path and its absence flatters the " +
-                        "answer.");
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Each load port across the power and reference nodes of its own pin-field cells, TIED
-        /// TOGETHER — because that is what the die sees (§2.2) — with its DC current as an injection.
-        ///
-        /// <para><b>A port with no stated current contributes an observation port and no current</b>
-        /// (§2.2, Q-16). A defaulted zero and a stated zero are the same number and mean different
-        /// things, and the DC report has to list an observed port AS observed rather than omitting
-        /// it.</para>
-        /// </summary>
-        private string? StampLoads()
-        {
-            for (int k = 0; k < _req.Rail.Loads.Count; k++)
-            {
-                var load = _req.Rail.Loads[k];
-                string name = load.Anchor.Describe();
-                string where = $"Rail '{_req.Rail.Name}'s load {k + 1} ({name})";
-
-                var power = PowerNodesFor(load.Anchor);
-                if (power.Count == 0)
-                    return PdnAttachments.RefusalForUnresolved(where, load.Anchor, 0);
-
-                var reference = ReferenceNodesFor(load.Anchor, out _);
-                if (reference.Count == 0)
-                    return $"{where} has no reference copper anywhere under it, so there is nothing to " +
-                           "measure its impedance against. Name the layer the return actually runs on.";
-
-                int np = Merge(power), nr = Merge(reference);
-
-                var cells = new List<PdnCellRef>();
-                foreach (int n in power) if (CellOf(n) is { } c) cells.Add(c);
-                foreach (int n in reference) if (CellOf(n) is { } c) cells.Add(c);
-
-                if (load.DcCurrentA is { } amps)
-                    _staged.Add(new Staged(
-                        // Injected INTO the reference and drawn OUT of the rail, which is what a load
-                        // does. The engine's current-source convention delivers J to Nodes[0].
-                        "I_1Tone", $"load.{k + 1}.i", [nr, np],
-                        new Dictionary<string, Value>(StringComparer.Ordinal) { ["Idc"] = new Value(amps) },
-                        new CurrentToneSourceModel([], amps), PdnOriginKind.LoadCurrent,
-                        $"{name} drawing {amps * 1e3:0.###} mA",
-                        CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
-
-                _staged.Add(new Staged(
-                    "Port", $"port.{k + 1}", [np, nr],
-                    new Dictionary<string, Value>(StringComparer.Ordinal) { ["Num"] = new Value(k + 1) },
-                    new PortModel(), PdnOriginKind.Port,
-                    load.DcCurrentA is null
-                        ? $"{name}, an observation port — it states no current and draws none"
-                        : $"{name}, observed",
-                    CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
-
-                _ports.Add(new PdnPortBinding(k, name, load.Anchor, np, nr, cells, load.DcCurrentA));
-            }
-
-            return null;
-        }
-
-        // ── node bookkeeping ───────────────────────────────────────────────────────────────────
-
-        private List<int> PowerNodesFor(RailPortAnchor anchor)
-        {
-            var nodes = new List<int>();
-            foreach (var (x, y) in PdnAttachments.Resolve(anchor, _req.Pads))
-                foreach (int n in _mesh.NodesAt(x, y, isReference: false))
-                    if (!nodes.Contains(n)) nodes.Add(n);
-            return nodes;
-        }
-
-        private List<int> ReferenceNodesFor(RailPortAnchor anchor, out long distanceDbu)
-        {
-            distanceDbu = 0;
-            var pads = PdnAttachments.Resolve(anchor, _req.Pads);
-            var nodes = new List<int>();
-
-            foreach (var (x, y) in pads)
-                foreach (int n in _mesh.NodesAt(x, y, isReference: true))
-                    if (!nodes.Contains(n)) nodes.Add(n);
-
-            if (nodes.Count > 0 || pads.Count == 0) return nodes;
-
-            // No reference copper directly under the pad — an antipad, a split, a keepout. The
-            // NEAREST reference cell is the honest stand-in and the distance is reported, because a
-            // return that starts 3 mm away is a finding rather than a detail.
-            var (x0, y0) = pads[0];
-            int nearest = _mesh.NearestReferenceNode(x0, y0, out distanceDbu);
-            if (nearest >= 0)
-            {
-                nodes.Add(nearest);
-                _diagnostics.Add(
-                    $"There is no reference copper under {anchor.Describe()}; the return was attached " +
-                    $"to the nearest reference cell, {distanceDbu} DBU away. The spreading between the " +
-                    "two is NOT in this answer.");
-            }
-            return nodes;
-        }
-
-        /// <summary>Ties a set of cells into one node — §4.3's "tied together", and what makes a pin
-        /// field one port rather than six.</summary>
-        private int Merge(List<int> nodes)
-        {
-            int rep = nodes[0];
-            for (int i = 1; i < nodes.Count; i++) _tie.Union(rep, nodes[i]);
-            return _tie.Find(rep);
-        }
-
-        private PdnCellRef? CellOf(int raw) => _mesh.CellOfNode(raw);
-
-        /// <summary>
-        /// Resolves ties, drops what has no DC path to the reference point, numbers what is left, and
-        /// builds the netlist. Nothing here decides anything a solver would — it is bookkeeping.
-        /// </summary>
-        private void Emit()
-        {
-            int groundRep = _tie.Find(_ground);
-
-            // Which nodes are joined by an ELEMENT, which is a different question from which are tied.
-            var reach = new UnionFind(_tie.Capacity);
-            foreach (var s in _staged) reach.Union(_tie.Find(s.Raw[0]), _tie.Find(s.Raw[1]));
-            int groundComponent = reach.Find(groundRep);
-
-            bool Keep(int raw) =>
-                _req.Mesh.IncludeIsolatedRegions || reach.Find(_tie.Find(raw)) == groundComponent;
-
-            var netlist = new ElaboratedNetlist();
-            var final = new Dictionary<int, int> { [groundRep] = 0 };
-            _nodeCells[0] = _mesh.CellOfNode(_ground) ?? default;
-
-            int Index(int raw)
-            {
-                int rep = _tie.Find(raw);
-                if (final.TryGetValue(rep, out int idx)) return idx;
-                idx = netlist.Nodes.GetOrAssign(NameOf(rep, raw));
-                final[rep] = idx;
-                if (_mesh.CellOfNode(raw) is { } cell) _nodeCells[idx] = cell;
-                return idx;
-            }
-
-            // Names in mesh order first, so a node's name is the cell a reader would point at rather
-            // than whichever element happened to mention it first.
-            var grid = _mesh.Grid;
-            foreach (var ml in _mesh.Layers)
-                for (int j = 0; j < grid.Ny; j++)
-                    for (int i = 0; i < grid.Nx; i++)
-                    {
-                        int n = ml.Node[j * grid.Nx + i];
-                        if (n >= 0 && Keep(n)) Index(n);
-                    }
-
-            int dropped = 0;
-
-            foreach (var s in _staged)
-            {
-                if (!Keep(s.Raw[0]) || !Keep(s.Raw[1])) { dropped++; continue; }
-
-                int componentIndex = netlist.Components.Count;
-                netlist.AddComponent(new ElaboratedComponent(
-                    s.Type, s.Path, [Index(s.Raw[0]), Index(s.Raw[1])], s.Params, s.Model));
-
-                _origins.Add(new PdnElementOrigin(
-                    componentIndex, s.Kind, s.Description, s.From, s.To, s.Refdes,
-                    s.ResistanceOhms, s.LengthMetres, s.WidthMetres));
-            }
-
-            if (dropped > 0)
-                _diagnostics.Add(
-                    $"{dropped} element(s) sit on copper with no DC path to the reference point and " +
-                    "were not stamped. That is the island structure, not an error — a capacitor " +
-                    "bridges nothing at DC. Set IncludeIsolatedRegions to carry them anyway.");
-
-            _portsFinal.Clear();
-            foreach (var p in _ports)
-                _portsFinal.Add(p with
-                {
-                    PowerNode = Keep(p.PowerNode) ? Index(p.PowerNode) : -1,
-                    ReferenceNode = Keep(p.ReferenceNode) ? Index(p.ReferenceNode) : -1,
-                });
-
-            _ports.Clear();
-            _ports.AddRange(_portsFinal);
-            _netlist = netlist;
-        }
-
-        private readonly List<PdnPortBinding> _portsFinal = [];
-
-        private string NameOf(int rep, int raw)
-        {
-            if (_mesh.CellOfNode(raw) is { } cell)
-                return $"{(cell.IsReference ? "ref" : "rail")}.{cell.Layer.Layer}_{cell.Layer.Datatype}." +
-                       $"{cell.Ix}.{cell.Iy}";
-            return $"internal.{rep}";
-        }
-
-        /// <summary>Union-find with path halving — local, for the same reason
-        /// <see cref="DrcConnectivity"/>'s is local.</summary>
-        private sealed class UnionFind
-        {
-            private readonly int[] _parent;
-
-            public UnionFind(int n)
-            {
-                _parent = new int[n];
-                for (int i = 0; i < n; i++) _parent[i] = i;
-            }
-
-            public int Capacity => _parent.Length;
-
-            public int Find(int x)
-            {
-                while (_parent[x] != x) { _parent[x] = _parent[_parent[x]]; x = _parent[x]; }
-                return x;
-            }
-
-            public void Union(int a, int b)
-            {
-                int ra = Find(a), rb = Find(b);
-                if (ra != rb) _parent[Math.Max(ra, rb)] = Math.Min(ra, rb);
-            }
-        }
+    }
+
+    private static void AddEdge(
+        MeshBuilder mesh, PdnAssembly asm,
+        MeshLayer ml, int i0, int j0, int i1, int j1, int a, int b,
+        long d0Dbu, long d1Dbu, double area0Dbu, double area1Dbu,
+        double sigmaT, double dbuPerMetre, string side, string axis)
+    {
+        // Half a cell of copper each, in series. dx²/(2·σ·T·A) is the half-cell resistance for a
+        // cell of length dx carrying an average width A/dx — the ordinary finite-volume form, and
+        // the reason a trace's resistance is right whether or not the grid lines fall on its edges.
+        double d0 = d0Dbu / dbuPerMetre, d1 = d1Dbu / dbuPerMetre;
+        double a0 = area0Dbu / (dbuPerMetre * dbuPerMetre), a1 = area1Dbu / (dbuPerMetre * dbuPerMetre);
+        if (!(a0 > 0) || !(a1 > 0)) return;
+
+        double r = d0 * d0 / (2 * sigmaT * a0) + d1 * d1 / (2 * sigmaT * a1);
+        double length = (d0 + d1) / 2.0;
+        double width = (a0 / d0 + a1 / d1) / 2.0;
+
+        asm.StageCopper(
+            $"mesh.{side}.{ml.Layer.Layer}_{ml.Layer.Datatype}.{i0}.{j0}.{axis}", a, b, r,
+            $"{length * 1e3:0.###} mm of {width * 1e3:0.###} mm {ml.Conductor.StackupName} copper",
+            mesh.CellRef(ml, i0, j0), mesh.CellRef(ml, i1, j1),
+            PdnOriginKind.MeshEdge, length, width);
     }
 }

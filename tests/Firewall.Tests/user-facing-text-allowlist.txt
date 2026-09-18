@@ -837,3 +837,8 @@ src/Engine/Mom/PlanarQuasiStaticLine.cs|The two calibration standards have the s
 src/Engine/Mom/PlanarSolve.cs|Calibration group port {g.PortNumbers[k]} is not in the run's port list.
 src/Engine/Mom/PlanarSolve.cs|This calibrator owns no calibration group.
 src/Engine/Mom/PlanarStaticAim.cs|The drive potential has {potential.Count} entries for {_m} cells.
+
+# railRF brief 4 — an INTERNAL invariant on PdnResultsByModel.Add. A refused extraction is
+# reported as a refusal by whoever asked for it and never reaches this method; the sentence
+# exists for whoever writes the caller that gets it wrong, and no user reads it.
+src/Design/Layout/Pdn/PdnModelKind.cs|A refused extraction names no model kind and is not filed as a result.
