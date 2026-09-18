@@ -61,7 +61,25 @@ public enum GerberFileKind
     /// </summary>
     Netlist,
 
-    /// <summary>A sibling to skip: a report, a listing, a placement file, an image, a PDF.
+    /// <summary>
+    /// railRF R-rail2-12. The placement (pick-and-place) table an output set ships beside its
+    /// artwork: one row per reference, carrying its coordinate, rotation, mirror and footprint.
+    ///
+    /// <para>It is <b>evidence about the artwork and never geometry</b> (R-rail2-1), exactly as the
+    /// board netlist is — see <see cref="PlacementFile"/>. A Gerber import does not consume one, so
+    /// it is still reported as skipped; what changes is that it is skipped BY NAME rather than as
+    /// "no Gerber or drill content in its head".</para>
+    /// </summary>
+    Placement,
+
+    /// <summary>
+    /// railRF R-rail2-12. The BILL OF MATERIALS — the internal part number, the reference, the value,
+    /// the footprint and a free-text description. Evidence about the artwork, never geometry, and
+    /// skipped by name for <see cref="Placement"/>'s reason. See <see cref="BomFile"/>.
+    /// </summary>
+    Bom,
+
+    /// <summary>A sibling to skip: a report, a listing, an image, a PDF.
     /// R-L4g-2 — every one of these is reported by name, once.</summary>
     Other,
 }
@@ -133,12 +151,28 @@ public static class GerberFileClassifier
         if (BoardNetlistFile.Recognize(head, out string netlist))
             return new GerberFileClass(path, GerberFileKind.Netlist, netlist);
 
-        // LAST, and that order is gate 2's second half: a real drill file renamed to whatever a
-        // declaration is conventionally called still reaches DrillEvidence first and still classifies
-        // as drill data. Nothing here can take a file the drill test already claimed.
+        // LAST OF THE SPECIFIC TESTS, and that order is gate 2's second half: a real drill file
+        // renamed to whatever a declaration is conventionally called still reaches DrillEvidence
+        // first and still classifies as drill data. Nothing here can take a file the drill test
+        // already claimed.
         if (GerberDeclarationFile.Recognize(head, out string declaration) is var form &&
             form != GerberDeclarationForm.None)
             return new GerberFileClass(path, GerberFileKind.Declaration, declaration) { Form = form };
+
+        // railRF R-rail2-12, and AFTER every test above for the reason that rule states: the
+        // placement and bill-of-materials signatures are a HEADER ROW NAMING COLUMNS, which is far
+        // weaker than a netlist's three-digit operation codes or a declaration's named keywords, and
+        // nothing added here may take a file one of those already claimed.
+        //
+        // The two are genuinely ambiguous with each other — a comma-separated table is a comma-
+        // separated table — so each declines a header the other also matches, and the reader itself
+        // refuses naming the two flags. One more refusal is cheaper than a board whose parts are all
+        // at (0, 0).
+        if (PlacementFile.Recognize(head, out string placement))
+            return new GerberFileClass(path, GerberFileKind.Placement, placement);
+
+        if (BomFile.Recognize(head, out string bom))
+            return new GerberFileClass(path, GerberFileKind.Bom, bom);
 
         return new GerberFileClass(path, GerberFileKind.Other, "no Gerber or drill content in its head");
     }

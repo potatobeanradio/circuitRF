@@ -205,7 +205,14 @@ public static class GerberImport
         var declarationFiles = classified.Where(c => c.Kind == GerberFileKind.Declaration).ToList();
         var netlistFiles = classified.Where(c => c.Kind == GerberFileKind.Netlist).ToList();
         var archiveFiles = classified.Where(c => c.Kind == GerberFileKind.Archive).ToList();
-        var skipped = classified.Where(c => c.Kind is GerberFileKind.Other or GerberFileKind.Archive).ToList();
+        // railRF R-rail2-12 added Placement and Bom as KINDS, and they belong here: a Gerber import
+        // does not consume either, so both stay genuinely skipped — what changed is that they are now
+        // named. A new kind left out of this list would vanish from the report entirely, which is the
+        // silent drop R-L4g-2 exists against.
+        var skipped = classified
+            .Where(c => c.Kind is GerberFileKind.Other or GerberFileKind.Archive
+                              or GerberFileKind.Placement or GerberFileKind.Bom)
+            .ToList();
 
         // R-L4g-2: a folder scan that silently ignores half of what it found is the same failure as a
         // reader that silently ignores a token, and it is more alarming because the user can see the
@@ -219,7 +226,8 @@ public static class GerberImport
             messages.Add($"Skipped {file.FileName} — {file.Why}.");
 
         var drillCandidates = GerberFileClassifier.FindSiblingDrillCandidates(
-            [.. classified.Where(c => c.Kind is not (GerberFileKind.Other or GerberFileKind.Archive))
+            [.. classified.Where(c => c.Kind is not (GerberFileKind.Other or GerberFileKind.Archive
+                                                     or GerberFileKind.Placement or GerberFileKind.Bom))
                           .Select(c => c.Path)]);
 
         // ── 1b. The archive, which is an OFFER and never an action (R-gi4-10, R-gi4-11) ──────────

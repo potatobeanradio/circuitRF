@@ -1,5 +1,113 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 2 — the three companion readers (2026-09-18)
+
+`PlacementFile`, `BomFile` and `RefdesCell` in `Layout/Interchange/` over a shared `DelimitedTable`;
+`PartLibrary` + `PartLibraryIo` (`.crlib`) in `RailRf/`. Tests in
+`tests/Ui.Tests/RailRf/RailReaderTests.cs`. All of it is `BoardNetlistFile`'s rule verbatim — evidence
+about the artwork, never geometry — and nothing here creates, moves or deletes a shape.
+
+### 1. Adding a `GerberFileKind` is TWO edits, and the second one is the silent half
+
+`Placement` and `Bom` joined the enum so a companion table in a Gerber folder is skipped **by name**
+rather than as "no Gerber or drill content in its head". `GerberImport` selects its `skipped` list by
+KIND (`Other or Archive`), so a new kind left out of that predicate does not become a new category —
+**it vanishes from the folder report entirely**, which is the exact silent drop R-L4g-2 exists
+against. The same predicate is repeated in `FindSiblingDrillCandidates`' exclusion and both were
+changed together. Check both when adding a third.
+
+### 2. The delimiter inference is a CONSISTENCY test, and a frequency count is wrong
+
+A tab-separated bill of materials whose description column reads `MLCC, 10n0, 50V` carries more commas
+than tabs. A most-frequent-character inference picks the comma and shreds every row. The test is
+therefore: parse the head with each candidate, take the one whose rows **agree on a field count**,
+with more fields breaking a tie — and a single-column reading (which is what a wrong delimiter looks
+like, and is perfectly self-consistent) scores zero rather than winning.
+
+### 3. A `value` column is NOT a bill-of-materials signal, and that decision is load-bearing
+
+R-rail2-12 refuses a header matching both signatures, naming `--placement / --bom`. The first draft of
+the bill-of-materials signature accepted `refdes + value`, which **made every ordinary placement export
+ambiguous** — placement files routinely carry a value column. The distinguishing columns are the part
+number, the quantity and the description; with those, the refusal is reachable only on a header that
+genuinely carries a reference, a part number AND coordinates. One more refusal is cheap; refusing every
+import is not.
+
+### 4. The three origins are only three DIFFERENT readings if the footprint offsets differ
+
+R-rail2-3 wants one file read at each origin to produce three landed counts. It cannot be done without
+footprint geometry, and the near-misses are instructive: on a footprint whose symbol origin **is** the
+body centre, two of the three readings are identical, and on one whose symbol origin is pin 1 a
+different two are. So `FootprintGeometry` (pad offsets with pin 1 first, a body-centre offset, and a
+has-bottom-side-artwork flag) is a deliberate **seam for brief 3**, not a footprint model: brief 3
+builds them from artwork, `PlacementFile.CheckLanding` only consumes one. A row whose footprint is not
+supplied counts as `Unknown` and **never as landed** — a missing footprint scoring as a success is how
+a wrong origin wins the comparison it was supposed to lose.
+
+The test fixture is worth keeping: four 0402s written at pin 1, plus two *neighbouring* pads 0.2 mm
+along, so reading at the symbol origin lands two of the four **on the neighbour's pad**. That is the
+brief's own failure story reproduced as a number (4 / 2 / 0 landed across the three origins).
+
+### 5. The origin refusal comes LAST, and `ParsedRowCount` survives it
+
+`Refusal` non-null means nothing was read and nothing may be used (`BoardNetlist`'s contract, kept).
+But the import dialog that asks the origin question wants to say how many parts it is asking about, so
+the rows are parsed first, the diagnostics are filled, and only then does the refusal replace the row
+list. `ParsedRowCount` is the one number that crosses it.
+
+### 6. Imperial case codes ONLY, deliberately — the metric set would be a confident wrong answer
+
+`0402` imperial and `0402` metric are different parts (the metric one is `01005` imperial), and a
+description carrying four bare digits does not say which system it is in. Matching one system leaves
+the other's codes **null**, which is what R-rail2-5 requires; matching both produces a confident wrong
+answer on exactly the small parts where the difference matters. Same discipline elsewhere in the parse:
+a voltage needs its unit letter (a bare number in free text is a quantity, a length or part of a code),
+a tolerance needs its percent sign, and the single-letter EIA tolerance codes (J/K/M) are **not** read —
+a K in a description is as likely to be a kilo- prefix.
+
+### 7. `RailAggressorOrigin.Bom` already existed, so no second spelling was added
+
+Brief 1 shipped the enum with `Typed` and `Bom`. The brief 2 text names the value `RecognisedFromBom`;
+adding that would have been a second spelling of one state. The existing value is used.
+
+The pre-fill requires a **frequency** as well as a kind: a converter recognised as a converter but
+stating no frequency contributes **no row** and is counted in the diagnostics instead. The harmonic
+count is 1 — the fundamental alone, the fewest a row can mean — because nothing in a bill of materials
+carries one and this is not the place to invent it.
+
+### 8. The `Bom` / byte order mark collision is handled once, at the bottom
+
+R-rail2-14's naming hazard is real in this exact code path. The byte order mark is stripped in
+`DelimitedTables.Parse` and **nowhere in `BomFile`**, so `BomFile` never contains a line that could be
+read as "the bill of materials strips a bill of materials". Both files spell U+FEFF out in full every
+time.
+
+### 9. The firewall's user-facing-text gate caught three, and the REFUSALS are not among them
+
+`UserFacingTextGateTests` fails on a new English sentence THROWN below the UI firewall.
+`PartLibraryIo`'s two format-version/deserialize sentences and `PlacementFile.CheckLanding`'s
+called-without-an-origin invariant were allowlisted alongside `RailDocumentIo`'s identical pair. The
+readers' own refusal sentences — which are the substance of this brief — do not trip it because they
+are **returned as data on the result record**, not thrown, which is `BoardNetlistFile`'s pattern and
+another reason to keep it.
+
+### 10. `.crlib` stores no derived inductance, and sorts the bias curve on read
+
+`L = 1/((2·π·f₀)²·C)` follows from two fields already in the file, so a stored third copy is a field
+that would be edited on one side only. `stated_inductance_henries` exists **only** to be compared:
+`PartLibrary.InductanceDisagreements()` reports a row past `InductanceTolerance` (5 %) and the derived
+value is used regardless. The bias curve is sorted by bias on the way in, because brief 11 interpolates
+it and an interpolation over an unsorted curve is a plausible wrong number rather than an error.
+
+### 11. What the committed tests do NOT prove, and it is written in the test file's own header
+
+The fixtures are synthetic: **they prove the readers parse their own output, not that they parse a real
+export.** The reference package arrives at manual testing (railrf.md §8.5), so the file carries a second
+`FixtureFact`-guarded tier keyed on `testdata/railrf-reference/` that skips with a stated reason until
+the bytes land — verified skipping, not failing, on this clone. R-rail2-14's four shape allowances each
+have a synthetic case now, so they are green or red on the day the package arrives.
+
+
 ## A port on metal drawn twice on ONE level was refused, in a sentence that could not be true (2026-09-17)
 
 Owner report: a `.clay` holding the same taper drawn twice, one exactly over the other, was refused
