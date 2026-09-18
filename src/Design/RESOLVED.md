@@ -1,5 +1,151 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 3 — the netlist contract, and the accurate DC extractor (2026-09-18)
+
+`src/Design/Layout/Pdn/` — `PdnNetlist`, `PdnRailRegions`, `PdnViaModel`, `PdnAttachments`,
+`PdnMeshExtractor`. Tests in `tests/Ui.Tests/RailRf/PdnMeshExtractorTests.cs` (15, ~0.4 s). Copper in,
+`ElaboratedNetlist` out, at ω = 0; no solve, no `EmProblem`, no result type, held by a
+comment-stripped source scan.
+
+Measured on the brief's own headline row — 50 mm of 0.3 mm inner trace on 0.5 oz copper over a
+reference: **7,620 cells, 14,212 elements, 66 ms**, and the closed form reproduced to under 1 %.
+
+### 1. `R = 2·Rs` is the LOOP's, and stamping it per cell edge gives 4·Rs
+
+The brief is emphatic about the factor of two — rev 2 of the design note used one plane's sheet
+resistance and every derived crossover frequency came out at half its real value — and asks for it to
+be carried in the code's own comment. **It is carried, but not where a first reading puts it.**
+
+§4.3 requires SEPARATE power and reference nodes: "each capacitor … connecting the power node to the
+reference node", "each load port across the power and reference nodes of its own pin-field cells".
+That is not the collapsed plane-pair formulation §4.1's `R = 2·Rs` is written for, where one 2-D node
+carries the inter-plane voltage and a loop traverses one edge. With both conductors meshed, a loop
+crosses one square of the rail on the way out and one square of the reference on the way back — so a
+per-edge 2·Rs would make the loop **4·Rs**, which is the same error rev 2 made, doubled instead of
+halved.
+
+So each edge carries **one square of its own conductor** and the 2 arrives by construction. The
+simplification that loses it is not "drop the 2" — it is **"mesh only the rail and tie the reference
+to ground"**, which halves every loop resistance and reports nothing. `ThePlanePairLoopIsTwiceOnePlane`
+is what holds that shut: an identical conductor above and below, out along one and back along the
+other, asserted at exactly 2.0.
+
+This also reconciles the brief's two gates, which look inconsistent and are not: §7's closed form
+`R = L/(σWT)` is one conductor, §2.8's crossover arithmetic says "using §4.1's **loop** resistance".
+
+### 2. Cell conductances are built from copper AREA, not from cell counts — and that is what makes R-rail3-14 safe
+
+A binary present/absent cell makes a conductor's width a multiple of Δ, so a 0.3 mm trace meshed at
+0.1 mm is right and the same trace at 0.13 mm is 33 % wrong, silently, in whichever direction the
+rounding fell. Instead each cell carries the area of copper actually inside it and an edge is the
+series pair of the two half-cells it joins:
+
+```
+half-cell along x  =  dx² / (2·σ·T·A)          R(edge) = half(i) + half(i+1)
+```
+
+the ordinary finite-volume harmonic form. On a straight trace of **any** width and **any** alignment
+the areas in a column sum to the real width whether or not the grid lines fall on its edges, so this
+is exact — and it is exact on a stepped trace too, half a cell of each width in series.
+
+**That is what lets the DC mesh be coarse without being optimistic**, which is the whole of
+R-rail3-14. The shipped default is three cells across the narrowest copper, and the 50 mm gate passes
+at that. It also means the `MaxCells` coarsening is honest rather than a degradation: a coarser cell
+still carries the right copper, and what it loses is the separation between two conductors that share
+a cell.
+
+Two limits follow and are stated rather than hidden: two pieces of the same region passing through one
+cell are given ONE node, and an edge is gated only on both cells being present — so a diagonal
+staircase run is slightly optimistic. Both shrink with Δ.
+
+### 3. A pad coordinate seeds the REFERENCE as well as the rail
+
+The rail's copper is found by seeding `DrcConnectivity`'s partition with the source and load anchors.
+An anchor is a POINT, and on a board with a return plane the plane is under all of them — so the
+unfiltered seed put the reference's own net into the rail's net set and **the reference came back as
+an island OF the rail.** A shorted board, reported as an ordinary one, on the most common board shape
+there is. `PdnRailRegions.NetsAt` now excludes the reference layer from rail seeding.
+
+Found by the island test returning 2 regions on a board with one rail region and one plane — which is
+why that test asserts the COUNT rather than only that a report was produced.
+
+### 4. A via's barrel disc arrives as "a layer the rail reaches with no conductor entry"
+
+`DrcRegions.Expand` decomposes a `ViaShape` into a barrel on its own via drawing layer and a pad on
+its landing layer, and `DrcConnectivity` then unions the barrel with the metal — which is exactly what
+makes an offset staircase connect. The consequence is that the rail's layer set contains a **via
+drawing layer**, which deliberately carries no thickness and no conductivity.
+
+The refusal that protects against a conductor with no sheet resistance (a mesh of zero-ohm links — the
+optimistic answer nothing reports) therefore had to skip via drawing layers explicitly, or it refused
+every board with a via in it. Both halves matter: without the refusal an unmapped copper layer meshes
+as a perfect plane; without the exemption nothing with a via extracts at all.
+
+### 5. `PortModel` is safe at DC only because the DC engine skips it
+
+§4.3 puts a port and a current injection on the same nodes, and one netlist serves both the DC
+operating point and brief 12's sweep. A `PortModel` stamps a **0 V voltage source**, which across power
+and reference is a dead short — so a DC solve that stamped it would report a perfect rail.
+
+`NonlinearDcEngine` already skips `PortModel`/`TermModel` (`src/Engine/NonlinearDcEngine.cs:311`), and
+that pre-existing line is the whole reason the arrangement works. Anything that changes it silently
+turns every railRF DC answer into zero drop. Recorded here because it is a dependency this brief
+acquired without touching the file it depends on.
+
+### 6. The document has no series-part list, so the extraction takes one
+
+`RailSpec` carries `Sources` and `Loads` and nothing else that attaches. But §2.8's "the copper stops
+at every pad, so the board is not electrically continuous until the user has said what bridges each
+gap" makes the bridging part a first-class input, and §4.3 makes it an ELEMENT rather than an
+annotation ("at DC these are the largest terms after the source" — 350 mΩ for a protection FET against
+165 mΩ for 50 mm of thin inner copper).
+
+`PdnSeriesElement` is therefore an extraction input rather than a document field. **A document field is
+brief 7's or brief 10's to add** — whichever first needs a user to type one — and when it arrives it
+should map onto this record rather than introducing a second spelling.
+
+### 7. An island with no DC path is REPORTED and not stamped, and that is a solvability decision
+
+R-rail3-4 is explicit that two islands joined by nothing at DC and by a capacitor at AC is not an
+error. It is also, at DC, a netlist with floating nodes — and "the deliverable is a netlist" is worth
+nothing if the netlist has no answer.
+
+So the island structure is always an output (`PdnRailRegionSet`, the provenance's `IslandReport`, a
+diagnostic naming the count), and by default an island with no DC path to the reference point
+contributes no elements. `PdnMeshSettings.IncludeIsolatedRegions` carries them anyway.
+**This is a judgement, not a requirement of the brief** — if brief 5 would rather see the singular
+system and refuse on it itself, flipping the default is the whole change.
+
+### 8. The minimum feature width is measured, by morphological opening
+
+R-rail3-14 sets the DC cell size from the narrowest conductor on the rail, and nothing stated what
+that number is. It is bisected: a shape survives erosion by `w/2` followed by dilation by `w/2` only
+where it was at least `w` wide, so the largest `w` that loses no area is the minimum width. A handful
+of Clipper offsets rather than a scan.
+
+It lands within a few percent — 0.295 mm for a 0.3 mm trace, the bisection's own resolution — and that
+costs nothing at all, because finding 2 means the AREAS carry the width and the cell size only has to
+resolve SHAPE.
+
+### 9. The reference point is the reference conductor under the first source, and it is stated
+
+Nothing in the design note names the node everything is measured from. It is the reference cells under
+the first source's own pads, tied together exactly as §4.3 ties a load's pin field — a drop is a drop
+relative to where the supply returns. It falls back to the first load where there is no source, and
+`PdnProvenance.ReferencePoint` says which in words, because an unwritten convention here makes every
+number in the report ambiguous.
+
+Where a pad has no reference copper under it at all — an antipad, a split — the nearest reference cell
+is used, the distance is reported, and the diagnostic says the spreading between the two is NOT in the
+answer.
+
+### 10. A zero-ohm part is a near-short, not a short
+
+`ASeriesPartIsAnElementOnThePath` asserts the brief's "the same board without it differs by **exactly**
+350 mΩ". It differs by 0.349 999 997, and the residue is not the mesh: `ResistorModel` substitutes
+`Gmax = 1e12` for `R = 0`, so the "without it" board keeps 1 pΩ. The test states the tolerance and why,
+rather than rounding the claim away.
+
 ## railRF brief 2 — the three companion readers (2026-09-18)
 
 `PlacementFile`, `BomFile` and `RefdesCell` in `Layout/Interchange/` over a shared `DelimitedTable`;
