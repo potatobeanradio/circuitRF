@@ -74,7 +74,13 @@ public class ZoomToFitShortcutTests
         Assert.True(at >= 0);
         var condition = code[at..code.IndexOf('{', key)];
 
-        Assert.Contains("IsTypingLabel", condition, StringComparison.Ordinal);
+        // The guard is one NAMED predicate now, not the condition spelled inline: railRF hosts this
+        // same control in a window whose whole left column is editable rows, so it had to widen to
+        // "nothing else owns the keyboard" (railrf.md §11.6 trap 1). The label half of it is held by
+        // CanvasArrowPanAndZoomBoxTests.TheLayoutCanvasNavigationGate_StillIncludesIsTypingLabel.
+        Assert.Contains("NavigationSuppressed", condition, StringComparison.Ordinal);
+        Assert.Contains("IsTypingLabel", CodeOf("src", "Ui", "Controls", "LayoutCanvas.cs"),
+                        StringComparison.Ordinal);
         Assert.Contains("!ctrl", condition, StringComparison.Ordinal);   // Ctrl/⌘+F stays free
     }
 

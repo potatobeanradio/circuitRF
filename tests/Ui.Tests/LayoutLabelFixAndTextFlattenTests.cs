@@ -324,7 +324,12 @@ public class LayoutLabelFixAndTextFlattenTests : IDisposable
         // the Space branch is gated on IsTypingLabel, not that the gesture visibly works end to end.
         string path = FindSourceFile("LayoutCanvas.cs");
         string src = File.ReadAllText(path);
-        Assert.Contains("Key.Space && _viewModel?.IsTypingLabel != true", src);
+        // Spelled through LayoutCanvas's one navigation gate now, not inline: railRF hosts this control
+        // in a window full of text fields, so the guard widened to "nothing else owns the keyboard"
+        // (railrf.md §11.6 trap 1). NavigationSuppressed is IsTypingLabel OR the host's own predicate,
+        // and both halves are asserted so neither can be dropped.
+        Assert.Contains("Key.Space && !NavigationSuppressed", src);
+        Assert.Contains("_viewModel?.IsTypingLabel == true || NavigationKeysSuppressed", src);
     }
 
     // ── Gates 7/11: text-to-polygon flattening — hole counts, nesting via Clipper2, same font ──────

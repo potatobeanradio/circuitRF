@@ -2,6 +2,78 @@
   "format_version": 1,
   "name": "Default",
   "light": {
+    "Rail.ClassForced": {
+      "r": 120,
+      "g": 40,
+      "b": 190,
+      "a": 255
+    },
+    "Rail.ClassSpreading": {
+      "r": 226,
+      "g": 160,
+      "b": 96,
+      "a": 255
+    },
+    "Rail.ClassTrace": {
+      "r": 108,
+      "g": 168,
+      "b": 226,
+      "a": 255
+    },
+    "Rail.CopperHighlight": {
+      "r": 0,
+      "g": 140,
+      "b": 190,
+      "a": 255
+    },
+    "Rail.LegendBackground": {
+      "r": 255,
+      "g": 255,
+      "b": 255,
+      "a": 255
+    },
+    "Rail.LegendInk": {
+      "r": 48,
+      "g": 48,
+      "b": 54,
+      "a": 255
+    },
+    "Rail.Load": {
+      "r": 40,
+      "g": 90,
+      "b": 200,
+      "a": 255
+    },
+    "Rail.MapCold": {
+      "r": 30,
+      "g": 80,
+      "b": 170,
+      "a": 255
+    },
+    "Rail.MapHot": {
+      "r": 198,
+      "g": 40,
+      "b": 40,
+      "a": 255
+    },
+    "Rail.MapMid": {
+      "r": 232,
+      "g": 172,
+      "b": 44,
+      "a": 255
+    },
+    "Rail.Source": {
+      "r": 20,
+      "g": 130,
+      "b": 90,
+      "a": 255
+    },
+    "Rail.ViaFlag": {
+      "r": 168,
+      "g": 44,
+      "b": 140,
+      "a": 255
+    },
     "Schematic.Background": {
       "r": 250,
       "g": 250,
@@ -112,6 +184,78 @@
     }
   },
   "dark": {
+    "Rail.ClassForced": {
+      "r": 190,
+      "g": 140,
+      "b": 255,
+      "a": 255
+    },
+    "Rail.ClassSpreading": {
+      "r": 190,
+      "g": 128,
+      "b": 66,
+      "a": 255
+    },
+    "Rail.ClassTrace": {
+      "r": 70,
+      "g": 130,
+      "b": 190,
+      "a": 255
+    },
+    "Rail.CopperHighlight": {
+      "r": 60,
+      "g": 200,
+      "b": 245,
+      "a": 255
+    },
+    "Rail.LegendBackground": {
+      "r": 38,
+      "g": 38,
+      "b": 42,
+      "a": 255
+    },
+    "Rail.LegendInk": {
+      "r": 226,
+      "g": 226,
+      "b": 230,
+      "a": 255
+    },
+    "Rail.Load": {
+      "r": 110,
+      "g": 175,
+      "b": 255,
+      "a": 255
+    },
+    "Rail.MapCold": {
+      "r": 80,
+      "g": 140,
+      "b": 245,
+      "a": 255
+    },
+    "Rail.MapHot": {
+      "r": 240,
+      "g": 84,
+      "b": 84,
+      "a": 255
+    },
+    "Rail.MapMid": {
+      "r": 250,
+      "g": 196,
+      "b": 70,
+      "a": 255
+    },
+    "Rail.Source": {
+      "r": 60,
+      "g": 210,
+      "b": 150,
+      "a": 255
+    },
+    "Rail.ViaFlag": {
+      "r": 238,
+      "g": 120,
+      "b": 214,
+      "a": 255
+    },
     "Schematic.Background": {
       "r": 28,
       "g": 28,

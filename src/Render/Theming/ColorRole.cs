@@ -297,6 +297,60 @@ public static class ColorRole
     /// <summary>A Norton-transform bracket and its label, drawn beneath the products it created.</summary>
     public const string MatchBracket = "Match.Bracket";
 
+    // ── railRF (docs/design/railrf.md §2.4, §2.9, §11.7; brief 8) ───────────────────────
+    //
+    // THE WHOLE SET IS OPAQUE, AND THAT IS A DESIGN CONSTRAINT RATHER THAN A DEFAULT (§11.7 point 2).
+    // A railRF map is opaque paint laid OVER the copper, and its legend carries its own scale, so
+    // nothing in the picture depends on the page background being any particular colour. The stackup
+    // renderer is the counter-example that decided it: it uses the background colour as PAINT, to cut
+    // a drill hole, and not painting the bore did not make it transparent — it showed the dielectric
+    // behind it. Give one of these an alpha and a copy onto a dark slide silently becomes a different
+    // picture from the one on screen.
+
+    /// <summary>The cold end of the drop map's ramp — the highest voltage on the rail, which is the
+    /// end nearest the source.</summary>
+    public const string RailMapCold = "Rail.MapCold";
+
+    /// <summary>The ramp's midpoint. A stop of its own rather than a computed blend: a two-stop
+    /// cold-to-hot ramp through sRGB passes through a muddy band exactly where a designer is reading
+    /// "where does the colour change fastest".</summary>
+    public const string RailMapMid = "Rail.MapMid";
+
+    /// <summary>The hot end — the lowest voltage on the rail, the far end of the drop.</summary>
+    public const string RailMapHot = "Rail.MapHot";
+
+    /// <summary>The legend plate the scale sits on. <b>Opaque</b>, per this section's header.</summary>
+    public const string RailLegendBackground = "Rail.LegendBackground";
+
+    /// <summary>Legend text, its frame, and every callout label.</summary>
+    public const string RailLegendInk = "Rail.LegendInk";
+
+    /// <summary>A source marker at its resolved pad.</summary>
+    public const string RailSource = "Rail.Source";
+
+    /// <summary>A load or observation-port marker at its resolved pad.</summary>
+    public const string RailLoad = "Rail.Load";
+
+    /// <summary>A flagged via transition's callout (brief 6). <see cref="SystemWarning"/> would do
+    /// and is deliberately not used: a flag here is drawn ON the map beside the load and source
+    /// markers, and it has to be separable from them by hue rather than by position.</summary>
+    public const string RailViaFlag = "Rail.ViaFlag";
+
+    /// <summary>Copper the fast model priced with the closed form (<c>PdnCopperClass.Trace</c>).</summary>
+    public const string RailClassTrace = "Rail.ClassTrace";
+
+    /// <summary>Copper it meshed instead (<c>PdnCopperClass.Spreading</c>).</summary>
+    public const string RailClassSpreading = "Rail.ClassSpreading";
+
+    /// <summary>The accent on a region the user FORCED. A forced region draws differently from an
+    /// inferred one because §2.9 rule 2 is about what the user can see they overrode.</summary>
+    public const string RailClassForced = "Rail.ClassForced";
+
+    /// <summary>The rail's own copper, outlined on the <c>copper</c> tab — which carries no map, so
+    /// this is the only thing that tab draws. It is what shows a rail that is three islands joined by
+    /// a 20 mil neck.</summary>
+    public const string RailCopperHighlight = "Rail.CopperHighlight";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -327,5 +381,9 @@ public static class ColorRole
         HarmonicaMarkerBand4, HarmonicaMarkerBand5,
         WBondWire, WBondWireStart, WBondWireVertex, WBondSelected, WBondEnvelope,
         MatchAbsorbed, MatchNegative, MatchBracket,
+        RailMapCold, RailMapMid, RailMapHot,
+        RailLegendBackground, RailLegendInk,
+        RailSource, RailLoad, RailViaFlag,
+        RailClassTrace, RailClassSpreading, RailClassForced, RailCopperHighlight,
     ];
 }

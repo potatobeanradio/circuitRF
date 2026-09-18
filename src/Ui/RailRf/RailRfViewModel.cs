@@ -83,6 +83,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         _document = document;
         _documentPath = path;
         BuildPlotHost();     // the one response container — see RailRfViewModel.Response.cs
+        BuildBoardPanel();   // the board canvas's overlay — see RailRfViewModel.Board.cs
         RebuildRails();
     }
 
@@ -195,6 +196,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(SelectedRail));
         OnPropertyChanged(nameof(StatusLine));
+        SyncBoardOverlayResult();
     }
 
     private RailSourceRowViewModel Track(RailSourceRowViewModel row) { row.Edited += OnRowEdited; return row; }

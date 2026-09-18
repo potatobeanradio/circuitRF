@@ -51,6 +51,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasBoard));
         OnPropertyChanged(nameof(HasNoPickableNets));
         ClearResults();
+        RebuildBoardLayout();
         RebuildReferenceOptions();
         RebuildParts();
         RefreshRunGate();
@@ -107,6 +108,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasBothModels));
         OnPropertyChanged(nameof(PortLines));
         OnPropertyChanged(nameof(BreakdownLines));
+        SyncBoardOverlayResult();
     }
 
     /// <summary>

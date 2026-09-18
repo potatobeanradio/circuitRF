@@ -159,7 +159,7 @@ public static class RailDcRun
             if (solve.Refusal is { } solveRefusal)
                 return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");
 
-            results.Add(Assemble(request, spec, pdn, solve.Solution!, chained, edges, solved));
+            results.Add(Assemble(request, spec, pdn, solve.Solution!, chained, edges, solved, extraction));
         }
 
         return new RailDcRunResult(null, results, order.Order, diagnostics);
@@ -300,7 +300,8 @@ public static class RailDcRun
 
     private static RailDcResult Assemble(
         RailDcRequest request, RailSpec rail, PdnNetlist pdn, LinearDcSolution solution,
-        RailChainStart? chained, IReadOnlyList<RailOrder.RailEdge> edges, bool upstreamSolved)
+        RailChainStart? chained, IReadOnlyList<RailOrder.RailEdge> edges, bool upstreamSolved,
+        PdnExtraction extraction)
     {
         var nl = pdn.Netlist;
         var findings = new List<string>();
@@ -397,6 +398,10 @@ public static class RailDcRun
             Data           = DcResultPacker.Pack(solution.AsDcResult(), nl),
             NodeVoltages   = voltages,
             Breakdown      = breakdown,
+            // Carried through from the extraction rather than re-derived: the window draws the
+            // classification the numbers were priced against, and the copper the solve walked.
+            Regions        = extraction.Regions,
+            Classification = extraction.Classification,
             ViaCheck       = viaCheck,
             Ports          = ports,
             Sources        = sources,

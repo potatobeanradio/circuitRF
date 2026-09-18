@@ -1,5 +1,87 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 8 — the board maps: what the scene had to decide (2026-09-18)
+
+`RailMapScene`, `RailMapRenderer` and `RailMapTheme`, plus twelve `Rail.*` colour roles in
+`ColorRole`, `ColorTheme.BuiltIn` and the shipped `Default.ccolor`. Below the firewall so the window
+and a headless report draw with the same code, which is the reason RND-1 put this project here. The
+overlay and the gestures are `src/Ui`'s — see that project's `RESOLVED.md`.
+
+### The legend is WORLD geometry, and that is what makes the trap detectable
+
+§11.6 trap 4: "a drop map is co-extensive with the copper, so this looks harmless — until a legend, a
+source marker or a flagged-via callout sits outside the copper's own bbox and Zoom to Fit cuts it
+off." A plate drawn in screen space could not be framed at all, and §11.7 point 1 frames a clipboard
+page from what is PAINTED. So `RailMapLegend.Box` is a `Bbox` in DBU, placed below the map, and
+`RailMapScene.Bounds` is the union of everything.
+
+**It is sized off the content's LONGER side, not off each axis, and that is not cosmetic.** A supply
+trace is routinely 30 mm long and 0.4 mm wide; a plate 7.5 % of 0.4 mm tall is 30 µm — unreadable, and
+small enough to sit inside the margin Zoom to Fit already leaves on the short axis of a 75:1 shape.
+The first version sized it per axis and the gate's own NEGATIVE could not be made to fail: returning
+the copper bbox from `ContentBounds()` still framed the legend, because letterboxing swamped it. The
+test now also sizes its canvas to the copper's own aspect for the same reason — a fit on a canvas whose
+aspect is unrelated to the content hides the very margin the gate is about.
+
+### The drop map has one interpolation rule and two regimes, and the branch is not two arithmetics
+
+R-rail5-2 puts the field's interpolation in exactly one place — `RailDcResult.VoltageAt` — so the window
+and the headless report cannot differ at the same coordinate. That method is a LINEAR SCAN by design,
+so sampling a 96-across grid through it costs O(samples × nodes).
+
+That is nothing in the regime it actually runs in (the fast model's graph is a few hundred junctions)
+and would be minutes on the accurate model's mesh. The scene therefore branches: **where the
+extraction's own cells are at least as dense as the sampling grid, the cells ARE the tiles**, and their
+values are read straight off `NodeVoltages`. That is not a second rule — `VoltageAt`'s own contract is
+that an exact hit on a cell centre answers that cell's value — it is the same answer without the scan.
+The sparse regime interpolates.
+
+### `SamplesAcross` is fixed, and it has to be
+
+96 across the map's longer side, independent of the viewport. Brief 9's clipboard gate and brief 17's
+documentation figures both require that rendering the same result twice gives the same bytes, and a
+grid that tracked the window size would break both.
+
+### Greyscale font edging, and the reason is §11.7 rather than taste
+
+`RailMapRenderer.Font` sets `Edging = SKFontEdging.Antialias` and `Subpixel = false`. Skia's default
+spreads a glyph's coverage unevenly across the red, green and blue channels on the assumption that the
+pixels it lands on are a particular physical stripe order. This picture does not stay on a screen:
+§11.7 copies it out as PDF, SVG and a bitmap that may be rescaled, and the same renderer draws the
+headless report. **It was found by the opacity gate**, which saw per-channel differences no amount of
+page showing through could explain — the same class of defect as a map that depends on the background,
+and free to avoid here.
+
+### What a two-render comparison can and cannot say about §11.7 point 2
+
+The rule is that "nothing in the picture depends on the page's background being any particular
+colour", and the case that decided it is the stackup renderer's drill bore: it uses the background
+colour as PAINT to cut a hole, and not painting the bore did not make it transparent, it showed the
+dielectric behind it.
+
+**A pixel comparison cannot catch that on its own, and it is worth knowing why.** Rendering over two
+backgrounds, every antialiased edge differs — it is by construction a blend of paint and page — and so
+does a translucent fill, and so does a cut hole. The gate that survives is two-part:
+
+* every differing pixel must be explained by a COMMON amount of page showing through on all three
+  channels (`f + (1−α)(bg − f)`), within one LSB of Skia's own byte rounding; and
+* **every colour the theme can paint is asserted opaque at the source**, ramp included and sampled
+  across its whole range — because an interpolation through a translucent stop is opaque at both ends
+  and not in the middle.
+
+The first catches paint that reads the background; the second catches paint that lets it through. A
+cut hole remains indistinguishable from unpainted page from pixels alone, which is why
+`RailMapRenderer`'s header states the rule as a prohibition on the technique (no background reads, no
+`SKBlendMode.Clear`/`DstOut`/`SrcOut`, no alpha-to-reveal) rather than relying on the test to find it.
+
+### The `Rail.*` roles
+
+Twelve, added to `ColorRole.All`, `ColorTheme.BuiltIn` (light and dark) and the shipped
+`Default.ccolor` in the same change — a role absent from `BuiltIn` resolves to flat grey and one absent
+from the file is invisible in the Settings editor. The ramp is **blue → amber → red with the midpoint
+as a stop of its own**: a two-stop cold-to-hot interpolation through sRGB passes through a muddy band
+exactly where §2.4's "where the colour changes fastest" is being read.
+
 ## Same report, round 2 (2026-09-17) — the fix for the pan made the scroll-wheel zoom worse
 
 The first round took Zoom to Fit from 72 ms a frame to 23. The reply was that panning was "a little

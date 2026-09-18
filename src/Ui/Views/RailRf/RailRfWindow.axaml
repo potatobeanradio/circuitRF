@@ -525,6 +525,33 @@
                 <Grid RowDefinitions="Auto,*,Auto,Auto">
                     <Grid ColumnDefinitions="Auto,*">
                         <TextBlock Classes="panelhdr" Text="Board" VerticalAlignment="Center"/>
+                        <!-- THE SAME FOUR BUTTONS THE LAYOUT EDITOR CARRIES, in the same order and
+                             with the same tooltips (§11.6). The keyboard is not the only route to any
+                             of these, and the buttons are where a user who has never read a tooltip
+                             finds them. Each one calls the CANVAS’s own method and hands the keyboard
+                             back to it — see LayoutEditorView.OnZoomToFit for why the focus return is
+                             part of the gesture rather than a nicety. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
+                                    HorizontalAlignment="Left" Margin="8,0,0,6"
+                                    IsVisible="{Binding HasBoard}">
+                            <Button Name="BoardZoomToFitBtn" Click="OnBoardZoomToFit"
+                                    ToolTip.Tip="Zoom to Fit  (F)" Padding="6,3">
+                                <mi:MaterialIcon Kind="FitToPage" Width="14" Height="14"/>
+                            </Button>
+                            <Button Name="BoardZoomBoxBtn" Click="OnBoardZoomBoxTool"
+                                    ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl+ +/- steps)"
+                                    Padding="6,3">
+                                <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="14" Height="14"/>
+                            </Button>
+                            <Button Name="BoardZoomOutBtn" Click="OnBoardZoomOut"
+                                    ToolTip.Tip="Zoom Out" Padding="6,3">
+                                <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="14" Height="14"/>
+                            </Button>
+                            <Button Name="BoardZoom1To1Btn" Click="OnBoardZoom1To1"
+                                    ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3">
+                                <mi:MaterialIcon Kind="Magnify" Width="14" Height="14"/>
+                            </Button>
+                        </StackPanel>
                         <!-- The tab strip switches the OVERLAY and NEVER the geometry (§11.3). The
                              artwork underneath is the same on all four; brief 8 draws each map. -->
                         <StackPanel Grid.Column="1" Name="OverlayTabs" Orientation="Horizontal"
@@ -551,7 +578,19 @@
                          seam wBond already uses. -->
                     <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
                         <Panel>
-                            <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"/>
+                            <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"
+                                              ViewModel="{Binding BoardLayout}"/>
+                            <!-- §2.4: "a cursor reads out the absolute voltage anywhere on the net".
+                                 Over the picture rather than beside it, because the number answers a
+                                 question about the place the pointer is on. -->
+                            <Border IsVisible="{Binding BoardReadout, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                    Margin="6" Padding="6,2" CornerRadius="4"
+                                    Background="{DynamicResource SystemChromeLowColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                                    BorderThickness="1">
+                                <TextBlock Classes="note" Text="{Binding BoardReadout}"/>
+                            </Border>
                             <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
                                        IsVisible="{Binding !HasBoard}"
                                        Text="No board yet. Import one — the artwork lands in the open workspace as an ordinary cell with a layout view."/>

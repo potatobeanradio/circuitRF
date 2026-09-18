@@ -127,6 +127,32 @@ public sealed class RailDcResult
     public required IReadOnlyList<PdnBreakdownRow> Breakdown { get; init; }
 
     /// <summary>
+    /// The galvanic region walk this rail's copper produced — the islands, per drawing layer.
+    /// </summary>
+    /// <remarks>
+    /// <b>Carried on the RESULT because the picture is drawn from it</b> (brief 8). The extraction
+    /// already produces it as a first-class output rather than a diagnostic (R-rail3-4), and a window
+    /// that re-walked the copper in order to draw the rail would be a second reading of the geometry
+    /// that could disagree with the one the numbers came from. Null on a result whose extractor
+    /// produced none.
+    /// </remarks>
+    public PdnRailRegionSet? Regions { get; init; }
+
+    /// <summary>
+    /// Which copper the fast model treated as a trace and which it meshed, with the reason for each
+    /// (R-rail4-3). Empty from the accurate reading, which meshes everything and so classifies
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>§2.9 rule 2 is not satisfiable unless this reaches the window.</b> "A silent
+    /// misclassification is the one failure mode of this design" — a wide supply polygon mistaken for
+    /// a trace is optimistic and the number looks entirely ordinary. Brief 8's class tab draws THIS
+    /// list rather than re-deriving a classification that could differ from the one the extraction
+    /// actually priced.
+    /// </remarks>
+    public IReadOnlyList<PdnClassification> Classification { get; init; } = [];
+
+    /// <summary>
     /// §2.4's via check: every layer transition, the current in EACH of its vias, and the ones whose
     /// WORST via is over its limit (brief 6).
     ///

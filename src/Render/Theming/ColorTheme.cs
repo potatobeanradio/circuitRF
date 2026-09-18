@@ -162,6 +162,24 @@ public sealed class ColorTheme
             [ColorRole.MatchAbsorbed]  = new( 60,  60,  66, 105),
             [ColorRole.MatchNegative]  = new(198,  40,  40),
             [ColorRole.MatchBracket]   = new( 21, 101, 192),
+
+            // ── railRF, LIGHT (railrf.md §2.4, §2.9; brief 8) ─────────────────────────────────
+            // EVERY ONE OF THESE IS FULLY OPAQUE, on purpose — see ColorRole's railRF header for the
+            // stackup drill-hole case that decided it. The ramp is blue → amber → red because those
+            // three are the pair of endpoints a reader already reads as cold and hot with a midpoint
+            // that is neither, which is what makes "where the colour changes fastest" legible.
+            [ColorRole.RailMapCold]           = new( 30,  80, 170),
+            [ColorRole.RailMapMid]            = new(232, 172,  44),
+            [ColorRole.RailMapHot]            = new(198,  40,  40),
+            [ColorRole.RailLegendBackground]  = new(255, 255, 255),
+            [ColorRole.RailLegendInk]         = new( 48,  48,  54),
+            [ColorRole.RailSource]            = new( 20, 130,  90),
+            [ColorRole.RailLoad]              = new( 40,  90, 200),
+            [ColorRole.RailViaFlag]           = new(168,  44, 140),
+            [ColorRole.RailClassTrace]        = new(108, 168, 226),
+            [ColorRole.RailClassSpreading]    = new(226, 160,  96),
+            [ColorRole.RailClassForced]       = new(120,  40, 190),
+            [ColorRole.RailCopperHighlight]   = new(  0, 140, 190),
         },
         new Dictionary<string, Rgba>
         {
@@ -256,5 +274,23 @@ public sealed class ColorTheme
             [ColorRole.MatchAbsorbed]  = new(214, 214, 222, 100),
             [ColorRole.MatchNegative]  = new(255, 118, 110),
             [ColorRole.MatchBracket]   = new(120, 178, 255),
+
+            // ── railRF, DARK (railrf.md §2.4, §2.9; brief 8) ─────────────────────────────────
+            // EVERY ONE OF THESE IS FULLY OPAQUE, on purpose — see ColorRole's railRF header for the
+            // stackup drill-hole case that decided it. The ramp is blue → amber → red because those
+            // three are the pair of endpoints a reader already reads as cold and hot with a midpoint
+            // that is neither, which is what makes "where the colour changes fastest" legible.
+            [ColorRole.RailMapCold]           = new( 80, 140, 245),
+            [ColorRole.RailMapMid]            = new(250, 196,  70),
+            [ColorRole.RailMapHot]            = new(240,  84,  84),
+            [ColorRole.RailLegendBackground]  = new( 38,  38,  42),
+            [ColorRole.RailLegendInk]         = new(226, 226, 230),
+            [ColorRole.RailSource]            = new( 60, 210, 150),
+            [ColorRole.RailLoad]              = new(110, 175, 255),
+            [ColorRole.RailViaFlag]           = new(238, 120, 214),
+            [ColorRole.RailClassTrace]        = new( 70, 130, 190),
+            [ColorRole.RailClassSpreading]    = new(190, 128,  66),
+            [ColorRole.RailClassForced]       = new(190, 140, 255),
+            [ColorRole.RailCopperHighlight]   = new( 60, 200, 245),
         });
 }

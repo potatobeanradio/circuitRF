@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CircuitRF.Render;
 using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.Views.Match;
 
@@ -45,6 +46,7 @@ public partial class RailRfWindow : Window
         FrequencyTab.Click  += (_, _) => SetResultsTab(RailResultsTab.Frequency);
 
         WireImportButton();
+        WireBoardCanvas();
 
         DataContextChanged += (_, _) =>
         {
@@ -57,8 +59,110 @@ public partial class RailRfWindow : Window
             vm.RunOffThread = (work, token) => System.Threading.Tasks.Task.Run(work, token);
 
             SyncTabs();
+            BindBoardOverlay(vm);
             vm.PropertyChanged += OnVmPropertyChanged;
         };
+    }
+
+    // ── The board view (brief 8) ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Everything the board panel needs that is not the view model’s: the overlay seam, the wider
+    /// keyboard gate, and the four buttons.
+    /// </summary>
+    /// <remarks>
+    /// <b>No navigation code, and that is the whole design</b> (§11.6). Every gesture is
+    /// <c>LayoutCanvas</c>’s own — the wheel, the pan latch, <c>F</c>, <c>Z</c>, Ctrl/⌘ +/-, the arrow
+    /// keys and Escape — so someone who has learned the layout editor has learned this window. What is
+    /// added here is R-rail8-4’s WIDER gate, which is a predicate and not a gesture: railRF’s left
+    /// column is editable rows, so no navigation key may fire while focus is in a text field.
+    /// </remarks>
+    private void WireBoardCanvas()
+    {
+        BoardCanvas.NavigationKeysSuppressed = RailKeyboardGate.For(this);
+
+        // The magnifier’s lit state comes from the CANVAS, which owns the mode — including the disarm
+        // it performs itself when the drag ends or Escape is pressed, neither of which this window can
+        // see. LayoutEditorView’s own pattern, for its own reason.
+        BoardCanvas.ZoomBoxArmedChanged += (_, _) =>
+            BoardZoomBoxBtn.Classes.Set("ToolActive", BoardCanvas.ZoomBoxArmed);
+
+        // A theme change is TWO different events and a view that paints its own colours needs both
+        // (src/Ui/CLAUDE.md): this one is light-vs-dark, and ThemeService.ThemeChanged is a different
+        // THEME being selected. Without the second, picking a new theme repaints the artwork and
+        // leaves the map in the old colours — owner-reported twice, in different views.
+        // Unsubscribe first on attach: ThemeService.ThemeChanged is a static, process-wide event and
+        // a re-attach must not stack a second handler on it.
+        ActualThemeVariantChanged += (_, _) => ApplyMapTheme();
+        AttachedToVisualTree += (_, _) =>
+        {
+            ThemeService.ThemeChanged -= OnThemeChanged;
+            ThemeService.ThemeChanged += OnThemeChanged;
+            ApplyMapTheme();
+        };
+        DetachedFromVisualTree += (_, _) => ThemeService.ThemeChanged -= OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e) => ApplyMapTheme();
+
+    private void ApplyMapTheme()
+    {
+        if (Vm is not { } vm) return;
+        vm.BoardOverlayLayer.Theme = RailMapTheme.FromTheme(
+            ThemeService.Active,
+            ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light);
+    }
+
+    private RailLayoutOverlay? _boundOverlay;
+
+    private void BindBoardOverlay(RailRfViewModel vm)
+    {
+        if (ReferenceEquals(_boundOverlay, vm.BoardOverlayLayer)) return;
+
+        if (_boundOverlay is not null) _boundOverlay.OverlayChanged -= OnOverlayChanged;
+        _boundOverlay = vm.BoardOverlayLayer;
+        _boundOverlay.OverlayChanged += OnOverlayChanged;
+
+        BoardCanvas.CanvasOverlay = _boundOverlay;
+        ApplyMapTheme();
+    }
+
+    /// <summary>
+    /// A map repaint, and <b>nothing else</b>.
+    /// </summary>
+    /// <remarks>
+    /// R-rail8-2: <c>InvalidateOverlay</c> repaints without disturbing <c>LayoutPathCache</c>, which
+    /// on a real board is the difference between a repaint and a rebuild of half a million shapes.
+    /// Anything that reached for <c>LayoutView</c> to make the map change would pay that cost on every
+    /// frame of every solve.
+    /// </remarks>
+    private void OnOverlayChanged() => BoardCanvas.InvalidateOverlay();
+
+    private void OnBoardZoomToFit(object? sender, RoutedEventArgs e)
+    {
+        BoardCanvas.ZoomToFit();
+        BoardCanvas.Focus();
+    }
+
+    /// <summary>The magnifier ARMS and does not zoom — the box the next left-drag draws is what gets
+    /// framed. Focus goes back to the canvas because the gesture, its Escape and its rubber band all
+    /// live there.</summary>
+    private void OnBoardZoomBoxTool(object? sender, RoutedEventArgs e)
+    {
+        if (BoardCanvas.ZoomBoxArmed) BoardCanvas.DisarmZoomBox(); else BoardCanvas.ArmZoomBox();
+        BoardCanvas.Focus();
+    }
+
+    private void OnBoardZoomOut(object? sender, RoutedEventArgs e)
+    {
+        BoardCanvas.ZoomOut();
+        BoardCanvas.Focus();
+    }
+
+    private void OnBoardZoom1To1(object? sender, RoutedEventArgs e)
+    {
+        BoardCanvas.Zoom1To1();
+        BoardCanvas.Focus();
     }
 
     /// <summary>The view model, or null before one is bound.</summary>

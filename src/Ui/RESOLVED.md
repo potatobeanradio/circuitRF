@@ -1,5 +1,95 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 8 — the board view, and the five findings that came out of building it (2026-09-18)
+
+`RailLayoutOverlay` + `RailKeyboardGate` (`src/Ui/RailRf/`), `RailRfViewModel.Board.cs`, the four
+zoom buttons on the board panel, and one addition to `LayoutCanvas`. The drawing is in
+`src/Render` — see that project's `RESOLVED.md` for the scene, the renderer and the legend.
+
+### The overlay declines EVERY gesture, and that is the feature
+
+§11.6's instruction is that railRF's board pans and zooms exactly as the layout editor does — "not
+'similarly'" — so the board view IS `LayoutCanvas` and `RailLayoutOverlay.OnPointerPressed`,
+`OnPointerMoved`, `OnPointerReleased` and `OnKeyDown` all return `false` unconditionally. A gesture an
+overlay consumes never reaches the layout editor's own state machine, so a single `true` returned from
+any of them would stop the marquee, the hit test or a navigation key dead for as long as the map is
+showing. A pointer move still reads a value out; it just does not claim the move.
+
+**Forcing a classification region is on the CONTEXT MENU for exactly that reason.** The obvious
+spelling — click the region on the class tab — would mean consuming a press, which is the one thing
+this overlay may not do. `BuildContextMenuItems` costs the user one extra gesture and costs the canvas
+nothing.
+
+### The widened keyboard gate is on the CANVAS, not in the overlay
+
+`LayoutCanvas.NavigationKeysSuppressed` is a `Func<bool>?` a host supplies; `NavigationSuppressed` is
+`IsTypingLabel || that`. Every navigation branch now reads `!NavigationSuppressed` — `F`, `Z`,
+Ctrl/⌘ +/-, Space's pan latch and the arrow-key pan.
+
+Doing it in the overlay instead would have meant re-implementing the gestures in order to suppress
+them, and two copies of navigation is the near-miss §11.6 exists to prevent. **It is asked afresh on
+every key rather than cached**, because focus moves between keystrokes and a cached answer is a latch —
+the same class of bug as the Space-to-pan latch two sections down.
+
+`RailKeyboardGate` states the rule as **"the focused element is, or sits inside, a `TextBox`"** rather
+than as a list of control types. `InlineEditText` — which the whole left column is made of — swaps a
+real `TextBox` in when it opens, and that box is what takes focus, so one rule covers it, the import
+dialog's plain boxes, and anything added later. A list is the shape that fails silently here: it stops
+covering a field and the symptom is a board that jumps to fit mid-word.
+
+**Three existing source-scan tests asserted the old inline `IsTypingLabel` spelling** and were updated
+to assert the named predicate plus a new test that `NavigationSuppressed` still mentions
+`IsTypingLabel` — the label rule now lives in one place, so it can only be lost from one place
+(`CanvasArrowPanAndZoomBoxTests.TheLayoutCanvasNavigationGate_StillIncludesIsTypingLabel`).
+
+### `LayoutCanvas` IS drivable headlessly, and the standing note that it is not was costing coverage
+
+Several tests in this project record that "no `UserControl` can be constructed headlessly in this
+project, so a real `KeyEventArgs` cannot be raised" and fall back to source scans. `LayoutCanvas` is a
+`Control`, not a `UserControl`: it constructs, `Measure`/`Arrange` gives it real `Bounds`, and
+`RaiseEvent` with a real `KeyEventArgs`, `PointerWheelEventArgs`, `PointerPressedEventArgs` or
+`PointerEventArgs` runs its handlers for real. All four of those args types have public constructors.
+
+**One platform service is genuinely missing and it blocks exactly two gestures.**
+`LayoutCanvas.SetCursor` constructs an Avalonia `Cursor`, which resolves `ICursorFactory` through the
+locator — absent with no application host — and both Space-to-pan and the middle-drag pan set the hand
+cursor on their first line. `ICursorFactory` is marked not-implementable by client code, so a plain
+fake does not compile; a `DispatchProxy` does, and `AvaloniaLocator.CurrentMutable` is internal so the
+binding is three reflection calls. That shim is `RailBoardViewTests.CursorFactoryShim` and it is the
+only thing about Avalonia that is faked in that file.
+
+That is what made the brief's headline gate possible as written: **every gesture in §11.6's table
+driven on both views, with the two `CurrentViewport`s compared for exact equality.** A list of
+features can be satisfied by an approximation of each one; that assertion cannot.
+
+### The viewport persistence needed no new mechanism, only the right owner
+
+R-rail8-8 asks that a railRF document reopen where it was left "through the mechanism already tested".
+That mechanism is `LayoutEditorViewModel.LastViewport`: `LayoutCanvas` records every viewport change on
+its bound view model and restores it when one is re-bound, which is the layout editor's own fix for the
+2026-09-04 report that opening the Technology editor changed the zoom. So the board's
+`LayoutEditorViewModel` lives on `RailRfViewModel` — which is deduplicated per `.crail` and outlives
+the window's controls — and nothing else was written.
+
+**A fresh `LayoutEditorViewModel` per BOARD, though.** Re-using one across two imports would carry the
+first board's remembered viewport onto the second, framing new artwork at the old one's pan and zoom:
+a wrong picture that looks like a right one.
+
+### Two things the result had to start carrying
+
+`RailDcResult` gained `Regions` and `Classification`, both carried through from `PdnExtraction` by
+`RailDcRun`. Neither is new work — the extraction already produces them — but both were being dropped
+at the solve, and §2.9 rule 2 is not satisfiable unless the classification reaches the window: "a
+silent misclassification is the one failure mode of this design". The window draws the list the
+extraction actually priced against, rather than re-deriving a classification that could differ from it.
+
+**Forcing a trace to `spreading` is a REFUSAL, not a different number**, and that surfaced while
+writing the gate. R-rail4-5: the closed form has no bounded error across copper the current fans out
+in and the error it would make is optimistic, so the fast model produces nothing rather than something
+smaller — and the refusal's own sentence tells the user to force it the other way. The test therefore
+asserts the class flip on `PdnCopperClassifier` (where it is produced, with `Inferred` still carrying
+what was measured) and the draw-state flip on the scene.
+
 ## railRF brief 7 — the window, and four things that turned out to need saying (2026-09-18)
 
 `brief-railrf-7-window.md`: one resizable non-modal window per railRF document, the import that gets

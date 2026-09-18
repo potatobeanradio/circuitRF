@@ -185,6 +185,36 @@ public sealed class LayoutCanvas : Control
     }
 
     /// <summary>
+    /// An EXTRA condition under which this canvas's NAVIGATION keys do not fire — <c>F</c>,
+    /// <c>Z</c>, <c>Escape</c>'s disarm, Ctrl/⌘ <c>+</c>/<c>-</c>, Space's pan latch and the arrow-key
+    /// pan. Null (the default) leaves every existing behaviour of this control unchanged.
+    ///
+    /// <h3>Why a host may need to widen it (railrf.md §11.6 trap 1)</h3>
+    /// <para>This canvas already suppresses those keys while a LABEL is being typed, because
+    /// <c>f</c> is an ordinary character in label text and <c>z</c> is one in a part number. That
+    /// gate is sized for the layout editor, where the canvas is most of the window. <b>railRF's
+    /// window has far more text fields than the layout editor does</b> — its whole left column is
+    /// editable rows — so the gate there has to be WIDER, not narrower: no navigation key fires
+    /// while focus is in any text-entry control.</para>
+    ///
+    /// <para><b>A gate rather than a gesture.</b> A host that wanted this by handling keys in an
+    /// overlay would be re-implementing navigation in order to suppress it, and the two copies would
+    /// drift — which is the failure §11.6 exists to prevent ("a near-miss is worse than an absence
+    /// because it is discovered by being wrong"). What a host supplies here is a predicate; every
+    /// gesture stays this control's.</para>
+    ///
+    /// <para>Asked afresh on every key rather than cached, because focus moves between keystrokes
+    /// and a cached answer is a latch — see <see cref="OnCanvasLostFocus"/> for what latches cost
+    /// here.</para>
+    /// </summary>
+    public Func<bool>? NavigationKeysSuppressed { get; set; }
+
+    /// <summary>True when something else owns the keyboard: a label is being typed on this canvas,
+    /// or the host says focus is in one of its own text fields.</summary>
+    private bool NavigationSuppressed =>
+        _viewModel?.IsTypingLabel == true || NavigationKeysSuppressed?.Invoke() == true;
+
+    /// <summary>
     /// Repaints because the OVERLAY changed. Deliberately does not touch <see cref="_pathCache"/>:
     /// the layout's geometry has not moved, and invalidating its cached paths is precisely the
     /// "cheap overlay becomes a 500k-shape redraw" failure WB17 exists to prevent.
@@ -1836,7 +1866,7 @@ public sealed class LayoutCanvas : Control
         // subsequent left-drag panning instead of doing nothing (labels have no drag gesture), even
         // though Space itself still reaches the label buffer via TextInput regardless (a separate,
         // unhandled routed event) — this guard only stops the SIDE EFFECT, not the character.
-        if (e.Key == Key.Space && _viewModel?.IsTypingLabel != true) { _spaceHeld = true; UpdateCursor(); return; }
+        if (e.Key == Key.Space && !NavigationSuppressed) { _spaceHeld = true; UpdateCursor(); return; }
 
         // Escape disarms the magnifier and hands the left button back to the Select tool. Ahead of
         // everything else, including the paste-ghost branch below, only for the armed case — when the
@@ -1896,7 +1926,7 @@ public sealed class LayoutCanvas : Control
         // Suppressed while a label is being typed, and that guard is load-bearing: 'f' is an ordinary
         // character in label text, and without this the editor would jump to fit the moment the user
         // typed one. SymbolEditorCanvas gates its own F on the same condition for the same reason.
-        if (!ctrl && e.Key == Key.F && _viewModel?.IsTypingLabel != true)
+        if (!ctrl && e.Key == Key.F && !NavigationSuppressed)
         {
             ZoomToFit();
             e.Handled = true;
@@ -1908,7 +1938,7 @@ public sealed class LayoutCanvas : Control
         // IsTypingLabel exactly as F above is, and for the same reason: 'z' is an ordinary character
         // in label text and without the guard typing one would arm a tool mid-word. !ctrl keeps
         // Ctrl/⌘+Z free for Undo.
-        if (!ctrl && e.Key == Key.Z && _viewModel?.IsTypingLabel != true)
+        if (!ctrl && e.Key == Key.Z && !NavigationSuppressed)
         {
             if (_zoomBoxArmed) DisarmZoomBox(); else ArmZoomBox();
             e.Handled = true;
@@ -1919,8 +1949,8 @@ public sealed class LayoutCanvas : Control
         // the magnifier, which arms rather than zooms — so the keyboard is where a plain "one step
         // closer" lives now, and it had to be somewhere. OemPlus/OemMinus are the main row;
         // Add/Subtract are the numeric keypad, which reports different keys for the same characters.
-        if (ctrl && e.Key is Key.OemPlus or Key.Add)      { ZoomIn();  e.Handled = true; return; }
-        if (ctrl && e.Key is Key.OemMinus or Key.Subtract) { ZoomOut(); e.Handled = true; return; }
+        if (ctrl && !NavigationSuppressed && e.Key is Key.OemPlus or Key.Add)      { ZoomIn();  e.Handled = true; return; }
+        if (ctrl && !NavigationSuppressed && e.Key is Key.OemMinus or Key.Subtract) { ZoomOut(); e.Handled = true; return; }
 
         if (ctrl && e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
@@ -1943,7 +1973,7 @@ public sealed class LayoutCanvas : Control
     {
         // An overlay with its own selection has already consumed the key above (its OnKeyDown returns
         // true exactly then), so reaching here means nothing anywhere is selected.
-        if (_viewModel is null || _viewModel.HasSelection || _viewModel.IsTypingLabel) return false;
+        if (_viewModel is null || _viewModel.HasSelection || NavigationSuppressed) return false;
         if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return false;
 
         // Y-up world: a downward step LOWERS the world Y at the bottom edge, so the Y component is

@@ -402,8 +402,16 @@ public class CanvasArrowPanAndZoomBoxTests
     /// ordinary character, and a bare-letter tool key with no typing guard arms the magnifier
     /// mid-word — the exact failure the layout editor's F already had to answer.
     /// </summary>
+    /// <remarks>
+    /// <b>The layout canvas’s guard is now one named predicate rather than the condition spelled
+    /// inline</b> (railrf.md §11.6 trap 1, brief 8 R-rail8-4): railRF hosts that same control in a
+    /// window whose left column is editable rows, so the gate had to widen to "nothing else owns the
+    /// keyboard" — <c>NavigationSuppressed</c>, which is <c>IsTypingLabel</c> OR the host’s own
+    /// predicate. <see cref="TheLayoutCanvasNavigationGate_StillIncludesIsTypingLabel"/> is what holds
+    /// the label half of it, so this pair of assertions still covers what it always did.
+    /// </remarks>
     [Theory]
-    [InlineData("src/Ui/Controls/LayoutCanvas.cs",                        "IsTypingLabel")]
+    [InlineData("src/Ui/Controls/LayoutCanvas.cs",                        "NavigationSuppressed")]
     [InlineData("src/Ui/Views/WBond/WBondEditorView.axaml.cs",            "IsTypingInAField")]
     [InlineData("src/Ui/Views/DataDisplay/DataDisplayView.axaml.cs",      "IsTypingInAField")]
     public void ZIsSuppressedWhileTyping(string path, string guard)
@@ -416,6 +424,29 @@ public class CanvasArrowPanAndZoomBoxTests
         // The guard is either on the branch itself or on the block that encloses it.
         var around = code[Math.Max(0, at - 1200)..Math.Min(code.Length, at + 200)];
         Assert.Contains(guard, around, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>And the widened gate still contains the one it replaced.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>LayoutCanvas.NavigationSuppressed</c> is the single place the layout canvas now decides
+    /// whether a navigation key may fire, so it is the single place the typing rule can be lost from.
+    /// A gate that stopped mentioning <c>IsTypingLabel</c> would let an ‘f’ typed into a label jump the
+    /// view, which is the defect the original guard was added for.
+    /// </remarks>
+    [Fact]
+    public void TheLayoutCanvasNavigationGate_StillIncludesIsTypingLabel()
+    {
+        var code = CodeOf("src", "Ui", "Controls", "LayoutCanvas.cs");
+
+        int at = code.IndexOf("bool NavigationSuppressed", StringComparison.Ordinal);
+        Assert.True(at >= 0,
+            "LayoutCanvas no longer defines NavigationSuppressed, so the branches that reference it "
+          + "are guarded by something this test cannot see.");
+
+        var body = code[at..Math.Min(code.Length, at + 300)];
+        Assert.Contains("IsTypingLabel", body, StringComparison.Ordinal);
     }
 
     /// <summary>Every Zoom Box button advertises the key, in the schematic editor's own spelling.</summary>
