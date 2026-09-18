@@ -365,12 +365,12 @@ public static class EmPortExtraction
             }
 
             var (poly, level, containing) = NearestPolygon(problem, x, y);
-            if (poly is not null && containing > 1 && viaLevel is null)
+            if (poly is not null && containing.Count > 1 && viaLevel is null)
             {
                 string portProblem =
                     $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
-                    $"sits on metal on {containing} of this EM setup's {problem.Layers.Count} conductor " +
-                    $"levels (" + string.Join(", ", problem.Layers.Select(l => $"'{l.Name}'")) + "). A " +
+                    $"sits on metal on {containing.Count} of this EM setup's {problem.Layers.Count} conductor " +
+                    $"levels (" + string.Join(", ", containing.Select(i => $"'{problem.Layers[i].Name}'")) + "). A " +
                     "port's LEVEL is part of its identity: driving the wrong one drives a different " +
                     "conductor with the same footprint, which produces a complete and plausible " +
                     "answer for a structure that was not drawn. Move the label to a point where only " +
@@ -543,13 +543,13 @@ public static class EmPortExtraction
                     continue;
                 }
 
-                if (negContaining > 1)
+                if (negContaining.Count > 1)
                 {
                     string portProblem =
                         $"Port {number} ('{Describe(label)}')'s RETURN terminal, at " +
                         $"{Coord(wantedReturn.X, wantedReturn.Y, dbuPerMicron, displayUnit)}, sits on metal on " +
-                        $"{negContaining} of this EM setup's {problem.Layers.Count} conductor levels (" +
-                        string.Join(", ", problem.Layers.Select(l => $"'{l.Name}'")) + "). A port's level " +
+                        $"{negContaining.Count} of this EM setup's {problem.Layers.Count} conductor levels (" +
+                        string.Join(", ", negContaining.Select(i => $"'{problem.Layers[i].Name}'")) + "). A port's level " +
                         "is part of its identity and two terminals is two chances to land on the wrong " +
                         "one silently. Move the return point to somewhere only the level you mean " +
                         "carries metal, or narrow this setup's analysis levels.";
@@ -728,29 +728,47 @@ public static class EmPortExtraction
     /// rather than from the label's own drawing layer, because a port label is annotation and is
     /// routinely drawn on a marker layer that names no conductor at all. Landing on more than one
     /// level is genuinely ambiguous and is reported here rather than picked.</para>
+    ///
+    /// <para><b>LEVELS are counted, not polygons</b> (owner report, 2026-09-17: a layout holding
+    /// metal drawn over the same metal was refused, and the question asked was why a setup should
+    /// object to artwork that would be perfectly acceptable if manufactured). Counting polygons made two overlapping
+    /// shapes on ONE level read as "on 2 of this EM setup's 1 conductor levels", a sentence that
+    /// cannot be true and that refused a layout with nothing wrong with it. Nothing about the
+    /// ambiguity this guards against is present there: the level is the same either way, and the
+    /// mesher rasterises a level's polygons into cell OCCUPANCY, so coincident copies of a conductor
+    /// produce exactly the mesh one copy produces (measured: 297 cells, 552 bases, identical). Metal
+    /// over metal on one level is a drawing habit, not a structure — the ambiguity is between
+    /// LEVELS, which is what the message was always about.</para>
     /// </summary>
-    private static (PlanarPolygon? Poly, int Level, int Containing) NearestPolygon(
+    /// <returns><c>Levels</c> is every conductor level whose metal CONTAINS the point, lowest first;
+    /// empty when the point is off the metal and <c>Poly</c> is the nearest conductor instead.</returns>
+    private static (PlanarPolygon? Poly, int Level, IReadOnlyList<int> Levels) NearestPolygon(
         PlanarProblem problem, double x, double y)
     {
         PlanarPolygon? best = null, contained = null;
-        int bestLevel = 0, containedLevel = 0, containing = 0;
+        int bestLevel = 0, containedLevel = 0;
+        List<int>? containingLevels = null;
         double bestD = double.PositiveInfinity;
 
         for (int li = 0; li < problem.Layers.Count; li++)
+        {
+            bool thisLevelContains = false;
             foreach (var p in problem.Layers[li].Polygons)
             {
                 if (p.Contains(x, y))
                 {
-                    containing++;
+                    thisLevelContains = true;
                     if (contained is null) { contained = p; containedLevel = li; }
                     continue;
                 }
                 double d = BoundaryDistance(p, x, y);
                 if (d < bestD) { bestD = d; best = p; bestLevel = li; }
             }
+            if (thisLevelContains) (containingLevels ??= []).Add(li);
+        }
 
-        if (contained is not null) return (contained, containedLevel, containing);
-        if (best is null) return (null, 0, 0);
+        if (contained is not null) return (contained, containedLevel, containingLevels!);
+        if (best is null) return (null, 0, []);
 
         // A label a long way off the metal is not "nearly on" it. The mesher would place the port on
         // whatever cell the transverse coordinate happens to fall in, which is a silent wrong answer.
@@ -776,7 +794,7 @@ public static class EmPortExtraction
         // trace width of the metal" is a sentence about the conductor; "within half the smaller side
         // of everything this polygon spans" was a sentence about the drawing.
         double reach = CharacteristicHalfWidth(best);
-        return bestD <= Math.Max(reach, 0) ? (best, bestLevel, 0) : (null, 0, 0);
+        return bestD <= Math.Max(reach, 0) ? (best, bestLevel, []) : (null, 0, []);
     }
 
     /// <summary>Distance from a point OUTSIDE <paramref name="poly"/> to its nearest boundary

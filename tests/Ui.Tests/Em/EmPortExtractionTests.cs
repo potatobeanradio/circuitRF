@@ -226,6 +226,50 @@ public class EmPortExtractionTests
         Assert.Contains("Port tool", r.Refusal!, StringComparison.Ordinal);
     }
 
+    // ── A port's ambiguity is between LEVELS, and levels are what gets counted ────────────────
+    //
+    // Owner report, 2026-09-17: a `.clay` with the same taper drawn twice, one exactly over the
+    // other, was refused with "sits on metal on 2 of this EM setup's 1 conductor levels" — a
+    // sentence that cannot be true. The count was of POLYGONS. Metal over metal on one level is
+    // manufacturable artwork and meshes as one conductor (the mesher rasterises a level's polygons
+    // into cell occupancy: measured identical, 297 cells and 552 bases, with one copy and with two).
+
+    [Fact]
+    public void MetalDrawnTwiceOnOneLevel_ResolvesRatherThanBeingCalledTwoLevels()
+    {
+        var r = Extract(Line(), Line(), Port("P1", 0, 1.45), Port("P2", 20, 1.45));
+
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Equal([1, 2], r.Ports.Select(p => p.Number).Order());
+    }
+
+    [Fact]
+    public void MetalOnTwoLevelsUnderOnePort_IsStillRefused_AndNamesThoseLevels()
+    {
+        var metal1 = new LayerKey(1, 0);
+        var metal2 = new LayerKey(2, 0);
+        long len = 200 * Dbu, wide = 30 * Dbu;   // 200 x 30 µm, the scale this stackup is drawn at
+
+        LayoutShape[] shapes =
+        [
+            new RectShape { Layer = metal1, X1 = 0, Y1 = 0, X2 = len, Y2 = wide },
+            new RectShape { Layer = metal2, X1 = 0, Y1 = 0, X2 = len, Y2 = wide },
+            new LabelShape { Layer = metal1, X = 0, Y = wide / 2, Text = "P1", Height = 5 * Dbu, IsPort = true },
+            new LabelShape { Layer = metal1, X = len, Y = wide / 2, Text = "P2", Height = 5 * Dbu, IsPort = true },
+        ];
+
+        var x = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAs(), Dbu, 20e9);
+        Assert.True(x.Ok, x.Refusal);
+        Assert.Equal(2, x.Problem!.Layers.Count);
+
+        var r = EmPortExtraction.Extract(shapes, x.Problem!, Dbu);
+
+        Assert.False(r.Ok);
+        Assert.Contains("2 of this EM setup's 2 conductor levels", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("'Metal1'", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("'Metal2'", r.Refusal!, StringComparison.Ordinal);
+    }
+
     // ── The impedance lives in the .cem, never on the shape ───────────────────────────────────
 
     [Fact]

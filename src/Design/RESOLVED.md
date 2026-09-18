@@ -1,5 +1,35 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A port on metal drawn twice on ONE level was refused, in a sentence that could not be true (2026-09-17)
+
+Owner report: a `.clay` holding the same taper drawn twice, one exactly over the other, was refused
+with `Port 1 … sits on metal on 2 of this EM setup's 1 conductor levels`. The question that came with
+it is the right one — that artwork would be perfectly acceptable if manufactured, so why should the
+EM setup object to it?
+
+**It counted POLYGONS and reported LEVELS.** `EmPortExtraction.NearestPolygon` incremented one
+counter for every polygon containing the port's point, across every level, and the caller spent it as
+"how many of this setup's conductor levels the label sits on" — hence "2 of … 1", which is what an
+arithmetic mismatch between a numerator and a denominator drawn from two different quantities looks
+like when it reaches a user.
+
+**The guard itself is right and stays.** A label sitting on metal on two LEVELS is genuinely
+ambiguous: driving the wrong one drives a different conductor with the same footprint and returns a
+complete, plausible answer for a structure nobody drew. But two coincident polygons on ONE level are
+not that. The level is the same either way, and the mesher rasterises a level's polygons into cell
+OCCUPANCY — measured directly rather than assumed: one 20 x 2.9 mm line meshes to 297 cells and 552
+bases, and the same line drawn twice meshes to 297 cells and 552 bases. Metal over metal on one level
+is a drawing habit, not a structure.
+
+So the count is of distinct levels, and the message now names the levels the port actually sits on
+rather than listing every level in the setup — the same change on the RETURN terminal's copy of it.
+Gate: two facts in `tests/Ui.Tests/Em/EmPortExtractionTests.cs`, one per half — drawn twice on one
+level resolves, and metal on two levels under one port is still refused and names both.
+
+**The duplicate metal in that report came from `Update Layout from Schematic`**, which is the other
+half of the same owner report and is written up in `src/Ui/RESOLVED.md`.
+
+
 ## A plate drawn with no mask over it lost its film SILENTLY when the shipped tie moved (2026-09-16)
 
 Found reviewing `brief-em-mim-11-nitride-mask-and-patterned-film.md`, and it was reproducing in this

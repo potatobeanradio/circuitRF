@@ -285,9 +285,106 @@ public static class SchematicToLayoutGenerator
         }
 
         var addedRegion = PlaceNewInstances(newInstances, targetLayoutBaseDir);
+        ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
 
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
                                     noLayoutWarnings, addedRegion);
+    }
+
+    /// <summary>
+    /// Says so when a newly placed instance lands on top of artwork that was already DRAWN in this
+    /// layout.
+    ///
+    /// <para><b>Owner report, 2026-09-17: opening the Klopfenstein Taper example's schematic and
+    /// running this command twice left the <c>.clay</c> with two tapers, one exactly over the
+    /// other.</b> Both were correct and the command was working: this generator tracks the instances
+    /// it PLACES, by <c>SchematicId</c>, and that example's layout is hand-drawn artwork — a polygon
+    /// and two port labels, which is what an EM example has to ship so it runs from a clone with no
+    /// generated cells on disk. Hand-drawn metal carries no <c>SchematicId</c> and never will, so
+    /// there is no match to find and the component is placed as new. (The second run then matched
+    /// its own instance and changed nothing, which is why the count stops at two.)</para>
+    ///
+    /// <para><b>Reported rather than prevented, and reported rather than tolerated.</b> Nothing here
+    /// can tell drawn metal that IS this component from drawn metal that merely sits where it was
+    /// put — refusing would block a legitimate gesture on a guess, and staying silent leaves a design
+    /// with two copies of one part, which reads as one part at every zoom and simulates as neither.
+    /// So the placement stands, the undo is one keystroke, and the user is told which instance it
+    /// was.</para>
+    ///
+    /// <para><b>The test is MUTUAL coverage, not mere intersection</b> — at least half of the drawn
+    /// shape inside the instance's footprint and at least half of the footprint inside the drawn
+    /// shape. "Overlaps at all" would fire on every part placed over a ground pour or inside a board
+    /// outline, which is ordinary board work and would make this line noise within a day. Two
+    /// drawings of one component cover each other almost exactly.</para>
+    /// </summary>
+    private static void ReportPlacementOntoDrawnArtwork(
+        LayoutView target, List<(int Slot, LayoutInstance Instance)> placed,
+        string targetLayoutBaseDir, List<ReportLine> lines)
+    {
+        if (placed.Count == 0 || target.Shapes.Count == 0) return;
+
+        foreach (var (_, inst) in placed)
+        {
+            var footprint = CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir);
+            if (footprint.IsEmpty) continue;
+
+            // Only the layers this cell actually draws on. A silkscreen outline over a copper part is
+            // not the same part twice, and saying it is would be wrong rather than merely noisy.
+            var layers = CellLayers(inst, targetLayoutBaseDir);
+
+            int overlapping = 0;
+            foreach (var shape in target.Shapes)
+            {
+                if (shape is LabelShape) continue;               // annotation, not metal
+                if (layers is not null && !layers.Contains(shape.Layer)) continue;
+
+                var bb = LayoutGeometry.BboxOf(shape);
+                if (CoverEachOther(bb, footprint)) overlapping++;
+            }
+
+            if (overlapping == 0) continue;
+
+            string what = overlapping == 1 ? "a shape" : $"{overlapping} shapes";
+            lines.Add(new ReportLine(inst.SchematicId ?? "",
+                $"{inst.SchematicId} — placed on top of {what} already drawn in this layout. This " +
+                "command tracks the instances it places, not artwork drawn by hand, so a component " +
+                "that was already drawn is now in the layout twice. Undo, or delete whichever copy " +
+                "you do not want.",
+                ReportSeverity.Warning));
+        }
+    }
+
+    /// <summary>The layer keys a placed cell's own artwork uses, or null when the cell does not
+    /// resolve — in which case the caller compares footprints alone rather than dropping the check,
+    /// since an unresolvable reference is already reported on its own account.</summary>
+    private static HashSet<LayerKey>? CellLayers(LayoutInstance inst, string targetLayoutBaseDir)
+    {
+        if (inst.CellRef is not { Length: > 0 } cellRef) return null;
+        if (CellLayoutResolver.Resolve(cellRef, targetLayoutBaseDir) is not
+            { State: CellLayoutState.Resolved, View: { } view }) return null;
+
+        var keys = new HashSet<LayerKey>();
+        foreach (var s in view.Shapes)
+            if (s is not LabelShape) keys.Add(s.Layer);
+        return keys.Count == 0 ? null : keys;
+    }
+
+    /// <summary>True when each box holds at least half of the other — "these two are drawings of the
+    /// same thing", as opposed to "these two touch". See <see cref="ReportPlacementOntoDrawnArtwork"/>
+    /// for why the weaker test is the wrong one.</summary>
+    private static bool CoverEachOther(Bbox a, Bbox b)
+    {
+        if (a.IsEmpty || b.IsEmpty || !a.Intersects(b)) return false;
+
+        double overlap = (double)(Math.Min(a.MaxX, b.MaxX) - Math.Max(a.MinX, b.MinX))
+                       * (Math.Min(a.MaxY, b.MaxY) - Math.Max(a.MinY, b.MinY));
+        double areaA = (double)(a.MaxX - a.MinX) * (a.MaxY - a.MinY);
+        double areaB = (double)(b.MaxX - b.MinX) * (b.MaxY - b.MinY);
+
+        // A zero-area box (a horizontal line, a point) is degenerate for a coverage fraction: it is
+        // fully covered whenever it intersects at all, which is the right answer for it.
+        return (areaA <= 0 || overlap >= 0.5 * areaA)
+            && (areaB <= 0 || overlap >= 0.5 * areaB);
     }
 
     /// <summary>

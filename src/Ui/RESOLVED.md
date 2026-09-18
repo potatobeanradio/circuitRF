@@ -1,5 +1,46 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Update Layout from Schematic drew the Klopfenstein example's taper a second time (2026-09-17)
+
+Owner report: opening that example's `.csch` and running **Update Layout from Schematic** left the
+`.clay` with two tapers, metal over metal.
+
+**Both were correct and the command was working.** `SchematicToLayoutGenerator` matches what it finds
+in the target layout by `LayoutInstance.SchematicId` — the mark it writes on every instance it
+places. The Klopfenstein example's layout is hand-drawn artwork: one polygon and two port labels,
+carrying no `SchematicId` and unable to carry one, so there is nothing to match and `TL1` is placed
+as new. It lands at the origin because a new instance's slot is its component's index in the
+schematic and this is slot 0, which is exactly where the drawn taper starts — hence the perfect
+overlap. A second run then matches its own instance and changes nothing, which is why the count stops
+at two rather than growing.
+
+**The example's layout is flat on purpose and stays flat.** A `.clay` holding an instance needs its
+generated cell on disk, and a generated cell is rebuilt from `PCellSnapshots` by
+`GeneratedCellsLifecycle.RegenerateAll` — which is a `src/Ui` call made when a workspace opens.
+Nothing headless regenerates, `.generated-cells/` is git-ignored in every example workspace, and that
+example's README documents `circuitrf em "Taper/em/Taper-MoM.cem"` as a thing to run from a clone. An
+instance-based layout there would trade a reported duplicate for an EM run that finds no metal.
+(The generated cell's folder name is not portable either: `GeneratedCellStore.BuildCellName` hashes
+the technology's absolute PATH alongside its content, so the same design on two machines names the
+same cell differently.)
+
+**So the placement is reported, not prevented.** Nothing here can tell drawn metal that IS this
+component from drawn metal that merely sits where it was put, so refusing would block a legitimate
+gesture on a guess — and staying silent leaves a design holding one part twice, which reads as one
+part at every zoom and simulates as neither. `ReportPlacementOntoDrawnArtwork` adds a warning line
+naming the instance, and the undo is one keystroke.
+
+**The test is MUTUAL coverage, not intersection**: at least half of the drawn shape inside the
+instance's footprint AND at least half of the footprint inside the drawn shape, on a layer the placed
+cell actually draws on. "Overlaps at all" would fire on every part placed over a ground pour or
+inside a board outline — ordinary board work — and the line would be noise within a day. Two drawings
+of one component cover each other almost exactly. Gate:
+`tests/Ui.Tests/SchematicToLayoutDrawnArtworkOverlapTests.cs`, one fact per half.
+
+**What the duplicate metal then did to the EM setup** — a refusal whose sentence could not be true —
+is the other half of the same owner report, in `src/Design/RESOLVED.md`.
+
+
 ## "Change Technology…" opened on the workspace default for every layout (2026-09-17)
 
 Owner report: after a second Gerber import, the new `.clay` "does not use the `.ctech` that was just

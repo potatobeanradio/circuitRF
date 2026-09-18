@@ -22,6 +22,11 @@ circuitrf em "Taper/em/Taper-MoM.cem"
 
 No EM results ship with this example — the whole point is to generate them.
 
+The `.clay` is drawn artwork, not a placed MKLOPF instance, so that the EM run works straight
+from a clone with nothing generated first. That also means **Update Layout from Schematic** has
+nothing here to recognise as `TL1`: run it and the taper is placed a second time, on top of the
+one already drawn. circuitRF says so when it happens — undo, or delete one of the two.
+
 ## Comparing them
 
 Port 2 is referenced to **100 Ω**, not 50. The `.npy` the EM writes carries the per-port reference
