@@ -180,6 +180,10 @@
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
                         <NativeMenuItem Header="Match Designer" Command="{Binding NewMatchDesignerCommand}"/>
+                        <!-- railRF (railrf.md §11.4). Needs NO workspace to open, for harmonicaRF's
+                             own reason — what needs one is the import's default of landing the
+                             artwork in it as a cell, and railRF offers to create one there. -->
+                        <NativeMenuItem Header="railRF" Command="{Binding NewRailRfCommand}"/>
                         <NativeMenuItemSeparator/>
                         <!-- Examples: the rows are filled in by RebuildNativeExamplesMenu, because
                              what is shipped is read off disk rather than listed here, and the whole
@@ -754,6 +758,13 @@
                           Command="{Binding NewMatchDesignerCommand}"
                           ToolTip.Tip="Synthesise an impedance-matching network from two terminations and a band, then flatten it to a cell. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- railRF — hand-mirrored with the macOS NativeMenu above, as every other menu on
+                     these two surfaces is. -->
+                <MenuItem Header="_railRF"
+                          Command="{Binding NewRailRfCommand}"
+                          ToolTip.Tip="Power-distribution analysis on a real board — the drop map, the ranked breakdown, the via check and Z(f). Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="CurrentDc" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator IsVisible="{Binding HasExamples}"/>
                 <!-- Examples — hand-mirrored with the macOS NativeMenu above. The rows come from the

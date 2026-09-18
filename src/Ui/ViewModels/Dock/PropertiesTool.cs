@@ -55,6 +55,14 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private bool _isWireActive;
 
+    /// <summary>True when a <c>.crail</c> is selected in the project tree (railrf.md §11.4).</summary>
+    [ObservableProperty]
+    private bool _isRailActive;
+
+    /// <summary>The summary panel for the selected <c>.crail</c>, or null.</summary>
+    [ObservableProperty]
+    private CircuitRF.Ui.RailRf.RailPropertiesPanelViewModel _railInspectorVm = new();
+
     /// <summary>File-info VM for the currently selected tree leaf, or null.</summary>
     [ObservableProperty]
     private FileInfoInspectorViewModel? _fileInfoVm;
@@ -105,13 +113,14 @@ public partial class PropertiesTool : Tool
     /// </summary>
     public bool IsSchematicContextActive =>
         !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive
-        && !IsLayoutActive && !IsWireActive;
+        && !IsLayoutActive && !IsWireActive && !IsRailActive;
 
     partial void OnIsSymbolEditorActiveChanged(bool value)  => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsCellActiveChanged(bool value)          => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsDataDisplayActiveChanged(bool value)   => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsFileInfoActiveChanged(bool value)      => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsWireActiveChanged(bool value) => OnPropertyChanged(nameof(IsSchematicContextActive));
+    partial void OnIsRailActiveChanged(bool value) => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     partial void OnIsLayoutActiveChanged(bool value)        => OnPropertyChanged(nameof(IsSchematicContextActive));
 
@@ -141,6 +150,7 @@ public partial class PropertiesTool : Tool
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
         IsWireActive  = false;
+        IsRailActive          = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -160,6 +170,7 @@ public partial class PropertiesTool : Tool
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
         IsWireActive  = false;
+        IsRailActive          = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -179,6 +190,7 @@ public partial class PropertiesTool : Tool
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
         IsWireActive  = false;
+        IsRailActive          = false;
         IsLayoutActive        = false;
         CellEditorVm          = vm;
         PlotInspectorVm       = null;
@@ -205,6 +217,7 @@ public partial class PropertiesTool : Tool
         IsDataDisplayActive   = window is not null;
         IsFileInfoActive      = false;
         IsWireActive  = false;
+        IsRailActive          = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
@@ -234,9 +247,46 @@ public partial class PropertiesTool : Tool
         LayoutInspectorVm.SetContext(null);
         WireInspectorVm.SetContext(null);
         IsWireActive          = false;
+        IsRailActive          = false;
         IsFileInfoActive      = vm is not null;
         FileInfoVm            = vm;
         HeaderText            = vm is not null ? "File" : "Properties";
+    }
+
+    /// <summary>
+    /// Shows the railRF summary for a selected <c>.crail</c>, clearing every other context
+    /// (railrf.md §11.4, R-rail7-10).
+    /// </summary>
+    /// <remarks>
+    /// <b>Mirrors <see cref="SetActiveWire"/> exactly</b>, including the ordering trap it records:
+    /// the mechanical "clear them all then set mine" shape of these setters means an own-flag
+    /// assignment placed FIRST is silently undone by the clears below it, so the own flag is set
+    /// LAST. That is not a style preference — it is the bug this comment exists because of.
+    /// </remarks>
+    public void SetActiveRail(string? crailPath)
+    {
+        IsLayoutActive       = false;
+        IsSymbolEditorActive = false;
+        IsCellActive         = false;
+        IsDataDisplayActive  = false;
+        IsFileInfoActive     = false;
+        IsWireActive         = false;
+
+        // Set LAST — see the note above.
+        IsRailActive = crailPath is { Length: > 0 };
+
+        FileInfoVm      = null;
+        CellEditorVm    = null;
+        PlotInspectorVm = null;
+
+        EditorVm.SetContext(null);
+        SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
+        WireInspectorVm.SetContext(null);
+
+        RailInspectorVm.SetContext(crailPath);
+
+        HeaderText = IsRailActive ? "railRF" : "Properties";
     }
 
     /// <summary>Called by WorkspaceViewModel when the active layout editor document changes.</summary>
@@ -247,6 +297,7 @@ public partial class PropertiesTool : Tool
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
         IsWireActive  = false;
+        IsRailActive          = false;
         IsLayoutActive        = vm is not null;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
@@ -279,6 +330,8 @@ public partial class PropertiesTool
 
         // Set LAST, after every other flag is cleared — the mechanical "clear them all then set mine"
         // shape of these setters means an own-flag assignment placed first is silently undone.
+        IsRailActive = false;
+
         IsWireActive = vm is not null;
 
         FileInfoVm = null;

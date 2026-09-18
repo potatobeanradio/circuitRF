@@ -43,6 +43,14 @@
                 <symInsp:WBondWirePropertiesView DataContext="{Binding WireInspectorVm}"/>
             </Panel>
 
+            <!-- railRF (railrf.md §11.4) — the rail, its reference, its branch counts, the worst
+                 drop and the worst margin, and Open railRF…. Mutually exclusive with everything
+                 above: a .crail selected in the tree is not a document with a canvas, and this panel
+                 edits nothing. -->
+            <Panel IsVisible="{Binding IsRailActive}">
+                <symInsp:RailPropertiesView DataContext="{Binding RailInspectorVm}"/>
+            </Panel>
+
             <!-- Data Display: Datasets list (document-level, R-dd-4/5) + Plot Inspector
                  (shown when a data display document is active; the inspector portion is only
                  rendered once a single plot is also selected — HasSelectedPlot, not just

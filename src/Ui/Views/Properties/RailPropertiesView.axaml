@@ -1,0 +1,70 @@
+<!-- The Properties panel a selected .crail shows (railrf.md §11.4, R-rail7-10).
+
+     It follows the Match and wBond panels exactly: a compact summary of what the document IS, and a
+     button that opens the window where it is actually edited. It edits nothing — a rail set is an
+     artwork reference, a stackup, a rail list, four sub-lists and a target, none of which fits in a
+     420 px column of text rows, and offering a half-editor beside a full one is how the two come to
+     disagree. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rvm="using:CircuitRF.Ui.RailRf"
+             x:Class="CircuitRF.Ui.Views.Properties.RailPropertiesView"
+             x:DataType="rvm:RailPropertiesPanelViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.k">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="Opacity"    Value="0.6"/>
+            <Setter Property="Margin"     Value="0,0,8,3"/>
+        </Style>
+        <Style Selector=":is(TextBlock).v">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Margin"       Value="0,0,0,3"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <!-- R-rail7-2 reaches here too. -->
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Margin="8" Spacing="6">
+
+        <!-- A file that will not open reads as circuitRF being broken unless the reason is on
+             screen, which is why this is said rather than shown as an empty panel. -->
+        <TextBlock Text="{Binding ReadError}" FontSize="11" TextWrapping="Wrap"
+                   Foreground="{DynamicResource CrfWarningBrush}"
+                   IsVisible="{Binding ReadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+              IsVisible="{Binding HasDocument}">
+            <TextBlock Classes="k" Text="Rail"/>
+            <SelectableTextBlock Grid.Column="1" Classes="v" Text="{Binding RailText}"/>
+
+            <TextBlock Grid.Row="1" Classes="k" Text="Reference"/>
+            <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="v" Text="{Binding ReferenceText}"/>
+
+            <TextBlock Grid.Row="2" Classes="k" Text="Branches"/>
+            <SelectableTextBlock Grid.Row="2" Grid.Column="1" Classes="v" Text="{Binding BranchesText}"/>
+
+            <TextBlock Grid.Row="3" Classes="k" Text="Worst drop"/>
+            <SelectableTextBlock Grid.Row="3" Grid.Column="1" Classes="v" Text="{Binding WorstDropText}"/>
+
+            <TextBlock Grid.Row="4" Classes="k" Text="Worst margin"/>
+            <SelectableTextBlock Grid.Row="4" Grid.Column="1" Classes="v" Text="{Binding WorstMarginText}"/>
+
+            <!-- §2.9's first rule reaches the summary too: a pass in Fast mode is reported as a
+                 FAST-MODEL pass, never as a pass. A panel that dropped the model kind would do
+                 exactly that. -->
+            <TextBlock Grid.Row="5" Classes="k" Text="Model"
+                       IsVisible="{Binding ModelText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <SelectableTextBlock Grid.Row="5" Grid.Column="1" Classes="v" Text="{Binding ModelText}"
+                                 IsVisible="{Binding ModelText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        </Grid>
+
+        <Button Content="Open railRF…" FontSize="11" Padding="8,3" HorizontalAlignment="Stretch"
+                IsVisible="{Binding HasDocument}"
+                Command="{Binding OpenRailRfCommand}"
+                ToolTip.Tip="Open this rail set in its own window — the board, the lists, the target and the results."/>
+    </StackPanel>
+</UserControl>

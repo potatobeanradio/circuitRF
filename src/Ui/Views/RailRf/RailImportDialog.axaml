@@ -1,0 +1,112 @@
+<!-- The railRF import dialog (brief-railrf-7-window.md R-rail7-6 / R-rail7-7; railrf.md §2.3 step 1).
+
+     ── IT ASKS EXACTLY THE TWO THINGS THAT MUST NOT BE GUESSED ─────────────────────────────────
+     The PLACEMENT ORIGIN and, where the drill file does not state it, the EXCELLON COORDINATE
+     FORMAT. Nothing is pre-selected on either. Everything ELSE takes the same default `convert`
+     takes — the layer mapping above all — because two surfaces asking the same question with two
+     different defaults is a defect that only shows up when someone compares their answers.
+
+     The Excellon question is NOT asked here: it is asked by GerberDrillFormatPromptDialog, during
+     the import, which is the dialog `convert`'s own rule already routes through. R-rail7-7 says to
+     reuse its wording rather than invent a second sentence for the same refusal, and reusing the
+     DIALOG is the strongest form of that. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.RailRf.RailImportDialog"
+        Title="railRF — Import Board"
+        Width="560"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Styles>
+        <!-- R-rail7-2 reaches the dialog too: centred text on every push button and on the
+             combobox's selection AND its items. There is no sortable column header here, so the
+             one exception does not arise. -->
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.hdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="20,16" Spacing="12">
+
+        <TextBlock x:Name="ArtworkText" FontSize="12" TextWrapping="Wrap"/>
+
+        <!-- ── The checkbox, and it is ON by default (§2.3 step 1, owner rev 3) ──────────────── -->
+        <StackPanel Spacing="4">
+            <CheckBox x:Name="LandInWorkspaceBox" IsChecked="True" FontSize="11"
+                      Content="Keep the artwork in this workspace as a cell"/>
+            <!-- Someone will eventually wonder why the default is not the cheap path, so the
+                 consequences are on the dialog rather than left to be rediscovered. -->
+            <TextBlock Classes="note"
+                       Text="On: the artwork lands as an ordinary circuitRF cell with a layout view — saved with the design rather than re-imported every session, it opens in the layout editor, DRC runs on it, circuitrf render draws it headlessly, revision control keeps it, and this document holds a reference to that cell rather than a private copy of the geometry.  Off: a throwaway copy, for a quick look."/>
+            <TextBlock x:Name="NoWorkspaceText" Classes="note" IsVisible="False"
+                       Text="No workspace is open. railRF will create one rather than silently falling back to the throwaway path — the same New Workspace the application's own command runs."/>
+        </StackPanel>
+
+        <!-- ── The three companion files ─────────────────────────────────────────────────────── -->
+        <StackPanel Spacing="4">
+            <TextBlock Classes="hdr" Text="Companion files"/>
+            <TextBlock Classes="note"
+                       Text="Evidence about the artwork, never geometry. A row naming a reference the board does not have is reported with a count in it, never turned into a footprint."/>
+
+            <Grid ColumnDefinitions="90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" >
+                <TextBlock Text="Placement" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Column="1" x:Name="PlacementBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Column="2" x:Name="PlacementPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+
+                <TextBlock Grid.Row="1" Text="BOM" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="BomBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="1" Grid.Column="2" x:Name="BomPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+
+                <TextBlock Grid.Row="2" Text="Netlist" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="NetlistBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="2" Grid.Column="2" x:Name="NetlistPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+
+                <TextBlock Grid.Row="3" Text="Part library" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="PartLibraryBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="3" Grid.Column="2" x:Name="PartLibraryPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- ── The placement origin: NOTHING PRE-SELECTED (Q-14, R-rail7-7) ─────────────────── -->
+        <StackPanel x:Name="OriginPanel" Spacing="4">
+            <TextBlock Classes="hdr" Text="Placement coordinate origin"/>
+            <TextBlock Classes="note"
+                       Text="The origin is a choice made at export and the exporting tool does not always record which. There is no house convention to learn, so railRF does not pre-select one: three quarters of a millimetre on an 0402 is the difference between landing on the part's own pad and landing on its neighbour's, and a wrong origin is SILENT where a wrong drill format is loud."/>
+            <!-- ItemsSource is declared here and filled in the constructor BEFORE anything sets a
+                 selection — and nothing sets one, which is the point. The wBond round-6 bug is a
+                 selection dropped because the binding attached later; here the invariant is stronger
+                 (there IS no selection until the user makes one) and the test asserts it. -->
+            <ComboBox x:Name="OriginCombo" FontSize="11" MinHeight="0" Padding="8,2"
+                      HorizontalAlignment="Stretch"
+                      PlaceholderText="choose the origin this file was written against"/>
+        </StackPanel>
+
+        <TextBlock x:Name="RefusalText" FontSize="11" IsVisible="False" TextWrapping="Wrap"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" Width="90" FontSize="12" Click="OnCancelClick"
+                    ToolTip.Tip="Abort the import. Nothing is created."/>
+            <Button x:Name="ImportButton" Content="Import" Width="90" IsDefault="True" FontSize="12"
+                    Click="OnImportClick"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

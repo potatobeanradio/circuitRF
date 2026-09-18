@@ -9115,14 +9115,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Opens a <c>.crail</c> — the double-click route from the tree, the project-tree Open item, and
     /// the path <c>App.OpenFiles</c> hands over when one arrives from the desktop.
     ///
-    /// <para><b>Brief 1 has the document and not the window.</b> <c>RailRfWindow</c> is brief 7's, so
-    /// what this does until then is READ the file through <see cref="RailDocumentIo"/> and say what
-    /// it holds. That is deliberately not a no-op: an extension declared to three operating systems
-    /// with a route that does nothing is exactly the "launches circuitRF and opens nothing" failure
-    /// the six document-type parity tests exist to catch, and it reads to a user as a broken file.
-    /// This route also puts the reader's own refusals — an anchor that is both a pad and a
-    /// coordinate, a rail pair that cannot be ordered — in front of whoever opened the file, which is
-    /// where they are worth something.</para>
+    /// <para><b>It opens the window</b> (brief 7). Deduplicated per DOCUMENT by
+    /// <see cref="Views.RailRf.RailRfWindow.Show"/>, because two views of one <c>.crail</c> would
+    /// write it from two working copies — the same rule the Match Designer keeps for one placed
+    /// component.</para>
+    ///
+    /// <para><b>The reader's own refusals are reported on the way in</b> — an anchor that is both a
+    /// pad and a coordinate, a rail pair that cannot be ordered. They are in front of whoever opened
+    /// the file, which is where they are worth something, and the window says them again in its own
+    /// status strip with the control that answers each one turned red.</para>
     /// </summary>
     public void OpenRailPath(string path)
     {
@@ -9133,16 +9134,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             var doc = RailDocumentIo.LoadFromFile(full);
 
-            string rails = doc.Rails.Count == 0
-                ? "no rails yet"
-                : $"{doc.Rails.Count} rail{(doc.Rails.Count == 1 ? "" : "s")} " +
-                  $"({string.Join(", ", doc.Rails.Select(r => r.Name))})";
-
             var order = RailOrder.Resolve(doc);
             if (order.Refusal is { } refusal) Messages.Error($"{name}: {refusal}");
 
-            Messages.Info($"{name} holds {rails}. Opening one in the railRF window is not available " +
-                          "in this build.");
+            Views.RailRf.RailRfWindow.Show(doc, full, Views.WorkspaceLocator.WindowFor(this));
         }
         catch (Exception ex)
         {
@@ -9150,6 +9145,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Error($"Could not open {name}: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Tools ▸ railRF — a window bound to nothing, which the import fills (§11.4).
+    /// </summary>
+    /// <remarks>
+    /// <b>No workspace is needed to OPEN one</b>, exactly as harmonicaRF and the Match Designer need
+    /// none: what needs a workspace is the import's default of landing the artwork in one as a cell,
+    /// and railRF OFFERS to create a workspace there rather than silently falling back to the
+    /// throwaway path.
+    /// </remarks>
+    [RelayCommand]
+    private void NewRailRf() =>
+        Views.RailRf.RailRfWindow.ShowStandalone(Views.WorkspaceLocator.WindowFor(this));
 
     /// <summary>
     /// File ▸ Import ▸ Wirebond Wires… — brings a <c>.wBond</c>'s WIRES into the active schematic
@@ -12189,6 +12197,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public void OnTreeSelectionChanged(ProjectTreeNodeViewModel? node)
     {
+        // R-rail7-10 — a selected .crail shows its own compact summary and an Open railRF… button,
+        // following the Match and wBond panels. Checked BEFORE the file-info branch: a .crail scans
+        // as its own NodeKind, but one bookmarked as a Known File would otherwise fall into the
+        // generic size-and-modified panel, and the two surfaces would disagree about what a .crail is.
+        if (node is { } railNode
+            && (railNode.Kind == NodeKind.RailFile
+                || (railNode.Kind == NodeKind.KnownFile
+                    && string.Equals(Path.GetExtension(railNode.AbsolutePath), ".crail",
+                                     StringComparison.OrdinalIgnoreCase)))
+            && File.Exists(railNode.AbsolutePath))
+        {
+            var panel = _factory.PropertiesTool;
+            if (panel is not null)
+            {
+                // The live-result lookup and the Open button are wired ONCE per panel, not per
+                // selection: += on every selection change would stack handlers and open one window
+                // per selection the user had ever made.
+                panel.RailInspectorVm.ResultLookup ??= Views.RailRf.RailRfWindow.ResultFor;
+                if (!_railPanelWired)
+                {
+                    panel.RailInspectorVm.OpenRailRfRequested += OpenRailPath;
+                    _railPanelWired = true;
+                }
+                panel.SetActiveRail(railNode.AbsolutePath);
+            }
+            return;
+        }
+
         if (node is not null
             && (node.Kind == NodeKind.OtherFile
                 || (node.Kind == NodeKind.KnownFile && File.Exists(node.AbsolutePath))))
@@ -12198,6 +12234,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         // For all other node kinds, leave the current document-driven context intact.
     }
+
+    /// <summary>Whether this window has already wired the railRF panel's Open button — see
+    /// <see cref="OnTreeSelectionChanged"/>.</summary>
+    private bool _railPanelWired;
 
     // ── Reveal in file manager ────────────────────────────────────────────────
 

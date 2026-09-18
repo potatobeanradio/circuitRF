@@ -71,12 +71,16 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         // "Match Designer" joined it on 2026-08-20, and is listed here for the same reason
         // harmonicaRF is — the order is the property under test, not the membership. "Examples"
         // joined on 2026-09-15 with the six shipped example workspaces; its own ROWS are filled in
-        // at run time from what is on disk, so only the entry itself is here.
-        Assert.Equal(["harmonicaRF", "Match Designer", "Examples"], nativeEntries);
+        // at run time from what is on disk, so only the entry itself is here. "railRF" joined on
+        // 2026-09-18 (brief-railrf-7-window.md, railrf.md §11.4) and needs no workspace to open, for
+        // harmonicaRF's own reason — so it is ungated here exactly as the other two are.
+        Assert.Equal(["harmonicaRF", "Match Designer", "railRF", "Examples"], nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
+        Assert.Contains(native[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewRailRfCommand") == true);
         Assert.DoesNotContain(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
 
@@ -90,11 +94,13 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF", "_Match Designer", "_Examples"], inWindowEntries);
+        Assert.Equal(["_harmonicaRF", "_Match Designer", "_railRF", "_Examples"], inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
+        Assert.Contains(inWindow[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewRailRfCommand") == true);
         Assert.DoesNotContain(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
     }

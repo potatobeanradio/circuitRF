@@ -1,0 +1,763 @@
+<!-- The railRF window (railrf.md §11; docs/sonnet-briefs/brief-railrf-7-window.md).
+
+     ── TAKEN FROM THE MATCH DESIGNER, AND "TAKEN" MEANS THE SAME CLASSES ───────────────────────
+     §11.1 is explicit: "Not 'inspired by' — the same classes, the same conventions, and where
+     possible the same controls." So every style below is MatchDesignerWindow.axaml's style, copied
+     with its reasoning intact rather than re-derived: Border.pane over Border.card so a group reads
+     as a thing sitting ON the panel; sentence-case headings; label left / value right with the
+     numbers in one right-aligned column whether the row is settable or not; ctl:InlineEditText for
+     every settable value, with the :disabled dimming that Avalonia does not give a bare TextBlock;
+     ListBox.rows for anything that can grow; Slider.compact's negative-margin trick; Button.gridhdr
+     left-aligned and unpadded. That window has had roughly ten rounds of refinement and every one of
+     them is a decision already made.
+
+     ── THE OPENING SIZE IS THE GOLDEN RATIO ────────────────────────────────────────────────────
+     1199 x 741, the Match Designer's own, for the Match Designer's own reason — and MinWidth is
+     1080 rather than 1000 because this window has THREE columns with a canvas between them and a
+     specification column that has to be able to show the rail, its reference, its extent, two lists
+     and a target. 741 x 1.618 = 1199 to four figures.
+
+     There is deliberately no WindowStartupLocation: the window is shown UNOWNED so it can go behind
+     the workspace, and CenterOwner needs an Owner. RailRfWindow.ShowUnowned sets both the location
+     mode and the position, off MatchWindowPlacement's arithmetic. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:rvm="using:CircuitRF.Ui.RailRf"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.RailRf.RailRfWindow"
+        x:DataType="rvm:RailRfViewModel"
+        Title="{Binding Title}"
+        Width="1199" Height="741"
+        MinWidth="1080" MinHeight="700"
+        CanResize="True">
+
+    <Window.Styles>
+        <!-- ── The panel language, taken from the Match Designer ──────────────────
+             Two tiers, and the whole point is that they are DIFFERENT: a pane is
+             SystemChromeMediumLowColor, a card inside it is SystemChromeLowColor, so a group reads
+             as a thing sitting ON the panel rather than as a rectangle drawn on it. Both carry the
+             one tile border the rest of the application uses, at 6 px corners. -->
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+
+        <!-- R-rail7-4: the control a refusal names turns RED. One class, worn by whichever control
+             the refusal's own RailRefusalControl points at — so the sentence in the status strip and
+             the thing to go and fix are never two separate discoveries. -->
+        <Style Selector="Border.card.flagged">
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="ComboBox.flagged">
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="Button.flagged">
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+
+        <!-- Anything that can grow is a ListBox, whose default ItemsPanel is a VirtualizingStackPanel
+             — the Match Designer's own finding: a bare ItemsControl inside a ScrollViewer is given an
+             infinite measure height and realizes EVERY item. A board's parts table is the list here
+             that actually reaches that size. These styles flatten the selection chrome so a
+             virtualized row reads as a row rather than as something to pick from. -->
+        <Style Selector="ListBox.rows">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility"   Value="Auto"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Margin"                     Value="0"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding"    Value="0"/>
+        </Style>
+
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize"          Value="10"/>
+            <Setter Property="Opacity"           Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.detailValue">
+            <Setter Property="FontSize"            Value="10"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector=":is(TextBlock).warn">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"       Value="0,2,0,0"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <!-- An observation port's own row. NOT a warning — a load with no current is a correct,
+             deliberate state (§2.2), and colouring it red would read as a defect. Dimmed and
+             italicised is what says "this row states no number" without saying "this row is wrong". -->
+        <Style Selector="TextBlock.observe">
+            <Setter Property="FontSize"            Value="10"/>
+            <Setter Property="FontStyle"           Value="Italic"/>
+            <Setter Property="Opacity"             Value="0.7"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+        </Style>
+
+        <!-- An UNRESOLVED parts row. Dimmed as a whole, because every column of it reads
+             "unresolved" — R-rail7-9's own rule is that nothing railRF could not resolve is
+             defaulted, so the row is listed and marked rather than filled in or dropped. -->
+        <Style Selector="Grid.unresolved">
+            <Setter Property="Opacity" Value="0.55"/>
+        </Style>
+
+        <!-- A settable value in a label-left/value-right row: same size and edge as detailValue, so
+             the settable rows and the read-only ones line up as one column of numbers. -->
+        <Style Selector="ctl|InlineEditText.val">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        </Style>
+        <!-- A DISABLED settable value has to LOOK disabled, and nothing else in the stack makes it:
+             an InlineEditText at rest is a bare TextBlock, and Avalonia's Fluent theme dims neither a
+             disabled TextBlock nor a disabled Panel — so a field that was switched off reads exactly
+             like one that is on and simply swallows the double-click. -->
+        <Style Selector="ctl|InlineEditText:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel:disabled">
+            <Setter Property="Opacity" Value="0.3"/>
+        </Style>
+
+        <!-- ── R-rail7-2, and BOTH halves of it ───────────────────────────────────
+             Centred text in comboboxes and on buttons, on the selection AND the items. The ONE
+             exception is already an owner decision in the Match Designer and it stays: a
+             click-to-sort column header is left-aligned with the column under it, because any
+             centring there is a misalignment the user can see. That exception is Button.gridhdr
+             below, and a test asserts both halves — the rule and its exception — since a test that
+             only checked the rule would delete the exception. -->
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.gridhdr">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="FontWeight"                 Value="SemiBold"/>
+            <Setter Property="Padding"                    Value="0,2"/>
+            <Setter Property="BorderThickness"            Value="0"/>
+            <Setter Property="Background"                 Value="Transparent"/>
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="Button.gridhdr:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+
+        <!-- A tab in either strip. A ToggleButton rather than a TabControl: both strips switch a
+             property the view model owns (which OVERLAY, which results half) and neither carries
+             content of its own, so a TabControl would be a content host with nothing in it. -->
+        <Style Selector="ToggleButton.tab">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="Padding"                    Value="8,2"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+
+        <!-- ── Title bar ─────────────────────────────────────────────────── -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,6">
+            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <!-- Icons, not words — the schematic editor's toolbar shape, which the Match Designer
+                 already took: a bare MaterialIcon at 16 px in a Padding="6,3" button, with the word
+                 that would have been on the face moved into ToolTip.Tip.
+
+                 NO CLOSE BUTTON. The window's own title bar already carries one, and a second in the
+                 client area is a second thing to aim at that does the same job (owner, 2026-08-20). -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <Button Name="ImportButton" Padding="6,3"
+                        ToolTip.Tip="Import a board — the artwork, and the placement, BOM and netlist that go with it">
+                    <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
+                </Button>
+                <!-- DISABLED WITH A REASON rather than silently inert. A control that looks live and
+                     does nothing is indistinguishable from one that is broken; one that is dimmed and
+                     says what it is waiting for is not. -->
+                <Button Name="ReportButton" Padding="6,3" IsEnabled="False"
+                        ToolTip.Tip="Report — the drop, the breakdown, the via flags and what they were computed at. Not wired yet.">
+                    <mi:MaterialIcon Kind="FileDocumentOutline" Width="16" Height="16"/>
+                </Button>
+                <!-- §11.2: "Clean and simple by default." The reference-plane options, the via
+                     limit basis, the meshing density and the temperature note live HERE and nowhere
+                     else — that is the whole list, and nothing has been added to it. The status strip
+                     states the ones in force on every frame, which is the half that has to be
+                     unmissable; the CONTROLS do not. -->
+                <Button Name="SettingsButton" Padding="6,3"
+                        Classes.flagged="{Binding IsStackupFlagged}"
+                        ToolTip.Tip="Settings — reference-plane extent, via limit basis, meshing density and the temperature everything is computed at">
+                    <mi:MaterialIcon Kind="CogOutline" Width="16" Height="16"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <StackPanel Width="320" Spacing="6">
+                                <TextBlock Classes="cardhdr" Text="Settings"/>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Reference extent"/>
+                                    <ComboBox Grid.Column="1" FontSize="10" MinHeight="0" Padding="6,1"
+                                              HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding ReferenceExtents}"
+                                              SelectedItem="{Binding ReferenceExtent, Mode=TwoWay}"
+                                              ToolTip.Tip="What the reference conductor is taken to be. Two of the three are OPTIMISTIC, and the status strip says which is in force on every frame."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Via plating"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding ViaPlatingEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="The plated barrel thickness a via's current limit is computed from. EMPTY IS NOT A DEFAULT — the stackup's own via entry is read first where it states one, and every flag says which basis produced it."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Via rise"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding ViaTemperatureRiseEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="The temperature RISE a via's current limit is stated at. A budget, not a temperature: there is no thermal model in railRF and nothing else reads this."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Temperature"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding TemperatureEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="What every resistance in this document is computed at. railRF is not a thermal tool and does not derate — the report states this number so a reader knows which basis they have."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Mesh cell"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding MeshCellEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="How finely Accuracy meshes. Read by the accurate reading only — the fast one traces instead."/>
+                                </Grid>
+
+                                <TextBlock Classes="note"
+                                           Text="Every one of these is stated on the report, which is why they are document state rather than session state."/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+                <Button Name="HelpButton" Padding="6,3" IsEnabled="False"
+                        ToolTip.Tip="Help — the railRF chapter of the circuitRF reference. Not wired yet.">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── The three columns (§11.3) ──────────────────────────────────── -->
+        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="300,*,340">
+
+            <!-- ══ SPECIFICATION ══════════════════════════════════════════ -->
+            <Border Grid.Column="0" Classes="pane">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <TextBlock Classes="panelhdr" Text="Specification"/>
+
+                    <!-- The rail card. The SELECTOR is above the lists and it moves the WHOLE window
+                         — that is §11.3's fourth point, and it is why it sits at the top of this pane
+                         rather than beside the results. -->
+                    <Border Grid.Row="1" Classes="card"
+                            Classes.flagged="{Binding IsRailSelectorFlagged}">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Rail"/>
+
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="detailLabel" Text="Rail"/>
+                                <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
+                                     here and built in that order in the view model: a combo whose
+                                     ItemsSource binding attaches after the selection was set drops it
+                                     silently, which is the wBond round-6 blank-Group-combo bug. -->
+                                <ComboBox Grid.Column="1" Name="RailSelector" FontSize="10"
+                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding Rails}"
+                                          SelectedItem="{Binding SelectedRailName, Mode=TwoWay}"
+                                          ToolTip.Tip="Which rail this window is showing. One rail is analysed at a time; the set is solved in dependency order."/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="detailLabel" Text="Ref."/>
+                                <ComboBox Grid.Column="1" Name="ReferenceSelector" FontSize="10"
+                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
+                                          Classes.flagged="{Binding IsReferenceLayerFlagged}"
+                                          ItemsSource="{Binding ReferenceLayerOptions}"
+                                          SelectedItem="{Binding SelectedReferenceLayer, Mode=TwoWay}"
+                                          ToolTip.Tip="The reference return's drawing layer. railRF proposes one and never assumes it."/>
+                            </Grid>
+
+                            <!-- The PROPOSAL and its REASON, together. A proposal with no reason is
+                                 indistinguishable from a default, and a default here is the guess
+                                 Q-8 closed. -->
+                            <TextBlock Classes="note" Text="{Binding ReferenceProposalReason}"
+                                       IsVisible="{Binding !IsReferenceConfirmed}"/>
+                            <Button Content="Confirm reference" FontSize="10" Padding="8,2"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding ConfirmReferenceCommand}"
+                                    IsVisible="{Binding !IsReferenceConfirmed}"
+                                    ToolTip.Tip="Run stays disabled until the reference has been affirmatively set — the one place this window deliberately costs a click."/>
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="0">
+
+                            <!-- ── Step 2: PICKING the rail (§2.3, R-rail7-8) ──────────
+                                 With a board file or a board netlist, pick the power net from a list.
+                                 OTHERWISE click the pour — geometry alone has no net in it and railRF
+                                 will not guess a net name, so that route makes a rail anchored by a
+                                 coordinate instead. Either way, what happens next is the same:
+                                 PdnRailRegions walks everything galvanically connected to the pick,
+                                 through vias and across layers, and the board shows whether the rail
+                                 is one region or three islands joined by a 20 mil neck.
+
+                                 The card is here only while there is something to pick FROM. On a
+                                 document whose rails are already set it is a control with nothing to
+                                 do, and a list of every net on the board standing open above the
+                                 sources would read as a second rail selector. -->
+                            <Border Classes="card" IsVisible="{Binding HasPickableNets}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Pick the rail"/>
+                                    <ListBox Name="NetList" Classes="rows" MaxHeight="110"
+                                             ItemsSource="{Binding AvailableNets}"
+                                             SelectedItem="{Binding SelectedNet, Mode=TwoWay}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="lbl" Text="{Binding}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <Button Content="Make it a rail" FontSize="10" Padding="8,2"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{Binding PickSelectedNetCommand}"
+                                            ToolTip.Tip="The rail takes the net's own name. It states no reference layer — that is the next step, and it is confirmed rather than assumed."/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Where there is neither a board file nor a netlist, the pick is made on
+                                 the board itself. The GESTURE is the canvas's; this says so, because a
+                                 pane with no pick list and no sentence reads as a missing feature. -->
+                            <TextBlock Classes="note" Margin="0,0,0,6"
+                                       IsVisible="{Binding HasNoPickableNets}"
+                                       Text="No board netlist named any nets, so pick the rail by clicking its pour on the board. railRF will not guess a net name."/>
+
+                            <!-- ── Sources: a LIST, with add and remove ───────────────── -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <TextBlock Classes="cardhdr" Text="Sources" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="+" FontSize="10" Padding="6,0"
+                                                MinHeight="0" Margin="0,0,4,2"
+                                                Command="{Binding AddSourceCommand}"
+                                                ToolTip.Tip="Add a source. A rail can be fed by a cell through a connector, by a regulator's output, or by both."/>
+                                        <Button Grid.Column="2" Content="−" FontSize="10" Padding="6,0"
+                                                MinHeight="0" Margin="0,0,0,2"
+                                                Command="{Binding RemoveSourceCommand}"
+                                                CommandParameter="{Binding #SourceList.SelectedItem}"
+                                                ToolTip.Tip="Remove the selected source"/>
+                                    </Grid>
+                                    <ListBox Name="SourceList" Classes="rows" MaxHeight="120"
+                                             ItemsSource="{Binding Sources}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailSourceRowViewModel">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                                    <TextBlock Classes="lbl" Text="{Binding Anchor}"
+                                                               ToolTip.Tip="{Binding ModelSummary}"/>
+                                                    <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="52"
+                                                                        Text="{Binding VoltageEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="Open-circuit voltage. Empty is NOT zero — a source with no stated level is one the frequency answer can use and the DC answer reports."/>
+                                                    <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                                               IsVisible="{Binding IsFlagged}"
+                                                               ToolTip.Tip="{Binding Refusal}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ── Loads: a LIST, and a row with no current reads observe ── -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <TextBlock Classes="cardhdr" Text="Loads" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="+" FontSize="10" Padding="6,0"
+                                                MinHeight="0" Margin="0,0,4,2"
+                                                Command="{Binding AddLoadCommand}"
+                                                ToolTip.Tip="Add a load. A new row states no current, which makes it an observation port until one is typed."/>
+                                        <Button Grid.Column="2" Content="−" FontSize="10" Padding="6,0"
+                                                MinHeight="0" Margin="0,0,0,2"
+                                                Command="{Binding RemoveLoadCommand}"
+                                                CommandParameter="{Binding #LoadList.SelectedItem}"
+                                                ToolTip.Tip="Remove the selected load"/>
+                                    </Grid>
+                                    <ListBox Name="LoadList" Classes="rows" MaxHeight="150"
+                                             ItemsSource="{Binding Loads}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailLoadRowViewModel">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                                    <TextBlock Classes="lbl" Text="{Binding Anchor}"/>
+                                                    <!-- The SAME right edge whether the row states a
+                                                         current or reads "observe", so the column of
+                                                         numbers stays one column. -->
+                                                    <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="52"
+                                                                        Text="{Binding CurrentEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="The DC current this port draws. Clear it to make the row an observation port — which is what a row with no current IS, not a zero."/>
+                                                    <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                                               IsVisible="{Binding IsFlagged}"
+                                                               ToolTip.Tip="{Binding Refusal}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ── Target ──────────────────────────────────────────────── -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Target"/>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel" Text="Drop"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding DropBudgetEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The DC drop budget. In millivolts, because a budget of 0.08 V reads as a typo where 80 mV does not."/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel" Text="Z"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding ImpedanceTargetEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The flat impedance target, in milliohms. A per-port mask lives on the load row instead."/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel" Text="Band from"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding BandStartEntry, Mode=TwoWay}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Classes="detailLabel" Text="Band to"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding BandStopEntry, Mode=TwoWay}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ── The regulator offer (§2.3) ──────────────────────────── -->
+                            <Border Classes="card" IsVisible="{Binding HasRegulatorOffers}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Next rail"/>
+                                    <ItemsControl ItemsSource="{Binding RegulatorOffers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailRegulatorOffer">
+                                                <StackPanel Spacing="2" Margin="0,2">
+                                                    <TextBlock Classes="note" Text="{Binding Summary}"/>
+                                                    <Button Content="Add it" FontSize="10" Padding="8,1"
+                                                            HorizontalAlignment="Stretch"
+                                                            Command="{Binding $parent[Window].((rvm:RailRfViewModel)DataContext).AcceptRegulatorOfferCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Classes="note"
+                                               Text="Offered, not created — the rail chain is a modelling statement and it is yours."/>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- ══ BOARD ═════════════════════════════════════════════════ -->
+            <Border Grid.Column="1" Classes="pane">
+                <Grid RowDefinitions="Auto,*,Auto,Auto">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Classes="panelhdr" Text="Board" VerticalAlignment="Center"/>
+                        <!-- The tab strip switches the OVERLAY and NEVER the geometry (§11.3). The
+                             artwork underneath is the same on all four; brief 8 draws each map. -->
+                        <StackPanel Grid.Column="1" Name="OverlayTabs" Orientation="Horizontal"
+                                    Spacing="2" HorizontalAlignment="Right" Margin="0,0,0,6">
+                            <ToggleButton Classes="tab" Content="copper" Name="CopperTab"
+                                          ToolTip.Tip="The artwork as drawn, with this rail's own copper highlighted"/>
+                            <ToggleButton Classes="tab" Content="drop" Name="DropTab"
+                                          ToolTip.Tip="The drop map — the artwork coloured by node voltage"/>
+                            <ToggleButton Classes="tab" Content="|Z|" Name="ImpedanceTab"
+                                          ToolTip.Tip="The |Z| map over frequency"/>
+                            <ToggleButton Classes="tab" Content="class" Name="ClassTab"
+                                          ToolTip.Tip="Which copper the fast model treated as a trace and which it meshed. A requirement, not a diagnostic: a wide supply polygon mistaken for a trace is optimistic and invisible."/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- THE LAYOUT EDITOR'S OWN CANVAS (§11.6). Not a schematic, not a sketch and not
+                         a picture of a layout — LayoutCanvas itself, so the board pans and zooms by
+                         exactly the gestures, the step sizes and the anchoring the layout editor uses.
+                         Someone who has learned one of these windows has learned the other, and a
+                         near-miss is worse than an absence because it is discovered by being wrong.
+
+                         BRIEF 8 OWNS IT ENTIRELY. Brief 7 hosts it and wires the strip above; every
+                         gesture and every pixel of overlay is brief 8's, through the CanvasOverlay
+                         seam wBond already uses. -->
+                    <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
+                        <Panel>
+                            <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"/>
+                            <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsVisible="{Binding !HasBoard}"
+                                       Text="No board yet. Import one — the artwork lands in the open workspace as an ordinary cell with a layout view."/>
+                        </Panel>
+                    </Border>
+
+                    <!-- ── Aggressors: an INPUT, not a decoration (§2.2) ────────
+                         A PDN peak matters if something on the board excites it, and this list is the
+                         only input that knows whether it does. Beside the parts table because both
+                         are about what is ON the board, and above the bottom bar because both are
+                         read while the board is being looked at. -->
+                    <Border Grid.Row="2" Classes="card" Margin="0,5,0,0">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                                <TextBlock Classes="cardhdr" Text="Aggressors" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="from the BOM" FontSize="10"
+                                        Padding="6,0" MinHeight="0" Margin="0,0,4,2"
+                                        IsVisible="{Binding HasRecognisedAggressors}"
+                                        Command="{Binding AcceptRecognisedAggressorsCommand}"
+                                        ToolTip.Tip="Add every crystal and converter the BOM reader recognised. Each row says it came from the BOM — a pre-filled frequency nobody checked is exactly the one that will be wrong."/>
+                                <Button Grid.Column="2" Content="+" FontSize="10" Padding="6,0"
+                                        MinHeight="0" Margin="0,0,4,2"
+                                        Command="{Binding AddAggressorCommand}"/>
+                                <Button Grid.Column="3" Content="−" FontSize="10" Padding="6,0"
+                                        MinHeight="0" Margin="0,0,0,2"
+                                        Command="{Binding RemoveAggressorCommand}"
+                                        CommandParameter="{Binding #AggressorList.SelectedItem}"/>
+                            </Grid>
+                            <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
+                                     ItemsSource="{Binding Aggressors}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="rvm:RailAggressorRowViewModel">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                            <TextBlock Classes="lbl" Text="{Binding Summary}"/>
+                                            <!-- WHERE IT CAME FROM, on the row's own face. -->
+                                            <TextBlock Grid.Column="1" Classes="note" Margin="6,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding OriginText}"/>
+                                            <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                       Foreground="{DynamicResource CrfWarningBrush}"
+                                                       IsVisible="{Binding IsFlagged}"
+                                                       ToolTip.Tip="{Binding Refusal}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── The parts table (R-rail7-9) ─────────────────────────── -->
+                    <Border Grid.Row="3" Classes="card" Margin="0,5,0,0">
+                        <Grid RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
+                            <TextBlock Classes="cardhdr" Text="Parts"/>
+                            <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
+                                 This is R-rail7-2's one exception and it is an owner decision: any
+                                 centring here is a misalignment the user can see. -->
+                            <Grid Grid.Row="1" Name="PartsHeader"
+                                  ColumnDefinitions="60,*,70,70,90,70,60">
+                                <Button Classes="gridhdr" Content="refdes"/>
+                                <Button Grid.Column="1" Classes="gridhdr" Content="part number"/>
+                                <Button Grid.Column="2" Classes="gridhdr" Content="marked"/>
+                                <Button Grid.Column="3" Classes="gridhdr" Content="derated"/>
+                                <Button Grid.Column="4" Classes="gridhdr" Content="model source"/>
+                                <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
+                                <Button Grid.Column="6" Classes="gridhdr" Content="L mount"/>
+                            </Grid>
+                            <ListBox Grid.Row="2" Name="PartsList" Classes="rows"
+                                     ItemsSource="{Binding Parts}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="rvm:RailPartRowViewModel">
+                                        <!-- An unresolved row is rendered AS unresolved and populates
+                                             no numeric column — a half-filled row is the shape a
+                                             defaulted one takes, and the whole point of listing it is
+                                             that it is not one. -->
+                                        <Grid ColumnDefinitions="60,*,70,70,90,70,60" Margin="0,1"
+                                              Classes.unresolved="{Binding IsUnresolved}">
+                                            <TextBlock Classes="detailLabel" Text="{Binding Refdes}"
+                                                       HorizontalAlignment="Left" />
+                                            <TextBlock Grid.Column="1" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding PartNumber}"/>
+                                            <TextBlock Grid.Column="2" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding MarkedText}"/>
+                                            <TextBlock Grid.Column="3" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding DeratedText}"/>
+                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
+                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding EsrText}"/>
+                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
+                                                       HorizontalAlignment="Left" Text="{Binding MountingInductanceText}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ══ RESULTS ═══════════════════════════════════════════════ -->
+            <Border Grid.Column="2" Classes="pane">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Classes="panelhdr" Text="Results" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Name="ResultsTabStrip" Orientation="Horizontal"
+                                    Spacing="2" HorizontalAlignment="Right" Margin="0,0,0,6">
+                            <ToggleButton Classes="tab" Content="DC" Name="DcTab"/>
+                            <ToggleButton Classes="tab" Content="frequency" Name="FrequencyTab"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- The plot is a PlotControl in RECTANGULAR mode, fed from a DataSet — never a
+                         bespoke chart (§11.1). Brief 12 builds the DataSet and the traces; the host is
+                         a DataDisplayViewModel with one container in it, which is what makes the
+                         markers, the info boxes, the theme and the clipboard the Data Display's own
+                         rather than four things this window would otherwise answer "nothing" to. -->
+                    <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
+                        <ddc:PlotControl Name="ImpedancePlotControl"
+                                         Plot="{Binding ImpedancePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </ctl:AspectRatioPanel>
+
+                    <!-- A DOCKED LIST PANEL, not a modal sheet (§11.1) — so a user can click through
+                         rows and watch the map and the curve change. -->
+                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="0">
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Drop"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding PortLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Breakdown"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding BreakdownLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Via check"/>
+                                    <TextBlock Classes="note" Text="{Binding ViaFlagSummary}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── The status strip (§11.3's second point) ────────────────────
+             ALWAYS ON SCREEN, so nobody reads a fast answer as an accurate one, and the elapsed time
+             makes the cost of Accuracy obvious BEFORE it is pressed. A refusal appears here, WITH ITS
+             NUMBERS IN IT, and turns the control that answers it red — the two are one mechanism, not
+             a sentence plus a separate hunt. -->
+        <Border Grid.Row="2" Classes="pane" Margin="4,0,4,0" Padding="10,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusLine}"
+                           IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center"/>
+                <TextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
+                           IsVisible="{Binding HasRefusal}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Classes="note" Text="both models in hand"
+                           IsVisible="{Binding HasBothModels}" VerticalAlignment="Center"
+                           ToolTip.Tip="The fast curve stays on the plot beside the accurate one, so the error is measured on this design rather than promised in a document."/>
+            </Grid>
+        </Border>
+
+        <!-- ── The bottom bar (§11.3's third point) ───────────────────────
+             ACCURACY IS A BUTTON HERE, NEXT TO RUN — the one control that changes what the numbers
+             mean, in the place the user looks when the design is settled. Never entered
+             automatically, and never left silently. -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="10,6">
+            <TextBlock Classes="note" Text="{Binding RunBlockedReason}" VerticalAlignment="Center"
+                       IsVisible="{Binding !CanRun}"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Button Name="AccuracyButton" Content="Accuracy" FontSize="11" Padding="10,3"
+                        Classes.flagged="{Binding IsModelKindFlagged}"
+                        Command="{Binding AccuracyCommand}"
+                        ToolTip.Tip="Run the mesh solve. It is never entered automatically and never left silently — and the fast result stays, so the two are compared on this board."/>
+                <Button Name="CompareButton" Content="Compare…" FontSize="11" Padding="10,3"
+                        IsEnabled="False"
+                        ToolTip.Tip="The fast reading beside the accurate one, on this design. Not wired yet."/>
+                <Button Name="ExportButton" Content="Export" FontSize="11" Padding="10,3"
+                        IsEnabled="False"
+                        ToolTip.Tip="Touchstone, .npy, CSV, or a report drawn by the same renderers. Not wired yet."/>
+                <Button Name="RunButton" Content="Run" FontSize="11" Padding="14,3"
+                        IsDefault="True"
+                        Command="{Binding RunCommand}"
+                        ToolTip.Tip="{Binding RunBlockedReason}"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

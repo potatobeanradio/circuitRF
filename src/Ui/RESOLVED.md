@@ -1,5 +1,111 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 7 — the window, and four things that turned out to need saying (2026-09-18)
+
+`brief-railrf-7-window.md`: one resizable non-modal window per railRF document, the import that gets
+a board into one, and the Properties-panel summary. §11 is "deliberately short on invention", and so
+was the work — the chrome is `MatchDesignerWindow.axaml`'s, the board is `LayoutCanvas`, the plot is a
+`PlotControl` on a `DataDisplayViewModel` host, the artwork import is `GerberImportEntry.Run`, and the
+solve is `RailDcRun`. What follows is only the part that was not already decided somewhere.
+
+**R-rail7-2's centring rule is carried by a window-level STYLE, not by an attribute per control — and
+that made the test's ordering assertion load-bearing.** The brief's own wording is "a XAML scan
+asserts `HorizontalContentAlignment="Center"` on every `Button` and `ComboBox`". A `Window.Styles`
+entry says the same thing once and cannot be forgotten on the next button added, so that is what the
+window has. The consequence is not free: **Avalonia resolves competing styles last-one-wins, not by
+CSS specificity**, so `Button.gridhdr` — R-rail7-2's one exception, the left-aligned click-to-sort
+column header — only beats the bare `Button` selector because it is declared *after* it. Swap the two
+blocks and every column header silently centres, which is exactly the misalignment the exception
+exists to prevent. `RailWindowTests` asserts the values AND the declaration order, and it asserts the
+exception as well as the rule, because a test that only checked the rule would delete it.
+
+**The model-kind invariant is a TYPE, not a discipline.** R-rail7-5 says the strip's model kind and
+the numbers must never disagree "for even one frame". Two fields updated in sequence satisfy that
+only by convention, and a test at rest cannot tell the difference. So there is one field —
+`RailResultView(Kind, Result, ElapsedMilliseconds)` — assigned once, and `ModelKindText`,
+`ResultsModelKind` and every results list read off it. The test asserts on the TRANSITION: it
+inspects both halves at every `PropertyChanged` while an edit, an Accuracy run and a second edit go
+past. Splitting the record back into two fields fails it immediately.
+
+**A re-solve in flight is cancelled, not queued, and the superseded result is DROPPED rather than
+merely ignored.** `RunControl` is the mechanism, as `em` and `render` already use it. The second half
+matters more than it looks: a result that arrives after the document has moved on was computed
+against a board state the user can no longer see, so showing it would put an honest model kind over
+numbers that describe nothing on screen. `Finish` checks that the `CancellationTokenSource` it was
+started with is still the current one and returns if not.
+
+**Four of R-rail7-4's six refusals never reach the classifier, and the two that do match on a stem of
+a sentence they do not own.** The window checks the reference layer, the rail order, the placement
+origin and the drill format itself — before a run — so those four are raised with their control
+already known. What is left is Fast's shunt-band ceiling and an unresolved via span, which arrive as
+sentences out of `PdnGraphExtractor` and `PdnAssembly`. `RailRefusals.Classify` matches those by
+stem, which is a real coupling: the better answer is a refusal CODE on `PdnExtraction`, and that is
+briefs 3-6's to add rather than brief 7's. What holds it meanwhile is a `[Theory]` carrying all six
+engine sentences verbatim, asserting the control each names and that each still states its own
+number — so a re-worded engine sentence fails a test rather than quietly turning nothing red.
+
+**`destTech` is null on railRF's own board import, and that is a decision.** Gerber import mints its
+own `.ctech` from the set's layers and points the `.clay` at it (R-L4g-8); `destTech` is the
+reconciliation target for grafting an import's layers onto an EXISTING technology. That is right when
+the artwork is a footprint joining a process and wrong here — a board's copper layers and a
+workspace's process layers are not the same layers, and reconciling them would silently reinterpret
+the stackup railRF is about to read every trace thickness and every dielectric out of.
+
+**The reference PROPOSAL reads `StackupLayer.IsGroundReference` and nothing else.** That flag is
+already what the microstrip PCell's substrate resolution keys on, precisely so an intervening unmarked
+signal conductor is never mistaken for ground — the same mistake on the same data, and a second rule
+here would be a second answer to one question. A stackup that marks nothing gets NO proposal and is
+told so; Q-8 closed the guess, and a guess dressed as a proposal is still one. Confirming is separate
+from selecting (`IsReferenceConfirmed`), because a pre-selected combo a user tabs past is not a
+confirmation — the one place this window deliberately costs a click.
+
+**The parts table's `derated` and `L mount` columns read *unresolved*, and that is correct rather
+than pending.** Derating from a bias curve is brief 11's and the computed mounting loop is brief 13's.
+Until those land, the honest thing for those columns to say is that railRF has not resolved them —
+§9's whole finding is that partial population must be visible, and a plausible number there would be
+the defaulted one the rule exists against. The bias-curve and modelled-from-a-file COUNTS are already
+real, out of `PartLibrary.Coverage`, and they are on the status strip rather than in a column
+somebody has to total up.
+
+**Two traps the Match and wBond panels already paid for, both honoured rather than rediscovered.**
+`PropertiesTool.SetActiveRail` sets its own flag LAST, after every clear — the mechanical
+"clear them all then set mine" shape of those setters means an own-flag assignment placed first is
+silently undone. And every combo here is built ItemsSource-first: `RebuildReferenceOptions` fills
+`ReferenceLayerOptions` before touching `SelectedReferenceLayer`, which is the wBond round-6
+blank-Group-combo bug. The project-tree dirty mark needed no new path at all — the panel edits
+nothing, so there is nothing for it to mark.
+
+**The Tools-menu parity test is what caught the one thing that would otherwise have shipped
+half-done.** `HarmonicaDocumentTests.ToolsMenu_ExistsOnBothSurfaces_WithTheSameEntriesInTheSameOrder`
+holds the macOS `NativeMenu` and the in-window `Menu` against each other, exactly, in order; adding
+railRF to one surface failed it immediately. Both surfaces and the test were updated together, which
+is the whole point of it existing.
+
+**A rejected edit notifies, and an empty field is a different gesture from an unparseable one.** Both
+are small and both are the same class of defect. An `InlineEditText` at rest is a `TextBlock` bound to
+the property, so a value the parser refused leaves the control showing text the model does not hold —
+with nothing raised it stays on screen looking accepted; the row view models therefore notify whether
+or not the value changed. And on the two target fields, CLEARING removes the target while MISTYPING
+leaves it alone: a rail with no stated budget is a rail with the DC question unanswered, which brief 5
+reports rather than substituting for, and a budget deleted by a typo reads afterwards as a design that
+passes.
+
+**A hand-written `InitializeComponent` SHADOWS Avalonia's generated one, and all three new views had
+one.** `private void InitializeComponent() => AvaloniaXamlLoader.Load(this);` is a habit that compiles
+cleanly, renders the XAML correctly, and leaves every `x:Name` field null — so the first use of one
+throws. All three views here use several (`CopperTab`, `OriginCombo`, `ImportButton`, the whole tab
+strip), which means the window would have crashed the moment it opened. Nothing in the build says so;
+**`InitializeComponentShadowingTests` is what said so**, both halves of it, naming all three files.
+That test already existed, it is why the invariant holds, and this is the third kind of thing it has
+caught.
+
+**What this brief deliberately did NOT wire, and says so on the face of the window.** `Report`,
+`Export`, `Compare…` and `Help` are brief 12/16/17's. They are on the bottom bar and the title strip
+because §11.3's sketch puts them there, and they are **disabled with a tooltip** rather than live and
+inert: a control that looks live and does nothing is indistinguishable from one that is broken. The
+parts table's `derated` and `L mount` columns take the same line, one level down — they read
+*unresolved*, which is true, rather than blank, which reads as zero.
+
 ## Update Layout from Schematic drew the Klopfenstein example's taper a second time (2026-09-17)
 
 Owner report: opening that example's `.csch` and running **Update Layout from Schematic** left the
