@@ -63,10 +63,16 @@ public sealed class LayoutPathCache
         public long WidenedAtDbu = -1;
         public long WidenedDetailDbu = -1;
 
+        /// <summary>The hairline tier's stroke route (see <see cref="GetOrBuildCentreline"/>), keyed on
+        /// the decimation tolerance ALONE — no widening, so a zoom gesture does not invalidate it.</summary>
+        public SKPath? CentrelinePath;
+        public long CentrelineDetailDbu = -1;
+
         public void DisposeAll()
         {
             LocalPath?.Dispose();
             WidenedPath?.Dispose();
+            CentrelinePath?.Dispose();
         }
     }
 
@@ -109,6 +115,93 @@ public sealed class LayoutPathCache
     }
 
     /// <summary>
+    /// A <see cref="PathShape"/>'s CENTRELINE in shape-local space, for the hairline tier's stroke
+    /// route — the batch <c>DrawLayer</c> strokes at <c>Width + the pen</c> instead of filling a
+    /// per-shape widened outline.
+    ///
+    /// <para><b>Its key is the decimation tolerance ALONE, and that is the whole point of it.</b>
+    /// <see cref="GetOrBuildWidened"/> has the widening in its key, so it rebuilds whenever the zoom
+    /// crosses a rung of that ladder — and a scroll-wheel click is 1.15x, which is 0.20 of an octave
+    /// against a rung of 0.125, so EVERY click misses on EVERY shape. A centreline does not depend on
+    /// the widening at all: the width is applied by the paint when the batch is stroked. The tolerance
+    /// is bucketed to a whole octave, so a wheel zoom rebuilds roughly once in every three or four
+    /// clicks rather than on all of them.</para>
+    /// </summary>
+    internal (SKPath? LocalPath, long RefX, long RefY) GetOrBuildCentreline(
+        int index, PathShape shape, double dbuToUm, long detailDbu, LayoutFrameCounters? counters)
+    {
+        var entry = Touch(index, shape);
+        if (entry.CentrelinePath is not null && entry.CentrelineDetailDbu == detailDbu)
+        {
+            HitCount++;
+            return (entry.CentrelinePath, entry.RefX, entry.RefY);
+        }
+
+        entry.CentrelinePath?.Dispose();
+        var localPs = new LayoutRenderer.PathSpace(entry.RefX, entry.RefY, dbuToUm);
+        entry.CentrelinePath = LayoutRenderer.BuildPathCentreline(shape, localPs, counters, detailDbu);
+        entry.CentrelineDetailDbu = detailDbu;
+        MissCount++;
+        return (entry.CentrelinePath, entry.RefX, entry.RefY);
+    }
+
+    // ── Which of the hairline tier's two routes a layer draws with ──────────────────────────────
+    //
+    // The two draw the SAME region — a centreline stroked at Width + the pen — one by filling a
+    // per-shape outline built at that width, the other by stroking a batch of centrelines with a paint
+    // of that width. They differ only in WHERE the stroker runs: once per shape into a cache, or once
+    // per frame over the batch. So the frame is free to pick whichever is cheaper, and the answer flips
+    // with what the user is doing.
+    //
+    //   * Zoom SETTLED — every widened outline is already built, the fill route rasterizes a cached
+    //     path and nothing is stroked. Measured on a 16,917-shape imported panel at 3400x2000:
+    //     33.5 ms a frame against 58.7 for the stroke route.
+    //   * Zoom MOVING — every widened outline is stale, so the fill route must rebuild all of them:
+    //     159.1 ms a frame, and 322 on the first. The stroke route rebuilds nothing and draws in 45.8.
+    //
+    // The rule below is therefore: stroke while anything is missing, fill once everything is there, and
+    // only ever BUILD while the key is holding still. A gesture then costs no builds at all, and the
+    // warm-up that follows it is spread over a few frames instead of landing in one.
+    private (long Widen, long Detail) _lastElisionKey = (-1, -1);
+    private bool _elisionKeyStable;
+    private readonly HashSet<LayerKey> _fillRouteReady = [];
+
+    /// <summary>
+    /// Called ONCE per frame, before any layer is drawn, with the key this frame's hairline outlines
+    /// would be built at.
+    ///
+    /// <para><b>Once per frame, not once per layer</b>, and that is not a tidiness point: asked per
+    /// layer, the first layer saw the change and updated the key, so every layer after it in the same
+    /// frame saw a key that already matched and went on building. A zoom gesture then paid the full
+    /// rebuild on every frame anyway, which is the entire cost this exists to avoid.</para>
+    /// </summary>
+    internal void NoteFrameElisionKey(long widenDbu, long detailDbu)
+    {
+        var key = (widenDbu, detailDbu);
+        _elisionKeyStable = _lastElisionKey == key;
+        if (_elisionKeyStable) return;
+
+        // The zoom moved. Nothing built at the old key is usable, and building at the new one is wasted
+        // the moment the next click lands — so this frame strokes, and builds nothing.
+        _lastElisionKey = key;
+        _fillRouteReady.Clear();
+    }
+
+    /// <summary>Called once per layer per frame, BEFORE its shapes are walked. Returns whether this
+    /// layer may use the fill route, and whether this frame may build widened outlines at all.</summary>
+    internal (bool UseFillRoute, bool MayBuild) BeginElisionFrame(LayerKey layer)
+        => (_elisionKeyStable && _fillRouteReady.Contains(layer), _elisionKeyStable);
+
+    /// <summary>Called once per layer per frame, AFTER its shapes are walked, with whether every
+    /// hairline shape on it had a widened outline in hand. One frame of lag is deliberate and
+    /// invisible: the two routes draw the same geometry, so which one a frame used cannot be seen.</summary>
+    internal void EndElisionFrame(LayerKey layer, bool allWidenedCached)
+    {
+        if (allWidenedCached) _fillRouteReady.Add(layer);
+        else _fillRouteReady.Remove(layer);
+    }
+
+    /// <summary>
     /// The stroke-elision tier's widened outline for a <see cref="PathShape"/> whose on-screen width is
     /// under a few device pixels — the same centreline stroked at <c>Width + widenDbu</c>, in the same
     /// shape-LOCAL space (and against the same reference point) <see cref="GetOrBuild"/> uses, so both
@@ -140,6 +233,20 @@ public sealed class LayoutPathCache
     /// gesture — 192,680 paths a frame on an imported raster-fill board, and this comment saying "a zoom
     /// step" is what let that survive.) Returns null only if the shape has no buildable outline.</para>
     /// </summary>
+    /// <summary>The widened outline if it is already built at this key, else null — never builds.
+    /// Touches the LRU exactly as a build would, so a probe cannot evict the shape it is asking about.</summary>
+    internal (SKPath? LocalPath, long RefX, long RefY) TryGetWidened(
+        int index, PathShape shape, long widenDbu, long detailDbu)
+    {
+        var entry = Touch(index, shape);
+        if (entry.WidenedPath is not null && entry.WidenedAtDbu == widenDbu && entry.WidenedDetailDbu == detailDbu)
+        {
+            HitCount++;
+            return (entry.WidenedPath, entry.RefX, entry.RefY);
+        }
+        return (null, entry.RefX, entry.RefY);
+    }
+
     internal (SKPath? LocalPath, long RefX, long RefY) GetOrBuildWidened(
         int index, PathShape shape, long widenDbu, double dbuToUm, long detailDbu, LayoutFrameCounters? counters)
     {

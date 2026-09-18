@@ -125,8 +125,8 @@ public class LayoutHairlineFillTests
     /// <summary>
     /// The board-outline bug: every board outline in the owner's panel is a closed 5-point path one mil
     /// wide, and batching them into the shared fill turned each board into a solid filled rectangle
-    /// covering everything inside it (199 such paths on the fabrication-drawing layer alone). A closed
-    /// centreline must stay on the ordinary fill-plus-outline route, so its interior stays empty.
+    /// covering everything inside it (199 such paths on the fabrication-drawing layer alone). The
+    /// property is that such a path's interior stays empty however the frame chooses to draw it.
     ///
     /// <para><b>The fixture is two NESTED rings of OPPOSITE winding, and every part of that is load
     /// bearing.</b> The mechanism is not "a batch loses holes" — it is narrower than that, and the
@@ -134,10 +134,20 @@ public class LayoutHairlineFillTests
     /// hole, correctly paired, and drawn on its own it is immune; batched, the shared path is filled
     /// NonZero, so contour ORIENTATION across independently built shapes starts to matter, and one
     /// shape's hole is cancelled by another's oppositely-wound contour. Measured directly against the
-    /// hairline tier with the guard removed: one ring alone, two nested rings wound the same way, two
-    /// coincident rings, and three nested rings all render correctly; two nested rings of opposite
-    /// winding do not. A Gerber traces each outline in whatever direction the source tool emitted, so
-    /// mixed winding is the normal case in an imported file, not a contrived one.</para>
+    /// hairline tier at the time: one ring alone, two nested rings wound the same way, two coincident
+    /// rings, and three nested rings all render correctly; two nested rings of opposite winding do not.
+    /// A Gerber traces each outline in whatever direction the source tool emitted, so mixed winding is
+    /// the normal case in an imported file, not a contrived one.</para>
+    ///
+    /// <para><b>What changed, and why this test is worth more now than when it was written.</b> The
+    /// first fix was to keep a closed centreline OUT of the shared fill — <c>IsOpenCentreline</c> on
+    /// the hairline gate. <c>NormalizeOutlineWinding</c> later removed the cancellation at its source
+    /// instead, by giving every built outline a positive outer contour, and the gate's guard came off
+    /// (<c>LayoutRenderer</c>'s hairline tier states the measurement: the exclusion was costing an
+    /// imported panel 58 ms of a 72 ms frame at Zoom to Fit). So these two rings now DO batch — 25,400
+    /// DBU at <see cref="HairlineZoom"/> is 0.82 device pixels, under the tier's threshold — and the
+    /// interior still has to come back empty. Same assertion, harder route: it is no longer checking
+    /// that the rings were kept apart, it is checking that batching them is safe.</para>
     /// </summary>
     [Fact]
     public void NestedClosedHairlinePaths_KeepTheirInteriors_WhateverTheirWinding()
@@ -164,6 +174,104 @@ public class LayoutHairlineFillTests
         var background = bmp.GetPixel(2, 2);
         Assert.True(centre == background,
             $"nested hairline outlines must stay rings — the interior painted {centre} against background {background}");
+    }
+
+    /// <summary>
+    /// A closed hairline path is SERVED by the tier, and the number that says so is the draw-call
+    /// count: one batched fill for the whole layer instead of a fill each plus a stroker pass over all
+    /// of them.
+    ///
+    /// <para><b>This is the shape an imported board is mostly made of</b> — outlines, courtyards,
+    /// keepouts, table rules, drill-chart glyphs — and while <c>IsOpenCentreline</c> guarded the gate
+    /// every one of them fell through to the visibility floor and was stroked. The cost only appears in
+    /// a band: wide enough on screen that the LOD tier does not catch them by bbox, narrow enough that
+    /// they are under a device pixel in WIDTH. That band is where Zoom to Fit lands, which is why an
+    /// imported panel drew at 13 FPS fitted and was fast both zoomed in and zoomed out (72.4 ms ->
+    /// 23.1 ms, measured on a 16,917-shape file whose paths are 8,108 closed against 637 open).</para>
+    ///
+    /// <para>Asserted as a COUNTER rather than a frame time, per this repo's rule for structural
+    /// performance properties. The fixture's rings are 0.82 device pixels wide (under the threshold)
+    /// and 311 long (nowhere near sub-pixel by bbox), so they can only reach the frame through this
+    /// tier or through the floor, and the two answers are one draw call against 201.</para>
+    /// </summary>
+    [Fact]
+    public void ClosedHairlinePaths_AreServedByTheTier_NotStrokedOneByOne()
+    {
+        const int count = 200;
+        var view = MakeView();
+        for (int i = 0; i < count; i++)
+        {
+            long y = 200_000 + i * 28_000L;
+            // A closed 5-point ring — the way every CAM tool writes a board outline or a table rule.
+            view.Shapes.Add(new PathShape
+            {
+                Layer = LayerA,
+                Xy = [200_000, y, 9_800_000, y, 9_800_000, y + 14_000, 200_000, y + 14_000, 200_000, y],
+                Width = 25_400, End = PathEndStyle.Round,
+            });
+        }
+        var tech = MakeTech();
+        var vp = new LayoutViewport(0, 0, HairlineZoom, W, H);
+
+        using var surface = SKSurface.Create(new SKImageInfo(W, H));
+        var on = LayoutRenderer.Draw(surface.Canvas, view, tech, vp, Opts(hairline: 0));
+        var off = LayoutRenderer.Draw(surface.Canvas, view, tech, vp, Opts(hairline: -1));
+
+        Assert.Equal(count, on.ShapesDrawn);            // the fixture really is reaching the tier
+        Assert.Equal(1, on.DrawCalls);                  // one widened fill for all of them
+        Assert.Equal(count + 1, off.DrawCalls);         // a fill each, plus the one stroker pass
+    }
+
+    /// <summary>
+    /// The two routes' division of labour, as the two numbers a frame can be asked for: a frame at a
+    /// NEW key builds nothing, and a settled one ends up building nothing either.
+    ///
+    /// <para><b>This is the regression that the first version of the closed-path fix caused.</b> With
+    /// only the fill route, the widened outline's cache key carries the widening — and the widening is
+    /// bucketed to eighth-octaves while a scroll-wheel click is 1.15x, which is 0.20 of an octave. So
+    /// every click missed on every shape: a 16,917-shape panel rebuilt its whole working set on each
+    /// one, and scroll-zooming from Zoom to Fit went from 77 ms a frame to 159, with the worst frame at
+    /// 322. The stroke route exists so a frame that cannot use the cache does not have to refill it.</para>
+    ///
+    /// <para>Asserted on <c>PathsConstructed</c> because that is the quantity the defect was made of.
+    /// A frame time would measure the machine.</para>
+    /// </summary>
+    [Fact]
+    public void AZoomGestureBuildsNothing_AndASettledViewStopsBuilding()
+    {
+        var view = RoutedHairlines();
+        var tech = MakeTech();
+        var cache = new LayoutPathCache(capacity: 1_000);
+
+        double zoom = 2.0 / 68_000.0;
+        Settle(view, tech, zoom, cache);
+
+        // A wheel click is 1.15x, which crosses a rung of the widening ladder every time — so under the
+        // fill route alone every one of these frames would rebuild every shape's widened outline, at
+        // four SKPaths each.
+        const int n = 12;                                  // RoutedHairlines' shape count
+        const int clicks = 6;
+        int built = 0, worst = 0;
+        for (int click = 1; click <= clicks; click++)
+        {
+            // OUT, not in. Zooming in walks a 25,400 DBU trace up through one device pixel by the third
+            // click, which takes the fixture out of the hairline tier altogether — the frames after that
+            // build ordinary outlines and the gate would be measuring a different tier.
+            zoom /= 1.15;
+            int frame = Frame(view, tech, zoom, cache).PathsConstructed;
+            built += frame;
+            worst = System.Math.Max(worst, frame);
+        }
+
+        // No frame may pay a widened rebuild (4 paths a shape). What a gesture DOES rebuild is the
+        // centrelines, one path a shape, and only on the clicks that cross a whole zoom OCTAVE — the
+        // decimation tolerance is the centreline's only key, and it is bucketed an octave at a time.
+        Assert.True(worst <= n, $"a gesture frame rebuilt {worst} paths; a centreline pass is at most {n}");
+        Assert.True(built <= 2 * n, $"a {clicks}-click gesture rebuilt {built} paths against {clicks * n * 4} for the fill route alone");
+
+        // And when the gesture stops, the warm-up converges rather than running every frame.
+        Assert.True(Settle(view, tech, zoom, cache) <= 3,
+            "a settled view must stop building within a few frames");
     }
 
     // ── The merge tier reuses the path cache ───────────────────────────────────────────────────
@@ -254,6 +362,26 @@ public class LayoutHairlineFillTests
             Opts(hairline: 0, cache));
     }
 
+    /// <summary>
+    /// Draws until the frame builds nothing, and returns how many frames that took.
+    ///
+    /// <para><b>Why the gates below settle before they assert.</b> The hairline tier has two routes
+    /// (<c>LayoutPathCache.BeginElisionFrame</c>): it STROKES a batch of centrelines while any widened
+    /// outline is missing, and FILLS the cached outlines once they are all there. A frame at a new key
+    /// therefore builds nothing at all — it strokes — and the frames after it build the widened set a
+    /// bounded number at a time. So "a pan rebuilds nothing" is a claim about the SETTLED state, and
+    /// asserting it on frame two now measures the warm-up instead of the cache. Settling first keeps
+    /// the gate pointed at what it was written for: once warm, a pan or a sub-rung zoom must not
+    /// rebuild.</para>
+    /// </summary>
+    private static int Settle(LayoutView view, Technology tech, double zoom, LayoutPathCache cache, long originY = 1_800_000)
+    {
+        for (int i = 1; i <= 20; i++)
+            if (Frame(view, tech, zoom, cache, originY).PathsConstructed == 0) return i;
+        Assert.Fail("the hairline tier never stopped building — the two routes are not converging");
+        return 0;
+    }
+
     /// <summary>Gate 1 — the key is constant across a whole bucket of zoom, which is the entire point:
     /// a gesture moves through the bucket before anything is rebuilt.</summary>
     [Fact]
@@ -305,6 +433,7 @@ public class LayoutHairlineFillTests
         var first = Frame(view, tech, zoom, cache);
         Assert.True(first.PathsConstructed > 0, "the first frame must build what it caches");
         Assert.True(first.ShapesDrawn >= 12, $"the fixture must reach the hairline tier; drew {first.ShapesDrawn}");
+        Settle(view, tech, zoom, cache);
 
         Assert.Equal(0, Frame(view, tech, zoom * 1.001, cache).PathsConstructed);
     }
@@ -323,7 +452,13 @@ public class LayoutHairlineFillTests
         Assert.NotEqual(LayoutRenderDetail.WidenDbu(2.0, justAbove), LayoutRenderDetail.WidenDbu(2.0, justBelow));
 
         Assert.True(Frame(view, tech, justAbove, cache).PathsConstructed > 0);
+        Settle(view, tech, justAbove, cache);
+
+        // Crossing a rung invalidates the widened set, so the tier falls back to the stroke route and
+        // rebuilds it — one frame later, since the frame that discovers the new key never builds at it.
+        Frame(view, tech, justBelow, cache);
         Assert.True(Frame(view, tech, justBelow, cache).PathsConstructed > 0, "crossing a rung must rebuild");
+        Settle(view, tech, justBelow, cache);
         Assert.Equal(0, Frame(view, tech, justBelow * 1.001, cache).PathsConstructed);
     }
 
@@ -338,6 +473,7 @@ public class LayoutHairlineFillTests
 
         double zoom = 2.0 / 68_000.0;
         Assert.True(Frame(view, tech, zoom, cache).PathsConstructed > 0);
+        Settle(view, tech, zoom, cache);
         Assert.Equal(0, Frame(view, tech, zoom, cache, originY: 1_900_000).PathsConstructed);
     }
 

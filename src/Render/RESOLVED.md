@@ -1,5 +1,149 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Same report, round 2 (2026-09-17) — the fix for the pan made the scroll-wheel zoom worse
+
+The first round took Zoom to Fit from 72 ms a frame to 23. The reply was that panning was "a little
+faster but not much", and that scroll-wheel zooming from Zoom to Fit was still slow. Both halves of
+that were right, and measuring the GESTURES rather than steady-state frames is what showed why.
+
+**Two things the first round's numbers had missed.**
+
+1. **A steady-state frame is not a gesture.** Rendering the same viewport five times measures a warm
+   cache. A zoom gesture is the opposite: `LayoutCanvas.ZoomFactor` is 1.15, which is 0.20 of an
+   octave, and the widening ladder's rungs are eighth-octaves — 0.125. **So every wheel click crosses
+   at least one rung and invalidates every widened outline in the frame.** Before round 1 only the
+   637 OPEN paths used that cache; after it, all 16,000 did. Scroll-zoom went from 77 ms a frame to
+   159, with the first frame of a gesture at 322.
+2. **The viewport is in LOGICAL pixels and Skia rasterizes at the device scale.** On a 2x display a
+   1700x1000 canvas is 3400x2000 real pixels — 4x the area, and every number in round 1 was taken at
+   1600x1000 with no scaling. Every measurement below is at 3400x2000, which is what a full-screen
+   window on the reporting machine actually costs. (Debug vs Release barely matters here: 68.4 ms
+   against 60.6 on the same frame, because the work is inside Skia, not in managed code.)
+
+**Two routes, because neither one wins both.** The hairline tier draws a centreline at Width + the
+pen. It can do that by filling a per-shape outline built at that width, or by stroking a batch of
+cached centrelines with a paint of that width — the same region either way. They differ only in where
+the stroker runs:
+
+| | pan at fit | zoom in | zoom out | worst frame |
+|---|---|---|---|---|
+| HEAD before round 1 | 93.4 | 77.2 | 39.4 | 353 |
+| round 1 — fill only | 33.5 | 159.1 | 126.7 | 346 |
+| stroke only | 58.7 | 45.8 | 29.4 | 148 |
+| **both, chosen per frame** | **31.0** | **47.1** | **29.6** | **152** |
+
+The rule is in `LayoutPathCache.BeginElisionFrame`: **stroke while anything is missing, fill once
+everything is there, and only ever BUILD while the key is holding still.** A gesture therefore costs
+no rebuilds at all — measured over six wheel clicks on a 12-shape fixture, one frame rebuilt 12
+centrelines (the click that crossed a zoom OCTAVE, which is the centreline cache's only key) against
+the 288 paths the fill route alone would have rebuilt.
+
+**Switching routes mid-gesture is invisible, and that is asserted rather than argued.** Full-frame
+diff of a stroke-route frame against the settled fill-route frame of the same viewport, at 3400x2000:
+at Zoom to Fit **not one pixel of 6,800,000 differs by more than 32/255**, the largest single-channel
+difference is 28, and no pixel changes luminance by more than 96. At half fit, 19 pixels exceed 32.
+
+**Three things worth not re-deriving:**
+
+- **The settle is spread on purpose** (`LayoutFrameCounters.WidenRebuildBudget`, 2,000 a frame).
+  Rebuilding the whole widened set in the first settled frame is 322 ms — a visible hitch landing
+  exactly when the user stops scrolling. Budgeted it is ~6 frames of ~120 ms, every one of them
+  drawing correctly through the stroke route, and then 31 ms from there on. A pan never re-triggers
+  it; only a zoom does.
+- **`Simplify` pays for itself and must not be dropped from the widened build.** It is only ever
+  FILLED, never stroked, so skipping `Simplify`/`AsWinding` looks free — and it halves the build
+  cost. But the unsimplified path is one contour per segment plus a wedge per join, and filling that
+  took the settled frame from 30.2 ms to 47.1. Tried, measured, reverted.
+- **`NoteFrameElisionKey` is called ONCE per frame, and is handed `scaleUm * dbuToUm`, not
+  `vp.Zoom`.** Asked per LAYER, the first layer saw the key change and updated it, so every layer
+  after it in the same frame saw a key that already matched and went on building — the gesture paid
+  the full rebuild anyway. And the two spellings of the zoom are the same quantity but not the same
+  double, so near a rung they can choose different ones, which would put the frame and its layers on
+  opposite sides of "has this changed".
+
+**A fixture that zooms IN leaves the tier it is testing.** The gate here zooms OUT for that reason: a
+25,400 DBU trace passes one device pixel by the third wheel click going in, after which the frames
+are exercising the ordinary outline tier and the assertion is measuring nothing.
+
+
+## User report, 2026-09-17 — an imported panel had no FPS at Zoom to Fit, and was fast either side of it
+
+The report is the diagnosis, and it is worth reading literally: fast zoomed IN, fast zoomed OUT, no
+frame rate in the middle. A cost that appears only in a band is a TIER that stops applying there, not
+a cost that scales with what is on screen.
+
+**Reproduced on the file** (16,917 shapes, 12 MB, 234,723 stored vertices, no instances, 11 layers all
+visible at 0.35 fill opacity), at 1600x1000, Release, medians of five steady-state frames:
+
+| zoom | before | after |
+|---|---|---|
+| fit x0.25 | 35.8 ms | 35.0 ms |
+| fit x0.5 | 38.4 ms | 25.7 ms |
+| **Zoom to Fit** | **72.4 ms** | **23.1 ms** |
+| fit x1.5 | 65.8 ms | 22.0 ms |
+| fit x2 | 55.8 ms | 21.0 ms |
+| fit x3 | 8.6 ms | 7.9 ms |
+| fit x4 | 4.3 ms | 3.6 ms |
+
+**Where the time was.** Instrumenting `DrawLayer`'s four paint points separately: at fit, 58.3 ms of
+the 75.5 ms frame was ONE call — `canvas.DrawPath(strokeBatch, strokePaint)`, with 314,978 points in
+it. Not the fills (1.7 ms for the merged aggregate, 7.9 ms for every individual shape together), not
+path construction (`PathsConstructed` is 0 on every steady-state frame; the cache was working).
+
+**Why that batch was so big.** Every path on this board is 127,000 DBU wide, which at the fit zoom of
+3.28e-6 device pixels per DBU is 0.42 of a pixel. That is under `MinVisibleFillDevicePixels`, so
+`mustOutline` — the visibility floor, which exists so hairline geometry cannot be erased by the
+frame-wide outline decision — was true for essentially every shape, and each one put its full stroked
+outline into the batch. The tier built to absorb exactly this, the hairline widened fill, refused
+them: its gate carried `IsOpenCentreline`, and **8,108 of this file's 8,745 paths are CLOSED** (board
+outlines, courtyards, keepouts, table rules, drill-chart glyphs — a CAM tool writes all of those as a
+closed centreline). 637 open ones went through the tier; the rest were stroked one by one.
+
+**Why it is a band and not a slope.** Zoomed out, the shapes become sub-pixel by BBOX and the LOD tier
+takes them as minimal rects before the floor is ever consulted. Zoomed in, 127,000 DBU passes one
+device pixel wide at about fit x2.4 and `mustOutline` goes false. Between those two is the whole
+visible board at a sub-pixel width — which is where Zoom to Fit puts it, on any imported board whose
+traces are fine relative to its extent.
+
+**The fix is a deletion**: `&& IsOpenCentreline(thinPath)` came off the hairline gate. The guard has
+been redundant since `NormalizeOutlineWinding` landed on 2026-09-12. What it protects against is two
+independently-built rings of OPPOSITE winding cancelling under NonZero inside the shared `elided`
+path; `AsWinding` (holes wound against the ring that encloses them) plus `NormalizeOutlineWinding`
+(every outer contour positive) leave no opposite winding in the frame for a batch to cancel, and the
+widened path is built by the same `BuildShapePath` and inherits both. The substitution is exact for a
+ring as well as for a capsule: fill-plus-outline grows the outer boundary by half the pen and shrinks
+the hole by half the pen, which is what stroking the centreline at Width + the pen produces.
+
+`NestedClosedHairlinePaths_KeepTheirInteriors_WhateverTheirWinding` — the test written to gate the
+guard, whose fixture is the exact case measured to break without it — **passes unchanged**, and now
+does so on the harder route: its two rings are 0.82 device pixels wide, so they go through the tier
+and batch together, and the interior still comes back empty. That test is worth more now than when it
+was written; its own comment says so.
+
+**Verified for lost geometry, not just for speed.** Full-frame pixel diff of before against after at
+seven zoom levels: at fit, 0.12% of pixels differ by more than 32/255 and **114 pixels of 1,600,000
+lost ink** — antialiased edges of the bounded over-cover, and zero at four of the seven levels. Side
+by side the two frames are indistinguishable.
+
+**Two things that were measured and are NOT the answer**, recorded so they are not tried again:
+
+- *Draw-call count.* Removing `IsRingGeometry` from the merge tier as well takes the fitted frame from
+  8,558 draw calls to 1,982 — and from 72.4 ms to **74.2 ms**. Skia's cost here is painted area and
+  edges fed to the rasterizer, not calls issued. The guard stays, and `IsOpenCentreline`'s doc comment
+  now records this A/B so the next reader does not repeat it.
+- *The tiled raster cache.* It is off on this file: `DefaultTileShapeCountThreshold` is 20,000 and the
+  board is 16,917 shapes. Lowering the threshold would have masked the band rather than removed it,
+  and it only ever helps a pan at a settled zoom.
+
+**Exports are unchanged by construction.** The gate requires `opts.PathCache`, and every one-shot
+render — `circuitrf render`, the SVG/PDF exports — passes null. The byte-identity gates were never at
+risk.
+
+**Attribution note on the test run.** `dotnet test tests/Ui.Tests --filter FullyQualifiedName~Layout`
+(3,155 tests) failed one test on each of three runs — a DIFFERENT one each time, one of them on a
+clean tree, and each passing in isolation. Load-dependent flakes in that filter set, not this change.
+
+
 ## `LayoutPortDirection` moved DOWN to `src/Design`, and one overload could not come with it (2026-09-14)
 
 Part of moving a port's TYPE onto its label — `src/Design/RESOLVED.md` has the bug and the decision.

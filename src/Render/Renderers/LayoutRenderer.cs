@@ -418,6 +418,20 @@ internal sealed class LayoutFrameCounters
     /// assertion over these two numbers on a steady-state pan.</summary>
     public int TilesBuilt;
     public int TilesBlitted;
+
+    /// <summary>
+    /// How many more widened hairline outlines this FRAME may build (<c>DrawLayer</c>'s hairline tier;
+    /// <see cref="LayoutPathCache.BeginElisionFrame"/> says when a frame is allowed to build any).
+    ///
+    /// <para><b>A budget rather than "build what is missing", because the missing set is the whole
+    /// document.</b> The first settled frame after a zoom has nothing cached at the new key, and
+    /// rebuilding all of it at once is a 322 ms frame — a visible hitch landing exactly when the user
+    /// stops scrolling and expects the picture to settle. Spread over a handful of frames it is a few
+    /// milliseconds each, and every one of those frames draws correctly through the stroke route
+    /// meanwhile. Set from what a build measures (~3 us on the panel this was tuned on) against a
+    /// budget of a few milliseconds a frame.</para>
+    /// </summary>
+    public int WidenRebuildBudget = LayoutRenderer.DefaultWidenRebuildBudget;
 }
 
 /// <summary>
@@ -662,6 +676,27 @@ public static partial class LayoutRenderer
             var ps = new PathSpace(originX, originY, dbuToUm);
 
             double scaleUm = vp.Zoom / dbuToUm;                          // device px per micron
+
+            // ONCE for the frame, before any layer is drawn — the hairline tier's route choice is a
+            // property of the FRAME's zoom, and asking per layer let the second layer onwards see a key
+            // the first one had already updated, so a zoom gesture kept on building.
+            //
+            // `scaleUm * dbuToUm` and NOT `vp.Zoom`, although the two are the same quantity: DrawLayer
+            // derives its own devicePxPerDbu that way, and (vp.Zoom / dbuToUm) * dbuToUm need not round
+            // back to vp.Zoom. The difference is in the last bits and can only matter where a zoom lands
+            // within one ulp of a rung of the widening ladder — but there the two would pick DIFFERENT
+            // rungs, and the frame would declare its key unchanged while every layer looked up a key
+            // nothing was cached at, rebuilding the whole working set at the one moment this exists to
+            // prevent. Deriving it the same way costs nothing and removes the question.
+            double frameDevicePxPerDbu = scaleUm * dbuToUm;
+            opts.PathCache?.NoteFrameElisionKey(
+                LayoutRenderDetail.WidenDbu(GeometryStrokeDevicePixels, frameDevicePxPerDbu),
+                opts.DetailPixelThreshold < 0
+                    ? 0
+                    : LayoutRenderDetail.ToleranceDbu(
+                        opts.DetailPixelThreshold > 0 ? opts.DetailPixelThreshold : DefaultDetailPixelThreshold,
+                        frameDevicePxPerDbu));
+
             double transX  = (originX - vp.PanX) * vp.Zoom;
             double transY  = vp.Height - (originY - vp.PanY) * vp.Zoom;
             var matrix = SKMatrix.CreateScaleTranslation((float)scaleUm, (float)scaleUm, (float)transX, (float)transY);
@@ -1256,11 +1291,12 @@ public static partial class LayoutRenderer
     // individually) — gate 6 requires both triggers route through the identical aggregate, and they do
     // by construction: there is exactly one `aggregate` SKPath per layer, filled once, below.
     //
-    // With ONE exception, and it is a correctness bound rather than a tuning choice: a CLOSED PathShape
-    // strokes to a ring whose winding nothing normalizes, and two such rings cancel each other under
-    // NonZero once they are contours of one path. See IsRingGeometry — it is the guard IsOpenCentreline
-    // already applies to the elision aggregate, which this tier had never been given. A sub-pixel closed
-    // path still aggregates, because what it contributes is a minimal RECT and not its own geometry.
+    // With ONE exception, and it started as a correctness bound: a CLOSED PathShape strokes to a ring
+    // whose winding nothing normalized, and two such rings cancelled each other under NonZero once they
+    // were contours of one path. See IsRingGeometry. NormalizeOutlineWinding has since removed the
+    // cancellation at the source, so the exception is now kept only because lifting it buys nothing
+    // measurable — read IsOpenCentreline for the A/B. A sub-pixel closed path still aggregates, because
+    // what it contributes is a minimal RECT and not its own geometry.
 
     /// <summary>Default LOD engagement threshold, device pixels — §5.3 item 3's own starting guess,
     /// confirmed (not just assumed) by the LOD-only measurement in the L2c completion note before the
@@ -1291,6 +1327,13 @@ public static partial class LayoutRenderer
     /// this one engages at EVERY zoom level, including the ones where the user is inspecting
     /// geometry.</summary>
     internal const double DefaultDetailPixelThreshold = 0.5;
+
+    /// <summary>Widened hairline outlines one frame may build — see
+    /// <see cref="LayoutFrameCounters.WidenRebuildBudget"/> for why it is a budget at all. 2,000 is
+    /// ~6 ms on the panel this was measured against, so a settled frame stays inside a 60 Hz slot
+    /// while it warms, and a 17,000-shape document is fully on the fill route in about nine
+    /// frames.</summary>
+    internal const int DefaultWidenRebuildBudget = 2_000;
 
     /// <summary>Default frame-wide outline budget, in vertices of visible-layer geometry estimated to
     /// be on screen. Calibrated on the imported board in <see cref="LayoutRenderDetail"/>: the outline
@@ -1384,6 +1427,12 @@ public static partial class LayoutRenderer
         // drill chart render half bright and half ghosted — see `substituteAlpha`.
         using var elided = new SKPath();
 
+        // The hairline tier's stroke route (LayoutPathCache.BeginElisionFrame states when each is used
+        // and what each one measured). One batch per (Width, End), because those two are exactly what
+        // the stroking paint needs — an imported panel's 8,745 paths fall into 12 of them.
+        Dictionary<(long Width, PathEndStyle End), SKPath>? elidedGroups = null;
+        bool useFillRoute = false, mayBuildWidened = false, allWidenedCached = true;
+
         double lodThreshold = EffectiveLodPixelThreshold(opts);
         int mergeThreshold = EffectiveMergeShapeCountThreshold(opts);
         // RF4 — on a tile build this is the FRAME's decision, handed down, never re-derived from the
@@ -1412,6 +1461,8 @@ public static partial class LayoutRenderer
         // was a cache key that changed on every frame of a pinch gesture, so the widened outlines were a
         // 100% miss and the whole working set was rebuilt each frame.
         long widenDbu = LayoutRenderDetail.WidenDbu(GeometryStrokeDevicePixels, devicePxPerDbu);
+        if (opts.PathCache is { } routeCache)
+            (useFillRoute, mayBuildWidened) = routeCache.BeginElisionFrame(def.Key);
 
         foreach (var (index, original) in shapes)
         {
@@ -1505,9 +1556,9 @@ public static partial class LayoutRenderer
 
             // The visibility floor described at `strokeBatch`'s declaration: this shape has nothing
             // the viewer could see if its outline went away, so the frame-wide decision does not
-            // reach it. A sub-pixel WIDTH covers the hairline paths (including the closed ones, which
-            // cannot go through the widened-fill tier below); a sub-pixel bbox dimension covers a
-            // sliver or a degenerate contour, which has no width field to ask.
+            // reach it. A sub-pixel WIDTH covers a hairline shape the widened-fill tier below cannot
+            // take (one being drag-previewed, or a frame with no path cache); a sub-pixel bbox
+            // dimension covers a sliver or a degenerate contour, which has no width field to ask.
             bool mustOutline =
                 System.Math.Min(screenW, screenH) < MinVisibleFillDevicePixels
                 || (shape is PathShape floorPath && floorPath.Width * devicePxPerDbu < MinVisibleFillDevicePixels);
@@ -1528,10 +1579,16 @@ public static partial class LayoutRenderer
             //   * a pour painted that way saturates to solid outline colour at full extent, hiding
             //     the silkscreen and the traces underneath it.
             //
-            // Filling the same centreline at Width + one stroke-width instead: a PathShape's fill IS its
-            // centreline stroked at Width, so fill-then-outline and fill-at-Width-plus-the-pen cover the
-            // identical region (see LayoutPathCache.GetOrBuildWidened). One filled path replaces a fill
-            // plus a stroker pass.
+            // Drawing the same centreline at Width + one stroke-width instead: a PathShape's fill IS its
+            // centreline stroked at Width, so fill-then-outline and Width-plus-the-pen cover the
+            // identical region. One pass replaces a fill plus a stroker pass.
+            //
+            // THERE ARE TWO WAYS TO DRAW THAT, and this tier uses both — LayoutPathCache's
+            // BeginElisionFrame is where the choice is made and where each one's measurement is.
+            // Filling a per-shape widened outline (GetOrBuildWidened) is the cheaper frame but its
+            // cache key carries the widening, so a zoom gesture rebuilds every one of them; stroking a
+            // batch of cached centrelines (GetOrBuildCentreline) rebuilds nothing but runs the stroker
+            // every frame. Settled frames fill; moving ones stroke.
             //
             // The FOOTPRINT is a bounded OVER-cover at any width, not an equality — widenDbu is bucketed
             // up an eighth-octave so it can be a cache key, so it is between 1x and 1.0905x the pen and
@@ -1544,15 +1601,66 @@ public static partial class LayoutRenderer
             // hairline in, and the only one this substitution is exact for — a thin polygon would need
             // a real offset, and inventing an approximation for it here would be a different claim
             // than the one this tier can actually make.
+            //
+            // ── A CLOSED CENTRELINE COMES THROUGH HERE TOO, and until 2026-09-17 it did not ──────
+            //
+            // This gate carried an `IsOpenCentreline` guard, for the reason that method still states:
+            // a closed centreline strokes to a RING, and two independently-built rings of opposite
+            // winding cancel under NonZero once they are contours of the ONE shared `elided` path.
+            // That guard has been redundant since NormalizeOutlineWinding landed — every PathShape
+            // outline now leaves BuildPathOutline with its holes wound against the ring enclosing
+            // them (AsWinding) AND its outer contour positive (NormalizeOutlineWinding), so there is
+            // no opposite winding left in the frame for a batch to cancel. The widened path this tier
+            // adds is built by the same BuildShapePath and inherits both.
+            //
+            // <b>The substitution is exact for a ring as well as for a capsule.</b> Fill-plus-outline
+            // grows the ring's outer boundary by half the pen and shrinks its hole by half the pen,
+            // which is what stroking the same centreline at Width + the pen produces. Where the hole
+            // is narrower than the pen it closes — and it closes in the fill-plus-outline frame too.
+            //
+            // <b>Why it matters enough to say twice.</b> An imported board's outlines, courtyards,
+            // keepouts, table rules and drill-chart glyphs are all closed hairline paths, and a
+            // 12 MB imported panel is 8,108 of them against 637 open ones. Excluded here, every one
+            // fell to the visibility floor above and was stroked: one 315,000-point DrawPath, 58 ms
+            // of a 72 ms frame with the whole board in view. That band — wide enough that the shapes
+            // are not sub-pixel by bbox, narrow enough that they are sub-pixel by WIDTH — is exactly
+            // where Zoom to Fit lands, which is why such a file drew at 13 FPS fitted and was fast
+            // both zoomed in and zoomed out. Measured on that panel at 3400x2000, a pan at fit went
+            // from 93.4 ms a frame to 30.3.
             if (hairlineThreshold > 0 && widenDbu > 0 && shape is PathShape thinPath
                 && thinPath.Width * devicePxPerDbu < hairlineThreshold
-                && IsOpenCentreline(thinPath)
                 && opts.PathCache is { } elisionCache && !dragOverrides.ContainsKey(index))
             {
+                // The fill route: a widened outline already built at this frame's key. Its absence is
+                // what puts the whole layer on the stroke route NEXT frame, so it is recorded even
+                // when this frame is stroking anyway.
                 var (widenedLocal, wRefX, wRefY) =
-                    elisionCache.GetOrBuildWidened(index, thinPath, widenDbu, ps.DbuToUm, detailDbu, counters);
-                if (widenedLocal is null || widenedLocal.IsEmpty) continue;
-                elided.AddPath(widenedLocal, ps.X(wRefX), ps.Y(wRefY));
+                    elisionCache.TryGetWidened(index, thinPath, widenDbu, detailDbu);
+                if (widenedLocal is null)
+                {
+                    allWidenedCached = false;
+                    if (mayBuildWidened && counters.WidenRebuildBudget > 0)
+                    {
+                        counters.WidenRebuildBudget--;
+                        (widenedLocal, wRefX, wRefY) =
+                            elisionCache.GetOrBuildWidened(index, thinPath, widenDbu, ps.DbuToUm, detailDbu, counters);
+                    }
+                }
+
+                if (useFillRoute && widenedLocal is { IsEmpty: false })
+                {
+                    elided.AddPath(widenedLocal, ps.X(wRefX), ps.Y(wRefY));
+                    counters.ShapesDrawn++;
+                    continue;
+                }
+
+                var (centreLocal, cRefX, cRefY) =
+                    elisionCache.GetOrBuildCentreline(index, thinPath, ps.DbuToUm, detailDbu, counters);
+                if (centreLocal is null || centreLocal.IsEmpty) continue;
+                elidedGroups ??= [];
+                var gkey = (thinPath.Width, thinPath.End);
+                if (!elidedGroups.TryGetValue(gkey, out var gpath)) elidedGroups[gkey] = gpath = new SKPath();
+                gpath.AddPath(centreLocal, ps.X(cRefX), ps.Y(cRefY));
                 counters.ShapesDrawn++;
                 continue;
             }
@@ -1662,6 +1770,31 @@ public static partial class LayoutRenderer
             canvas.DrawPath(elided, elidedPaint);
         }
 
+        // The stroke route: one DrawPath per (Width, End). The width is the group's own Width plus the
+        // SAME widening the fill route's outlines were built at, so the two routes cover the identical
+        // region and a layer switching between them from one frame to the next cannot be seen.
+        if (elidedGroups is not null)
+        {
+            foreach (var ((groupWidth, groupEnd), groupPath) in elidedGroups)
+            {
+                using (groupPath)
+                {
+                    if (groupPath.IsEmpty) continue;
+                    using var groupPaint = new SKPaint
+                    {
+                        IsAntialias = true, Style = SKPaintStyle.Stroke,
+                        StrokeWidth = ps.Len(groupWidth + widenDbu),
+                        StrokeCap = StrokeCapFor(groupEnd), StrokeJoin = SKStrokeJoin.Round,
+                        Color = color.WithAlpha(substituteAlpha),
+                    };
+                    counters.DrawCalls++;
+                    canvas.DrawPath(groupPath, groupPaint);
+                }
+            }
+        }
+
+        opts.PathCache?.EndElisionFrame(def.Key, allWidenedCached);
+
         if (!strokeBatch.IsEmpty)
         {
             counters.DrawCalls++;
@@ -1705,8 +1838,16 @@ public static partial class LayoutRenderer
     private static bool IsRingGeometry(LayoutShape shape) => shape is PathShape t && !IsOpenCentreline(t);
 
     /// <summary>
-    /// Whether a <see cref="PathShape"/>'s centreline starts and ends at different points — the gate on
-    /// the hairline tier, and it is about HOLES, not about tidiness.
+    /// Whether a <see cref="PathShape"/>'s centreline starts and ends at different points — and it is
+    /// about HOLES, not about tidiness.
+    ///
+    /// <para><b>It no longer gates the hairline tier</b>, which is what it was written for. Once
+    /// <see cref="NormalizeOutlineWinding"/> gave every built outline a positive outer contour, the
+    /// cancellation described below could no longer happen and the guard was removed from that gate
+    /// (see it for the measurement, and for the class of board it was costing). <see cref="IsRingGeometry"/>
+    /// is the one caller left, on the merge tier, where it is kept because removing it is measurably
+    /// worth nothing: on that same board it turned 8,558 draw calls into 1,982 and the frame went from
+    /// 72.4 ms to 74.2 ms. Draw-call count is not what that frame is made of.</para>
     ///
     /// <para>An OPEN centreline strokes to a capsule: one contour, no interior. Any number of those can
     /// be merged into a single batched path and filled once, because under the non-zero winding rule a
@@ -1720,9 +1861,15 @@ public static partial class LayoutRenderer
     /// each outline in whatever direction its source tool emitted.) That is not hypothetical. Every
     /// board outline in the owner's panel is a closed 5-point path one mil wide (the largest is the
     /// 194 x 115 mm panel border), and batching them turned each board into a solid black rectangle
-    /// covering everything inside it. A closed path therefore stays on the ordinary fill-plus-outline
-    /// route, where it is drawn on its own and its hole is safe. There are a handful of them per file
-    /// against tens of thousands of open segments, so nothing measurable is given up.</para>
+    /// covering everything inside it.</para>
+    ///
+    /// <para><b>The winding this describes is the one the renderer no longer produces.</b> Both halves
+    /// of the fix are at the SOURCE, in <see cref="BuildPathOutline"/>: <see cref="AsWinding"/> orients
+    /// a hole against the ring enclosing it, and <see cref="NormalizeOutlineWinding"/> makes every
+    /// outer contour positive. Two rings built that way cannot cancel, nested or not, whichever
+    /// direction the file traced them — which is why the hairline tier takes closed centrelines now
+    /// and <c>NestedClosedHairlinePaths_KeepTheirInteriors_WhateverTheirWinding</c> still passes with
+    /// the fixture that used to break it.</para>
     /// </summary>
     private static bool IsOpenCentreline(PathShape p) =>
         p.Xy.Length >= 4 && (p.Xy[0] != p.Xy[^2] || p.Xy[1] != p.Xy[^1]);
@@ -2316,6 +2463,42 @@ public static partial class LayoutRenderer
 
     // ── PathShape (trace): centerline -> outline via GetFillPath (§1.5 of the L1a brief) ────────
 
+    /// <summary>Skia's cap for a <see cref="PathEndStyle"/>. Extended is Butt because the extension is
+    /// already in the centreline (<see cref="ExtendedCenterline"/>), not in the cap.</summary>
+    private static SKStrokeCap StrokeCapFor(PathEndStyle end) => end switch
+    {
+        PathEndStyle.Round  => SKStrokeCap.Round,
+        PathEndStyle.Square => SKStrokeCap.Square,
+        _                   => SKStrokeCap.Butt,   // Flush, and Extended
+    };
+
+    /// <summary>
+    /// A <see cref="PathShape"/>'s centreline in path space — the stored vertex list, extended if the
+    /// end style says so and thinned to the frame's decimation tolerance.
+    ///
+    /// <para>Extracted so the two things that stroke it cannot drift: <see cref="BuildPathOutline"/>,
+    /// which strokes it to a filled outline, and <c>DrawLayer</c>'s hairline tier, which batches it and
+    /// strokes the batch. Same vertices, same extension, same decimation, or the two tiers disagree
+    /// about where a trace is.</para>
+    /// </summary>
+    internal static SKPath? BuildPathCentreline(PathShape trace, PathSpace ps, LayoutFrameCounters? counters, long detailDbu)
+    {
+        if (trace.Xy.Length / 2 < 2) return null;
+
+        var xy = trace.End == PathEndStyle.Extended ? ExtendedCenterline(trace.Xy, trace.Width) : trace.Xy;
+        if (trace.Edges is null)
+            xy = LayoutRenderDetail.Decimate(xy, detailDbu, minKeep: 2);
+
+        var centerline = new SKPath();
+        if (counters is not null) counters.PathsConstructed++;
+        AddEdgeListPath(centerline, xy, trace.Edges, closed: false, ps);
+        // The trace's own CENTRELINE is the stored vertex list `--detail` thins; the stroked outline
+        // Skia derives from it is generated geometry, not stored, and counting that instead would
+        // report the stroker's fidelity rather than the document's.
+        CountVertices(counters, xy.Length / 2);
+        return centerline;
+    }
+
     /// <summary>
     /// Builds a <c>PathShape</c>'s DISPLAY outline — curves stay curves, via Skia's own stroker plus
     /// <see cref="SKPath.Simplify"/>. <c>GetFillPath</c> does not produce a single merged contour: Skia's
@@ -2345,24 +2528,10 @@ public static partial class LayoutRenderer
         int n = trace.Xy.Length / 2;
         if (n < 2) return null;
 
-        var xy = trace.End == PathEndStyle.Extended ? ExtendedCenterline(trace.Xy, trace.Width) : trace.Xy;
-        if (trace.Edges is null)
-            xy = LayoutRenderDetail.Decimate(xy, detailDbu, minKeep: 2);
+        using var centerline = BuildPathCentreline(trace, ps, counters, detailDbu);
+        if (centerline is null) return null;
 
-        using var centerline = new SKPath();
-        if (counters is not null) counters.PathsConstructed++;
-        AddEdgeListPath(centerline, xy, trace.Edges, closed: false, ps);
-        // The trace's own CENTRELINE is the stored vertex list `--detail` thins; the stroked outline
-        // Skia derives from it is generated geometry, not stored, and counting that instead would
-        // report the stroker's fidelity rather than the document's.
-        CountVertices(counters, xy.Length / 2);
-
-        var cap = trace.End switch
-        {
-            PathEndStyle.Round  => SKStrokeCap.Round,
-            PathEndStyle.Square => SKStrokeCap.Square,
-            _                   => SKStrokeCap.Butt,   // Flush, and Extended (handled via the pre-extended centerline above)
-        };
+        var cap = StrokeCapFor(trace.End);
 
         using var strokeForFill = new SKPaint
         {
