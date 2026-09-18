@@ -758,6 +758,105 @@ public partial class TechEditorView : UserControl
         }
     }
 
+    // ── The Name column's width (owner, 2026-09-17) ──────────────────────────
+    // Dragging the grip in the Name header (see the `Border.colgrip` style) sets the first column
+    // of all three grids that make up the layer table — the filter row, the header row and every
+    // row of the list — to the same explicit width, which is what carries the columns beside it
+    // left and right. The width is deliberately VIEW state and nothing else: it is not on the view
+    // model, not in the document and not saved, because it is a way to read a long name for a
+    // moment rather than a property of the technology. Closing the editor forgets it, which is the
+    // same answer double-clicking the grip gives.
+    //
+    // Null means the DEFAULT — the star width the column has today, whatever the window is
+    // currently giving it. It is kept as "no width" rather than as the number that star resolves
+    // to, so that until someone drags the grip the column still grows and shrinks with the window.
+
+    /// <summary>The column's own MinWidth. Below this the Grid would clamp anyway; clamping here as
+    /// well is what stops the drag accumulating a width the user then has to drag back through.</summary>
+    private const double LayerNameMinWidth = 110;
+
+    /// <summary>Far wider than any layer name, and short of the point where the drag would push the
+    /// whole table off the right edge with nothing left on screen to drag back.</summary>
+    private const double LayerNameMaxWidth = 600;
+
+    private static readonly GridLength LayerNameDefaultWidth = new(1, GridUnitType.Star);
+
+    private double? _layerNameWidth;
+    private double? _gripDragOriginX;
+    private double  _gripDragBaseWidth;
+
+    private void OnLayerNameGripPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border grip) return;
+
+        // Double-click restores the default. Taken here rather than through DoubleTapped because the
+        // press below captures the pointer, and a gesture that needs a second press to arrive at the
+        // same control is the kind of thing capture quietly changes.
+        if (e.ClickCount >= 2)
+        {
+            _gripDragOriginX = null;
+            _layerNameWidth  = null;
+            ApplyLayerNameColumnWidth();
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
+        // Measured against the HEADER GRID, not the grip: the grip moves as the column widens, so a
+        // delta read in its own coordinate space would be measuring itself.
+        _gripDragOriginX   = e.GetPosition(LayerHeaderColumns).X;
+        _gripDragBaseWidth = LayerHeaderColumns.ColumnDefinitions[0].ActualWidth;
+        e.Pointer.Capture(grip);
+        e.Handled = true;
+    }
+
+    private void OnLayerNameGripMoved(object? sender, PointerEventArgs e)
+    {
+        if (_gripDragOriginX is not { } origin) return;
+
+        var width = _gripDragBaseWidth + (e.GetPosition(LayerHeaderColumns).X - origin);
+        _layerNameWidth = Math.Clamp(width, LayerNameMinWidth, LayerNameMaxWidth);
+        ApplyLayerNameColumnWidth();
+        e.Handled = true;
+    }
+
+    private void OnLayerNameGripReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_gripDragOriginX is null) return;
+        _gripDragOriginX = null;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    /// <summary>A row realized after the drag — the list is virtualized, so scrolling builds rows
+    /// that were never on screen while the grip was moving — is born at the current width rather
+    /// than at the default the template declares.</summary>
+    private void OnLayerRowColumnsLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Grid g) SetNameColumnWidth(g, CurrentLayerNameWidth);
+    }
+
+    private GridLength CurrentLayerNameWidth =>
+        _layerNameWidth is { } w ? new GridLength(w, GridUnitType.Pixel) : LayerNameDefaultWidth;
+
+    private void ApplyLayerNameColumnWidth()
+    {
+        var width = CurrentLayerNameWidth;
+        SetNameColumnWidth(LayerFilterColumns, width);
+        SetNameColumnWidth(LayerHeaderColumns, width);
+
+        // Every realized row, found by the tag its template carries. Only the rows on screen exist,
+        // so this is a few dozen grids however many layers the technology has.
+        foreach (var row in LayersList.GetVisualDescendants().OfType<Grid>())
+            if (row.Tag as string == "LayerRowColumns")
+                SetNameColumnWidth(row, width);
+    }
+
+    private static void SetNameColumnWidth(Grid grid, GridLength width)
+    {
+        if (grid.ColumnDefinitions.Count > 0) grid.ColumnDefinitions[0].Width = width;
+    }
+
     private void OnComboSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (sender is not Control c) return;

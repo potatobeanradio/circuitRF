@@ -162,6 +162,36 @@ public sealed class TechEditorLayerColumnLayoutTests
         }
     }
 
+    /// <summary>
+    /// The Name column can be dragged wider by the grip in its header, and the ONE way that goes
+    /// wrong is the same way the column list itself goes wrong: the width reaches two of the three
+    /// grids and not the third, so the headings stop sitting over the fields they name. The grip
+    /// lives in the Name header and the code-behind that moves it names all three grids — the
+    /// filter row, the header row, and every realized row by the tag its template carries.
+    /// </summary>
+    [Fact]
+    public void TheNameWidthGrip_IsInTheNameHeader_AndMovesAllThreeGrids()
+    {
+        string axaml = Axaml();
+
+        // In the Name column, and last in it, which is what puts it at the right-hand edge of the
+        // column of name boxes rather than somewhere in the middle of the heading.
+        var header = Between(axaml, "<Grid Grid.Column=\"0\" ColumnDefinitions=\"*,Auto\">", "</Grid>");
+        Assert.Contains("Text=\"Name\"", header);
+        Assert.Contains("Classes=\"colgrip\"", header);
+        Assert.Contains("Grid.Column=\"1\" Classes=\"colgrip\"", header);
+
+        Assert.Contains("x:Name=\"LayerFilterColumns\"", axaml);
+        Assert.Contains("x:Name=\"LayerHeaderColumns\"", axaml);
+        Assert.Contains("Tag=\"LayerRowColumns\"", RowTemplate());
+
+        string code = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs"));
+        var apply = Between(code, "private void ApplyLayerNameColumnWidth()", "private static void SetNameColumnWidth");
+        foreach (var grid in new[] { "LayerFilterColumns", "LayerHeaderColumns", "LayerRowColumns" })
+            Assert.Contains(grid, apply);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static string Axaml() => File.ReadAllText(
@@ -190,6 +220,15 @@ public sealed class TechEditorLayerColumnLayoutTests
         Assert.True(start >= 0, "the layer row template is gone");
         int end = axaml.IndexOf("</DataTemplate>", start, StringComparison.Ordinal);
         return axaml[start..end];
+    }
+
+    private static string Between(string text, string start, string end)
+    {
+        int i = text.IndexOf(start, StringComparison.Ordinal);
+        Assert.True(i >= 0, $"'{start}' is gone from the Layers tab");
+        int j = text.IndexOf(end, i, StringComparison.Ordinal);
+        Assert.True(j >= 0, $"'{start}' is not closed by '{end}'");
+        return text[i..j];
     }
 
     private static string RepoRoot()

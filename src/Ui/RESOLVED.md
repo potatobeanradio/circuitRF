@@ -1,5 +1,38 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The Technology Editor's Name column can be dragged wider (2026-09-17)
+
+The layer table's ten fixed columns already fill a default-sized window on their own, so the
+star-sized **Name** column sits at its `MinWidth` of 110 px until the window itself is dragged wider
+— and a process layer name is routinely longer than that. A grip in the Name header, at the right
+edge of the column and immediately left of **Vis**, now drags it: the columns beside it follow, and a
+double-click puts it back to the star width it has today. View state only: not on the view model, not
+in the document, not saved, because it is a way to read a long name for a moment.
+
+**Why this is code-behind and not a binding.** All three grids of that tab — filter row, header row,
+row template — declare the same eleven columns, and the width has to reach all three or the headings
+stop sitting over the fields they name. The row grid is inside a `DataTemplate`, so the obvious move
+is to bind its first `ColumnDefinition.Width`. **It cannot be bound at all:**
+`ColumnDefinition` derives from `DefinitionBase : AvaloniaObject` (checked against the 12.0.3
+assembly, not recalled) — not `StyledElement`. It has no `DataContext` to bind against and is in
+neither tree, so `$parent[ListBox]` has nothing to walk. A `Style` cannot reach it either, for the
+same reason. So the width is pushed: the two outer grids by name, every realized row by the
+`Tag="LayerRowColumns"` its template carries, plus that grid's `Loaded` for a row the virtualizing
+panel builds AFTER the drag — scrolling would otherwise realize rows at the template's default width,
+beside rows at the dragged one.
+
+**The drag is measured against the header grid, not against the grip.** The grip moves as the column
+widens, so a delta read in its own coordinate space measures itself and the column crawls. Pointer
+press captures, `PointerMoved` re-reads an absolute X, and the double-click is taken off
+`ClickCount` in the same press handler rather than through `DoubleTapped` — the capture the first
+press takes is exactly the sort of thing a tap gesture is built on.
+
+**Avalonia 12 does have `SharedSizeGroup`**, and it is still not what these columns use: a shared
+group is the maximum over the participants that were MEASURED, and with virtualization only the rows
+on screen are, so the columns would shift under the user every time scrolling realized a wider row.
+The comment in the XAML saying so predates the grip and is unchanged by it.
+
+
 ## Revision control kept talking to a designer who had switched it off (2026-09-17)
 
 Two owner reports, one root cause: **every open-time revision surface asked "is this workspace held?"

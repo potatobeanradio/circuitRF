@@ -19,6 +19,34 @@
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
         </Style>
+
+        <!-- ── The Name column's width grip (owner, 2026-09-17) ─────────────────
+             Name is the one column on the layer table that cannot be read wider by widening the
+             window: the ten fixed columns beside it already fill a default-sized window on their
+             own, so the star-sized Name column sits pinned at its MinWidth and a long process layer
+             name is cut off with nowhere to go. The grip is how a full name is read without
+             touching the window — drag it right, read the name, double-click it to put the column
+             back where it was.
+
+             It sits at the RIGHT edge of the Name header, directly above the end of the column of
+             name boxes, because the right edge is the one it moves. Two hairlines rather than a
+             glyph or a word: in 10 px of header it is the only mark that reads as "grab me"
+             without joining in with the column titles. Dimmed until the pointer is on it. -->
+        <Style Selector="Border.colgrip">
+            <Setter Property="Width" Value="9"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="SizeWestEast"/>
+            <Setter Property="Opacity" Value="0.5"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="Border.colgrip:pointerover">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <Style Selector="Border.colgrip Rectangle">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="10"/>
+            <Setter Property="Fill" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
         <Style Selector="TextBox.cell">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Padding" Value="4,3"/>
@@ -430,7 +458,7 @@
                              bulk toggles directly above the Vis and Sel checkbox columns they
                              sweep. A row of buttons parked at the left, acting on a column 400 px
                              away, is the version of this that has to be read twice. -->
-                        <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                        <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4" x:Name="LayerFilterColumns">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
                                 <ColumnDefinition Width="30"/>
@@ -474,7 +502,7 @@
                             </ToggleButton>
                         </Grid>
 
-                        <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4">
+                        <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4" x:Name="LayerHeaderColumns">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
                                 <ColumnDefinition Width="30"/>
@@ -488,7 +516,20 @@
                                 <ColumnDefinition Width="48"/>
                                 <ColumnDefinition Width="82"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"  Classes="colhdr" Text="Name"/>
+                            <Grid Grid.Column="0" ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Classes="colhdr" Text="Name" VerticalAlignment="Center"/>
+                                <Border Grid.Column="1" Classes="colgrip" x:Name="LayerNameGrip"
+                                        PointerPressed="OnLayerNameGripPressed"
+                                        PointerMoved="OnLayerNameGripMoved"
+                                        PointerReleased="OnLayerNameGripReleased"
+                                        ToolTip.Tip="Drag to widen or narrow the Name column; the columns beside it move to follow. Double-click to restore its default width.">
+                                    <StackPanel Orientation="Horizontal" Spacing="2"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Rectangle/>
+                                        <Rectangle/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                             <TextBlock Grid.Column="1"  Classes="colhdr" Text="Vis"       HorizontalAlignment="Center"/>
                             <TextBlock Grid.Column="2"  Classes="colhdr" Text="Sel"       HorizontalAlignment="Center"/>
                             <TextBlock Grid.Column="3"  Classes="colhdr" Text="Color"     HorizontalAlignment="Center"/>
@@ -505,7 +546,7 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:LayerRowViewModel">
                                         <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1" Padding="0,3">
-                                            <Grid ColumnSpacing="4">
+                                            <Grid ColumnSpacing="4" Tag="LayerRowColumns" Loaded="OnLayerRowColumnsLoaded">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" MinWidth="110"/>
                                                     <ColumnDefinition Width="30"/>
