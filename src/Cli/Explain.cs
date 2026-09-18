@@ -166,6 +166,7 @@ internal static class Explain
             case DocumentKind.Technology:
             case DocumentKind.Symbol:
             case DocumentKind.AssemblyRules:
+            case DocumentKind.Rail:
             case DocumentKind.Folder:
                 // Nothing but the workspace walk to report: none of these resolves a second
                 // reference of its own. Reported anyway, because "which workspace" is the context

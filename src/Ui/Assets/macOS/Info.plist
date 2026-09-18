@@ -249,6 +249,24 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.crail</string>
+            <key>UTTypeDescription</key>
+            <string>railRF Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>crail</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -432,6 +450,23 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>cem</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>railRF Document</string>
+            <!-- Editor, not Viewer, and unlike .charm/.wBond it stays that way: railRF ships no
+                 standalone binary, so there is no second application for Launch Services to choose
+                 between. circuitRF is the only thing that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.crail</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>crail</string>
             </array>
         </dict>
     </array>

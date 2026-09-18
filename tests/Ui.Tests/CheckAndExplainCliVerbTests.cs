@@ -36,6 +36,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using Symbol = CircuitRF.Design.Symbol.Symbol;
@@ -219,6 +220,54 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         output.WriteLine(run.StdErr);
 
         AssertHasDiagnostic(run, "check.cdd.source-not-run");
+
+        var ids = Json(run).RootElement.GetProperty("diagnostics").EnumerateArray()
+                      .Select(d => d.GetProperty("id").GetString()).ToArray();
+        Assert.DoesNotContain("check.path.unknown-kind", ids);
+
+        Assert.Equal(0, run.ExitCode);
+    }
+
+    /// <summary>
+    /// <b>A workspace holding a <c>.crail</c> checks clean, and the rail set's SOLVE ORDER is what
+    /// the check reports</b> (brief-railrf-1-document.md R-rail1-11).
+    ///
+    /// <para>The <c>.cdd</c> test above is the precedent and the reason this one exists: giving
+    /// <c>DocumentKinds</c> a new extension without giving <c>check</c> an arm for it turns every
+    /// walk over a workspace holding one into <c>check.path.unknown-kind</c> — <i>"Nothing circuitRF
+    /// reads is named 'X.crail'"</i>, which is false about a document the application opens — and
+    /// exits 1 with nothing wrong.</para>
+    ///
+    /// <para>The order is the finding worth having: a regulator is a load on its input rail and a
+    /// source on its output rail, the two rows are linked by nothing but a shared refdes, and reading
+    /// the file tells you neither which order they solve in nor whether an order exists.</para>
+    /// </summary>
+    [Fact]
+    public void AWorkspaceHoldingARailDocument_ChecksCleanAndReportsItsSolveOrder()
+    {
+        string ws = Dir("rail-ws");
+        WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"), new CwsFile());
+
+        var doc = new RailDocument { Name = "board" };
+        foreach (var (name, source, load) in
+                 new[] { ("+1V8", "U2", (string?)null), ("VBAT", "BT1", "U2") })
+        {
+            var rail = new RailSpec { Name = name, ReferenceLayer = new LayerKey(2, 0) };
+            rail.Sources.Add(new RailSource { Anchor = new RailPortAnchor { Refdes = source, Pin = "OUT" } });
+            if (load is not null)
+                rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = load, Pin = "VIN" } });
+            doc.Rails.Add(rail);
+        }
+        RailDocumentIo.SaveToFile(Path.Combine(ws, "board.crail"), doc);
+
+        var run = RunCli("check", ws, "--json");
+        output.WriteLine(run.StdErr);
+
+        var doc2 = AssertHasDiagnostic(run, "check.rail.summary");
+
+        // The ARGUMENT, not the sentence — R-aut1-8's rule, and the order is the finding.
+        Assert.Equal("VBAT \u2192 +1V8", Argument(doc2, "check.rail.summary", "order"));
+        Assert.Equal("2", Argument(doc2, "check.rail.summary", "rails"));
 
         var ids = Json(run).RootElement.GetProperty("diagnostics").EnumerateArray()
                       .Select(d => d.GetProperty("id").GetString()).ToArray();

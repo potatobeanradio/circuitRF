@@ -15,6 +15,7 @@ internal enum DocumentKind
     Layout,
     Technology,
     EmSetup,
+    Rail,
     Netlist,
     AssemblyRules,
     DataDisplay,
@@ -47,6 +48,7 @@ internal static class DocumentKinds
         DocumentKind.Layout        => "layout",
         DocumentKind.Technology    => "technology",
         DocumentKind.EmSetup       => "em-setup",
+        DocumentKind.Rail          => "rail",
         DocumentKind.Netlist       => "netlist",
         DocumentKind.AssemblyRules => "assembly-rules",
         DocumentKind.DataDisplay   => "data-display",
@@ -92,6 +94,10 @@ internal static class DocumentKinds
             ".clay"  => DocumentKind.Layout,
             ".ctech" => DocumentKind.Technology,
             ".cem"   => DocumentKind.EmSetup,
+            // A railRF document (brief-railrf-1-document.md R-rail1-11). `check`, `explain`, `find`
+            // and `render` classify it BY KIND rather than calling it unreadable; the `rail` verb
+            // that runs one is brief 10's.
+            ".crail" => DocumentKind.Rail,
             ".cnl"   => DocumentKind.Netlist,
             ".wasm"  => DocumentKind.AssemblyRules,
             // A data display. `render` draws one (RND-4); `check`/`explain` do not read it yet, and

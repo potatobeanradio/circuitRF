@@ -6616,3 +6616,88 @@ declares it.
 two conductors and one dielectric; and no drill override needed.** Gate:
 `tests/Ui.Tests/GerberRunTogetherNamesTests.cs`. Its fixtures name no tool, vendor or product — only
 the SHAPE of the names, which is the whole content of the first defect.
+
+## railRF brief 1 — the `.crail` document, and the five things the registration turned up (2026-09-18)
+
+`src/Design/RailRf/` now holds the document every other brief in the series reads and writes:
+`RailDocument`, `RailSpec`, `RailPortAnchor`, `RailSource`, `RailLoad`, `RailTarget`,
+`RailAggressor`, `RailOrder` and `RailDocumentIo`. Framework-free, on `EmSetupPersistence`'s terms
+exactly — `System.Text.Json`, `WriteIndented`, enum-as-string, `WhenWritingNull`, a `FormatVersion`
+integer that is refused when it is newer, `AtomicFile` on the way out and `GzipTextFile`'s sniff on
+the way in. Gate: `tests/Ui.Tests/RailRf/RailDocumentTests.cs`, 10 tests, 66 ms.
+
+Five things came out of doing it that are not in the brief.
+
+### 1. `RailTarget`'s record equality was reference equality, and brief 16 is what that would break
+
+A `record`'s generated `Equals` compares each member with that member's own `Equals` — and
+`IReadOnlyList<RailMaskPoint>`'s own is REFERENCE equality. So two targets read from the same bytes
+compared UNEQUAL, silently, which would have made the round-trip test prove nothing while passing on
+every document that happened to carry no mask. It is worse downstream than in a test: **brief 16
+compares two documents for a living**, and "these two masks differ" is exactly the false finding a
+comparison tool must not produce. `RailTarget` therefore overrides `Equals(RailTarget?)` and
+`GetHashCode` to compare the mask's POINTS. Any later record here that gains a collection member
+needs the same treatment — the compiler says nothing.
+
+### 2. Only circuitRF's `Info.plist` claims `.crail`, not "all three"
+
+The brief's registration table says `src/Ui/Assets/macOS/*.plist` (all three). The other two plists
+are **harmonicaRF's and wBond's own standalone bundles, and each claims exactly one type — its own**.
+railRF ships no standalone binary, so there is no second application for Launch Services to choose
+between and no role to split; and a `.crail` claimed by a bundle whose binary has no railRF window in
+it is precisely the "launches and opens nothing" failure the six parity tests exist to catch, wearing
+a new hat. For the same reason circuitRF's entry is role **Editor** rather than the **Viewer** that
+`.charm` and `.wBond` carry: those two are Viewer because a standalone owns them, and nothing owns
+this one but circuitRF.
+
+### 3. Classifying `.crail` in `DocumentKinds` is not free — `check` needed an arm the same day
+
+This is the `.cdd` bug again and it is worth writing down twice. Giving `DocumentKinds.Classify` a new
+extension moves the file out of `DocumentKind.Unknown`, which is one of the four kinds a folder walk
+SKIPS. So `check <workspace>` stopped skipping every `.crail` and fell through to
+`check.path.unknown-kind` — *"Nothing circuitRF reads is named 'board.crail'"*, false about a document
+the application opens, once per file, exit 1 with nothing wrong. `CheckRail` is the arm, and it writes
+no validation logic of its own on `check`'s own rule: the refusals are `RailDocumentIo`'s (the reader
+the window opens one with) and the order is `RailOrder`'s. `explain` joins the group that reports the
+workspace walk; `render` needed nothing, because its `default` already refuses BY KIND and now names
+`rail` instead of `unknown`. **The rule: a row added to `Classify` obliges an arm in `check` and a case
+in `explain` in the same change.**
+
+### 4. `OpenRailPath` is a real route, deliberately, and it is brief 7's hand-off point
+
+Brief 7 owns the window, but the parity tests require a `case ".crail":` in
+`WorkspaceViewModel.OpenDocumentByPath` the moment the plist claims the type — and a case that does
+nothing is the broken-file failure the tests exist to prevent. So the route READS the document through
+`RailDocumentIo`, reports what it holds, and says the window is not available in this build. That is
+not filler: it puts the reader's own refusals — an anchor that is both a pad and a coordinate, a rail
+pair that cannot be ordered — in front of whoever opened the file. Brief 7 replaces the body and keeps
+the route.
+
+### 5. A stale `ExpectedIds` list was already red before this change
+
+`CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` was failing at HEAD:
+`CliDiagnostics` declared `check.cdd.empty`, `check.cdd.source-not-run`, `check.cdd.summary` and
+`check.cdd.trace-unbound` and the committed list carried none of them. Recorded now, alongside this
+brief's three (`check.rail.summary`, `check.rail.order`, `check.rail.no-reference-layer`), which is
+what that test's own doc comment asks for. Verified pre-existing with `git show HEAD:` on both files
+rather than by stashing.
+
+### Model decisions worth knowing before brief 3 or brief 5 reads one
+
+- **A source refuses BOTH an R-L and a Touchstone file**, on `RailPortAnchor`'s own rule: a silently
+  preferred one of two stated models is the same bug on a different row. §2.2 says a Touchstone
+  REPLACES the R-L where one exists, so a document stating both has no single answer.
+- **A coordinate anchor carrying a `Pin` is refused too.** It is the one malformed shape that reads as
+  a pad anchor without being one — a fragment of the pad spelling left behind.
+- **A `.crail`'s point anchor needs both `PointX` and `PointY`.** One alone reads back as `(x, 0)`,
+  which is a point on the board and a plausible one, so the reader takes both or neither.
+- **`RailSpec.DropBudget` and `RailSpec.ImpedanceTarget` are separate slots**, because §2.2 says a rail
+  carries both and they are not alternatives; `RailLoad.Mask` is a third, because a mask is per
+  observation port. `RailTarget.Refusal` takes the kinds a slot accepts, so a mask written into the
+  rail's own slot is named rather than carried into a solve that would ignore it.
+- **The transient derivation's 0.35 is a named constant** (`RailTransientSpec.KneeFactor`), not folded
+  into the expression: it is the 10–90 % rise-time convention, and a reader who assumes 0.5 (20–80 %)
+  gets a band top 43 % too high with nothing in the answer looking wrong.
+- **`RailOrder` keeps declaration order among independent rails**, so two runs of one document do not
+  report their rails in different orders for no visible reason. A refdes that is both a load and a
+  source on ONE rail is its own refusal rather than a self-loop reported as "a rail depends on itself".

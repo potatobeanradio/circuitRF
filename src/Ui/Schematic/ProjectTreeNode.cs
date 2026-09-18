@@ -53,6 +53,10 @@ public enum NodeKind
     /// <summary>A `.wBond` wirebond design (wbond.md §9).</summary>
     WBondFile,
 
+    /// <summary>A railRF document (<c>.crail</c>) — the rail set for one board, its sources, loads,
+    /// targets and aggressors. <c>RailDocumentIo</c> reads it.</summary>
+    RailFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

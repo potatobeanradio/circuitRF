@@ -263,6 +263,8 @@ src/Design/Layout/Em/EmRunService.cs|Touchstone export returned {result.Status}.
 src/Design/Layout/Em/EmRunService.cs|the solved DataSet carries no S cube
 src/Design/Layout/Em/EmSetupPersistence.cs|.cem format_version {file.FormatVersion} is newer than expected 
 src/Design/Layout/Em/EmSetupPersistence.cs|Failed to deserialize .cem file.
+src/Design/RailRf/RailDocumentIo.cs|.crail format_version {file.FormatVersion} is newer than expected 
+src/Design/RailRf/RailDocumentIo.cs|Failed to deserialize .crail file.
 src/Design/Layout/Em/EmSetupPersistence.cs|This .cem states its mesh current model twice and the two disagree: 
 src/Design/Layout/Interchange/DxfUnits.cs|Unsupported/unset $INSUNITS value {insunits}.
 src/Design/Layout/Interchange/DxfWriter.cs|DXF export does not support shape type {shape.GetType().Name}.

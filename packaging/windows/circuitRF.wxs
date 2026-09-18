@@ -314,6 +314,12 @@
           </Extension>
         </ProgId>
 
+        <ProgId Id="circuitRF.Rail" Description="railRF Document" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="crail" ContentType="application/x-circuitrf-rail">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
       </Component>
     </ComponentGroup>
 

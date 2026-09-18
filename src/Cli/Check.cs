@@ -7,6 +7,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
@@ -197,6 +198,7 @@ internal static class Check
             case DocumentKind.Touchstone: Scoped(path, kind, f, () => CheckTouchstone(path, f)); break;
             case DocumentKind.DataDisplay:
                                           Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
+            case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
 
             case DocumentKind.Interchange:
                 f.Begin(path, kind);
@@ -632,6 +634,29 @@ internal static class Check
     /// checks clean and one that does not is named here rather than at the moment somebody
     /// double-clicks it.</para>
     /// </summary>
+    /// <summary>
+    /// A railRF document. <b>No validation logic of its own</b>, on this verb's own rule: the
+    /// document's refusals are <c>RailDocumentIo</c>'s — the same reader the window opens one with —
+    /// and the solve order is <c>RailOrder</c>'s, which is what a rail set's correctness actually
+    /// consists of. A rule living only in <c>check</c> is a rule the application does not enforce.
+    /// </summary>
+    private static void CheckRail(string path, Findings f)
+    {
+        RailDocument doc;
+        try { doc = RailDocumentIo.LoadFromFile(path); }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        var order = RailOrder.Resolve(doc);
+        if (order.Refusal is { } refusal) f.Add(CliDiagnostics.CheckRailOrder(path, refusal));
+        else f.Add(CliDiagnostics.CheckRailSummary(
+                 path, doc.Rails.Count,
+                 order.Order.Count > 0 ? string.Join(" → ", order.Order) : "(none)"));
+
+        foreach (var rail in doc.Rails)
+            if (rail.ReferenceLayer is null)
+                f.Add(CliDiagnostics.CheckRailNoReferenceLayer(path, rail.Name));
+    }
+
     private static void CheckDataDisplay(string path, Findings f)
     {
         DataDisplayConfig? config;

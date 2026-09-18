@@ -32,6 +32,7 @@ public class TreeItemIconConverter : IValueConverter
                 NodeKind.DataDisplayFile => MaterialIconKind.ChartLine,
                 NodeKind.HarmonicaFile   => MaterialIconKind.ChartBellCurve,
                 NodeKind.WBondFile       => MaterialIconKind.VectorPolyline,
+                NodeKind.RailFile        => MaterialIconKind.FlashOutline,
                 NodeKind.ColorThemeFile  => MaterialIconKind.Palette,
                 NodeKind.KnownFile       => MaterialIconKind.FileOutline,
                 NodeKind.KnownFilesGroup => MaterialIconKind.FolderOutline,

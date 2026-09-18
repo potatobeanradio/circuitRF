@@ -73,4 +73,10 @@
         <glob pattern="*.cem"/>
     </mime-type>
 
+    <mime-type type="application/x-circuitrf-rail">
+        <comment>railRF Document</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.crail"/>
+    </mime-type>
+
 </mime-info>

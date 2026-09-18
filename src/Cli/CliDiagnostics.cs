@@ -842,6 +842,32 @@ internal static class CliDiagnostics
         "check.file.unreadable", DiagnosticSeverity.Error,
         "{path}: could not be read ({message}).", ("path", path), ("message", message));
 
+    // ── railRF (`.crail`) ────────────────────────────────────────────────────
+
+    /// <summary>What the document holds, and the ORDER its rails solve in — the one thing about a
+    /// rail set that is not visible by reading it, since a regulator's two rows are linked by nothing
+    /// but a shared refdes.</summary>
+    public static Diagnostic CheckRailSummary(string path, int rails, string order) => Diagnostic.Create(
+        "check.rail.summary", DiagnosticSeverity.Info,
+        "{path}: {rails} rail(s), solved in the order {order}.",
+        ("path", path), ("rails", rails), ("order", order));
+
+    /// <summary>A cycle in the rail order, reported in <c>RailOrder</c>'s own words. Load-bearing and
+    /// not a limitation to be lifted (railrf.md §9): solving the rails together needs a regulator's
+    /// forward transfer and its PSRR, which §8.2 records as frequently impossible to obtain.</summary>
+    public static Diagnostic CheckRailOrder(string path, string refusal) => Diagnostic.Create(
+        "check.rail.order", DiagnosticSeverity.Error,
+        "{path}: {refusal}", ("path", path), ("refusal", refusal));
+
+    /// <summary>A rail with no reference layer. A WARNING rather than an error: the document is well
+    /// formed and simply not yet ready to solve, and the reference plane is asked for and never
+    /// inferred (railrf.md §2.2, Q-8) — so nothing here may propose one.</summary>
+    public static Diagnostic CheckRailNoReferenceLayer(string path, string rail) => Diagnostic.Create(
+        "check.rail.no-reference-layer", DiagnosticSeverity.Warning,
+        "{path}: rail '{rail}' names no reference layer, so it cannot be solved yet. The reference "
+        + "is asked for and never inferred.", ("path", path), ("rail", rail));
+
+
     /// <summary>R-aut4-2's <c>MissingNamedPrimary</c> — the `.ccell` names a primary that is not
     /// there. <c>PrimaryState</c>'s own remarks say do not collapse this into NoPrimary.</summary>
     public static Diagnostic CheckPrimaryMissing(string cellDir, string view, string named) => Diagnostic.Create(

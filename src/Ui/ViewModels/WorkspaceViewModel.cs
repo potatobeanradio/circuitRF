@@ -26,6 +26,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Design.RailRf;
 using RfCore.Data;
 using RfCore.Loadpull;
 using CircuitRF.Ui.Commands;
@@ -9111,6 +9112,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// Opens a <c>.crail</c> — the double-click route from the tree, the project-tree Open item, and
+    /// the path <c>App.OpenFiles</c> hands over when one arrives from the desktop.
+    ///
+    /// <para><b>Brief 1 has the document and not the window.</b> <c>RailRfWindow</c> is brief 7's, so
+    /// what this does until then is READ the file through <see cref="RailDocumentIo"/> and say what
+    /// it holds. That is deliberately not a no-op: an extension declared to three operating systems
+    /// with a route that does nothing is exactly the "launches circuitRF and opens nothing" failure
+    /// the six document-type parity tests exist to catch, and it reads to a user as a broken file.
+    /// This route also puts the reader's own refusals — an anchor that is both a pad and a
+    /// coordinate, a rail pair that cannot be ordered — in front of whoever opened the file, which is
+    /// where they are worth something.</para>
+    /// </summary>
+    public void OpenRailPath(string path)
+    {
+        string full = Path.GetFullPath(path);
+        string name = Path.GetFileName(full);
+
+        try
+        {
+            var doc = RailDocumentIo.LoadFromFile(full);
+
+            string rails = doc.Rails.Count == 0
+                ? "no rails yet"
+                : $"{doc.Rails.Count} rail{(doc.Rails.Count == 1 ? "" : "s")} " +
+                  $"({string.Join(", ", doc.Rails.Select(r => r.Name))})";
+
+            var order = RailOrder.Resolve(doc);
+            if (order.Refusal is { } refusal) Messages.Error($"{name}: {refusal}");
+
+            Messages.Info($"{name} holds {rails}. Opening one in the railRF window is not available " +
+                          "in this build.");
+        }
+        catch (Exception ex)
+        {
+            // The house rule: report, never fail silently and never substitute.
+            Messages.Error($"Could not open {name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// File ▸ Import ▸ Wirebond Wires… — brings a <c>.wBond</c>'s WIRES into the active schematic
     /// (wbond.md §9.2 route 2, from a file picker rather than from the project tree).
     ///
@@ -9819,6 +9860,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case MarkdownDocument.Extension: OpenOrActivateMarkdown(abs); return true;
             case ".charm": OpenHarmonicaPath(abs);         return true;
             case ".wbond": OpenWBondPath(abs);             return true;
+            case ".crail": OpenRailPath(abs);              return true;
             // RC-2: a cell's PARAMETERS are a document like any other here, and the edit routed to
             // the workspace that owns a cell (R-rc2-7) can be an edit to them. Deliberately absent
             // from App.OpenFiles' switch, which is held shut against the three operating systems'
@@ -9880,6 +9922,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // opens like any other document type.
             case NodeKind.WBondFile:
                 OpenWBondPath(node.AbsolutePath);
+                return;
+
+            // R-rail1-11 — a .crail in a workspace opens like any other document type. What it opens
+            // INTO is brief 7's window; until then the route reads the document and reports it.
+            case NodeKind.RailFile:
+                OpenRailPath(node.AbsolutePath);
                 return;
 
             case NodeKind.TechFile:

@@ -419,6 +419,12 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.args.path-required",
         "check.args.unknown-option",
         "check.args.unknown-severity",
+        // The `.cdd` arm (2026-09). Declared when `check` grew an arm for a data display and
+        // never recorded here, so this list was stale before railRF added to it.
+        "check.cdd.empty",
+        "check.cdd.source-not-run",
+        "check.cdd.summary",
+        "check.cdd.trace-unbound",
         "check.cell.no-primary",
         "check.cell.primary-missing",
         "check.drc.note",
@@ -435,6 +441,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.path.interchange",
         "check.path.not-found",
         "check.path.unknown-kind",
+        "check.rail.no-reference-layer",
+        "check.rail.order",
+        "check.rail.summary",
         "check.ref.kit-not-loaded",
         "check.ref.not-found",
         "check.ref.primary-missing",
