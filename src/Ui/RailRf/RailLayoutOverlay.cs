@@ -72,6 +72,21 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// </remarks>
     public Action<PdnRegionRef, PdnCopperClass?>? ForceRegion { get; set; }
 
+    /// <summary>
+    /// Asked to copy the board — the context menu's own <b>Copy</b> row (R-rail9-6).
+    /// </summary>
+    /// <remarks>
+    /// A callback for <see cref="ForceRegion"/>'s reason, and one more of its own: the copy needs an
+    /// ANCHOR control to reach the top level's clipboard, and this overlay is handed a
+    /// <c>Visual</c> per right-click rather than owning one. The window owns both, so the window is
+    /// what performs the copy; what is owned here is only the row.
+    ///
+    /// <para>Ctrl/⌘+C does not come through here at all — that is
+    /// <c>LayoutCanvas.ClipboardCopyRequested</c>, the same event the schematic, symbol and layout
+    /// canvases raise. Two routes to one action, neither of which is a second implementation.</para>
+    /// </remarks>
+    public Action? CopyRequested { get; set; }
+
     private RailDcResult? _result;
     private RailMapKind _kind = RailMapKind.Copper;
     private int _dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
@@ -295,7 +310,30 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     public IReadOnlyList<object> BuildContextMenuItems(
         double worldX, double worldY, long tolDbu, LayoutEditorViewModel? layout, Avalonia.Visual host)
     {
-        if (Kind != RailMapKind.Class || ForceRegion is null) return [];
+        var items = new List<object>();
+
+        // ── R-rail9-6: Copy, on every tab and wherever the click landed ────────────────────────
+        //
+        // The copy is of the VIEW rather than of a selection (§11.7), so there is nothing under the
+        // pointer for it to depend on: the row is offered on every tab, wherever the click landed,
+        // and whether or not there is a result. It LEADS the menu because it is the only row here
+        // that is about the picture as a whole.
+        //
+        // (A window with no board imported has no view model bound, and LayoutCanvas records a
+        // right-click target only when it has one — so on that one screen the menu does not open at
+        // all and Ctrl/⌘+C is the route. Nothing is lost: what a board-less window copies is a blank
+        // page and an empty document.)
+        if (CopyRequested is { } copy)
+        {
+            items.Add(new MenuItem
+            {
+                Header = "Copy",
+                Command = new CommunityToolkit.Mvvm.Input.RelayCommand(copy),
+            });
+            items.Add(new Separator());
+        }
+
+        if (Kind != RailMapKind.Class || ForceRegion is null) return items;
 
         long x = (long)Math.Round(worldX), y = (long)Math.Round(worldY);
 
@@ -307,7 +345,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
             long area = Math.Max(1, r.Bounds.MaxX - r.Bounds.MinX) * Math.Max(1, r.Bounds.MaxY - r.Bounds.MinY);
             if (area < bestArea) { bestArea = area; best = r; }
         }
-        if (best is not { } region) return [];
+        if (best is not { } region) return items;
 
         MenuItem Row(string header, PdnCopperClass? forced, bool ticked) => new()
         {
@@ -318,14 +356,12 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
                 () => ForceRegion?.Invoke(region.Region, forced)),
         };
 
-        return
-        [
-            Row("Copper: treat as a trace", PdnCopperClass.Trace,
-                region.Forced && region.Class == PdnCopperClass.Trace),
-            Row("Copper: treat as spreading", PdnCopperClass.Spreading,
-                region.Forced && region.Class == PdnCopperClass.Spreading),
-            Row("Copper: use the measured classification", null, !region.Forced),
-            new Separator(),
-        ];
+        items.Add(Row("Copper: treat as a trace", PdnCopperClass.Trace,
+                      region.Forced && region.Class == PdnCopperClass.Trace));
+        items.Add(Row("Copper: treat as spreading", PdnCopperClass.Spreading,
+                      region.Forced && region.Class == PdnCopperClass.Spreading));
+        items.Add(Row("Copper: use the measured classification", null, !region.Forced));
+        items.Add(new Separator());
+        return items;
     }
 }

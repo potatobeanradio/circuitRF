@@ -1,5 +1,30 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 9 — where the rail map lands in `LayoutRenderer.Draw` (2026-09-18)
+
+`LayoutRenderOptions` gained `RailMap` + `RailTheme`, and `Draw` paints them. Two ordering decisions,
+both of which would be wrong the obvious way round. The rest of the brief's findings are in
+`src/Ui/RESOLVED.md`.
+
+**It is painted in SCREEN space, after the path-space transform is restored** — beside the EM mesh
+inset, not beside the planar mesh overlay. `RailMapRenderer` does its own world→screen through the
+`LayoutViewport`, which is exactly how `LayoutCanvas` calls it after handing the Skia lease to
+`ILayoutCanvasOverlay.Draw`; drawing it inside the path-space transform would apply the scale twice.
+That the copy and the live canvas call the same function at the same point is the whole reason a
+copied board cannot disagree with the one on screen.
+
+**Rulers move to the deferred pass whenever a rail map is present.** The map is opaque paint by design
+(R-rail8-10: nothing in it may depend on the page's background), so a ruler drawn in the in-band pass
+would be buried by it — and §9B.9 is that a ruler is document content that comes out in a slide. So
+`Draw` skips its own ruler pass when `RailMap is not null` and calls `DrawRulersOnTop` after the map,
+which is the same two-step `DeferRulers` gives a HOST that paints an overlay of its own. The host's
+own `DeferRulers` still wins: when it is set, the rulers are the host's to draw and this does nothing.
+
+**No companion `ShowRailMap` flag**, unlike `ShowPlanarMesh` and `ShowDrcMarkers`. Those exist because
+a mesh or a marker set is computed and then shown or hidden; a rail scene is built for the tab that is
+showing, and there is no state in which one exists and is not wanted. The scene is the switch.
+
+
 ## railRF brief 8 — the board maps: what the scene had to decide (2026-09-18)
 
 `RailMapScene`, `RailMapRenderer` and `RailMapTheme`, plus twelve `Rail.*` colour roles in

@@ -58,6 +58,13 @@ public static class LayoutClipboard
     /// exactly): shown in the graphic (bitmap/PDF/SVG) only when the panel's own markers toggle is on,
     /// and deliberately NOT in the JSON payload — a violation marker is a check result, not geometry,
     /// so pasting into another layout must never carry one.</para>
+    ///
+    /// <para><b>And railRF's board map on the same terms again</b> (brief-railrf-9-copy.md R-rail9-3,
+    /// railrf.md §11.7). These four parameters are the EXPLICIT OVERLAY LIST that decides what is in
+    /// the picture, and the failure mode they share is worth stating once: <i>an overlay nobody added
+    /// to the list is silently absent from the copy</i> — the picture is still produced, it still
+    /// looks correct, and the one thing the user copied it for is missing. That is why each of them
+    /// is gated against the real rendered bytes rather than against the wiring.</para>
     /// </summary>
     public static async Task CopyAsync(
         IClipboard clipboard,
@@ -67,7 +74,9 @@ public static class LayoutClipboard
         string baseDir = "",
         Engine.Mom.PlanarMeshReport? planarMesh = null,
         Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
-        IReadOnlyList<DrcMarker>? drcMarkers = null)
+        IReadOnlyList<DrcMarker>? drcMarkers = null,
+        RailMapScene? railMap = null,
+        RailMapTheme? railTheme = null)
     {
         // §9B.9: RULERS COUNT AS CONTENT. Owner report, 2026-08-27 — pasting a ruler produced some
         // other geometry instead of it. A ruler-only copy fell out of this guard and returned
@@ -86,7 +95,8 @@ public static class LayoutClipboard
         Bitmap?                         bmp = null;
         try
         {
-            var ctx = new ExportContext(payload, tech, renderTheme, transparent, baseDir, planarMesh, currentDensity, drcMarkers);
+            var ctx = new ExportContext(payload, tech, renderTheme, transparent, baseDir, planarMesh,
+                                        currentDensity, drcMarkers, railMap, railTheme);
             pdf = TryRenderToPdf(ctx);
             svg = TryRenderToSvg(ctx);
             bmp = TryRenderToAvaloniaImage(ctx);
@@ -97,14 +107,7 @@ public static class LayoutClipboard
         //    session — see WindowsClipboard.cs's header comment for the full why. ──
         if (OperatingSystem.IsWindows())
         {
-            float pageW = 0f, pageH = 0f;
-            if (svg is { } s)
-            {
-                const float maxSide = 720f;   // ≈10in at 72pt/in — Word/PowerPoint-friendly default
-                float scale = MathF.Min(1f, maxSide / MathF.Max(s.W, s.H));
-                pageW = s.W * scale;
-                pageH = s.H * scale;
-            }
+            var (pageW, pageH) = svg is { } s ? ClipboardPageSize(s.W, s.H) : (0f, 0f);
             WindowsClipboard.SetClipboard(ownerHwnd, pdf, svg?.Svg, json, bmp, pageW, pageH);
             return;
         }
@@ -158,7 +161,25 @@ public static class LayoutClipboard
         string BaseDir,
         Engine.Mom.PlanarMeshReport? PlanarMesh,
         Engine.Mom.PlanarCurrentDensityMap? CurrentDensity,
-        IReadOnlyList<DrcMarker>? DrcMarkers = null);
+        IReadOnlyList<DrcMarker>? DrcMarkers = null,
+        RailMapScene? RailMap = null,
+        RailMapTheme? RailTheme = null);
+
+    /// <summary>
+    /// The page a clipboard picture is offered to Windows at, from the SVG flavour's own pixel size.
+    /// </summary>
+    /// <remarks>
+    /// One copy of the arithmetic, because two copy paths that sized their pages differently would be
+    /// a difference nobody chose: the cross-platform transfer carries no dimensions at all, so the
+    /// Windows bypass is the only place a receiving application is TOLD how big the picture is, and it
+    /// is told the same thing whichever of this application's copies produced it.
+    /// </remarks>
+    internal static (float W, float H) ClipboardPageSize(float svgW, float svgH)
+    {
+        const float maxSide = 720f;   // ≈10in at 72pt/in — Word/PowerPoint-friendly default
+        float scale = MathF.Min(1f, maxSide / MathF.Max(svgW, svgH));
+        return (svgW * scale, svgH * scale);
+    }
 
     /// <summary>
     /// Bounds of what will actually be PAINTED (R-L1f-4: the SELECTION, never the current view) —
@@ -240,6 +261,22 @@ public static class LayoutClipboard
             if (r.SizeMode == RulerSizeMode.Scaled)
                 bbox = bbox.Union(LayoutRenderer.MeasureRulerWorldBbox(r, unit, dbuPerMicron, 0));
         }
+
+        // ── R-rail9-2: railRF's overlay is part of the PAINTED extent, and goes into THIS pass ──
+        //
+        // The same requirement as brief 8's R-rail8-7 (Zoom to Fit frames the union) seen from the
+        // other side, and it is why the legend's placement is a correctness question rather than a
+        // cosmetic one: a drop map is co-extensive with the copper, so this looks harmless until the
+        // legend, a source marker or a flagged-via callout sits outside the copper's own bbox and the
+        // page is sized without it. RailMapScene.Bounds is the scene's own union of everything it
+        // paints, computed from UNCULLED content, so it is the same answer ContentBounds() gives the
+        // canvas — one rule, not two.
+        //
+        // Unioned BEFORE the empty check, deliberately: a rail map over an empty selection is still a
+        // picture, and returning null there would be R-rail9-5's "writes nothing" failure arriving by
+        // a different route.
+        if (ctx.RailMap is { } railMap && !railMap.Bounds.IsEmpty)
+            bbox = bbox.Union(railMap.Bounds);
 
         if (bbox.IsEmpty) return null;
 
@@ -356,11 +393,31 @@ public static class LayoutClipboard
         Theme = ctx.Theme,
         ShowGrid = false,
         Overlay = null,
-        // An export carries the stored geometry, not the screen's view of it. The interactive
-        // decimation tier (LayoutRenderDetail) is keyed to DEVICE pixels, which a PDF/SVG page does
-        // not have and a pasted bitmap may be rescaled away from — so it is off here, exactly as
-        // ShowGrid and Overlay are.
-        DetailPixelThreshold = -1,
+        // ── AN EXPORT CARRIES THE STORED GEOMETRY, NOT THE SCREEN'S VIEW OF IT ─────────────────
+        //
+        // The level-of-detail tiers are keyed to DEVICE pixels, which a PDF or SVG page does not have
+        // and a pasted bitmap may be rescaled away from — so what is STORED is what is drawn, exactly
+        // as `circuitrf render --detail full` does. On a real board this is a visible difference, not
+        // a theoretical one.
+        //
+        // ALL SEVEN, and that is a correction rather than belt-and-braces (2026-09-18,
+        // brief-railrf-9-copy.md's own detail gate). Only DetailPixelThreshold was set here, and it
+        // turns off the VERTEX-DECIMATION tier plus the two that document themselves as implied by it
+        // — not the LOD, merge, stroke-elision, hairline-fill or coarse-coverage tiers, which read
+        // their own knobs and were silently running at their interactive defaults. Measured on 240
+        // stored 40 µm rects at page scale: 2 drawn elements, because every one of them was sub-pixel
+        // and collapsed into a per-layer batched fill. That is the one direction where the mistake
+        // produces a plausible picture — a picture of LESS geometry than the document holds, pasted
+        // into a document where nobody can check it. `render --detail full` sets all seven for this
+        // reason and says so; this is the same list, for the same reason.
+        DetailPixelThreshold          = -1,
+        LodPixelThreshold             = -1,
+        MergeShapeCountThreshold      = -1,
+        OutlineVertexBudget           = -1,
+        InstanceRasterMaxDevicePixels = -1,
+        StrokeElisionPixelThreshold   = -1,
+        HairlineFillPixelThreshold    = -1,
+        CoarseCoverageThreshold       = -1,
         TransparentBackground = ctx.Transparent,
         BaseDir = ctx.BaseDir,
         ShowPlanarMesh = ctx.PlanarMesh is not null,
@@ -368,6 +425,8 @@ public static class LayoutClipboard
         PlanarCurrentDensity = ctx.CurrentDensity,
         ShowDrcMarkers = ctx.DrcMarkers is { Count: > 0 },
         DrcMarkers = ctx.DrcMarkers,
+        RailMap = ctx.RailMap,
+        RailTheme = ctx.RailTheme,
     };
 
     /// <summary>Test seam: build the same context <see cref="CopyAsync"/> builds, so a gate can drive
@@ -376,8 +435,10 @@ public static class LayoutClipboard
         LayoutFragment.Payload payload, Technology? tech, LayoutRenderTheme theme, bool transparent,
         string baseDir = "", Engine.Mom.PlanarMeshReport? planarMesh = null,
         Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
-        IReadOnlyList<DrcMarker>? drcMarkers = null)
-        => new(payload, tech, theme, transparent, baseDir, planarMesh, currentDensity, drcMarkers);
+        IReadOnlyList<DrcMarker>? drcMarkers = null,
+        RailMapScene? railMap = null, RailMapTheme? railTheme = null)
+        => new(payload, tech, theme, transparent, baseDir, planarMesh, currentDensity, drcMarkers,
+               railMap, railTheme);
 
     /// <summary>Test seam over <see cref="ComputeSelectionBounds"/> — the page-framing rule is the
     /// thing the cropped-ports report was about, and it is worth asserting directly rather than

@@ -93,6 +93,18 @@ public partial class RailRfWindow : Window
         // leaves the map in the old colours — owner-reported twice, in different views.
         // Unsubscribe first on attach: ThemeService.ThemeChanged is a static, process-wide event and
         // a re-attach must not stack a second handler on it.
+        // ── R-rail9-6: the two routes to one copy ────────────────────────────────────────────
+        //
+        // Ctrl/⌘+C is LayoutCanvas's OWN event — the same one the schematic, symbol and layout
+        // canvases raise, reached by the same key on the same control — and the context row is the
+        // overlay's, through ILayoutCanvasOverlay.BuildContextMenuItems, which is the seam's member
+        // for exactly this because the canvas is shared and its ContextMenu is built once.
+        //
+        // The window performs the copy rather than the view model because a clipboard write needs an
+        // ANCHOR control to reach the top level, and the window is the only thing here that is one.
+        // Everything ABOUT the picture is RailGraphicExport's; this is dispatch.
+        BoardCanvas.ClipboardCopyRequested += (_, _) => CopyBoard();
+
         ActualThemeVariantChanged += (_, _) => ApplyMapTheme();
         AttachedToVisualTree += (_, _) =>
         {
@@ -123,8 +135,68 @@ public partial class RailRfWindow : Window
         _boundOverlay = vm.BoardOverlayLayer;
         _boundOverlay.OverlayChanged += OnOverlayChanged;
 
+        _boundOverlay.CopyRequested = CopyBoard;
+
         BoardCanvas.CanvasOverlay = _boundOverlay;
         ApplyMapTheme();
+    }
+
+    // ── The copy (brief-railrf-9-copy.md) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Copies the board as it is drawn, plus the document's own state (R-rail9-4).
+    /// </summary>
+    /// <remarks>
+    /// <b>No guard, and that is R-rail9-5.</b> Not on a board-less window, not on an unsolved
+    /// document, not on a rail with no result — <i>a copy that writes nothing to the system clipboard
+    /// leaves the PREVIOUS copy sitting there, so the next paste produces something unrelated and
+    /// nothing reports a failure.</i> The only thing checked here is that there is a view model to
+    /// copy, because without one there is no document to put in the text flavour.
+    ///
+    /// <para><b>The scene is the overlay's own, not a freshly-built one.</b> What the user asked for
+    /// is the picture they are looking at, and the overlay's scene is that picture — building a second
+    /// one from the same inputs would be a second answer to a question already answered, which is how
+    /// a copy comes to disagree with the window.</para>
+    /// </remarks>
+    private async void CopyBoard()
+    {
+        if (Vm is not { } vm) return;
+
+        try
+        {
+            await RailGraphicExport.CopyToClipboardAsync(this, new RailGraphicExport.Request(
+                Board:    vm.BoardLayout?.Model,
+                Tech:     vm.Board?.Technology,
+                Map:      vm.BoardOverlayLayer.Scene,
+                Document: vm.Document));
+        }
+        catch (Exception ex)
+        {
+            // An async void handler that lets an exception escape takes the process down. A copy that
+            // could not be written is worth one line in the log and nothing else — there is no state
+            // to roll back and nothing the user can do differently.
+            System.Diagnostics.Debug.WriteLine($"[railRF] Copy failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the board menu's rows from the recorded right-click, and cancels when there are none.
+    /// </summary>
+    /// <remarks>
+    /// The layout editor's own <c>OnLayoutContextMenuOpening</c>, minus everything that is about a
+    /// layout document (Pop Out, Re-reference Cell…) — railRF's board is not one and offers no edits.
+    /// Rebuilt per opening rather than reused: re-subscribing a retained item's <c>Click</c> fires its
+    /// action N times on the Nth opening, which is the mistake the single-instance rule exists to stop
+    /// reintroducing.
+    /// </remarks>
+    private void OnBoardContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (BoardCanvas.ConsumeContextMenuTarget() is not { } t) { e.Cancel = true; return; }
+
+        var items = BoardCanvas.BuildContextMenuItems(t.Wx, t.Wy);
+        if (items.Count == 0) { e.Cancel = true; return; }
+
+        if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
 
     /// <summary>

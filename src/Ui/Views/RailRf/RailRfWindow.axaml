@@ -579,7 +579,16 @@
                     <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
                         <Panel>
                             <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"
-                                              ViewModel="{Binding BoardLayout}"/>
+                                              ViewModel="{Binding BoardLayout}">
+                                <!-- ONE ContextMenu instance, declared here and never constructed by
+                                     the canvas (the L1-fix rule the layout editor's own view states:
+                                     a right-click that built and opened its own menu stacked them).
+                                     Its rows are rebuilt per opening, and railRF's Copy is one of
+                                     them — R-rail9-6, through ILayoutCanvasOverlay's own seam. -->
+                                <ctl:LayoutCanvas.ContextMenu>
+                                    <ContextMenu Opening="OnBoardContextMenuOpening"/>
+                                </ctl:LayoutCanvas.ContextMenu>
+                            </ctl:LayoutCanvas>
                             <!-- §2.4: "a cursor reads out the absolute voltage anywhere on the net".
                                  Over the picture rather than beside it, because the number answers a
                                  question about the place the pointer is on. -->

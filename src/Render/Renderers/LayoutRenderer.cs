@@ -293,6 +293,37 @@ public readonly struct LayoutRenderOptions
     /// </summary>
     public bool DeferRulers { get; init; }
 
+    /// <summary>
+    /// railRF's board map — the drop map, the |Z| map or the classification — to paint over the
+    /// artwork, or null. (brief-railrf-9-copy.md R-rail9-3; railrf.md §11.7.)
+    /// </summary>
+    /// <remarks>
+    /// <b>This is an entry in an EXPLICIT OVERLAY LIST, and that is the thing to know about it.</b>
+    /// The EM mesh, the current-density map and the DRC markers above were each added here as they
+    /// arrived, and the failure mode is the same for all of them: <i>an overlay nobody added to the
+    /// list is silently absent from an export.</i> The picture is still produced, it still looks
+    /// correct, and the one thing the user copied it for is missing — which is why
+    /// <c>RailCopyTests</c> gates the map's presence in the real SVG text rather than trusting this
+    /// wiring.
+    ///
+    /// <para><b>Drawn in SCREEN space, after the path-space transform is restored</b>, because
+    /// <see cref="RailMapRenderer"/> does its own world→screen through the viewport — exactly as the
+    /// interactive canvas calls it, so a copied board cannot disagree with the one on screen. Null by
+    /// default, so every other export and one-shot render is unchanged by construction.</para>
+    ///
+    /// <para><b>No companion <c>ShowRailMap</c> flag</b>, unlike <see cref="ShowPlanarMesh"/> and
+    /// <see cref="ShowDrcMarkers"/>. Those exist because a mesh or a marker set is COMPUTED and then
+    /// shown or hidden; a rail scene is built for the tab that is showing and there is no state in
+    /// which one exists and is not wanted. The scene IS the switch.</para>
+    /// </remarks>
+    public RailMapScene? RailMap { get; init; }
+
+    /// <summary>railRF's own colours for <see cref="RailMap"/>. Null takes
+    /// <see cref="RailMapTheme.Fallback"/> — the map is opaque paint (R-rail8-10) so it reads on any
+    /// page, but the CALLER is what knows whether this copy was asked for in light or dark
+    /// (<c>ClipboardRenderPolicy</c>), and that is never re-decided here.</summary>
+    public RailMapTheme? RailTheme { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
@@ -903,8 +934,12 @@ public static partial class LayoutRenderer
                 // marquee, snap marker), which is chrome about the current gesture rather than
                 // content. Default-true and NOT gated on Overlay, so an export carries them.
                 // Unless the host has taken it on itself to draw them LAST, above whatever it paints
-                // after this call — see LayoutRenderOptions.DeferRulers.
-                if (!opts.DeferRulers && opts.ShowRulers
+                // after this call — see LayoutRenderOptions.DeferRulers — or unless a railRF map is
+                // about to be painted over everything, which is the same situation arriving from
+                // inside this call rather than from a host: the map is OPAQUE paint (R-rail8-10), so
+                // a ruler drawn here would simply be buried by it. The deferred pass below puts it
+                // back on top, where §9B.1 says a ruler always is.
+                if (!opts.DeferRulers && opts.RailMap is null && opts.ShowRulers
                     && (view.Rulers.Count > 0 || opts.Overlay?.RulerPreview is not null
                         || opts.Overlay?.RulerPastePreview is { Count: > 0 }))
                     DrawRulers(canvas, view.Rulers,
@@ -969,6 +1004,21 @@ public static partial class LayoutRenderer
             finally
             {
                 canvas.Restore();
+            }
+
+            // R-rail9-3: railRF's map, over the artwork. Drawn AFTER the path-space transform has
+            // been restored, because RailMapRenderer does its own world→screen through the viewport —
+            // the same call LayoutCanvas makes when it hands the Skia lease to the overlay, so a
+            // copied board and the one on screen are painted by one piece of code.
+            if (opts.RailMap is { } railMap)
+            {
+                RailMapRenderer.Draw(canvas, railMap, vp, opts.RailTheme ?? RailMapTheme.Fallback);
+
+                // …and the rulers back on top of it. §9B.9: a ruler is DOCUMENT CONTENT, it comes out
+                // in a slide, and an export path that quietly dropped it (or buried it under an
+                // opaque map) would contradict that. DeferRulers means the HOST has taken this on,
+                // and then it is the host's to do.
+                if (!opts.DeferRulers) DrawRulersOnTop(canvas, view, vp, opts);
             }
 
             // R-em-15: drawn AFTER the path-space transform has been restored — the mesh overlay is

@@ -45,8 +45,29 @@ public static class RailDocumentIo
     public static string Serialize(RailDocument doc)
     {
         if (doc.Refusal() is { } r) throw new InvalidDataException(r);
-        return JsonSerializer.Serialize(ToFileModel(doc), JsonOpts);
+        return SerializeUnvalidated(doc);
     }
+
+    /// <summary>
+    /// The same JSON, with the well-formedness check SKIPPED — for a CLIPBOARD payload, and for
+    /// nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <b>A copy always writes</b> (railrf.md §11.7, brief-railrf-9-copy.md R-rail9-5): a copy that
+    /// puts nothing on the system clipboard leaves the PREVIOUS copy sitting there, so the next paste
+    /// produces something unrelated and nothing reports a failure. A half-built document — a rail with
+    /// no net picked yet — is exactly the state someone copies from while they are still working, so
+    /// the validation <see cref="Serialize"/> performs would turn that into the silent-wrong-paste
+    /// case it exists to prevent.
+    ///
+    /// <para>A FILE is still validated on the way out, because a document that cannot be read back is
+    /// a document that was never written and its only symptom is a file that refuses to open next
+    /// week. A clipboard payload is not a file: it is re-read by
+    /// <see cref="DeserializeUnvalidated"/> in this process within seconds, and a half-built document
+    /// that arrives half-built is the honest result.</para>
+    /// </remarks>
+    public static string SerializeUnvalidated(RailDocument doc)
+        => JsonSerializer.Serialize(ToFileModel(doc), JsonOpts);
 
     public static void SaveToFile(string path, RailDocument doc)
         => AtomicFile.WriteAllText(path, Serialize(doc));
@@ -54,6 +75,21 @@ public static class RailDocumentIo
     /// <exception cref="InvalidDataException">The file is empty, is from a newer circuitRF, or is not
     /// well formed.</exception>
     public static RailDocument Deserialize(string json)
+    {
+        var doc = DeserializeUnvalidated(json);
+        if (doc.Refusal() is { } r) throw new InvalidDataException(r);
+        return doc;
+    }
+
+    /// <summary>
+    /// The reading half of <see cref="SerializeUnvalidated"/>, and it is unvalidated for that
+    /// method's reason. The format-version refusal is NOT skipped: a document from a newer circuitRF
+    /// is unreadable rather than half-built, and reading it anyway would silently drop whatever the
+    /// newer version added.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The JSON is empty, malformed, or from a newer
+    /// circuitRF.</exception>
+    public static RailDocument DeserializeUnvalidated(string json)
     {
         var file = JsonSerializer.Deserialize<CrailFile>(json, JsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .crail file.");
@@ -63,9 +99,7 @@ public static class RailDocumentIo
                 $".crail format_version {file.FormatVersion} is newer than expected " +
                 $"{CurrentFormatVersion}. Update the application.");
 
-        var doc = FromFileModel(file);
-        if (doc.Refusal() is { } r) throw new InvalidDataException(r);
-        return doc;
+        return FromFileModel(file);
     }
 
     public static RailDocument LoadFromFile(string path)

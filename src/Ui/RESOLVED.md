@@ -1,5 +1,92 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 9 — copy to clipboard, and the six LOD knobs the layout copy never turned off (2026-09-18)
+
+`RailGraphicExport` (`src/Ui/RailRf/`), a `Copy` row on the board's context menu, `Ctrl/⌘+C` on the
+board canvas, `RailClipboard` (`src/Design/RailRf/` — the marker-guarded payload), and one entry added
+to the overlay parameter list in `LayoutRenderOptions` / `LayoutClipboard`. Gate:
+`tests/Ui.Tests/RailRf/RailCopyTests.cs`, 9 tests, ~0.2 s.
+
+### The brief's own detail gate found a real defect in the LAYOUT copy, six knobs wide
+
+§11.7 point 4 and brief 9's own test say the clipboard export opts out of the level-of-detail tiers,
+`DetailPixelThreshold = -1`, *"so what is STORED is what is drawn, exactly as `circuitrf render
+--detail full` already does"*. **It did not.** `LayoutClipboard.ExportOptions` set that one knob, and
+that knob turns off the vertex-decimation tier plus the two that document themselves as implied by it
+— **not** the LOD, merge, stroke-elision, hairline-fill or coarse-coverage tiers, each of which reads
+its own `< 0` knob and was running at its interactive default in every copy this application has ever
+made.
+
+Measured while writing the gate: **240 stored 40 µm rects rendered 2 drawn elements** at page scale,
+because every one of them was sub-pixel and collapsed into a per-layer batched fill. That is the one
+direction in which the mistake produces a plausible result — a picture of *less* geometry than the
+document holds, pasted into a document where nobody can check it against the source.
+
+`src/Cli/Render.cs` sets all seven and says in a comment why it does not rely on the implications;
+`ExportOptions` now carries the same list for the same reason. **The fix reaches every graphic copy
+that goes through `LayoutClipboard`**, not just railRF's — a layout selection, a wirebond layout's
+reference geometry, a planar mesh. No existing test moved: the fixtures are small, and the tiers only
+engage on content that is sub-pixel or numerous.
+
+### The overlay set is an explicit parameter list, and that is the whole reason the gate is what it is
+
+The EM mesh, the current-density map, the DRC markers and now railRF's board map are four parameters
+on `LayoutClipboard.CopyAsync` / `ExportContext`, and two more on `LayoutRenderOptions`. The failure
+mode is structural: **an overlay nobody added to the list is silently absent from the copy** — the
+picture is still produced, it still looks correct, and the one thing the user copied it for is missing.
+
+So `RailCopyTests` never asserts the wiring. Every claim that the map is in the picture is paired with
+the same context rendered with `railMap: null` — precisely the state "nobody added it" leaves behind —
+and asserts the claim fails there. The oracle is the SVG text: the legend's caption carries the rail
+name and the model kind (`"VDD"`, `"Fast model"`) and the source callout carries its refdes, none of
+which any amount of copper can produce.
+
+### Three things that had to be decided, not inherited
+
+**The map is drawn in SCREEN space, so it lands after the path-space transform is restored** — beside
+the EM mesh inset, not beside the planar mesh. `RailMapRenderer` does its own world→screen through the
+viewport, which is exactly how `LayoutCanvas` calls it when it hands the Skia lease to the overlay, so
+the copy and the window are painted by one piece of code. The consequence is that **the in-band ruler
+pass is skipped when a rail map is present and `DrawRulersOnTop` runs after the map instead**: the map
+is opaque paint (R-rail8-10), so a ruler drawn underneath it would simply be buried, and §9B.9 says a
+ruler is document content that comes out in a slide.
+
+**The map's colours come from `ClipboardRenderPolicy`, not from the overlay's current theme.** The
+overlay's theme follows the window; the policy is what a user who set "always copy in light mode" set.
+Resolving the two separately is how a copy ends up with a light board under a dark legend.
+
+**A `.crail` is validated on the way out; a clipboard payload is not.** `RailDocumentIo` grew
+`SerializeUnvalidated` / `DeserializeUnvalidated` for this. R-rail9-5 says a copy always writes — a
+copy that writes nothing leaves the *previous* copy on the clipboard for the next paste to find — and
+a half-built document (a rail with no net picked yet) is exactly the state someone copies from while
+they are still working. A FILE keeps the check, because a document that cannot be read back is one
+that was never written and its only symptom is a file that refuses to open next week.
+
+### Two things deliberately not built, so nobody looks for them
+
+**There is no PASTE gesture.** `RailClipboard.TryDeserialize` exists and round-trips, which is what
+§11.7's marker guard is for and what the gate asserts; no brief asks for a Ctrl/⌘+V on the railRF
+window, and replacing an open document wholesale with a pasted one is a destructive operation nobody
+has specified. The payload is what makes it possible; the gesture is a decision.
+
+**`WorkspaceViewModel.InvokeClipboardAsync` is not on this path, because it cannot be.** Brief 9
+R-rail9-6 describes the copy as dispatched there "on the active document's type, exactly as every other
+document's copy already is" — but railRF is a standalone `Window` (`RailRfWindow.Show`, deduplicated
+per `.crail`), not a dock document, so `ResolveActiveDocumentForCommands` never sees one. The seam that
+IS shared is one level down and is the same one every other editor uses:
+`LayoutCanvas.ClipboardCopyRequested`, the event the schematic, symbol and layout canvases all raise on
+`Ctrl/⌘+C`. harmonicaRF, also a standalone window, reaches its own copy the same way.
+
+### The board canvas had no `ContextMenu` at all until now
+
+Brief 8 gave `RailLayoutOverlay` a `BuildContextMenuItems` and the railRF window never hosted a menu
+for it to fill, so the class tab's three "force this region" rows were unreachable. One
+`<ContextMenu Opening="…"/>` on `BoardCanvas` plus the layout editor's own opening handler (minus the
+rows that are about a layout document) turns brief 8's rows on as a side effect of adding brief 9's
+`Copy` row. The single-instance rule is the layout editor's: the canvas records the click and builds a
+fresh item list per opening; it never constructs or opens a menu itself.
+
+
 ## railRF brief 8 — the board view, and the five findings that came out of building it (2026-09-18)
 
 `RailLayoutOverlay` + `RailKeyboardGate` (`src/Ui/RailRf/`), `RailRfViewModel.Board.cs`, the four
