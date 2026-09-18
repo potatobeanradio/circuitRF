@@ -1,6 +1,6 @@
 # railRF — Power Integrity on Real Board Shapes, from DC Up
 
-**Status:** Proposal — rev 3, **for external review** · **Date:** 2026-09-17 · **Phase:** unstarted
+**Status:** Proposal — rev 4, **for external review** · **Date:** 2026-09-18 · **Phase:** unstarted
 **Reads with:** `docs/design/match.md` §9 (the UI this one is modelled on), `docs/design/data-display.md`
 (the plot layer this reuses), `docs/design/mom-engine.md` (the full-wave solver this deliberately does
 *not* use, and why), `docs/design/layout-view.md` and `src/Design/Layout/Interchange/` (the Gerber /
@@ -8,8 +8,28 @@ Excellon / board-netlist / `.kicad_pcb` readers this is built on), `docs/design/
 firewall this obeys), `docs/user/reference/derived-metrics.html` (the passive readouts that turn a
 vendor part file into a PDN element).
 
-**What changed in rev 3.** The second review round answered almost everything rev 2 asked, and three of
-the answers change the shape of the tool rather than filling in a blank:
+**What changed in rev 4.** The third review round answered every question rev 3 left open but one, and
+one of the answers arrived against §11's window rather than against a numbered question — and it is the
+one that changes the shape of the document:
+
+1. **A rail has a SET of sources and a SET of loads, and a board has more than one rail.** Review's
+   boards run a primary cell into a converter or an LDO that makes a second voltage, so the single
+   source and single load rev 3 assumed are both wrong. Both are now add/remove lists, each entry
+   anchored to a **component pad** rather than to a coordinate, and Q-6's "one rail at a time" is
+   re-closed rather than reversed: one rail is *analysed* at a time, but the document holds the rail
+   set and solves them in dependency order, because a regulator is a load on its input rail and a
+   source on its output rail (§2.2).
+2. **Q-13 … Q-19 are closed and Q-18 alone is carried forward** (§8.4). Two of the answers change
+   behaviour rather than filling a blank: the via current limit gets a stated basis whose hidden
+   variable turns out to be the plating thickness (§4.2), and the A/B comparison turns out to be a
+   decap-removal tool rather than a DC one, which moves it in the phasing (§6).
+3. **The board view is the layout editor's own canvas, and the copy out of it reuses the exporter that
+   already exists** (owner). Every pan and zoom gesture the layout editor has — Zoom to Fit, Zoom to
+   Marquee, Ctrl +/−, arrow-key panning — and a clipboard copy in every format that carries railRF's
+   own overlays, written by no new clipboard code. §11.6 and §11.7 are new and they are mostly a list
+   of traps already paid for.
+
+**What changed in rev 3**, and still stands:
 
 1. **The copper is not the small term.** Rev 2's own table said the artwork contributes a few percent of
    a DC drop. On the real geometry — 0.15–0.5 mm traces, 0.5 oz inner copper, runs far longer than
@@ -24,8 +44,9 @@ the answers change the shape of the tool rather than filling in a blank:
    in milliseconds, so the live interaction rev 2 dropped comes back — in that mode only, with the mesh
    solve behind an explicit **Accuracy** button (§2.9).
 
-Also new: the board import lands in an ordinary circuitRF cell by default (§2.3); §11 is a real UI spec
-rather than a workflow list; Q-1 … Q-12 are all closed or decided and Q-13 … Q-19 replace them.
+Also from rev 3: the board import lands in an ordinary circuitRF cell by default (§2.3), and §11 is a
+real UI spec rather than a workflow list. **Q-1 … Q-19 are now all closed or decided except Q-18**, and
+Q-20 … Q-22 replace them.
 
 **The name is decided** — railRF, following the house pattern (`harmonicaRF`, `wBond`), and the only one
 of the four candidates that covers a DC voltage drop and a PDN impedance equally well.
@@ -64,8 +85,8 @@ form factor that is smaller and has fewer components?**
 railRF answers a question circuitRF cannot answer today and neither can a SPICE-class simulator: **on
 this board, with these decoupling capacitors in these positions, what impedance does the load actually
 see, where does the supply voltage go on the way there, and where does the copper stop helping?** It
-takes the artwork you already have — Gerbers, or a board file — plus a stackup, a parts list, a load
-current and a target impedance, and returns the DC drop broken down by what caused it, and Z(f) at the
+takes the artwork you already have — Gerbers, or a board file — plus a stackup, a parts list, the load
+currents and a target impedance, and returns the DC drop broken down by what caused it, and Z(f) at the
 load with the target mask over it, the anti-resonances named, the plane's own resonances named, and a
 ranked list of which capacitors are earning their place. It then does the same thing to a second board
 and shows you the difference.
@@ -134,13 +155,20 @@ rule `BoardNetlistFile` states and these follow.
 - **The board netlist (IPC-D-356).** circuitRF **already reads one** when it is present in a Gerber
   folder: a net name per pad, a plating flag per hole, and the component reference and pin where there is
   one — and it is the *absence* of a reference that identifies a hole as a via rather than a component
-  hole. Where it is present, almost all the clicking in §2.3 disappears. Q-13 asks how often it is there.
+  hole. Where it is present, almost all the clicking in §2.3 disappears. **Review's answer to Q-13 is
+  that it is in the output set**, identified by the example file supplied rather than by the standard's
+  name — so the assisted Gerber path of §2.2 is the *fallback* for a package that lacks one rather than
+  the normal case, and which netlist flavour that example turns out to be is Q-21.
 - **The placement (pick-and-place) file.** A plain text table, one row per refdes: x, y, rotation, mirror
   and footprint name, with a small header carrying a format version and the units. **The coordinate
   origin is a choice made at export — symbol origin, body centre, or pin 1** — and the exporting tool does
   not always record which. Three quarters of a millimetre on an 0402 is the difference between landing on
   the part's own pad and landing on its neighbour's, so **an unstated origin is a refusal naming the flag
-  that answers it**, exactly as an unstated Excellon coordinate format already is. The `mirror` column is
+  that answers it**, exactly as an unstated Excellon coordinate format already is. **Review's answer to
+  Q-14 is that railRF should ask which was chosen** rather than learn a house convention, so in the window
+  it is a three-way choice on the import dialog with nothing pre-selected — there is no default, because
+  a default here is the guess the refusal exists to prevent. Headless it stays a refusal naming the
+  flag. The `mirror` column is
   what puts a part on the bottom side; a row that sets it and a footprint that has no bottom-side artwork
   is reported, not assumed.
 - **The BOM.** A delimited table whose useful columns are the **internal part number**, the **part
@@ -167,11 +195,26 @@ The two numbers that matter most and are most often wrong: **the power-to-refere
 (it sets the plane capacitance linearly and the spreading inductance linearly) and **tan δ** (it sets how
 sharp the cavity resonances are, which is the difference between a 6 dB bump and a 20 dB one).
 
-### The rail and its reference — mandatory
+### The rails and their references — mandatory
 
-Which conductor is the power net, which is its reference return, and **where the load is**. The load port
-is the IC's power/ground pin field — a set of pads, not a point. railRF ties them into one port, because
-that is what the die sees. Optionally, more than one observation port.
+Which conductor is the power net and which is its reference return — **per rail, and a board has more
+than one.**
+
+**A railRF document holds the rail set.** Review's own topology is a primary cell feeding a converter or
+an LDO that makes a second voltage, so a document that could describe one net could not describe one of
+these boards. Each rail carries its own net, reference, sources, loads, targets and band, and **one rail
+is analysed at a time** — which is what Q-6 closed and is still true. What is new is that the rails are
+not independent: **a regulator is a load on its input rail and a source on its output rail**, the same
+part in two rows, and railRF solves the rails in that dependency order so the regulator's input voltage
+is the upstream answer rather than a nominal. A cycle in that order is a refusal naming the two rails.
+
+**At DC that chain is the whole of the coupling, and v1 does not extend it over frequency.** Carrying
+ripple from an input rail to an output one needs the regulator's PSRR and its output impedance — the
+data §8.2 records as frequently impossible to obtain. So each rail's Z(f) is solved against its own
+source model, and where that source is a regulator whose curves were not supplied, railRF says the
+sub-megahertz answer is optimistic rather than producing a curve that looks complete. What the chain
+does buy at DC is the answer that matters most on a battery design: whether the drop on the input rail
+has taken the regulator below the input voltage it needs (Q-20).
 
 **The reference plane is asked for, never inferred.** Review is unambiguous: on an RF product one layer is
 assigned as the reference ground plane regardless of who supplied the board. So railRF proposes the layer
@@ -187,11 +230,41 @@ offered explicitly because each changes the answer:
 The choice is stamped on every plot, every table and every export, because the second and third are
 optimistic and a reader who does not know which was used cannot tell.
 
-### The load currents — mandatory for the DC answer
+### The sources
 
-One DC current per load port, and optionally a peak. Nothing in a BOM or a placement file carries this,
-and without it there is no IR drop to report — so it is typed, per port, and Q-16 asks whether there is a
-better source for it.
+**More than one per rail, and each one sits on a pad.** A rail can be fed by a cell through its
+connector, by a regulator's output pin field, or by both on a design that runs from either — so the
+sources are a **list with add and remove**, not a field. Each entry is anchored the way a load is
+(below): **pick the refdes and the pin** that the placement file or the board netlist already named,
+and railRF resolves that to the pads and to the mesh cells under them. A bare coordinate is accepted
+where there is no placement file, and it is the fallback rather than the spelling — **a pad moves when the board is
+re-laid out and a coordinate does not**, which is precisely what the A/B comparison of §2.5 would
+otherwise get wrong on the one input it cannot check.
+
+A battery is the default model: a series R-L whose R is swept across the cell's life (§8.2, Q-5), sitting
+on the battery connector's own pad. A converter or an LDO is the same R-L unless you have its published
+output-impedance curve, in which case it is a Touchstone file like any other part — and where you do not,
+railRF says that the sub-MHz answer is optimistic near the loop crossover rather than pretending an R-L
+is the whole story.
+
+Two sources on one rail are two branches in the same mesh and nothing in the solve is special-cased for
+them: **the geometry is what decides how they share**, which is the answer a hand calculation cannot give
+and is a large part of why this is a board tool rather than a spreadsheet.
+
+### The loads and their currents — mandatory for the DC answer
+
+**A list with add and remove, and a load is a pad plus a current.** A load port is an IC's power/ground
+pin field — a set of pads, not a point — and railRF ties them into one port, because that is what the die
+sees. A regulator's input pin field is a load like any other, and it is the row that links two rails
+(above). Loads are picked by refdes and pin exactly as sources are.
+
+**The current is typed, per port, and a port with no stated current is not a load** (Q-16). Nothing in a
+BOM or a placement file carries a current, so it is typed; and review's rule for the terminals that were
+not given one is the useful half of the answer — **an unstated current means no load there, never a
+defaulted one.** Such a port is still an *observation* port over frequency, where no current is needed;
+it simply contributes nothing to the DC solve, and the DC report lists it as observed rather than
+omitting it. Optionally a peak current per load, which is what the transient form of the target below
+consumes.
 
 ### The parts
 
@@ -203,8 +276,14 @@ Each part on the rail is one of:
   such a table directly and derives L rather than asking for it twice.
   **That table carries no ESR**, and ESR is what sets the depth of the minimum and the height of every
   anti-resonance peak. With C and f₀ alone, railRF can place a resonance but not size it, so it takes an
-  ESR where one is given, falls back to a dissipation-factor default per dielectric class, and **says which
-  of the two it used** on the part row. Q-15 asks where real ESR should come from.
+  ESR where one is given and **says which of the two it used** on the part row. **Q-15 closes on the
+  fallback**: there is no per-part ESR figure to be had, so a dissipation-factor default per dielectric
+  class *is* the basis rather than a stopgap, and every peak height computed from one is marked
+  indicative wherever it appears — on the part row, on
+  the plot, in the anti-resonance table and in the provenance of every export. The same per-class
+  dissipation factor serves the board dielectric where the stackup does not state a tan δ of its own, and
+  is flagged the same way. A part whose own Touchstone file was supplied is how a real ESR gets in, which
+  is why that is the recommended path below and not merely an alternative one.
 - **A Touchstone file** — the vendor's own measured `.sNp`, the manufacturers' web model tools' usual
   output. railRF reads its impedance through the shunt-through relation and uses it directly, so the ESR
   and the self-resonance are the part's real ones. Recommended, and already built: see
@@ -216,13 +295,6 @@ Plus, per part, the **mounting inductance**: the loop from the pad through its v
 back. railRF computes this from the actual via positions and the plane separation when it has the artwork,
 which is the point — it is typically 0.3–1.5 nH, it dominates above roughly 50 MHz, and **it is the thing
 your form factor change actually altered.** You can override it.
-
-### The source
-
-A battery, by default: a series R-L whose R is swept across the cell's life (§8.2, Q-5). A converter is
-the same R-L unless you have its published output-impedance curve, in which case it is a Touchstone file
-like any other part — and where you do not, railRF says that the sub-MHz answer is optimistic near the
-loop crossover rather than pretending an R-L is the whole story.
 
 ### The target
 
@@ -252,18 +324,22 @@ control keeps it, and railRF's own document holds a *reference* to that cell rat
 the geometry. Unchecking it gives the old throwaway behaviour for a quick look. With no workspace open,
 railRF offers to create one (`WorkspaceCreate`) rather than silently falling back to the throwaway path.
 
-**2 — Identify the rail.** With a board file or a board netlist, pick the power net from a list. Otherwise
-click the pour. railRF highlights everything galvanically connected to your pick — through vias, across
-layers — so you immediately see whether the rail is one region or three islands joined by a 20 mil neck.
-*That alone has caught real problems.* Then confirm the reference layer, which railRF proposes and never
-assumes (§2.2).
+**2 — Identify the rails.** With a board file or a board netlist, pick the power net from a list.
+Otherwise click the pour. railRF highlights everything galvanically connected to your pick — through
+vias, across layers — so you immediately see whether the rail is one region or three islands joined by a
+20 mil neck. *That alone has caught real problems.* Then confirm the reference layer, which railRF
+proposes and never assumes (§2.2). **Repeat for each rail the board has**: where a regulator is
+recognised from the BOM, railRF offers its output net as the next rail and pre-fills the row that makes
+it a load on this one.
 
 **3 — Confirm the parts.** A table: refdes, part number, value, model source, derated value, position,
 computed mounting inductance. Anything railRF could not resolve is listed as unresolved rather than
 defaulted.
 
-**4 — Place the load ports and their currents.** Click the IC's pin field, or accept the footprint where
-the netlist named one; type the DC current.
+**4 — Place the sources and the loads.** Both are lists with add and remove. An entry is a **refdes and
+a pin** — the cell's connector, a regulator's output field, an IC's power pins — picked from what the
+placement file or the netlist already named, or clicked on the artwork where there is neither. Type a DC
+current per load; a load with no current is an observation port and nothing else (§2.2).
 
 **5 — Set the target.** A drop budget for DC, a number or a mask for Z(f).
 
@@ -289,9 +365,11 @@ is not.
 layer transition carrying real current through too few vias is a defect that no schematic shows. railRF
 knows the current in **each** via, not the average — vias in parallel do not share equally, and the one
 nearest the load routinely carries several times its share — so it flags a transition whose worst via
-exceeds the limit, and names the count that would clear it. The limit is a setting with a stated basis, not
-a constant (Q-17). **Current density as a field, and the hot-spot question behind it, is explicitly a step
-2** — review asked for it and agreed it comes after the flag.
+exceeds the limit, and names the count that would clear it. **The limit's basis is now stated** (§4.2,
+Q-17): a temperature-rise budget over the barrel's own conducting annulus, with a per-drill-size table as
+the default the setting opens on — and with the **plating thickness shown**, because that is the term the
+table hides and it is worth a factor of two. **Current density as a field, and the hot-spot question
+behind it, is explicitly a step 2** — review asked for it and agreed it comes after the flag.
 
 **Everything at nominal temperature.** Review is running this as a room-temperature selection tool; the
 design is measured over temperature in the lab regardless. So railRF computes at 20 °C, says so on the
@@ -326,26 +404,41 @@ them.
 **Everything exports.** Z(f) as Touchstone or `.npy`, the tables as CSV, the maps as vector graphics
 through the same renderers the window draws with. The impedance curves land in an ordinary circuitRF Data
 Display, so they overlay anything else — including a measurement. **Every export carries which model
-produced it** (§2.9) and which reference option was used (§2.2).
+produced it** (§2.9) and which reference option was used (§2.2). The board panel also **copies to the
+clipboard** — PDF, SVG and a bitmap together, and an enhanced metafile on Windows — with whichever map
+overlay is showing inside the picture rather than beside it (§11.7).
 
 ## 2.5 The A/B comparison
 
 This is Q3 and it is the workflow that motivated the whole tool.
 
+**What review uses it for, which rev 3 guessed wrong** (Q-19). The comparison weighs what the *layout*
+did to the PDN and, through that, **which parts could come off the board** — it is not a load-current
+study. The DC drop analysis is a layout-review step of its own, done once the topology is settled, and
+review keeps the two apart. So the impedance half of this section is the point of it, the DC half is
+supporting evidence, and **§6 phases A/B with P2a rather than shipping a DC-only version early** as rev 3
+proposed.
+
 Open the reference design and the target design side by side. railRF matches the two by **net name** where
 it can and by **refdes** for the parts, falling back to **part number** for the models. Where it cannot
-match something, it says so and asks — it does not pair things by proximity or by guessing.
+match something, it says so and asks — it does not pair things by proximity or by guessing. **Sources and
+loads pair by refdes and pin** for the same reason §2.2 anchors them there: pairing by coordinate is
+exactly what a re-layout breaks, and a comparison whose ports moved is a comparison of nothing.
 
 Then:
 
-- **Both DC breakdowns**, element by element. On a compact redesign this is usually where the first
-  surprise is: the same schematic, 40 mm of extra 0.3 mm trace, and 60 mV that were not in the budget.
 - **Both impedance curves on one plot**, with the target mask and the aggressor lines. The reference
   passes; does yours?
 - **A delta trace** — Δ|Z| in dB versus frequency — with the frequencies where it moved most called out.
 - **A per-part comparison table**: the same capacitor's mounting inductance on both boards. A part that was
   0.4 nH on the reference and is 1.1 nH on yours because its return via moved 4 mm is a finding you can act
   on in an afternoon.
+- **Both removal rankings**, which is the output Q-19's answer puts first: a part that earns its place on
+  the reference and earns nothing on yours has been shadowed by the re-layout, and a part that earns
+  nothing on both can come off both boards.
+- **Both DC breakdowns**, element by element — supporting evidence rather than the headline, though on a
+  compact redesign it is often where the first surprise is: the same schematic, 40 mm of extra 0.3 mm
+  trace, and 60 mV that were not in the budget.
 - **Both mode lists**, where P2b has run.
 
 The output is a short report, not just a plot: *these three parts got worse mounting, this trace section
@@ -360,9 +453,11 @@ converter's fundamental — that the reference did not have.*
 > fit an enclosure: same schematic, same BOM, less room.
 >
 > 1. Load the reference Gerber set with its drill, netlist, placement and BOM. Import into the workspace as
->    a cell (the default). Pick net `+1V8` and confirm L2 as the reference. Type 120 mA at `U1`.
->    **DC: 60 mV, budget met.** The breakdown is FET 42 mV, ferrite 6 mV, copper 11 mV, vias 1 mV — the
->    copper is 90 mΩ of it, 25 mm of 0.5 mm outer and 20 mm of 0.3 mm inner.
+>    a cell (the default). Pick net `+1V8` and confirm L2 as the reference. Add one source — the cell at the
+>    battery connector's pad — and two loads: 120 mA at `U1.VDD`, 15 mA at `U3.VCC`.
+>    **DC: 60 mV at U1, 48 mV at U3, budget met.** The breakdown on the worst path is FET 42 mV, ferrite
+>    6 mV, copper 11 mV, vias 1 mV — the copper is 90 mΩ of it, 25 mm of 0.5 mm outer and 20 mm of 0.3 mm
+>    inner.
 > 2. Press **Accuracy**, then run the sweep. **Passes, worst margin 4.2 dB at 6.8 MHz.**
 > 3. Load yours, same picks. **DC: 91 mV — over budget.** The breakdown names it: 70 mm of 0.2 mm copper
 >    on L3 is 347 mΩ and **42 mV on its own**, because the compact layout took the supply the long way
@@ -392,6 +487,10 @@ Stated plainly, because a tool that is vague about its boundary gets trusted pas
 - **It stops at the package.** The answer is the impedance at the board-side pads. On-die capacitance and
   package inductance sit between that and the transistor and typically dominate above a few hundred
   megahertz. If your silicon vendor supplies a package model you can cascade it; railRF will not invent one.
+- **It does not model a regulator's forward transfer.** A rail chain is solved in order and the coupling it
+  carries is a DC one: an input-rail drop that changes a regulator's headroom (§2.2). Ripple passing
+  *through* a regulator needs its PSRR and its output impedance — the data §8.2 records as frequently
+  unavailable — so railRF does not carry it, and does not approximate it either.
 - **It does not do transient.** The output is Z(f) and a DC operating point. Converting Z(f) into a voltage
   waveform for a given current profile is a defensible v2 feature and is deliberately not v1.
 - **It does not model a split plane as if it were solid**, and it does not silently bridge a split.
@@ -549,11 +648,34 @@ cannot resolve. The one honest limit from artwork alone — a via and a plated c
 indistinguishable — is settled by the board netlist, whose *absence* of a component reference is what marks
 a hole as a via.
 
-**The current limit.** Each via's I²R heating sets a current at which it is at risk. railRF holds each via
-to a limit derived from its barrel cross-section and a temperature-rise budget that is a **setting with a
-stated basis**, not a constant, and flags a layer transition whose worst via exceeds it — worst, not
-average, because the mesh knows the actual split and the nearest via of a group routinely carries several
-times its share.
+**The current limit.** Each via's I²R heating sets a current at which it is at risk, and review's answer
+to Q-17 is a **table by drill size on a 10 °C rise**:
+
+| Drill | Current at roughly 10 °C rise |
+|---|---|
+| 0.2–0.3 mm, a signal via | 0.3–0.5 A |
+| 0.4–0.5 mm | 0.7–1.0 A |
+| 0.6–0.8 mm | 1.0–1.5 A |
+| 1.0–1.2 mm | 1.5–2.5 A |
+
+with a 0.3 mm drill **at 20 µm of plating** quoted separately at 0.8–1.0 A.
+
+**That separate figure is the most useful part of the answer, because it disagrees with the table's own
+0.3 mm row by about a factor of two** — and the one term that differs between them is the **plating
+thickness**, which the table does not state and which is the only thing setting the barrel's conducting
+cross-section. A 0.3 mm hole plated to 20 µm has roughly twice the copper annulus of the same hole plated
+to 10 µm, and roughly twice the current. A table indexed on drill size alone cannot express that.
+
+So **railRF does not ship the table as the rule.** It computes the limit from the barrel's own annulus,
+its span and a rise budget that is a setting, and it uses the table as the value that setting opens on and
+as a sanity band drawn beside each flagged transition. The plating thickness comes from the stackup's via
+entry where one states it, and is otherwise **typed and shown on the report**, never defaulted silently,
+because it is worth that factor of two (Q-22). The figures above are general engineering guidance rather
+than a standard held internally, and **each flag says which basis produced it** — computed-from-geometry
+or table — for the same reason every other number in this document carries its provenance.
+
+railRF flags a layer transition whose **worst** via exceeds the limit — worst, not average, because the
+mesh knows the actual split and the nearest via of a group routinely carries several times its share.
 
 ## 4.3 What attaches to the mesh
 
@@ -563,12 +685,17 @@ times its share.
   return via, minus twice their partial mutual inductance, plus the pad-to-via trace. The dominant term is
   the via pair's separation and the plane separation `h` — precisely the quantity that changes when a part
   moves.
-- **The source** at its own cells: a series R-L to the reference, R swept over battery life, or a supplied
-  output-impedance curve.
+- **Each source** at its own pad's cells: a series R-L to the reference, R swept over battery life, or a
+  supplied output-impedance curve. More than one source on a rail is more than one such branch and
+  nothing else — no special case anywhere, and the mesh is what decides how they share (§2.2).
 - **Series parts on the path** — the protection FET, the ferrite — as their library models. At DC these are
   the largest terms after the source, so they are elements, never annotations.
-- **The load port** across the power and reference nodes of the IC's pin-field cells, tied together, with
-  its DC current as a source for the operating point.
+- **Each load port** across the power and reference nodes of its own pin-field cells, tied together, with
+  its DC current as a source for the operating point. A port with no stated current contributes an
+  observation port and no current (§2.2).
+- **A regulator, twice** — a load branch on its input rail and a source branch on its output rail, in two
+  solves run in dependency order. It is never two branches in one mesh, which is the modelling mistake
+  this arrangement exists to make impossible (§9).
 
 ## 4.4 The solve
 
@@ -618,6 +745,8 @@ reference a UI framework.
 | Target masks, ranking, aggressor coincidence, A/B diff | `src/Engine/Pdn/` | All arithmetic over a `DataSet`. |
 | The solve | `src/Engine` (existing MNA) | Nothing new. |
 | Drawing the artwork and the colour maps | `src/Render` (existing) | Below the firewall since 2026-09-07, so the window and the headless report draw with the same code. The maps are an overlay on `LayoutRenderer`, not a second renderer. |
+| The board view, its navigation, its overlays | `src/Ui/Controls/LayoutCanvas` (existing) + `src/Ui/RailRf/` | railRF adds an `ILayoutCanvasOverlay`, **not a canvas** — the seam wBond already draws wires through. Pan, zoom, Zoom to Fit, the magnifier, arrow-key pan, rulers and hit-testing are the canvas's own (§11.6). |
+| Copy to clipboard | `src/Ui/RailRf/` calling `PlotExporter.SetClipboardDataAsync` | **No clipboard code is written.** The page framing, the writers, the Windows metafile path and the font repair all exist (§11.7). |
 | The window | `src/Ui/RailRf/` | The only piece that draws chrome. |
 | `rail` CLI verb | `src/Cli` | Headless, per `docs/design/cli.md`. |
 
@@ -643,6 +772,9 @@ order of magnitude above anything they excite.
 breakdown, the via current flag, Fast mode and its live edit loop. No frequency sweep, no eigensolve. It
 builds the import front end, the three companion readers, the part library, the placement and the
 extractors — most of everything later — and it is the only phase with a closed-form external oracle (§7).
+**The rail set, the source and load lists and the rail chain are all in P0**, because on a resistive mesh
+several sources and several loads are only more branches, and because the chain's whole payoff is a DC
+one: whether the input rail's drop has taken a regulator below the input voltage it needs.
 
 **P1 — Lumped PDN.** The part library's C/f₀ rows and Touchstone models, derating, the source model and its
 life sweep, the target mask, the aggressor lines and the coincidence check, Z(f) at one port, the
@@ -657,9 +789,12 @@ are.
 **P2b — The cavity.** The shunt branch, the eigensolve, the mode list, the field maps, adaptive sampling
 around narrow resonances. Real, and last: for a compact board it is above the excitation set.
 
-**P3 — A/B.** Two designs, net/refdes/part-number matching, the DC comparison, the delta trace, the per-part
-table, the report. Cheap once P0 and P2a exist, and useful from P0 onward — a DC-only A/B is already worth
-having.
+**P3 — A/B.** Two designs, net/refdes/part-number matching, both impedance curves, the delta trace, the
+per-part mounting table, both removal rankings, the DC comparison and the report. **It lands with P2a, not
+before** (Q-19): review's use for it is weighing the layout's effect on the PDN and deciding which parts
+can come off, and that is the frequency answer. A DC-only A/B was rev 3's guess at an early win and it is
+not the one — the DC comparison ships inside P3 as supporting evidence rather than ahead of it as a
+feature.
 
 **If only one phase is ever built it should be P0**, which rev 2 could not have said: P0 answers a question
 these designs have, on artwork that always exists, with an oracle that is arithmetic rather than opinion.
@@ -679,6 +814,14 @@ Each phase is gated against something that is not our own arithmetic.
   honest, and it is the one that would catch a misclassification.
 - **Via current split.** Against a closed-form parallel-resistance calculation for a symmetric via group, and
   against the mesh for an asymmetric one, where the point is precisely that the split is not equal.
+- **More than one source, against superposition.** A resistive mesh is linear, so a two-source DC solve is
+  exactly the sum of the two one-source solves. That is arithmetic rather than opinion, it needs no
+  external data, and it catches the whole class of defect where a second source is stamped once, twice or
+  at the wrong node — the class a single-source tool cannot have and this one now can.
+- **The rail chain, against a hand-solved two-rail ladder.** Input rail with a known drop, a regulator
+  drawing a known current, an output rail with its own loads: the input voltage the second solve starts
+  from is a number written down in advance. The gate is that it is the *upstream answer* and not the
+  nominal, and the negative half of it is that a cycle in the order is refused rather than iterated.
 - **The rectangular cavity.** A uniform rectangular plane pair has closed-form modes and a closed-form input
   impedance. The mesh must reproduce the first six modes to better than 2 %, with monotone convergence in
   cell size.
@@ -695,14 +838,25 @@ Each phase is gated against something that is not our own arithmetic.
 - **The importers against real files.** Review will supply a reference-design package and the layout tool's
   own placement and BOM exports; each reader is gated on those bytes, and on a refusal where a required
   field (the placement origin, the Excellon format) is absent.
+- **Navigation parity with the layout editor**, and it is a comparison rather than a checklist. Every
+  gesture in §11.6's table is driven on the railRF board view and on a layout editor view holding the same
+  geometry, and the two resulting viewports must be identical — pan offsets, zoom, and the framing Zoom to
+  Fit chose. A list of features can be satisfied by an approximation of each one; asserting the same
+  viewport cannot.
+- **The clipboard picture carries the overlay.** A copy taken with the drop map showing must contain the
+  drop map, asserted against the real SVG text the way `LayoutClipboardVisibilityTests` and the
+  `TryRenderToSvg` font tests already assert against Skia's own output. This gate exists because the
+  overlay set a copy draws is an **explicit parameter list** (§11.7), so an overlay nobody added to it is
+  absent from the picture and nothing reports a failure. The same test asserts the page is framed on the
+  painted extent including the overlay, and that a hidden layer does not size it.
 
 ---
 
 # 8. Questions — what is settled, and what is left
 
-Numbered so the thread survives iteration. **Q-1 … Q-12 are all closed**; their answers are recorded below
-because the reasoning behind a closed question is what stops it reopening by accident. **Q-13 … Q-19 are
-new in rev 3.**
+Numbered so the thread survives iteration. **Q-1 … Q-19 are all closed or decided except Q-18**; their
+answers are recorded below because the reasoning behind a closed question is what stops it reopening by
+accident. **Q-20 … Q-22 are new in rev 4.**
 
 ## 8.1 Closed in the rev-1 review
 
@@ -713,7 +867,10 @@ new in rev 3.**
   netlist or board file names the footprint it is pre-selected.
 - **Q-3 — How far up? — CLOSED**, and rev 3 goes further: §4.5 shows the cavity is above the excitation set
   on a compact board, so the ceiling is not the binding concern at either end.
-- **Q-6 — Multiple rails at once? — CLOSED.** One rail at a time for v1.
+- **Q-6 — Multiple rails at once? — CLOSED, then re-closed differently in rev 4.** One rail is *analysed*
+  at a time, which stands. What changed is that a railRF **document holds the whole rail set** and solves
+  them in dependency order, because review's boards run a primary cell into a regulator that makes a
+  second voltage — so the original answer was right about the solve and wrong about the document (§2.2).
 - **Live results — CLOSED, then reopened and resolved differently.** Review accepted re-running; the owner
   then asked for a fast default that supports live interaction. §2.9 is the answer, and it is better than
   either: live in Fast, explicit in Accurate.
@@ -780,46 +937,94 @@ much heavier in simulation terms. §2.7 stands.
 **The antipad mesh risk — NO INPUT, and it stays ours.** Review had no information on it. §9 keeps it as an
 engineering requirement rather than a user-facing question.
 
-## 8.3 Decided by the owner in rev 3
+## 8.3 Decided by the owner
+
+**In rev 3:**
 
 - **The board import lands in a circuitRF cell, default on** (§2.3).
 - **Fast is the default and Accuracy is a button** (§2.9).
 - **The window borrows the Match Designer's UI** (§11), which has had roughly ten rounds of refinement and
   is the house standard for a tool window.
 
-## 8.4 Open in rev 3
+**In rev 4:**
 
-**Q-13 — Is an IPC-D-356 board netlist normally in the output set?** circuitRF already reads one, and with it
-most of §2.3's step 2 disappears — net names per pad, and the via-versus-component-hole distinction for free.
-Without it, every rail is named by clicking. *Which is it, for a supplier package and for your own designs?*
+- **The board view gets the layout editor's whole navigation set** — Zoom to Fit, Zoom to Marquee, Zoom
+  Out, Ctrl +/−, arrow-key panning when no text field has the keyboard, and the mouse gestures — which is
+  satisfied by the board view *being* `LayoutCanvas` rather than by re-implementing any of it (§11.6).
+- **Copy to clipboard must work and must carry railRF's own rendering**, in every format, reusing the
+  layout clipboard exporter rather than a second implementation — because that path has already cost
+  substantial debugging time across three platforms (§11.7). The corollary, stated as a rule: **railRF
+  writes no clipboard code.**
 
-**Q-14 — The placement origin.** The placement export offers symbol origin, body centre or pin 1, and the
-file itself does not always say which was chosen. Is it always the same one in practice, or should railRF
-require it to be stated on every import? *(§2.2 currently refuses rather than guesses, which is safe but is
-one more thing to type.)*
+## 8.4 Closed in the rev-3 review
 
-**Q-15 — Where does ESR come from?** The maintained library carries C and self-resonant frequency, which fix
-where a resonance is but not how deep or how tall it is. Are ESR figures available per part — from the
-manufacturers' model tools, or in your own table — or should railRF fall back to a dissipation-factor default
-per dielectric class and flag every peak height as indicative?
+**The rail's sources and loads are both plural, and both sit on pads. — ADOPTED, and it is the largest
+change in rev 4.** It arrived against §11's window rather than as an answer to a numbered question: these
+boards run a primary source that feeds a regulator making a second voltage, there is more than one load on
+a rail, and a source or load location is typically a **component pad** — a battery's being the connector's
+pad. So both are add/remove lists keyed on refdes and pin, and the rail set and its dependency order
+follow from the same fact (§2.2, §4.3, §11.3).
 
-**Q-16 — Where do the load currents come from?** The DC answer needs a current per load, and no BOM or
-placement file carries one. Is typing a current per port acceptable, or is there a per-net current budget
-somewhere that could be imported?
+**Q-13 — Is a board netlist normally in the output set? — CLOSED: yes.** Review confirmed it by pointing
+at the example file supplied rather than by the standard's name, so §2.2's assisted Gerber path becomes the
+fallback for a package that lacks one. **Which netlist flavour that example is** — circuitRF's existing
+reader is IPC-D-356 — is the residue, and it is Q-21.
 
-**Q-17 — What via current limit should the flag use?** railRF needs a stated basis: a temperature rise
-budget, a fixed current per via of a given barrel, or a standards-derived table. *What do you hold a via to
-today?*
+**Q-14 — The placement origin. — CLOSED: ask.** It is not one house convention to be learned, so railRF
+asks which origin the export used, on every import, with nothing pre-selected. A default here would be the
+guess the refusal exists to prevent. Headless it stays a refusal naming the flag (§2.2).
 
-**Q-18 — How much of the reference package can we have?** §7 gates the three new readers on real bytes rather
-than on invented ones. A complete supplier reference package — Gerbers, drill, netlist if present, BOM,
-placement — and one of your own designs' exports would settle the importers outright and become the
-acceptance fixtures. *(They would be committed anonymised: the repo carries no company, vendor or product
-names, so part numbers and library prefixes in a fixture are rewritten to the same shape.)*
+**Q-15 — Where does ESR come from? — CLOSED: the dissipation-factor default per dielectric class.** There
+is no per-part ESR figure to be had, so the fallback is the basis rather than a stopgap, and every peak
+height derived from one is marked indicative wherever it appears. A part's own Touchstone file remains the
+only route to a real ESR, which is why §2.2 recommends it rather than merely offering it. The same per-class
+figure serves the board dielectric where the stackup states no tan δ. **§9 keeps this as a standing
+accuracy condition, not a gap to be filled later.**
 
-**Q-19 — Does the A/B comparison need to run at DC alone?** P3 is cheap from P0 onward if a DC-only
-comparison is useful on its own — same schematic, two layouts, two drop breakdowns side by side, before any
-frequency work exists. Worth shipping early, or only worth having complete?
+**Q-16 — Where do the load currents come from? — CLOSED: typed, per port.** Typing a current per port is
+acceptable, and the second half of the answer is the more useful one: **a terminal with no stated current is
+not a load**, never a defaulted one. Such a port is an observation port over frequency and contributes
+nothing to the DC solve (§2.2).
+
+**Q-17 — What via current limit should the flag use? — CLOSED: a temperature-rise basis, with a table by
+drill size as the default.** Roughly 0.3–0.5 A for a 0.2–0.3 mm signal via, 0.7–1.0 A at 0.4–0.5 mm,
+1.0–1.5 A at 0.6–0.8 mm and 1.5–2.5 A at 1.0–1.2 mm, all at about a 10 °C rise — with a 0.3 mm drill **at
+20 µm of plating** quoted separately at 0.8–1.0 A. **That separate figure is what makes the answer usable**,
+because it disagrees with the table's own 0.3 mm row by about two-fold and the term that differs is the
+plating thickness. §4.2 therefore computes the limit from the barrel's annulus and uses the table as a
+default and a sanity band. The plating thickness itself is Q-22.
+
+**Q-19 — Does the A/B comparison need to run at DC alone? — CLOSED: no, and the question had the purpose
+backwards.** A/B exists to weigh what the layout did to the PDN and to decide **which parts can come off**;
+the DC load analysis is a separate layout-review step taken once the topology is settled. So the impedance
+comparison and the removal rankings are the deliverable, the DC comparison rides along inside P3, and the
+DC-only early version rev 3 offered is not worth building (§2.5, §6).
+
+## 8.5 Open in rev 4
+
+**Q-18 — How much of the reference package can we have? — CARRIED FORWARD, and now the only thing between
+this note and P0.** §7 gates the three new readers on real bytes rather than on invented ones. A complete
+supplier reference package — Gerbers, drill, the netlist Q-13 confirmed, BOM, placement — and one of your
+own designs' exports would settle the importers outright and become the acceptance fixtures. *(They would
+be committed anonymised: the repo carries no company, vendor or product names, so part numbers and library
+prefixes in a fixture are rewritten to the same shape.)*
+
+**Q-20 — The rail chain: what does a regulator need typed?** railRF will solve the rails in dependency
+order so a regulator's input voltage is the upstream answer rather than a nominal (§2.2). Two things that
+order needs and no file carries: the regulator's **input current** at the operating point being judged, and
+its **minimum input voltage** — without the second, railRF can report the input rail's drop but not that
+the drop broke the rail downstream, which is the finding the chain exists to produce. Is typing both per
+regulator acceptable, exactly as the load currents are?
+
+**Q-21 — Which netlist format is the example?** Q-13's answer identified a file rather than a standard.
+circuitRF already reads IPC-D-356; if the supplied example is that, nothing more is needed. If it is
+another flavour, that is a fourth reader and it is much cheaper to know now than at P0's gate.
+
+**Q-22 — Is the via plating thickness stated anywhere in what you have?** §4.2 shows it is worth a factor
+of two in the via current limit, and the drill file does not carry it. A fabrication note, a stackup
+drawing or a board specification may. If nothing does, it stays a typed setting and every flag says which
+thickness produced it — which is honest but means the one number the flag turns on is the one number nobody
+checked.
 
 ---
 
@@ -834,10 +1039,13 @@ only partly populated with curves produces a result that is partly derated, and 
 extreme unless it is visible. **Every part row shows marked, derated and which it used, and the result
 carries a count of parts with no curve.**
 
-**ESR coverage, for the same reason.** C and f₀ place a resonance; ESR sizes it. A library without ESR gives
-peak heights that are indicative only, and a mask margin in dB computed from an indicative peak looks exactly
-as authoritative as a real one. Until Q-15 is answered, a margin computed against a defaulted ESR must be
-marked as such wherever it appears.
+**ESR coverage — and Q-15 closes it as a permanent condition, not a gap.** C and f₀ place a resonance; ESR
+sizes it. There is no per-part ESR figure to be had, so a defaulted one is the normal case rather than the
+degraded one, and **a mask margin in dB computed from an indicative peak looks exactly as authoritative as
+a real one.** Every such margin is marked wherever it appears — part row, plot, table, export provenance —
+and that marking is now load-bearing rather than temporary. The one route to a real number is a part's own
+Touchstone file, so the parts table's count of *how many parts are modelled from a file* is a headline
+number and not a detail.
 
 **The stackup is usually wrong.** Designers copy a stackup from the last board. The plane-to-plane dielectric
 thickness sets the plane capacitance linearly, and a 2× error there is a 2× error in the answer at every
@@ -854,6 +1062,18 @@ Drawing the classification and gating Fast against Accurate (§7) are both requi
 and it is precisely under the load port. Too coarse a mesh there and the spreading inductance is
 underestimated — again optimistically. Local refinement under port regions is a correctness requirement, not
 an optimisation. Review had no input here; it stays our own risk.
+
+**The rail chain invites a simultaneous multi-rail solve, and that invitation should be refused.** Solving
+the rails in dependency order is a few lines and it answers the question review has. Solving them *together*
+— a regulator as a two-port with a forward transfer and a PSRR — is a different model, it needs exactly the
+data §8.2 records as frequently impossible to obtain, and it would be entered by accident the first time
+someone asked for a cycle in the order to be supported. **The refusal on a cycle (§2.2) is the boundary and
+it is load-bearing**, not a limitation to be lifted when convenient.
+
+**Several sources on one rail invite an average, and the answer is the one thing an average cannot give.**
+Two supplies feeding one net do not share in proportion to anything a designer can see; the copper decides,
+and on a compact board it decides badly. The superposition gate in §7 exists because this is cheap to get
+subtly wrong — a second source stamped at the wrong node produces a plausible number, not an error.
 
 **Scope creep toward signal integrity.** Every one of these primitives — a plane pair, a mesh, a port — is one
 step from a return-path-discontinuity tool. That is a different product and a much heavier simulation. §2.7 is
@@ -874,6 +1094,12 @@ Worth listing, because it is the argument that this is a large feature rather th
 - The `DataSet`/`DataCube` result model, `.npy`/MATLAB/Touchstone export — **built**
 - The Data Display: plots, masks as traces, markers, overlays, tear-off windows — **built**
 - `src/Render`'s layout renderer, below the firewall, so the window and a headless report draw alike — **built 2026-09-07**
+- `LayoutCanvas` and the whole of its navigation — pan, cursor-anchored zoom, Zoom to Fit, the one-shot
+  magnifier, Ctrl +/−, arrow-key panning, rulers, hit-testing, per-document viewport persistence — **built**
+- The `ILayoutCanvasOverlay` seam, which is how wBond already draws on that canvas without owning it — **built**
+- The multi-format clipboard write — painted-extent page framing, PDF/SVG/PNG writers, the Windows
+  enhanced-metafile path and the SVG font repair — **built, and debugged over several rounds across three
+  platforms**, which is the reason §11.7 writes none of it again
 - Passive-part readouts, so a vendor `.sNp` becomes a PDN element — **built 2026-09-06**
 - Touchstone health checking, so a vendor file is trusted for a reason — **built 2026-09-06**
 - A tool-as-document shell with its own menus, window and standalone binary — **built twice**, for the Match
@@ -929,20 +1155,20 @@ One resizable window, opened per railRF document:
 ┌────────────────────────────────────────────────────────────────────────────────────────────┐
 │ railRF — evk_1v8_compact                            [Report ▸] [Settings] [Help] [Close]   │
 ├────────────────────┬──────────────────────────────────────┬────────────────────────────────┤
-│ SPECIFICATION      │ BOARD            [artwork│drop│|Z|]  │ RESULTS         [DC│frequency] │
+│ SPECIFICATION      │ BOARD       [copper│drop│|Z|│class]  │ RESULTS         [DC│frequency] │
 │                    │                                      │  ┌──────────────────────────┐  │
-│ Rail               │   ┌────────────────────────────────┐ │  │ |Z| vs f, mask shaded,   │  │
+│ Rail  [ +1V8    ▾] │   ┌────────────────────────────────┐ │  │ |Z| vs f, mask shaded,   │  │
 │  Net    [ +1V8  ▾] │   │                                │ │  │ aggressor lines drawn    │  │
 │  Ref.   [ L2    ▾] │   │   the real artwork, drawn by   │ │  └──────────────────────────┘  │
-│  Extent [as imp ▾] │   │   LayoutRenderer, with the     │ │  Drop      70 mV / 80 mV   ✔   │
+│  Extent [as imp ▾] │   │   LayoutRenderer, with the     │ │  Drop  U1  70 mV / 80 mV   ✔   │
 │                    │   │   drop map or |Z| map as an    │ │  Worst Z   93 mΩ / 50 mΩ   ✘   │
-│ Source             │   │   overlay                      │ │  +5.4 dB over at 7.1 MHz       │
-│  (•)Battery ( )Conv│   │                                │ │  ← on the converter fundamental│
-│  R [ 2.5 ] Ω  life │   └────────────────────────────────┘ │                                │
-│  L [ 20  ] nH   ▸  │                                      │  BREAKDOWN / ANTI-RESONANCES   │
-│                    │  PARTS                               │  ┌──────────────────────────┐  │
-│ Load               │   ┌────────────────────────────────┐ │  │ ranked rows, one per     │  │
-│  Port   [ U1    ▾] │   │ refdes · P/N · value · derated │ │  │ element or per peak      │  │
+│ Sources    [+] [−] │   │   overlay                      │ │  +5.4 dB over at 7.1 MHz       │
+│  BT1.1  batt 2.5 Ω │   │                                │ │  ← on the converter fundamental│
+│  U2.OUT  R-L    ▸  │   └────────────────────────────────┘ │                                │
+│ Loads      [+] [−] │                                      │  BREAKDOWN / ANTI-RESONANCES   │
+│  U1.VDD    120 mA  │  PARTS                               │  ┌──────────────────────────┐  │
+│  U3.VCC     15 mA  │   ┌────────────────────────────────┐ │  │ ranked rows, one per     │  │
+│  U4.VIN   observe  │   │ refdes · P/N · value · derated │ │  │ element or per peak      │  │
 │  I dc   [ 120 ] mA │   │ · model · L_mount · flags      │ │  └──────────────────────────┘  │
 │                    │   └────────────────────────────────┘ │  [ Rank capacitors ]           │
 │ Target             │                                      │                                │
@@ -955,26 +1181,169 @@ One resizable window, opened per railRF document:
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Three things in that sketch are the whole design:
+Four things in that sketch are the whole design:
 
-1. **The centre is the board.** Not a schematic and not a sketch — the imported artwork, drawn by the same
-   renderer the layout editor uses, with the drop map or the impedance map as an overlay. The tabs switch the
-   overlay, never the geometry.
+1. **The centre is the board, and it is the layout editor's own canvas.** Not a schematic, not a sketch and
+   not a picture of a layout — `LayoutCanvas` itself, drawing the imported artwork with railRF's maps as an
+   overlay through the seam wBond already uses. The tabs switch the overlay, never the geometry; `class` is
+   §2.9's trace-versus-mesh classification, which is a requirement rather than a diagnostic. Everything
+   this buys — and the traps it inherits — is §11.6, and the copy out of it is §11.7.
 2. **The status strip carries the model.** *Fast model · 4.1 ms* is always on screen, so nobody reads a fast
    answer as an accurate one, and the elapsed time makes the cost of `Accuracy` obvious before it is pressed.
    The reference-plane choice and the derating coverage sit beside it for the same reason.
 3. **`Accuracy` is a button on the bottom bar, next to Run** — the one control that changes what the numbers
    mean, in the place the user looks when the design is settled.
+4. **Sources and loads are lists, not fields.** Review's boards have more than one of each — a cell through
+   a connector, a regulator making a second voltage, several ICs on one rail — so both carry add and remove,
+   each row is a refdes and a pin rather than a coordinate, and the **rail selector above them** is what
+   says which rail the whole window is currently showing (§2.2). A load row with no current reads
+   *observe*, because that is what it is.
 
 ## 11.4 Where it opens from
 
 From the Tools menu for a new document, and by double-clicking a railRF document in the project tree. A
-selected railRF document's Properties panel shows a compact summary — net, reference, source, worst drop,
-worst margin — and an **Open railRF…** button, following the same pattern as the Match and wBond panels.
+selected railRF document's Properties panel shows a compact summary — the rail, its reference, its source
+count and load count, worst drop and worst margin — and an **Open railRF…** button, following the same
+pattern as the Match and wBond panels.
 
 ## 11.5 Headless
 
-Everything the window does, `circuitrf rail` does with no display: `--fast` (default) / `--accurate`, the
-mask, the aggressor list, the breakdown, the via flags, and `-o` for Touchstone, `.npy`, CSV or an SVG/PDF
-report drawn by the same renderers. Per `docs/design/cli.md`, the verb holds no analysis logic of its own — a
-rule the automation verbs already follow, and the reason a board can be gated in CI.
+Everything the window does, `circuitrf rail` does with no display: `--rail` to name which rail of the set,
+`--fast` (default) / `--accurate`, the mask, the aggressor list, the breakdown, the via flags, and `-o` for
+Touchstone, `.npy`, CSV or an SVG/PDF report drawn by the same renderers. Sources and loads are repeatable
+arguments (`--source BT1.1=batt` and `--load U1.VDD=120mA`, spelled per the CLI's own value+unit
+conventions), and **a load with no current is accepted as an observation port** rather than refused,
+because that is what it means in the window. Omitting `--rail` on a document holding several rails runs
+them all in dependency order, which is the shape `hb`/`lp` already have for a wrapped sweep. Per
+`docs/design/cli.md`, the verb holds no analysis logic of its own — a rule the automation verbs already
+follow, and the reason a board can be gated in CI.
+
+## 11.6 The board view is the layout editor's canvas
+
+**Owner instruction: the board in the centre of that window pans and zooms exactly as the layout editor
+does, by mouse and by keyboard.** Not "similarly" — the same gestures, the same step sizes, the same
+anchoring. Someone who has learned one of these windows has learned the other, and a near-miss is worse
+than an absence because it is discovered by being wrong.
+
+The way to get that is not to re-implement it. **railRF's board view IS `LayoutCanvas`**
+(`src/Ui/Controls/LayoutCanvas.cs`), and railRF's own drawing arrives through the `ILayoutCanvasOverlay`
+seam that wBond already uses to draw wires on that same control. The overlay is offered every gesture
+first and declines everything that is not its own, so pan, zoom, the marquee, the magnifier, the rulers and
+the hit-test all reach the canvas's own state machine untouched — an arrangement that exists precisely
+because a transparent sibling control layered on top would swallow every event it did not want. What railRF
+adds is a drop-map overlay, an impedance-map overlay and the classification overlay, **and no navigation
+code at all.**
+
+| Gesture | What it does | Where it already lives |
+|---|---|---|
+| Wheel, or two-finger scroll | zoom, anchored on the world point under the cursor | `LayoutViewport.WithZoomAnchoredAt` |
+| Middle-button drag, or Space + left drag | pan | `LayoutCanvas`'s pan latch |
+| `F` | Zoom to Fit | `LayoutCanvas.ZoomToFit` over `LayoutViewport.ZoomToFit` |
+| `Z`, then a left drag | Zoom to Marquee — the magnifier, **one shot**, self-disarming | `ArmZoomBox` / `ZoomBoxMarquee` |
+| Ctrl/⌘ `+` and `−` | zoom one step about the centre, main row **and** numeric keypad | `ZoomIn` / `ZoomOut` |
+| Arrow keys | pan 40 device pixels a step, ×5 with Shift | `CanvasArrowPan.ScreenStep` |
+| `Escape` | disarms the magnifier and drops a half-drawn box | `DisarmZoomBox` |
+
+**And the same four toolbar buttons**, in the same order and with the same tooltips the layout editor's
+carry: Zoom to Fit, the Zoom Box magnifier (which lights while armed), Zoom Out, and Zoom 1:1. The
+keyboard is not the only route to any of these, and the buttons are where a user who has never read a
+tooltip finds them.
+
+Five things in that table are traps already paid for once, and this window must not reopen any of them:
+
+1. **Every keyboard gesture is gated on nothing else owning the keyboard.** `F` is an ordinary letter in a
+   net name and `Z` is one in a part number; the layout canvas suppresses both while a label is being
+   typed, and **railRF's window has far more text fields than the layout editor does** — its whole left
+   column is editable rows. The gate is therefore wider here, not narrower: no navigation key fires while
+   focus is in any text-entry control.
+2. **The arrow keys are the case that instruction turns on.** They pan only when nothing is selected and
+   nothing is being typed, because in every one of these editors an arrow key already nudges a selection
+   and that gesture is the older one. In this window the competing claim is stronger still — an arrow key
+   inside a value field belongs to the caret, always — so the pan is what an arrow key means on the board
+   panel and nowhere else. It matters because **a trackpad has no middle button** and the two-finger
+   scroll is spent on zoom: on a laptop the arrow keys are the only pan there is.
+3. **Every held-key latch is dropped on `LostFocus`.** Hold Space to pan, then click a button on the bottom
+   bar; the key-up goes to the button and the canvas never sees it, so the latch stays set and from that
+   moment every left-drag is a pan with nothing on screen explaining it. That was diagnosed once already —
+   and in a window whose board panel is ringed by controls it is *more* likely here than it was there, not
+   less.
+4. **Zoom to Fit must include the overlay's own extent.** `ContentBounds()` exists on the overlay seam for
+   exactly this: the canvas fits the union of the layout's shapes and the overlay's, and an overlay whose
+   content is in neither gets framed out. A drop map is co-extensive with the copper, so this looks
+   harmless — until a legend, a source marker or a flagged-via callout sits outside the copper's own bbox
+   and Zoom to Fit cuts it off.
+5. **The viewport is per document and it persists.** A railRF document reopens where it was left, as a
+   layout document does, through the mechanism already tested.
+
+Two further rules follow from the overlay contract rather than from navigation, and both are correctness
+rather than polish: an overlay **never touches the layout model** — nothing railRF draws enters the
+`.clay`, and a map repaint must go through `InvalidateOverlay` rather than invalidating the path cache,
+which on a real board is the difference between a repaint and a rebuild of half a million shapes — and an
+overlay's coordinates are the canvas's own **database units**, converted at this boundary and nowhere
+else.
+
+## 11.7 Copy to clipboard, with railRF's own rendering in it
+
+**Owner instruction: a copy out of railRF must land as a picture in a document or a slide, it must carry
+railRF's own rendering and not just the copper, and it must reuse the exporter that already exists — this
+path has cost real debugging time across three platforms and none of it should be spent again.**
+
+So railRF **writes no clipboard code**. The existing pieces, in the order they are called, each with the
+finding that put it there:
+
+1. **Frame the page from what is PAINTED** — never from the current pan and zoom, and never from raw
+   geometry bounds. Two separate defects are baked into that sentence. A label's stored bbox is a *point*,
+   so a page unioned from geometry bboxes once sized itself to almost nothing and hung the content off the
+   edges; and a hidden layer must not size the page, which is why `LayoutClipboard.ComputeSelectionBounds`
+   and `LayoutRenderer.Draw` now read the same `LayerDef.Visible` flag — before they did, two shapes on two
+   layers with one hidden produced a page spanning both and a visible shape too small to read. **railRF's
+   overlays are part of the painted extent** and go into that same pass, which is the same requirement as
+   §11.6's point 4 seen from the other side.
+2. **Resolve colour and background through `ClipboardRenderPolicy.Resolve()`** — one app-wide setting,
+   never a per-call parameter, and the contract every copy path in this application already signs.
+   railRF's maps are the one place this needs thought. For every other copy the background is a *backdrop*,
+   so honouring transparency is a matter of not painting it; the stackup copy is the counter-example, and
+   it is instructive — its renderer uses the background colour as **paint**, to cut a drill hole, and
+   simply not painting the bore did not make it transparent, it showed the dielectric behind it. A hole had
+   to be cut in what was behind. **A railRF map must not acquire that shape**: the shading is opaque paint
+   laid over the copper and the legend carries its own scale, so nothing in the picture depends on the
+   page's background being any particular colour. That is a design constraint on the overlay, decided here
+   rather than discovered in an export.
+3. **Render PDF, SVG and a 2× PNG through the writers the plot exporter already uses**, and write them all
+   at once with `PlotExporter.SetClipboardDataAsync`. On Windows that call bypasses Avalonia's clipboard
+   entirely and performs **one** P/Invoke session covering every format, with the enhanced metafile first —
+   which is what a slide or a word-processor document takes when it iterates the formats on offer. On macOS
+   and Linux it is one transfer carrying the native PDF and SVG types, the bitmap and the text, with a
+   text-only fallback if the platform refuses the multi-format write. It is one call and not four because
+   **a second Avalonia clipboard session fails on Windows** for reasons `WindowsClipboard`'s own header
+   records.
+4. **Exports opt out of the level-of-detail tiers** (`DetailPixelThreshold = -1`). A PDF or SVG page has no
+   device pixels to budget against, and a pasted bitmap may be rescaled away from the size it was rendered
+   at — so what is stored is what is drawn, exactly as `circuitrf render --detail full` already does. On a
+   real board this is a visible difference, not a theoretical one.
+5. **The font repair is not optional.** Skia's SVG device writes font-family names and embeds no font data,
+   so every emitted SVG passes through `SvgFontNormalizer`, and on Windows the embedded faces are
+   registered for the process for the duration of the render. **A copy must never be able to fail because
+   of a font** — which is the rule that made that repair a shared step rather than an export-only one.
+
+**The one thing that is genuinely new, and the one that will break.** The overlay set a layout copy draws
+is an **explicit parameter list**: the EM mesh, the current-density map and the DRC markers were each added
+to `LayoutClipboard.CopyAsync` as they arrived, and each rides the *picture* while staying deliberately out
+of the JSON payload — a mesh or a violation marker is a result, not geometry, and must not paste into
+another layout as though it were. railRF's overlays follow that rule exactly, and the failure mode follows
+from it too: **an overlay nobody added to that list is silently absent from the copy.** The picture is still
+produced, it still looks correct, and the one thing the user copied it for is missing. That is why §7 gates
+the overlay's presence in the real SVG text rather than trusting the wiring.
+
+**What lands on the clipboard.** The rail's own state as marker-guarded JSON, so a copy pastes back into
+another railRF document and a foreign paste is ignored rather than half-parsed — plus PDF, SVG and a bitmap
+of the board *as drawn*: the active map overlay, its legend, the source and load markers, the flagged vias
+and the rulers, which count as content. **An empty view is not a licence to return early.** A copy that
+writes nothing to the system clipboard leaves the *previous* copy sitting there, so the next paste produces
+something unrelated and nothing reports a failure — that is precisely what a ruler-only layout copy did,
+and it is a further reason railRF's copy is of the **view** rather than of a selection.
+
+Ctrl/⌘+C on the board panel and a **Copy** item in its context menu, dispatched through
+`WorkspaceViewModel.InvokeClipboardAsync` on the active document's type, exactly as every other document's
+copy already is. The same render path produces the picture in the `Report ▸` menu and in the headless
+report, so there is one route from an overlay to a page and not two.
