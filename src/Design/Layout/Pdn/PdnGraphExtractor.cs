@@ -1057,6 +1057,26 @@ internal sealed class GraphBuild(
                     Union(at[0], at[i]);
         }
 
+        // A SERIES PART bridges two pieces of the rail's copper exactly as a via bridges two
+        // conductors, and on imported artwork it is the ORDINARY case rather than an unusual one —
+        // §2.8: "the copper stops at every pad, so the board is not electrically continuous until
+        // the user has said what bridges each gap". Without this, the design note's own §2.8 board
+        // — a battery, a protection FET, and 50 mm of inner copper — is refused as pour-dominated
+        // when no pour is involved at all, and so is every real board with a ferrite on the rail.
+        // Permissive for the reason the via loop above states: it can only ever make a refusal LESS
+        // likely, and the connectivity it stands in for is the region walk's own.
+        foreach (var part in request.SeriesElements)
+        {
+            var ends = new List<int>();
+            foreach (var anchor in new[] { part.A, part.B })
+                foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
+                    ends.AddRange(nodes.NodesAt(x, y, isReference: false));
+
+            for (int i = 1; i < ends.Count; i++)
+                if (!_spreadingRailNodes.Contains(ends[0]) && !_spreadingRailNodes.Contains(ends[i]))
+                    Union(ends[0], ends[i]);
+        }
+
         var sourceRoots = new HashSet<int>();
         foreach (var s in rail.Sources)
             foreach (var (x, y) in PdnAttachments.Resolve(s.Anchor, request.Pads))

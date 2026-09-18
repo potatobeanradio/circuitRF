@@ -4,6 +4,31 @@ Mirrors `src/Engine/Loadpull/RESOLVED.md`'s pattern: a completed brief's detail 
 section per brief, sparingly — only for findings that are still true, still surprising, and would cost
 someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+
+## `LinearDcEngine` — the ω = 0 linear solve, and why it is not `NonlinearDcEngine` (2026-09-18)
+
+Added for railRF brief 5; the full record is in `src/Design/RESOLVED.md` under that brief, and the
+part that belongs here is the reason a second DC entry point exists at all.
+
+`NonlinearDcEngine` materialises its augmented system as a **dense `double[n,n]`** before assembling a
+CSC out of it. That is what makes `MeasureThermalNodes` and `ResidualPerUnknown` cheap to write and it
+is entirely reasonable for a circuit; it is unusable for a resistive mesh, whose extractor ceiling is
+400,000 nodes — 1.28 TB of that array, and 800 MB at a modest 10,000. Newton is the other half: such a
+netlist is LINEAR, so there is one assembly, one factorisation and one back-substitution, and the
+iteration, the source stepping and the convergence trace have nothing to do.
+
+So `LinearDcEngine` is that engine's **linear pass with the dense array removed** — it implements no
+matrix, no ordering and no factorisation, and keeps every convention that pass sets: Port and Term
+inert at DC, gmin on every voltage row, mutual inductance stamped after everything else, and a branch
+current flowing from its element's FIRST node to its SECOND. It refuses a netlist carrying a nonlinear
+model rather than solving one incorrectly, and it returns the whole solution vector — **branch
+currents included, because an ideal source's current is a solution unknown and cannot be derived from
+node voltages**, and it is exactly the number "which source carried what share" is made of.
+
+`LinearDcSolution.AsDcResult()` hands the answer back in `NonlinearDcEngine.DcResult`'s shape so
+`DcResultPacker` packs it unchanged: an ω = 0 linear run yields the same `DataSet` every other DC run
+yields, and nothing downstream learns a second result type.
+
 ## An unresolvable analysis Tone resolved to 1 GHz, and every later message described that grid (2026-09-02)
 
 Reported against a single-tone HB whose `Tone` named a variable the schematic does not define

@@ -1,5 +1,146 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 5 — the DC solve, the breakdown, and the rail chain (2026-09-18)
+
+`src/Design/RailRf/RailDcRun.cs` + `RailDcResult.cs`, `src/Engine/Pdn/PdnBreakdown.cs`, and one new
+file in the numeric layer, `src/Engine/LinearDcEngine.cs`. Tests in
+`tests/Ui.Tests/RailRf/PdnDcSolveTests.cs` (10, ~2 s).
+
+Measured, on §2.8's own board — a battery, a 350 mΩ protection FET bridging the gap the copper leaves
+at its pads, and 50 mm of 0.3 mm 0.5 oz inner copper beyond it, at 100 mA:
+
+| Row, as the breakdown prints it | R | Drop | Share | Elements |
+|---|---|---|---|---|
+| `Q1 at 350 mΩ (the part library's on-resistance)` | 350.000 mΩ | 35.0000 mV | **66.19 %** | 1 |
+| `166.3 squares of TOP copper` | 163.854 mΩ | 16.3855 mV | **30.99 %** | **14,053** |
+| `11.4 squares of TOP copper` | 11.191 mΩ | 1.1191 mV | 2.12 % | 1,282 |
+| `11 squares of BOT copper, the reference return` | 2.710 mΩ | 0.2710 mV | 0.51 % | **93,544** |
+| `BT1.1's series resistance, 1 mΩ` | 1.000 mΩ | 0.1000 mV | 0.19 % | 1 |
+
+That is the ACCURATE reading: **108,884 netlist elements, five rows**, and the rows sum to the
+52.8755 mV total drop. The FAST reading of the same board is 276 elements and the same five rows —
+`49.72 mm of 0.301 mm TOP copper, priced as one section (165 squares)` at 163.089 mΩ against the
+mesh's 163.854 mΩ, and a total drop of 52.6813 mV against 52.8755 mV, **0.37 % apart** on the number
+§2.9's fourth rule asks a user to trust.
+
+Rev 3 of the design note exists for that second row and the number is not a rounding error: the
+copper is **second, at nearly a third of the drop**, it is half the series semiconductor, and
+§2.8's own arithmetic — 50 mm of 0.3 mm copper is 167 squares — comes back out of the mesh as 166.3.
+
+### 1. `NonlinearDcEngine` is the wrong engine for a mesh, and the reason is storage rather than physics
+
+R-rail5-1 says the solve is the existing machinery and nothing here is new. The existing DC engine
+materialises its augmented system as a **dense `double[n,n]`** before assembling a CSC out of it —
+which is what makes its thermal measurement and its per-unknown residual report cheap to write, and is
+entirely reasonable for a circuit. brief 3's mesh ceiling is **400,000 cells**, which is 1.28 TB of
+that array; even a modest 10,000-node board is 800 MB. Newton is the other half: a resistive mesh is
+LINEAR, so the iteration, the source stepping and the convergence trace have nothing to do.
+
+So `LinearDcEngine` is that engine's linear pass **with the dense array removed** — §4.4's own
+sentence, "at ω = 0 the system is real, symmetric and positive-definite and the same code path solves
+it far faster". It implements no matrix, no ordering and no factorisation: `MnaSystem` assembles, AMD
+orders, CSparse's `SparseLU` factorises, exactly as they do for an S-parameter point, and it keeps
+every convention that pass sets (Port and Term inert at DC, gmin on every voltage row, mutuals stamped
+last, a branch current flowing from its element's FIRST node to its SECOND). It lives in `src/Engine`
+proper and **not** in `src/Engine/Pdn/`, where the series' own scope rule forbids a matrix.
+
+**gmin is load-bearing here, not a continuity aid.** A decoupling capacitor is an EXACT open at ω = 0
+and R-rail3-4 says it stays in the netlist anyway, so a node reached only through one has no equation
+of its own and `Factorize` reports a structurally zero row. gmin gives it one and it settles at zero
+volts, which is the honest answer for copper with no DC path. At 1e-12 S it is 4e-7 S across a
+400,000-cell mesh, against milliohms of copper.
+
+### 2. The breakdown's three numbers come from DISSIPATION, which is what makes the aggregation exact
+
+R-rail5-4 aggregates thousands of cell edges into one row, and the obvious arithmetic — sum the
+resistances, take a current — is right for a series chain and **wrong by a factor of six for six
+parallel via barrels**. What works for every shape is: a group's dissipation is `Σ Iₑ²Rₑ`, its THROUGH
+CURRENT is half the sum over every node of the net current its own elements deliver there (which
+cancels at an interior node and does not at a terminal), and then `drop = P/I`, `R = P/I²`.
+
+- A series chain: `I` is the common current, `R` is `ΣRₑ`, drop is `I·ΣRₑ`.
+- Six barrels between one pair of cells: `I` is their SUM, `R` their parallel combination, and the
+  drop is the voltage actually across them.
+- A meshed sheet with one way in and one way out: `R` is its spreading resistance.
+
+`Σ drop` then equals the source-to-load drop **exactly** on a series path, which is what the gate
+asserts, and the shares sum to one by construction on any board.
+
+### 3. Contiguity is a union-find over MESH EDGES ONLY
+
+"Contiguous cells belonging to one trace section **on one layer**" (R-rail5-4) falls straight out of
+running the union-find over mesh-edge origins alone: a via is a different origin and a different row,
+so it never merges two conductors into one row and the layer survives the aggregation. §2.6's worked
+example turns on exactly that. A mesh group's own elements each describe ONE cell, so the row's label
+is BUILT rather than borrowed — a row reading "0.1 mm of 0.1 mm copper" over five thousand cells would
+be wrong by the whole aggregation — and it is printed in **squares**, which is the unit §2.8's
+correction is counted in.
+
+### 4. The chain's DC coupling is the headroom and NOTHING else
+
+R-rail5-7 says the output rail's source "starts from" the upstream answer, and §2.7 says railRF "does
+not model a regulator's forward transfer … and does not approximate it either". Those reconcile
+exactly along brief 1's own two cases for `RailSource.OpenCircuitVoltageV`:
+
+- **Stated** — a REGULATED output, used exactly as stated. The upstream answer never scales, offsets
+  or caps it. An earlier draft capped it at the measured input (a regulator "cannot output more than
+  it takes in"); that is a forward transfer, it is false for a boost converter, and it was dropped.
+- **Not stated** — brief 1's "a branch whose impedance is known and whose level is not". On a chained
+  rail that level IS known: it is the answer at this part's own input pin field upstream, carried
+  through a series element whose resistance the row already states. That is a pass element, not a
+  transfer.
+
+The second case is what makes §7's second assertion possible at all: **narrow the input rail's copper
+and the output rail's node voltages move.** A chain reading a nominal passes the first assertion (the
+input voltage is 3.6308 V) and fails this one.
+
+### 5. Superposition's exact form is three terms, not the brief's two
+
+§7 and R-rail5-6 say "solve with source A alone and source B alone" and that the two sum to the
+two-source solve. Taken literally that is not superposition: a source that is **removed** leaves an
+OPEN where a **zeroed** one leaves its own series resistance in circuit, and the two are different
+networks. And a load's current injection is a third source, so with one present it appears in BOTH
+one-source solves and the sum double-counts it.
+
+The gate is therefore written in the exact form — sources zeroed rather than removed, ports stating no
+current so the decomposition is exactly two terms — and it holds to **better than 1e-9 V** node for
+node, which is round-off in the back-substitution.
+
+**The negative in the brief does not work as written, and the one below does.** "Stamp the second
+source at the wrong node and assert the sum no longer matches" cannot fail: superposition is
+insensitive to WHERE a source sits, so moving it in every solve at once still sums correctly. What
+reproduces §9's defect — "a second source stamped at the wrong node produces a plausible number, not
+an error" — is moving it in ONE of the three solves and asserting the sum breaks. It also has to be
+read at the load's own node rather than over the whole field: moving a source's pad moves the
+junctions the graph reading puts on the copper, so the two netlists no longer share every node name.
+
+### 6. A brief-4 defect this brief had to fix: the fast model refused §2.8's own board
+
+`PdnGraphExtractor.PourDominatedRefusal` decides a path is pour-dominated when the source cannot reach
+the load through **trace edges** (plus vias, which it unions explicitly). It did not union **series
+elements** — and §2.8's whole point is that "on imported artwork the copper stops at every pad, so the
+board is not electrically continuous until the user has said what bridges each gap". So a battery, a
+protection FET and a run of copper — the design note's own worked board — was refused as pour-dominated
+with no pour anywhere in it, and so would be every real board carrying a ferrite or a load switch on
+the rail. The refusal's own message even named the load it "could not reach".
+
+Fixed by unioning each series part's two anchors exactly as the via loop unions a barrel's two ends,
+with the same guard and the same justification the file already states: being permissive there can
+only ever make a refusal LESS likely. Brief 4's own pour gate (`FastAgreesWithAccurateOnTracesAnd
+RefusesOnAPour`, including the forced-to-`Trace` negative) still passes.
+
+### 7. The interpolation is stated ONCE, on `RailDcResult.VoltageAt`
+
+R-rail5-2: the window (brief 8) and the headless report may not differ about what the voltage is
+between two cells, and they are written by different briefs. The rule is **inverse-distance-squared
+over the four nearest cells on the same drawing layer and the same side of the rail**, with an exact
+hit on a cell centre answering that cell's own value. Four rather than three because the mesh is a grid
+and three points on a grid pick a direction; squared rather than linear because a linear weight leaves
+visible creases along the cell rows. One rule has to serve both readings — the mesh's cells are a
+regular grid and the graph's are junctions at irregular spacings — or the fast and accurate drop maps
+would be drawn by different arithmetic.
+
+
 ## railRF brief 4 — the fast graph extractor, the classification, and the gate (2026-09-18)
 
 `src/Design/Layout/Pdn/` — `PdnModelKind`, `PdnCopperClassifier`, `PdnGraphExtractor`, plus
