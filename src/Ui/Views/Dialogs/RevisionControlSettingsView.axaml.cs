@@ -259,6 +259,7 @@ public partial class RevisionControlSettingsView : UserControl
                 "No workspace is open, so there is nothing to compact or reclaim. These act on the "
               + "workspace you have open, and name it.";
             ShowReclaimStatus("");
+            ApplyCheckpointOnCloseAvailability(armed: preference);
             return;
         }
 
@@ -285,6 +286,35 @@ public partial class RevisionControlSettingsView : UserControl
             "Stores the same history in less space. Nothing is discarded and nothing becomes "
           + "unavailable.";
         ShowReclaimStatus("");
+        ApplyCheckpointOnCloseAvailability(RevisionArming.IsArmed(preference, recorded));
+    }
+
+    /// <summary>
+    /// <b>The close-boundary row follows the switch above it</b> (owner-reported, 2026-09-17).
+    ///
+    /// <para>It says WHEN to record, and there is no when in a workspace that records nothing — so with
+    /// history off it was a live checkbox whose every value meant the same thing. That is the failure
+    /// §1.4 is written against from the other side: not a control that lies about what is kept, but one
+    /// that implies something is.</para>
+    ///
+    /// <para><b>Keyed on the same answer the two switches above resolve to</b>
+    /// (<see cref="RevisionArming.IsArmed"/>), never on the preference alone, so a workspace that
+    /// overrides the preference ON keeps the row live — which is the case a straight read of the
+    /// per-user switch gets wrong and nobody notices until they are in that workspace.</para>
+    ///
+    /// <para>The row's own value is NOT rewritten. Turning history off must not silently discard a
+    /// preference the user set, any more than it discards a restore point: turning it back on has to
+    /// come back to what they chose.</para>
+    /// </summary>
+    private void ApplyCheckpointOnCloseAvailability(bool armed)
+    {
+        CheckpointOnCloseCheck.IsEnabled = armed;
+
+        CheckpointOnCloseScope.IsVisible = !armed;
+        CheckpointOnCloseScope.Text      = armed
+            ? ""
+            : "Nothing is recorded for this workspace, so there is no restore point to take when it "
+            + "closes. Turn history on above and this comes back to what you chose.";
     }
 
     /// <summary>

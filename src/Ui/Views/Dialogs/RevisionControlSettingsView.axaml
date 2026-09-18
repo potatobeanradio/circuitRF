@@ -152,7 +152,7 @@
            forward would otherwise expire everything on the next sweep. -->
       <TextBlock Text="Restore Points" FontSize="11" FontWeight="SemiBold"
                  Opacity="0.55" Margin="0,24,0,6"/>
-      <Grid ColumnDefinitions="155,*" RowDefinitions="Auto,Auto,6,Auto,Auto,Auto,Auto,Auto">
+      <Grid ColumnDefinitions="155,*" RowDefinitions="Auto,Auto,6,Auto,Auto,Auto,Auto,Auto,Auto">
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Keep them for:"
                    VerticalAlignment="Center" FontSize="12"/>
         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
@@ -200,7 +200,17 @@
              does not learn it is fixed, they learn that clicking did nothing. Disabled says both
              halves at once — it is on, and it is not yours to change — and the sentence below it says
              why. -->
-        <CheckBox  Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
+        <!-- Why it is greyed, and it is only ever shown when it IS (owner, 2026-09-17). The row is a
+             per-user preference about a boundary, and a boundary records nothing in a workspace that
+             keeps no history — so with the switch above off it is a live control that changes
+             nothing. Greyed rather than hidden, for the reason the AI row below is greyed rather than
+             hidden: a checkbox that looks ordinary and does nothing teaches a user that clicking did
+             nothing, not that the setting does not apply. -->
+        <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+                   Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
+                   Name="CheckpointOnCloseScope" IsVisible="False" Text=""/>
+
+        <CheckBox  Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2"
                    Name="CheckpointBeforeAiCheck" FontSize="12" Margin="0,8,0,0"
                    Content="Take a restore point before an AI edit"
                    IsChecked="True" IsEnabled="False">
@@ -210,7 +220,7 @@
           </ToolTip.Tip>
         </CheckBox>
 
-        <TextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+        <TextBlock Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                    Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
                    Text="Always on, and shown here so you never have to wonder whether it is happening."/>
       </Grid>

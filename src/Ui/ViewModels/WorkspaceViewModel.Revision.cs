@@ -1021,7 +1021,13 @@ public partial class WorkspaceViewModel
         // is asked ONCE — the answer goes in the repository's own marker, so a reopen does not ask
         // again. Deferred off the open path so a dialog never sits in front of the thing the designer
         // actually asked for.
-        if (situation.NeedsAnAnswer) _ = AskAboutExistingHistory();
+        //
+        // AND NOT ASKED AT ALL WHERE HISTORY IS SWITCHED OFF (owner-reported, 2026-09-17). It is the
+        // same complaint as the hold report one surface over, and louder: a designer who has said they
+        // do not want a history is answering a modal about looking after one. The question keeps for
+        // the open after they turn it back on — it is asked once, not once ever.
+        if (situation.NeedsAnAnswer && WorkspaceHistoryService.KeepingHistoryHere(WorkspaceRootDir))
+            _ = AskAboutExistingHistory();
 
         // R-rc5-12c. A restore over thousands of files on a share can be cut off by a crash or a
         // dropped connection, and what it leaves is §1.3's failure exactly: a workspace that opens, is

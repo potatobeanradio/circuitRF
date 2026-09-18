@@ -3,6 +3,42 @@
 Same pattern as the other `RESOLVED.md` files in this repo: a completed investigation's detail lands
 here, and `CLAUDE.md` stays for durable, still-true conventions only.
 
+## Two Smith charts in the Data Display chapter had no grid, and the figures were innocent (2026-09-17)
+
+Owner: some Smith charts in the user docs render with no axis grid lines.
+
+**The `.svg` files were correct. The page's INLINED copies were stale.** `reference/data-display.html`
+carried `data-display`, `data-display-dark`, `plot-loadpull-contours` and
+`plot-loadpull-contours-dark` as they stood BEFORE `e670f8c9`, which is the commit whose own message
+says what the missing thing is: *Skia's SVG device drops everything drawn inside a SaveLayer, which
+took the whole Smith grid out of every export*, fixed by drawing the arc family as one path filled
+once. That commit rewrote the four figure files and did not rewrite the page, so the fix reached
+`assets/figures/` and never reached the chapter anybody reads.
+
+**It presents as a figure bug and is not one, so the first four hours can go into the wrong file.**
+Rendering every figure — all 98 light, 42 dark — shows every Smith chart with its full grid, because
+every figure genuinely has one. `{{ui: …}}` figures are **inlined as `<svg>`, not referenced with
+`<img>`** (`Placeholders.ReadInline`), so a page and its figures are two copies of one picture and
+only the figure half is regenerated when a capture is re-run.
+
+### The check that finds it in one pass, and it is cheap
+
+For each inline `<svg>…</svg>` block, take the id prefix (`<name>_cl_0`), read
+`assets/figures/<name>.svg`, strip the XML declaration and comments exactly as `ReadInline` does, and
+compare. A stale block is not subtle once you look: the four here were **~17 KB short each**, the
+size of the one omitted grid path. Run over every page it also named `antennas.html`
+(`antenna-patch-em-setup`, ±2.2 KB) and `mom-engine.html` (`mom-bend-mesh-settings`, ±40 bytes) as
+stale for unrelated reasons — left alone here, because the ask was the Smith charts.
+
+**Element counts are enough to spot it; lengths are not, on their own.** `<ellipse>` is what a POLAR
+grid's rings are; a SMITH grid is one `<path fill="#A0A0A0" fill-opacity="0.498">` holding every arc
+as a stroke-to-fill outline, which is why a gridless Smith chart still has its unit circle (that one
+IS an `<ellipse>`) and its real axis, and reads as "the chart drew, the grid did not".
+
+**The fix was to re-inline those four blocks from their own files, byte for byte as `ReadInline`
+would**, rather than re-running DocGen — a full run rewrites every figure and every page, and this
+repo already treats that churn as a red flag. Four lines changed in one file.
+
 ## R-stk8-7 — the stackup doc figures adopt `StackupRenderer`. Taken, and here is what it cost (2026-09-13)
 
 `brief-stackup-render-8-docs-and-figures.md` left one decision open: `DocStackupFixtures` drew

@@ -750,6 +750,44 @@ public class RetentionHoldAndOffTests
     // ══ 10. Cadence (R-rc6-9) ═════════════════════════════════════════════════════════════════════
 
     /// <summary>
+    /// <b>A designer who switched history off is told nothing about a hold</b> (owner-reported,
+    /// 2026-09-17).
+    ///
+    /// <para>The open report answers <i>why is there no history HERE</i> — a question only somebody who
+    /// wants one is asking. With the switch off the hold is not the operative reason and its remedy
+    /// (move the workspace somewhere else) would change nothing, so the message named a cause that was
+    /// not true of their situation, on every single open, about a feature they had opted out of.</para>
+    ///
+    /// <para>Same workspace, same hold, both answers — because what has to be pinned is that the switch
+    /// is what decides, not that the message can be absent.</para>
+    /// </summary>
+    [GitFact]
+    public void AHeldWorkspaceSaysNothingOnOpenWhenHistoryIsSwitchedOff()
+    {
+        using var outer = new GitWorkspace(withCws: false);
+        using var _     = Identity(outer);
+        using var prefs = new AppDataRootScope();
+        Assert.Equal(0, outer.Raw("init", "--quiet", outer.Root).Code);
+
+        string inner = Path.Combine(outer.Root, "a-workspace");
+        Directory.CreateDirectory(inner);
+        File.WriteAllText(Path.Combine(inner, ".cws"), "{}");
+
+        // Off: nothing at all. A fresh service per open, because the report is once per session.
+        CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.RevisionKeepHistory = false);
+        var quiet = new RecordingSink();
+        new WorkspaceHistoryService(quiet).ReportStateOnOpen(inner);
+        Assert.Empty(quiet.Texts);
+
+        // On: the hold is reported exactly as it was, remedy and all.
+        CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.RevisionKeepHistory = true);
+        var told = new RecordingSink();
+        new WorkspaceHistoryService(told).ReportStateOnOpen(inner);
+        Assert.Contains("not keeping a history", Assert.Single(told.Texts), StringComparison.Ordinal);
+    }
+
+
+    /// <summary>
     /// <b>One message on open; a refusal per attempt with no remedy restated; no per-checkpoint
     /// messages.</b>
     ///
@@ -762,6 +800,11 @@ public class RetentionHoldAndOffTests
     {
         using var outer = new GitWorkspace(withCws: false);
         using var _     = Identity(outer);
+
+        // The hold report is only made where a history is WANTED, so this reads the preference — and
+        // must read a default one rather than whatever this machine's owner has chosen.
+        using var prefs = new AppDataRootScope();
+
         Assert.Equal(0, outer.Raw("init", "--quiet", outer.Root).Code);
 
         string inner = Path.Combine(outer.Root, "a-workspace");

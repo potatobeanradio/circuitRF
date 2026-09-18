@@ -392,6 +392,38 @@ public class RevisionControlSettingsTests
                         StripCode(Dialog("RevisionControlSettingsView.axaml.cs")));
     }
 
+    /// <summary>
+    /// <b>The close-boundary row follows the switch above it, and keeps its value</b> (owner-reported,
+    /// 2026-09-17). It says WHEN to record, and there is no when in a workspace that records nothing,
+    /// so leaving it live made it a control whose every value meant the same thing.
+    ///
+    /// <para>Keyed on <see cref="RevisionArming.IsArmed"/> rather than on the per-user switch alone,
+    /// because a workspace may override that switch ON — the case a straight read of the preference
+    /// gets wrong, in the one place nobody looks. And the row's own value is never rewritten: turning
+    /// history off must not silently discard a preference, any more than it discards a restore
+    /// point.</para>
+    /// </summary>
+    [Fact]
+    public void TheCloseCheckpointRowIsGreyedWhenNothingIsBeingKept()
+    {
+        string code = StripCode(Dialog("RevisionControlSettingsView.axaml.cs"));
+
+        int enabled = code.IndexOf("CheckpointOnCloseCheck.IsEnabled", StringComparison.Ordinal);
+        Assert.True(enabled > 0, "the close-boundary row is never disabled, so history off leaves a "
+                              +  "live control that changes nothing");
+        Assert.Contains("ApplyCheckpointOnCloseAvailability(RevisionArming.IsArmed(", code);
+
+        // Exactly one writer of the checkbox's VALUE, and it is the one that loads the preference.
+        var writes = System.Text.RegularExpressions.Regex.Matches(
+            code, @"CheckpointOnCloseCheck\.IsChecked\s*=[^=]");
+        Assert.Single(writes);
+        Assert.Contains("prefs.RevisionCheckpointOnClose", writes[0].Value + code[
+            (writes[0].Index)..Math.Min(code.Length, writes[0].Index + 120)]);
+
+        // And the greyed row says why, in this UI (the tab's own rule 1).
+        Assert.Contains("Name=\"CheckpointOnCloseScope\"", StripXaml(Dialog("RevisionControlSettingsView.axaml")));
+    }
+
     /// <summary>Every one of the nine application-wide preferences is nullable and omitted when null —
     /// absent means the documented default, which is what makes a machine with no preferences file a
     /// correctly configured one.</summary>

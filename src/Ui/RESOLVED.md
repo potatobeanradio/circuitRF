@@ -1,5 +1,42 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Revision control kept talking to a designer who had switched it off (2026-09-17)
+
+Two owner reports, one root cause: **every open-time revision surface asked "is this workspace held?"
+before it asked "does this designer want a history at all?"**
+
+**The warning.** A workspace inside another repository posted `revision.held.ancestor` on EVERY open —
+what is not being kept, why, and move the folder to fix it — with *keep a history of my workspaces*
+unchecked. R-rc6-9's first cadence answers *why is there no history HERE*, and that is a question only
+somebody who wants one is asking. With the switch off the hold is not the operative reason (their own
+answer is), and the remedy it offers would change nothing. `ReportStateOnOpen` now consults
+`KeepingHistoryHere` first. **`ArrivedSwitchedOff` still fires**, because that one is about being off,
+and it is the message that tells a recipient the flag TRAVELLED with the workspace.
+
+**The same complaint one surface over, and louder:** `situation.NeedsAnAnswer` put a MODAL — *would you
+like circuitRF to look after this history?* — in front of the same designer. Gated on the same answer.
+It is asked once, not once ever: it keeps until the open after they turn history back on.
+
+**What was deliberately NOT changed.** The persistent indicator still reports **Held** ahead of **Off**.
+That ordering is pinned, with its reasoning, by `RetentionHoldAndOffTests.TheOffFlagTravelsWithTheWorkspace`:
+a CLONE of a switched-off workspace is both, and it is reported held because git does not clone a
+repository's config, so §4.5's management marker cannot travel. A badge is not a message on every open.
+
+**The inert checkbox.** *Take a restore point when a workspace is closed* stayed live with history off —
+a control whose every value meant the same thing. Greyed now, with the reason beside it, and **keyed on
+`RevisionArming.IsArmed`, never on the per-user switch alone**: a workspace may override that switch ON,
+which is the case a straight read of the preference gets wrong in the one place nobody looks. Its VALUE
+is never rewritten — turning history off must not silently discard a preference, any more than it
+discards a restore point.
+
+### The trap this left in the test suite
+
+Gating on the preference made `ReportStateOnOpen` read `AppPreferences` for the first time, and
+`TheThreeReportsKeepTheirThreeCadences` had no `AppDataRootScope` — so it would have read the REAL
+machine's preferences and failed on any box whose owner had turned history off. **A test that starts
+reading per-user state needs the redirect even when the thing it is testing is a git repository in a
+temp folder.**
+
 ## A restored tab was reported as opened and had no tab (2026-09-17)
 
 Owner: opening `examples/System Design/.cws` posted `Opened …/TxDirectConversion.csch` and the file

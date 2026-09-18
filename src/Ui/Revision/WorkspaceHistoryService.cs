@@ -424,6 +424,15 @@ public sealed class WorkspaceHistoryService
     /// <para>Returns the situation so the caller can put R-rc6-7a's question, which is the one row
     /// this does not report: the workspace-root case is a QUESTION, and a message about it would be
     /// answered by a dialog the user is already looking at.</para>
+    ///
+    /// <para><b>Nothing at all is said about a hold when history is switched off</b> (owner-reported,
+    /// 2026-09-17). The hold report answers <i>why is there no history HERE</i>, and that is a question
+    /// only somebody who wants one is asking. Where the switch is off, the hold is not why nothing is
+    /// being kept — the designer's own answer is — so the message names a cause that is not operative
+    /// and offers a remedy (move the workspace) that would change nothing. It arrives on every open, so
+    /// it is the exact shape R-rc3-3's silence exists to prevent: a designer who has opted out being
+    /// told about the feature they opted out of, forever. The <b>off</b> report below still fires,
+    /// because that one is about being off.</para>
     /// </summary>
     public RepositorySituation ReportStateOnOpen(string? workspaceRoot)
     {
@@ -431,7 +440,7 @@ public sealed class WorkspaceHistoryService
         if (_reportedOnOpen || workspaceRoot is not { Length: > 0 }) return situation;
         _reportedOnOpen = true;
 
-        if (EnclosingRepository.OpenReportFor(situation) is { } held)
+        if (KeepingHistoryHere(workspaceRoot) && EnclosingRepository.OpenReportFor(situation) is { } held)
         {
             _messages.PostDiagnostic(held);
             return situation;
