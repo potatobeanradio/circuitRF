@@ -1,0 +1,25 @@
+# circuitRF — what is kept, and what is not
+#
+# circuitRF ADDS lines to this file and never rewrites it. Anything you put here stays.
+#
+# Simulation results are not kept in history, and they are NOT recoverable from it —
+# re-run the analysis. The reason is reproducibility rather than size: a result is a
+# function of the design and the engine, so the design is the thing worth keeping.
+*.npy
+*.spl
+*.lpcwave
+*.mat
+
+# Per-user session state: panel layout, open tabs, tree expansion, colour theme. It belongs
+# to whoever is sitting here, not to the design, and nothing is lost by leaving it out.
+.cwsuser
+
+# Rebuildable caches, and circuitRF's own per-session bookkeeping dropped in the workspace
+# root — the advisory 'someone has this open' notice, the write probe, and a file being
+# written atomically. These matter MORE here than in an archive: they are live while the
+# workspace is open, which is exactly when a restore point is taken, and a restore point
+# that captured the open-notice would record one machine's session in a design's history.
+.generated-cells/
+.crf-*
+*.crf-tmp-*
+

@@ -67,6 +67,7 @@ reference/antennas.html        | Patch antennas: the pattern, the numbers that g
 == Tools
 reference/harmonicarf.html | Interactive harmonic load-pull on one device, at the speed of a mouse drag.
 reference/wbond.html       | Bondwire arrays: geometry, the 3D kernel, and S-parameters out.
+reference/railrf.html      | Power integrity on the board you drew: DC drop, Z(f) against a target, and which decaps earn their place.
 
 == Application notes
 app-notes/index.html                    | Worked investigations of questions that come up on real boards.

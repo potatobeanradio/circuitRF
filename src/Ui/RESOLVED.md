@@ -1,5 +1,47 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 17 — the parts table and the results tab strip (2026-09-18)
+
+Two findings from driving the window as a user for the documentation figures. **Neither is fixed** —
+`brief-railrf-17-docs-and-example.md` §6.
+
+### 1. The parts table fills from the BOM ALONE, so a typed `.crail` shows none of its parts
+
+`RailRfViewModel.RebuildParts` returns early unless `Bom is { Refusal: null }`, and its one `Parts.Add`
+is inside a `foreach` over `bom.Rows`. **`RailSpec.Parts` — the document's own part list — is never
+read.** A `.crail` carrying thirteen capacitors and no imported bill of materials therefore shows an
+empty Parts pane.
+
+The rest of the window uses those rows in full: `BuildSweepRequest` resolves `rail.Parts` through
+`RailPartResolver`, so every resonance on the curve, every anti-resonance attribution and every row of
+the removal ranking comes out of parts the table does not list. The `Power Rail` example is exactly
+that document, and its figures show it.
+
+**This is the defect review round 2 fixed on the CLI and not here.** `src/Cli/RESOLVED.md` records the
+verb counting bias-curve coverage over the whole shared library instead of the board's parts, and
+states the rule it broke: *"a verb disagreeing with the window about one document"*. The verb was moved
+onto `RailSpec.Parts`; the window's own table was left on the BOM, so the two now disagree in the other
+direction — `circuitrf rail` on the example prints *"0 of 4 part number(s) modelled from a file, 1 with
+no bias curve"* while the window's Parts pane is empty for the same file.
+
+R-rail11-8 makes typed parts the P1 case in so many words (*"in P1 that number is TYPED"*), so this is
+the ordinary P1 workflow rather than a corner of it.
+
+### 2. The `DC` / `frequency` strip sets no card's visibility
+
+`SelectedResultsTab` is an `[ObservableProperty]`, and the only thing that reads it is
+`RailRfWindow.SyncTabs`, which assigns the two `ToggleButton.IsChecked` values. Every card in the
+results column is in ONE `ScrollViewer` and is gated on its own `Has…` property — `HasMaskVerdict`,
+`HasAntiResonances`, `HasRemovalRanking` and the rest — not on the tab. Pressing **frequency** lights
+the button and changes nothing else.
+
+It is honest in the sense that everything is present; it is not what a tab strip means. The chapter
+tells a reader to scroll, and `DocRailFixtures.Impedance` scrolls the column to the `Against the
+target` card rather than selecting a tab, because selecting one would have produced the DC figure again
+under a frequency caption.
+
+---
+
 ## railRF brief 9 — copy to clipboard, and the six LOD knobs the layout copy never turned off (2026-09-18)
 
 `RailGraphicExport` (`src/Ui/RailRf/`), a `Copy` row on the board's context menu, `Ctrl/⌘+C` on the

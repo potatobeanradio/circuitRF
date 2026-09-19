@@ -1,5 +1,41 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 17 — the class map paints the reference over the rail (2026-09-18)
+
+Found while capturing the user chapter's classification figure, **reported and not fixed**
+(`brief-railrf-17-docs-and-example.md` §6).
+
+`RailMapScene.BuildClass` copies `result.Classification` in order, and both extractors build that list
+**rail copper first, reference copper last** (`PdnGraphExtractor`: one `Classify` pass over
+`railCopper`, then one over `refCopper`). `RailMapRenderer.Draw` walks `scene.Regions` in list order
+and every region is **opaque paint** — which is R-rail8-10's own rule, so that nothing in the map
+depends on the page's background.
+
+So the reference conductor is painted last, over everything under it. On a board whose reference is a
+PLANE — which is every board this feature is for — the class tab is one flat rectangle in the
+`Spreading` colour, and the rail's own trace sections are invisible beneath it.
+
+**It is the one tab whose entire job is to let a user see and correct the classification** (§2.9 rule
+2: *"A silent misclassification is the one failure mode of this design … Drawing it is what makes it
+neither"*), so the picture that rule depends on shows nothing on the ordinary case.
+
+Nothing else is affected: the classification itself is right, the ranked breakdown names each trace
+section with its own length, width and square count, and the extraction uses the same decision. The
+defect is the draw order alone.
+
+The obvious fix is to emit the reference regions FIRST in `BuildClass` rather than to reorder the
+extractors, since the extraction's order is a property of how the two passes are written and the map's
+is a property of what a reader needs to see. It is one line and it is still a behaviour change to
+shipping code, which is why it is here rather than in the diff.
+
+**Second, smaller, same file:** `RailMapLegend.Box` is a `Bbox` in DBU while `RailMapRenderer.Font` is
+sized in screen points, so the legend's three labels — the minimum, the caption and the maximum —
+overlap each other once the map is drawn small enough. On the `Power Rail` example that happens below
+roughly a 600 px canvas, which is why `FigureCatalog`'s railRF rows capture at 1600 rather than at the
+1240 the panes alone would need.
+
+---
+
 ## railRF brief 9 — where the rail map lands in `LayoutRenderer.Draw` (2026-09-18)
 
 `LayoutRenderOptions` gained `RailMap` + `RailTheme`, and `Draw` paints them. Two ordering decisions,

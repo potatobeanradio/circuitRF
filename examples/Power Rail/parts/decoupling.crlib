@@ -1,0 +1,112 @@
+{
+  "FormatVersion": 1,
+  "Name": "decoupling",
+  "Parts": [
+    {
+      "PartNumber": "CAP-0402-100N-X7R-16V",
+      "Description": "100 nF 0402 X7R 16 V",
+      "Footprint": "0402",
+      "DielectricClass": "X7R",
+      "VoltageRatingV": 16,
+      "CapacitanceFarads": 1E-07,
+      "SelfResonantFrequencyHz": 28000000,
+      "EsrOhms": 0.032,
+      "BiasCurve": [
+        {
+          "BiasVolts": 0,
+          "CapacitanceFarads": 1E-07
+        },
+        {
+          "BiasVolts": 1.65,
+          "CapacitanceFarads": 8.8E-08
+        },
+        {
+          "BiasVolts": 3.3,
+          "CapacitanceFarads": 7.4E-08
+        },
+        {
+          "BiasVolts": 6.6,
+          "CapacitanceFarads": 5.2E-08
+        },
+        {
+          "BiasVolts": 16,
+          "CapacitanceFarads": 2.6E-08
+        }
+      ]
+    },
+    {
+      "PartNumber": "CAP-0603-1U0-X5R-10V",
+      "Description": "1 uF 0603 X5R 10 V",
+      "Footprint": "0603",
+      "DielectricClass": "X5R",
+      "VoltageRatingV": 10,
+      "CapacitanceFarads": 1E-06,
+      "SelfResonantFrequencyHz": 9500000,
+      "EsrOhms": 0.02,
+      "BiasCurve": [
+        {
+          "BiasVolts": 0,
+          "CapacitanceFarads": 1E-06
+        },
+        {
+          "BiasVolts": 1.65,
+          "CapacitanceFarads": 8.2E-07
+        },
+        {
+          "BiasVolts": 3.3,
+          "CapacitanceFarads": 6.2E-07
+        },
+        {
+          "BiasVolts": 6.6,
+          "CapacitanceFarads": 3.4E-07
+        },
+        {
+          "BiasVolts": 10,
+          "CapacitanceFarads": 2.2E-07
+        }
+      ]
+    },
+    {
+      "PartNumber": "CAP-0805-10U-X5R-10V",
+      "Description": "10 uF 0805 X5R 10 V",
+      "Footprint": "0805",
+      "DielectricClass": "X5R",
+      "VoltageRatingV": 10,
+      "CapacitanceFarads": 1E-05,
+      "SelfResonantFrequencyHz": 2600000,
+      "EsrOhms": 0.012,
+      "BiasCurve": [
+        {
+          "BiasVolts": 0,
+          "CapacitanceFarads": 1E-05
+        },
+        {
+          "BiasVolts": 1.65,
+          "CapacitanceFarads": 7.6E-06
+        },
+        {
+          "BiasVolts": 3.3,
+          "CapacitanceFarads": 5.4E-06
+        },
+        {
+          "BiasVolts": 6.6,
+          "CapacitanceFarads": 2.9E-06
+        },
+        {
+          "BiasVolts": 10,
+          "CapacitanceFarads": 1.8E-06
+        }
+      ]
+    },
+    {
+      "PartNumber": "CAP-BULK-100U-POLY-10V",
+      "Description": "100 uF polymer bulk 10 V",
+      "Footprint": "7343",
+      "DielectricClass": "Polymer",
+      "VoltageRatingV": 10,
+      "CapacitanceFarads": 0.0001,
+      "SelfResonantFrequencyHz": 420000,
+      "EsrOhms": 0.025
+    }
+  ]
+}

@@ -87,6 +87,7 @@ convention behind both.</p>
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
+| `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -584,6 +585,78 @@ analyse. Point this EM setup at a layout that exists.
 | **No layout** | The layout reference did not resolve | 1 |
 | **Engine error** | The solve failed | 1 |
 | **Cancelled** | Stopped at a work boundary | 130 |
+
+## `rail` — power integrity, headless {#rail}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf rail &lt;board.crail&gt; [--rail NAME] [--accurate] [-o out.{csv,npy,mat,txt,svg,pdf}]</code></pre>
+
+`rail` runs a **`.crail`** — the document the [railRF window](railrf.html) edits. It resolves the
+artwork and the stackup, extracts the copper, solves the rail at DC, checks the vias and prints the
+answer. Every number comes out of the same call the window's **Run** button makes, and every pixel of an
+`.svg` or `.pdf` report out of the same renderer the window draws with, so a report produced on a build
+machine is the one you would have got by pressing the button.
+
+**Omitting `--rail` runs them all**, in dependency order — the same shape `hb` and `lp` have for a
+wrapped sweep, and for the same reason: a downstream rail solved on its own would start its source from
+a nominal instead of from the upstream answer.
+
+It can also take the `.clay`, the cell folder or the workspace the `.crail` sits in, and find it.
+
+### What it reads, and what walks up to it {#rail-resolution}
+
+Like [`em`](#em), the references are walk-ups rather than flags. The `.crail` names its artwork; the
+artwork names — or inherits from its workspace — a technology.
+
+| File | What it supplies |
+|---|---|
+| **`.crail`** | The rails, their references and extents, the sources, the loads and their currents, the parts, the targets, the band and the aggressors |
+| **`.clay`** (or a Gerber set) | The copper being measured |
+| **`.ctech`** | The stackup: conductor thicknesses and conductivities, the dielectrics between them, and the via entry's plated-wall thickness |
+| **`.crlib`** | The part library the decoupling resolves against |
+
+### Options {#rail-options}
+
+| Option | Meaning |
+|---|---|
+| `--rail <name>` | Which rail. Omitting it runs every one. |
+| `--fast` (default) / `--accurate` | [The two readings of the copper](railrf.html#speeds). Fast is the default, as in the window. |
+| `--source REFDES.PIN=<model>` | Repeatable. `3.7V,50mOhm,10nH` — any subset, in any order, each field identified by its unit or by a `v=`/`r=`/`l=` key — or a Touchstone file. A row for the same anchor is **replaced**, not added beside it. |
+| `--load REFDES.PIN[=<current>]` | Repeatable. **The current may be left out**: that makes it an observation port. |
+| `--target-drop`, `--target-z`, `--mask [PORT=]<file>` | The target forms. A mask is per observation port; one that lands on no port is refused, because a mask nobody applied reads on the report exactly like one that was honoured. |
+| `--aggressor NAME=<freq>[xN]` | Repeatable. `x` and `×` both spell the harmonic count. |
+| `--reference <layer>`, `--extent as-imported\|filled\|infinite` | The return conductor, and how far it is taken to extend. |
+| `--rows N`, `--all` | How much of the ranked breakdown to print. |
+| `-o out.…` | `.csv` for the tables, `.npy`/`.mat`/`.txt` through the usual exporter, `.svg`/`.pdf` for the report page. |
+
+**An anchor is `REFDES`, `REFDES.PIN`, or `@x,y` in DBU.** Headless it is always the coordinate form:
+a `.crail` names no placement file, so there is nothing to resolve a refdes against — see
+[what is not wired up yet](railrf.html#notyet).
+
+**Values carry units**, through the same table the [expression engine](expressions.html) uses, so a
+spelling that works in a `.cnl` works here. A bare number is base SI, which is what every number in a
+`.crail` already is.
+
+### What is refused, and what is not {#rail-refusals}
+
+| Unstated | Answer |
+|---|---|
+| The **reference layer** | **Refused**, naming `--reference`. railRF never infers one. |
+| The **technology** | **Refused.** Copper priced with no thickness and no conductivity produces numbers that look exactly like numbers with physics behind them. |
+| The **Excellon coordinate format**, on a Gerber import | **Refused** — the same sentence [`convert`](#convert) gives. |
+| The **via plating thickness** | **Not refused.** It is a setting, and every flag says which basis produced its limit. |
+| A **load's current** | **Not refused.** It is an observation port, it contributes nothing to the DC solve, and the report lists it *as observed*. Refusing it — or defaulting it to zero — would make *not added* and *added with no current* indistinguishable. |
+
+`-o out.sNp` is **refused**: Z(f) at the observation ports is the frequency answer, this verb answers
+DC, and a Touchstone holding the DC point repeated would look like a measurement. `--set` is refused
+too, naming the flags that do state those quantities: a `.crail` declares no variables, so a `--set`
+accepted here would be silently dropped.
+
+### Every export says which model produced it {#rail-provenance}
+
+A file read six months later has no status strip beside it, so every format carries the model (Fast or
+Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
+many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
+height **indicative** rather than measured.
 
 ## `convert` — layout interchange {#convert}
 

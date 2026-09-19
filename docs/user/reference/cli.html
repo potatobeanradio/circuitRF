@@ -143,6 +143,12 @@ convention behind both.</p>
 <td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
 </tr>
 <tr>
+<td><code>rail</code></td>
+<td><code>.crail</code></td>
+<td>The same DC solve and via check <a href="railrf.html">railRF</a>'s <strong>Run</strong> button calls</td>
+<td>The ports, the ranked breakdown and the via check to stdout; <code>-o .csv/.npy/.mat/.txt/.svg/.pdf</code></td>
+</tr>
+<tr>
 <td><code>convert</code></td>
 <td>any layout format</td>
 <td>The same importer and exporter <strong>File ▸ Import/Export</strong> runs</td>
@@ -802,6 +808,139 @@ analyse. Point this EM setup at a layout that exists.
 </tr>
 </tbody>
 </table>
+<h2 id="rail"><code>rail</code> — power integrity, headless</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf rail &lt;board.crail&gt; [--rail NAME] [--accurate] [-o out.{csv,npy,mat,txt,svg,pdf}]</code></pre>
+<p><code>rail</code> runs a <strong><code>.crail</code></strong> — the document the <a href="railrf.html">railRF window</a> edits. It resolves the
+artwork and the stackup, extracts the copper, solves the rail at DC, checks the vias and prints the
+answer. Every number comes out of the same call the window's <strong>Run</strong> button makes, and every pixel of an
+<code>.svg</code> or <code>.pdf</code> report out of the same renderer the window draws with, so a report produced on a build
+machine is the one you would have got by pressing the button.</p>
+<p><strong>Omitting <code>--rail</code> runs them all</strong>, in dependency order — the same shape <code>hb</code> and <code>lp</code> have for a
+wrapped sweep, and for the same reason: a downstream rail solved on its own would start its source from
+a nominal instead of from the upstream answer.</p>
+<p>It can also take the <code>.clay</code>, the cell folder or the workspace the <code>.crail</code> sits in, and find it.</p>
+<h3 id="rail-resolution">What it reads, and what walks up to it</h3>
+<p>Like <a href="#em"><code>em</code></a>, the references are walk-ups rather than flags. The <code>.crail</code> names its artwork; the
+artwork names — or inherits from its workspace — a technology.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it supplies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>.crail</code></strong></td>
+<td>The rails, their references and extents, the sources, the loads and their currents, the parts, the targets, the band and the aggressors</td>
+</tr>
+<tr>
+<td><strong><code>.clay</code></strong> (or a Gerber set)</td>
+<td>The copper being measured</td>
+</tr>
+<tr>
+<td><strong><code>.ctech</code></strong></td>
+<td>The stackup: conductor thicknesses and conductivities, the dielectrics between them, and the via entry's plated-wall thickness</td>
+</tr>
+<tr>
+<td><strong><code>.crlib</code></strong></td>
+<td>The part library the decoupling resolves against</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rail-options">Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--rail &lt;name&gt;</code></td>
+<td>Which rail. Omitting it runs every one.</td>
+</tr>
+<tr>
+<td><code>--fast</code> (default) / <code>--accurate</code></td>
+<td><a href="railrf.html#speeds">The two readings of the copper</a>. Fast is the default, as in the window.</td>
+</tr>
+<tr>
+<td><code>--source REFDES.PIN=&lt;model&gt;</code></td>
+<td>Repeatable. <code>3.7V,50mOhm,10nH</code> — any subset, in any order, each field identified by its unit or by a <code>v=</code>/<code>r=</code>/<code>l=</code> key — or a Touchstone file. A row for the same anchor is <strong>replaced</strong>, not added beside it.</td>
+</tr>
+<tr>
+<td><code>--load REFDES.PIN[=&lt;current&gt;]</code></td>
+<td>Repeatable. <strong>The current may be left out</strong>: that makes it an observation port.</td>
+</tr>
+<tr>
+<td><code>--target-drop</code>, <code>--target-z</code>, <code>--mask [PORT=]&lt;file&gt;</code></td>
+<td>The target forms. A mask is per observation port; one that lands on no port is refused, because a mask nobody applied reads on the report exactly like one that was honoured.</td>
+</tr>
+<tr>
+<td><code>--aggressor NAME=&lt;freq&gt;[xN]</code></td>
+<td>Repeatable. <code>x</code> and <code>×</code> both spell the harmonic count.</td>
+</tr>
+<tr>
+<td><code>--reference &lt;layer&gt;</code>, <code>--extent as-imported\|filled\|infinite</code></td>
+<td>The return conductor, and how far it is taken to extend.</td>
+</tr>
+<tr>
+<td><code>--rows N</code>, <code>--all</code></td>
+<td>How much of the ranked breakdown to print.</td>
+</tr>
+<tr>
+<td><code>-o out.…</code></td>
+<td><code>.csv</code> for the tables, <code>.npy</code>/<code>.mat</code>/<code>.txt</code> through the usual exporter, <code>.svg</code>/<code>.pdf</code> for the report page.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>An anchor is <code>REFDES</code>, <code>REFDES.PIN</code>, or <code>@x,y</code> in DBU.</strong> Headless it is always the coordinate form:
+a <code>.crail</code> names no placement file, so there is nothing to resolve a refdes against — see
+<a href="railrf.html#notyet">what is not wired up yet</a>.</p>
+<p><strong>Values carry units</strong>, through the same table the <a href="expressions.html">expression engine</a> uses, so a
+spelling that works in a <code>.cnl</code> works here. A bare number is base SI, which is what every number in a
+<code>.crail</code> already is.</p>
+<h3 id="rail-refusals">What is refused, and what is not</h3>
+<table>
+<thead>
+<tr>
+<th>Unstated</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The <strong>reference layer</strong></td>
+<td><strong>Refused</strong>, naming <code>--reference</code>. railRF never infers one.</td>
+</tr>
+<tr>
+<td>The <strong>technology</strong></td>
+<td><strong>Refused.</strong> Copper priced with no thickness and no conductivity produces numbers that look exactly like numbers with physics behind them.</td>
+</tr>
+<tr>
+<td>The <strong>Excellon coordinate format</strong>, on a Gerber import</td>
+<td><strong>Refused</strong> — the same sentence <a href="#convert"><code>convert</code></a> gives.</td>
+</tr>
+<tr>
+<td>The <strong>via plating thickness</strong></td>
+<td><strong>Not refused.</strong> It is a setting, and every flag says which basis produced its limit.</td>
+</tr>
+<tr>
+<td>A <strong>load's current</strong></td>
+<td><strong>Not refused.</strong> It is an observation port, it contributes nothing to the DC solve, and the report lists it <em>as observed</em>. Refusing it — or defaulting it to zero — would make <em>not added</em> and <em>added with no current</em> indistinguishable.</td>
+</tr>
+</tbody>
+</table>
+<p><code>-o out.sNp</code> is <strong>refused</strong>: Z(f) at the observation ports is the frequency answer, this verb answers
+DC, and a Touchstone holding the DC point repeated would look like a measurement. <code>--set</code> is refused
+too, naming the flags that do state those quantities: a <code>.crail</code> declares no variables, so a <code>--set</code>
+accepted here would be silently dropped.</p>
+<h3 id="rail-provenance">Every export says which model produced it</h3>
+<p>A file read six months later has no status strip beside it, so every format carries the model (Fast or
+Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
+many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
+height <strong>indicative</strong> rather than measured.</p>
 <h2 id="convert"><code>convert</code> — layout interchange</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert &lt;input&gt; -o &lt;output&gt; [options]</code></pre>
 <p>Reads a layout in any format circuitRF understands and writes it in any other. It is the same reader

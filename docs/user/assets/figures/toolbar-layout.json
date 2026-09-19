@@ -287,7 +287,7 @@
       "Slot": 39,
       "Id": "",
       "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
-      "Icon": "SineWave",
+      "Icon": "none",
       "Command": null,
       "Kind": "button"
     },

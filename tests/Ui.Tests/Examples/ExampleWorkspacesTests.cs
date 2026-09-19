@@ -465,6 +465,18 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
     /// Every example carries at least one analysis somewhere, and no example carries an absolute
     /// path out of somebody's home directory.
     /// </summary>
+    /// <remarks>
+    /// <b>The runnable set is a list of DOCUMENT KINDS, and a new kind has to be added to it.</b>
+    /// <c>.crail</c> was the first one to arrive after this gate was written, and the Power Rail
+    /// example failed here with "has nothing to run" — on a workspace whose whole point is a rail
+    /// to run. It is the omission brief-railrf-1 already names ("a row added to
+    /// <c>DocumentKinds.Classify</c> obliges an arm in <c>check</c> and a case in <c>explain</c> in
+    /// the same change"), one place further along.
+    ///
+    /// <para>The personal-path sweep covers <b>every</b> text document an example ships rather than
+    /// only the runnable ones: a technology, a part library and a rail document all carry file
+    /// references, and a leak is a leak whichever file it is in.</para>
+    /// </remarks>
     [Fact]
     public void EveryExampleDeclaresAnalysesAndNamesNobodysMachine()
     {
@@ -475,7 +487,8 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                                                             SearchOption.AllDirectories))
             {
                 string ext = Path.GetExtension(doc);
-                if (ext is not (".csch" or ".cem" or ".clay" or ".cws" or ".ccell")) continue;
+                if (ext is not (".csch" or ".cem" or ".clay" or ".cws" or ".ccell"
+                                      or ".crail" or ".crlib" or ".ctech")) continue;
 
                 string text = File.ReadAllText(doc);
                 Assert.DoesNotContain("/Users/", text, StringComparison.Ordinal);
@@ -483,6 +496,10 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                 Assert.DoesNotContain("/home/", text, StringComparison.Ordinal);
 
                 if (ext is ".cem") runnable = true;
+
+                // A .crail runs on its own — `circuitrf rail` needs no analysis card, because the
+                // rail set IS the thing to run.
+                if (ext is ".crail") runnable = true;
                 if (ext is ".csch" && text.Contains("\"Analyses\"", StringComparison.Ordinal)
                                    && text.Contains("\"Type\"", StringComparison.Ordinal))
                     runnable = true;

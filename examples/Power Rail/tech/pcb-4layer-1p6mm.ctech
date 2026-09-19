@@ -1,0 +1,221 @@
+{
+  "FormatVersion": 1,
+  "Name": "pcb-4layer-1p6mm",
+  "DefaultDisplayUnit": "Nm",
+  "DefaultSnapDbu": 0,
+  "DefaultFlattenTolDbu": 0,
+  "DefaultLabelHeightDbu": 0,
+  "DefaultViaPadDbu": 0,
+  "DefaultViaDrillDbu": 0,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "TOP",
+      "Color": {
+        "r": 196,
+        "g": 92,
+        "b": 44,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 0,
+      "Visible": true,
+      "Selectable": true
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "GND",
+      "Color": {
+        "r": 72,
+        "g": 132,
+        "b": 82,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "IN3",
+      "Color": {
+        "r": 150,
+        "g": 110,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "BOT",
+      "Color": {
+        "r": 52,
+        "g": 96,
+        "b": 190,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true
+    },
+    {
+      "Key": {
+        "Layer": 10,
+        "Datatype": 0
+      },
+      "Name": "VIA",
+      "Color": {
+        "r": 128,
+        "g": 128,
+        "b": 128,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "TOP",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "PP1",
+        "ThicknessDbu": 200000,
+        "Epsr": 4.3,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "GND",
+        "ThicknessDbu": 17500,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "CORE",
+        "ThicknessDbu": 1065000,
+        "Epsr": 4.3,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "IN3",
+        "ThicknessDbu": 17500,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 3,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "PP2",
+        "ThicknessDbu": 200000,
+        "Epsr": 4.3,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "BOT",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 4,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Via",
+        "Name": "PTH",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 10,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "TOP",
+        "SpanToLayer": "BOT"
+      }
+    ]
+  },
+  "DrcRules": []
+}

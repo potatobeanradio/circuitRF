@@ -559,6 +559,35 @@ public static class FigureCatalog
           + "axis, |S21| against the right. Both passbands are matched; the region between them is "
           + "not, and that is the design working rather than failing."),
 
+        // ── railRF ──────────────────────────────────────────────────────────────
+        // 1600x780 rather than the window's own 1199x741. The three panes are 300 / star / 340 with
+        // a canvas between them, so the width has to leave the middle one enough to be a board -- and
+        // the map legend is a box in DBU with screen-sized text in it, so below about 1500 its three
+        // labels overlap each other.
+
+        new("railrf-window", DocRailFixtures.Window, 1600, 780,
+            WindowFrame.Titled("railRF - Sensor board"),
+            "The railRF window on the shipped Power Rail example, run: the rail, its reference and "
+          + "its ports down the left, the board in the middle showing the drop map, and the DC "
+          + "answer with its ranked breakdown on the right."),
+
+        // The class tab on a board with a reference PLANE shows the plane and nothing else: the
+        // reference's own region is classified last and RailMapRenderer paints the list in order
+        // with opaque paint, so it covers every trace under it. The figure is of the tab as it
+        // behaves; src/Render/RESOLVED.md records why, and the chapter says so rather than letting
+        // a reader conclude their traces were not classified.
+        new("railrf-classification", DocRailFixtures.Classification, 1600, 780,
+            WindowFrame.Titled("railRF - Sensor board"),
+            "The class tab, which draws what the fast model decided about each piece of copper. "
+          + "Here the whole reference plane is spreading copper and was meshed; the rail's own "
+          + "trace sections are classified too, and are painted over by it."),
+
+        new("railrf-impedance", DocRailFixtures.Impedance, 1600, 780,
+            WindowFrame.Titled("railRF - Sensor board"),
+            "The frequency half of the results column: the impedance at the observation port "
+          + "against its target, the anti-resonances the run named, and what removing each "
+          + "capacitor would cost."),
+
         new("match-form-glyphs", DocMatchFixtures.FormGlyphs, 780, 150, null,
             "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
           + "two or three smaller bandpass groups mean two or three bands."),

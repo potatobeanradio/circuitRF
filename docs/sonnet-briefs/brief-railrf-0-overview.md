@@ -172,6 +172,7 @@ schedule fact, not a design one, and one worth knowing before P0's gate rather t
 | [15 — modes and maps](brief-railrf-15-modes-and-maps.md) | P2b | The eigensolve, the mode list, the field maps, the impedance-map overlay. | `PdnModeTests.cs` — first six rectangular modes to 2 %, monotone in cell size |
 | [16 — A/B](brief-railrf-16-ab-comparison.md) | P3 | Two designs matched by net/refdes/part number, both curves, the delta trace, the per-part mounting table, both rankings, the report. | `RailComparisonTests.cs` — two synthetic boards differing in one known way |
 | [17 — docs, example, closeout](brief-railrf-17-docs-and-example.md) | — | The user chapter, the figures, an example workspace, and the design note's own status. | DocGen, reported |
+| [18 — six defects](brief-railrf-18-six-defects.md) | — | The six brief 17 found by driving the feature as a user: the zero minimum-feature width, the Fast model's false stackup sentence, the class map's paint order, the legend overlap, the BOM-only parts table, the inert results tab. | **each ships a test that fails at HEAD** |
 
 ### Dependency order
 

@@ -1,5 +1,77 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 17 — three defects the documentation found, and none of them reports a failure (2026-09-18)
+
+Writing the user chapter and the `Power Rail` example meant driving the whole feature as a user does,
+which is a test nothing else in this series performs. Three findings are in this project; the other
+three are in `src/Render/RESOLVED.md` and `src/Ui/RESOLVED.md`. **None was fixed** —
+`brief-railrf-17-docs-and-example.md` §6 is explicit that a gap found while documenting is a finding
+and a possible brief 18, not a change made under cover of documentation.
+
+### 1. `MinimumFeatureWidthDbu` over a rail's copper reads ZERO on any multilayer board
+
+`PdnMeshExtractor.MinimumFeatureWidthDbu(IReadOnlyList<PdnRegion>)` pools every layer's paths into one
+`Paths64` and measures the pooled set by morphological opening. `LosesArea` compares the opened area
+against `total = Math.Abs(Clipper.Area(all))` — **the SUM of the per-path areas** — while `opened` is the
+area of their geometric UNION. Wherever two pooled paths overlap, the union is smaller than the sum, the
+comparison is unsatisfiable at every width, and the bisection bottoms out at its floor of 1 DBU.
+
+Reduced to two lines, which is how it was confirmed rather than inferred:
+
+| pooled set | measured |
+|---|---|
+| one 5 mm square | 4.92 mm |
+| **the same square, listed twice** | **0 mm** |
+| the example's TOP copper alone | 0.346 mm |
+| the example's BOT copper alone | 0.199 mm |
+| **TOP and BOT pooled** (they cross at every via) | **0 mm** |
+
+A rail on more than one layer crosses itself at every via, so this is the ordinary case rather than a
+corner. **The consequence is the accurate DC cell size**: `baseDeltaDbu` becomes `max(1, 0/3) = 1 DBU`,
+`PdnGrid.Build`'s `MaxCells` coarsening then silently decides the mesh, and the provenance reports
+*"the rail's narrowest copper, 0 mm, at 3 cells across it"* with `CellSizeMetres = 1e-9`. The answer is
+not wrong — the cap produces a workable mesh and the `Power Rail` example's accurate run agrees with its
+fast one to 1.6 % — but **R-rail3-14's rule is not what is running**, and nothing says so in a way a
+reader would take as a fault.
+
+The single-`Paths64` overload is fine where it is called from `PdnCopperClassifier` and
+`PdnGraphExtractor`, because each of those passes ONE region's own unioned copper.
+
+### 2. `PdnSweep` never sets the plane capacitance, so the Fast model's stackup line is FALSE
+
+`RailDcResult.PlaneCapacitanceLine` exists because §2.4 calls plane capacitance the number *"a designer
+recognises a wrong one instantly and would never notice buried in a curve"*, and it is printed even on a
+DC run so the stackup gets checked. `PdnMeshExtractor` fills `PlaneSeparationMetres`,
+`PlaneCapacitanceFarads` and `PlaneOverlapSquareMetres`; **`PdnGraphExtractor` fills none of them.** So
+on the DEFAULT model, on every board, the line reads:
+
+> Plane capacitance: none. The stackup states no dielectric between this rail's copper and its
+> reference, so ε₀εᵣA/h has no h — state the dielectric entries between them.
+
+which is a sentence about the user's stackup, and it is untrue of any stackup that states one. The
+example's does: the same board through Accuracy reports 1.03 pF over 1.12 cm² at εr 4.3. The check that
+was put there to make a wrong stackup obvious instead tells everyone their stackup is wrong.
+
+### 3. A through via joins only the two conductors its span NAMES
+
+Not a defect — `DrcConnectivity` is explicit about it — but it is the shape of a real board that
+`R-rail2-14`'s four allowances did not anticipate, and it decided the example's routing. For each
+`StackupKind.Via` entry the walk unions a barrel with *the first touching piece on `SpanFromLayer`* and
+*the first on `SpanToLayer`*, and with nothing else. Two consequences, and the second is the one that
+costs something:
+
+- **An intervening plane is never shorted**, so a board needs no anti-pads for railRF to read it
+  correctly. (The `Power Rail` example draws them anyway, because a real board has them and they are
+  part of the reference's own copper area.)
+- **An inner layer the via physically lands on is never CONNECTED either.** A `TOP`→`BOT` through via
+  cannot hand current to `IN3`. A board routed on an inner layer needs a via entry whose span names that
+  layer — a blind or buried via — or the rail comes back as three regions and the load floats.
+
+This is why the example's supply runs on `TOP` and `BOT` with the reference on L2, rather than on the
+inner layer the design note's own worked example uses.
+
+---
+
 ## railRF brief 5 — the DC solve, the breakdown, and the rail chain (2026-09-18)
 
 `src/Design/RailRf/RailDcRun.cs` + `RailDcResult.cs`, `src/Engine/Pdn/PdnBreakdown.cs`, and one new

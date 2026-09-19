@@ -1,7 +1,7 @@
 # railRF — Power Integrity on Real Board Shapes, from DC Up
 
-**Status:** **APPROVED** — rev 4, amended 2026-09-18 · **Date:** 2026-09-18 · **Phase:** briefed, unstarted
-**Implementation:** [`docs/sonnet-briefs/brief-railrf-0-overview.md`](../sonnet-briefs/brief-railrf-0-overview.md) — 17 briefs across P0…P3
+**Status:** **BUILT** — rev 4, amended 2026-09-18 · **Date:** 2026-09-18 · **Phase:** P0…P3 shipped; see §6
+**Implementation:** [`docs/sonnet-briefs/brief-railrf-0-overview.md`](../sonnet-briefs/brief-railrf-0-overview.md) — 17 briefs across P0…P3, all built 2026-09-18
 **Reads with:** `docs/design/match.md` §9 (the UI this one is modelled on), `docs/design/data-display.md`
 (the plot layer this reuses), `docs/design/mom-engine.md` (the full-wave solver this deliberately does
 *not* use, and why), `docs/design/layout-view.md` and `src/Design/Layout/Interchange/` (the Gerber /
@@ -803,6 +803,37 @@ feature.
 **If only one phase is ever built it should be P0**, which rev 2 could not have said: P0 answers a question
 these designs have, on artwork that always exists, with an oracle that is arithmetic rather than opinion.
 
+## 6.1 What shipped, per phase (2026-09-18)
+
+All seventeen briefs were built, and two review rounds over the finished code found nine further defects —
+*"none of which reported a failure"*, which is the shape this whole series was written against. Findings
+live in the `RESOLVED.md` beside each project rather than here.
+
+| Phase | Briefs | What landed |
+|---|---|---|
+| **P0 — DC** | 1–10 | the `.crail` document; the three companion readers and the `.crlib` part library; the resistive mesh and the fast graph extractor with its classification; the DC solve, the ranked breakdown and the rail chain; the via current check; the window; the board view; copy to clipboard; `circuitrf rail` |
+| **P1 — Lumped PDN** | 11–12 | the part models, derating and the source's own life sweep; Z(f), the mask, the anti-resonance table, the aggressor coincidences and the removal ranking |
+| **P2a — Distributed low band** | 13 | the mesh's inductance, spreading inductance, and the mounting loop computed from a part's own via geometry |
+| **P2b — Cavity** | 14–15 | the shunt branch, the eigensolve, the mode list, the maps, and the resonance search that keeps a log grid from stepping over a narrow peak |
+| **P3 — A/B** | 16 | the match, both curves, the delta in dB, the excursion bands, both rankings and the report |
+| **Docs** | 17 | `docs/user/reference/railrf.*`, the `Power Rail` example workspace, and this record |
+
+**Three things did not land, and each is recorded where it was found rather than left to be
+rediscovered.** None is a phase that was skipped; each is a seam nobody reached.
+
+- **A refdes anchor does not resolve, in the window or on the command line.** `PdnExtractionRequest.Pads`
+  is filled by nothing in the application — the import reads the placement table and
+  `RailRfViewModel.BuildRequest` does not carry it — so every port is anchored by coordinate and every
+  report row reads a point in DBU. **A rail CHAIN is therefore unsolvable**, because `RailOrder` links two
+  rails only through a refdes that is a load on one and a source on the other. The cycle refusal still
+  works, which is what the gate can honestly gate. `src/Cli/RESOLVED.md`.
+- **`circuitrf rail` produces no Z(f).** `PdnSweep` is reachable from the window and from tests only; the
+  verb's `-o out.sNp` is still brief 10's P0 placeholder refusal. `src/Cli/RESOLVED.md`.
+- **The same gap costs the DC solve its series and shunt parts.** `SeriesElements` and `ShuntParts` are
+  constructed nowhere but in tests, so a protection FET, a ferrite or a decoupling bank enters the DC
+  answer only as a source's own R and L. Over frequency the parts are the rail's own `Parts` rows and are
+  fully modelled. `src/Design/RESOLVED.md`.
+
 ---
 
 # 7. Acceptance
@@ -1010,10 +1041,45 @@ the DC load analysis is a separate layout-review step taken once the topology is
 comparison and the removal rankings are the deliverable, the DC comparison rides along inside P3, and the
 DC-only early version rev 3 offered is not worth building (§2.5, §6).
 
-## 8.5 Open in rev 4 — and Q-18's disposition
+## 8.5 Q-18 … Q-22 — how they landed
 
-*Q-18 is settled by deferral (2026-09-18) and is kept here rather than moved, because the
-reasoning behind it is what the implementation is shaped around. Q-20 … Q-22 are genuinely open.*
+*Every question below is answered as of 2026-09-18, and each keeps the reasoning that produced it:
+§8's rule is that the reasoning behind a closed question is what stops it reopening by accident.
+Q-18's deferral is the one that is still a deferral, and the paragraph that says why is exactly the
+one that must not be deleted.*
+
+### How they landed, before the reasoning that produced each
+
+- **Q-18 — the reference package. Still deferred: it did not arrive, so the guarded tier still
+  skips with a reason.** The finding is the other half of the question. **Of `R-rail2-14`'s four
+  shape allowances, none was exercised, because nothing real was read** — each has a synthetic case
+  and is green or red on the day the package lands. That is the whole value of the allowance: it
+  cost one fixture each to build now and it would have cost a change to the BOM row type, the
+  refdes join or the recognition rule to retrofit. **A fifth shape was needed and was not
+  anticipated** — and it came from the artwork rather than from a companion file: a through via is
+  joined only to the two conductors its stackup span NAMES, so the layers it physically passes are
+  neither shorted to it nor connected by it. The `Power Rail` example is routed on TOP and BOT for
+  that reason.
+- **Q-20 — typing the regulator's input current and minimum input voltage: ACCEPTED**, both on
+  `RailLoad`, both nullable and neither defaulted. A regulator with no stated minimum still appears
+  in the headroom table with a null margin, and the run says which rails had no minimum — the drop
+  is always reported, the headroom finding only where the number was stated. *Untested against a
+  real chain*, because no rail chain is solvable today (§6.1).
+- **Q-21 — which netlist flavour: UNANSWERED, and no fourth reader was written.** The example is
+  synthetic and carries no board netlist at all, so it is not evidence either way. `BoardNetlistFile`
+  reads IPC-D-356/356A and nothing else. This question travels with Q-18 and is answered by the same
+  twenty lines of a real file.
+- **Q-22 — the plating thickness: it STAYED A TYPED SETTING**, and the implementation gave it a
+  sharper answer than the question asked for. `PdnPlatingBasis` has three values and they line up
+  exactly with what the number is worth: a stackup via entry or the document's own setting both give
+  a *computed* limit, and `Defaulted` — nobody stated it — falls back to the drill-size table and
+  says so, because that is the case resting on a number no one checked. §4.2's own suspicion was
+  confirmed and quantified: **one current density reproduces review's entire table at 10–12 µm of
+  plating**, so the table is not inconsistent with its own separately-quoted 20 µm figure — it is a
+  table of a thinner barrel than anyone plates today. It therefore ships as a sanity band and never
+  as the rule.
+
+### Q-18 — the reasoning, kept
 
 **Q-18 — How much of the reference package can we have? — DEFERRED TO MANUAL TESTING, and it no longer
 blocks P0** (owner, 2026-09-18). §7 gates the three new readers on real bytes rather than on invented
@@ -1050,6 +1116,8 @@ parse their own output. It does not prove they parse a real export. That is the 
 tier exists, and the reason the first thing pointed at the package when it arrives is `circuitrf rail` run
 as a process — one command exercises every reader, both extractors and the whole solve, with no window
 and with every refusal legible in a terminal.
+
+### Q-20 … Q-22 — the reasoning, kept
 
 **Q-20 — The rail chain: what does a regulator need typed?** railRF will solve the rails in dependency
 order so a regulator's input voltage is the upstream answer rather than a nominal (§2.2). Two things that

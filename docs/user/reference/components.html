@@ -3192,8 +3192,8 @@ readable on the page.</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>State</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>1 closes the switch, 0 opens it. The symbol is drawn in the position it is set to, so a swept State reads off the schematic.</td></tr>
-<tr><td>Throws</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>How many throws the switch has: 1 for the SPST tile, 2 for the SPDT. It is what makes the two tiles one component, and it sets the pin count, so leave it alone.</td></tr>
+<tr><td>State</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>1 closes the switch, 0 opens it. The symbol is drawn in the position it is set to, so a swept State reads off the schematic.</td></tr>
+<tr><td>Throws</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>How many throws the switch has: 1 for the SPST tile, 2 for the SPDT. It is what makes the two tiles one component, and it is fixed by the tile — place the other one to get the other throw count.</td></tr>
 <tr><td>IL</td><td><code>0</code></td><td>dB</td><td>&mdash;</td><td>Insertion loss of the path the switch is making, as a positive number of dB.</td></tr>
 <tr><td>Isolation</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>How far below the signal the leakage past an OPEN throw sits. The 200 dB default means none — the ideal switch leaks nothing, and the entry is not stamped at all.</td></tr>
 <tr><td>OffState</td><td><code>Reflective</code></td><td>&mdash;</td><td>&mdash;</td><td>What an open throw looks like from its own port: Reflective is an open circuit, Absorptive is a matched termination. Reflective is what a series switch does.</td></tr>
@@ -3231,8 +3231,8 @@ the <code>SW</code> instance prefix, so swapping one for the other does not renu
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>State</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Which throw the common port is connected to — 1 or 2, or 0 for both open. The blade in the symbol points at it.</td></tr>
-<tr><td>Throws</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many throws the switch has: 1 for the SPST tile, 2 for the SPDT. It is what makes the two tiles one component, and it sets the pin count, so leave it alone.</td></tr>
+<tr><td>State</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Which throw the common port is connected to — 1 or 2, or 0 for both open. The blade in the symbol points at it.</td></tr>
+<tr><td>Throws</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many throws the switch has: 1 for the SPST tile, 2 for the SPDT. It is what makes the two tiles one component, and it is fixed by the tile — place the other one to get the other throw count.</td></tr>
 <tr><td>IL</td><td><code>0</code></td><td>dB</td><td>&mdash;</td><td>Insertion loss of the path the switch is making, as a positive number of dB.</td></tr>
 <tr><td>Isolation</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>How far below the signal the leakage past an OPEN throw sits. The 200 dB default means none — the ideal switch leaks nothing, and the entry is not stamped at all.</td></tr>
 <tr><td>OffState</td><td><code>Reflective</code></td><td>&mdash;</td><td>&mdash;</td><td>What an open throw looks like from its own port: Reflective is an open circuit, Absorptive is a matched termination. Reflective is what a series switch does.</td></tr>

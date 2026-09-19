@@ -35,6 +35,11 @@
       "Folder": "System Design",
       "Title": "System Design (TX and RX)",
       "Summary": "A 2.4 GHz transmitter and receiver drawn twice \u2014 direct conversion and superheterodyne \u2014 from the System block library, plus a transmitter whose final stage is a nonlinear FET and a cascade gain/IP3/noise budget."
+    },
+    {
+      "Folder": "Power Rail",
+      "Title": "Power Rail Integrity",
+      "Summary": "A four-layer board with one 3.3 V rail: the DC drop and where it goes, Z(f) against a flat target, and which of thirteen capacitors are actually doing anything."
     }
   ]
 }
