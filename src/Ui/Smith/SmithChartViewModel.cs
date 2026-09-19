@@ -213,6 +213,13 @@ public sealed partial class SmithChartViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedRow));
         RemoveGeneratorRowCommand.NotifyCanExecuteChanged();
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
+
+        // The overlay rows are rebuilt on the SAME channel and for the same reason: every committed
+        // edit replaces the whole design, so a row holding the old SmithOverlayRef would be editing
+        // a document nobody can see. Here rather than in RefreshDerived, which also runs on every
+        // pointer move of a gripper drag — clearing and refilling an ObservableCollection twenty
+        // times a second would rebuild the list's controls under the hand holding it.
+        RebuildOverlayRows();
     }
 
     /// <summary>

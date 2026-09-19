@@ -119,8 +119,9 @@ public sealed partial class SmithChartViewModel
 
         bool dragging = _dragBefore is not null;
 
-        Scene = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
-        SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging);
+        Scene      = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
+        _traceKeys = SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging,
+                                           ResolveOverlays());
         _lastWindow = ChartPlot.Axes.Window;
 
         if (!dragging) ChartContainer.OnPlotChanged(this, EventArgs.Empty);

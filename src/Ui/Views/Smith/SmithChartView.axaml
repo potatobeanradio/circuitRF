@@ -328,12 +328,92 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- The panel space briefs 8 and 9 fill. Left as a NOTE rather than as empty
+                        <!-- ── The overlays (brief 8) ───────────────────────────────────────
+                             R-smith8-1/-2/-3/-4; docs/design/smith-chart.md §5.7.
+
+                             REFERENCE MATERIAL UNDER THE WORK, and none of it is part of the
+                             cascade: an overlay is not an element, it is not in the node array, it
+                             is not in the network strip, and it stays out of the chart's autoscale
+                             unless its own row says otherwise — a stability circle can be enormous
+                             and one unlucky overlay must not reframe the work.
+
+                             EVERY ROW IS AN ORDINARY DATA DISPLAY TRACE. The quantity cell takes
+                             what a trace card takes — S11, S21, Z11, a cube slice — and the derived
+                             cell takes a DerivedParameters name, of which SourceStabilityCircle and
+                             LoadStabilityCircle are the two this tool was asked for. Nothing here
+                             computes any of it.
+
+                             A ROW THAT DOES NOT RESOLVE IS MARKED AND SAYS WHY, and the document
+                             still opens with the rest of the chart drawn. That is the opposite of
+                             an S1P ELEMENT, whose missing file is a refusal, and the difference is
+                             the point: the cascade cannot be walked without an element, and an
+                             overlay's absence costs the user a comparison and nothing else. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Overlays"/>
+
+                                <TextBlock Classes="note" IsVisible="{Binding !ViewModel.HasOverlays}"
+                                           TextWrapping="Wrap"
+                                           Text="Reference data under the work — a Touchstone file, or a cube in an open data set. Everything is renormalized to the chart's Z₀ on the way in."/>
+
+                                <ListBox Classes="rows" MaxHeight="150"
+                                         IsVisible="{Binding ViewModel.HasOverlays}"
+                                         ItemsSource="{Binding ViewModel.OverlayRows}"
+                                         SelectedItem="{Binding ViewModel.SelectedOverlay, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="sm:SmithOverlayRowViewModel">
+                                            <StackPanel Margin="0,1" Spacing="1">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <CheckBox Grid.Column="0" Padding="4,0,0,0" MinHeight="0"
+                                                              IsChecked="{Binding Visible, Mode=TwoWay}"
+                                                              ToolTip.Tip="Draw this overlay. A hidden row is not on the chart at all, so it is also out of the trace list and the Add Marker menu."/>
+                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                                               Classes.bad="{Binding IsUnresolved}"
+                                                               Text="{Binding Label}"
+                                                               ToolTip.Tip="{Binding Unresolved}"/>
+                                                </Grid>
+
+                                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="20,0,0,0">
+                                                    <TextBlock Classes="detailLabel" Text="Quantity"/>
+                                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                                        Text="{Binding QuantityEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="S11, S21, Z11, Y21 — a matrix letter and a pair of 1-BASED port numbers — or a cube slice. Double-click to edit."/>
+                                                    <ctl:InlineEditText Grid.Column="2" Classes="val" Margin="6,0,0,0"
+                                                                        Text="{Binding DerivedEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="A derived quantity, or None. SourceStabilityCircle and LoadStabilityCircle are drawn as circles in the Γ plane; a derived row ignores the quantity beside it."/>
+                                                </Grid>
+
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="20,0,0,0">
+                                                    <CheckBox MinHeight="0" FontSize="11" Content="Renormalize"
+                                                              IsChecked="{Binding Renormalize, Mode=TwoWay}"
+                                                              ToolTip.Tip="Renormalize to the chart's Z₀ on the way in. ON is the right answer: a 75 Ω part drawn on a 50 Ω chart without it is a curve in the wrong place that looks entirely plausible."/>
+                                                    <CheckBox MinHeight="0" FontSize="11" Content="Autoscale"
+                                                              IsChecked="{Binding IncludeInAutoscale, Mode=TwoWay}"
+                                                              ToolTip.Tip="Let this row take part in the chart's autoscale. Off by default — a stability circle can be enormous, and one unlucky overlay would squash the cascade into a corner."/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0"
+                                            HorizontalAlignment="Right">
+                                    <Button Classes="tiny" Content="+"
+                                            Command="{Binding ViewModel.AddOverlayCommand}"
+                                            ToolTip.Tip="Add a Touchstone file as an overlay. It is REFERENCED by a path relative to this document, never copied into it — an overlay is reference material, so a stale copy would be the wrong answer."/>
+                                    <Button Classes="tiny" Content="−"
+                                            Command="{Binding ViewModel.RemoveOverlayCommand}"
+                                            ToolTip.Tip="Remove the selected overlay. Nothing else changes — an overlay is not part of the cascade."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The panel space brief 9 fills. Left as a NOTE rather than as empty
                              cards: a card with nothing in it reads as a control that failed to load,
-                             and this brief must not build the sweep row, the Q row or the overlays
-                             list (§6). -->
+                             and this brief must not build the sweep row or the Q row. -->
                         <TextBlock Classes="note" Margin="2,6,2,0"
-                                   Text="The swept band and the constant-Q arcs (brief 9) and the overlays list (brief 8) take the space below."/>
+                                   Text="The swept band and the constant-Q arcs (brief 9) take the space below."/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

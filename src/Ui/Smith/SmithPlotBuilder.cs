@@ -10,6 +10,24 @@ using SkiaSharp;
 namespace CircuitRF.Ui.Smith;
 
 /// <summary>
+/// One trace on the chart and the name a marker on it is stored against
+/// (<c>brief-smith-8-overlays-markers.md</c> <c>R-smith8-5</c>).
+/// </summary>
+/// <remarks>
+/// A `.cdd` nests its markers under their trace and needs no such thing. Every trace on THIS chart
+/// is derived and is rebuilt from the design on each edit, so the association has to be written
+/// down, and it is written as the trace's LABEL — an element's name, <c>load</c>, or an overlay's
+/// file and quantity — because an index moves when an element is deleted.
+/// </remarks>
+internal readonly record struct SmithTraceKey(string Key, Trace Trace);
+
+/// <summary>An overlay that resolved, ready to go on the plot.</summary>
+/// <remarks><b>Resolution is not this file's</b> — <see cref="SmithOverlayResolver"/> does it, so the
+/// row can report what failed and why while the chart carries on drawing everything that did
+/// resolve (<c>R-smith8-2</c>).</remarks>
+internal readonly record struct SmithOverlayTrace(string Key, Trace Trace, bool Visible);
+
+/// <summary>
 /// Builds the chart's <c>Plot</c> from the evaluator — <b>the traces, and nothing that draws</b>
 /// (<c>brief-smith-5-chart.md</c> <c>R-smith5-1</c>, <c>R-smith5-2</c>,
 /// <c>docs/design/smith-chart.md</c> §5.4).
@@ -168,13 +186,16 @@ internal static class SmithPlotBuilder
     /// on every pointer move would slide the chart out from under the hand holding it</b>, and the
     /// gripper would stop being where the cursor is — which is the same complaint a pinned drag that
     /// stopped tracking produces.</param>
-    public static void Fill(Plot plot, SmithChartScene scene, SmithDesign design, bool autoscale)
+    public static IReadOnlyList<SmithTraceKey> Fill(
+        Plot plot, SmithChartScene scene, SmithDesign design, bool autoscale,
+        IReadOnlyList<SmithOverlayTrace>? overlays = null)
     {
         ArgumentNullException.ThrowIfNull(plot);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(design);
 
         plot.Traces.Clear();
+        var keys = new List<SmithTraceKey>();
 
         // ── one per ENABLED element ──────────────────────────────────────────
         foreach (var curve in scene.Trajectories)
@@ -190,16 +211,16 @@ internal static class SmithPlotBuilder
                       curve.IsChord ? LineType.Dashed : LineType.Solid, width: 1.0));
 
             SetGamma(trace, curve.Gamma);
-            plot.Traces.Add(trace);
+            Add(plot, keys, ElementLabel(element, curve.ElementIndex), trace);
         }
 
         // ── the load points ──────────────────────────────────────────────────
         //
         //  Two traces rather than one, because the emphasis is a MARKER SIZE and that is a per-trace
         //  property. The design frequency's point is the larger of the two (R-smith5-2).
-        AddPoints(plot, "load", scene.LoadPoints.Where(p => !p.IsDesignFrequency).Select(p => p.Gamma),
+        AddPoints(plot, keys, "load", scene.LoadPoints.Where(p => !p.IsDesignFrequency).Select(p => p.Gamma),
                   ReadingColorIndex, size: 2.0, annotation: false, excludeFromAutoscale: false);
-        AddPoints(plot, "load (design f)", scene.LoadPoints.Where(p => p.IsDesignFrequency).Select(p => p.Gamma),
+        AddPoints(plot, keys, "load (design f)", scene.LoadPoints.Where(p => p.IsDesignFrequency).Select(p => p.Gamma),
                   ReadingColorIndex, size: 4.0, annotation: false, excludeFromAutoscale: false);
 
         // ── the conjugate targets ────────────────────────────────────────────
@@ -212,9 +233,31 @@ internal static class SmithPlotBuilder
         //  otherwise set the window and squash the cascade the user is actually looking at into a
         //  corner of it.
         if (design.Chart.ShowTargets)
-            AddPoints(plot, "conj(Zgen)", scene.ConjugateTargets, ColorLUTGrey, size: 3.0,
+            AddPoints(plot, keys, "conj(Zgen)", scene.ConjugateTargets, ColorLUTGrey, size: 3.0,
                       annotation: true, excludeFromAutoscale: true, opacity: 0.45,
                       markerType: MarkerType.Plus);
+
+        // ── the overlays (R-smith8-1, R-smith8-4) ───────────────────────────
+        //
+        //  LAST, so reference material draws OVER the work rather than under it, and so a row added
+        //  or removed cannot renumber the trajectories' colours. An invisible row is not on the plot
+        //  at all — TraceProperties.Enabled is read by nothing, and a trace left on the plot would
+        //  still be in the trace list, the legend and the Add Marker menu.
+        //
+        //  They are ordinary traces and this loop is the whole of what makes them one: their
+        //  quantity, their renormalization and their autoscale exclusion were all settled by
+        //  SmithOverlayResolver, on the Trace's OWN fields.
+        foreach (var overlay in overlays ?? [])
+            if (overlay.Visible)
+                Add(plot, keys, overlay.Key, overlay.Trace);
+
+        // ── the markers (R-smith8-5) ────────────────────────────────────────
+        //
+        //  THE DOCUMENT IS THE AUTHORITY, and it has to be: every trace above was just built from
+        //  scratch and the markers that were on the previous set went with them. So they are
+        //  re-attached here, from `design.Markers`, on every rebuild — which is also what makes an
+        //  undo of a marker edit restore the markers rather than only the numbers.
+        RestoreMarkers(keys, design);
 
         plot.SetAxesViewport();
 
@@ -226,13 +269,71 @@ internal static class SmithPlotBuilder
         //  THE UNIT-CIRCLE MINIMUM IS THE PLOT'S OWN and is left alone: a node outside the unit
         //  circle — an active S2P, a Z1P with negative R — is DRAWN, because clamping to the disc
         //  would be a lie about a stability result (R-smith5-4).
-        if (!autoscale) return;
+        if (!autoscale) return keys;
 
         if (design.Chart.Window is { } stored)
             plot.Axes.Window = new PlotRect(stored.MinX, stored.MinY,
                                             stored.MaxX - stored.MinX, stored.MaxY - stored.MinY);
         else
             plot.Autoscale(force: true);
+
+        return keys;
+    }
+
+    /// <summary>Puts a trace on the plot and records the name a marker is stored against.</summary>
+    /// <remarks>
+    /// <b>The key is the LABEL, not the index.</b> An index moves the moment an element is deleted
+    /// or an overlay row is removed, and a marker that silently slid onto the next curve would be a
+    /// reading reported against the wrong thing. A duplicate label is disambiguated rather than
+    /// refused — two elements cannot share a name (<c>SmithDesign.Refusal</c> says so) but two
+    /// overlays on the same file and quantity can, and that is not worth stopping a document over.
+    /// </remarks>
+    private static void Add(Plot plot, List<SmithTraceKey> keys, string name, Trace trace)
+    {
+        string key = name;
+        for (int n = 2; keys.Any(k => string.Equals(k.Key, key, StringComparison.Ordinal)); n++)
+            key = $"{name} ({n})";
+
+        keys.Add(new SmithTraceKey(key, trace));
+        plot.Traces.Add(trace);
+    }
+
+    /// <summary>
+    /// Re-attaches the document's markers to the curves they were taken on.
+    /// </summary>
+    /// <remarks>
+    /// A marker whose trace is no longer on the chart — an element deleted, an overlay row removed
+    /// or a file that stopped resolving — <b>lands on the first curve rather than disappearing</b>.
+    /// It is a reading somebody took, and the alternative is that deleting one element silently
+    /// deletes readings taken on another; the one it lands on is visibly wrong, which is the point.
+    /// A chart with no curves at all keeps them in the document and draws none.
+    /// </remarks>
+    private static void RestoreMarkers(List<SmithTraceKey> keys, SmithDesign design)
+    {
+        if (keys.Count == 0) return;
+
+        foreach (var stored in design.Markers)
+        {
+            var target = keys.FirstOrDefault(
+                k => string.Equals(k.Key, stored.TraceName, StringComparison.Ordinal)).Trace
+                ?? keys[0].Trace;
+
+            target.Markers.Add(SmithMarkerBridge.ToMarker(stored, target));
+        }
+    }
+
+    /// <summary>
+    /// The markers currently on the chart, as the document stores them — the inverse of
+    /// <see cref="RestoreMarkers"/>, and the only way a placement, a drag or a VSWR toggle reaches
+    /// the `.csmith`.
+    /// </summary>
+    public static List<SmithMarker> HarvestMarkers(IReadOnlyList<SmithTraceKey> keys)
+    {
+        var markers = new List<SmithMarker>();
+        foreach (var (key, trace) in keys)
+            foreach (var m in trace.Markers)
+                markers.Add(SmithMarkerBridge.FromMarker(m, key));
+        return markers;
     }
 
     /// <summary>Grey — see <see cref="ReadingColor"/>.</summary>
@@ -247,7 +348,8 @@ internal static class SmithPlotBuilder
                : element.Name;
 
     private static void AddPoints(
-        Plot plot, string name, IEnumerable<Complex> points, int colorIndex, double size,
+        Plot plot, List<SmithTraceKey> keys, string name, IEnumerable<Complex> points,
+        int colorIndex, double size,
         bool annotation, bool excludeFromAutoscale, double opacity = 1.0,
         MarkerType markerType = MarkerType.Circle)
     {
@@ -266,7 +368,7 @@ internal static class SmithPlotBuilder
         trace.IsAnnotation         = annotation;
         trace.ExcludeFromAutoscale = excludeFromAutoscale;
         SetGamma(trace, list);
-        plot.Traces.Add(trace);
+        Add(plot, keys, name, trace);
     }
 
     /// <summary>

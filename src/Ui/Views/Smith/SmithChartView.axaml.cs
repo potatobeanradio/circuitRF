@@ -80,6 +80,7 @@ public partial class SmithChartView : UserControl
 
         // The picker is the view's; the refusal that follows a cancelled one is the view model's.
         _doc.ViewModel.TouchstoneFileChooser = PickTouchstoneFile;
+        _doc.ViewModel.OverlayFileChooser    = PickOverlayFile;
 
         // The request may have been made BEFORE this view existed — a document that is already the
         // active dockable at the instant its view is first realized. ConsumeActivationFocus is what
@@ -252,9 +253,19 @@ public partial class SmithChartView : UserControl
         // A pan or a zoom is what makes the chart's window the USER's; from then on the document
         // carries it and the chart stops re-fitting under every edit. It is not an edit: no undo
         // entry, no dirty mark — the splitters' own rule.
-        plot.PlotChanged += (_, _) => { vm.CaptureChartWindow(); container.OnPlotChanged(this, EventArgs.Empty); };
-        plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
-        plot.MarkerAdded += container.OnMarkerAdded;
+        plot.PlotChanged += (_, _) =>
+        {
+            vm.CaptureChartWindow();
+            container.OnPlotChanged(this, EventArgs.Empty);
+
+            // A REMOVAL has no event of its own — PlotControl's marker menu takes the marker off its
+            // trace and raises PlotChanged — so the harvest hangs off all three and decides for
+            // itself what is an undo entry. It is cheap and it no-ops when nothing changed, which is
+            // what makes it safe on a pan.
+            vm.HarvestMarkers();
+        };
+        plot.MarkerMoved += (_, _) => { container.OnMarkerMoved(); vm.HarvestMarkers(); };
+        plot.MarkerAdded += (marker, trace) => { container.OnMarkerAdded(marker, trace); vm.HarvestMarkers(); };
         container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
 
         SyncPlotTheme();
@@ -398,6 +409,48 @@ public partial class SmithChartView : UserControl
         // somewhere a relative reference could not reach.
         string full = files[0].Path.LocalPath;
         string? dir = _doc?.ViewModel.DocumentDirectory;
+        if (dir is not { Length: > 0 }) return full;
+
+        string relative = Path.GetRelativePath(dir, full);
+        return relative.StartsWith("..", StringComparison.Ordinal) ? full : relative;
+    }
+
+    // ── the overlays (brief-smith-8-overlays-markers.md R-smith8-2) ─────────
+
+    /// <summary>
+    /// The file picker <b>Add overlay</b> opens.
+    /// </summary>
+    /// <remarks>
+    /// <b>Relative to the document wherever that is possible</b> — the `.cdd` convention, and the
+    /// one that survives an archived or moved workspace: the pair moves together and the reference
+    /// still resolves. An absolute path is kept only when the file lives somewhere a relative
+    /// reference could not reach, which is the same rule an S1P ELEMENT's own picker follows.
+    ///
+    /// <para><b>Any port count</b>, unlike the element pickers. An overlay is reference material and
+    /// its quantity is chosen on the row afterwards, so an <c>.s2p</c> here is an ordinary thing to
+    /// want — a two-port part whose S₁₁ is what the match is being checked against.</para>
+    /// </remarks>
+    private async Task<string?> PickOverlayFile()
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top) return null;
+
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Add an overlay",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Touchstone")
+                    { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp",
+                                  "*.S1P", "*.S2P", "*.S3P", "*.S4P", "*.SNP"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
+        });
+
+        if (files.Count == 0) return null;
+
+        string  full = files[0].Path.LocalPath;
+        string? dir  = _doc?.ViewModel.DocumentDirectory;
         if (dir is not { Length: > 0 }) return full;
 
         string relative = Path.GetRelativePath(dir, full);

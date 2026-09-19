@@ -9336,6 +9336,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // SmithDesign.Refusal, so the two things that can be wrong with a `.csmith` are in front
             // of whoever opened it rather than discovered later by a window that half-opened.
             var doc = SmithChartDocument.Open(full);
+            WireSmithChartSources(doc);
 
             _openDocsByPath[full] = doc;
             _factory.OpenDocument(doc);
@@ -9365,8 +9366,35 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void NewSmithChart()
     {
         var doc = new SmithChartDocument(NextSmithChartTitle(), new SmithChartViewModel());
+        WireSmithChartSources(doc);
         _scratchSmithCharts.Add(doc);
         _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// Tells an open Smith Chart where the workspace's data lives, so a CUBE overlay has something
+    /// to resolve against (<c>brief-smith-8-overlays-markers.md</c> <c>R-smith8-2</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>The same three providers a Data Display gets</b> (<see cref="WireDataDisplayLibraryEvents"/>)
+    /// and the same <c>IPlotDataSources</c> seam its trace cards resolve through — so a cube overlay
+    /// and a <c>.cdd</c> trace over the same run go through ONE lookup rather than two that could
+    /// disagree about which file a logical reference names.
+    ///
+    /// <para><b>A Touchstone overlay needs none of it</b>: that one is a path relative to the
+    /// document and resolves with no workspace at all, which is what keeps a scratch <c>.csmith</c>
+    /// a real document. A cube row in one that was never wired simply reports that no data set is
+    /// open.</para>
+    /// </remarks>
+    private void WireSmithChartSources(Smith.SmithChartDocument doc)
+    {
+        if (doc.ViewModel.PlotHost.Library is not { } lib) return;
+
+        lib.ResultsRootProvider     = GetResultsRoot;
+        lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
+        lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
+
+        doc.ViewModel.OverlayDataSources = new DataDisplay.ViewModels.LibraryDataSources(lib);
     }
 
     /// <summary>

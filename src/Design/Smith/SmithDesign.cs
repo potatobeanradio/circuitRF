@@ -545,6 +545,20 @@ public sealed class SmithOverlayRef
 /// </summary>
 public sealed class SmithMarker
 {
+    /// <summary>
+    /// <b>Which curve this marker is a reading ON</b> — the trace's LABEL, which is an element's
+    /// name for a trajectory, <c>load</c> for the load points, or an overlay's file and quantity.
+    ///
+    /// <para>The one field <c>MarkerConfig</c> does not have, and it is not an invention: a `.cdd`
+    /// nests its markers under their trace, so the association is that file's own structure. A
+    /// `.csmith` has no trace list to nest them in — every trace on this chart is DERIVED and is
+    /// rebuilt from the design on each edit — so the association has to be written down, and it is
+    /// written as the label rather than as an index because an index moves when an element is
+    /// deleted and a marker that silently jumped to the next curve would be a reading reported
+    /// against the wrong thing. Empty means the first curve on the chart.</para>
+    /// </summary>
+    public string TraceName { get; set; } = "";
+
     public string Name  { get; set; } = "m0";
     public int    Index { get; set; }
 

@@ -1,5 +1,108 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the overlays, the markers, and the field MarkerConfig does not have (2026-09-19)
+
+brief-smith-8-overlays-markers.md. Reference material under the work: a Touchstone file or a cube in
+an open data set, renormalized to Z₀_chart on the way in, derived stability circles, and the Data
+Display's own markers with their VSWR circles, persisted. Gate:
+`tests/Ui.Tests/Smith/SmithOverlayTests.cs`, seven tests, one per claim; all pass, as do the 212
+Smith tests and `Firewall.Tests`.
+
+### Renormalization is a FLAG that already exists, and that is the whole of `R-smith8-3`
+
+The requirement — *a trace that is not renormalized is a curve in the wrong place that looks entirely
+plausible* — sounds like arithmetic and is not. `Trace.Z0OverrideEnabled`/`Trace.Z0` is the single
+gate on all reference-impedance renormalization of displayed data, and it covers the SNP path
+(`BuildMatrixPath` → `RFNetwork.SToS`) and the cube path (`TraceResolve.ResolveNetworkParamCube` →
+`NetworkMetrics.RenormalizeSCube`) alike. So `SmithOverlayResolver` sets two fields and computes
+nothing.
+
+The gate is a 75 Ω one-port whose S₁₁ is exactly zero. That IS 75 Ω, so on a 50 Ω chart it belongs at
+Γ = (75 − 50)/(75 + 50) = **0.2**, and unrenormalized it draws at the ORIGIN — the perfect match. A
+hand-computed point was asked for because that is the failure: not a wrong-looking curve but a
+believable one.
+
+### A DERIVED trace must not be cube-bound, and `BuildPath`'s test order is why
+
+`Trace.BuildPath` tests `IsCubeBound` **before** `IsDerived`, so a cube-bound trace with
+`Derived = LoadStabilityCircle` goes down the cube path and the metric is never computed — no
+circle, no error. The Data Display already solved this: `PlotConfigLoader` resolves a derived trace
+against `IPlotDataSources.NetworkFor`, and its own note records that reading `Snp` alone once
+dropped every stability circle out of a simulated source's display as it opened. A cube-source
+derived overlay here takes the same route, and a source with no network view is a refusal naming
+what it lacks rather than an empty curve.
+
+### One quantity vocabulary, and the digits are 1-BASED PORT NUMBERS on both sides
+
+`S11`, `S21`, `Z11`, `Y21` mean the same thing whether the data came from a file or from a run: for a
+file they are `Trace.Row`/`Col` (0-based, converted exactly once, in `TryParseQuantity`), and for a
+cube they are translated into the bracket spec the cube path takes — `S21` → `S[:, 2, 1]`, which is
+the repo's standing sparam-port-indexing rule. Reading those digits as indices is the `plot` verb's
+own recorded trap: it draws the wrong element in silence, and on a reciprocal part it is invisible.
+A quantity that is not that shape is passed to the cube parser verbatim, so a hand-written slice of
+any other cube still works.
+
+### `SmithMarker` needed one field `MarkerConfig` does not have, and it is not an invention
+
+A `.cdd` nests its markers **under their trace**, so the association is that file's own structure and
+`MarkerConfig` needs no trace field. Every trace on a Smith chart is DERIVED and is thrown away and
+rebuilt from the design on each edit, so a `.csmith` has no trace list to nest markers in — the
+association has to be written down. `SmithMarker.TraceName` is that, and it is the trace's **label**
+(an element's name, `load`, or an overlay's file and quantity) rather than an index, because an index
+moves when an element is deleted and a marker that silently slid onto the next curve would be a
+reading reported against the wrong thing. A marker whose trace has gone lands on the first curve
+rather than disappearing: it is a reading somebody took, and the alternative is that deleting one
+element silently deletes readings taken on another.
+
+The consequence is that **the document is the authority and the plot is re-populated from it on every
+rebuild** — which is also what makes an undo of a marker edit restore the marker rather than only the
+numbers.
+
+### `Marker.InfoBoxPos` defaults to NaN, and `System.Text.Json` throws on it
+
+Found by the gate, and it would have been found by the first user who placed a marker. `InfoBoxPos`
+is NaN until the box has been laid out — *"not placed yet"* — and `SmithDesignIo.SerializeUnvalidated`
+runs on **every committed edit** to build the undo snapshot, so one freshly-placed marker took the
+document down mid-edit with an `ArgumentException` out of the serializer. The Data Display carries
+the identical guard for the identical reason (`DataDisplayViewModel`'s own `Finite()`, and the note
+beside it says the dirty-check serializes on every redraw); `SmithMarkerBridge.FromMarker` now carries
+it too, on every persisted floating-point field rather than only the one that bit.
+
+### A placement is one undo entry; a marker DRAG is not
+
+`PlotControl` raises `MarkerMoved` on every pointer move and has **no drag-finished event** to push
+against, so an entry per move would be the Match Designer's "eight edits took fourteen undos" defect
+by a slower route. The split is on the marker COUNT: a placement or a removal changes it and is one
+entry; a drag, a VSWR toggle or a format change does not and rides along on the next real save, which
+is the splitters' and the chart window's own rule (`R-smith4-3`). A REMOVAL has no event of its own
+either — the marker menu takes it off its trace and raises `PlotChanged` — so the harvest hangs off
+all three events and decides for itself, and it no-ops when nothing changed, which is what makes it
+safe on a pan.
+
+### Three smaller things worth knowing
+
+- **`TraceProperties.Enabled` is read by nothing.** A hidden overlay is one that is not added to the
+  `Plot` at all — which also keeps it out of the trace list, the legend and the Add Marker menu,
+  rather than only out of the picture.
+- **Adding a `Trace` to a `Plot` does not build its path.** `Plot.OnTracesChanged` only re-fits the
+  axes, so an SNP-backed overlay put on the plot without an explicit `BuildPath` draws nothing, with
+  no error anywhere. The cube path builds inside `SetCubeData`, which is why the trajectories never
+  needed it.
+- **`Plot.AutoscaleCore` skips a trace whose bounding box is degenerate in BOTH axes.** The first
+  version of the autoscale test used a fixture repeating one Γ and passed whichever way
+  `IncludeInAutoscale` was set — the trace was being ignored for a reason that had nothing to do
+  with the flag. The fixture's three points are now deliberately not collinear.
+
+### What was deliberately not built
+
+**No cube PICKER.** A cube overlay resolves, persists and draws, and `AddCubeOverlay(sourceRef,
+quantity)` is the seam a host calls — `WorkspaceViewModel.WireSmithChartSources` gives an open
+`.csmith` the same three library providers a Data Display gets and the same `LibraryDataSources`
+lookup its trace cards resolve through. What has no UI yet is *choosing* one from a list of open runs;
+the `+` button adds a Touchstone file. That is a dialog, it is not in this brief's gate, and building
+half of one would be worse than saying so here.
+
+
 ## Smith Chart — the clipboard, both ways, and the topology recognizer (2026-09-19)
 
 brief-smith-7-clipboard.md. Copy the network out as a runnable two-port, paste a `.csch` selection

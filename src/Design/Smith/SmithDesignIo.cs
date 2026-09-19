@@ -215,6 +215,7 @@ public static class SmithDesignIo
 
     private static CsmithMarker ToFile(SmithMarker m) => new()
     {
+        TraceName              = NullIfEmpty(m.TraceName),
         Name                   = m.Name,
         Index                  = m.Index,
         Freq                   = m.Freq,
@@ -339,6 +340,7 @@ public static class SmithDesignIo
 
     private static SmithMarker FromFile(CsmithMarker m) => new()
     {
+        TraceName              = m.TraceName ?? "",
         Name                   = m.Name ?? "m0",
         Index                  = m.Index ?? 0,
         Freq                   = m.Freq  ?? 0.0,
@@ -486,6 +488,11 @@ public static class SmithDesignIo
     /// `.cdd`.</summary>
     private sealed class CsmithMarker
     {
+        /// <summary>Which curve the marker is a reading ON — the trace's label. The one field
+        /// <c>MarkerConfig</c> does not have, because a `.cdd` nests its markers under their trace
+        /// and a `.csmith` has no trace list to nest them in. Absent reads as the first curve.</summary>
+        public string? TraceName              { get; set; }
+
         public string? Name                   { get; set; }
         public int?    Index                  { get; set; }
         public double? Freq                   { get; set; }
