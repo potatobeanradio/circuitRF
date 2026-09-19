@@ -48,6 +48,28 @@ public sealed class SmithChartDocument : Document, IActivatableDocument, IFileBa
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // ── Edit ▸ Cut / Copy / Paste — the shell's own menu, routed here ────────
+
+    /// <summary>
+    /// Raised by the shell's Edit ▸ Copy / Paste. <b>The view decides what they mean</b>
+    /// (<c>R-smith7-9</c>): Copy is the chart when the chart has focus and the network when the
+    /// network does, which is a question only the focused pane can answer.
+    /// </summary>
+    /// <remarks>
+    /// <c>LayoutDocument</c>'s own shape, for its own reason — a document's clipboard verbs belong to
+    /// whatever has the keyboard inside it, and <c>WorkspaceViewModel.InvokeClipboardAsync</c> has no
+    /// way to know that. <b>There is deliberately no Cut</b>: cutting the network would leave the
+    /// document with no cascade and the chart with nothing on it, which is Delete on every element
+    /// and is spelled that way.
+    /// </remarks>
+    public event Action? CopyRequested;
+
+    /// <inheritdoc cref="CopyRequested"/>
+    public event Action? PasteRequested;
+
+    public void RequestCopy()  => CopyRequested?.Invoke();
+    public void RequestPaste() => PasteRequested?.Invoke();
+
     private string _baseTitle;
     private bool   _isDirty;
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -9,7 +10,10 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
+using CircuitRF.Ui.Clipboard;
+using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Smith;
@@ -56,15 +60,23 @@ public partial class SmithChartView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (_doc is not null) _doc.ActivationFocusRequested -= OnActivationFocusRequested;
+        if (_doc is not null)
+        {
+            _doc.ActivationFocusRequested -= OnActivationFocusRequested;
+            _doc.CopyRequested            -= OnEditCopy;
+            _doc.PasteRequested           -= OnEditPaste;
+        }
 
         _doc = DataContext as SmithChartDocument;
         if (_doc is null) return;
 
         _doc.ActivationFocusRequested += OnActivationFocusRequested;
+        _doc.CopyRequested            += OnEditCopy;
+        _doc.PasteRequested           += OnEditPaste;
         ApplySplitFractions();
         BindChartPlot(_doc.ViewModel);
         BuildElementMenus(_doc.ViewModel);
+        BindClipboard(_doc.ViewModel);
 
         // The picker is the view's; the refusal that follows a cancelled one is the view model's.
         _doc.ViewModel.TouchstoneFileChooser = PickTouchstoneFile;
@@ -223,7 +235,13 @@ public partial class SmithChartView : UserControl
         // THE OVERLAY — the grippers (R-smith5-6). Everything about the gesture is the overlay's;
         // the control only asks it first and falls through when it answers null, which is what keeps
         // pan, zoom and marker drag exactly as they were.
+        //
+        // BOTH HALVES, and the second is brief 7's. The control's copy reaches the on-screen frame;
+        // the CONTAINER's reaches the export path, which composes from containers and would
+        // otherwise drop the arrowheads, the load-frequency labels and the grippers out of every
+        // copied picture — silently, with the picture still produced and still looking correct.
         plot.Overlay = vm.ChartOverlay;
+        container.Overlay = vm.ChartOverlay;
 
         plot.DoubleTapped += (_, args) =>
         {
@@ -448,4 +466,105 @@ public partial class SmithChartView : UserControl
 
     private void OnSliderCaptureLost(object? sender, PointerCaptureLostEventArgs e)
         => _doc?.ViewModel.EndSliderDrag();
+
+    // ── The clipboard (brief-smith-7-clipboard.md) ───────────────────────────
+
+    /// <summary>
+    /// Gives the view model its three clipboard seams, and puts <b>Copy</b> and <b>Paste</b> on the
+    /// network strip.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every one of the three is a single call into code that already exists</b>
+    /// (<c>R-smith7-1</c>): the schematic editor's <c>SchematicClipboard</c> for the network, the Data
+    /// Display's <c>PlotExporter</c> for the chart. No format, no P/Invoke and no second Avalonia
+    /// session is written here — the Windows path in particular must be one <c>SetClipboard</c>
+    /// session, because Avalonia's <c>SetDataAsync</c> empties the clipboard and keeps ownership, and
+    /// that is already paid for.
+    ///
+    /// <para>The menu is attached in code rather than declared in the AXAML for the reason every
+    /// other context menu in this application is: a <c>ContextMenu</c> is a popup with its own visual
+    /// root, so a <c>MenuItem</c> declared inside one is not reliably reachable by
+    /// <c>FindControl</c>, and a handler that silently never attaches is a menu entry that does
+    /// nothing. The CHART gets none — see below.</para>
+    /// </remarks>
+    private void BindClipboard(SmithChartViewModel vm)
+    {
+        vm.NetworkCopySink = async model =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+
+            // The owner window's handle, for the Windows CF_ENHMETAFILE session. Zero elsewhere, and
+            // zero is what SchematicClipboard's own non-Windows path expects.
+            IntPtr owner = (TopLevel.GetTopLevel(this) as Window)?.TryGetPlatformHandle()?.Handle
+                           ?? IntPtr.Zero;
+
+            await SchematicClipboard.CopyAsync(
+                clipboard, model.Components, model.Wires, model.CanvasObjects, model.GridSize,
+                netLabels: null, schematicDirectory: vm.DocumentDirectory, ownerHwnd: owner);
+        };
+
+        vm.NetworkPasteSource = async () =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return null;
+
+            // Offset ZERO, unlike a schematic paste: this one does not land beside what is already
+            // there, it REPLACES it, and the recognizer reads the drawn x of each end to decide which
+            // is the generator. A nudge would be a nudge of the whole cascade and would mean nothing.
+            var payload = await SchematicClipboard.PasteAsync(clipboard, offsetX: 0, offsetY: 0);
+            return payload is { } p ? (p.Comps, (IReadOnlyList<EditableWire>)p.Wires) : null;
+        };
+
+        vm.ChartCopySink = container => PlotExporter.CopyPlotToClipboardAsync(
+            ChartPlotControl, vm.ChartPlot, vm.PlotHost.Theme,
+            showFilePrefix: false, container: container);
+
+        // NO CONTEXT MENU IS ATTACHED TO THE CHART, and that is the requirement rather than a gap.
+        // R-smith7-5 asks for "right-click the chart ▸ Copy"; PlotControl has had exactly that item
+        // for as long as it has had a menu, alongside Plot Properties, Axes Limits, Autoscale, Add
+        // Marker and Export — and it reaches the same PlotExporter call through the
+        // ContainerProvider brief 5 set. Assigning ContextMenu here would REPLACE all of it with one
+        // item, which is a Copy that works and five things that silently stopped existing.
+        //
+        // What is left for this view is Edit ▸ Copy with the chart focused (OnEditCopy), which no
+        // context menu can answer because it is the shell's.
+
+        NetworkCanvas.ContextMenu = new ContextMenu
+        {
+            ItemsSource = new[]
+            {
+                Item("Copy",  () => vm.CopyNetworkCommand.Execute(null)),
+                Item("Paste", () => vm.PasteNetworkCommand.Execute(null)),
+            },
+        };
+
+        static MenuItem Item(string header, Action run)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => run();
+            return item;
+        }
+    }
+
+    /// <summary>
+    /// Edit ▸ Copy and Edit ▸ Paste, <b>routed by focus</b> (<c>R-smith7-9</c>).
+    /// </summary>
+    /// <remarks>
+    /// Copy means the chart when the chart has focus and the network when the network does. There is
+    /// no third meaning and no ambiguity to resolve at the command — the routing is the focused pane's
+    /// — and with neither focused the network is the answer, because that is the half a selection can
+    /// come from and go back to.
+    ///
+    /// <para><b>Paste has only one meaning</b>: a chart is not something a schematic selection can be
+    /// pasted into, so Edit ▸ Paste is the network's wherever the focus is. Saying so is cheaper than
+    /// a second command that refuses.</para>
+    /// </remarks>
+    private void OnEditCopy()
+    {
+        if (_doc?.ViewModel is not { } vm) return;
+
+        if (ChartPlotControl.IsKeyboardFocusWithin) vm.CopyChartCommand.Execute(null);
+        else                                        vm.CopyNetworkCommand.Execute(null);
+    }
+
+    private void OnEditPaste() => _doc?.ViewModel.PasteNetworkCommand.Execute(null);
 }

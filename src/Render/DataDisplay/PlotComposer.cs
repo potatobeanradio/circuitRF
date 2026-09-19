@@ -104,6 +104,25 @@ public sealed class PlacedPlot
 
     /// <summary>A trace's source alias, when the display has one. Null means "no aliases".</summary>
     public Func<Trace, string?>? AliasFor { get; init; }
+
+    /// <summary>
+    /// Transient chrome this plot draws above its traces — the Smith Chart's grippers, its arrowheads
+    /// and its load labels.
+    /// </summary>
+    /// <remarks>
+    /// <b>On the PLACEMENT and not on the <see cref="Plot"/>, because it is not data</b>: it is what a
+    /// host chose to draw over this plot, and a copy is a picture OF what the host drew. Without it
+    /// here, an overlay that a <c>PlotControl</c> draws on every frame is silently absent from every
+    /// export — the picture is still produced, it still looks correct, and the arrowheads and the
+    /// frequency labels the user copied it for are gone. That is the same failure shape railRF's own
+    /// copy gate was written for (an overlay nobody added to the list).
+    ///
+    /// <para><b>A delegate rather than the control's <c>IPlotOverlay</c></b>: that interface lives
+    /// above the firewall with the rest of the input seam, and drawing needs only its draw half. The
+    /// canvas and the transform are ARGUMENTS of the frame — <c>ContourRenderer</c> once drew every
+    /// contour on every Smith plot to the first target it had been handed.</para>
+    /// </remarks>
+    public Action<SKCanvas, TransformSet, RenderTheme>? Overlay { get; init; }
 }
 
 public static class PlotComposer
@@ -225,7 +244,8 @@ public static class PlotComposer
             PlotRenderer.Draw(canvas, (plotW, plotH), plot, PlotDetail.Full, theme, c.ShowFilePrefix,
                 zoomLevel: cTableZoom,
                 aliasFor: c.AliasFor,
-                alwaysShowSource: c.AlwaysShowSource);
+                alwaysShowSource: c.AlwaysShowSource,
+                overlay: c.Overlay is { } ov ? (cv, tf) => ov(cv, tf, theme) : null);
             canvas.Restore();
 
             // Marker info boxes

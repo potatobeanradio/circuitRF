@@ -31,6 +31,23 @@ public partial class PlotContainerViewModel : ViewModelBase
     public PlotViewModel           PlotVM    { get; }
     public PlotInspectorViewModel  Inspector { get; }
 
+    /// <summary>
+    /// Transient chrome a HOST draws over this plot — set beside <c>PlotControl.Overlay</c>, by the
+    /// same line of the same method, and read only by <see cref="PlotExporter.Place"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is here so a COPY is a picture of what was on screen.</b> <c>PlotControl.Overlay</c>
+    /// reaches the on-screen frame and nothing else; the export path composes from CONTAINERS, so an
+    /// overlay known only to the control is drawn every frame and absent from every exported picture
+    /// — silently, with the picture still produced and still looking correct. The Smith Chart's
+    /// arrowheads, load-frequency labels and grippers are all on that overlay
+    /// (<c>brief-smith-7-clipboard.md</c> <c>R-smith7-5</c>).
+    ///
+    /// <para>Null on every other plot in the application, which is the whole of the old
+    /// behaviour.</para>
+    /// </remarks>
+    public CircuitRF.Ui.DataDisplay.Controls.IPlotOverlay? Overlay { get; set; }
+
     // ---- Canvas layout (logical/model coordinates) ------------------
     //  Width/Height represent the GRAPH AREA (PlotControl inner size).
     //  ViewTotalWidth adds per-trace label strips so the ContentPresenter

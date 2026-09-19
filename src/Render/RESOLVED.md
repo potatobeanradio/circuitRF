@@ -1,5 +1,23 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## `PlacedPlot` gained an overlay, because a copy composed from containers had none (2026-09-19)
+
+brief-smith-7-clipboard.md, the half that landed below the firewall. The reasoning is in
+`src/Ui/RESOLVED.md` under the same date; what matters here is the shape.
+
+`PlotControl.Overlay` (the R-smith5-6 seam) reaches the on-screen frame only. The export path
+composes from `PlotContainerViewModel`s through `PlacedPlot`, and `PlotComposer.Render` called
+`PlotRenderer.Draw` with no overlay argument — so an overlay a host draws on every frame was absent
+from every exported picture, silently, with the picture still produced and still looking correct.
+
+`PlacedPlot.Overlay` is an `Action<SKCanvas, TransformSet, RenderTheme>` and **not** the
+`IPlotOverlay` the control takes: that interface is the INPUT seam as well as the draw one and lives
+above the firewall with the rest of it, while a composition needs only the drawing. The canvas and
+the transform stay arguments of the frame, never remembered — `ContourRenderer` once drew every
+contour on every Smith plot to the first target it had been handed. Null on every other plot in the
+application, which is the whole of the old behaviour.
+
+
 ## railRF, fourth pass: a plot that kept a third of its width, and a legend pinned to the screen (2026-09-19)
 
 The two items of that round that landed below the firewall. The window's half is in

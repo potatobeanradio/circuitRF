@@ -308,6 +308,10 @@ namespace CircuitRF.Ui.DataDisplay
                 AlwaysShowSource    = AppSettings.Current.EffectiveShowFilePrefix(
                                           lib?.HasMultipleSources ?? false),
                 AliasFor            = lib is { } l ? t => l.AliasFor(t.EffectiveSourcePath) : null,
+                // The host's own transient chrome — the Smith Chart's grippers, arrowheads and load
+                // labels. Carried so a COPY is a picture of what was on screen; without it an
+                // overlay a PlotControl draws on every frame is silently absent from every export.
+                Overlay             = c.Overlay is { } ov ? ov.Draw : null,
             };
         }
 

@@ -1,5 +1,147 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the clipboard, both ways, and the topology recognizer (2026-09-19)
+
+brief-smith-7-clipboard.md. Copy the network out as a runnable two-port, paste a `.csch` selection
+back in or refuse it by name, copy the chart. Gate:
+`tests/Ui.Tests/Smith/SmithClipboardTests.cs`, seven tests, one per claim; all pass, as do the 205
+Smith tests, the 482 export-path tests around `PlotExporter`/`PlotComposer`, and `Firewall.Tests`.
+
+### The copy is the strip's OWN projection with a flag, not a second build
+
+`MatchSchematicCopy` has to project its ladder itself because that pane draws from render records
+with no editable model behind it. This pane's drawing already IS a `SchematicEditModel` — brief 6
+built one and the strip renders it — so the copy is `SmithNetworkModel.Build(..., terminated: true)`
+and `SmithSchematicCopy` is four lines. The flag's whole effect is the two ends: the generator's
+`TermG` gains `Num=1` and a runnable `Z`, and the load's `Pin` becomes a `TermG` with `Num=2` and
+Z₀_chart. Everything brief 7 would otherwise have re-derived — the mirror's sign-and-rotation rule,
+one ground per column, the spine drawn in the gaps, labels off `ComponentTypeRegistry` — is not
+re-derived, so "the copy is the drawing you were looking at" is true by construction rather than by
+two layouts that agree today.
+
+### A complex termination impedance has exactly one spelling, and it carries NO unit
+
+The generator is complex in the general case and `Z = 11.4 − j9.1` is display text, not something a
+netlist reader takes. The only form the expression engine parses is `complex(re,im)` — what brief
+2's oracle `.cnl` writes and what `SParameterEngine.GetZ0` reads back as a complex reference
+impedance — so that is what a complex end gets, and a real one gets its value and its unit
+(`Z = 50 Ω`) because that is what reads on a figure.
+
+**And the complex form's unit is `""`, deliberately.** Ω is scale 1.0 so a unit would buy nothing,
+and `""` is what `NetExtractor` turns into the `null` that means "no unit"; passing the string `"Ω"`
+alongside a `complex(...)` expression is an untested path, and `src/Core/CLAUDE.md`'s own note is
+that an empty unit reaching `Evaluator.ApplyUnit` fails with `Unknown unit ''` three layers from
+anything the user did. The gate does not take any of this on trust — it elaborates the copied
+selection and runs it through `SParameterEngine`, which is the only check that distinguishes a
+parameter row that looks right from one that runs.
+
+### The copied two-port's S22, not its S11, is the number the strip was showing
+
+`SmithCascade.Evaluate(...)[^1].Z` is Zgen carried through the whole cascade — what the LOAD sees,
+"the load is where you read" (§3.2). The copy puts port 1 at the generator end and port 2 at the
+load end, so the matching read is `Z₀(1+S22)/(1−S22)`: port 1 is presenting the generator's own
+impedance and port 2's reference is Z₀_chart. S11 is the other direction and a different number
+(118.9 Ω against 155.4 Ω on the gate's own four-element fixture), and it is a plausible-looking
+wrong answer — which is why the assertion is worth having rather than just checking the run did not
+throw. Brief 2's oracle reads S11 because it puts its ONE port at the load end.
+
+### The recognizer does not build a net graph, and reads the components anyway
+
+Working out which pins share a net is `NetExtractor`'s union-find over on-grid connection points,
+geometric T-junctions, wire vertices and same-name labels — five layers with real corner cases in
+each. A copy of that here would agree with the application about most selections and paste the rest
+as a different circuit that still evaluates, so the selection is handed to `NetExtractor.Extract`
+and what is read back is the net NAMES per instance, in port order, joined to the components on the
+instance name (which `NetExtractor` uses verbatim).
+
+The components are still read, and that is not a second source of truth: the extraction answers
+what is connected to what, and the refusals have to name a SYMBOL and a PARAMETER as the user
+spelled them. An instance carries neither — `Tline`, `StubOpen` and `StubShorted` are one engine
+reference, and `C = Cnom*2` has already become an override by then.
+
+**`ExtractionResult.CellPorts` is how a `Pin`'s net is found.** A `Term`/`TermG` is an instance and
+its first net binding is the answer; a `Pin` is not an instance at all — it NAMES its net — and
+`CellPorts` is that list of names in ascending `Num` order. Deriving the name here from `Num` would
+have been a second copy of `BuildPinNetNameMap`'s rule.
+
+### An open stub and a series line with a bare end are the SAME GRAPH
+
+Both are one `Tline` with a far net nobody else is on. What separates them is whether that net is an
+END, and the ends are what the ports say — so the open-stub reading is only taken when both ends
+are already pinned by ports, and otherwise the line is read as series with the bare net as an end.
+This tool's own copy always writes a `TermG` at each end, so a round trip is never in the ambiguous
+case.
+
+**The test is the number of PORT COMPONENTS, not the number of port NETS**, and the difference is a
+real design: a cascade of nothing but shunt arms has ONE net with both ports sitting on it. Counting
+nets there gives one, leaves the ends looking unpinned, and a shunt arm whose ground has been
+deleted then reads as a perfectly ordinary series element into the second end — the paste succeeds
+and the circuit is not the one that was copied. That was caught by gate case (d) and by nothing
+else.
+
+Two refusals for what looks like one condition, for the same reason: an arm whose far end goes
+nowhere is a statement about ONE element and the sentence names it, while a walk with the wrong
+number of ends is a statement about the whole selection. Leaving the first to the second produces a
+sentence about nets when the user needs to know which part is wrong.
+
+### The export path composes from CONTAINERS, so an overlay known only to the control is not in any copy
+
+`PlotControl.Overlay` reaches the on-screen frame and nothing else. `PlotExporter` builds its page
+from `PlotContainerViewModel`s through `PlacedPlot`, and `PlotComposer.Render` called
+`PlotRenderer.Draw` with no overlay at all — so the Smith Chart's arrowheads, its load-point
+frequency labels and its grippers were drawn on every frame and absent from every exported picture.
+Silently: the picture is still produced and still looks correct. That is the same failure shape
+railRF's own copy gate was written for (an overlay nobody added to the list).
+
+Fixed where it belongs rather than in this tool: `PlotContainerViewModel.Overlay`, carried by
+`PlotExporter.Place` into `PlacedPlot.Overlay` (an `Action<SKCanvas, TransformSet, RenderTheme>` —
+`IPlotOverlay` lives above the firewall with the input seam and drawing needs only its draw half),
+and invoked by `PlotComposer`. Null on every other plot in the application, which is the whole of
+the old behaviour. `SmithChartView.BindChartPlot` sets both halves on one line each, and the gate
+renders the same container twice — with the overlay and without — because an assertion that the
+frequency label is in the SVG proves nothing unless the picture without it does not have one.
+
+### No chrome is narrowed, so nothing is cloned — but the rule is stated where it would be broken
+
+R-smith7-5a asks that a copy hiding grippers, targets or Q arcs do so on a CLONE of the `Plot` and
+the `RenderTheme`. Nothing is hidden today, so there is no clone and the requirement is vacuous;
+the note is on `CopyChart` rather than omitted, because the defect it names — `TechnologyCache`'s,
+where narrowing a shared instance in place quietly narrows every later use in the same process —
+only appears on the SECOND call, and the person who adds the first `if (hideGrippers)` is the one
+who needs to read it.
+
+### The chart gets NO context menu, because it already had the one the brief asks for
+
+R-smith7-5 asks for "right-click the chart ▸ Copy". `PlotControl` has had exactly that item for as
+long as it has had a menu — beside Plot Properties, Axes Limits, Autoscale, Add Marker and Export —
+and it reaches the same `PlotExporter.CopyPlotToClipboardAsync` through the `ContainerProvider`
+brief 5 set, so that half of the requirement was already met and the wiring brief 5 did is what met
+it. Assigning `ChartPlotControl.ContextMenu` would have REPLACED all of it with one item: a Copy
+that works and five things that silently stopped existing. Written, then removed, on reading the
+control. The network strip has no menu of its own and gets one.
+
+### Edit ▸ Copy routes by focus, and there is no Cut
+
+`SmithChartDocument` raises `CopyRequested`/`PasteRequested` and the VIEW answers them, because
+"Copy means the chart when the chart has focus and the network when the network does" is a question
+only the focused pane can answer and `WorkspaceViewModel.InvokeClipboardAsync` has no way to reach
+it. `LayoutDocument`'s own shape.
+
+Paste has one meaning wherever the focus is — a chart is not something a schematic selection goes
+into — and there is deliberately no Cut: cutting the network would leave the document with no
+cascade and the chart with nothing on it, which is Delete on every element and is spelled that way.
+
+### The paste offset is ZERO, unlike a schematic paste
+
+`SchematicClipboard.PasteAsync` defaults to nudging a selection by (100, 100) so it does not land
+exactly on what is already there. This paste REPLACES rather than lands beside, and the recognizer
+reads the drawn x of each end for the geometric generator rule — a nudge would move the whole
+cascade and mean nothing. It also leaves the GENERATOR TABLE alone: the ports told the recognizer
+which end was which and are then discarded, because overwriting a table the user may have imported
+from an `.s1p` with one `Term`'s reference impedance is not what a paste aimed at the network
+asked for.
+
+
 ## Smith Chart — the network strip, its sliders, and the mirror that is a rotation too (2026-09-19)
 
 brief-smith-6-network-strip.md. The bottom pane: the cascade drawn through `SchematicRenderer`,

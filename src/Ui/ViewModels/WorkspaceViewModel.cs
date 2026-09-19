@@ -3493,6 +3493,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             else if (cut) wbDoc.RequestCut();
             else          wbDoc.RequestCopy();
         }
+        // The Smith Chart routes BY FOCUS inside its own view (R-smith7-9) — Copy means the chart
+        // when the chart has it and the network when the network does — so what is raised here is
+        // the request and not the answer. No Cut: see SmithChartDocument.CopyRequested.
+        else if (active is Smith.SmithChartDocument smithDoc)
+        {
+            if (paste)      smithDoc.RequestPaste();
+            else if (!cut)  smithDoc.RequestCopy();
+        }
     }
 
     private IClipboard? GetClipboard()

@@ -111,7 +111,20 @@ public static class SmithNetworkModel
     /// <param name="documentDirectory">What a file element's relative <c>FileRef</c> resolves against —
     /// used only to put the generator's own impedance on its label, and a refusal there simply leaves
     /// that one label blank rather than emptying the drawing.</param>
-    public static SmithNetworkProjection Build(SmithDesign design, string? documentDirectory)
+    /// <param name="terminated">
+    /// <b>The COPY's projection</b> (<c>R-smith7-2</c>): both ends become a real <c>TermG</c> — port 1
+    /// carrying the generator's impedance at the design frequency, port 2 carrying Z₀_chart — so what
+    /// lands in a schematic is a complete, runnable two-port rather than a fragment with dangling
+    /// ends.
+    ///
+    /// <para><b>A flag on the ONE projection rather than a second build.</b> Everything brief 7 needs
+    /// is already decided here — the mirror's sign and symbol rule, one ground per column, the spine
+    /// drawn in the gaps, the labels off <c>ComponentTypeRegistry</c> — and a copy that re-derived any
+    /// of it would be a drawing that agreed with the strip until one of them was changed. The two ends
+    /// are the whole difference, which is why they are the whole of this parameter.</para>
+    /// </param>
+    public static SmithNetworkProjection Build(SmithDesign design, string? documentDirectory,
+                                               bool terminated = false)
     {
         ArgumentNullException.ThrowIfNull(design);
 
@@ -134,7 +147,8 @@ public static class SmithNetworkModel
         // (0, −200), so a centre one lead-length BELOW the spine puts that pin on it.
         edit.Components.Add(Compose(
             SymbolKind.TermG, GeneratorName, 0.0, SpineY + LeadHalf, SymbolRotation.R0, mirrored,
-            [Param("Z", GeneratorLabel(design), "", UnitDimension.Resistance)]));
+            terminated ? PortParameters(1, GeneratorImpedance(design))
+                       : [Param("Z", GeneratorLabel(design), "", UnitDimension.Resistance)]));
 
         // ── The elements ─────────────────────────────────────────────────────
         for (int i = 0; i < design.Elements.Count; i++)
@@ -163,10 +177,14 @@ public static class SmithNetworkModel
         // to be runnable; the drawing states the model instead.
         //
         // Pin's own pin is at local (100, 0) with the body to its left, so R180 puts the tip on the
-        // spine end and the body pointing outward.
+        // spine end and the body pointing outward. The COPY's TermG sits where the generator's does,
+        // one lead-length below the spine, so its own pin lands on the spine end instead.
         double loadX = dir * (design.Elements.Count + 1) * Pitch;
-        edit.Components.Add(Compose(
-            SymbolKind.Pin, LoadName, loadX + dir * 100.0, SpineY, SymbolRotation.R180, mirrored, []));
+        edit.Components.Add(terminated
+            ? Compose(SymbolKind.TermG, LoadName, loadX, SpineY + LeadHalf, SymbolRotation.R0,
+                      mirrored, PortParameters(2, new Complex(design.Chart.Z0Ohm, 0.0)))
+            : Compose(SymbolKind.Pin, LoadName, loadX + dir * 100.0, SpineY, SymbolRotation.R180,
+                      mirrored, []));
 
         AddSpineWires(edit, design, mirrored, loadX);
 
@@ -435,6 +453,51 @@ public static class SmithNetworkModel
     };
 
     private static string Num(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The generator's impedance at the design frequency, or Z₀_chart when it cannot be evaluated
+    /// there — the COPY's own reading of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refusal falls back rather than throwing</b>, on <see cref="GeneratorLabel"/>'s own terms:
+    /// the copy's whole job is to produce a runnable two-port, and a port with no impedance at all is
+    /// not one. Z₀_chart is the only other number in the document that is certainly a real impedance.
+    /// </remarks>
+    private static Complex GeneratorImpedance(SmithDesign design)
+    {
+        try   { return SmithCascade.GeneratorImpedance(design.Generator, design.Chart.DesignFrequencyHz); }
+        catch { return new Complex(design.Chart.Z0Ohm, 0.0); }
+    }
+
+    /// <summary>
+    /// A terminated end's two parameters — <c>Num</c> and a <c>Z</c> a netlist reader will actually
+    /// take (<c>R-smith7-2</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>Two spellings, and the split is the engine's rather than a preference.</b> A real impedance
+    /// is written as a number and its unit, which is what the Designer's own copy writes and what
+    /// reads naturally on a figure — <c>Z = 50 Ω</c>. A COMPLEX one has no such spelling: the only
+    /// form the expression engine parses is <c>complex(re,im)</c>, which is exactly what brief 2's
+    /// oracle <c>.cnl</c> writes for the generator and what <c>SParameterEngine.GetZ0</c> reads back
+    /// as a complex reference impedance.
+    ///
+    /// <para><b>And the complex form carries NO unit.</b> Ω is scale 1.0, so a unit would buy nothing
+    /// — and <c>""</c> is not "no unit" to the extractor's own convention, it is a unit that fails
+    /// elaboration with <c>Unknown unit ''</c> three layers from anything the user did
+    /// (<c>src/Core/CLAUDE.md</c>). <c>EditableParameter.Unit</c> of <c>""</c> is what
+    /// <c>NetExtractor</c> turns into the <c>null</c> that means no unit.</para>
+    /// </remarks>
+    private static IReadOnlyList<EditableParameter> PortParameters(int num, Complex z)
+    {
+        var numParam = Param("Num", num.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None);
+
+        bool real = Math.Abs(z.Imaginary) <= 1e-12 * Math.Max(1.0, Math.Abs(z.Real));
+        var zParam = real
+            ? Value("Z", z.Real, MatchQuantity.Resistance, UnitDimension.Resistance)
+            : Param("Z", $"complex({Num(z.Real)},{Num(z.Imaginary)})", "", UnitDimension.Resistance);
+
+        return [numParam, zParam];
+    }
 
     /// <summary>
     /// The generator's impedance at the design frequency, for its termination's one label — or "" when
