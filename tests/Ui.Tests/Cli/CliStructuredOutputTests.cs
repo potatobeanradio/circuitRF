@@ -860,6 +860,23 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "serve.tool.cancelled",
         "serve.tool.failed",
         "serve.tool.unknown",
+        // SMITH-10. The short list is the point: every refusal ABOUT THE DOCUMENT is
+        // SmithDesign.Refusal's or SmithCascade's and travels verbatim under two of these ids, so
+        // what the verb mints is argument handling and nothing else (R-smith10-1, R-smith10-4).
+        "smith.args.path-required",
+        "smith.at.malformed",
+        "smith.band.clamped",
+        "smith.cancelled",
+        "smith.cascade.refused",
+        "smith.document.refused",
+        "smith.document.unreadable",
+        "smith.output.not-one-port",
+        "smith.output.unknown-format",
+        "smith.output.write-failed",
+        "smith.overlay.unresolved",
+        "smith.path.not-a-smith",
+        "smith.path.not-found",
+        "smith.set.not-applicable",
         // R-aut9-1: `sparam -o` honours the extension now, and one that names no format it writes is
         // a refusal listing the ones it does — rather than a Touchstone written under that name.
         "sparam.export.no-s-parameters",

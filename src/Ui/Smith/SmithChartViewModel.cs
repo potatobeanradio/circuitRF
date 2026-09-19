@@ -535,12 +535,14 @@ public sealed partial class SmithChartViewModel : ObservableObject
     {
         double f = _design.Chart.DesignFrequencyHz;
 
-        Complex load, generator;
+        // EVERY NUMBER BELOW IS SmithReadings' (R-smith10-1). The strip formats; it does not
+        // compute — `circuitrf smith` prints the same five quantities about the same document, and a
+        // VSWR or a conjugate mismatch derived twice is two chances to be wrong in a quantity whose
+        // wrong value looks entirely ordinary.
+        SmithReading r;
         try
         {
-            var nodes = SmithCascade.Evaluate(_design, f, DocumentDirectory);
-            load      = nodes[^1].Z;
-            generator = nodes[0].Z;
+            r = SmithReadings.At(_design, f, DocumentDirectory);
         }
         catch (Exception)
         {
@@ -549,18 +551,11 @@ public sealed partial class SmithChartViewModel : ObservableObject
             return "";
         }
 
-        double z0    = _design.Chart.Z0Ohm;
-        var    gamma = SmithCascade.Gamma(load, z0);
-        double mag   = gamma.Magnitude;
-        double vswr  = mag < 1.0 ? (1.0 + mag) / (1.0 - mag) : double.PositiveInfinity;
-
-        // The conjugate-match mismatch: the reflection between the LOAD and the generator it is
-        // working into, which is zero exactly when Z_load = conj(Z_gen). That is the quantity the
-        // target glyphs mark on the chart (§3.4), so the strip and the glyphs agree by construction.
-        var    mismatchGamma = (load - Complex.Conjugate(generator)) / (load + generator);
-        double mismatchSq    = mismatchGamma.Magnitude * mismatchGamma.Magnitude;
-        double mismatchDb    = mismatchSq < 1.0 ? -10.0 * Math.Log10(1.0 - mismatchSq)
-                                                : double.PositiveInfinity;
+        var    load       = r.LoadZ;
+        var    gamma      = r.Gamma;
+        double mag        = gamma.Magnitude;
+        double vswr       = r.Vswr;
+        double mismatchDb = r.ConjugateMismatchDb;
 
         string fText = MatchValueFormat.FormatWithUnit(f, MatchQuantity.Frequency, MatchValueFormat.AutoUnit, 5);
         string rText = MatchValueFormat.Significant(load.Real, 4);

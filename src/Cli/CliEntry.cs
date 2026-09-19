@@ -141,6 +141,11 @@ return JsonRun.Finish(JsonRun.Verb switch
     // every number comes out of src/Design/RailRf and every pixel out of CircuitRF.Render, which is
     // what lets a BOARD be gated in CI rather than only looked at (railrf.md §5).
     "rail"   => CircuitRF.Cli.Rail.Run(args[1..]),
+    // The Smith Chart tool's answer, with no display (brief-smith-10-cli-verb.md). It owns no
+    // arithmetic and no rendering: every number is src/Design/Smith's and every pixel is
+    // CircuitRF.Render's, which is what makes a matching network gateable in CI rather than only
+    // draggable in a window (smith-chart.md §9, P3).
+    "smith"  => CircuitRF.Cli.Smith.Run(args[1..]),
     "convert" => CircuitRF.Cli.LayoutConvert.Run(args[1..]),
     // R-aut3-13: `new` is ONE verb with a noun, not three — the surface has a standing cost, and
     // adding `new schematic` later is a noun rather than a fourth top-level verb.
@@ -2117,6 +2122,7 @@ static int PrintHelp()
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
+    Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");
     Console.WriteLine("  convert <in> -o <out>  (layout interchange: any format to any other)");
@@ -2167,6 +2173,14 @@ static int PrintHelp()
     Console.WriteLine("  --extent as-imported|filled|infinite   (the last two are OPTIMISTIC)");
     Console.WriteLine("  --rows N, --all         how much of the ranked breakdown to print");
     Console.WriteLine("  -o out.{csv,npy,mat,txt,svg,pdf}   .svg/.pdf is the report page");
+    Console.WriteLine();
+    Console.WriteLine("smith options:");
+    Console.WriteLine("  --at <freq>             evaluate here instead of the design frequency.");
+    Console.WriteLine("                          Outside the generator table's span is a refusal.");
+    Console.WriteLine("  --sweep                 force the document's swept band on");
+    Console.WriteLine("  -o out.s1p              the load reflection coefficient as Touchstone");
+    Console.WriteLine("  -o out.{svg,pdf,png}    the chart, drawn by the renderer the window draws with");
+    Console.WriteLine("  --size WxH  --scale N | --dpi N  --background opaque|transparent  --dark");
     Console.WriteLine();
     Console.WriteLine("convert options:");
     Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");

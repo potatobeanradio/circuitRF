@@ -150,7 +150,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         NdfReportJson? Ndf = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        RailReportJson? Rail = null);
+        RailReportJson? Rail = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        SmithReportJson? Smith = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -401,6 +403,68 @@ namespace RfCore.Export
         IReadOnlyList<string>           Order,
         IReadOnlyList<RailResultJson>   Rails,
         IReadOnlyList<string>           Solved);
+
+    /// <summary>
+    /// One node of the Smith Chart's walk: the impedance looking back toward the generator from the
+    /// output of one element, and which element produced it
+    /// (brief-smith-10-cli-verb.md; docs/design/smith-chart.md §3.2).
+    /// </summary>
+    /// <param name="Node">0 is the generator; the last is the load. <b>A DISABLED element occupies
+    /// no node</b>, which is why the element fields are carried rather than left to be indexed
+    /// out of the document by this number.</param>
+    /// <param name="Element">The element's name, or null on node 0.</param>
+    /// <param name="Kind">Its <c>SmithElementKind</c>, or null on node 0.</param>
+    /// <param name="Placement">Series or Shunt, or null on node 0.</param>
+    /// <param name="Z">[R, X] in ohms.</param>
+    /// <param name="Gamma">[Re, Im] against the CHART's reference impedance, which is the
+    /// document's own and not the generator's.</param>
+    public sealed record SmithNodeJson(
+        int      Node,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?  Element,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?  Kind,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?  Placement,
+        double[] Z,
+        double[] Gamma);
+
+    /// <param name="Clamped">True when the document asked for a wider band than the generator table
+    /// can answer for. <b>Reported rather than silent</b>: the band was NARROWED, and a caller
+    /// reading Start/Stop without this would take them for what it asked for.</param>
+    public sealed record SmithBandJson(
+        double StartHz,
+        double StopHz,
+        int    Points,
+        bool   Clamped);
+
+    /// <summary>
+    /// What <c>smith</c> answered (brief-smith-10-cli-verb.md R-smith10-2).
+    /// </summary>
+    /// <remarks>
+    /// <b>The WALK is here and not only the reading.</b> The reading answers "is it matched"; the
+    /// walk answers "where did it stop being matched", which is the question a caller has when the
+    /// answer is no, and it is the half an exit code cannot carry.
+    /// </remarks>
+    /// <param name="Vswr">Null where |Γ| ≥ 1 — an active S2P or a Z1P with negative R legitimately
+    /// puts the load there. <b>Null rather than a large number</b>: a finite VSWR reported for a
+    /// reflection coefficient outside the unit circle is a lie about a stability result.</param>
+    /// <param name="ConjugateMismatchDb">Null for the same reason, at a total mismatch.</param>
+    public sealed record SmithReportJson(
+        string                        Document,
+        string                        Name,
+        double                        Z0Ohm,
+        double                        FrequencyHz,
+        double[]                      GeneratorZ,
+        double[]                      LoadZ,
+        double[]                      Gamma,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                       Vswr,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                       ConjugateMismatchDb,
+        IReadOnlyList<SmithNodeJson>  Nodes,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        SmithBandJson?                Band);
 
     /// <summary>
     /// One step of a resolution walk: what was being resolved, what it started from, what it landed

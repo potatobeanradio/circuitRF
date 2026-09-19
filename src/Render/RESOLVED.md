@@ -3264,3 +3264,41 @@ resolves against the files a *caller* named (`src/Cli/CddSources.cs`). So:
   produces its own trace list says it has replaced them. In the Data Display a trace only ever
   arrives *through* the panel, so the two stayed in step with no synchronisation at all — which is
   why railRF's inspector opened on zero cards over a plot holding thirteen traces.
+
+---
+
+## The Smith Chart's plot half arrived here in SMITH-10 (2026-09-19)
+
+`brief-smith-10-cli-verb.md` R-smith10-3. `src/Render/Smith/` holds `SmithPlotBuilder`,
+`SmithChartScene`, `SmithMarkerBridge`, `SmithOverlayResolver` and `SmithChartChrome`, so
+`circuitrf smith` draws a `.csmith` with the code the window draws it with.
+
+**The four that moved needed no change at all.** They referenced `CircuitRF.Design.Smith`,
+`CircuitRF.Render.DataDisplay`, `RfCore` and SkiaSharp and nothing else — no Avalonia, no view
+model — and had simply been written in `src/Ui` because that is where the window is. Namespace
+`CircuitRF.Ui.Smith` → `CircuitRF.Render.Smith`, two global-using lines, and the 201 existing Smith
+tests passed unchanged. **Framework-free is not the same as below the firewall, and only the second is
+enforced**: `tests/Firewall.Tests` can say that nothing here references Avalonia, but nothing can say
+that a file in `src/Ui` which happens to need none is in the wrong project. That is only ever found by
+the first caller from underneath.
+
+**`SmithChartChrome` is the one that had to be carved.** `SmithGripperOverlay` drew the arrowheads,
+the load-point label boxes, the generator anchor and the gripper rings AND owned the gesture that
+mutates the design. Only the drawing is a picture, so the drawing is here and takes an explicit
+`SmithChromeState` (hovered node, dragged node, hovered/dragged Q handle) instead of reading a view
+model. An export passes `SmithChromeState.None`.
+
+**It is chrome and it belongs in the export**, which is not obvious: `PlacedPlot.Overlay` exists
+because of exactly this — without it, an overlay a `PlotControl` draws on every frame is silently
+absent from every export, the picture is still produced, it still looks correct, and the frequency
+labels the user exported it for are gone. A headless verb drawing only the traces would have
+reproduced that defect deliberately.
+
+**They are `public` here where they were `internal` there.** Three assemblies consume them now
+(`src/Ui`, `src/Cli`, `tests/Ui.Tests`), two of them through `InternalsVisibleTo`, and a public method
+cannot take an internal type — `SmithChartChrome.Draw(…, SmithChartScene, SmithDesign, …)` is what
+forced the decision. It is also the honest one: this is a cross-assembly API now.
+
+**Nothing here caches a canvas, a transform or a theme**, which is the same rule `ContourRenderer`'s
+own header states after it once drew every contour on every Smith plot to the first target it had been
+handed.

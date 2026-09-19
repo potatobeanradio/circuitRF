@@ -546,7 +546,7 @@ public sealed partial class SmithChartViewModel
     private void MakeParameterActive(SmithSliderRowViewModel? row)
     {
         if (row is null || ElementAt(row.ElementIndex) is not { } e) return;
-        if (ActiveParameterOf(e) == row.Parameter) return;
+        if (SmithComponentMap.ActiveParameterOf(e) == row.Parameter) return;
 
         Edit($"Set {e.Name}'s gripper to {SmithSliderRowViewModel.LabelFor(row.Parameter)}",
              () => e.ActiveParameter = row.Parameter);

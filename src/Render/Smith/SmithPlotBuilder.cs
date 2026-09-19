@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using CircuitRF.Design.Matching;
 using CircuitRF.Design.Smith;
-using CircuitRF.Ui.Matching;
+using CircuitRF.Render.DataDisplay;
 using RfCore;
 using SkiaSharp;
 
-namespace CircuitRF.Ui.Smith;
+namespace CircuitRF.Render.Smith;
 
 /// <summary>
 /// One trace on the chart and the name a marker on it is stored against
@@ -19,13 +20,13 @@ namespace CircuitRF.Ui.Smith;
 /// down, and it is written as the trace's LABEL — an element's name, <c>load</c>, or an overlay's
 /// file and quantity — because an index moves when an element is deleted.
 /// </remarks>
-internal readonly record struct SmithTraceKey(string Key, Trace Trace);
+public readonly record struct SmithTraceKey(string Key, Trace Trace);
 
 /// <summary>An overlay that resolved, ready to go on the plot.</summary>
 /// <remarks><b>Resolution is not this file's</b> — <see cref="SmithOverlayResolver"/> does it, so the
 /// row can report what failed and why while the chart carries on drawing everything that did
 /// resolve (<c>R-smith8-2</c>).</remarks>
-internal readonly record struct SmithOverlayTrace(string Key, Trace Trace, bool Visible);
+public readonly record struct SmithOverlayTrace(string Key, Trace Trace, bool Visible);
 
 /// <summary>
 /// Builds the chart's <c>Plot</c> from the evaluator — <b>the traces, and nothing that draws</b>
@@ -53,7 +54,7 @@ internal readonly record struct SmithOverlayTrace(string Key, Trace Trace, bool 
 /// the numbers. On a complex plot a complex cube's points ARE (Re Γ, Im Γ), which is why no
 /// transform is applied and none may be.</para>
 /// </remarks>
-internal static class SmithPlotBuilder
+public static class SmithPlotBuilder
 {
     /// <summary>The nominal canvas the trajectory sampler measures its chord error in when the view
     /// has not yet reported a real one — the Data Display's own square-plot default box.</summary>
@@ -211,6 +212,41 @@ internal static class SmithPlotBuilder
     /// sentence along the bottom cannot disagree about which point is which.</summary>
     public static string FrequencyLabel(double hz)
         => MatchValueFormat.FormatWithUnit(hz, MatchQuantity.Frequency, MatchValueFormat.AutoUnit, 4);
+
+    // ── the plot itself ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A chart <c>Plot</c>, with the two settings this tool's own chart carries.
+    /// </summary>
+    /// <remarks>
+    /// <b>ONE place decides what a Smith Chart plot IS</b> (<c>R-smith10-1</c>). The window does not
+    /// call this — its plot comes with the container <c>DataDisplayViewModel.AddPlot</c> creates —
+    /// so it calls <see cref="Configure"/> on that one instead, and a headless caller with no
+    /// container calls this. What must not happen is a second list of settings in a verb: the flags
+    /// below are invisible in a picture and change what the plot DOES, so a copy that drifted would
+    /// be found by somebody noticing that a headless chart behaves unlike the window's.
+    /// </remarks>
+    public static Plot NewChartPlot() => Configure(new Plot(PlotType.Smith, FreqUnit.GHz));
+
+    /// <summary>The two settings, applied to a plot somebody else created.</summary>
+    /// <remarks>
+    /// <b>Panning is UNLOCKED</b>, which is the opposite of railRF's choice and for the opposite
+    /// reason: a new <c>Plot</c> locks axis panning so a drag on a Data Display CANVAS moves and
+    /// selects the plot instead, and there is no canvas here — the chart fills its own pane, and
+    /// <c>R-smith5-6</c>'s rule is that a press on empty chart still pans.
+    ///
+    /// <para><b>The trace set is the DOCUMENT's</b>: every trace is rebuilt from the design on each
+    /// edit, so one added in the Plot Inspector would be gone by the next keystroke and one removed
+    /// would be back. railRF's own reasoning, and its own flag.</para>
+    /// </remarks>
+    public static Plot Configure(Plot plot)
+    {
+        ArgumentNullException.ThrowIfNull(plot);
+
+        plot.Axes.LockedPanning = false;
+        plot.IsFixedReadout     = true;
+        return plot;
+    }
 
     // ── the traces ───────────────────────────────────────────────────────────
 

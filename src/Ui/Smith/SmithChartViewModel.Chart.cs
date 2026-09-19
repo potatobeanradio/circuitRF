@@ -83,16 +83,11 @@ public sealed partial class SmithChartViewModel
                                           width:  DataDisplayViewModel.DefaultSquareSize,
                                           height: DataDisplayViewModel.DefaultSquareSize);
 
-        // PANNING IS UNLOCKED, which is the opposite of railRF's choice and for the opposite reason.
-        // A new Plot locks axis panning so that a drag on a Data Display CANVAS moves and selects the
-        // plot instead — there is no canvas here, the chart fills its own pane, and R-smith5-6's own
-        // rule is that a press on empty chart still pans.
-        ChartPlot.Axes.LockedPanning = false;
-
-        // The trace set is this document's: every trace is rebuilt from the design on each edit, so
-        // one added in the Plot Inspector would be gone by the next keystroke and one removed would
-        // be back. railRF's own reasoning, and its own flag.
-        ChartPlot.IsFixedReadout = true;
+        // WHAT A SMITH CHART PLOT IS, said in one place — SmithPlotBuilder.Configure, which is also
+        // what a headless `circuitrf smith` applies to the plot it has to create for itself
+        // (R-smith10-1). Panning unlocked and the readout fixed; both are invisible in a picture and
+        // change what the plot DOES, which is exactly the kind of setting a second copy loses.
+        SmithPlotBuilder.Configure(ChartPlot);
 
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
 
@@ -198,21 +193,6 @@ public sealed partial class SmithChartViewModel
     private string? _dragPin;
 
     /// <summary>
-    /// The parameter a gripper on this element drags.
-    /// </summary>
-    /// <remarks>
-    /// The element's own <see cref="SmithElement.ActiveParameter"/> — the one whose slider was last
-    /// touched — falling back to §3.3's default for the kind. <b>The fallback is the table's own
-    /// answer and not a second one</b>: brief 6's sliders are what set the field, and until an
-    /// element has been selected once it carries <see cref="SmithParameter.None"/>, which is not
-    /// "this element has no parameter" but "nobody has chosen yet".
-    /// </remarks>
-    internal static SmithParameter ActiveParameterOf(SmithElement element)
-        => element.ActiveParameter != SmithParameter.None
-               ? element.ActiveParameter
-               : SmithComponentMap.DefaultParameter(element.Kind);
-
-    /// <summary>
     /// A gripper was pressed. <b>The before-value is captured HERE</b> and the undo entry is pushed
     /// on release (<c>R-smith5-8</c>).
     /// </summary>
@@ -230,7 +210,7 @@ public sealed partial class SmithChartViewModel
         var element = _design.Elements[elementIndex];
         if (SmithComponentMap.UsesFile(element.Kind)) return false;
 
-        var p = ActiveParameterOf(element);
+        var p = SmithComponentMap.ActiveParameterOf(element);
         if (p == SmithParameter.None) return false;
 
         _dragNode      = nodeIndex;

@@ -36,6 +36,7 @@ and it is gated by the same firewall test. That is what the `em` verb (§8) runs
 | `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb`; `--out-grid` writes the `.gam` |
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
+| `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
 | `elab` | `.cnl` or `.csch` | elaboration only | the elaborated netlist, for development |
 
 **A run verb takes a SCHEMATIC as well as a netlist, and extracts it in memory** (§14). Any other
@@ -2050,3 +2051,139 @@ applied only when the raw bytes differ. Beside them: the source scan, the five r
 provenance read back out of three written files, the two exit codes, and the end-to-end that authors a
 workspace, checks a rail document and solves it **with no display at any step**, which is §5's claim
 for this whole architecture.
+
+## 18. `smith` — the Smith Chart tool's answer, with no display
+
+`brief-smith-10-cli-verb.md`; `docs/design/smith-chart.md` §9 (P3).
+
+**Why it exists** is that note's own phasing decision: the window ships first, the arithmetic lives
+below the firewall from day one, and the headless verb is therefore *wiring rather than a refactor*. A
+matching network that can only be judged by dragging a gripper cannot be judged in CI; this is the one
+command that evaluates a `.csmith`, reports the reading and the walk, and answers with an exit code.
+
+```
+circuitrf smith match/Lmatch.csmith                      # the reading and the per-node table
+circuitrf smith match/Lmatch.csmith --at 1.9GHz          # somewhere else in the band
+circuitrf smith match/Lmatch.csmith --sweep -o load.s1p  # the load Γ across the band
+circuitrf smith match/Lmatch.csmith -o chart.svg --json  # the picture AND the document
+```
+
+### 18.1 It owns no arithmetic, and no rendering either
+
+`src/Cli/Smith.cs` is argument parsing, refusals and reporting, on `src/Cli/Authoring.cs`' terms. Every
+number comes out of `src/Design/Smith` — `SmithCascade.Evaluate`, `SmithReadings`, `SmithBand`,
+`SmithDesign.Refusal` — which is what the window's status strip reads on every edit, and every pixel
+comes out of `SmithPlotBuilder`, `SmithChartChrome` and `PlotComposer` in `CircuitRF.Render`, which is
+what the window draws each frame with. `SmithCliVerbTests.TheVerbHoldsNoEvaluatorAndNoPlotOfItsOwn` is
+a comment-stripped scan that keeps it that way: no `new Plot(`, no `Complex.Conjugate`, no
+`Math.Log10`, no VSWR quotient.
+
+**Three things had to move below the firewall for that to be true**, and each is the wiring the design
+note promised rather than a rewrite:
+
+- **`SmithPlotBuilder`, `SmithChartScene`, `SmithMarkerBridge` and `SmithOverlayResolver`** →
+  `src/Render/Smith/`. They were already framework-free; they simply lived in `src/Ui`, which
+  `src/Cli` cannot reference.
+- **The DRAW half of `SmithGripperOverlay`** → `src/Render/Smith/SmithChartChrome.cs`. The gesture —
+  hit test, press, drag, undo entry — stayed in `src/Ui` with the view model it calls back into.
+  Without the split, a headless picture silently loses the arrowheads and the load-point frequency
+  labels, which is exactly the failure `PlacedPlot.Overlay`'s own remark was added for.
+- **`MatchValueFormat`** → `src/Design/Matching/`. A load point's frequency is LABELLED below the
+  firewall and REPORTED above it, and two spellings of one frequency are two answers.
+
+**The reading itself was extracted, not copied** (`SmithReadings`): VSWR and the conjugate-match
+mismatch used to be computed in `SmithChartViewModel.ComputeStatusLine`, and a verb deriving them a
+second time would be a second chance to get a sign, a conjugate or a square wrong in a quantity whose
+wrong value looks entirely ordinary. The strip now formats what this type computes.
+
+### 18.2 What it takes
+
+The kind is inferred through `DocumentKinds.Classify`, exactly as `check`, `render` and `rail` infer
+it, and **any other kind is a refusal BY KIND** — a `.csch` is refused as a schematic, not as an
+unreadable file, because the caller very likely meant a run verb.
+
+| Option | Meaning |
+|---|---|
+| `--at <freq>` | Evaluate here instead of the document's design frequency. Parsed by `MatchValueFormat.TryParseWithUnit`, the window's own frequency field's parser, so `2.4 GHz`, `2.4e9` and `900 MHz` all mean what they look like and a bare number is hertz. **Outside the generator table's span it is a refusal with the span in the sentence** (`R-smith2-5`) — the document's own rule, including its one-row exception: one row is one impedance, flat, and every frequency is legal against it. |
+| `--sweep` | Force the document's swept band on. It does not INVENT one: a document with no band refuses in `SmithDesign.Refusal`'s own words. A band is the one caller allowed to CLAMP to the generator table rather than refuse — a band is a viewing choice where a design frequency is a design input — and a clamp is reported as a warning naming the span it was narrowed to. |
+| `--set var=expr` | **Refused.** A `.csmith` states every quantity as a number in base SI and holds no expression scope, so there is nothing for an override to land on; `rail`'s own `--set` refusal is the precedent and §3.3's accepted-and-dropped defect is the reason. The remedy named is the standing one — once a document exists, the way to change it is to WRITE it. |
+| `-o out.s1p` | The load Γ as Touchstone — §18.4. |
+| `-o out.{svg,pdf,png}` | The chart — §18.3. |
+| `--size WxH`, `--scale N` / `--dpi N`, `--background opaque\|transparent`, `--dark` | `plot`'s own picture options, spelling for spelling and refusal for refusal. |
+
+**`smith` is the one verb that owns `--at` itself.** AUT-9's global `--at axis=value` narrows the axes
+of a RESULT document and is taken before dispatch; this verb produces no `DataSet`, and its `--at`
+says where to EVALUATE. `JsonRun.TakeFlags` therefore leaves the flag alone for this verb by name —
+not by the shape of its value, because deciding on the presence of an `=` would make
+`smith --at freq=2GHz` mean something different from `smith --at 2GHz`, silently.
+
+**There are no per-primitive edit options** — no `--add-element`, no `--set-value`. The format is the
+contract; `new` and `history` already follow the same rule.
+
+### 18.3 The picture goes through `render`, not through a second renderer
+
+The chart is built as the `Plot` the window builds — `SmithPlotBuilder.NewChartPlot` + `Fill`, which
+brings the constant-Q arcs, the per-element trajectories, the swept band, the load points, the
+conjugate targets, the resolved overlays and the document's markers in the window's own draw order —
+placed by `RenderDataDisplay.Place`, and composed and encoded by `RenderDataDisplay.Emit`, which is
+the same page, theme, composer and writer `render --data` and `plot` already go through.
+
+The transient chrome rides `PlacedPlot.Overlay`, the field the GUI's own `PlotExporter` fills from
+`IPlotOverlay.Draw`, with `SmithChromeState.None`: **nothing hovered and nothing dragged**, because
+those are states a live pointer has and an exported picture does not.
+
+**Nothing is narrowed in place.** There is no per-render layer or overlay selection here at all, which
+is the cheapest possible answer to `TechnologyCache`'s defect — a shared instance narrowed once stays
+narrowed for every later call in the same process, and that is invisible until the second call.
+
+**An overlay row that does not resolve is a WARNING, not a refusal** (`R-smith8-2`): reference material
+that is missing must not take the work down with it, and the chart still draws everything that did.
+
+**There is no picture on stdout.** stdout is the result document, `--json` has to co-exist with the
+write, and both blocks are present when it does — `result.render` for what was written and
+`result.smith` for what was evaluated.
+
+### 18.4 `-o out.s1p` — one point, or the band's
+
+With no swept band the file holds the one frequency the report is about; with the band on (the
+document's own, or `--sweep`'s) it holds exactly the locus the picture draws. That is the only pair of
+answers that cannot surprise anyone: a caller who asked for a band and got one point, or the reverse,
+would have a file that plots as something they did not run.
+
+**A load is a one-port**, so anything other than `.s1p` is refused rather than padded — a `.s2p` of one
+reflection coefficient would be three quarters invented, and it would plot. The refusal is raised from
+the ARGUMENT, before the document is read.
+
+**No date comment**, deliberately: the same document written twice is the same bytes, so a caller can
+diff two revisions of a matching network and see only what changed about the network.
+
+### 18.5 What the report says, and why the table is the point
+
+With no `-o` the verb prints the reading the window's status strip states — the design frequency, the
+generator and load impedances, Γ in polar form, VSWR and the conjugate-match mismatch in dB — and then
+**the walk, one row per node**, generator first and load last, each with its impedance and its Γ.
+
+The reading alone answers *is it matched*. The table answers *where did it stop being matched*, which
+is the question a caller has when the answer is no, and it is the half an exit code cannot carry. It
+is also what a caller comparing two revisions of a network actually diffs.
+
+`--json` carries all of it as `result.smith`, including `nodes[]` and, when there is one, `band`.
+`vswr` and `conjugateMismatchDb` are **absent rather than large** where |Γ| ≥ 1: an active S2P or a
+Z1P with negative R legitimately puts the load outside the unit circle, and a finite VSWR reported
+there is a lie about a stability result.
+
+### 18.6 Progress, cancellation and exit codes
+
+`RunHost`'s `RunControl`, exactly as `em`, `render` and `rail` ride it. 0 on success; **1** on a
+refusal, with the model's own sentence kept whole; **130** on a cancellation, which **writes nothing**
+— the bytes are complete before anything reaches the filesystem.
+
+### 18.7 The gate
+
+`tests/Ui.Tests/Smith/SmithCliVerbTests.cs`. The verb run as a PROCESS writes the `.svg` an in-process
+`SmithPlotBuilder` + `SmithChartChrome` + `PlotComposer` composition writes for the same document —
+**byte-identical, with no exclusion applied at all**, not even the Skia `clipPath` counter the render
+gates allow for. Its `.s1p` carries `SmithReadings`' own Γ and is reproducible run to run. Beside
+them: the source scan, the three refusals by kind, `--at` against the span and its one-row exception,
+the `--set` refusal, exit 130 writing nothing with its vacuity guard, and `--json` co-existing with the
+picture.

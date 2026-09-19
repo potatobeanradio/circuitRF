@@ -2358,3 +2358,109 @@ it. Wiring it is a real piece of work — a band/grid surface on the verb, the T
 frequency tables in the CSV and on the page — so it is recorded here as an owner decision rather than
 taken unasked. §5's claim that *a board can be gated in CI* is true of the DC half today and of
 nothing above it.
+
+---
+
+## SMITH-10 — `circuitrf smith`, and the four things that were wiring after all (2026-09-19)
+
+`brief-smith-10-cli-verb.md`. The brief's premise — *it depends on brief 2 and not on the window,
+which is the whole point of having put the arithmetic below the firewall from day one* — held for the
+NUMBERS exactly as promised: `SmithCascade`, `SmithBand`, `SmithQArcs` and `SmithDesign.Refusal` were
+already in `src/Design` and the verb reads them directly. It did not hold for the PICTURE, and the
+gap was not where the brief expected it.
+
+### The chart's plot half was framework-free and in the wrong project
+
+`SmithPlotBuilder`, `SmithChartScene`, `SmithMarkerBridge` and `SmithOverlayResolver` reference
+`CircuitRF.Design.Smith`, `CircuitRF.Render.DataDisplay`, `RfCore` and SkiaSharp — **no Avalonia, and
+no view model.** They were nonetheless in `src/Ui`, which `src/Cli` cannot reference, so
+R-smith10-3's "no second drawing path" was unreachable without moving them. The move was mechanical:
+four files, namespace `CircuitRF.Ui.Smith` → `CircuitRF.Render.Smith`, one line each in
+`src/Ui/GlobalUsings.cs` and its `tests/Ui.Tests` mirror, and the existing 201 Smith tests passed
+unchanged.
+
+**Framework-free is not the same as below the firewall, and only the second is enforced.**
+`tests/Firewall.Tests` asserts that `src/Design`, `src/Render` and `src/Cli` reference no Avalonia; it
+cannot assert that a file in `src/Ui` which HAPPENS to need no Avalonia is in the right place. That
+gap is only ever discovered by the first caller from underneath — which is what a P3 phase is.
+
+### `SmithGripperOverlay` was one class doing two jobs
+
+Its `Draw` produced the arrowheads, the load-point frequency labels, the generator anchor and the
+gripper rings; its `HitTest`/`DragBegin`/`DragTo`/`DragEnd` mutated the design through the view model.
+Only the first half is a picture. It is split now: `SmithChartChrome` (in `src/Render/Smith`) draws,
+taking an explicit `SmithChromeState` — hovered node, dragged node, hovered/dragged Q handle — and
+the overlay keeps the gesture and passes its own state down.
+
+**Why the split had to happen rather than "the export simply omits the chrome".** `PlacedPlot.Overlay`
+exists precisely because it does not: its own remark records that without it *an overlay that a
+`PlotControl` draws on every frame is silently absent from every export — the picture is still
+produced, it still looks correct, and the arrowheads and the frequency labels the user copied it for
+are gone.* A headless verb that dropped them would have reproduced that defect on purpose. The gate
+compares the chrome too, by handing the in-process side the same delegate.
+
+`SmithChromeState.None` — nothing hovered, nothing dragged — is what an export passes. Those are
+states a live pointer has and a picture does not, and inventing one would put a highlighted ring on a
+chart nobody was touching.
+
+### Two rules that lived in a view model, and therefore did not exist
+
+Both were found by R-smith10-1's source scan rather than by a failure:
+
+- **`ActiveParameterOf`** — which parameter a gripper on an element drags — was
+  `SmithChartViewModel`'s. The gripper RING is drawn wherever the chart is drawn, so the rule moved to
+  `SmithComponentMap` beside `DefaultParameter`, which is the table it falls back to. Left where it
+  was, a headless chart would have put a ring on a file element and the window would not.
+- **VSWR and the conjugate-match mismatch** were computed inline in `ComputeStatusLine`. They are
+  `SmithReadings` now, and the strip formats what that type computes. A verb deriving them a second
+  time is a second chance to get a sign, a conjugate or a square wrong in a quantity whose wrong value
+  looks entirely ordinary — a VSWR of 3.3 and a VSWR of 1.9 are both perfectly plausible numbers.
+
+Same shape, one project along: **what a Smith Chart `Plot` IS** — panning unlocked, readout fixed —
+was two statements in `BuildChartHost`. `SmithPlotBuilder.NewChartPlot`/`Configure` is the one place
+now; the window calls `Configure` on the plot its container created, the verb calls `NewChartPlot`.
+Neither flag is visible in a picture, which is exactly why a second copy would have survived.
+
+### `MatchValueFormat` had to cross too, and it is not a Match Designer type
+
+The load-point labels on the chart are formatted by it, and so is every frequency the verb prints. It
+moved to `src/Design/Matching` (namespace `CircuitRF.Design.Matching`); the other 25 files of
+`CircuitRF.Ui.Matching` stayed and reach it through the global using. It also turned out to be the
+right parser for `--at`: `TryParseWithUnit` is what the window's own frequency field uses, so
+`2.4 GHz`, `900 MHz` and `1.9e9` mean here exactly what they mean there, and a unit typed into a
+frequency field is honoured rather than silently read as hertz.
+
+### `--at` collided with AUT-9's global `--at`, and the verb had to win by NAME
+
+`JsonRun.TakeFlags` pulls `--at axis=value` out of every command line before dispatch, so
+`smith --at 2GHz` was answered with *"--at '2GHz' is malformed. Write --at &lt;axis&gt;=&lt;value&gt;"* —
+a refusal about a flag the caller did not mean, from a narrowing mechanism for a result document this
+verb does not produce.
+
+The fix is one line, and **the test is the VERB, not the shape of the value.** Deciding by whether the
+text contains an `=` would make `smith --at freq=2GHz` mean something different from
+`smith --at 2GHz`, silently, which is the guess a refusal exists to avoid. This is the first verb to
+own a pre-dispatch flag name; if a second ever does, the condition is where it goes.
+
+### Three smaller ones
+
+- **`TouchstoneIO` writes `Encoding.ASCII`**, so an em dash or an Ω in a `CommentEntry` lands as `?`.
+  Both comment lines are plain ASCII for that reason. Visible, harmless and shabby — and a reader
+  would take it for a corrupted file rather than for a comment nobody checked.
+- **The `.s1p` carries no date comment**, on purpose (`includeDateComment` left off). The same
+  document written twice is the same bytes, so the byte-identity gate needed **no exclusion at all** —
+  not even the Skia `clipPath` counter the render gates allow for, which the SVG comparison also came
+  back clean of. A caller can diff two revisions of a matching network and see only the network.
+- **`RenderDataDisplay` grew two internal seams rather than a third composer.** `Emit` is the page,
+  the theme, `PlotComposer`, `PlotDocumentWriter` and the write, now shared by the `.cdd` half,
+  `plot` and `smith`; `Place` takes the six numbers directly for a plot that no `PlotContainerConfig`
+  describes. A `.csmith` chart is a third way of ARRIVING at a `PlacedPlot`, and from that point on
+  there is one set of decisions.
+
+### `--set` is refused, and that is the honest answer
+
+A `.csmith` states every element value as a number in base SI and holds no expression scope, so
+nothing in it is an override's to replace. `rail`'s own `--set` refusal is the precedent and §3.3's
+accepted-and-dropped defect is the reason: a run that took the flag and answered a different question
+than the one asked. The sentence names `--at` — the one thing that IS overridable — and the standing
+rule for everything else: once a document exists, the way to change it is to write it.

@@ -149,6 +149,12 @@ convention behind both.</p>
 <td>The ports, the ranked breakdown and the via check to stdout; <code>-o .csv/.npy/.mat/.txt/.svg/.pdf</code></td>
 </tr>
 <tr>
+<td><code>smith</code></td>
+<td><code>.csmith</code></td>
+<td>The same cascade evaluator the Smith Chart window walks on every edit</td>
+<td>The reading and the per-node table to stdout; <code>-o .s1p</code> for the load Γ, <code>-o .svg/.pdf/.png</code> for the chart</td>
+</tr>
+<tr>
 <td><code>convert</code></td>
 <td>any layout format</td>
 <td>The same importer and exporter <strong>File ▸ Import/Export</strong> runs</td>
@@ -941,6 +947,68 @@ accepted here would be silently dropped.</p>
 Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
 many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
 height <strong>indicative</strong> rather than measured.</p>
+<h2 id="smith"><code>smith</code> — a matching network, headless</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [--sweep] [-o out.{s1p,svg,pdf,png}]</code></pre>
+<p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It
+walks the cascade from the generator to the load at the design frequency, prints what the window's
+status strip states, and then prints the walk <strong>one node at a time</strong>.</p>
+<p>That table is the reason to run this rather than open the window. The reading answers <em>is it matched</em>;
+the table answers <em>where did it stop being matched</em>, which is the question you have when the answer is
+no — and it is what you diff between two revisions of a network.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith Lmatch.csmith
+L-match demo — Smith chart, Z0 50 Ω
+  design frequency   2 GHz
+  generator          10 − j10
+  load               17.81 + j20.38
+  Γ                  0.538 ∠131°
+  VSWR               3.329
+  conj. mismatch     0.9237 dB
+
+  node  element                          Z (Ω)                    Γ
+     0  (generator)                       10 − j10                0.6778 ∠-157°
+     1  L1                                10 + j17.65             0.6991 ∠140°
+     2  C1                                17.81 + j20.38          0.538 ∠131°</code></pre>
+<h3 id="smith-at">Where it evaluates</h3>
+<p><code>--at</code> moves the design frequency for this run only — the document is not touched. Write the unit and
+it is honoured (<code>2.4 GHz</code>, <code>900 MHz</code>, <code>1.9e9</code>); a bare number is hertz.</p>
+<p><strong>Outside the generator table's span it refuses, with the span in the sentence.</strong> The generator
+impedance is interpolated between the table's rows and never extrapolated past them, so a frequency
+the table cannot answer for has no answer at all. The one exception is a <strong>single-row table</strong>: one row
+is one impedance, flat, and every frequency is legal against it.</p>
+<p><code>--sweep</code> turns the document's swept band on. A band is the one thing that is <strong>clamped</strong> to the
+table's span rather than refused — a band is a viewing choice, where a design frequency is a design
+input — and the clamp is reported, with the span it was narrowed to.</p>
+<h3 id="smith-output">What it writes</h3>
+<table>
+<thead>
+<tr>
+<th><code>-o</code></th>
+<th>You get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>out.s1p</code></td>
+<td>The load reflection coefficient as Touchstone: <strong>one point</strong> at the design frequency, or the whole band when one is on. Referenced to the chart's own Z₀.</td>
+</tr>
+<tr>
+<td><code>out.svg</code>, <code>out.pdf</code>, <code>out.png</code></td>
+<td>The chart — the trajectories, the constant-Q arcs, the swept band, the load points and their frequency labels, the conjugate-match targets, your overlays and your markers. The same picture the window's <strong>Copy chart</strong> puts on the clipboard.</td>
+</tr>
+</tbody>
+</table>
+<p><code>.s2p</code> and the rest are <strong>refused</strong>: what this verb has is the load, which is one reflection
+coefficient, and a two-port built from it would be three quarters invented.</p>
+<p>The picture takes the same options <a href="#plot"><code>plot</code></a> takes — <code>--size</code>, <code>--scale</code>/<code>--dpi</code>,
+<code>--background</code>, <code>--dark</code>.</p>
+<h3 id="smith-refusals">What it will not guess</h3>
+<p><code>--set</code> is <strong>refused</strong>. A <code>.csmith</code> states every element value as a number, with no expressions and no
+variables, so there is nothing for an override to replace — and a flag accepted and then dropped means
+the run answered a different question than the one you asked. <code>--at</code> moves the design frequency;
+anything else is a change to the <strong>document</strong>, which you make by writing it.</p>
+<p>An <strong>overlay that does not resolve</strong> is a warning and not a refusal: reference material that is missing
+must not take the work down with it, so the chart still draws everything that did resolve and the
+warning names what did not.</p>
 <h2 id="convert"><code>convert</code> — layout interchange</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert &lt;input&gt; -o &lt;output&gt; [options]</code></pre>
 <p>Reads a layout in any format circuitRF understands and writes it in any other. It is the same reader

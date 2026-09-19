@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using CircuitRF.Design.Smith;
 
-namespace CircuitRF.Ui.Smith;
+namespace CircuitRF.Render.Smith;
 
 /// <summary>
 /// One load point: where the cascade lands at one frequency, and how that frequency is spelled.
@@ -12,7 +12,7 @@ namespace CircuitRF.Ui.Smith;
 /// spelling, so the chart and the strip cannot disagree about which point is which.</param>
 /// <param name="IsDesignFrequency">True for the one the status strip reports, which is drawn
 /// emphasised (<c>R-smith5-2</c>).</param>
-internal readonly record struct SmithLoadPoint(Complex Gamma, string Label, bool IsDesignFrequency);
+public readonly record struct SmithLoadPoint(Complex Gamma, string Label, bool IsDesignFrequency);
 
 /// <summary>
 /// Everything one frame of the chart is drawn from, evaluated once (<c>brief-smith-5-chart.md</c>
@@ -31,7 +31,7 @@ internal readonly record struct SmithLoadPoint(Complex Gamma, string Label, bool
 /// a gripper are ambiguous about direction and a second derivation is a second chance to get the
 /// sign wrong), and Γ is <see cref="SmithCascade.Gamma"/>'s.</para>
 /// </remarks>
-internal sealed class SmithChartScene
+public sealed class SmithChartScene
 {
     /// <summary>The empty scene — what a design whose evaluation refused draws. The status strip is
     /// already saying what is wrong, with its numbers in it.</summary>

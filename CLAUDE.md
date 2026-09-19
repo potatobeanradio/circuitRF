@@ -52,7 +52,7 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - Run CLI: `dotnet run --project src/Cli -- <args>`
   Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, **`convert`**, **`new`**,
   **`import`**, **`check`**, **`explain`**, **`history`**, **`render`**, **`netlist`**, **`plot`**,
-  **`find`**, **`rail`**, `elab`. **The CLI has its own design doc —
+  **`find`**, **`rail`**, **`smith`**, `elab`. **The CLI has its own design doc —
   `docs/design/cli.md`** — covering the five-step anatomy of a run verb, the stdout/stderr split, and
   the rules below; read it before adding a verb. `hb`/`lp`/`lpp` run the netlist's harmonic-balance,
   loadpull and loadpull-pursuit analyses, and each runs the whole sweep when a `parametric_sweep`

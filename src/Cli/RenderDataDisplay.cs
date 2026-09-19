@@ -165,6 +165,40 @@ internal static class RenderDataDisplay
             placedPages.Add(placed);
         }
 
+        return Emit(path, reportKind ?? DocumentKinds.Name(DocumentKind.DataDisplay), req, placedPages,
+                    new RenderDataDisplayJson(
+                        tabs[tabIndex].Name, tabIndex, tabs.Count, pages.Count, plotCount,
+                        sources!.Report()),
+                    $"  {plotCount} plot(s) on {pages.Count} page(s), {sources.Report().Count} data source(s)");
+    }
+
+    /// <summary>
+    /// The page, the theme, the encoder, the write and the report — <b>every picture this program
+    /// composes out of <c>Plot</c>s goes through here</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Shared rather than copied, for <see cref="VectorPage"/>'s own reason.</b> A `.cdd`, a
+    /// generated `plot` document and a `.csmith` chart are three ways of ARRIVING at a set of
+    /// <see cref="PlacedPlot"/>s; from that point on there is exactly one set of decisions — the
+    /// application's own Letter landscape, the export settings <c>AppSettings.Current</c> carries,
+    /// <see cref="PlotComposer"/>, <c>PlotDocumentWriter</c>'s three encoders, and a write that
+    /// happens only once the bytes are complete. A second copy of them would differ in one field
+    /// nobody chose, which is the difference that gets excluded from a gate rather than fixed.
+    /// </remarks>
+    /// <param name="inputPath">The document the picture is OF, for the report.</param>
+    /// <param name="reportKind">What the report calls that document — <c>DocumentKinds.Name</c>'s
+    /// spelling, never a claim about a file that is not one.</param>
+    /// <param name="pages">One list of placed plots per PAGE. More than one page is PDF only, which
+    /// the caller has already refused otherwise.</param>
+    /// <param name="display">The data-display block of the report, or null for an input that is not
+    /// one.</param>
+    /// <param name="summaryLine">The second stdout line, after "Wrote …", or null for none.</param>
+    internal static int Emit(
+        string inputPath, string reportKind, Request req,
+        IReadOnlyList<List<PlacedPlot>> pages,
+        RenderDataDisplayJson? display,
+        string? summaryLine)
+    {
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("draw");
         Console.Error.WriteLine("[circuitRF] draw...");
@@ -205,7 +239,7 @@ internal static class RenderDataDisplay
             AlwaysDisplayDataSourcePrefix  = current.AlwaysDisplayDataSourcePrefix,
         };
 
-        byte[] bytes = Encode(req, placedPages, theme, settings, page);
+        byte[] bytes = Encode(req, pages, theme, settings, page);
 
         // ── write and report ─────────────────────────────────────────────────
 
@@ -230,20 +264,17 @@ internal static class RenderDataDisplay
 
         JsonRun.AddOutput(req.Format, req.Output);
         JsonRun.Render = new RenderReportJson(
-            path, reportKind ?? DocumentKinds.Name(DocumentKind.DataDisplay), View: null, req.Format,
+            inputPath, reportKind, View: null, req.Format,
             Viewport: null, Extents: null,
             new RenderSizeJson(outW, outH, unitKind,
                                               req.Format == "png" ? req.Scale : 1.0),
             new RenderThemeJson(
                 req.Dark ? "Dark" : "Light", req.Dark ? "dark" : "light", "built-in"),
             Layers: null, Detail: null, Counters: null, bytes.Length,
-            new RenderDataDisplayJson(
-                tabs[tabIndex].Name, tabIndex, tabs.Count, pages.Count, plotCount,
-                sources!.Report()));
+            display);
 
         Console.WriteLine($"Wrote {req.Output} ({outW}x{outH} {unitKind}, {bytes.Length:N0} bytes)");
-        Console.WriteLine(
-            $"  {plotCount} plot(s) on {pages.Count} page(s), {sources.Report().Count} data source(s)");
+        if (summaryLine is { Length: > 0 }) Console.WriteLine(summaryLine);
         return 0;
     }
 
@@ -256,7 +287,7 @@ internal static class RenderDataDisplay
     /// field when written to the same name.
     /// </summary>
     private static byte[] Encode(
-        Request req, List<List<PlacedPlot>> pages,
+        Request req, IReadOnlyList<List<PlacedPlot>> pages,
         RenderTheme theme, AppSettings settings, PagePlacement page)
     {
         Action<SKCanvas> PageRender(List<PlacedPlot> plots)
@@ -287,14 +318,33 @@ internal static class RenderDataDisplay
     /// (<see cref="PlotComposer"/>'s header says where).
     /// </summary>
     private static PlacedPlot Place(Plot plot, PlotContainerConfig pc, CddSources sources)
+        => Place(plot, pc.Left, pc.Top, pc.Width, pc.Height, pc.FreqUnit,
+                 sources.HasMultipleSources,
+                 t => sources.AliasFor(t.EffectiveSourcePath ?? ""));
+
+    /// <summary>
+    /// The same placement over the six numbers themselves, for a plot that no
+    /// <c>PlotContainerConfig</c> describes — <c>smith</c>'s chart, which is BUILT rather than loaded
+    /// (brief-smith-10-cli-verb.md R-smith10-3).
+    /// </summary>
+    /// <param name="hasMultipleSources">Whether a trace label carries its source's name. False for a
+    /// chart with no data-source library behind it, which is what the Smith window's own host is.</param>
+    /// <param name="aliasFor">A trace's source alias, or null for "no aliases".</param>
+    /// <param name="overlay">Transient chrome drawn above this plot's traces. <b>Without it an
+    /// overlay the window draws on every frame is silently absent from the picture</b> —
+    /// <see cref="PlacedPlot.Overlay"/>'s own remark.</param>
+    internal static PlacedPlot Place(
+        Plot plot, double left, double top, double width, double height, FreqUnit freqUnit,
+        bool hasMultipleSources, Func<Trace, string?>? aliasFor,
+        Action<SKCanvas, TransformSet, RenderTheme>? overlay = null)
     {
-        double stripW = PlotCanvasGeometry.StripLogicalWidth(pc.Height);
-        double topX   = PlotCanvasGeometry.TopLabelExtraLogical(plot, pc.Width);
-        double botX   = PlotCanvasGeometry.BottomLabelExtraLogical(plot, pc.Width);
+        double stripW = PlotCanvasGeometry.StripLogicalWidth(height);
+        double topX   = PlotCanvasGeometry.TopLabelExtraLogical(plot, width);
+        double botX   = PlotCanvasGeometry.BottomLabelExtraLogical(plot, width);
 
         // Which traces get a strip is PlotLabelStrips' rule, the same one the window's own
         // container follows (RND-4 R-rnd4-7: the strips are content and come out in an export).
-        var (left, right) = PlotLabelStrips.For(plot, sources.HasMultipleSources);
+        var (leftStrips, rightStrips) = PlotLabelStrips.For(plot, hasMultipleSources);
 
         var boxes = new List<PlacedMarkerBox>();
         foreach (var t in plot.Traces)
@@ -309,30 +359,31 @@ internal static class RenderDataDisplay
             // through the same function, so the two agree.
             var pos = double.IsNaN(m.InfoBoxPos.X) || double.IsNaN(m.InfoBoxPos.Y)
                 ? PlotCanvasGeometry.DefaultInfoBoxPosition(
-                      m, t, plot, pc.Width, pc.Height + topX + botX, pc.Left, pc.Top, zoom: 1.0)
+                      m, t, plot, width, height + topX + botX, left, top, zoom: 1.0)
                 : m.InfoBoxPos;
             double bx = pos.X;
             double by = pos.Y;
-            var (w, h) = MarkerRenderer.MeasureInfoBox(m, t, pc.FreqUnit,
-                                                       sources.HasMultipleSources, plot.Traces);
-            boxes.Add(new PlacedMarkerBox(m, t, pc.FreqUnit, bx, by, w, h, plot.Traces));
+            var (w, h) = MarkerRenderer.MeasureInfoBox(m, t, freqUnit,
+                                                       hasMultipleSources, plot.Traces);
+            boxes.Add(new PlacedMarkerBox(m, t, freqUnit, bx, by, w, h, plot.Traces));
         }
 
         return new PlacedPlot
         {
             Plot                = plot,
-            ViewLeft            = pc.Left,
-            ViewTop             = pc.Top - topX,
-            ViewWidth           = pc.Width,
-            ViewHeight          = pc.Height + topX + botX,
-            LogicalWidth        = pc.Width,
+            ViewLeft            = left,
+            ViewTop             = top - topX,
+            ViewWidth           = width,
+            ViewHeight          = height + topX + botX,
+            LogicalWidth        = width,
             LabelStripViewWidth = stripW,
-            LeftLabelStrips     = left,
-            RightLabelStrips    = right,
+            LeftLabelStrips     = leftStrips,
+            RightLabelStrips    = rightStrips,
             MarkerBoxes         = boxes,
-            ShowFilePrefix      = sources.HasMultipleSources,
-            AlwaysShowSource    = sources.HasMultipleSources,
-            AliasFor            = t => sources.AliasFor(t.EffectiveSourcePath ?? ""),
+            ShowFilePrefix      = hasMultipleSources,
+            AlwaysShowSource    = hasMultipleSources,
+            AliasFor            = aliasFor,
+            Overlay             = overlay,
         };
     }
 

@@ -2664,4 +2664,104 @@ internal static class CliDiagnostics
         "rail.aggressor.malformed", DiagnosticSeverity.Error,
         "--aggressor '{spec}' is not NAME=<frequency>[xN] — 'converter=2.2MHz x5', for instance. "
       + "N is how many harmonics to draw and check, and 1 is the fundamental alone.", ("spec", spec));
+
+    // ── smith (brief-smith-10-cli-verb.md R-smith10-4) ───────────────────────
+    //
+    //  THE SHORT LIST IS THE POINT. Every refusal about the DOCUMENT — a generator table that does
+    //  not span the design frequency, an element whose file does not resolve, a band that goes
+    //  nowhere, a Q that is not a finite positive number — is SmithDesign.Refusal's or
+    //  SmithCascade's, and is surfaced verbatim by the two wrappers below. What is minted here is
+    //  argument handling and nothing else, which is the whole of what R-smith10-1 leaves this verb.
+
+    public static Diagnostic SmithPathRequired() => new(
+        "smith.args.path-required", DiagnosticSeverity.Error,
+        "smith: a path is required — a .csmith, which is what the Smith Chart tool writes.");
+
+    public static Diagnostic SmithPathNotFound(string path) => Diagnostic.Create(
+        "smith.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    /// <summary>Refused BY KIND, naming what was handed over — `rail`'s rule and `check`'s
+    /// inference, so a `.csch` is refused as a schematic rather than as an unreadable file.</summary>
+    public static Diagnostic SmithNotASmithDocument(string path, string kind) => Diagnostic.Create(
+        "smith.path.not-a-smith", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and smith evaluates a Smith Chart document. Give it the .csmith.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic SmithDocumentUnreadable(string path, string why) => Diagnostic.Create(
+        "smith.document.unreadable", DiagnosticSeverity.Error,
+        "'{path}' did not read: {why}", ("path", path), ("why", why));
+
+    /// <summary><see cref="CircuitRF.Design.Smith.SmithDesign.Refusal"/>'s own sentence, carried
+    /// through unchanged. It is where an out-of-span design frequency is caught, with the span in
+    /// it.</summary>
+    public static Diagnostic SmithDocumentRefused(string path, string why) => Diagnostic.Create(
+        "smith.document.refused", DiagnosticSeverity.Error,
+        "'{path}' is not well formed: {why}", ("path", path), ("why", why));
+
+    /// <summary>What the cascade itself could not proceed past — a file that does not resolve, a
+    /// port count that is not the element's, a line quoting its length at a non-positive reference
+    /// frequency. The evaluator's own words.</summary>
+    public static Diagnostic SmithCascadeRefused(string path, string why) => Diagnostic.Create(
+        "smith.cascade.refused", DiagnosticSeverity.Error,
+        "'{path}' could not be evaluated: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic SmithAtMalformed(string text) => Diagnostic.Create(
+        "smith.at.malformed", DiagnosticSeverity.Error,
+        "smith: --at '{text}' is not a frequency — '2.4 GHz', '2.4e9' or '900 MHz', for instance. A "
+      + "bare number is hertz.", ("text", text));
+
+    /// <summary>
+    /// <c>--set</c> on a document that declares no variables.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refusal rather than a silent no-op</b>, exactly as <see cref="RailSetNotApplicable"/>
+    /// is: a `.csmith` states every quantity as a number in base SI and holds no expression scope,
+    /// so there is nothing for an override to replace — and `cli.md` §3.3's accepted-and-dropped
+    /// defect is a run that answered a different question than the one asked. The remedy named is
+    /// the standing one: once a document exists, the way to change it is to WRITE it.
+    /// </remarks>
+    public static Diagnostic SmithSetNotApplicable(string name) => Diagnostic.Create(
+        "smith.set.not-applicable", DiagnosticSeverity.Error,
+        "--set {name}=… : a .csmith declares no variables — every element value is stated as a "
+      + "number in base SI and nothing is an expression. --at moves the design frequency; anything "
+      + "else is a change to the document, which is written rather than overridden.", ("name", name));
+
+    public static Diagnostic SmithUnknownOutputFormat(string path, string extension)
+        => Diagnostic.Create(
+            "smith.output.unknown-format", DiagnosticSeverity.Error,
+            "smith: '{path}' has extension '{extension}', which this verb does not write — it "
+          + "writes .s1p, .svg, .pdf and .png.", ("path", path), ("extension", extension));
+
+    /// <summary>A load is a one-port. Refused rather than padded: a `.s2p` of one reflection
+    /// coefficient would be three quarters invented, and it would plot.</summary>
+    public static Diagnostic SmithTouchstoneNotOnePort(string path, int ports) => Diagnostic.Create(
+        "smith.output.not-one-port", DiagnosticSeverity.Error,
+        "smith: '{path}' asks for a {ports}-port, and what this verb has is the LOAD — one "
+      + "reflection coefficient. Write .s1p.", ("path", path), ("ports", ports.ToString()));
+
+    public static Diagnostic SmithWriteFailed(string path, string why) => Diagnostic.Create(
+        "smith.output.write-failed", DiagnosticSeverity.Error,
+        "smith: '{path}' was not written: {why}", ("path", path), ("why", why));
+
+    /// <summary>A band NARROWED to what the generator table can answer for. The one place in this
+    /// tool where an out-of-span frequency is not a refusal — a band is a viewing choice where a
+    /// design frequency is a design input — and it is said out loud rather than left to be noticed
+    /// in the picture.</summary>
+    public static Diagnostic SmithBandClamped(string start, string stop) => Diagnostic.Create(
+        "smith.band.clamped", DiagnosticSeverity.Warning,
+        "The swept band was clamped to the generator table's span, {start} to {stop} — the "
+      + "generator impedance is interpolated between rows, never extrapolated past them.",
+        ("start", start), ("stop", stop));
+
+    /// <summary>An overlay row that did not resolve. <b>A warning and not a refusal</b>
+    /// (R-smith8-2): reference material that is missing must not take the work down with it, and the
+    /// chart still draws everything that did resolve.</summary>
+    public static Diagnostic SmithOverlayUnresolved(string label, string why) => Diagnostic.Create(
+        "smith.overlay.unresolved", DiagnosticSeverity.Warning,
+        "The overlay '{label}' is not on this picture: {why}", ("label", label), ("why", why));
+
+    public static Diagnostic SmithCancelled() => new(
+        "smith.cancelled", DiagnosticSeverity.Error,
+        "smith: cancelled. Nothing was written.");
 }

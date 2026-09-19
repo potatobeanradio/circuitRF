@@ -389,7 +389,7 @@ public sealed class SmithNetworkStripTests
 
         // §3.3's default for an SRLC is L — the reactive part, because dragging the loss of a lossy
         // part is a move along the trajectory nobody reaches for first.
-        Assert.Equal(SmithParameter.L, SmithChartViewModel.ActiveParameterOf(vm.Design.Elements[0]));
+        Assert.Equal(SmithParameter.L, SmithComponentMap.ActiveParameterOf(vm.Design.Elements[0]));
         Assert.Equal([SmithParameter.R, SmithParameter.L, SmithParameter.C],
                      vm.SliderRows.Select(r => r.Parameter).ToArray());
 
@@ -399,7 +399,7 @@ public sealed class SmithNetworkStripTests
         cRow.Position = cRow.Position + 0.05;
         vm.EndSliderDrag();
 
-        Assert.Equal(SmithParameter.C, SmithChartViewModel.ActiveParameterOf(vm.Design.Elements[0]));
+        Assert.Equal(SmithParameter.C, SmithComponentMap.ActiveParameterOf(vm.Design.Elements[0]));
         Assert.True(cRow.IsActive);
         Assert.False(vm.SliderRows.Single(r => r.Parameter == SmithParameter.L).IsActive);
 

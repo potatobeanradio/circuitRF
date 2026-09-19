@@ -1,8 +1,21 @@
+// The engineering value formatter, below the UI firewall since SMITH-10
+// (brief-smith-10-cli-verb.md R-smith10-1).
+//
+// IT MOVED BECAUSE A FREQUENCY HAS ONE SPELLING. `SmithPlotBuilder` labels every load point with
+// this function and `circuitrf smith` reports the same frequencies on a terminal; a second
+// formatter for the headless half would be a second answer nobody could tell apart from the first —
+// and the picture and the report would disagree about which point is which. Nothing here draws,
+// docks or observes anything: it is `CircuitRF.Core`'s own unit tables read out loud.
+//
+// WHAT DID NOT MOVE: the other 25 files of `CircuitRF.Ui.Matching` — the Match Designer's view
+// models, its canvases and its commands — which still say `using CircuitRF.Ui.Matching;` and reach
+// this type through the one line in src/Ui/GlobalUsings.cs.
+
 using System;
 using System.Globalization;
 using CircuitRF.Core.Matching;
 
-namespace CircuitRF.Ui.Matching;
+namespace CircuitRF.Design.Matching;
 
 /// <summary>
 /// Engineering formatting for the Designer's element values, and the value+unit parsing the

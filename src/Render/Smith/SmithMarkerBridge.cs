@@ -4,7 +4,7 @@ using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
 using RfCore;
 
-namespace CircuitRF.Ui.Smith;
+namespace CircuitRF.Render.Smith;
 
 /// <summary>
 /// The `.csmith`'s <see cref="SmithMarker"/> block and the Data Display's own <c>Marker</c>, in both
@@ -31,11 +31,11 @@ namespace CircuitRF.Ui.Smith;
 /// an element is deleted and a marker that silently jumped to the next curve would be a reading
 /// reported against the wrong thing.</para>
 /// </remarks>
-internal static class SmithMarkerBridge
+public static class SmithMarkerBridge
 {
     /// <summary>The document's marker as the Data Display's, ready to be added to
     /// <paramref name="trace"/>'s marker list.</summary>
-    internal static Marker ToMarker(SmithMarker m, Trace trace)
+    public static Marker ToMarker(SmithMarker m, Trace trace)
     {
         ArgumentNullException.ThrowIfNull(m);
         ArgumentNullException.ThrowIfNull(trace);
@@ -62,7 +62,7 @@ internal static class SmithMarkerBridge
     }
 
     /// <summary>The Data Display's marker as the document's, keyed to the trace it sits on.</summary>
-    internal static SmithMarker FromMarker(Marker m, string traceName)
+    public static SmithMarker FromMarker(Marker m, string traceName)
     {
         ArgumentNullException.ThrowIfNull(m);
 
@@ -118,7 +118,7 @@ internal static class SmithMarkerBridge
     /// opposite BY CONSTRUCTION, so their midpoint IS the centre and half their separation IS the
     /// radius. Constructing a circle here would be the mistake the correction is about.</para>
     /// </remarks>
-    internal static (Complex Centre, double Radius) VswrCircle(Complex marker, double vswr, double z0)
+    public static (Complex Centre, double Radius) VswrCircle(Complex marker, double vswr, double z0)
     {
         var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(
             marker, vswr, RfCore.Loadpull.SurfacePlane.Gamma, new Complex(z0, 0.0), nPoints: 2);

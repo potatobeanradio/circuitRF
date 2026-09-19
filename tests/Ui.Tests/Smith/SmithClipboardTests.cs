@@ -369,7 +369,7 @@ public sealed class SmithClipboardTests
         // …and Z0_chart at the load, as a plain value with its unit.
         Assert.Equal(ChartZ0,
             double.Parse(Param(load, "Z")!, CultureInfo.InvariantCulture)
-                * CircuitRF.Ui.Matching.MatchValueFormat.Scale(
+                * CircuitRF.Design.Matching.MatchValueFormat.Scale(
                       load.Parameters.First(p => p.Name == "Z").Unit), 9);
 
         // A pasted selection is a fragment of a circuit; the TestBench it lands in owns its analyses.

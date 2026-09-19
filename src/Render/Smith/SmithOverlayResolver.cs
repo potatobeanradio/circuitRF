@@ -7,7 +7,7 @@ using CircuitRF.Render.DataDisplay;
 using RfCore;
 using SkiaSharp;
 
-namespace CircuitRF.Ui.Smith;
+namespace CircuitRF.Render.Smith;
 
 /// <summary>
 /// Turns one <see cref="SmithOverlayRef"/> into an ordinary Data Display <c>Trace</c>, or into the
@@ -39,13 +39,13 @@ namespace CircuitRF.Ui.Smith;
 /// with it — which is the opposite of an S1P ELEMENT, whose absence is a refusal because the cascade
 /// cannot be evaluated without it.</para>
 /// </remarks>
-internal static class SmithOverlayResolver
+public static class SmithOverlayResolver
 {
     /// <summary>What one row resolved to: a trace, or the sentence for its tooltip. Never both.</summary>
-    internal readonly record struct Resolution(Trace? Trace, string? Unresolved)
+    public readonly record struct Resolution(Trace? Trace, string? Unresolved)
     {
-        internal static Resolution Ok(Trace t)      => new(t, null);
-        internal static Resolution No(string why)   => new(null, why);
+        public static Resolution Ok(Trace t)      => new(t, null);
+        public static Resolution No(string why)   => new(null, why);
     }
 
     /// <summary>
@@ -59,7 +59,7 @@ internal static class SmithOverlayResolver
     /// it on the way in unless the row says otherwise.</param>
     /// <param name="sources">The open data sources, for <see cref="SmithOverlaySource.Cube"/>. Null
     /// is an honest "nothing is open", which marks a cube row unresolved rather than throwing.</param>
-    internal static Resolution Resolve(
+    public static Resolution Resolve(
         SmithOverlayRef overlay, string? documentDirectory, double z0Chart,
         IPlotDataSources? sources, int colorIndex)
     {
@@ -308,7 +308,7 @@ internal static class SmithOverlayResolver
 
     /// <summary>A <c>DerivedParameters</c> member name, case-insensitively; an empty string is
     /// <c>None</c>, so a row that carries no answer is not a refusal.</summary>
-    internal static bool TryParseDerived(string? name, out DerivedParameters derived)
+    public static bool TryParseDerived(string? name, out DerivedParameters derived)
     {
         if (string.IsNullOrWhiteSpace(name)) { derived = DerivedParameters.None; return true; }
         return Enum.TryParse(name.Trim(), ignoreCase: true, out derived);
@@ -330,7 +330,7 @@ internal static class SmithOverlayResolver
     /// the port pair a stability circle needs is <c>InputPort</c>/<c>OutputPort</c>, which default
     /// to 1 and 2.</para>
     /// </remarks>
-    internal static bool TryParseQuantity(
+    public static bool TryParseQuantity(
         string? quantity, int ports, DerivedParameters derived,
         out MatrixType matrix, out int row, out int col, out string? refusal)
     {
@@ -385,7 +385,7 @@ internal static class SmithOverlayResolver
     /// <summary>What the trace is called in the legend and what a marker on it is stored against —
     /// the file's own name (or the cube's) and the quantity, which is the pair a reader needs to say
     /// which curve is which when two overlays come from the same part.</summary>
-    internal static string Label(SmithOverlayRef overlay)
+    public static string Label(SmithOverlayRef overlay)
     {
         string head = overlay.SourceKind == SmithOverlaySource.TouchstoneFile
             ? Path.GetFileName(overlay.Source.Replace('\\', '/'))

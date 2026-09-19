@@ -112,6 +112,29 @@ public static class SmithComponentMap
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a Smith element kind."),
     };
 
+    /// <summary>
+    /// The parameter a gripper on <paramref name="element"/> drags.
+    /// </summary>
+    /// <remarks>
+    /// The element's own <see cref="SmithElement.ActiveParameter"/> — the one whose slider was last
+    /// touched — falling back to <see cref="DefaultParameter"/> for the kind. <b>The fallback is
+    /// this table's own answer and not a second one</b>: brief 6's sliders are what set the field,
+    /// and until an element has been selected once it carries <see cref="SmithParameter.None"/>,
+    /// which is not "this element has no parameter" but "nobody has chosen yet".
+    ///
+    /// <para><b>It is here rather than on the view model</b> (<c>R-smith10-1</c>): the gripper RING
+    /// is drawn wherever the chart is drawn, including headlessly, and a node with no parameter
+    /// carries none. A rule that lived only in the window would put a ring on a file element in
+    /// every exported picture and on none of the ones anybody looked at.</para>
+    /// </remarks>
+    public static SmithParameter ActiveParameterOf(SmithElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return element.ActiveParameter != SmithParameter.None
+                   ? element.ActiveParameter
+                   : DefaultParameter(element.Kind);
+    }
+
     /// <summary>True for the two kinds whose value is a Touchstone file, and only those — the rule
     /// <c>SmithElement.Refusal</c> reads in both directions.</summary>
     public static bool UsesFile(SmithElementKind kind)

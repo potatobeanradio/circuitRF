@@ -88,6 +88,7 @@ convention behind both.</p>
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
+| `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -657,6 +658,70 @@ A file read six months later has no status strip beside it, so every format carr
 Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
 many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
 height **indicative** rather than measured.
+
+## `smith` — a matching network, headless {#smith}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [--sweep] [-o out.{s1p,svg,pdf,png}]</code></pre>
+
+`smith` evaluates a **`.csmith`** — the document the Smith Chart window edits. It
+walks the cascade from the generator to the load at the design frequency, prints what the window's
+status strip states, and then prints the walk **one node at a time**.
+
+That table is the reason to run this rather than open the window. The reading answers *is it matched*;
+the table answers *where did it stop being matched*, which is the question you have when the answer is
+no — and it is what you diff between two revisions of a network.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith Lmatch.csmith
+L-match demo — Smith chart, Z0 50 Ω
+  design frequency   2 GHz
+  generator          10 − j10
+  load               17.81 + j20.38
+  Γ                  0.538 ∠131°
+  VSWR               3.329
+  conj. mismatch     0.9237 dB
+
+  node  element                          Z (Ω)                    Γ
+     0  (generator)                       10 − j10                0.6778 ∠-157°
+     1  L1                                10 + j17.65             0.6991 ∠140°
+     2  C1                                17.81 + j20.38          0.538 ∠131°</code></pre>
+
+### Where it evaluates {#smith-at}
+
+`--at` moves the design frequency for this run only — the document is not touched. Write the unit and
+it is honoured (`2.4 GHz`, `900 MHz`, `1.9e9`); a bare number is hertz.
+
+**Outside the generator table's span it refuses, with the span in the sentence.** The generator
+impedance is interpolated between the table's rows and never extrapolated past them, so a frequency
+the table cannot answer for has no answer at all. The one exception is a **single-row table**: one row
+is one impedance, flat, and every frequency is legal against it.
+
+`--sweep` turns the document's swept band on. A band is the one thing that is **clamped** to the
+table's span rather than refused — a band is a viewing choice, where a design frequency is a design
+input — and the clamp is reported, with the span it was narrowed to.
+
+### What it writes {#smith-output}
+
+| `-o` | You get |
+|---|---|
+| `out.s1p` | The load reflection coefficient as Touchstone: **one point** at the design frequency, or the whole band when one is on. Referenced to the chart's own Z₀. |
+| `out.svg`, `out.pdf`, `out.png` | The chart — the trajectories, the constant-Q arcs, the swept band, the load points and their frequency labels, the conjugate-match targets, your overlays and your markers. The same picture the window's **Copy chart** puts on the clipboard. |
+
+`.s2p` and the rest are **refused**: what this verb has is the load, which is one reflection
+coefficient, and a two-port built from it would be three quarters invented.
+
+The picture takes the same options [`plot`](#plot) takes — `--size`, `--scale`/`--dpi`,
+`--background`, `--dark`.
+
+### What it will not guess {#smith-refusals}
+
+`--set` is **refused**. A `.csmith` states every element value as a number, with no expressions and no
+variables, so there is nothing for an override to replace — and a flag accepted and then dropped means
+the run answered a different question than the one you asked. `--at` moves the design frequency;
+anything else is a change to the **document**, which you make by writing it.
+
+An **overlay that does not resolve** is a warning and not a refusal: reference material that is missing
+must not take the work down with it, so the chart still draws everything that did resolve and the
+warning names what did not.
 
 ## `convert` — layout interchange {#convert}
 

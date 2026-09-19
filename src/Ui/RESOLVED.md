@@ -31264,3 +31264,44 @@ line and the newer sentence is the one about what just happened. The sentence is
 **A clamped band is clamped at its ENDS, not per sample.** Clamping each sample individually piles
 half the band onto one frequency and draws a locus that stops moving without saying so; clamping the
 ends narrows the view, which is what the note reports, and still produces exactly `Points` samples.
+
+---
+
+## Smith Chart brief 10 — what left this project, and what the split leaves behind (2026-09-19)
+
+`brief-smith-10-cli-verb.md`. P3's headless verb needed the chart's PLOT half below the firewall, so
+five things moved out of `src/Ui`. The full write-up is in `src/Cli/RESOLVED.md`; what matters on this
+side is what is still here and why.
+
+**What left.** `SmithPlotBuilder`, `SmithChartScene`, `SmithMarkerBridge` and `SmithOverlayResolver`
+(→ `CircuitRF.Render.Smith`); the DRAW half of `SmithGripperOverlay` (→ `SmithChartChrome`, same
+namespace); `SmithChartViewModel.ActiveParameterOf` (→ `SmithComponentMap`); the status strip's VSWR
+and conjugate-mismatch arithmetic (→ `SmithReadings`, `src/Design/Smith`); and `MatchValueFormat`
+(→ `CircuitRF.Design.Matching`). All of it was already framework-free — the move changed no behaviour
+and the 201 existing Smith tests passed unchanged, which is what "wiring rather than a refactor"
+meant.
+
+**What stayed, and the line it is on.** `SmithGripperOverlay` keeps the GESTURE: `HitTest`,
+`DragBegin`, `DragTo`, `DragEnd`, `Hover`, and the hover/drag fields. Those are what a live pointer
+has and a picture does not, and they are also the only part that calls back into a view model. Its
+`Draw` is now one statement handing `SmithChartChrome` the same scene, the same design and a
+`SmithChromeState` built from those fields.
+
+**The rule the split makes enforceable.** Anything that decides what a frame LOOKS like now lives
+somewhere `circuitrf smith` can reach, so a change to the chart's appearance moves both surfaces or
+fails the byte-identity gate. Two settings had already drifted out of reach in exactly that way and
+were caught by the verb's source scan rather than by anything failing:
+
+- **`ActiveParameterOf`** decides which nodes carry a gripper ring. Left in the view model, a headless
+  chart would have drawn a ring on a file element — which has no parameter to drag — and the window
+  would not.
+- **`ChartPlot.Axes.LockedPanning = false` and `IsFixedReadout = true`** were two loose statements in
+  `BuildChartHost`. They are `SmithPlotBuilder.Configure` now, which `BuildChartHost` calls and which
+  the verb's `NewChartPlot` is. Neither flag is visible in a picture, which is precisely why a second
+  copy of them would have survived indefinitely.
+
+**`MatchValueFormat` is not a Match Designer type and never was.** It formats a frequency for the
+chart's load-point labels, for the status strip, and now for the verb's report; the other 25 files of
+`CircuitRF.Ui.Matching` are the Designer and stayed. Files here reach it through one line in
+`GlobalUsings.cs` — the same mechanism the DRC engine's move used — so no `using` in this project
+changed.

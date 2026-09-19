@@ -78,7 +78,7 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
     /// what it does, and the only way to find out which parameter it is on is to drag it.
     /// </remarks>
     public bool IsActive => _owner.ElementAt(ElementIndex) is { } e
-                         && SmithChartViewModel.ActiveParameterOf(e) == Parameter;
+                         && SmithComponentMap.ActiveParameterOf(e) == Parameter;
 
     /// <summary>True for the four parameters whose slider is logarithmic.</summary>
     public bool IsLogarithmic => IsLog(Parameter);

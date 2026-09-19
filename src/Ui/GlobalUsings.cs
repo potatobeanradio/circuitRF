@@ -54,6 +54,19 @@ global using CircuitRF.Render;
 // src/Render/RESOLVED.md.
 global using CircuitRF.Render.DataDisplay;
 
+// The Smith Chart's PLOT half, which crossed the same wall in SMITH-10
+// (brief-smith-10-cli-verb.md R-smith10-3) so `circuitrf smith` draws the chart the window draws
+// rather than a second one that would drift. What moved is the scene builder, the trace fill, the
+// marker bridge, the overlay resolver and the transient chrome's DRAW calls. What stayed here is
+// the gesture — SmithGripperOverlay's hit test, press and drag — and every view model beside it.
+global using CircuitRF.Render.Smith;
+
+// The engineering value formatter, which moved to CircuitRF.Design in the same change and for the
+// same reason: a load point's frequency label is drawn below the firewall and reported above it, and
+// two spellings of one frequency is two answers.
+global using CircuitRF.Design.Matching;
+
+
 // The one place a STORED relative reference is turned into a filesystem path and back, aliased
 // rather than imported wholesale: `CircuitRF.Core`'s root namespace also holds `ComponentModel`,
 // which would shadow `System.ComponentModel` in every file here that names it.

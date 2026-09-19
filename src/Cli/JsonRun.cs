@@ -134,6 +134,12 @@ internal static class JsonRun
     /// of this run carries.</summary>
     public static RailReportJson? Rail;
 
+    /// <summary>What <c>smith</c> answered (brief-smith-10-cli-verb.md R-smith10-2) — the reading at
+    /// the design frequency, the walk one node at a time, and the swept band when there is one. It
+    /// runs no analysis and carries no DataSet, which is why it is its own payload beside
+    /// <see cref="Render"/> rather than a cube.</summary>
+    public static SmithReportJson? Smith;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -174,6 +180,7 @@ internal static class JsonRun
         Find                = null;
         Render              = null;
         Rail                = null;
+        Smith               = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -198,6 +205,21 @@ internal static class JsonRun
         var rest = new List<string>(args.Length);
         bool interpolate = args.Contains("--interp");
 
+        // THE ONE VERB THAT OWNS `--at` ITSELF (brief-smith-10-cli-verb.md R-smith10-2).
+        //
+        // AUT-9's `--at axis=value` narrows the AXES of a result document, and it is taken here so
+        // every verb that produces a DataSet gets it for free. `smith` produces none — it evaluates a
+        // `.csmith` and reports — and its own `--at <freq>` says WHERE to evaluate, which is a
+        // question about the run rather than about its output. Taking it here would swallow the
+        // frequency, report "--at '2GHz' is malformed. Write --at <axis>=<value>" and leave the
+        // caller with a refusal about a flag they did not mean, one verb away from the one they did.
+        //
+        // The test is the VERB and not the SHAPE of the value: deciding by whether the text contains
+        // an '=' would make `smith --at freq=2GHz` mean something different from `smith --at 2GHz`,
+        // silently, and that is precisely the kind of guess a refusal exists to avoid.
+        bool verbOwnsAt = args.Length > 0
+                       && args[0].Equals("smith", StringComparison.OrdinalIgnoreCase);
+
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -215,7 +237,7 @@ internal static class JsonRun
                 // R-aut9-9. Taken here, with `--only` and `--group`, for the same reason those are:
                 // every verb that produces a DataSet gets them without its own argument loop
                 // learning about them, and `read` gets exactly the same spelling as `run`.
-                case "--at" when i + 1 < args.Length:
+                case "--at" when i + 1 < args.Length && !verbOwnsAt:
                     foreach (string one in Split(args[++i]))
                     {
                         int eq = one.IndexOf('=');
@@ -380,9 +402,9 @@ internal static class JsonRun
         // is about no document at all — so they are answered before the cube machinery, not folded
         // into it.
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
-         || History is not null || Render is not null || Find is not null)
+         || History is not null || Render is not null || Find is not null || Smith is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
-                                     Find: Find);
+                                     Find: Find, Smith: Smith);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its
