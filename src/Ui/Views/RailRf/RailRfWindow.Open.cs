@@ -89,7 +89,13 @@ public partial class RailRfWindow
             return;
         }
 
-        bool disposable = Vm is { DocumentPath: null, Board: null } scratch && scratch.Document.Rails.Count == 0;
+        // AND NOT DIRTY, since the window learned to save (2026-09-19). The other three clauses
+        // catch every kind of work this window used to be able to hold; a panel toggle or a Settings
+        // edit in an otherwise empty scratch window is not caught by any of them, and closing it
+        // would now also raise the unsaved-changes prompt in the middle of an Open — which is a
+        // question about a window the user is in the act of replacing.
+        bool disposable = Vm is { DocumentPath: null, Board: null, IsDirty: false } scratch
+                       && scratch.Document.Rails.Count == 0;
 
         var opened = Show(document, path, this, out var notes);
 

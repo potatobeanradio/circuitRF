@@ -123,6 +123,17 @@ public static class RailDocumentIo
             ViaPlatingThicknessMicrometres = d.Settings.ViaPlatingThicknessMicrometres,
             ViaTemperatureRiseCelsius      = d.Settings.ViaTemperatureRiseCelsius,
         },
+        // WRITTEN ONLY WHEN SOMETHING IS HIDDEN. Absent is the all-shown state, so a document
+        // nobody has collapsed a panel in is the same bytes it was before panels existed — and a
+        // `.crail` from an older circuitRF opens with all four, which is the same rule read from
+        // the other end.
+        Panels = d.Panels.AllShown ? null : new CrailPanels
+        {
+            ShowSpecification = d.Panels.ShowSpecification,
+            ShowBoard         = d.Panels.ShowBoard,
+            ShowParts         = d.Panels.ShowParts,
+            ShowResults       = d.Panels.ShowResults,
+        },
         Rails = d.Rails.Count > 0 ? [.. d.Rails.Select(ToFile)] : null,
         // Deterministic order, so a document saved twice with no edit in between is the same bytes
         // and revision control has nothing to show.
@@ -237,7 +248,18 @@ public static class RailDocumentIo
                 ViaTemperatureRiseCelsius      = f.Settings?.ViaTemperatureRiseCelsius
                                               ?? PdnViaCurrentLimit.ReferenceRiseCelsius,
             },
+            Panels = new RailPanels
+            {
+                ShowSpecification = f.Panels?.ShowSpecification ?? true,
+                ShowBoard         = f.Panels?.ShowBoard         ?? true,
+                ShowParts         = f.Panels?.ShowParts         ?? true,
+                ShowResults       = f.Panels?.ShowResults       ?? true,
+            },
         };
+
+        // A hand-edited file can say every panel is hidden; the window cannot, and a window with no
+        // content in it is not a state anything should have to be rescued from. See RailPanels.
+        if (!doc.Panels.AnyShown) doc.Panels = new RailPanels();
 
         foreach (var r in f.Rails ?? []) doc.Rails.Add(FromFile(r));
 
@@ -350,6 +372,12 @@ public static class RailDocumentIo
         public string?          ReferenceNet    { get; set; }
 
         public CrailSettings?   Settings       { get; set; }
+
+        /// <summary>Which of the window's four panels are on screen. <b>Absent means all four</b>,
+        /// which is every document written before panels existed and every one nobody has
+        /// collapsed a panel in.</summary>
+        public CrailPanels?     Panels         { get; set; }
+
         public List<CrailRail>? Rails          { get; set; }
 
         /// <summary>R-rail4-3's overrides. Absent on every document nobody has corrected, which is
@@ -366,6 +394,16 @@ public static class RailDocumentIo
         public long           X        { get; set; }
         public long           Y        { get; set; }
         public PdnCopperClass Class    { get; set; }
+    }
+
+    /// <summary>Which panels are on screen. Each nullable for the format's own reason — an absent
+    /// key takes the default, and the default here is shown.</summary>
+    private sealed class CrailPanels
+    {
+        public bool? ShowSpecification { get; set; }
+        public bool? ShowBoard         { get; set; }
+        public bool? ShowParts         { get; set; }
+        public bool? ShowResults       { get; set; }
     }
 
     private sealed class CrailSettings

@@ -1309,6 +1309,32 @@ Four things in that sketch are the whole design:
    says which rail the whole window is currently showing (§2.2). A load row with no current reads
    *observe*, because that is what it is.
 
+A fifth was added on 2026-09-19, at the owner's request:
+
+5. **Each of the four panels has a lamp on the top bar, left of `Open` and behind a rule.** They are in
+   the window's own left-to-right order — specification, board, parts, results — and all four start lit.
+   The point is temporary room: hiding one gives its space to the panels still on screen, so the board
+   can have the window for a moment without a splitter to drag back afterwards. **It is kept in the
+   `.crail`** (`RailPanels`), at the owner's instruction, and it is the one piece of pure view state
+   the document carries: the question it answers is about a BOARD rather than about a sitting, so a
+   reader who gave the artwork the whole window to review one board gets it back the next time they
+   open *that* board. **Absent from the file means all four are shown**, and the block is written only
+   when something is hidden — so a `.crail` from before this, and every one nobody has collapsed a
+   panel in, is unchanged. The specification panel is the one that never
+   *expands*: a rail selector, two short lists and a target are legible at 300 px and gain nothing from
+   more, so its column is fixed-or-gone. The board and the parts table share the centre column, so
+   hiding one of them widens nothing and hiding **both** is what collapses the column and hands its
+   width to results. **At least one panel is always showing**: four hidden panels is a window with a
+   toolbar, a status strip and nothing between them, so the last lit button is *disabled* rather than
+   inert, and a hand-edited `.crail` that hides everything opens with everything.
+
+   Saving arrived with it. **The window could open a `.crail` and never write one back** — `Save` and
+   `Save as…` sit beside `Open` on the top bar with ⌘S and ⇧⌘S, the title carries a leading bullet
+   while the document differs from disk, and closing a window with unsaved work asks, through the same
+   dialog wBond uses for the same reason (one window per document means closing the window *is*
+   closing the document). Until this, every edit the window made — the rail set, the sources and
+   loads, the targets, the four settings, the class overrides — lived only as long as the window did.
+
 ## 11.4 Where it opens from
 
 From the Tools menu for a new document, and by double-clicking a railRF document in the project tree. A

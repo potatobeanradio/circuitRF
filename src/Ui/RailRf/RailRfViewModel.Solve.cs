@@ -496,6 +496,10 @@ public sealed partial class RailRfViewModel
         // whatever is still wrong. Nothing survives an edit it has stopped being true of.
         RefreshRunGate();
 
+        // AND THE DIRTY MARK, for the same reason and at the same one call site: this runs on every
+        // committed edit, so it is where the title learns the document no longer matches disk.
+        RefreshDirty();
+
         if (!CanRun || Board is not { } board || SelectedRail is null) return;
         Start(board, PdnModelKind.Fast);
     }

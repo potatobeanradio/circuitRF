@@ -85,6 +85,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         BuildPlotHost();     // the one response container — see RailRfViewModel.Response.cs
         BuildBoardPanel();   // the board canvas's overlay — see RailRfViewModel.Board.cs
         RebuildRails();
+
+        // What the window opened on. A scratch document is captured too, so an EMPTY window is not
+        // reported as having unsaved work — see RailRfViewModel.Save.cs.
+        CaptureSnapshot();
     }
 
     private RailDocument _document;
@@ -97,9 +101,17 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     /// <summary>Where it came from, or null for one that has never been saved.</summary>
     public string? DocumentPath => _documentPath;
 
-    /// <summary>The window's own title — "railRF — evk_1v8_compact".</summary>
+    /// <summary>
+    /// The window's own title — "railRF — evk_1v8_compact", with a leading bullet while the
+    /// document differs from disk.
+    /// </summary>
+    /// <remarks>
+    /// <b>wBond's own spelling</b>, leading bullet and all, because a mark at the front is the one
+    /// still visible when a platform truncates a long title. Save is enabled whether or not it is
+    /// showing: the mark is information, and a disabled Save would be a refusal.
+    /// </remarks>
     public string Title =>
-        "railRF" + (DocumentName is { Length: > 0 } n ? $" — {n}" : "");
+        (IsDirty ? "• " : "") + "railRF" + (DocumentName is { Length: > 0 } n ? $" — {n}" : "");
 
     private string? DocumentName =>
         _document.Name is { Length: > 0 } n ? n
@@ -116,6 +128,9 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // all (PdnResultsByModel's own note), so the results go with the document.
         ClearResults();
         RebuildRails();
+        AnnouncePanels();
+        CaptureSnapshot();
+        OnPropertyChanged(nameof(IsDirty));
 
         OnPropertyChanged(nameof(Document));
         OnPropertyChanged(nameof(DocumentPath));

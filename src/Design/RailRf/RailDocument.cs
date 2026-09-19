@@ -42,6 +42,47 @@ public sealed class RailSettings
 }
 
 /// <summary>
+/// Which of the window's four panels are on screen (railrf.md §11.3, point 5).
+///
+/// <para><b>Absent from the file means all four are shown</b>, which is why every one of these
+/// defaults to true and why <see cref="RailDocumentIo"/> writes the block only when something is
+/// hidden: a document nobody has collapsed a panel in says nothing about panels, and a `.crail`
+/// written before this existed opens exactly as it always did.</para>
+///
+/// <para><b>It is the one piece of pure VIEW state in this document</b>, and it is here because the
+/// owner asked for it to be — a reader who gives the board the whole window for a board review wants
+/// it that way again the next time they open that board, not the next time they open any of them.
+/// Nothing reads it but the window: no extractor, no solve and no report.</para>
+/// </summary>
+public sealed class RailPanels
+{
+    /// <summary>The left column. It is fixed-width or gone and never expands — a rail selector, two
+    /// short lists and a target are legible at 300 px and gain nothing from more.</summary>
+    public bool ShowSpecification { get; set; } = true;
+
+    /// <summary>The artwork and the map strip above it.</summary>
+    public bool ShowBoard { get; set; } = true;
+
+    /// <summary>The parts table under the board.</summary>
+    public bool ShowParts { get; set; } = true;
+
+    /// <summary>The results column.</summary>
+    public bool ShowResults { get; set; } = true;
+
+    /// <summary>The state a document that says nothing opens in — what the file OMITS.</summary>
+    public bool AllShown => ShowSpecification && ShowBoard && ShowParts && ShowResults;
+
+    /// <summary>
+    /// Whether anything at all is showing. <b>At least one panel always is</b> (owner,
+    /// 2026-09-19): four hidden panels is a window with a toolbar, a status strip and nothing
+    /// between them. The window's own buttons cannot reach that state, but a hand-edited
+    /// <c>.crail</c> can, so <see cref="RailDocumentIo"/> reads all-hidden as all-shown rather
+    /// than opening a window with no content in it.
+    /// </summary>
+    public bool AnyShown => ShowSpecification || ShowBoard || ShowParts || ShowResults;
+}
+
+/// <summary>
 /// A railRF document — what a railRF window opens, what <c>circuitrf rail</c> reads, and what
 /// revision control keeps (railrf.md §2.2, §2.3).
 ///
@@ -136,6 +177,10 @@ public sealed class RailDocument
 
     /// <summary>The settings §11.2 puts behind <c>Settings</c>.</summary>
     public RailSettings Settings { get; set; } = new();
+
+    /// <summary>Which of the window's four panels are on screen. All four, in a document that says
+    /// nothing — see <see cref="RailPanels"/>.</summary>
+    public RailPanels Panels { get; set; } = new();
 
     /// <summary>
     /// Which regions of copper the user has forced the fast model to read either way

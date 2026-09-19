@@ -30132,3 +30132,81 @@ first inspector edit **emptied every curve**, silently) and `ExcludeFromAutoscal
 axis and the low decades flatten onto the floor. dBΩ *is* the log-ohms view, which is what §2.4's
 log-log request settled for. Adding a log Y is a real feature below the firewall touching every Rect
 plot in the application, and the owner chose linear ohms as-is (2026-09-19).
+
+---
+
+## railRF — the panel lamps, and the Save the window had never had (2026-09-19)
+
+The owner asked for a way to toggle which of railRF's four panels are on screen, so one of them can
+have the window for a moment; then for that choice to be kept in the `.crail`. Three findings came
+out of it, two of them about code that had nothing to do with the request.
+
+### 1. The window could open a `.crail` and never write one back
+
+`RailDocumentIo` has been able to write one since brief 1, and **nothing in the application ever
+called it**: the clipboard serialised a document, `Cli/Rail.cs` round-tripped one in memory, the
+tests wrote files, and the window's `Export` button wrote *results*. So every edit that window makes —
+the rail set, the sources and loads, the targets, the Settings flyout's four values, the class
+overrides — lived exactly as long as the window did, and no control anywhere said so.
+
+It had not been noticed because nothing in the window looks like a document editor: there is no menu
+bar, the toolbar is five icons, and `Export` is the only thing on it that writes a file. The panel
+toggles are what made it impossible to leave, since a setting kept in a file nothing writes is not
+kept.
+
+`Save`/`Save as…` now sit beside `Open` (⌘S, ⇧⌘S), the title carries a leading bullet while the
+document differs from disk, and `OnClosing` asks through the `SaveChangesDialog` wBond already uses —
+one window per document means closing the window *is* closing the document.
+
+**The dirty mark is a byte comparison, not a flag.** `IsDirty` serialises the document and compares
+it with what was last read or written, which is the one definition that cannot drift: it compares the
+bytes a save would produce against the bytes on disk, so an edit nobody remembered to flag still
+shows and a pair of edits that cancel out correctly does not. It is refreshed from `QueueResolve` —
+the view model's own documented funnel for a committed edit — and from the panel setters, which
+deliberately queue no solve. **Save is enabled either way**: a refresh this code failed to reach can
+never be the reason a document would not write.
+
+**Save as… re-keys the per-document table.** `RailRfWindow.Open` keyed a window by the path it was
+opened with, captured in the `Closed` closure; a window that saved itself elsewhere would have
+removed the wrong row and left a stale one pointing at a closed window. The key is an instance field
+now, and saving over a path another window holds is a **refusal** — the "two working copies" rule
+`Show` has kept since brief 7, stated where it can still be acted on rather than discovered later as
+lost work. The standalone window (`Tools ▸ railRF`) starts in no table at all, so its first save is
+also its registration.
+
+### 2. An `AspectRatioPanel` in an `Auto` row has no ceiling
+
+The results plot is an `AspectRatioPanel` in `RowDefinitions="Auto,Auto,*,Auto"`. An `Auto` row
+offers an **infinite** height, which is exactly what that panel's own note says makes the height
+follow the width — correct while the results column was always 340 px, and a bug the moment a panel
+toggle could hand that column the whole window: at 1,100 px wide the golden plot is 680 px tall in a
+620 px pane, so the drop, the breakdown and the via check went off the bottom and took the plot's own
+lower half with them.
+
+Fixed with a **ceiling**, not a star row. A star row would reserve its share whether the plot could
+use it or not, so a tall NARROW window — where the plot is already capped by its width — would sit
+under a band of empty space the cards used to have. `MaxHeight` binds only in the case that was
+broken; the panel then letterboxes, as it does in any bounded row.
+
+The general form is worth keeping: **a ratio-driven control is only safe in a row that bounds it.**
+Anywhere one sits in `Auto`, its height is a function of a width somebody may later change.
+
+### 3. Four hidden panels is a state with no way back that looks like a way back
+
+All four lamps off leaves a toolbar, a status strip and nothing between them — reachable in four
+clicks, escapable only by recognising four dark buttons as the exit. The last lit button is now
+**disabled rather than inert**, through the command's own `CanExecute` so the Button dims itself and
+there is no `IsEnabled` to keep in step. The setter refuses it too, for a caller that is not the
+button, and a hand-edited `.crail` that hides everything opens with everything: an invariant the UI
+enforces and the reader does not is one a file can walk straight past.
+
+### What the `.crail` gained
+
+`RailPanels` — four bools, all defaulting to shown. **The block is written only when something is
+hidden**, so a document nobody has collapsed a panel in is byte-identical to what it was and an older
+file is untouched; absent reads as all four shown. It is the one piece of pure view state the
+document carries, and it earns the place because the question is about a BOARD rather than about a
+sitting: a reader who gave the artwork the whole window to review one board gets it back the next
+time they open *that* board.
+
+Gates: `tests/Ui.Tests/RailRf/RailPaneToggleTests.cs` and `RailSaveTests.cs`.

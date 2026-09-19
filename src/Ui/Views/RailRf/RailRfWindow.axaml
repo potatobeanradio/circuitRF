@@ -51,6 +51,16 @@
          unaffected. -->
     <Window.KeyBindings>
         <KeyBinding Gesture="Delete" Command="{Binding DeleteSelectedMarkersCommand}"/>
+        <!-- Save, on both spellings, as every other gesture in this application is bound. The
+             command is the VIEW MODEL's and it carries no writing of its own: the window installs
+             the hook that knows there is a file picker, exactly as it installs PostToUi because it
+             is the half that knows there is a dispatcher (wBond and harmonicaRF's own
+             SaveDocumentHook). Same command on the buttons, so the gesture and the glyph cannot
+             drift apart. -->
+        <KeyBinding Gesture="Ctrl+S"       Command="{Binding SaveCommand}"/>
+        <KeyBinding Gesture="Meta+S"       Command="{Binding SaveCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SaveAsCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+S" Command="{Binding SaveAsCommand}"/>
     </Window.KeyBindings>
 
     <Window.Styles>
@@ -320,6 +330,57 @@
                  NO CLOSE BUTTON. The window's own title bar already carries one, and a second in the
                  client area is a second thing to aim at that does the same job (owner, 2026-08-20). -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <!-- ── THE FOUR PANEL LAMPS (owner, 2026-09-19) ────────────────────────────────
+                     Four toggles, one per panel, so a reader can give one of them the whole window
+                     for a moment. They are ORDERED AS THE WINDOW IS — specification on the left,
+                     the board and the parts table under it in the middle, results on the right —
+                     and the glyphs say the same thing a second time: Material's own page-layout
+                     family draws the sidebar, the body and the footer of a page, which is exactly
+                     the shape each button turns off.
+
+                     LIT MEANS ON SCREEN, on Button.ToolActive's accent — the same lamp the map
+                     strip, the results strip and the Accuracy button wear, so a lit control means
+                     one thing in this window. All four start lit.
+
+                     Plain Buttons bound to Classes.ToolActive rather than ToggleButtons, for the
+                     reason the tab-strip comment below gives at length: a ToggleButton toggles
+                     ITSELF, so its visual state and the view model's would be two copies of one
+                     fact. Here the view model owns it and the class follows it.
+
+                     AT LEAST ONE IS ALWAYS SHOWING, and the last lit button is DISABLED rather
+                     than inert — the Command's own CanExecute dims it, so there is no IsEnabled
+                     here to keep in step. Four hidden panels is a window with nothing between its
+                     toolbar and its status strip. -->
+                <Button Name="SpecificationPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowSpecification}"
+                        Command="{Binding ToggleSpecificationCommand}"
+                        ToolTip.Tip="Specification — show or hide the left column. Hidden, the board, the parts table and the results take the width it releases; it never takes more than its own. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/>
+                </Button>
+                <Button Name="BoardPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowBoard}"
+                        Command="{Binding ToggleBoardCommand}"
+                        ToolTip.Tip="Board — show or hide the artwork and its map strip. Hidden, the parts table takes the whole centre column. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutBody" Width="16" Height="16"/>
+                </Button>
+                <Button Name="PartsPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowParts}"
+                        Command="{Binding TogglePartsCommand}"
+                        ToolTip.Tip="Parts — show or hide the parts table. Hidden, the board expands down into its space. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutFooter" Width="16" Height="16"/>
+                </Button>
+                <Button Name="ResultsPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowResults}"
+                        Command="{Binding ToggleResultsCommand}"
+                        ToolTip.Tip="Results — show or hide the right column. Hidden, the board and the parts table take the width it releases. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutSidebarRight" Width="16" Height="16"/>
+                </Button>
+
+                <!-- The layout editor's own toolbar rule, and it is doing the layout editor's job:
+                     these four change what is SHOWN, the three to its right act on the document. -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <!-- OPEN, and it is not a second import. An import CREATES a cell from foreign
                      artwork; this points the window at a document or a layout that already exists —
                      a `.crail` anywhere on disk, or a `.clay` in any workspace, whose own `.ctech`
@@ -328,6 +389,25 @@
                 <Button Name="OpenButton" Padding="6,3"
                         ToolTip.Tip="Open — a .crail, or a .clay layout from any workspace. The layout's own technology reference is what supplies the stackup.">
                     <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                </Button>
+                <!-- ── SAVE, WHICH THIS WINDOW HAD NEVER HAD (owner, 2026-09-19) ────────────────
+                     `RailDocumentIo` has been able to write a `.crail` since brief 1 and nothing in
+                     the application called it, so every edit this window makes lived for as long as
+                     the window did. Beside Open because they are the pair; left of Import because
+                     Import CREATES and these two are about the document that exists.
+
+                     ⌘S / Ctrl+S and ⇧⌘S / Ctrl+Shift+S are bound at the window, and the title
+                     carries a bullet while the document differs from disk. Save is ALWAYS enabled:
+                     the bullet is information, a disabled Save would be a refusal. -->
+                <Button Name="SaveButton" Padding="6,3"
+                        Command="{Binding SaveCommand}"
+                        ToolTip.Tip="Save (⌘S) — the rails, the sources and loads, the targets, the settings and which panels are open. A window that has never been saved asks where.">
+                    <mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/>
+                </Button>
+                <Button Name="SaveAsButton" Padding="6,3"
+                        Command="{Binding SaveAsCommand}"
+                        ToolTip.Tip="Save as… (⇧⌘S) — write this document under a new name. A file another railRF window is already holding is a refusal, not two working copies of it.">
+                    <mi:MaterialIcon Kind="ContentSaveEditOutline" Width="16" Height="16"/>
                 </Button>
                 <Button Name="ImportButton" Padding="6,3"
                         ToolTip.Tip="Import a board — the artwork, and the placement, BOM and netlist that go with it">
@@ -421,7 +501,8 @@
         <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="300,*,340">
 
             <!-- ══ SPECIFICATION ══════════════════════════════════════════ -->
-            <Border Grid.Column="0" Classes="pane">
+            <Border Grid.Column="0" Name="SpecificationPane" Classes="pane"
+                    IsVisible="{Binding ShowSpecification}">
                 <Grid RowDefinitions="Auto,Auto,*,Auto">
                     <TextBlock Classes="panelhdr" Text="Specification"/>
 
@@ -725,9 +806,14 @@
             </Border>
 
             <!-- ══ BOARD ═════════════════════════════════════════════════ -->
-            <Border Grid.Column="1" Classes="pane">
-                <Grid RowDefinitions="Auto,*,Auto">
-                    <Grid ColumnDefinitions="Auto,*">
+            <!-- THE BOARD AND THE PARTS TABLE SHARE THIS COLUMN, which is why hiding one of
+                 them widens nothing and hiding BOTH is what collapses the column. RailRfWindow's
+                 SyncPanes owns the arithmetic; what is here is which parts of it are drawn. -->
+            <Border Grid.Column="1" Name="BoardPane" Classes="pane"
+                    IsVisible="{Binding ShowBoardColumn}">
+                <Grid Name="BoardPaneGrid" RowDefinitions="Auto,*,Auto">
+                    <Grid Name="BoardPaneHeader" ColumnDefinitions="Auto,*"
+                          IsVisible="{Binding ShowBoard}">
                         <TextBlock Classes="panelhdr" Text="Board" VerticalAlignment="Center"/>
                         <!-- THE SAME FOUR BUTTONS THE LAYOUT EDITOR CARRIES, in the same order and
                              with the same tooltips (§11.6). The keyboard is not the only route to any
@@ -811,7 +897,8 @@
                          BRIEF 8 OWNS IT ENTIRELY. Brief 7 hosts it and wires the strip above; every
                          gesture and every pixel of overlay is brief 8's, through the CanvasOverlay
                          seam wBond already uses. -->
-                    <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
+                    <Border Grid.Row="1" Name="BoardCard" Classes="card" Margin="0"
+                            ClipToBounds="True" IsVisible="{Binding ShowBoard}">
                         <!-- THE LAYOUT EDITOR'S OWN RULERS, the same control (owner, 2026-09-19).
                              Every coordinate this window prints — a source, a load, a part's
                              placement, the readout under the cursor — is a place on this artwork, and
@@ -902,8 +989,9 @@
                     </Border>
 
                     <!-- ── The parts table (R-rail7-9) ─────────────────────────── -->
-                    <Border Grid.Row="2" Classes="card" Margin="0,5,0,0">
-                        <Grid RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
+                    <Border Grid.Row="2" Name="PartsCard" Classes="card" Margin="0,5,0,0"
+                            IsVisible="{Binding ShowParts}">
+                        <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
                             <TextBlock Classes="cardhdr" Text="Parts"/>
                             <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
                                  This is R-rail7-2's one exception and it is an owner decision: any
@@ -974,7 +1062,8 @@
             </Border>
 
             <!-- ══ RESULTS ═══════════════════════════════════════════════ -->
-            <Border Grid.Column="2" Classes="pane">
+            <Border Grid.Column="2" Name="ResultsPane" Classes="pane"
+                    IsVisible="{Binding ShowResults}">
                 <Grid RowDefinitions="Auto,Auto,*,Auto">
                     <Grid ColumnDefinitions="Auto,*">
                         <TextBlock Classes="panelhdr" Text="Results" VerticalAlignment="Center"/>
@@ -1001,7 +1090,16 @@
                          a DataDisplayViewModel with one container in it, which is what makes the
                          markers, the info boxes, the theme and the clipboard the Data Display's own
                          rather than four things this window would otherwise answer "nothing" to. -->
-                    <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
+                    <!-- ── AND ITS HEIGHT IS CAPPED FROM THE CODE-BEHIND (owner, 2026-09-19)
+                         An AspectRatioPanel in an Auto row is offered an INFINITE height, so its
+                         height is whatever the width divides to — which was fine while this column
+                         was always 340 px and became a bug the moment a panel toggle could hand it
+                         the whole window: at 1,100 px wide the golden plot is 680 px tall, and it
+                         took the drop, the breakdown and the via check off the bottom of the pane
+                         with it, along with its own lower half. RailRfWindow.CapResultsPlot keeps
+                         it under a share of the pane's own height; the panel then letterboxes,
+                         which is what it does in any bounded row. -->
+                    <ctl:AspectRatioPanel Grid.Row="1" Name="ImpedancePlotHost" Margin="0,2">
                         <!-- ── THE PLOT INSPECTOR OPENS HERE (owner, 2026-09-19) ──────────────
                              Double-click empty plot area and the Data Display's own inspector
                              flyout opens, which is where the Y unit lives: the curves are dBΩ and a

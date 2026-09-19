@@ -25,10 +25,13 @@ namespace CircuitRF.Ui.Views.RailRf;
 /// arithmetic, closed with its owner, and deduplicated per DOCUMENT rather than per window — two
 /// views of one <c>.crail</c> would write it from two working copies.
 ///
-/// <para><b>The code-behind does three things and no more</b>, which is the line that window already
+/// <para><b>The code-behind does four things and no more</b>, which is the line that window already
 /// draws: it opens and positions the window, it binds the two tab strips (a <c>ToggleButton</c> strip
 /// has no single selected-value property to bind, so the grouping is done here rather than with four
-/// converters), and it gives the view model its UI-thread post. Everything else is the view model's.
+/// converters), it gives the space a hidden panel released to the panels still on screen (a
+/// <c>ColumnDefinition</c>'s width is not something a child's <c>IsVisible</c> can reach —
+/// <see cref="SyncPanes"/>), and it gives the view model its UI-thread post. Everything else is the
+/// view model's.
 /// </para>
 /// </remarks>
 public partial class RailRfWindow : Window
@@ -38,6 +41,12 @@ public partial class RailRfWindow : Window
     /// legitimately want side by side, exactly as the Match Designer's standalone is.</summary>
     private static readonly Dictionary<string, RailRfWindow> Open =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>This window's key in <see cref="Open"/>, or null while it is in no table at all —
+    /// the standalone case, until its first save. <b>Held as a field rather than captured</b>,
+    /// because Save as… moves a window from one key to another and a closure over the key it was
+    /// opened with would then remove the wrong row (<see cref="AdoptPath"/>).</summary>
+    private string? _openKey;
 
     public RailRfWindow()
     {
@@ -49,6 +58,18 @@ public partial class RailRfWindow : Window
         ClassTab.Click      += (_, _) => SetOverlay(RailBoardOverlay.Class);
         DcTab.Click         += (_, _) => SetResultsTab(RailResultsTab.Dc);
         FrequencyTab.Click  += (_, _) => SetResultsTab(RailResultsTab.Frequency);
+
+        // The four panel lamps' own arithmetic. Captured BEFORE anything can change it, because
+        // the sizes below are the AXAML's and this file must not carry a second copy of them.
+        _specificationColumn = PaneGrid.ColumnDefinitions[0].Width;
+        _resultsColumn       = PaneGrid.ColumnDefinitions[2].Width;
+        _partsGridMaxHeight  = PartsGrid.MaxHeight;
+        _partsListMaxHeight  = PartsList.MaxHeight;
+        SyncPanes();
+
+        // The results plot derives its height from its width, so it needs a ceiling the moment the
+        // results column can be wide — see CapResultsPlot.
+        ResultsPane.SizeChanged += (_, _) => CapResultsPlot();
 
         WireImportButton();
         WireExportButtons();
@@ -71,8 +92,10 @@ public partial class RailRfWindow : Window
             // there is a dispatcher — the same split the rest of this view model keeps.
             vm.PostToUi = a => Dispatcher.UIThread.Post(a);
             vm.RunOffThread = (work, token) => System.Threading.Tasks.Task.Run(work, token);
+            InstallSaveHook(vm);
 
             SyncTabs();
+            SyncPanes();
             BindBoardOverlay(vm);
             BindImpedancePlot(vm);
             BindBoardRulerUnits();
@@ -509,10 +532,98 @@ public partial class RailRfWindow : Window
                            or nameof(RailRfViewModel.SelectedResultsTab))
             SyncTabs();
 
+        // The four panel lamps. The BORDERS gate themselves off the same properties in the AXAML;
+        // what cannot be bound is the geometry a collapsed panel leaves behind — a fixed column is
+        // still 300 px wide when the thing inside it is invisible.
+        else if (e.PropertyName is nameof(RailRfViewModel.ShowSpecification)
+                                or nameof(RailRfViewModel.ShowBoard)
+                                or nameof(RailRfViewModel.ShowParts)
+                                or nameof(RailRfViewModel.ShowResults))
+            SyncPanes();
+
         // A new board is a new LayoutEditorViewModel — and with it a new resolution and a new unit
         // for the rulers to label in.
         else if (e.PropertyName is nameof(RailRfViewModel.BoardLayout))
             BindBoardRulerUnits();
+    }
+
+    // ── The four panel lamps (owner, 2026-09-19) ─────────────────────────────────────
+
+    /// <summary>The widths and caps the AXAML declares, read once so they are stated once.</summary>
+    private GridLength _specificationColumn = new(300);
+    private GridLength _resultsColumn       = new(340);
+    private double _partsGridMaxHeight = double.PositiveInfinity;
+    private double _partsListMaxHeight = double.PositiveInfinity;
+
+    /// <summary>
+    /// Gives the space a hidden panel released to the panels that are still on screen.
+    /// </summary>
+    /// <remarks>
+    /// <b>The visibility is bound and only the GEOMETRY is here.</b> Each panel's
+    /// <c>IsVisible</c> comes off the view model in the AXAML, but an invisible child does not
+    /// shrink the column it sits in: <c>ColumnDefinitions[0]</c> is a fixed 300 whether anything is
+    /// drawn in it or not, so hiding the specification panel without this would leave a 300 px hole
+    /// where it had been — which is the whole of what the button was asked for.
+    ///
+    /// <para><b>The specification column is fixed-or-gone and never star</b> (see
+    /// <c>RailRfViewModel.Panes.cs</c>). The results column is fixed BESIDE the board and star
+    /// WITHOUT it, which is the one case where a panel grows sideways rather than just taller.</para>
+    ///
+    /// <para>The centre column's two rows are the same statement vertically: the board holds the
+    /// star row and the parts table sits under it at its own capped height, and with the board gone
+    /// the parts table takes the star row and both caps come off — a table pinned at 170 px in an
+    /// otherwise empty column is not what "give parts the space" means.</para>
+    /// </remarks>
+    private void SyncPanes()
+    {
+        bool specification = Vm?.ShowSpecification ?? true;
+        bool board         = Vm?.ShowBoard         ?? true;
+        bool parts         = Vm?.ShowParts         ?? true;
+        bool results       = Vm?.ShowResults       ?? true;
+        bool centre        = board || parts;
+
+        PaneGrid.ColumnDefinitions[0].Width = specification ? _specificationColumn : new GridLength(0);
+        PaneGrid.ColumnDefinitions[1].Width = centre ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        PaneGrid.ColumnDefinitions[2].Width =
+            !results ? new GridLength(0)
+            : centre ? _resultsColumn
+                     : new GridLength(1, GridUnitType.Star);
+
+        BoardPaneGrid.RowDefinitions[1].Height = board ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        BoardPaneGrid.RowDefinitions[2].Height = board ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+
+        PartsGrid.RowDefinitions[2].Height = board ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        PartsGrid.MaxHeight = board ? _partsGridMaxHeight : double.PositiveInfinity;
+        PartsList.MaxHeight = board ? _partsListMaxHeight : double.PositiveInfinity;
+    }
+
+    /// <summary>The share of the results pane the plot may take. The rest is the cards.</summary>
+    private const double ResultsPlotHeightShare = 0.45;
+
+    /// <summary>
+    /// Keeps the results plot from growing taller than the pane that has to show it AND the cards
+    /// under it.
+    /// </summary>
+    /// <remarks>
+    /// <b>An <c>AspectRatioPanel</c> in an <c>Auto</c> row is offered an infinite height</b>, which
+    /// is exactly what that panel's own note says makes the height follow the width. That was right
+    /// while this column was a fixed 340 px; with a panel toggle able to hand the column the whole
+    /// window it became a 680 px plot in a 620 px pane, which took the drop, the breakdown and the
+    /// via check off the bottom along with the plot's own lower half (owner, 2026-09-19).
+    ///
+    /// <para><b>A ceiling rather than a star row.</b> A star row would reserve the share whether the
+    /// plot could use it or not, so a tall NARROW window — where the plot is already capped by its
+    /// width — would sit under a band of empty space the cards used to have. A MaxHeight changes
+    /// nothing in that case and binds only in the one that was broken; the panel letterboxes, as it
+    /// does in any bounded row.</para>
+    /// </remarks>
+    private void CapResultsPlot()
+    {
+        double pane = ResultsPane.Bounds.Height;
+        if (pane <= 0) return;
+
+        double cap = pane * ResultsPlotHeightShare;
+        if (Math.Abs(ImpedancePlotHost.MaxHeight - cap) > 0.5) ImpedancePlotHost.MaxHeight = cap;
     }
 
     // ── The margin rulers ────────────────────────────────────────────────────────────
@@ -627,10 +738,11 @@ public partial class RailRfWindow : Window
 
         var window = new RailRfWindow { DataContext = vm };
         window.AdoptLiveArtwork();   // prefer the shared session's model where the .clay is open
+        window._openKey = key;
         Open[key] = window;
         window.Closed += (_, _) =>
         {
-            Open.Remove(key);
+            if (window._openKey is { } k) Open.Remove(k);
             vm.Dispose();
         };
 
@@ -648,7 +760,12 @@ public partial class RailRfWindow : Window
     {
         var vm = new RailRfViewModel();
         var window = new RailRfWindow { DataContext = vm };
-        window.Closed += (_, _) => vm.Dispose();
+        window.Closed += (_, _) =>
+        {
+            // It may have acquired one by being saved — see AdoptPath.
+            if (window._openKey is { } k) Open.Remove(k);
+            vm.Dispose();
+        };
 
         ShowUnowned(window, owner);
         return window;
