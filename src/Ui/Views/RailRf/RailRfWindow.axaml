@@ -36,6 +36,23 @@
         MinWidth="1080" MinHeight="700"
         CanResize="True">
 
+    <!-- ── DELETE REMOVES THE SELECTED MARKER (owner, 2026-09-19) ──────────────────────────────
+         The results plot is a real Data Display PlotControl with real markers on it, and this
+         window answered no Delete at all — so a marker added by double-clicking the plot and
+         selected by clicking its info box could not be removed by the key every other plot surface
+         in the application removes it with. Bound at the WINDOW, like the Match Designer's, so the
+         keystroke works wherever focus sits; the plot is not deletable here (the command touches
+         markers only — see DeleteSelectedMarkers for why it is not DataDisplay's DeleteSelected).
+
+         Delete ONLY, not Backspace as well — the Match Designer's own note, and this window has far
+         more of what it is about: the specification column is InlineEditText rows, focusable at
+         rest without being text fields, and a Backspace landing on one would remove a marker the
+         user was not looking at. A TextBox that has focus handles Delete itself, so typing is
+         unaffected. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Delete" Command="{Binding DeleteSelectedMarkersCommand}"/>
+    </Window.KeyBindings>
+
     <Window.Styles>
         <!-- ── The panel language, taken from the Match Designer ──────────────────
              Two tiers, and the whole point is that they are DIFFERENT: a pane is
@@ -515,13 +532,14 @@
                                         </Button>
                                         <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,0,2"
                                                 Command="{Binding RemoveSourceCommand}"
-                                                CommandParameter="{Binding #SourceList.SelectedItem}"
+                                                CommandParameter="{Binding SelectedSource}"
                                                 ToolTip.Tip="Remove the selected source">
                                             <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
                                         </Button>
                                     </Grid>
                                     <ListBox Name="SourceList" Classes="rows" MaxHeight="120"
-                                             ItemsSource="{Binding Sources}">
+                                             ItemsSource="{Binding Sources}"
+                                             SelectedItem="{Binding SelectedSource, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailSourceRowViewModel">
                                                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
@@ -565,13 +583,14 @@
                                         </Button>
                                         <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,0,2"
                                                 Command="{Binding RemoveLoadCommand}"
-                                                CommandParameter="{Binding #LoadList.SelectedItem}"
+                                                CommandParameter="{Binding SelectedLoad}"
                                                 ToolTip.Tip="Remove the selected load">
                                             <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
                                         </Button>
                                     </Grid>
                                     <ListBox Name="LoadList" Classes="rows" MaxHeight="150"
-                                             ItemsSource="{Binding Loads}">
+                                             ItemsSource="{Binding Loads}"
+                                             SelectedItem="{Binding SelectedLoad, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailLoadRowViewModel">
                                                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
@@ -651,13 +670,14 @@
                                         </Button>
                                         <Button Grid.Column="3" Classes="rowbtn" Margin="0,0,0,2"
                                                 Command="{Binding RemoveAggressorCommand}"
-                                                CommandParameter="{Binding #AggressorList.SelectedItem}"
+                                                CommandParameter="{Binding SelectedAggressor}"
                                                 ToolTip.Tip="Remove the selected aggressor">
                                             <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
                                         </Button>
                                     </Grid>
                                     <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
-                                             ItemsSource="{Binding Aggressors}">
+                                             ItemsSource="{Binding Aggressors}"
+                                             SelectedItem="{Binding SelectedAggressor, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailAggressorRowViewModel">
                                                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
@@ -982,10 +1002,23 @@
                          markers, the info boxes, the theme and the clipboard the Data Display's own
                          rather than four things this window would otherwise answer "nothing" to. -->
                     <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
+                        <!-- ── THE PLOT INSPECTOR OPENS HERE (owner, 2026-09-19) ──────────────
+                             Double-click empty plot area and the Data Display's own inspector
+                             flyout opens, which is where the Y unit lives: the curves are dBΩ and a
+                             reader who wants ohms picks Mag on a trace card. The MASK and the
+                             aggressor lines follow it without being cards of their own — they are
+                             annotation, and RailRfViewModel.OnInspectorChangedThePlot is what
+                             carries the choice to them.
+
+                             CanDeletePlot stays False and Plot.IsFixedReadout hides the Add and
+                             the per-card trash: every trace here is rebuilt from the sweep on each
+                             re-solve, so a trace added would be gone by the next keystroke and one
+                             removed would be back. What the panel CAN change — the unit, the
+                             colour, the line — is carried across those rebuilds, markers with it. -->
                         <ddc:PlotControl Name="ImpedancePlotControl"
                                          Plot="{Binding ImpedancePlot}"
                                          Library="{Binding PlotHost.Library}"
-                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                         CanDeletePlot="False" CanEditPlotProperties="True"/>
                     </ctl:AspectRatioPanel>
 
                     <!-- A DOCKED LIST PANEL, not a modal sheet (§11.1) — so a user can click through

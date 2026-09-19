@@ -778,7 +778,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // A marker is a point on a 2D CURVE, and a 3D pattern draws a surface — there is nothing
             // to put one on (owner, 2026-09-11). Greyed rather than removed, the same rule the two
             // axis items beside it follow; see ApplyMenuAvailability.
-            bool hasTraces  = _plot?.Traces.Count > 0 && _plot.PlotType != PlotType.Surface3D;
+            //
+            // AND AN ANNOTATION TRACE IS NOT A CURVE EITHER (owner-reported, 2026-09-19 — the submenu
+            // offered many rows that are not curves). A target ceiling and a frequency marker line
+            // are drawn as traces only because the Data Display has no other way to draw them, and
+            // on railRF's |Z| plot eleven of the thirteen rows here were those — burying the two
+            // that answer anything. Counted as well as listed, so a plot carrying only annotation
+            // greys the item out rather than opening an empty submenu.
+            bool hasTraces  = _plot?.Traces.Any(t => !t.IsAnnotation) == true
+                           && _plot.PlotType != PlotType.Surface3D;
             bool hasMarkers = _plot?.Traces.Any(t => t.Markers.Count > 0) ?? false;
             _addMarkerMenuItem.IsEnabled = hasTraces;
             _addMarkerMenuItem.Opacity   = hasTraces ? 1.0 : 0.4;
@@ -789,6 +797,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             foreach (var t in _plot!.Traces)
             {
+                if (t.IsAnnotation) continue;
+
                 var sub      = new MenuItem { Header = t.Description };
                 var captured = t;
                 sub.Click += (_, _) => AddMarkerAtCanvasPoint(captured, _lastRightClickPos);
@@ -1705,6 +1715,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             foreach (var trace in _plot.Traces)
             {
+                // The same rule the Add Marker submenu applies, and it has to be applied here too:
+                // a double-click that snapped to an aggressor line would put a marker on a trace the
+                // menu deliberately does not offer, which is one gesture disagreeing with another
+                // about what this plot holds.
+                if (trace.IsAnnotation) continue;
+
                 var (wx, wy) = trace.UseSecondaryAxis
                     ? tf.SecondaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y)
                     : tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);

@@ -474,6 +474,32 @@ namespace CircuitRF.Render.DataDisplay
 
         public bool   ShowWatermark      { get; set; } = false;
         public string CustomTitle    { get; set; } = "";
+        /// <summary>
+        /// True where this plot is a READ-OUT its owner controls: the Plot Inspector may restyle it
+        /// but not re-aim it.
+        /// </summary>
+        /// <remarks>
+        /// <b>For a plot that is a read-out of a design rather than a document.</b> railRF's |Z|
+        /// plot rebuilds every trace from the sweep on each re-solve — which happens on every
+        /// committed edit — so anything that changes WHAT IS SHOWN is gone by the next keystroke.
+        /// The inspector still opens, because what the user wants from it (the Y unit, the colour,
+        /// the line) is presentation and is carried across those rebuilds; what is hidden is the
+        /// half that cannot be.
+        ///
+        /// <para>Hidden rather than disabled, throughout: a permanently grey control is one the user
+        /// goes on trying, and several of these are comboboxes that would sit empty taking up the
+        /// width of the panel.</para>
+        ///
+        /// <para><b>What it governs</b> — the plot TYPE (this plot is the kind it is), the trace SET
+        /// (no Add, no per-card trash), and each trace's DATA selection (the source combo, the
+        /// group and quantity pickers, and <c>vs X</c>). It governs nothing about how a trace looks,
+        /// which is the whole point of still opening the panel.</para>
+        ///
+        /// <para>Plot-wide rather than per-trace, because the rule is about who owns the CONTENT. It
+        /// says nothing about any one trace.</para>
+        /// </remarks>
+        public bool   IsFixedReadout { get; set; } = false;
+
         public bool   CustomTitleOn  { get; set; } = false;
 
         /// <summary>Renders <see cref="Title"/> in bold. Defaults false — every existing plot keeps
@@ -951,6 +977,10 @@ namespace CircuitRF.Render.DataDisplay
 
             foreach (var t in Traces)
             {
+                // A trace drawn TO the window cannot also decide it — see
+                // Trace.ExcludeFromAutoscale.
+                if (t.ExcludeFromAutoscale) continue;
+
                 var box = t.PathBoundingRect();
                 if (box.Width <= 0 && box.Height <= 0) continue;
                 if (t.UseSecondaryAxis)

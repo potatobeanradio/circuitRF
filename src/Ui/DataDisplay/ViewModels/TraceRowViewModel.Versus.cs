@@ -32,7 +32,8 @@ public partial class TraceRowViewModel
 
     /// <summary>The vs row is offered for cube-bound traces on the two plot types that have an X
     /// axis at all. Smith/Polar are excluded by the same rule the resolver enforces.</summary>
-    public bool ShowVersusRow => IsCubeBoundTrace && IsRectOrTablePlot && !ShowEmptyQuantity;
+    public bool ShowVersusRow =>
+        CanPickTraceData && IsCubeBoundTrace && IsRectOrTablePlot && !ShowEmptyQuantity;
 
     /// <summary>The X-source combo appears only once a second dataset is loaded — mirroring the Y
     /// side's own Source selector, so a single-dataset display is untouched by this feature.</summary>

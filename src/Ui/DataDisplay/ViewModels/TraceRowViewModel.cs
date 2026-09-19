@@ -1018,7 +1018,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
     /// <summary>True once a second dataset exists — the one gate that keeps a single-dataset
     /// display's picker byte-identical to before this selector existed.</summary>
-    public bool SourceSelectorVisible => _parent.LibraryEntries.Count > 1;
+    public bool SourceSelectorVisible => CanPickTraceData && _parent.LibraryEntries.Count > 1;
 
     partial void OnSelectedSourceItemChanged(PickerSourceItem? value)
     {
@@ -2625,6 +2625,30 @@ public partial class TraceRowViewModel : ViewModelBase
     // ---- Command ------------------------------------------------------------
 
     public IRelayCommand RemoveCommand { get; }
+
+    /// <summary>False where the plot's owner produces the trace list — see
+    /// <see cref="Plot.IsFixedReadout"/>. The card's trash button is hidden by it.</summary>
+    public bool CanRemove => _parent.CanEditTraceSet;
+
+    /// <summary>
+    /// False where WHAT this trace shows is the plot owner's — see <see cref="Plot.IsFixedReadout"/>.
+    /// </summary>
+    /// <remarks>
+    /// Hides the card's data selectors: the source combo, the group and quantity pickers, and
+    /// <c>vs X</c>. On a plot whose traces are rebuilt from a live result on every edit, all four
+    /// re-aim a trace at something the next rebuild will aim straight back — and on railRF's |Z|
+    /// plot they were four controls' worth of width on the narrowest panel in the window, every one
+    /// of them empty (owner, 2026-09-19).
+    ///
+    /// <para>What stays is everything about how the trace LOOKS, which is why the panel opens at
+    /// all: the transform (the Y unit), the colour, the line, the symbols, the markers.</para>
+    /// </remarks>
+    public bool CanPickTraceData => _parent.CanEditTraceSet;
+
+    /// <summary>The identity row — the group and quantity pickers, the matrix type and the
+    /// right-axis toggle. Hidden whole on a fixed read-out, so the row costs no height and its two
+    /// star columns no width.</summary>
+    public bool ShowIdentityRow => IsStandardTrace && CanPickTraceData;
 
     // ---- Contour commands (Phase 7.4e) ----------------------------------------
 

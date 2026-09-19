@@ -3163,3 +3163,86 @@ spot; its threshold happened to be met by the background rows.
 (`SymbolEditorRenderer`, the `overlay.InProgressPrimitive` branch). The report was about the layout
 editor, and that one differs by more than a dash — it draws in `theme.GhostBody` rather than the
 primitive's own colour, so matching it to its committed appearance is a separate change.
+
+## A plot's ANNOTATION traces were treated as data by every marker gesture (2026-09-19)
+
+A plot can carry traces that are not data — a target ceiling, a vertical line marking a frequency
+something else happens at. They are `Trace`s because the Data Display has no bespoke chart to draw
+them any other way, and they carry two points rather than the sweep's grid. Two reports, one cause:
+
+- **The multi-marker readout.** `GetCubeMultiMarkerLine` reads every other trace at the marker's own
+  **X sample** and answers `"NaN"` where the other trace's `_cubeXValues` is a different length —
+  which is exactly what a two-point annotation is. On railRF's |Z| plot: eleven `NaN` rows beside
+  two readings.
+- **Add Marker.** `RefreshAddMarkerSubmenu` lists one row per trace, so the same eleven were offered
+  as places to put a marker and buried the two that answer anything.
+
+`Trace.IsAnnotation` is the trace's own statement, and it is the Data Display's word for *drawn like
+a trace, not treated as one by any marker*. It is honoured in both multi loops of
+`BuildMarkerBoxLines`, in `RefreshAddMarkerSubmenu` (both the listing **and** the enablement count,
+so a plot of only annotation greys the item rather than opening an empty submenu), and in
+`TryAddMarkerNearPoint` — the last of those because filtering the menu alone would leave a
+double-click near an aggressor line putting a marker on a trace the menu deliberately does not
+offer.
+
+Two things worth keeping:
+
+- **Not "drop any row that reads NaN".** That would hide a genuine NaN in a real curve, which is a
+  reading a user needs. The flag says the row is not a reading at all.
+- **Filtering inside `BuildMarkerBoxLines` rather than at the caller is load-bearing** — the
+  renderer MEASURES the info box with that function and then DRAWS it with the same one, so a filter
+  applied at one of the two sizes the box wrong.
+
+## A trace cut TO the window cannot also decide it (2026-09-19)
+
+`Trace.ExcludeFromAutoscale`, honoured in `Plot.AutoscaleCore`. railRF marks each aggressor
+frequency with a two-point vertical trace spanning the current Y window; with that trace in the
+autoscale, the window it was drawn from becomes the window it produces and every curve is squashed.
+
+That was held by **order** — the lines were added after the autoscale, and `RailRfViewModel.Response.cs`
+said so in capitals — which works exactly until something else autoscales. The Plot Inspector does,
+on every edit, which is what turning it on for railRF exposed.
+
+**Separate from `IsAnnotation` on purpose.** A target ceiling is annotation and *should* frame the
+plot: a ceiling off the top of the window is a verdict the reader cannot see.
+
+## The Plot Inspector assumed every trace came from the data-source library (2026-09-19)
+
+Turning the inspector on for a window that publishes its own `DataSet` emptied every curve on the
+first edit — 425 points to 0, no error on the card, no message anywhere. `RebuildAndNotify`
+re-resolves each cube trace from its **source**, and the source lookup was hard-wired to
+`LibraryDataSources` — files on disk. railRF has no library; it publishes a fresh `DataSet` per
+solve, the way harmonicaRF does. (That is exactly why harmonicaRF has its own trace picker instead.)
+
+`IPlotDataSources` was already the answer and already had a second implementation — `circuitrf render`
+resolves against the files a *caller* named (`src/Cli/CddSources.cs`). So:
+
+- `PlotInspectorViewModel.SetDataSources(IPlotDataSources)`, defaulting to the library as before.
+  It does **not** replace the library everywhere: the library still drives what an *Add trace* can be
+  seeded from and what a source alias reads as, neither of which a fixed-trace-set plot has.
+- `ResolveOrRebuild` replaces the three open-coded resolves. An **annotation** trace takes
+  `BuildPath` instead of a library lookup: it has no source, it was handed its values directly, and
+  `BuildPath` re-derives its points from what it holds — which re-applies its `Transform`, and that
+  is the whole mechanism by which a ceiling stored in ohms follows the curve it is judging into dB
+  and back.
+- `Plot.IsFixedReadout` — *the inspector may restyle this plot but not re-aim it*. **Hidden, not
+  greyed, throughout**: a permanently grey control is one the user goes on trying, and several of
+  these are comboboxes that would sit empty at the width of the panel. It governs four things, and
+  they are one fact rather than four — each re-aims a trace (or the plot) at something the owner's
+  next rebuild aims straight back:
+  - the **plot type** header (`CanChangePlotType`). Not merely cosmetic: `SetPlotType` restructures
+    the trace list and the owner's rebuild does not put the type back, so a stray click leaves the
+    plot broken with no way to say so.
+  - the **trace set** (`CanEditTraceSet`) — `+ Trace` and every card's trash.
+  - each trace's **data selection** (`TraceRowViewModel.CanPickTraceData`) — the source combo, and
+    `vs X` via `ShowVersusRow`.
+  - the card's **identity row** (`ShowIdentityRow`), hidden whole rather than control by control so
+    its two star columns cost no width: the "(load a file…)" group combo, the quantity picker, the
+    matrix type and the right-axis toggle.
+
+  It governs **nothing** about how a trace looks — transform, colour, line, symbols, markers — which
+  is the whole point of still opening the panel.
+- `RebuildTraces` gives no card to an annotation trace, and `ReloadTraceCards()` is how a host that
+  produces its own trace list says it has replaced them. In the Data Display a trace only ever
+  arrives *through* the panel, so the two stayed in step with no synchronisation at all — which is
+  why railRF's inspector opened on zero cards over a plot holding thirteen traces.

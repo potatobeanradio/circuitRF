@@ -490,6 +490,9 @@ public partial class MarkerEditorViewModel : ViewModelBase
             foreach (var t in _parent.Container.PlotVM.Plot.Traces)
             {
                 if (t == _parent.Trace) continue;
+                // An annotation trace is not a reading — see Trace.IsAnnotation. The editor and
+                // the info box show the same rows, so the filter is the same filter.
+                if (t.IsAnnotation) continue;
                 bool tHasZ0 = !t.IsCubeBound && !t.IsContourTrace && !t.IsDerived;
                 result.Add(new MultiTraceLineItem
                 {

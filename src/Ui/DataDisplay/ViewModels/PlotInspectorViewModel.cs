@@ -633,9 +633,27 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public ObservableCollection<TraceRowViewModel> Traces { get; } = new();
 
+    /// <summary>
+    /// False where the plot's owner produces the trace list — see <see cref="Plot.IsFixedReadout"/>.
+    /// The Add button and every card's trash button are hidden by it, rather than disabled: a
+    /// control that is permanently grey is a control the user goes on trying.
+    /// </summary>
+    public bool CanEditTraceSet => !_plot.IsFixedReadout;
+
+    /// <summary>
+    /// False where the plot is the kind it is — the segmented type header is hidden by it.
+    /// </summary>
+    /// <remarks>
+    /// Changing the type of a fixed read-out does not merely look wrong: <c>SetPlotType</c>
+    /// restructures the trace list, and the owner's next rebuild does not put the type back, so the
+    /// plot would stay broken with no way to say so.
+    /// </remarks>
+    public bool CanChangePlotType => !_plot.IsFixedReadout;
+
     public bool CanAddTrace =>
-        _plot.Traces.Count > 0 ||
-        (_library?.SelectedEntry is { } e && HasPlottableData(e, _plot.PlotType == PlotType.Table));
+        CanEditTraceSet &&
+        (_plot.Traces.Count > 0 ||
+         (_library?.SelectedEntry is { } e && HasPlottableData(e, _plot.PlotType == PlotType.Table)));
 
     /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
     /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).
@@ -1018,7 +1036,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             if (t.IsCubeBound)
             {
                 ReseedSliceIfCubeShapeChanged(t, _library);
-                TrySetCubeData(t, _library, _plot.PlotType, _plot.FreqUnits);
+                TraceResolve.ResolveCubeTrace(t, Sources, _plot.PlotType, _plot.FreqUnits);
             }
             else
                 t.BuildPath(_plot.PlotType, _plot.FreqUnits);
@@ -1045,11 +1063,40 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // ---- Trace management -----------------------------------------------
 
+    /// <summary>
+    /// Rebuilds one card per trace on the plot — <b>except an annotation trace, which gets none</b>.
+    /// </summary>
+    /// <remarks>
+    /// A target ceiling and a frequency marker line are drawn as traces only because the Data
+    /// Display has no other way to draw them (railrf.md §11.1). They are not the user's traces:
+    /// eleven of railRF's thirteen are those, and eleven cards nobody can act on bury the two that
+    /// answer anything. See <see cref="Trace.IsAnnotation"/>, which is the same fact the Add Marker
+    /// submenu and the multi-marker readout read.
+    /// </remarks>
     private void RebuildTraces()
     {
         Traces.Clear();
         foreach (var t in _plot.Traces)
-            Traces.Add(new TraceRowViewModel(t, this));
+            if (!t.IsAnnotation)
+                Traces.Add(new TraceRowViewModel(t, this));
+    }
+
+    /// <summary>
+    /// Re-reads the plot's trace list into cards.
+    /// </summary>
+    /// <remarks>
+    /// <b>For a host that rebuilds the list itself.</b> In the Data Display a trace only ever
+    /// arrives THROUGH this panel, so the two stay in step with no synchronisation at all. A plot
+    /// whose traces are produced by something else (<see cref="Plot.IsFixedReadout"/>) has to say
+    /// when it has replaced them — otherwise the panel opens on the cards of traces that no longer
+    /// exist, or, as railRF's did, on none at all.
+    /// </remarks>
+    public void ReloadTraceCards()
+    {
+        RebuildTraces();
+        OnPropertyChanged(nameof(IsSummaryTable));
+        RefreshAddCommand();
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void AddTrace()
@@ -1096,7 +1143,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         trace.BuildPath(_plot.PlotType, _plot.FreqUnits);
         if (trace.IsCubeBound)
-            TrySetCubeData(trace, _library, _plot.PlotType, _plot.FreqUnits);
+            TraceResolve.ResolveCubeTrace(trace, Sources, _plot.PlotType, _plot.FreqUnits);
         _plot.Traces.Add(trace);
         _plot.Autoscale();
         Traces.Add(new TraceRowViewModel(trace, this));
@@ -1202,17 +1249,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public void RebuildAndNotify()
     {
-        foreach (var t in _plot.Traces)
-        {
-            if (t.IsCubeBound)
-                TrySetCubeData(t, _library, _plot.PlotType, _plot.FreqUnits);
-            else
-            {
-                // Keep per-port Z0 fresh on network-bound traces (handles in-place reload).
-                RefreshSourceZ0(t, _library);
-                t.BuildPath(_plot.PlotType, _plot.FreqUnits);
-            }
-        }
+        foreach (var t in _plot.Traces) ResolveOrRebuild(t);
         _plot.Autoscale();
         foreach (var vm in Traces) vm.RefreshDescription();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
@@ -1295,6 +1332,61 @@ public partial class PlotInspectorViewModel : ViewModelBase
     internal static void TrySetCubeData(Trace t, DataSourceLibraryViewModel? library,
                                         PlotType plotType, FreqUnit freqUnit)
         => TraceResolve.ResolveCubeTrace(t, new LibraryDataSources(library), plotType, freqUnit);
+
+    // ---- Where a trace's data comes from (RND-4's own seam) ------------------
+    //
+    //  A trace is re-resolved from its SOURCE on every edit, and until now the source was always the
+    //  data-source LIBRARY — files on disk. A host that publishes its own DataSet and keeps no
+    //  library (railRF's |Z| plot, which is a read-out of a design being edited) therefore had every
+    //  one of its curves silently emptied the first time anything in this panel was touched: 425
+    //  points to 0, no error, no message. It is the same seam `circuitrf render` already uses to
+    //  resolve against the files a CALLER named rather than a library — IPlotDataSources, in
+    //  CircuitRF.Render, with LibraryDataSources as the application's ordinary implementation.
+
+    private IPlotDataSources? _sources;
+
+    /// <summary>
+    /// Where this inspector resolves a cube-bound trace from. The data-source library by default.
+    /// </summary>
+    private IPlotDataSources Sources => _sources ??= new LibraryDataSources(_library);
+
+    /// <summary>
+    /// Resolves against <paramref name="sources"/> instead of the data-source library.
+    /// </summary>
+    /// <remarks>
+    /// For a host that owns its own results and keeps no library. It does NOT replace the library
+    /// everywhere: the library still drives what an <c>Add trace</c> can be seeded from and what a
+    /// source alias reads as — neither of which a fixed-trace-set plot has (see
+    /// <see cref="Plot.IsFixedReadout"/>).
+    /// </remarks>
+    public void SetDataSources(IPlotDataSources sources) => _sources = sources;
+
+    /// <summary>
+    /// Re-derives one trace's geometry from its source — or, for an ANNOTATION trace, from the values
+    /// it already carries.
+    /// </summary>
+    /// <remarks>
+    /// <b>An annotation trace has no source to be re-resolved against.</b> A target ceiling and a
+    /// frequency marker line are built by the plot's owner out of its own numbers and handed straight
+    /// to <c>SetCubeData</c>; sending them round the library lookup would report them unresolvable
+    /// and empty them. <c>BuildPath</c> re-derives their points from what they hold — which is
+    /// exactly what is wanted, because it re-applies their <c>Transform</c>, and that is how a
+    /// ceiling in ohms follows the curve it is judging into dB and back.
+    /// </remarks>
+    private void ResolveOrRebuild(Trace t)
+    {
+        if (t.IsAnnotation) { t.BuildPath(_plot.PlotType, _plot.FreqUnits); return; }
+
+        if (t.IsCubeBound)
+        {
+            TraceResolve.ResolveCubeTrace(t, Sources, _plot.PlotType, _plot.FreqUnits);
+            return;
+        }
+
+        // Keep per-port Z0 fresh on network-bound traces (handles in-place reload).
+        RefreshSourceZ0(t, _library);
+        t.BuildPath(_plot.PlotType, _plot.FreqUnits);
+    }
 
     /// <summary>
     /// What an "add a trace" click was working from: the plot it lands on, how many traces are

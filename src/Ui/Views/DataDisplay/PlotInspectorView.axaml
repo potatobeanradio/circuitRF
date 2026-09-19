@@ -171,9 +171,13 @@
             Padding="10">
         <StackPanel Spacing="6">
 
-            <!-- ── §B Row 1: Segmented plot-type header (centered) ───────── -->
+            <!-- ── §B Row 1: Segmented plot-type header (centered) ─────────
+                 HIDDEN on a fixed read-out (Plot.IsFixedReadout): that plot is the kind it is, and
+                 SetPlotType restructures the trace list without its owner's next rebuild putting
+                 the type back — so a stray click would leave it broken with no way to say so. -->
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Center"
+                        IsVisible="{Binding CanChangePlotType}"
                         Spacing="0">
 
                 <Button Classes="seg-btn"
@@ -417,9 +421,11 @@
             <!-- ── §B Row 2: + Trace (left) / Freq + Font Size (right) ─── -->
             <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
 
+                <!-- Hidden, not greyed, on a fixed trace set — see the trash button's own note. -->
                 <Button Grid.Column="0"
                         Content="+ Trace"
                         Command="{Binding AddTraceCommand}"
+                        IsVisible="{Binding CanEditTraceSet}"
                         FontSize="11"
                         Padding="8,3"
                         HorizontalContentAlignment="Center"
@@ -573,8 +579,14 @@
                                          Cols: * (group) | * (item) | Auto (matrix S-only) | 26 (→R)
                                          Matrix col is Auto so it collapses when hidden. Eye moved to pin row.
                                          Hidden for contour traces (they have no cube/SNP picker). -->
+                                    <!-- ShowIdentityRow, not IsStandardTrace: on a fixed read-out
+                                         (Plot.IsFixedReadout) the whole row goes, so its two star
+                                         columns cost no width. What it holds — "(load a file…)",
+                                         the quantity picker, the matrix type and the right-axis
+                                         toggle — all re-aim a trace the owner's next rebuild aims
+                                         straight back. -->
                                     <Grid ClipToBounds="False"
-                                          IsVisible="{Binding IsStandardTrace}">
+                                          IsVisible="{Binding ShowIdentityRow}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"    MinWidth="60"/>
                                             <ColumnDefinition Width="*"    MinWidth="60"/>
@@ -1955,9 +1967,13 @@
 
                                 </StackPanel>
                                 <!-- Col 1: trash button pinned to card top-right -->
+                                <!-- HIDDEN, not disabled, on a plot whose trace set belongs to its
+                                     owner (Plot.IsFixedReadout) — a permanently grey button is one
+                                     the user goes on trying. -->
                                 <Button Grid.Column="1"
                                         Classes="removeTrace"
                                         Command="{Binding RemoveCommand}"
+                                        IsVisible="{Binding CanRemove}"
                                         VerticalAlignment="Top"
                                         ToolTip.Tip="Remove this trace">
                                     <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/>

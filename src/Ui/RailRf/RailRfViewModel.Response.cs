@@ -19,6 +19,23 @@
 // anti-resonance's margin and a removal ranking are all decibels, so on this axis a margin is a
 // distance a reader can measure off the picture rather than a number in a table beside it.
 //
+// ── WHAT A MARKER MAY TOUCH: THE CURVES, AND NOTHING ELSE ─────────────────────────────────────
+//
+// Of the thirteen traces this plot carries on the shipped example, two are |Z| curves and the rest
+// are the mask edge and the aggressor lines — annotation, drawn as traces only because §11.1 forbids
+// a bespoke chart. They carry TWO points, not the sweep's 201, and the owner reported both halves of
+// what that does (2026-09-19): a multi-marker reads every other trace at its own X SAMPLE, so at
+// index 137 each of the eleven printed "NaN"; and the Add Marker submenu lists one row per trace, so
+// the same eleven were offered as places to put a marker and buried the two that answer anything.
+//
+// So each is marked Trace.IsAnnotation, which is the Data Display's own word for "drawn like a
+// trace, not treated as one by any marker".
+//
+// Marked at the TRACE rather than filtered at each caller: an info box is built by
+// Trace.BuildMarkerBoxLines, which the renderer MEASURES with and then DRAWS with, so a filter
+// applied at only one of the two gives a box the wrong size for its contents — and the menu, the
+// double-click and the readout would each need their own copy of the same rule.
+
 // ── THE AGGRESSOR LINES GO ON LAST, AND THAT IS LOAD-BEARING ───────────────────────────────────
 //
 // A vertical line is a two-point trace spanning the Y window, and this display has no per-trace
@@ -37,6 +54,7 @@ using CircuitRF.Engine.Pdn;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CommunityToolkit.Mvvm.Input;
 using RfCore;
 using RfCore.Data;
 
@@ -61,6 +79,34 @@ public sealed partial class RailRfViewModel
     public DataDisplayViewModel PlotHost { get; } =
         new(new DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
 
+    /// <summary>
+    /// Removes every SELECTED marker from its trace, as one undoable step on the plot host's own
+    /// stack — what the Delete key does on a Data Display canvas.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window had no Delete at all</b> (owner, 2026-09-19): a marker could be added by
+    /// double-clicking the plot and selected by clicking its info box, and then the only way to be
+    /// rid of it was the info box's own close. Every other plot surface in the application answers
+    /// the key, so on this one it read as broken rather than absent.
+    ///
+    /// <para><b>Deliberately not <c>DataDisplayViewModel.DeleteSelected</c></b> — the Match
+    /// Designer's own reason, which holds here identically. That method also removes selected PLOT
+    /// CONTAINERS, and this window's one plot is not deletable: there is nothing to delete it from
+    /// and its traces are rebuilt from the document on every solve. A shared gesture that could
+    /// silently take the plot with the marker would be worse than no gesture.</para>
+    ///
+    /// <para><b>Delete only, not Backspace</b>, for the reason the Match Designer's AXAML states:
+    /// this window's left column is <c>InlineEditText</c> rows, which are focusable at rest without
+    /// being text fields, and a Backspace landing on one would remove a marker the user was not
+    /// looking at.</para>
+    /// </remarks>
+    [RelayCommand]
+    public void DeleteSelectedMarkers()
+    {
+        foreach (var box in PlotHost.MarkerInfoBoxes.Where(b => b.IsSelected).ToList())
+            box.Container.RemoveMarkerWithUndo(box.Marker, box.Trace);
+    }
+
     /// <summary>The container holding <see cref="ImpedancePlot"/>.</summary>
     public PlotContainerViewModel ImpedanceContainer { get; private set; } = null!;
 
@@ -77,6 +123,25 @@ public sealed partial class RailRfViewModel
     {
         ImpedanceContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.MHz,
                                               left: 0, top: 0, width: PlotWidth, height: PlotHeight);
+
+        // ── THE TRACE SET IS THIS WINDOW'S (owner, 2026-09-19) ────────────────────────────────
+        //
+        // The Plot Inspector opens on this plot now, so the Y unit can be changed — but every trace
+        // here is rebuilt from the sweep on each re-solve, which happens on every committed edit.
+        // A trace added in the panel would be gone by the next keystroke and one removed would be
+        // back, so the Add and the trash are hidden rather than offered and then undone.
+        ImpedancePlot.IsFixedReadout = true;
+
+        // AND ITS DATA IS THIS WINDOW'S TOO, which is the part that does not work by default: the
+        // inspector re-resolves every cube trace from its SOURCE on each edit, and the ordinary
+        // source is the data-source library — files on disk. railRF has none. Without this the first
+        // touch of the panel emptied every curve, 425 points to 0, silently. See RailPlotDataSources.
+        ImpedanceContainer.Inspector.SetDataSources(new RailPlotDataSources(SweepByModel));
+
+        // What the user picked in the panel has to reach the MASK and the aggressor lines, which are
+        // not cards and cannot be changed there — R-rail12-3's own rule, and the owner's: the target
+        // traces must adapt to any scale the impedance traces are given.
+        ImpedanceContainer.Inspector.PlotNeedsRedraw += OnInspectorChangedThePlot;
 
         // AXES PANNING STARTS LOCKED, for the Match Designer's own reason: this plot is a read-out of
         // a design being edited underneath it, every committed edit re-solves and autoscales, and a
@@ -310,13 +375,149 @@ public sealed partial class RailRfViewModel
 
     // ── the traces ────────────────────────────────────────────────────────────────────────────
 
+    // ── THE Y UNIT, AND WHO OWNS IT ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// What the curves are drawn in — <b>one unit for the whole plot</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>dBΩ by default, and dB20 is not the same as dB</b> (owner, 2026-09-19). The curve was
+    /// authored as <c>dB(Z[…])</c>, and <c>dB</c> in this vocabulary is <c>10·log₁₀</c> — a POWER
+    /// decibel — while the mask edge beside it was built with <c>20·log₁₀</c>. Measured on the
+    /// shipped fixture: a 200 mΩ target drew at −13.979 and a curve at 0.311 Ω drew at −5.076
+    /// rather than −10.152, so a design sitting exactly on its ceiling read as seven decibels clear
+    /// of it. The mask VERDICT is computed in ohms by <c>PdnSweep</c> and was always right; it was
+    /// the picture that disagreed with it. |Z| in dBΩ is 20·log₁₀.
+    ///
+    /// <para><b>Plot-wide rather than per-trace.</b> The user changes it on one card; every curve
+    /// and every mask adopts it. A plot showing one reading in dBΩ and the other in ohms would put
+    /// two quantities on one axis under one label.</para>
+    /// </remarks>
+    internal CubeTransform ImpedanceTransform { get; private set; } = CubeTransform.dB20;
+
+    /// <summary>The curves of the last rebuild, by (reading, port) — what carries a user's own
+    /// edits across the next one. See <see cref="RebuildImpedancePlot"/>.</summary>
+    private readonly Dictionary<string, Trace> _curves = new(StringComparer.Ordinal);
+
+    /// <summary>The aggressor lines of the last rebuild — re-spanned whenever the window moves.</summary>
+    private readonly List<Trace> _aggressorLines = [];
+
+    private static string CurveKey(PdnModelKind kind, int portIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"{kind}|{portIndex}");
+
+    /// <summary>What the axis is called, in whatever unit the curves are currently in.</summary>
+    private string ImpedanceYLabel => ImpedanceTransform switch
+    {
+        CubeTransform.dB20              => "|Z| (dBΩ)",
+        CubeTransform.dB10 or CubeTransform.dB => "|Z| (dB, 10·log₁₀)",
+        CubeTransform.Real              => "Re(Z) (Ω)",
+        CubeTransform.Imag              => "Im(Z) (Ω)",
+        CubeTransform.Phase             => "∠Z (°)",
+        _                               => "|Z| (Ω)",
+    };
+
+    /// <summary>
+    /// The user changed something in the Plot Inspector. If it was the Y unit, everything that is
+    /// not a card follows it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The mask and the aggressor lines have no cards</b> (they are annotation — see
+    /// <c>Trace.IsAnnotation</c>), so the panel cannot carry a change to them and this is what does.
+    /// Read off the curves rather than handed in, because the inspector's own contract is that it
+    /// writes the trace and says the plot needs redrawing; it has no notion of a plot-wide unit.
+    /// </remarks>
+    private void OnInspectorChangedThePlot(object? sender, EventArgs e)
+    {
+        if (_curves.Count == 0) return;
+
+        var picked = _curves.Values.First().Transform;
+        if (picked == ImpedanceTransform) { RespanAggressors(); return; }
+
+        ImpedanceTransform = picked;
+        ApplyImpedanceUnit();
+    }
+
+    /// <summary>
+    /// Puts <see cref="ImpedanceTransform"/> on every curve and every mask, re-labels the axis and
+    /// re-frames the plot.
+    /// </summary>
+    private void ApplyImpedanceUnit()
+    {
+        var plot = ImpedancePlot;
+
+        foreach (var curve in _curves.Values)
+        {
+            curve.SetDisplayTransform(ImpedanceTransform);
+            curve.BuildPath(PlotType.Rect, FreqUnit.MHz);
+        }
+
+        // The mask carries OHMS and takes the same transform, which is the whole reason it is stored
+        // raw — see MaskTrace. A mask is a magnitude ceiling and has no phase, so on a phase axis it
+        // is removed rather than drawn somewhere meaningless.
+        foreach (var mask in plot.Traces.Where(t => t.IsAnnotation && !t.ExcludeFromAutoscale).ToList())
+        {
+            if (ImpedanceTransform == CubeTransform.Phase) { plot.Traces.Remove(mask); continue; }
+            mask.Transform = ImpedanceTransform;
+            mask.BuildPath(PlotType.Rect, FreqUnit.MHz);
+        }
+
+        plot.CustomYLabelOn = true;
+        plot.CustomYLabel   = ImpedanceYLabel;
+        plot.SetAxesViewport();
+        plot.Autoscale(force: true);
+
+        RespanAggressors();
+        AnnounceRebuiltPlot();
+    }
+
+    /// <summary>
+    /// Re-draws each aggressor line to span the CURRENT Y window.
+    /// </summary>
+    /// <remarks>
+    /// A vertical line is a two-point trace from the bottom of the window to the top, so it has to
+    /// be re-cut whenever the window moves — and it is marked
+    /// <see cref="Trace.ExcludeFromAutoscale"/> so that it never moves the window itself, which is
+    /// what stops the two chasing each other.
+    /// </remarks>
+    private void RespanAggressors()
+    {
+        if (_aggressorLines.Count == 0) return;
+
+        var window = ImpedancePlot.Axes.Window;
+        double lo = Math.Min(window.Top, window.Bottom);
+        double hi = Math.Max(window.Top, window.Bottom);
+        if (!(hi > lo)) return;
+
+        foreach (var line in _aggressorLines)
+        {
+            if (line.CubeXValues is not { Count: > 0 } xs) continue;
+            double hz = xs[0];
+            line.SetCubeData([hz, hz], null, [lo, hi], "freq", "Hz", PlotType.Rect, FreqUnit.MHz,
+                             transformBaked: true);
+        }
+    }
+
+    // ── the traces ────────────────────────────────────────────────────────────────────────────
+
     /// <summary>
     /// Rebuilds every trace on the impedance plot: the mask, one |Z| curve per observation port per
     /// model kind, and one line per aggressor harmonic.
     /// </summary>
+    /// <remarks>
+    /// <b>It runs on every solve, which is every committed edit — so it must not throw away what the
+    /// user did in the Plot Inspector.</b> Before this, a Y unit picked in the panel, a colour
+    /// chosen on a card and every marker on the plot lasted exactly until the next keystroke in the
+    /// specification column, because the whole trace list is replaced here. Curves are therefore
+    /// matched across the rebuild on a key that survives it — the READING and the PORT, which is
+    /// what a curve IS — and their transform, their custom styling and their markers come with them.
+    /// </remarks>
     public void RebuildImpedancePlot()
     {
         var plot = ImpedancePlot;
+
+        var previous = new Dictionary<string, Trace>(_curves, StringComparer.Ordinal);
+        _curves.Clear();
+        _aggressorLines.Clear();
         plot.Traces.Clear();
 
         // Fast first so an Accuracy run lands ON TOP of the curve it is being compared with, rather
@@ -330,23 +531,37 @@ public sealed partial class RailRfViewModel
             return;
         }
 
+        // The unit the user is in, carried from the curves that were on the plot a moment ago.
+        if (previous.Count > 0) ImpedanceTransform = previous.Values.First().Transform;
+
         var primary = SweepByModel[kinds[^1]];
         int colour = 0;
 
-        // The mask FIRST, so it sits behind the curves it is judging.
-        foreach (var port in primary.Ports)
-            if (port.Mask is { } mask && MaskTrace(mask, port.Name) is { } masked)
-                plot.Traces.Add(masked);
-
+        // THE CURVES ARE BUILT FIRST and added second: the mask has to be drawn in the unit they are
+        // in, and it has to sit BEHIND them.
+        var curves = new List<Trace>();
         foreach (var kind in kinds)
         {
             var sweep = SweepByModel[kind];
             if (sweep.Data is not { } data) continue;
 
             foreach (var port in sweep.Ports)
-                if (CurveTrace(data, port, kind, colour++) is { } curve)
-                    plot.Traces.Add(curve);
+            {
+                if (CurveTrace(data, port, kind, colour++) is not { } curve) continue;
+
+                string key = CurveKey(kind, port.Index);
+                if (previous.TryGetValue(key, out var was)) Carry(was, curve);
+
+                _curves[key] = curve;
+                curves.Add(curve);
+            }
         }
+
+        foreach (var port in primary.Ports)
+            if (port.Mask is { } mask && MaskTrace(mask, port.Name) is { } masked)
+                plot.Traces.Add(masked);
+
+        foreach (var curve in curves) plot.Traces.Add(curve);
 
         // ── THE TITLE NAMES THE PICTURE AND NOTHING ELSE (owner, 2026-09-19) ──────────────────
         //
@@ -364,10 +579,10 @@ public sealed partial class RailRfViewModel
         // plot holds three curves of different quantities. This plot holds one quantity and as many
         // traces as the design has ports, models, masks and aggressor harmonics — thirteen on the
         // shipped example — so the column stack took most of the panel's width and left the curves
-        // in a sliver. Every trace here is |Z| in dBΩ, so the honest label is one label, and it is
-        // set AFTER the traces because that is the only thing it depends on.
+        // in a sliver. Every trace here is |Z| in the SAME unit, so the honest label is one label,
+        // and it names whichever unit that is.
         plot.CustomYLabelOn = true;
-        plot.CustomYLabel   = "|Z| (dBΩ)";
+        plot.CustomYLabel   = ImpedanceYLabel;
 
         // AND THE VIEWPORT HAS TO BE RECOMPUTED FOR IT. Plot.SetAxesViewport sizes the left margin
         // from the number of label COLUMNS, which a plot-wide Y label makes one — but it runs off
@@ -377,15 +592,43 @@ public sealed partial class RailRfViewModel
 
         plot.Autoscale(force: true);
 
-        // AFTER the autoscale. See this file's own header.
-        var aggressors = AggressorTraces(primary, plot);
-        foreach (var line in aggressors) plot.Traces.Add(line);
+        // AFTER the autoscale, because each line is cut TO the window. They are also excluded from
+        // it (Trace.ExcludeFromAutoscale) so that a later autoscale — the Plot Inspector performs
+        // one on every edit — cannot read last frame's window back as this frame's data.
+        _aggressorLines.AddRange(AggressorTraces(primary, plot));
+        foreach (var line in _aggressorLines) plot.Traces.Add(line);
+
+        // The panel shows one card per trace and syncs itself only when a trace arrives THROUGH it,
+        // which none of these did — so without this it opens on the cards of traces that no longer
+        // exist, or, as it did, on none at all.
+        ImpedanceContainer.Inspector.ReloadTraceCards();
 
         AnnounceRebuiltPlot();
     }
 
     /// <summary>
-    /// One port's |Z| in dBΩ, as an ordinary cube-bound trace over the sweep's own Z cube.
+    /// Moves what the user chose from the curve that is going away onto the one replacing it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Styling comes over only when it is the USER's.</b> <c>TraceProperties.Custom</c> is
+    /// already the flag for that — <see cref="Style"/> clears it on every trace this file builds —
+    /// so a palette default stays a palette default and follows a change to the palette, while a
+    /// colour somebody picked survives the next re-solve.
+    ///
+    /// <para><b>The markers come over as OBJECTS</b>, not as copies: the info boxes are rebuilt from
+    /// the plot's own traces by <c>OnPlotChanged</c>, and a marker rebuilt as an equal-but-different
+    /// object would lose its selection, its box position and its m-number.</para>
+    /// </remarks>
+    private static void Carry(Trace was, Trace now)
+    {
+        if (was.Properties.Custom) now.Properties = was.Properties;
+
+        foreach (var marker in was.Markers) now.Markers.Add(marker);
+    }
+
+    /// <summary>
+    /// One port's |Z| as an ordinary cube-bound trace over the sweep's own Z cube, in whatever unit
+    /// <see cref="ImpedanceTransform"/> currently names.
     /// </summary>
     /// <remarks>
     /// <b>The spec is authored as text and resolved by <see cref="CubeTraceSpecParser"/></b> rather
@@ -394,11 +637,15 @@ public sealed partial class RailRfViewModel
     /// <c>i</c>/<c>j</c> axis is a 1-BASED PORT NUMBER. Building the slice by hand here would be a
     /// second place that convention is decided, and the two would differ by one silently — which on
     /// a reciprocal Z matrix draws a curve that is not wrong-looking at all.
+    ///
+    /// <para><b>The spec carries NO transform.</b> It used to read <c>dB(Z[…])</c>, which put the
+    /// unit in the expression TEXT — where the trace card cannot reach it, and where it silently
+    /// disagreed with the mask beside it. See <see cref="ImpedanceTransform"/>.</para>
     /// </remarks>
-    private static Trace? CurveTrace(DataSet data, PdnPortImpedance port, PdnModelKind kind, int colour)
+    private Trace? CurveTrace(DataSet data, PdnPortImpedance port, PdnModelKind kind, int colour)
     {
         int number = port.Index + 1;
-        string spec = string.Create(CultureInfo.InvariantCulture, $"dB(Z[:, {number}, {number}])");
+        string spec = string.Create(CultureInfo.InvariantCulture, $"Z[:, {number}, {number}]");
 
         if (!CubeTraceSpecParser.TryParse(spec, data, out string cubeName, out var slice,
                                           out var transform, out _))
@@ -409,27 +656,49 @@ public sealed partial class RailRfViewModel
         var trace = CubeTrace(cubeName, slice, transform, spec,
                               Style(colour, kind == PdnModelKind.Accurate
                                                 ? LineType.Solid : LineType.Dashed, width: 1.0));
+
+        // WHICH READING this curve is of. The Plot Inspector re-resolves a cube trace from its
+        // source on every edit, and this is what it resolves against — see RailPlotDataSources.
+        trace.SourcePath = RailPlotDataSources.PathFor(kind);
+
+        trace.SetDisplayTransform(ImpedanceTransform);
         TraceResolve.SetCubeDataFrom(trace, data, PlotType.Rect, FreqUnit.MHz);
         return trace.Points.Count > 0 ? trace : null;
     }
 
     /// <summary>
-    /// The target, as a trace of its own stated points in dBΩ.
+    /// The target, as a trace of its own stated points — <b>in OHMS</b>.
     /// </summary>
     /// <remarks>
     /// §2.4 draws the mask as a shaded ceiling; what is drawn here is its EDGE, because that is the
     /// part the Data Display already renders and §11.1 forbids a bespoke chart to get the shading.
     /// It carries the mask's own points and not the sweep's grid, so a two-point flat target is two
     /// points — a ceiling resampled onto 201 frequencies would read as data.
+    ///
+    /// <para><b>The values are RAW OHMS and the unit is the trace's <c>Transform</c>, which is the
+    /// whole of how a ceiling follows the curve it is judging</b> (owner, 2026-09-19: the target
+    /// traces must adapt to any scale the impedance traces are given). It used to be stored with
+    /// <c>20·log₁₀</c> already applied, so it could only ever be read in one unit — and, worse, in a
+    /// DIFFERENT one from the curve beside it. A real-valued cube trace applies its transform at
+    /// path-build time (<c>Trace.BuildCubePath</c>), so changing it and rebuilding is all this
+    /// takes.</para>
     /// </remarks>
-    private static Trace? MaskTrace(PdnMask mask, string portName)
+    private Trace? MaskTrace(PdnMask mask, string portName)
     {
+        // A ceiling on a magnitude has no phase to be drawn at.
+        if (ImpedanceTransform == CubeTransform.Phase) return null;
+
         var x = mask.Points.Select(p => p.FrequencyHz).ToArray();
-        var y = mask.Points.Select(p => 20.0 * Math.Log10(p.LimitOhms)).ToArray();
+        var y = mask.Points.Select(p => p.LimitOhms).ToArray();
         if (x.Length < 2) return null;
 
-        var trace = CubeTrace($"target({portName})", slice: null, CubeTransform.None,
+        var trace = CubeTrace($"target({portName})", slice: null, ImpedanceTransform,
                               $"target({portName})", Style(2, LineType.Dashed, width: 1.0));
+
+        // NOT DATA — see the note in this file's header. It still FRAMES the plot, which is why it
+        // is not also excluded from the autoscale: a ceiling off the top of the window is a verdict
+        // the reader cannot see.
+        trace.IsAnnotation = true;
         trace.SetCubeData(x, null, y, "freq", "Hz", PlotType.Rect, FreqUnit.MHz);
         return trace;
     }
@@ -469,7 +738,15 @@ public sealed partial class RailRfViewModel
             var trace = CubeTrace($"{name} × {harmonic}", slice: null, CubeTransform.None,
                                   $"{name} × {harmonic}",
                                   Style(3, LineType.Dashed, harmonic == 1 ? 0.75 : 0.4));
-            trace.SetCubeData([hz, hz], null, [lo, hi], "freq", "Hz", PlotType.Rect, FreqUnit.MHz);
+
+            // NOT DATA, and NOT ALLOWED TO SET THE WINDOW — see this file's header and
+            // Trace.ExcludeFromAutoscale. transformBaked, because these two numbers are already in
+            // the axis's own unit: they ARE the window, so a transform applied to them would be
+            // applied twice.
+            trace.IsAnnotation         = true;
+            trace.ExcludeFromAutoscale = true;
+            trace.SetCubeData([hz, hz], null, [lo, hi], "freq", "Hz", PlotType.Rect, FreqUnit.MHz,
+                              transformBaked: true);
             lines.Add(trace);
         }
 

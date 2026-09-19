@@ -175,6 +175,52 @@ public class RailWindowTests
     }
 
     /// <summary>
+    /// <b>Every edit that changes the ANSWER re-solves — including the four that did not.</b>
+    /// </summary>
+    /// <remarks>
+    /// §2.3 step 6 is "the result follows the edit", and four edits did not follow: the flat
+    /// impedance target (owner, 2026-09-19), the two band ends, and adding or removing an aggressor.
+    /// All four are drawn or judged off the sweep RESULT — the target is the mask trace on the |Z|
+    /// plot, the band is that plot's own X axis, and the aggressor lines and every coincidence row
+    /// come out of the result too — so each one left the picture describing a document the field no
+    /// longer showed, which is worse than a control that visibly does nothing.
+    ///
+    /// <para>Written as one test over the four because the claim is one claim. The gate is
+    /// <c>SolvesStarted</c> rather than a rendered curve: what went wrong was that the loop was
+    /// never entered.</para>
+    /// </remarks>
+    [Fact]
+    public void EveryEditThatChangesTheAnswerReSolves_IncludingTheTargetTheBandAndTheAggressors()
+    {
+        var vm = Ready(out _);
+
+        void Edits(string what, Action edit)
+        {
+            int before = vm.SolvesStarted;
+            edit();
+            Assert.True(vm.SolvesStarted > before, $"{what} did not re-solve.");
+        }
+
+        Edits("the impedance target", () => vm.ImpedanceTargetEntry = "50 mohm");
+        Assert.Equal(50.0, vm.SelectedRail!.ImpedanceTarget!.FlatMilliohms!.Value, 6);
+
+        Edits("the band start", () => vm.BandStartEntry = "10 kHz");
+        Edits("the band stop",  () => vm.BandStopEntry  = "100 MHz");
+        Assert.Equal(1e4, vm.SelectedRail.Band.StartHz, 3);
+        Assert.Equal(1e8, vm.SelectedRail.Band.StopHz, 3);
+
+        Edits("adding an aggressor", () => vm.AddAggressorCommand.Execute(null));
+        Assert.Single(vm.Aggressors);
+
+        Edits("removing an aggressor", () => vm.RemoveAggressorCommand.Execute(vm.Aggressors[0]));
+        Assert.Empty(vm.Aggressors);
+
+        // The drop budget beside them always did, and still does — the behaviour the other four
+        // were brought into line with.
+        Edits("the drop budget", () => vm.DropBudgetEntry = "80 mV");
+    }
+
+    /// <summary>
     /// <b>A re-solve in flight when another edit arrives is CANCELLED, not queued.</b>
     /// </summary>
     /// <remarks>
@@ -1093,11 +1139,127 @@ public class RailWindowTests
         Assert.Equal("C11", vm.SelectedPart?.Refdes);
         Assert.NotNull(vm.BoardOverlayLayer.PartHighlight);
 
-        vm.ClearPartSelectionCommand.Execute(null);
+        vm.ClearRowSelectionCommand.Execute(null);
 
         Assert.Null(vm.SelectedPart);
         Assert.Null(vm.PartHighlight);
         Assert.Null(vm.BoardOverlayLayer.PartHighlight);
+    }
+
+    /// <summary>
+    /// <b>One row is selected in this window at a time, Escape clears whichever it is, and a source
+    /// or a load is marked on the board exactly as a part is.</b>
+    /// </summary>
+    /// <remarks>
+    /// Three reports, one cause (owner, 2026-09-19). Each list owned its own selection, so a row
+    /// could be highlighted in the parts table AND in the sources list at once — which reads as two
+    /// selections when nothing in the window acts on a pair. Escape was wired to the parts table
+    /// only, which is the one shape a user cannot diagnose: a key that does nothing looks the same
+    /// as a key that is not wired. And a source or a load is ANCHORED — at a refdes and pin — so it
+    /// has a place on the board and had no mark on it.
+    ///
+    /// <para>Driven on the shipped example because the mark only exists where the board netlist
+    /// places the anchor.</para>
+    /// </remarks>
+    [Fact]
+    public void OnlyOneRowIsSelectedAtATime_AndASourceOrLoadIsMarkedOnTheBoard()
+    {
+        string crail = Path.Combine(RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+        vm.LoadDocumentReferences();
+        vm.RebuildParts();
+
+        vm.SelectedPart = vm.Parts.First(p => p.Refdes == "C11");
+        Assert.True(vm.HasRowSelection);
+
+        // Picking a LOAD takes the selection off the parts table — one window, one selected row.
+        var load = vm.Loads.First(l => l.Load.Anchor.Refdes is { Length: > 0 });
+        vm.SelectedLoad = load;
+
+        Assert.Null(vm.SelectedPart);
+        Assert.Same(load, vm.SelectedLoad);
+
+        // And it is marked on the board, on the pads PdnAttachments resolves — the same resolver
+        // every port goes through, so a pin FIELD marks the whole field rather than one pad.
+        var mark = vm.PartHighlight;
+        Assert.NotNull(mark);
+        Assert.Equal(load.Anchor, mark!.Label);
+        Assert.NotEmpty(mark.Pads);
+        Assert.Equal(mark, vm.BoardOverlayLayer.PartHighlight);
+
+        var pads = vm.Board!.Pads.Where(p =>
+            string.Equals(p.Refdes, load.Load.Anchor.Refdes, StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.All(mark.Pads, pad => Assert.Contains(pads, p => p.X == pad.X && p.Y == pad.Y));
+
+        // A source next: the load goes, the source arrives, and the mark follows.
+        var source = vm.Sources.First(s => s.Source.Anchor.Refdes is { Length: > 0 });
+        vm.SelectedSource = source;
+
+        Assert.Null(vm.SelectedLoad);
+        Assert.Equal(source.Anchor, vm.PartHighlight?.Label);
+
+        // An aggressor is a FREQUENCY, not a place — selecting one takes the mark off rather than
+        // inventing somewhere to put it.
+        if (vm.Aggressors.Count > 0)
+        {
+            vm.SelectedAggressor = vm.Aggressors[0];
+            Assert.Null(vm.SelectedSource);
+            Assert.Null(vm.PartHighlight);
+            Assert.Null(vm.BoardOverlayLayer.PartHighlight);
+        }
+
+        // Escape clears whichever list holds it — all four through one command, which is what the
+        // window's key handler calls.
+        vm.SelectedSource = source;
+        Assert.True(vm.HasRowSelection);
+
+        vm.ClearRowSelectionCommand.Execute(null);
+
+        Assert.False(vm.HasRowSelection);
+        Assert.Null(vm.SelectedPart);
+        Assert.Null(vm.SelectedSource);
+        Assert.Null(vm.SelectedLoad);
+        Assert.Null(vm.SelectedAggressor);
+        Assert.Null(vm.BoardOverlayLayer.PartHighlight);
+    }
+
+    /// <summary>
+    /// <b>A rail the window is not showing blocks the run, and the sentence goes when it is fixed.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>RailDcRun.Run</c> solves EVERY rail of the document and a refusal on any one refuses the
+    /// run — so a window that gated on the selected rail alone let a run start, took back
+    /// <i>"Rail 'GND' was not solved. Rail 'GND' states no reference layer…"</i>, and then had no way
+    /// to see the fix: a refusal raised by a solve is only replaced by another solve (owner,
+    /// 2026-09-19). Asked as a GATE, the sentence is re-derived on every refresh and is gone the
+    /// moment the rail is given a reference.
+    /// </remarks>
+    [Fact]
+    public void ARailTheWindowIsNotShowingBlocksTheRun_AndItsSentenceGoesWhenItIsFixed()
+    {
+        var doc = OneRail();
+        doc.Rails.Add(new RailSpec { Name = "GND", NetName = "GND" });   // states no reference layer
+
+        var vm = Window(doc);
+        vm.Board = Board();
+        vm.ConfirmReferenceCommand.Execute(null);          // the SELECTED rail is answered for
+
+        Assert.True(vm.IsReferenceConfirmed);
+        Assert.False(vm.CanRun);
+        Assert.Contains("GND", vm.RunBlockedReason, StringComparison.Ordinal);
+        Assert.Contains("states no reference layer", vm.RunBlockedReason, StringComparison.Ordinal);
+
+        // It names the control that answers it, which is the reference combo — reached through the
+        // rail selector, which the sentence says.
+        Assert.Equal(RailRefusalControl.ReferenceLayer, vm.Refusal?.Control);
+        Assert.Contains("rail selector", vm.Refusal!.Sentence, StringComparison.Ordinal);
+
+        // Fix it the way the sentence says to: show that rail and confirm its reference.
+        vm.SelectedRailName = "GND";
+        vm.ConfirmReferenceCommand.Execute(null);
+
+        Assert.True(vm.CanRun);
+        Assert.Null(vm.Refusal);
     }
 
     /// <summary>

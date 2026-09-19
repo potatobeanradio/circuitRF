@@ -593,6 +593,51 @@ namespace CircuitRF.Render.DataDisplay
 
         public bool IsSummaryColumn => SummaryColumn != null;
 
+        // ---- Annotation traces ------------------------------------------
+        //
+        //  A plot can carry traces that are not data: a target ceiling, a vertical line marking a
+        //  frequency something else happens at. They are traces because the Data Display has no
+        //  bespoke chart to draw them any other way (railrf.md §11.1), and they carry two points
+        //  rather than the sweep's grid.
+        //
+        //  Two reports, one cause (owner, 2026-09-19). A MULTI-marker reads every other trace at the
+        //  marker's own X SAMPLE, finds no sample at that index and prints "NaN" — eleven such rows
+        //  beside two real ones on railRF's |Z| plot. And the Add Marker submenu lists one row per
+        //  trace, so the same eleven were offered as places to put a marker, burying the two that
+        //  answer anything.
+
+        /// <summary>
+        /// True where this trace is ANNOTATION rather than data — a target ceiling, a marker line.
+        /// </summary>
+        /// <remarks>
+        /// <b>It is DRAWN exactly like any other trace</b>, which is the whole reason it is a trace.
+        /// What it is excluded from is everything a MARKER does: it is not offered one of its own
+        /// (the Add Marker submenu, and a double-click near it), and it is not a row in another
+        /// trace's multi-marker readout.
+        ///
+        /// <para><b>Set by whoever builds the trace, because only it knows.</b> The alternative for
+        /// the readout — dropping any row that reads NaN — would also hide a genuine NaN in a real
+        /// curve, which is a reading a user needs. This says the row is not a reading at all.</para>
+        /// </remarks>
+        public bool IsAnnotation { get; set; }
+
+        /// <summary>
+        /// True where this trace's extent must not set the plot's window.
+        /// </summary>
+        /// <remarks>
+        /// <b>A line drawn TO the window cannot also decide it.</b> railRF marks each aggressor
+        /// frequency with a two-point vertical trace spanning the current Y window; with that trace
+        /// in the autoscale, the window it was drawn from becomes the window it produces, and the
+        /// curves are squashed to nothing. That used to be held by ORDER — the lines were added
+        /// after the autoscale and the file said so in capitals — which works exactly until
+        /// something else autoscales, and the Plot Inspector does on every edit.
+        ///
+        /// <para>Separate from <see cref="IsAnnotation"/> on purpose: a target ceiling is
+        /// annotation and SHOULD frame the plot, because a ceiling off the top of the window is a
+        /// verdict the reader cannot see.</para>
+        /// </remarks>
+        public bool ExcludeFromAutoscale { get; set; }
+
         // ---- Cube-native binding (Phase 7.2c-a) -------------------------
         //
         //  Null CubeName ⇒ this trace uses the legacy SNP/matrix path.
@@ -3198,7 +3243,8 @@ namespace CircuitRF.Render.DataDisplay
             // When the other trace's X axis is incompatible (different length), the value is NaN.
             if (m.IsMulti && plotTraces != null)
                 foreach (var other in plotTraces)
-                    if (!Equals(other)) lines.Add((GetMultiMarkerLine(m, other), false));
+                    if (!Equals(other) && !other.IsAnnotation)
+                        lines.Add((GetMultiMarkerLine(m, other), false));
 
             return lines;
         }
@@ -3898,7 +3944,8 @@ namespace CircuitRF.Render.DataDisplay
 
             if (m.IsMulti && plotTraces != null)
                 foreach (var other in plotTraces)
-                    if (!Equals(other)) standardLines.Add((GetMultiMarkerLine(m, other), false));
+                    if (!Equals(other) && !other.IsAnnotation)
+                        standardLines.Add((GetMultiMarkerLine(m, other), false));
 
             return standardLines;
         }

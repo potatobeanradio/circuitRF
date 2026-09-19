@@ -176,8 +176,13 @@ public partial class RailRfWindow : Window
     // ── Escape: nothing is selected (owner, 2026-09-19) ──────────────────────────────
 
     /// <summary>
-    /// Clears the parts-table selection, and with it the mark on the board.
+    /// Clears whichever of the four lists has a row selected, and with it the mark on the board.
     /// </summary>
+    /// <remarks>
+    /// <b>All four, not just the parts table</b> (owner, 2026-09-19). The keystroke worked on one
+    /// list and did nothing on the next three, which is the one shape a user cannot diagnose: there
+    /// is no way to tell a key that is not wired from a key that found nothing to clear.
+    /// </remarks>
     /// <remarks>
     /// <b>Bubbling, and it defers to anything that already handled the key.</b> Escape is the layout
     /// canvas's own disarm for the zoom box and its own cancel for a drag; this window promises that
@@ -194,9 +199,9 @@ public partial class RailRfWindow : Window
         if (e.Handled || e.Key != Key.Escape) return;
         if (RailKeyboardGate.IsTextEntry(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
             return;
-        if (Vm is not { SelectedPart: not null } vm) return;
+        if (Vm is not { HasRowSelection: true } vm) return;
 
-        vm.ClearPartSelectionCommand.Execute(null);
+        vm.ClearRowSelectionCommand.Execute(null);
         e.Handled = true;
     }, RoutingStrategies.Bubble);
 

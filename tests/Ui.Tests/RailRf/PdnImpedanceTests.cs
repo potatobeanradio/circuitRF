@@ -597,6 +597,102 @@ public class PdnImpedanceTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// <b>A multi-marker reads the CURVES, and the mask and the aggressor lines are not curves.</b>
+    /// </summary>
+    /// <remarks>
+    /// Turning Multi on in a marker's info box added eleven rows reading <c>NaN</c> to the two real
+    /// ones (owner, 2026-09-19). They are not wrong readings, they are not readings: a multi-marker
+    /// reads every other trace at its own X SAMPLE, and the mask edge and the aggressor lines carry
+    /// two points rather than the sweep's 401, so at the marker's index there is nothing to read.
+    ///
+    /// <para>Asserted through <c>BuildMarkerBoxLines</c> — the one function the renderer both
+    /// MEASURES the box with and DRAWS it with, so a filter that worked in only one of the two
+    /// would give a box the wrong size for its contents.</para>
+    /// </remarks>
+    [Fact]
+    public void AMultiMarkerReadsTheImpedanceCurvesAndNotTheMaskOrTheAggressorLines()
+    {
+        var vm = Window();
+
+        // A SECOND observation port, so the readout has a real row to produce as well as the rows it
+        // must not: a test that only asserted the absence of NaN would pass on a filter that dropped
+        // everything.
+        vm.Document.Rails[0].Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = "U2", Pin = "VDD" } });
+        vm.RunCommand.Execute(null);
+
+        var traces = vm.ImpedancePlot.Traces.ToList();
+        Assert.True(traces.Count > 5, "not enough traces to be exercising the defect.");
+
+        // Every trace that is not a |Z| curve says so of itself — one flag, so the menu, the
+        // double-click and the readout cannot come to disagree about what this plot holds.
+        Assert.All(traces, t => Assert.Equal(t.CubeName != "Z", t.IsAnnotation));
+
+        var curve = traces.First(t => t.CubeName == "Z");
+        var marker = new Marker(curve, curve.Points[curve.Points.Count / 2].X, isMulti: true,
+                                isDelta: false, index: 1, FreqUnit.MHz);
+
+        var lines = curve.BuildMarkerBoxLines(marker, FreqUnit.MHz, showFilePrefix: false, traces);
+        foreach (var (text, _) in lines) _output.WriteLine(text);
+
+        Assert.DoesNotContain(lines, l => l.Text.Contains("NaN", StringComparison.Ordinal));
+
+        // And the rows it DOES add are the other curves — the marker's own port being its first
+        // line. A filter that dropped everything would pass the assertion above for free.
+        int curves = traces.Count(t => t.CubeName == "Z");
+        Assert.True(curves > 1, "one curve only — the multi readout has nothing to report.");
+        Assert.Equal(curves, lines.Count(l => l.Text.StartsWith("Z(", StringComparison.Ordinal)));
+
+        // The exclusion is load-bearing, not decorative: read directly, an annotation trace is
+        // exactly the NaN row that was on screen.
+        var mask = traces.First(t => t.CubeName!.StartsWith("target(", StringComparison.Ordinal));
+        Assert.Contains("NaN", curve.GetMultiMarkerLine(marker, mask), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Delete removes the selected marker</b> (owner, 2026-09-19: a marker is selected and the
+    /// Delete keystroke does not remove it).
+    /// </summary>
+    /// <remarks>
+    /// This window answered no Delete at all — the binding was simply never written, although the
+    /// results plot is a real <c>PlotControl</c> with real markers on it and every other plot
+    /// surface in the application answers the key. The Match Designer had the identical report and
+    /// the identical fix, which is why the command here is a copy of that one rather than
+    /// <c>DataDisplayViewModel.DeleteSelected</c>: that also removes selected plot CONTAINERS, and
+    /// binding the wrong one would look identical until somebody selected the plot.
+    /// </remarks>
+    [Fact]
+    public void DeleteRemovesTheSelectedMarkerAndCannotTakeThePlotWithIt()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var trace = vm.ImpedancePlot.Traces.First(t => t.CubeName == "Z");
+        var marker = new Marker(trace, trace.Points[trace.Points.Count / 2].X, isMulti: false,
+                                isDelta: false, index: 1, FreqUnit.MHz);
+        trace.Markers.Add(marker);
+        vm.ImpedanceContainer.OnPlotChanged(vm, EventArgs.Empty);   // what publishes the info box
+
+        var box = Assert.Single(vm.PlotHost.MarkerInfoBoxes);
+        box.IsSelected = true;
+
+        int plots = vm.PlotHost.Plots.Count;
+        vm.DeleteSelectedMarkersCommand.Execute(null);
+
+        Assert.Empty(trace.Markers);
+        Assert.Empty(vm.PlotHost.MarkerInfoBoxes);
+
+        // And it did NOT take the plot with it — this window's one plot is not deletable, there
+        // being nothing to delete it from and its traces rebuilt from the document on every solve.
+        Assert.Equal(plots, vm.PlotHost.Plots.Count);
+
+        // The keystroke reaches it: bound at the window, so it works wherever focus sits.
+        string xaml = System.IO.File.ReadAllText(System.IO.Path.Combine(
+            RepoRoot(), "src", "Ui", "Views", "RailRf", "RailRfWindow.axaml"));
+        Assert.Contains("Gesture=\"Delete\" Command=\"{Binding DeleteSelectedMarkersCommand}\"",
+                        xaml, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A window with a board, a confirmed reference, a part library and a stubbed DC solve — so the
     /// FREQUENCY answer under test is the real <see cref="PdnSweep"/> and nothing else is.
     /// </summary>
@@ -628,6 +724,274 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         vm.ConfirmReferenceCommand.Execute(null);
         Assert.True(vm.CanRun, vm.RunBlockedReason);
         return vm;
+    }
+
+    /// <summary>
+    /// <b>Add Marker offers the curves only</b> (owner-reported, 2026-09-19 — the context menu
+    /// offered many rows that are not traces a marker belongs on).
+    /// </summary>
+    /// <remarks>
+    /// The submenu is one row per trace, so on this plot eleven of the thirteen were the mask edge
+    /// and the aggressor lines — annotation, drawn as traces only because §11.1 forbids a bespoke
+    /// chart, and burying the two rows that answer anything. Same flag as the NaN readout above,
+    /// because it is the same fact about the same traces.
+    ///
+    /// <para><b>The double-click path is asserted with it.</b> Filtering the menu alone would leave
+    /// a double-click near an aggressor line putting a marker on a trace the menu deliberately does
+    /// not offer — one gesture disagreeing with another. A source scan is the gate because there is
+    /// no headless Avalonia host in this project to open a real menu on; the comments are stripped
+    /// first, so a rule that exists only in a comment does not pass.</para>
+    /// </remarks>
+    [Fact]
+    public void AddMarkerOffersTheCurvesOnly_AndSoDoesTheDoubleClick()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        // What the submenu would list, by the rule the control applies.
+        var offered = vm.ImpedancePlot.Traces.Where(t => !t.IsAnnotation).ToList();
+        _output.WriteLine(string.Join(" · ", vm.ImpedancePlot.Traces.Select(
+            t => (t.IsAnnotation ? "-" : "+") + t.CubeName)));
+
+        Assert.All(offered, t => Assert.Equal("Z", t.CubeName));
+        Assert.True(vm.ImpedancePlot.Traces.Count - offered.Count >= 5,
+                    "not enough annotation traces to be exercising the defect.");
+
+        string code = StripComments(System.IO.File.ReadAllText(System.IO.Path.Combine(
+            RepoRoot(), "src", "Ui", "DataDisplay", "Controls", "PlotControl.cs")));
+
+        Assert.Contains("IsAnnotation", Body(code, "private void RefreshAddMarkerSubmenu()"),
+                        StringComparison.Ordinal);
+        Assert.Contains("IsAnnotation", Body(code, "private bool TryAddMarkerNearPoint(Point canvasPt)"),
+                        StringComparison.Ordinal);
+    }
+
+    /// <summary>The body of one method, by brace matching from its signature.</summary>
+    private static string Body(string code, string signature)
+    {
+        int at = code.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(at >= 0, $"'{signature}' is no longer in the source — the scan is testing nothing.");
+
+        int open = code.IndexOf('{', at);
+        int depth = 0;
+        for (int i = open; i < code.Length; i++)
+        {
+            if (code[i] == '{') depth++;
+            else if (code[i] == '}' && --depth == 0) return code[open..i];
+        }
+        return "";
+    }
+
+    private static string StripComments(string src)
+    {
+        src = System.Text.RegularExpressions.Regex.Replace(
+            src, @"/\*.*?\*/", "", System.Text.RegularExpressions.RegexOptions.Singleline);
+        return System.Text.RegularExpressions.Regex.Replace(src, @"//[^\n]*", "");
+    }
+
+    /// <summary>
+    /// <b>The curve and its own mask are in the same decibel</b> (owner, 2026-09-19, found while
+    /// making the unit settable).
+    /// </summary>
+    /// <remarks>
+    /// The curve was authored as <c>dB(Z[…])</c>, and <c>dB</c> in this vocabulary is
+    /// <c>10·log₁₀</c> — a POWER decibel — while the mask edge beside it was built with
+    /// <c>20·log₁₀</c>. Measured on this fixture: a 200 mΩ target drew at −13.979 and a curve at
+    /// 0.311 Ω drew at −5.076 rather than −10.152, so a design sitting exactly on its ceiling read
+    /// as seven decibels clear of it. The mask VERDICT is computed in ohms by <c>PdnSweep</c> and
+    /// was always right — it was the picture that disagreed with it.
+    /// </remarks>
+    [Fact]
+    public void TheCurveAndItsMaskAreInTheSameDecibel()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var curve = vm.ImpedancePlot.Traces.First(t => t.CubeName == "Z");
+        var mask  = vm.ImpedancePlot.Traces.First(
+            t => t.CubeName!.StartsWith("target(", StringComparison.Ordinal));
+
+        double limitOhms = vm.Sweep!.Ports[0].Mask!.Points[0].LimitOhms;
+        Assert.Equal(20 * Math.Log10(limitOhms), mask.Points[0].Y, 3);
+
+        // The curve's own value in ohms, read off the same trace — so the comparison is of the two
+        // CONVENTIONS and not of two different numbers.
+        double db = curve.Points[0].Y;
+        curve.Transform = CubeTransform.Mag;
+        curve.BuildPath(PlotType.Rect, FreqUnit.MHz);
+        double ohms = curve.Points[0].Y;
+
+        _output.WriteLine($"|Z|={ohms:0.#####} Ω drew at {db:0.###} dB; " +
+                          $"20·log10={20 * Math.Log10(ohms):0.###}, 10·log10={10 * Math.Log10(ohms):0.###}");
+        Assert.Equal(20 * Math.Log10(ohms), db, 3);
+    }
+
+    /// <summary>
+    /// <b>The Y unit is settable, the target follows it, and a re-solve does not undo any of it.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: the trace is listed as dB and there is no way to see it in ohms; offer the
+    /// Plot Inspector, do not let the impedance traces be deleted, do not show the target traces as
+    /// cards, and make those targets adapt to any scale the impedance traces are given.
+    ///
+    /// <para>The last clause of that is the hard one and it is why the mask carries raw OHMS with a
+    /// transform rather than a baked <c>20·log₁₀</c>. The re-solve half is the other: this plot is
+    /// rebuilt from the sweep on every committed edit, so without carrying state across it the unit
+    /// picked in the panel would last until the next keystroke.</para>
+    /// </remarks>
+    [Fact]
+    public void TheYUnitIsSettableInTheInspector_TheTargetFollowsIt_AndAReSolveKeepsIt()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var inspector = vm.ImpedanceContainer.Inspector;
+
+        // ── The cards are the CURVES, and none of them can be removed ──────────────────────────
+        Assert.Equal(vm.ImpedancePlot.Traces.Count(t => t.CubeName == "Z"), inspector.Traces.Count);
+        Assert.All(inspector.Traces, c => Assert.Equal("Z", c.Trace.CubeName));
+        Assert.All(inspector.Traces, c => Assert.False(c.CanRemove));
+        Assert.False(inspector.CanEditTraceSet);
+        Assert.False(inspector.CanAddTrace);
+
+        var curve = vm.ImpedancePlot.Traces.First(t => t.CubeName == "Z");
+        double limitOhms = vm.Sweep!.Ports[0].Mask!.Points[0].LimitOhms;
+
+        Mask(vm, out double maskDb);
+        Assert.Equal(20 * Math.Log10(limitOhms), maskDb, 3);
+        Assert.Equal("|Z| (dBΩ)", vm.ImpedancePlot.CustomYLabel);
+
+        // ── Ohms, as the trace card sets it ───────────────────────────────────────────────────
+        curve.Transform = CubeTransform.Mag;
+        inspector.RebuildAndNotify();
+
+        // The curve still HAS data. It is re-resolved from its source on every inspector edit, and
+        // this window has no data-source library — before RailPlotDataSources that emptied it.
+        Assert.NotEmpty(curve.Points);
+
+        Mask(vm, out double maskOhms);
+        Assert.Equal(limitOhms, maskOhms, 6);                       // the target adapted
+        Assert.Equal("|Z| (Ω)", vm.ImpedancePlot.CustomYLabel);
+
+        // ── And a marker and a chosen style, to be carried ─────────────────────────────────────
+        curve.Markers.Add(new Marker(curve, curve.Points[0].X, isMulti: false, isDelta: false,
+                                     index: 1, FreqUnit.MHz));
+        curve.Properties.LineWidth = 4.0;                           // raises Properties.Custom
+        Assert.True(curve.Properties.Custom);
+
+        // ── A re-solve: what every committed edit does ────────────────────────────────────────
+        vm.RunCommand.Execute(null);
+
+        var rebuilt = vm.ImpedancePlot.Traces.First(t => t.CubeName == "Z");
+        Assert.NotSame(curve, rebuilt);                             // it really is a new trace
+        Assert.Equal(CubeTransform.Mag, rebuilt.Transform);
+        Assert.Equal(4.0, rebuilt.Properties.LineWidth);
+        Assert.Single(rebuilt.Markers);
+        Assert.Equal("|Z| (Ω)", vm.ImpedancePlot.CustomYLabel);
+
+        Mask(vm, out double maskAfter);
+        Assert.Equal(limitOhms, maskAfter, 6);
+    }
+
+    /// <summary>
+    /// <b>An aggressor line spans the window and never sets it.</b>
+    /// </summary>
+    /// <remarks>
+    /// A vertical line is a two-point trace cut TO the Y window, so with it in the autoscale the
+    /// window it was drawn from becomes the window it produces and every curve is squashed to
+    /// nothing. That used to be held by ORDER — added after the autoscale, in capitals in the file —
+    /// which works exactly until something else autoscales, and the Plot Inspector does on every
+    /// edit. <c>Trace.ExcludeFromAutoscale</c> is what holds it now.
+    /// </remarks>
+    [Fact]
+    public void AnAggressorLineSpansTheWindowAndNeverSetsIt()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var lines = vm.ImpedancePlot.Traces.Where(t => t.ExcludeFromAutoscale).ToList();
+        Assert.NotEmpty(lines);
+        Assert.All(lines, l => Assert.StartsWith("converter × ", l.CubeName!, StringComparison.Ordinal));
+
+        var window = vm.ImpedancePlot.Axes.Window;
+        double lo = Math.Min(window.Top, window.Bottom);
+        double hi = Math.Max(window.Top, window.Bottom);
+        Assert.All(lines, l =>
+        {
+            Assert.Equal(lo, Math.Min(l.Points[0].Y, l.Points[1].Y), 3);
+            Assert.Equal(hi, Math.Max(l.Points[0].Y, l.Points[1].Y), 3);
+        });
+
+        // The half that order alone could not hold: autoscale again, with the lines already on the
+        // plot, and the window must not have walked outwards.
+        vm.ImpedancePlot.Autoscale(force: true);
+        Assert.Equal(lo, Math.Min(vm.ImpedancePlot.Axes.Window.Top,
+                                  vm.ImpedancePlot.Axes.Window.Bottom), 3);
+        Assert.Equal(hi, Math.Max(vm.ImpedancePlot.Axes.Window.Top,
+                                  vm.ImpedancePlot.Axes.Window.Bottom), 3);
+    }
+
+    /// <summary>The Y of the first mask point currently on the plot.</summary>
+    private static void Mask(RailRfViewModel vm, out double y) =>
+        y = vm.ImpedancePlot.Traces
+              .First(t => t.CubeName!.StartsWith("target(", StringComparison.Ordinal))
+              .Points[0].Y;
+
+    /// <summary>
+    /// <b>The panel restyles this plot and cannot re-aim it.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: the plot type, <c>vs X</c>, the "(load a file…)" combo and the quantity
+    /// picker beside it are not used for railRF and just take up space — on the narrowest panel in
+    /// the window, every one of them empty. They are one fact, not four: each re-aims a trace (or
+    /// the whole plot) at something the next re-solve aims straight back, because this plot is a
+    /// READ-OUT rebuilt from the sweep on every committed edit. <c>Plot.IsFixedReadout</c> is that
+    /// fact; what it deliberately leaves alone is everything about how a trace LOOKS, which is why
+    /// the panel opens at all.
+    ///
+    /// <para>Hidden rather than disabled throughout — a permanently grey control is one the user
+    /// goes on trying, and these are comboboxes that would sit empty at the width of the panel.</para>
+    /// </remarks>
+    [Fact]
+    public void ThePanelRestylesThisPlotAndCannotReAimIt()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var inspector = vm.ImpedanceContainer.Inspector;
+        Assert.True(vm.ImpedancePlot.IsFixedReadout);
+
+        // The plot is the kind it is, and the trace set is the window's.
+        Assert.False(inspector.CanChangePlotType);
+        Assert.False(inspector.CanEditTraceSet);
+        Assert.False(inspector.CanAddTrace);
+
+        var card = inspector.Traces.First();
+        Assert.False(card.CanRemove);              // no trash
+        Assert.False(card.CanPickTraceData);       // no re-aiming
+        Assert.False(card.ShowIdentityRow);        // "(load a file…)" + the quantity picker
+        Assert.False(card.ShowVersusRow);          // vs X
+        Assert.False(card.SourceSelectorVisible);  // the source combo
+
+        // And what the panel is OPEN for is untouched.
+        Assert.True(card.ShowTransformCombo);
+        Assert.True(card.IsTransformComboEnabled);
+
+        // ── The Data Display's own plots keep every one of them ───────────────────────────────
+        var display = new CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel(
+            new CircuitRF.Ui.DataDisplay.ViewModels.DataSourceLibraryViewModel(),
+            addEmptyPlot: false, selectEmptyPlot: false);
+        var ordinary = display.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 0, 100, 100).Inspector;
+        Assert.True(ordinary.CanChangePlotType);
+        Assert.True(ordinary.CanEditTraceSet);
+    }
+
+    private static string RepoRoot()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir is { Length: > 0 } && !System.IO.File.Exists(System.IO.Path.Combine(dir, "circuitRF.slnx")))
+            dir = System.IO.Path.GetDirectoryName(dir) ?? "";
+        return dir;
     }
 
     /// <summary>A stackup whose second conductor is marked as the ground reference — the only thing

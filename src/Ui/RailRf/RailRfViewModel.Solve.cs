@@ -284,6 +284,40 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private string _runBlockedReason = "";
 
+    /// <summary>
+    /// The first rail OTHER than the selected one that states no reference layer, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>The gate has to look at the whole rail set, because the solve does</b> (owner,
+    /// 2026-09-19). <see cref="RailDcRun.Run"/> solves every rail of the document in dependency
+    /// order and a refusal on any one of them refuses the run, so a window that checked only the
+    /// rail it was SHOWING let a run start, took the engine's "Rail 'GND' was not solved" back, and
+    /// then had nowhere to put it: the reference combo it turned red was the selected rail's, which
+    /// was correctly set.
+    ///
+    /// <para>And the sentence then OUTLIVED the fix. A refusal that arrives from a solve is only
+    /// replaced by another solve, so a condition the window could not see was a condition it could
+    /// not see being repaired either. Asked here, the sentence is re-derived on every gate refresh
+    /// and is gone the moment the rail is given a reference — which is what makes it a gate rather
+    /// than a message.</para>
+    ///
+    /// <para>The selected rail is skipped because <see cref="IsReferenceConfirmed"/> answers for it
+    /// one branch earlier, and it answers MORE: a rail that names a layer the technology no longer
+    /// offers is unconfirmed although it states one.</para>
+    /// </remarks>
+    private string? UnreferencedRail()
+    {
+        foreach (var rail in _document.Rails)
+        {
+            if (string.Equals(rail.Name, SelectedRailName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (rail.ReferenceLayer is null) return rail.Name;
+        }
+
+        return null;
+    }
+
     private void RefreshRunGate()
     {
         string? why =
@@ -295,6 +329,10 @@ public sealed partial class RailRfViewModel
             : !IsReferenceConfirmed
                 ? "Confirm the reference layer first. railRF proposes one and never assumes it (Q-8), "
                 + "and a pre-selected combo tabbed past is not a confirmation."
+            : UnreferencedRail() is { } unreferenced
+                ? $"Rail '{unreferenced}' states no reference layer, so there is nothing to return "
+                + "current through. The rail set is solved together, so this one blocks the run as "
+                + "well — pick it in the rail selector above and confirm its reference."
             : PendingImportRefusal is { } import
                 ? import.Sentence
             : _document.Refusal();
@@ -445,6 +483,19 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     public void QueueResolve()
     {
+        // ── THE GATE FIRST, ALWAYS (owner, 2026-09-19) ────────────────────────────────────────
+        //
+        // What is on the status strip is a VERDICT ON THE DOCUMENT, and this is called from every
+        // committed edit — so by the time it runs, the verdict on screen is about a document state
+        // that no longer exists. Refreshing here means one call site rather than a dozen, and it
+        // means an edit that leaves the run still refused REPLACES the old sentence with the
+        // current one instead of leaving a fixed problem on screen.
+        //
+        // It is also what clears a refusal the SOLVE raised: RefreshRunGate writes Refusal
+        // unconditionally, so a gate that now passes clears it and the solve below re-raises
+        // whatever is still wrong. Nothing survives an edit it has stopped being true of.
+        RefreshRunGate();
+
         if (!CanRun || Board is not { } board || SelectedRail is null) return;
         Start(board, PdnModelKind.Fast);
     }

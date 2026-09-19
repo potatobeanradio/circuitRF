@@ -29949,3 +29949,186 @@ refdes that no longer exists clears, because a deleted part is not a selected on
 
 Escape is bubbling and defers to `e.Handled`: it is the layout canvas's own zoom-box disarm, and
 §11.6 promises that someone who has learned that canvas has learned this one.
+
+## railRF: three from a fifth manual pass over the window (2026-09-19)
+
+### Eleven of the |Z| plot's thirteen traces are not data, and every marker gesture treated them as data
+
+Two reports (a multi-marker filled with `NaN`; the Add Marker submenu listing many "traces" that
+should not be shown) with one cause. The |Z| plot carries thirteen traces on the shipped example and
+only two are curves: the rest are the mask edge and the aggressor lines, which are `Trace`s only
+because §11.1 forbids a bespoke chart to draw them any other way. They carry **two points**, not the
+sweep's 401.
+
+- A multi-marker reads every other trace at its own **X sample** (`GetCubeMultiMarkerLine` requires
+  equal `_cubeXValues.Length` and answers `"NaN"` otherwise) — so eleven `NaN` rows beside two
+  readings.
+- The Add Marker submenu is one row per trace — so the same eleven were offered as places to put a
+  marker, burying the two that answer anything.
+
+`Trace.IsAnnotation` now says so at the trace, and railRF sets it on the mask and on every aggressor
+line. Detail of what honours it is in `src/Render/RESOLVED.md`; the two rules worth repeating here:
+
+- **Marked at the trace, not filtered at each caller.** `Trace.BuildMarkerBoxLines` is the one
+  function the renderer MEASURES the info box with and then DRAWS it with, so a filter applied at
+  one of the two gives a box the wrong size for its contents — and the menu, the double-click and
+  the readout would otherwise each carry their own copy of the same rule.
+- **Not "drop any row that reads NaN".** That would also hide a genuine NaN in a real curve, which
+  is a reading a user needs. The flag says the row is not a reading at all.
+
+### Four lists, four selections — and Escape was wired to one of them
+
+A row could be highlighted in the parts table **and** in the sources list at once. Nothing in the
+window acts on a pair: each remove button acts on its own list's row and the board can mark one
+thing. `RailRfViewModel.Selection.cs` is now the single place that answers *what is selected*, and
+setting any one of Sources / Loads / Aggressors / Parts clears the other three.
+
+Escape cleared the parts table only. That is the one shape a user cannot diagnose — a key that finds
+nothing to clear looks exactly like a key that was never wired — so it is one command over all four
+now (`ClearRowSelectionCommand`, read through `HasRowSelection`).
+
+**A source and a load are places on the board, so they are marked like a part.** They are anchored
+at a refdes and pin (or a coordinate) and had no mark. The mark is the same `RailPartHighlight`, and
+the pads come from `PdnAttachments.Resolve` — the resolver every port already goes through, so a pin
+FIELD such as `U1.VDD` marks the whole field rather than one pad. A part row goes through the same
+call with a refdes-only anchor, so there is one code path rather than two that could drift. An
+**aggressor is a frequency, not a place**: selecting one takes the mark off rather than inventing
+somewhere to put it.
+
+The net picker under *Pick the rail* is deliberately **not** in the group: it is the operand of the
+button directly beneath it, and clearing it on an unrelated click would disable that button under
+the user's hand.
+
+### "Rail 'GND' was not solved" outlived the fix
+
+The run gate checked the reference layer of the rail the window was **showing**. `RailDcRun.Run`
+solves **every** rail of the document in dependency order and a refusal on any one refuses the run —
+so a document whose second rail stated no reference let a run start, took back *"Rail 'GND' was not
+solved. Rail 'GND' states no reference layer…"*, and then had nowhere to put it: the reference combo
+it turned red was the selected rail's, which was correctly set.
+
+And the sentence then **outlived the repair**, because a refusal raised by a solve is only replaced
+by another solve. A condition the window could not see was a condition it could not see being fixed.
+
+Two changes, and the second is the general one:
+
+- `RefreshRunGate` now asks every rail, so the sentence is a **gate** — re-derived on every refresh,
+  gone the moment the rail is given a reference. It keeps the engine's own stem (*"states no
+  reference layer"*), so `RailRefusals.Classify` still attributes it to the reference combo, and it
+  names the rail selector as the way to reach it.
+- `QueueResolve` refreshes the gate **first**. What is on the status strip is a verdict on the
+  document, and every committed edit calls this — so by then the verdict on screen is about a
+  document state that no longer exists. One call site rather than a dozen, and nothing survives an
+  edit it has stopped being true of.
+
+### Four edits that changed the answer and did not re-solve
+
+Found while reading the above, then fixed on the owner's word. §2.3 step 6 is *the result follows
+the edit*, and four did not:
+
+- **`ImpedanceTargetEntry`** — the flat impedance target. This is the one field on the window whose
+  value is **drawn**: the mask is a trace on the |Z| plot, built from `PdnSweepResult`'s own ports.
+  A target typed and committed left the old ceiling on the picture and the old verdict in the mask
+  table — a design judged against a number the field no longer showed.
+- **`BandStartEntry` / `BandStopEntry`** — worse, because the band **is** the plot's X axis: the
+  curve stayed of the old band under an axis nothing had changed, and every anti-resonance,
+  coincidence and mask verdict was still of the band the user had just replaced.
+- **`AddAggressor` / `RemoveAggressor`** — the vertical lines and every coincidence row come out of
+  the sweep result too, so the plot went on showing the previous set.
+
+`DropBudgetEntry` beside them always did, which is what made the omission invisible. A scan of every
+setter in `src/Ui/RailRf` that writes to the rail or the document found no others.
+
+## railRF: Delete did not remove a selected marker (2026-09-19)
+
+The results plot is a real Data Display `PlotControl` with real markers on it — a double-click adds
+one, clicking its info box selects it — and this window answered **no Delete at all**. The binding
+was never written. Every other plot surface in the application answers the key, so on this one it
+read as broken rather than absent.
+
+`DeleteSelectedMarkersCommand` on the view model, bound at the **window** so the keystroke works
+wherever focus sits. Two decisions copied from the Match Designer, which had the identical report
+and the identical fix:
+
+- **Not `DataDisplayViewModel.DeleteSelected`.** That also removes selected plot CONTAINERS, and
+  this window's one plot is not deletable — there is nothing to delete it from and its traces are
+  rebuilt from the document on every solve. Binding the wrong command would look identical until
+  somebody selected the plot, so the test asserts both halves.
+- **Delete only, not Backspace.** This window's specification column is `InlineEditText` rows, which
+  are focusable at rest without being text fields; a Backspace landing on one would remove a marker
+  the user was not looking at. A `TextBox` that has focus handles Delete itself, so typing is
+  unaffected.
+
+## railRF: the |Z| unit was not settable — and the curve and its mask were in different decibels (2026-09-19)
+
+The plot was dBΩ with no way to read it in ohms. Making it settable meant opening the Plot Inspector
+on this window, which turned out to require four things it had never needed before, and turned up a
+fifth defect on the way.
+
+### The curve was 10·log₁₀ and its own mask was 20·log₁₀
+
+Found while making the unit settable, and measured on the shipped fixture rather than argued: a
+200 mΩ target drew at **−13.979** (20·log₁₀) while a curve at 0.311 Ω drew at **−5.076** — which is
+10·log₁₀, not the −10.152 it should have been. The curve was authored as `dB(Z[…])`, and `dB` in the
+Data Display's vocabulary is a POWER decibel (`DbFloor.Db10`); `MaskTrace` used `20 * Math.Log10`
+directly. So a design sitting exactly on its ceiling read as **seven decibels clear of it**.
+
+The mask VERDICT is computed in ohms by `PdnSweep` and was always right — it was the picture that
+disagreed with it, which is the worse way round, because the picture is what gets looked at.
+
+|Z| in dBΩ is 20·log₁₀. The spec now carries **no** transform at all (`Z[:, n, n]`), because the
+unit is trace state the card writes, not expression text the card cannot reach.
+
+### The unit is the PLOT's, and the target follows it
+
+`ImpedanceTransform` is plot-wide: the user changes it on one card and every curve and every mask
+adopts it. One quantity, one axis, one label — `ImpedanceYLabel` names whichever unit is in force.
+
+**The mask carries raw OHMS and takes the curves' `Transform`.** That is the whole of "the target
+traces must adapt to any scale the impedance traces are given": a real-valued cube trace applies its
+transform at path-build time, so a ceiling stored in ohms is drawn in dBΩ or in Ω according to one
+field. Stored pre-converted it could only ever be read in one unit — and was being read in the wrong
+one. A ceiling has no phase, so on a phase axis it is removed rather than drawn somewhere meaningless.
+
+The mask and the aggressor lines have no trace cards (they are `IsAnnotation`), so the panel cannot
+carry a change to them; `OnInspectorChangedThePlot` is what does.
+
+### A re-solve used to throw all of it away, markers included
+
+`RebuildImpedancePlot` replaces the whole trace list, and it runs on every committed edit. So a unit
+picked in the panel, a colour chosen on a card and **every marker on the plot** lasted until the next
+keystroke in the specification column. Curves are now matched across the rebuild on a key that
+survives it — the READING and the PORT, which is what a curve *is* — and `Carry` brings over:
+
+- the **transform**, which is the unit;
+- the **styling, only when it is the user's** — `TraceProperties.Custom` is already that flag, so a
+  palette default stays a default and follows a change to the palette;
+- the **markers, as objects**. Rebuilt as equal-but-different objects they would lose their
+  selection, their box position and their m-number.
+
+### What the panel may not do here
+
+`Plot.IsFixedReadout` — *restyle this plot, do not re-aim it*. It hides the plot-type header, *Add
+trace*, every card's trash, the card's identity row (the "(load a file…)" group combo, the quantity
+picker, the matrix type and the right-axis toggle), `vs X`, and the source combo.
+
+Those are one fact and not six: this plot is rebuilt from the sweep on every committed edit, so each
+of them re-aims a trace at something the next keystroke aims straight back. They were also, on the
+narrowest panel in the window, four controls' worth of width with nothing in any of them — the
+library they pick from is empty here by design. What the flag leaves alone is everything about how a
+trace LOOKS, which is why the panel opens at all.
+
+**The right-axis toggle went with the identity row.** It was kept whole rather than hidden control by
+control, because the row's two star columns carry `MinWidth="60"` each and would have left 120 px of
+empty space with one button pushed to the right of it. Nothing is lost that survived a re-solve
+anyway: `UseSecondaryAxis` is not among the state `Carry` brings across, and a right Y axis on a plot
+of one quantity in one unit makes the Fast-vs-Accuracy comparison harder to read, not easier.
+
+Detail of the two shared-code changes this needed — the `IPlotDataSources` seam (without which the
+first inspector edit **emptied every curve**, silently) and `ExcludeFromAutoscale` — is in
+`src/Render/RESOLVED.md`.
+
+**Offered, and not taken: a log Y axis.** `AxisScale.Log` exists for X only, so ohms draw on a linear
+axis and the low decades flatten onto the floor. dBΩ *is* the log-ohms view, which is what §2.4's
+log-log request settled for. Adding a log Y is a real feature below the firewall touching every Rect
+plot in the application, and the owner chose linear ohms as-is (2026-09-19).

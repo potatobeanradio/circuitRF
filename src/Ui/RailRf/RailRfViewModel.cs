@@ -175,6 +175,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
     private void RebuildForSelectedRail()
     {
+        // The row objects below are about to be replaced, so a selection pointing at one of them is
+        // pointing at a row that is no longer in any list — and with no ListBox attached (a test, a
+        // window not yet shown) nothing else would ever null it.
+        ClearRowSelection();
+
         foreach (var s in Sources) s.Edited -= OnRowEdited;
         foreach (var l in Loads) l.Edited -= OnRowEdited;
         foreach (var a in Aggressors) a.Edited -= OnRowEdited;
@@ -211,11 +216,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     private RailAggressorRowViewModel Track(RailAggressorRowViewModel row) { row.Edited += OnRowEdited; return row; }
 
     /// <summary>Every committed row edit lands here, and here is where the Fast loop starts.</summary>
-    private void OnRowEdited(object? sender, EventArgs e)
-    {
-        RefreshRunGate();
-        QueueResolve();
-    }
+    private void OnRowEdited(object? sender, EventArgs e) => QueueResolve();
 
     // ── Add and remove ─────────────────────────────────────────────────────────────────────────
 
@@ -272,6 +273,12 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         if (SelectedRail is not { } rail) return;
         rail.Aggressors.Add(new RailAggressor("new", 1e6, 1));
         RebuildForSelectedRail();
+
+        // The aggressor lines on the |Z| plot and every row of the coincidence table come out of the
+        // SWEEP RESULT, so adding one without re-solving leaves both showing the previous set — the
+        // same defect the impedance-target field had. Add and remove both re-solve, as the load and
+        // source buttons above already do.
+        QueueResolve();
     }
 
     /// <summary>
@@ -294,6 +301,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
         rail.Aggressors.RemoveAt(i);
         RebuildForSelectedRail();
+        QueueResolve();
     }
 
     /// <summary>
@@ -482,6 +490,13 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
     /// <summary>The flat impedance target, in milliohms. Empty clears it; unparseable leaves it —
     /// see <see cref="DropBudgetEntry"/>.</summary>
+    /// <remarks>
+    /// <b>It re-solves, like the budget beside it</b> (owner, 2026-09-19). It did not, and this is
+    /// the one field on the window whose value is DRAWN: the mask is a trace on the |Z| plot, built
+    /// from <c>PdnSweepResult</c>'s own ports, so a target typed and committed left the old ceiling
+    /// on the picture and the old verdict in the mask table — a design judged against a number the
+    /// field no longer showed. §2.3 step 6 is "the result follows the edit", and this is an edit.
+    /// </remarks>
     public string ImpedanceTargetEntry
     {
         get => SelectedRail?.ImpedanceTarget?.FlatMilliohms is { } mo
@@ -495,10 +510,17 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
                     rail.ImpedanceTarget = RailTarget.OfFlatImpedance(r * 1e3);
             }
             OnPropertyChanged();
+            QueueResolve();
         }
     }
 
     /// <summary>The bottom of the band Z(f) is answered over.</summary>
+    /// <remarks>
+    /// <b>And it re-solves</b>, for <see cref="ImpedanceTargetEntry"/>'s reason and more sharply: the
+    /// band IS the plot's own X axis, so a band edit that did not re-sweep left a curve of the old
+    /// band under an axis nothing had changed — every anti-resonance, every coincidence and every
+    /// mask verdict still of the band the user had just replaced.
+    /// </remarks>
     public string BandStartEntry
     {
         get => SelectedRail is { } r ? RailValueFormat.FormatWithUnit(r.Band.StartHz, RailQuantity.Frequency) : "";
@@ -508,10 +530,12 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             if (RailValueFormat.TryParse(value, RailQuantity.Frequency, out double hz))
                 rail.Band = rail.Band with { StartHz = hz };
             OnPropertyChanged();
+            QueueResolve();
         }
     }
 
     /// <summary>The top of it.</summary>
+    /// <inheritdoc cref="BandStartEntry"/>
     public string BandStopEntry
     {
         get => SelectedRail is { } r ? RailValueFormat.FormatWithUnit(r.Band.StopHz, RailQuantity.Frequency) : "";
@@ -521,6 +545,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             if (RailValueFormat.TryParse(value, RailQuantity.Frequency, out double hz))
                 rail.Band = rail.Band with { StopHz = hz };
             OnPropertyChanged();
+            QueueResolve();
         }
     }
 
