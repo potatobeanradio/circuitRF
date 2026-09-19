@@ -37,6 +37,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
@@ -610,6 +611,140 @@ public sealed class PdnFastExtractorTests
         Assert.True(accurate.Netlist.Components.Count > 20 * fast.Netlist.Components.Count,
                     $"the mesh is thousands: {accurate.Netlist.Components.Count} against " +
                     $"{fast.Netlist.Components.Count}");
+    }
+
+    // ── R-rail18-2: the stackup check, on the model that is the DEFAULT ────────────────────────
+
+    /// <summary>
+    /// The fast model computes §4.1's plane capacitance, and it agrees with the mesh's figure to
+    /// <b>5 %</b> — the tolerance stated rather than discovered.
+    /// </summary>
+    /// <remarks>
+    /// <b>The two cannot agree to machine precision and it would be wrong to ask them to.</b> The
+    /// mesh sums per-cell overlap on a discretised grid and reads a little under on any shape whose
+    /// edges do not fall on cell boundaries; the graph intersects the polygons exactly. 5 % is the
+    /// grid's own quantisation on the boards this runs on, and it is the same figure §7's
+    /// fast-versus-accurate resistance gate uses.
+    ///
+    /// <para>At HEAD the fast reading was 0 F and the window, the report and <c>circuitrf rail</c>
+    /// all printed a sentence saying the USER'S STACKUP states no dielectric — on the default model,
+    /// on every board, including this one, which states one.</para>
+    /// </remarks>
+    [Fact]
+    public void R_rail18_2_TheFastModelReportsAPlaneCapacitance_AgreeingWithTheMesh()
+    {
+        var (request, _) = StraightBoard();
+
+        var fast = PdnGraphExtractor.Extract(request);
+        var accurate = PdnMeshExtractor.Extract(request);
+        Assert.Null(fast.Refusal);
+        Assert.Null(accurate.Refusal);
+
+        var f = fast.Netlist!.Provenance;
+        var a = accurate.Netlist!.Provenance;
+
+        Assert.Equal(PdnPlaneCapacitanceBasis.Computed, f.PlaneCapacitanceBasis);
+        Assert.True(f.PlaneCapacitanceFarads > 0,
+                    "the fast model reported no plane capacitance at all.");
+
+        Assert.Equal(a.PlaneCapacitanceFarads, f.PlaneCapacitanceFarads,
+                     Math.Abs(a.PlaneCapacitanceFarads) * 0.05);
+        Assert.Equal(a.PlaneOverlapSquareMetres, f.PlaneOverlapSquareMetres,
+                     Math.Abs(a.PlaneOverlapSquareMetres) * 0.05);
+        Assert.Equal(a.PlaneSeparationMetres, f.PlaneSeparationMetres, 12);
+
+        // And the sentence it produces is the sentence with a number in it, on BOTH models.
+        foreach (var e in new[] { fast, accurate })
+            Assert.Contains("ε₀εᵣA/h over", Line(e), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A stackup that genuinely states no dielectric between the rail and its reference gets the
+    /// ORIGINAL sentence — <b>from both models</b>. That is the case the check was written for, and
+    /// a repair that lost it would have removed the check rather than fixed it.
+    /// </summary>
+    [Fact]
+    public void R_rail18_2_AStackupWithNoDielectricStillGetsTheStackupSentence_FromBothModels()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+
+        // The one entry between TOP and BOT, removed. Everything else about the board is unchanged.
+        tech.Stackup.Layers = [.. tech.Stackup.Layers.Where(l => l.Kind != StackupKind.Dielectric)];
+
+        long w = Mm(0.3), l = Mm(40);
+        var request = Request(
+            tech,
+            [Rect(Top, 0, 0, l, w), Rect(Bot, 0, -Mm(0.35), l, w + Mm(0.35))],
+            (Mm(0.1), w / 2), (l - Mm(0.1), w / 2));
+
+        foreach (var e in new[] { PdnGraphExtractor.Extract(request), PdnMeshExtractor.Extract(request) })
+        {
+            Assert.Null(e.Refusal);
+            Assert.Equal(PdnPlaneCapacitanceBasis.NoDielectricStated,
+                         e.Netlist!.Provenance.PlaneCapacitanceBasis);
+            Assert.Contains("The stackup states no dielectric", Line(e), StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// A model that did not compute the number says <b>that</b>, and names itself — it never blames
+    /// the stackup for its own omission. And the stackup sentence has exactly ONE spelling in the
+    /// source, so a second reading cannot drift into saying it for a different reason.
+    /// </summary>
+    [Fact]
+    public void R_rail18_2b_AnUncomputedNumberSaysSo_AndTheStackupSentenceHasOneSpelling()
+    {
+        var (request, _) = StraightBoard();
+        var extraction = PdnGraphExtractor.Extract(request);
+        Assert.Null(extraction.Refusal);
+
+        var pdn = extraction.Netlist!;
+        var uncomputed = new PdnNetlist
+        {
+            Netlist    = pdn.Netlist,
+            Origins    = pdn.Origins,
+            NodeCells  = pdn.NodeCells,
+            Ports      = pdn.Ports,
+            Provenance = pdn.Provenance with
+            {
+                PlaneCapacitanceFarads = 0,
+                PlaneCapacitanceBasis = PdnPlaneCapacitanceBasis.NotComputed,
+            },
+        };
+
+        string line = Line(uncomputed);
+        Assert.Contains("not computed by", line, StringComparison.Ordinal);
+        Assert.Contains(pdn.Provenance.Model, line, StringComparison.Ordinal);
+        Assert.DoesNotContain("The stackup states no dielectric", line, StringComparison.Ordinal);
+
+        // The sentence lives in RailDcResult and nowhere else. `PlaneMedia` and `PlaneCapacitance`
+        // raise a NOTE with the same words, which is a different surface — this pins the readout.
+        string source = File.ReadAllText(Path.Combine(RepoRoot(), "src/Design/RailRf/RailDcResult.cs"));
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(
+            source, "The stackup states no dielectric").Count);
+    }
+
+    private static string Line(PdnExtraction extraction) => Line(extraction.Netlist!);
+
+    /// <summary>The one sentence under test, read off a result carrying nothing but the extraction —
+    /// <c>PlaneCapacitanceLine</c> reads the provenance and nothing else.</summary>
+    private static string Line(PdnNetlist pdn) => new RailDcResult
+    {
+        RailName     = "VDD",
+        Netlist      = pdn,
+        Data         = new RfCore.Data.DataSet(),
+        NodeVoltages = new Dictionary<int, double>(),
+        Breakdown    = [],
+        Ports        = [],
+        Sources      = [],
+    }.PlaneCapacitanceLine;
+
+    private static string RepoRoot()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir is { Length: > 0 } && !File.Exists(Path.Combine(dir, "circuitRF.slnx")))
+            dir = Path.GetDirectoryName(dir) ?? "";
+        return dir;
     }
 
     // ── shared fixtures ────────────────────────────────────────────────────────────────────────

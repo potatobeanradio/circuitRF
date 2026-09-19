@@ -54,6 +54,7 @@ public sealed class PdnMeshExtractorTests
     private const int DbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
     private static readonly LayerKey Top = new(1, 0);
     private static readonly LayerKey Bot = new(2, 0);
+    private static readonly LayerKey Mid = new(3, 0);
     private static readonly LayerKey ViaLayer = new(10, 0);
 
     private const double CopperSigma = 5.8e7;          // S/m at 20 °C
@@ -134,6 +135,179 @@ public sealed class PdnMeshExtractorTests
                 CellSizeMetres = cellSize,
             },
         };
+    }
+
+    // ── R-rail18-1: the pooled measurement, which read zero on every multilayer board ───────────
+
+    private static Paths64 RectPaths(long x1, long y1, long x2, long y2) =>
+        [[new Point64(x1, y1), new Point64(x2, y1), new Point64(x2, y2), new Point64(x1, y2)]];
+
+    private static PdnRegion Island(params (LayerKey Layer, Paths64 Paths)[] copper)
+    {
+        var b = Bbox.Empty;
+        foreach (var (_, paths) in copper) b = b.Union(DrcRegionBounds(paths));
+        return new PdnRegion(0, copper, b, 0);
+    }
+
+    private static Bbox DrcRegionBounds(Paths64 paths)
+    {
+        var b = Bbox.Empty;
+        foreach (var path in paths)
+            foreach (var pt in path) b = b.Union(new Bbox(pt.X, pt.Y, pt.X, pt.Y));
+        return b;
+    }
+
+    /// <summary>
+    /// <b>The whole defect, in two lines.</b> One square measures its own width; the SAME square
+    /// listed twice measures the same width.
+    /// </summary>
+    /// <remarks>
+    /// It read 0 mm before R-rail18-1, and the arithmetic is why: the opening's area is a UNION's
+    /// and the total it is compared against is a SUM of per-path areas, so any overlap between two
+    /// pooled paths makes the comparison unsatisfiable at every width and the bisection returns its
+    /// 1 DBU floor. <b>A rail on more than one layer crosses itself at every via</b>, so the
+    /// duplicate here is not a contrived input — it is the ordinary board reduced to two lines.
+    /// </remarks>
+    [Fact]
+    public void R_rail18_1_TheSameCopperListedTwiceMeasuresTheSameWidth()
+    {
+        var square = RectPaths(0, 0, Mm(5), Mm(5));
+
+        long once  = PdnMeshExtractor.MinimumFeatureWidthDbu([Island((Top, square))]);
+        long twice = PdnMeshExtractor.MinimumFeatureWidthDbu([Island((Top, square)), Island((Top, square))]);
+
+        // The bisection stops on a geometric ladder rather than exactly, so the square reads a little
+        // under its own 5 mm. What matters is that it reads its own width at all.
+        Assert.InRange(once / (double)Mm(5), 0.95, 1.0);
+        Assert.Equal(once, twice);
+    }
+
+    /// <summary>
+    /// A rail on two layers is measured per layer, and the answer is the NARROWER layer's width —
+    /// not the union's (which would read the wide layer, because the narrow one crosses it) and not
+    /// the pooled set's (which read nothing at all).
+    /// </summary>
+    [Fact]
+    public void R_rail18_1_ATwoLayerRailMeasuresItsNarrowerLayer()
+    {
+        // A 1 mm run on TOP, and a 0.3 mm one on BOT crossing it at right angles — the shape a via
+        // makes, and the two overlap over a 0.3 x 1 mm patch.
+        var wide   = RectPaths(0, 0, Mm(10), Mm(1));
+        var narrow = RectPaths(Mm(4), -Mm(3), Mm(4.3), Mm(4));
+
+        long w = PdnMeshExtractor.MinimumFeatureWidthDbu([Island((Top, wide), (Bot, narrow))]);
+
+        Assert.InRange(w / (double)Mm(0.3), 0.9, 1.05);
+    }
+
+    /// <summary>
+    /// End to end on the board shape this defect is ABOUT — a rail on two layers, joined by vias,
+    /// with its reference on a third. The accurate mesh's cell size is R-rail3-14's rule, and the
+    /// provenance names a real width rather than 0 mm.
+    /// </summary>
+    /// <remarks>
+    /// At HEAD this reported <c>"the rail's narrowest copper, 0 mm, at 3 cells across it"</c> with
+    /// <c>CellSizeMetres = 1e-9</c>, and <c>PdnGrid.Build</c>'s <c>MaxCells</c> cap then chose the
+    /// mesh. Nothing failed — the cap produces a workable mesh and the answer stayed plausible —
+    /// which is why the assertion is on the STATED RULE and not on the resistance.
+    /// </remarks>
+    [Fact]
+    public void R_rail18_1_TheAccurateCellSizeFollowsTheNarrowestCopper_OnATwoLayerRail()
+    {
+        var tech = ThreeConductorBoard();
+
+        // 0.6 mm on TOP, a 0.15 mm run on BOT, and a via joining them. The BOT trace is the
+        // narrowest copper the rail has anywhere and no single layer's measurement can see it and
+        // the TOP run at once.
+        var shapes = new List<LayoutShape>
+        {
+            Rect(Top, 0, 0, Mm(4), Mm(0.6)),
+            Rect(Bot, Mm(3.2), 0, Mm(3.8), Mm(0.6)),                  // the landing
+            Rect(Bot, Mm(3.425), Mm(0.6), Mm(3.575), Mm(3)),          // 0.15 mm
+            Rect(Mid, -Mm(0.3), -Mm(0.3), Mm(4.3), Mm(3.3)),          // the reference plane
+            new ViaShape
+            {
+                Layer = ViaLayer, LandingLayer = Top,
+                X = Mm(3.5), Y = Mm(0.3), DrillSize = Mm(0.3), PadSize = Mm(0.45),
+            },
+        };
+
+        var request = Request(tech, shapes, (Mm(0.2), Mm(0.3)), (Mm(3.5), Mm(2.8)), cellsAcross: 3);
+        var multiLayer = new PdnExtractionRequest
+        {
+            Rail = new RailSpec { Name = "VDD", NetName = "VDD", ReferenceLayer = Mid },
+            Shapes = shapes,
+            Technology = tech,
+            DbuPerMicron = DbuPerMicron,
+            Pads = request.Pads,
+            Mesh = request.Mesh,
+        };
+        multiLayer.Rail.Sources.Add(new RailSource
+        {
+            Anchor = new RailPortAnchor { Refdes = "BT1", Pin = "1" }, OpenCircuitVoltageV = 3.7,
+        });
+        multiLayer.Rail.Loads.Add(new RailLoad
+        {
+            Anchor = new RailPortAnchor { Refdes = "U1", Pin = "VDD" }, DcCurrentA = 0.5,
+        });
+
+        var result = PdnMeshExtractor.Extract(multiLayer);
+        Assert.Null(result.Refusal);
+
+        var p = result.Netlist!.Provenance;
+
+        // The rail really is on both layers — otherwise this gates the single-layer case again.
+        Assert.True(result.Regions!.Power.SelectMany(r => r.Copper)
+                          .Select(c => c.Layer).Distinct().Count() >= 2,
+                    "the rail came back on one layer, so this board is not the case under test.");
+
+        Assert.DoesNotContain("0 mm", p.CellSizeBasis, StringComparison.Ordinal);
+        Assert.Contains("narrowest copper", p.CellSizeBasis, StringComparison.Ordinal);
+
+        // The rule, arithmetically: the cell is the narrowest copper over the cells-across setting.
+        // 1e-9 m is what the floor of 1 DBU reads as, and it is what this produced at HEAD.
+        Assert.InRange(p.CellSizeMetres, 0.9 * 0.15e-3 / 3, 1.05 * 0.15e-3 / 3);
+    }
+
+    /// <summary>A stackup with the reference in the MIDDLE, so a rail can be on two layers at once —
+    /// which <see cref="Board"/>'s two-conductor stackup cannot express.</summary>
+    private static Technology ThreeConductorBoard()
+    {
+        var tech = new Technology { Name = "test board, 3 conductors" };
+        tech.Stackup.Layers =
+        [
+            new StackupLayer
+            {
+                Kind = StackupKind.Conductor, Name = "TOP",
+                ThicknessDbu = Um(35), SigmaSm = CopperSigma, DrawingLayers = [Top],
+            },
+            new StackupLayer
+            {
+                Kind = StackupKind.Dielectric, Name = "PP1", ThicknessDbu = Um(200), Epsr = 4.3, TanD = 0.02,
+            },
+            new StackupLayer
+            {
+                Kind = StackupKind.Conductor, Name = "MID",
+                ThicknessDbu = Um(18), SigmaSm = CopperSigma, DrawingLayers = [Mid],
+                IsGroundReference = true,
+            },
+            new StackupLayer
+            {
+                Kind = StackupKind.Dielectric, Name = "CORE", ThicknessDbu = Mm(1.1), Epsr = 4.3, TanD = 0.02,
+            },
+            new StackupLayer
+            {
+                Kind = StackupKind.Conductor, Name = "BOT",
+                ThicknessDbu = Um(35), SigmaSm = CopperSigma, DrawingLayers = [Bot],
+            },
+            new StackupLayer
+            {
+                Kind = StackupKind.Via, Name = "PTH", DrawingLayers = [ViaLayer],
+                Fill = ViaFillKind.Plated, WallThicknessDbu = Um(25),
+                SpanFromLayer = "TOP", SpanToLayer = "BOT",
+            },
+        ];
+        return tech;
     }
 
     // ── the headline gate ──────────────────────────────────────────────────────────────────────

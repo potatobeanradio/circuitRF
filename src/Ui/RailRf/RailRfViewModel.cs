@@ -195,6 +195,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         RefreshRunGate();
         SyncPlaneFrequencyDefault();
 
+        // R-rail18-5a: the parts table is of the SELECTED rail, so selecting another rail rebuilds
+        // it. Until then it was of the BOM, which is the whole board and does not change with the
+        // selector above it.
+        RebuildParts();
+
         OnPropertyChanged(nameof(SelectedRail));
         OnPropertyChanged(nameof(StatusLine));
         SyncBoardOverlayResult();
@@ -650,6 +655,83 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
     /// <summary>Both tabs.</summary>
     public IReadOnlyList<RailResultsTab> ResultsTabs { get; } = [.. Enum.GetValues<RailResultsTab>()];
+
+    partial void OnSelectedResultsTabChanged(RailResultsTab value) => AnnounceCardVisibility();
+
+    // ── R-rail18-6a: the strip PARTITIONS the column ───────────────────────────────────────────
+    //
+    // Until this, SelectedResultsTab's only reader was RailRfWindow.SyncTabs, which sets the two
+    // ToggleButtons' IsChecked and nothing else: every card lived in one ScrollViewer gated on its
+    // own Has… property, so pressing `frequency` lit a button and changed nothing. Nothing was
+    // hidden and nothing was wrong — it simply is not what a tab MEANS, and a control that looks
+    // like it filters and does not is one a user stops trusting.
+    //
+    // GATED rather than removed, which §11.3 gives the strip as a control rather than as decoration
+    // supports: the column is long enough that a reader looking for the mask verdict scrolls past
+    // four DC cards to reach it.
+    //
+    // Each card is `Has… && tab == …`, so a card with nothing to say still does not appear — the
+    // tab narrows what is shown and never forces an empty card into view.
+
+    /// <summary>The stackup readout — <b>DC</b>. §4.1's shunt branch is not stamped at ω = 0 and the
+    /// number is still the cheapest check in the tool, which is why it is on the DC half at all.</summary>
+    public bool ShowStackupCard => IsDc && HasPlaneCapacitance;
+
+    /// <summary>The per-port drop — DC.</summary>
+    public bool ShowDropCard => IsDc;
+
+    /// <summary>The ranked breakdown — DC.</summary>
+    public bool ShowBreakdownCard => IsDc;
+
+    /// <summary>The via current check — DC.</summary>
+    public bool ShowViaCheckCard => IsDc;
+
+    /// <summary>
+    /// The coincidence list — <b>frequency</b>.
+    /// </summary>
+    /// <remarks>
+    /// It reads as a DC-side observation on the shipped example, and it is not one: a coincidence is
+    /// between a SWEPT peak and an aggressor's harmonic, and neither half of that exists in a DC
+    /// answer.
+    /// </remarks>
+    public bool ShowCoincidencesCard => IsFrequency && HasCoincidences;
+
+    /// <summary>The verdict against the target mask — frequency.</summary>
+    public bool ShowMaskCard => IsFrequency && HasMaskVerdict;
+
+    /// <summary>The anti-resonance table — frequency.</summary>
+    public bool ShowAntiResonancesCard => IsFrequency && HasAntiResonances;
+
+    /// <summary>The removal ranking — frequency.</summary>
+    public bool ShowRemovalCard => IsFrequency && HasRemovalRanking;
+
+    /// <summary>The cavity mode card and its own Find button — frequency.</summary>
+    public bool ShowPlaneResonancesCard => IsFrequency;
+
+    /// <summary>Whatever the frequency answer has to say that is not a curve — frequency.</summary>
+    public bool ShowImpedanceMessageCard => IsFrequency && HasImpedanceMessage;
+
+    private bool IsDc => SelectedResultsTab == RailResultsTab.Dc;
+    private bool IsFrequency => SelectedResultsTab == RailResultsTab.Frequency;
+
+    /// <summary>
+    /// Re-raises every card's visibility. Called from the tab change and from each of the three
+    /// blocks that announce a new result — <b>explicitly, so the coupling is greppable</b> rather
+    /// than inferred from a property name.
+    /// </summary>
+    private void AnnounceCardVisibility()
+    {
+        OnPropertyChanged(nameof(ShowStackupCard));
+        OnPropertyChanged(nameof(ShowDropCard));
+        OnPropertyChanged(nameof(ShowBreakdownCard));
+        OnPropertyChanged(nameof(ShowViaCheckCard));
+        OnPropertyChanged(nameof(ShowCoincidencesCard));
+        OnPropertyChanged(nameof(ShowMaskCard));
+        OnPropertyChanged(nameof(ShowAntiResonancesCard));
+        OnPropertyChanged(nameof(ShowRemovalCard));
+        OnPropertyChanged(nameof(ShowPlaneResonancesCard));
+        OnPropertyChanged(nameof(ShowImpedanceMessageCard));
+    }
 
     public void Dispose()
     {

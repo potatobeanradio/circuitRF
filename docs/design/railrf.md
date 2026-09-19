@@ -482,7 +482,7 @@ with a soldering iron.
 
 ## 2.7 What railRF will not do
 
-Stated plainly, because a tool that is vague about its boundary gets trusted past it.
+Stated plainly:
 
 - **It is not a full-wave solver and does not become one.** Review's own words for why: that step is very
   much heavier in simulation terms, for an answer this question does not need.

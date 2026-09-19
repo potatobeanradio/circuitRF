@@ -291,6 +291,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasCoincidences));
         OnPropertyChanged(nameof(HasAntiResonances));
         OnPropertyChanged(nameof(HasRemovalRanking));
+        AnnounceCardVisibility();
         RebuildImpedancePlot();
     }
 

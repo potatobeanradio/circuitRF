@@ -53,21 +53,33 @@ public sealed partial class RailRfViewModel
     private PartLibraryCoverage? _coverage;
 
     /// <summary>
-    /// Rebuilds the parts table from the BOM, the placement and the part library.
+    /// Rebuilds the parts table from <b>the selected rail's own part rows</b>, enriched by the BOM,
+    /// the placement and the part library.
     /// </summary>
     /// <remarks>
-    /// <b>Anything railRF could not resolve is listed as unresolved rather than defaulted</b>
-    /// (§2.3 step 3). A reference the BOM names but the library does not still gets a ROW — omitting
-    /// it is the failure, because <i>not on the board</i> and <i>on the board with no model</i> must
-    /// not look the same, which is the same finding <see cref="RailPortDrop"/> records for an
-    /// observation port.
+    /// <b>R-rail18-5a. The rail's rows are the SUBJECT; the three files fill columns.</b> This read
+    /// the BOM alone until then, and returned early without one — so the <c>Power Rail</c> example,
+    /// whose thirteen typed capacitors drive every resonance on its curve, showed an empty pane.
+    /// <c>BuildSweepRequest</c> resolves <c>rail.Parts</c> through <c>RailPartResolver</c>, so every
+    /// anti-resonance, every removal ranking and every mask verdict already came out of parts the
+    /// table did not list. R-rail11-8 makes that the ordinary P1 case rather than a corner: §6 makes
+    /// P1 artwork-optional, so in P1 the mounting inductance is TYPED and the rows are typed with it.
     ///
-    /// <para><b>The derated value and the mounting inductance read <i>unresolved</i> here by
-    /// construction, and that is correct rather than pending.</b> Derating from a bias curve is brief
-    /// 11's and the computed mounting loop is brief 13's; until they land, the honest thing for those
-    /// columns to say is that railRF has not resolved them — which is exactly what
-    /// <see cref="RailPartRowViewModel.UnresolvedText"/> says. A plausible number here would be the
-    /// defaulted one §9 exists to prevent.</para>
+    /// <para><b>It also stops the table being of the whole BOARD.</b> Listing every refdes the BOM
+    /// names put another rail's decoupling under a header carrying the rail selector. A refdes the
+    /// BOM names and the rail does not is not a row — it is not on this rail; a refdes the rail names
+    /// and the BOM does not is a row with an unresolved part number, which is the state
+    /// <see cref="RailPartRowViewModel.UnresolvedText"/> exists to say.</para>
+    ///
+    /// <para><b>The two headline counts are over the rail's distinct PART NUMBERS</b>, which is what
+    /// <c>circuitrf rail</c> counts (<c>Rail.Provenance</c>). R-rail10-8: a verb and a window
+    /// disagreeing about one document is the divergence this whole rule exists against, and this
+    /// disagreed in both directions at once — the verb was moved onto <c>RailSpec.Parts</c> in review
+    /// round 2 and the window was left on the BOM.</para>
+    ///
+    /// <para><b>The derated value reads <i>unresolved</i> here by construction, and that is correct
+    /// rather than pending</b>: derating from a bias curve is brief 11's and it happens in the solve.
+    /// A plausible number here would be the defaulted one §9 exists to prevent.</para>
     /// </remarks>
     public void RebuildParts()
     {
@@ -75,48 +87,69 @@ public sealed partial class RailRfViewModel
         PartsModelledFromFile = 0;
         PartsUnresolved = 0;
 
-        if (Bom is not { Refusal: null } bom)
+        void Done()
         {
-            Coverage = null;
-            PartsWithoutBiasCurve = 0;
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(RecognisedAggressors));
             OnPropertyChanged(nameof(HasRecognisedAggressors));
+        }
+
+        if (SelectedRail is not { } rail)
+        {
+            Coverage = null;
+            PartsWithoutBiasCurve = 0;
+            Done();
             return;
         }
 
+        var bom = Bom is { Refusal: null } b ? b : null;
         var placedBy = Placement is { Refusal: null } p
             ? p.Rows.ToDictionary(r => r.Refdes, r => r, StringComparer.OrdinalIgnoreCase)
             : [];
 
-        foreach (var refdes in bom.Rows.Select(r => r.Refdes).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var part in rail.Parts)
         {
+            if (string.IsNullOrWhiteSpace(part.Refdes)) continue;
+
             // A LIST per reference, not the first row (R-rail2-14 item 1): one internal part number
             // sits in front of a list of approved manufacturers, and taking the first silently is what
             // produces a plausible model from the wrong manufacturer's part. More than one is an
             // AMBIGUITY, and the row says so rather than choosing.
-            var rows = bom.RowsFor(refdes);
+            var rows = bom?.RowsFor(part.Refdes) ?? [];
             var row = rows.Count == 1 ? rows[0] : null;
 
-            var model = row?.PartNumber is { Length: > 0 } pn ? PartLibrary?.ResolveModel(pn) : null;
+            string partNumber = part.PartNumber is { Length: > 0 } own ? own : row?.PartNumber ?? "";
+            var model = partNumber.Length > 0 ? PartLibrary?.ResolveModel(partNumber) : null;
 
-            string? position = placedBy.TryGetValue(refdes, out var placement)
+            string? position = placedBy.TryGetValue(part.Refdes, out var placement)
                 ? $"({placement.X}, {placement.Y}) DBU" + (placement.Mirror ? " · bottom" : "")
                 : null;
 
-            var part = new RailPartRowViewModel(refdes, row, model, mountingInductanceHenries: null, position);
-            Parts.Add(part);
+            var built = new RailPartRowViewModel(
+                part, row, model, part.MountingInductanceHenries, position);
+            Parts.Add(built);
 
-            if (model is { Source: PartModelSource.AttachedFile, Row: not null }) PartsModelledFromFile++;
-            if (part.IsUnresolved) PartsUnresolved++;
+            if (built.IsUnresolved) PartsUnresolved++;
         }
 
-        Coverage = PartLibrary?.Coverage(bom.PartNumbers);
+        // The rail's own part numbers, distinct — the set `circuitrf rail` asks the library about.
+        var referenced = rail.Parts
+            .Select(x => x.PartNumber is { Length: > 0 } own
+                ? own
+                : (bom?.RowsFor(x.Refdes) is { Count: 1 } one ? one[0].PartNumber : null))
+            .Where(pn => !string.IsNullOrWhiteSpace(pn))
+            .Select(pn => pn!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        PartsModelledFromFile = PartLibrary is { } library
+            ? referenced.Count(pn => library.ResolveModel(pn).Source == PartModelSource.AttachedFile)
+            : 0;
+
+        Coverage = PartLibrary is { } lib && referenced.Count > 0 ? lib.Coverage(referenced) : null;
         PartsWithoutBiasCurve = Coverage?.WithoutBiasCurve.Count ?? 0;
 
-        OnPropertyChanged(nameof(StatusLine));
-        OnPropertyChanged(nameof(RecognisedAggressors));
-        OnPropertyChanged(nameof(HasRecognisedAggressors));
+        Done();
     }
 
     /// <summary>

@@ -516,6 +516,141 @@ public class RailWindowTests
         Assert.Contains("1 part(s) with no bias curve", vm.StatusLine, StringComparison.Ordinal);
     }
 
+    // ══ R-rail18-5 — the table is of the RAIL, not of the BOM ═══════════════════════════════════
+
+    /// <summary>
+    /// A document with <b>no BOM at all</b> lists its own part rows — the P1 case R-rail11-8 makes
+    /// ordinary, and the one the <c>Power Rail</c> example is.
+    /// </summary>
+    /// <remarks>
+    /// <c>RebuildParts</c> returned early unless a BOM had been imported, so a rail whose thirteen
+    /// typed capacitors drive every resonance on its curve showed an empty pane — while
+    /// <c>BuildSweepRequest</c> resolved those same rows through <c>RailPartResolver</c> and put
+    /// them in the answer.
+    /// </remarks>
+    [Fact]
+    public void R_rail18_5_WithNoBomAtAll_TheTableListsTheRailsOwnParts()
+    {
+        var doc = OneRail();
+        var rail = doc.Rails[0];
+        rail.Parts.Clear();
+        for (int i = 1; i <= 13; i++)
+            rail.Parts.Add(new RailPart
+            {
+                Refdes = $"C{i}", PartNumber = "CAP-100N-0402", MountingInductanceHenries = 0.85e-9,
+            });
+
+        var vm = Window(doc);
+        vm.PartLibrary = LibraryKnowing("CAP-100N-0402");
+
+        Assert.Null(vm.Bom);
+        Assert.Equal(13, vm.Parts.Count);
+
+        // The rail's own columns are filled from the rail: the part number and the mounting loop are
+        // the document's, and neither needs a BOM to exist.
+        var c7 = vm.Parts.Single(p => p.Refdes == "C7");
+        Assert.Equal("CAP-100N-0402", c7.PartNumber);
+        Assert.False(c7.IsUnresolved);
+        Assert.Equal(0.85e-9, c7.MountingInductanceHenries!.Value, 15);
+    }
+
+    /// <summary>
+    /// A BOM naming parts that are not on this rail does not add rows. <b>The table is headed by the
+    /// rail selector</b>, and listing another rail's decoupling under it is the same class of defect
+    /// as listing none.
+    /// </summary>
+    [Fact]
+    public void R_rail18_5_ABomNamingAnotherRailsPartsAddsNoRows()
+    {
+        var doc = OneRail();                       // its rail names C1 and C2
+        var vm = Window(doc);
+        vm.PartLibrary = LibraryKnowing("CAP-100N-0402");
+
+        vm.Bom = new BomTable(
+            "/b/bom.csv", null, ',',
+            [
+                new BomRow("C1",  "CAP-100N-0402", "100n", "0402", "MLCC 100n 16V 0402 X7R"),
+                new BomRow("C40", "CAP-100N-0402", "100n", "0402", "on the +5V rail"),
+                new BomRow("C41", "CAP-100N-0402", "100n", "0402", "on the +5V rail"),
+            ],
+            SourceRowCount: 3, UnreadableRows: 0, RecognisedAggressors: [], Diagnostics: []);
+
+        Assert.Equal(["C1", "C2"], vm.Parts.Select(p => p.Refdes));
+
+        // C1 is enriched by the BOM — the part number it did not state, and its marked value.
+        var c1 = vm.Parts.Single(p => p.Refdes == "C1");
+        Assert.Equal("CAP-100N-0402", c1.PartNumber);
+        Assert.Equal("100n", c1.MarkedText);
+
+        // C2 is on the rail and not in the BOM, so it is a row with an unresolved part number —
+        // never a missing row.
+        var c2 = vm.Parts.Single(p => p.Refdes == "C2");
+        Assert.Equal(RailPartRowViewModel.UnresolvedText, c2.PartNumber);
+        Assert.True(c2.IsUnresolved);
+    }
+
+    // ══ R-rail18-6 — the tab strip partitions the column ════════════════════════════════════════
+
+    /// <summary>
+    /// With the tab on <c>DC</c> the frequency cards are not visible and the DC ones are; with it on
+    /// <c>frequency</c>, the reverse.
+    /// </summary>
+    /// <remarks>
+    /// <c>SelectedResultsTab</c>'s only reader was <c>RailRfWindow.SyncTabs</c>, which assigns the
+    /// two <c>ToggleButton.IsChecked</c> values — every card lived in one <c>ScrollViewer</c> gated
+    /// on its own <c>Has…</c> property, so pressing <c>frequency</c> lit a button and changed
+    /// nothing. Nothing was hidden and nothing was wrong; it is simply not what a tab means.
+    ///
+    /// <para><b>The XAML binding is asserted too</b>, because the properties below could be correct
+    /// and bound to nothing — which is the state this defect was in, one layer along.</para>
+    /// </remarks>
+    [Fact]
+    public void R_rail18_6_TheTabStripPartitionsTheResultsColumn()
+    {
+        var vm = Window(OneRail());
+
+        vm.SelectedResultsTab = RailResultsTab.Dc;
+        Assert.True(vm.ShowDropCard && vm.ShowBreakdownCard && vm.ShowViaCheckCard);
+        Assert.False(vm.ShowPlaneResonancesCard);
+        Assert.False(vm.ShowCoincidencesCard);
+        Assert.False(vm.ShowMaskCard);
+        Assert.False(vm.ShowAntiResonancesCard);
+        Assert.False(vm.ShowRemovalCard);
+        Assert.False(vm.ShowImpedanceMessageCard);
+
+        vm.SelectedResultsTab = RailResultsTab.Frequency;
+        Assert.False(vm.ShowDropCard || vm.ShowBreakdownCard || vm.ShowViaCheckCard
+                  || vm.ShowStackupCard);
+        Assert.True(vm.ShowPlaneResonancesCard);
+
+        // Every card the window binds is one of these ten, and each is bound exactly once.
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+        foreach (string card in new[]
+                 {
+                     "ShowStackupCard", "ShowDropCard", "ShowBreakdownCard", "ShowViaCheckCard",
+                     "ShowCoincidencesCard", "ShowMaskCard", "ShowAntiResonancesCard",
+                     "ShowRemovalCard", "ShowPlaneResonancesCard", "ShowImpedanceMessageCard",
+                 })
+            Assert.Equal(1, Regex.Matches(xaml, $@"IsVisible=""{{Binding {card}}}""").Count);
+    }
+
+    /// <summary>
+    /// A card with nothing to say still does not appear — the tab NARROWS what is shown and never
+    /// forces an empty card into view.
+    /// </summary>
+    [Fact]
+    public void R_rail18_6_TheTabNeverForcesAnEmptyCardIntoView()
+    {
+        var vm = Window(OneRail());
+        vm.SelectedResultsTab = RailResultsTab.Frequency;
+
+        // Nothing has been swept, so there is no mask verdict, no coincidence list and no ranking.
+        Assert.False(vm.HasMaskVerdict);
+        Assert.False(vm.ShowMaskCard);
+        Assert.False(vm.ShowCoincidencesCard);
+        Assert.False(vm.ShowRemovalCard);
+    }
+
     // ══ R-rail7-4 — every refusal states a number and turns its own control red ══════════════════
 
     /// <summary>
@@ -660,6 +795,13 @@ public class RailWindowTests
         var rail = new RailSpec { Name = "+1V8", NetName = "+1V8" };
         rail.Sources.Add(new RailSource { Anchor = Pad("BT1", "1"), OpenCircuitVoltageV = 3.7 });
         rail.Loads.Add(new RailLoad { Anchor = Pad("U1", "VDD") });   // no current — an observation port
+
+        // The rail's OWN part rows, which is what the table lists (R-rail18-5a). They state no part
+        // number, so the BOM supplies it where there is one — which is the enrichment being tested
+        // in the two R-rail7-9 cases below.
+        rail.Parts.Add(new RailPart { Refdes = "C1" });
+        rail.Parts.Add(new RailPart { Refdes = "C2" });
+
         doc.Rails.Add(rail);
         return doc;
     }

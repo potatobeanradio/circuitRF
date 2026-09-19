@@ -435,6 +435,12 @@ public static class PdnMeshExtractor
             CellSizeMetres = baseDeltaDbu / dbuPerMetre,
             CellSizeBasis = cellBasis,
             PlaneCapacitanceFarads = planeCapacitance,
+
+            // R-rail18-2b. The mesh always computes it; the only zero it can produce that is ABOUT
+            // the stackup is the one where no rail conductor had a medium to be of.
+            PlaneCapacitanceBasis = media.Count > 0
+                ? PdnPlaneCapacitanceBasis.Computed
+                : PdnPlaneCapacitanceBasis.NoDielectricStated,
             PlaneOverlapSquareMetres = overlapArea,
             RelativePermittivity = dominantMedium?.EpsilonR ?? 0,
             LossTangent = dominantMedium?.TanDelta ?? 0,
@@ -678,21 +684,54 @@ public static class PdnMeshExtractor
     /// <c>w/2</c> followed by a dilation by <c>w/2</c> only where it was at least <c>w</c> wide, so
     /// the largest <c>w</c> that loses no area is the minimum feature width. Bisected on a geometric
     /// ladder, which is a handful of offsets rather than a scan.</para>
+    ///
+    /// <para><b>PER DRAWING LAYER, and the minimum across them</b> (R-rail18-1a). The quantity wanted
+    /// is "the narrowest copper this rail has anywhere", and copper on two drawing layers is not one
+    /// 2-D shape. Pooling every layer into one call is how this read ZERO on every multilayer board
+    /// for three briefs: a rail crosses itself at every via, the overload below compares a UNION's
+    /// area against a SUM of per-path areas, and overlap makes that comparison unsatisfiable at every
+    /// width so the bisection bottoms out on its floor of 1 DBU. Unioning the pooled set instead
+    /// would be the other wrong answer — a trace crossing a plane would then measure plane-wide.</para>
     /// </summary>
     internal static long MinimumFeatureWidthDbu(IReadOnlyList<PdnRegion> islands)
     {
-        var all = new Paths64();
+        // Islands on ONE layer are galvanically separate pieces of the same sheet, so they are
+        // measured together: the narrowest of three collinear trace segments is the narrowest copper
+        // on that layer, and measuring each island alone would give the same answer more slowly.
+        var byLayer = new Dictionary<LayerKey, Paths64>();
         foreach (var island in islands)
-            foreach (var (_, paths) in island.Copper)
-                all.AddRange(paths);
-        return MinimumFeatureWidthDbu(all);
+            foreach (var (layer, paths) in island.Copper)
+            {
+                if (paths.Count == 0) continue;
+                if (!byLayer.TryGetValue(layer, out var acc)) byLayer[layer] = acc = [];
+                acc.AddRange(paths);
+            }
+
+        long min = long.MaxValue;
+        foreach (var paths in byLayer.Values) min = Math.Min(min, MinimumFeatureWidthDbu(paths));
+        return min == long.MaxValue ? 1 : min;
     }
 
-    /// <summary>The same measurement over one piece of copper — what
-    /// <see cref="PdnCopperClassifier"/> reports as a region's width variation, and what
-    /// <see cref="PdnGraphExtractor"/> sizes its raster from.</summary>
+    /// <summary>
+    /// The same measurement over ONE 2-D SHAPE — what <see cref="PdnCopperClassifier"/> reports as a
+    /// region's width variation, and what <see cref="PdnGraphExtractor"/> sizes its raster from.
+    /// </summary>
+    /// <remarks>
+    /// <b>The input is UNIONED here rather than assumed disjoint</b> (R-rail18-1b). <c>total</c>
+    /// below is the sum of the per-path areas while <c>opened</c> is the area of their union, so any
+    /// overlap at all makes <see cref="LosesArea"/> true at every width and the bisection returns its
+    /// floor — a plausible 1 DBU, reported in words nobody reads as a fault. Unioning is one Clipper
+    /// call on a caller's already-unioned copper and it removes the precondition entirely.
+    ///
+    /// <para>What unioning does NOT make safe is pooling copper from different DRAWING LAYERS into
+    /// one call: that is a semantic error rather than an arithmetic one, and the answer it gives — a
+    /// trace crossing a plane measuring plane-wide — is just as plausible. The
+    /// <see cref="PdnRegion"/>-list overload above is the per-layer route and the only one a rail's
+    /// whole copper should take.</para>
+    /// </remarks>
     internal static long MinimumFeatureWidthDbu(Paths64 all)
     {
+        all = DrcRegions.Union(all);
         var bounds = DrcRegions.BoundsOf(all);
 
         if (all.Count == 0 || bounds.IsEmpty) return 1;

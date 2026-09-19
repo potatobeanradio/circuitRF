@@ -346,6 +346,114 @@ public sealed class RailCopyTests
         Assert.Equal(1, writes);
     }
 
+    // ══ R-rail18-3 — the class tab draws the RAIL, not one flat reference plane ═══════════════
+
+    /// <summary>
+    /// Every reference region precedes every non-reference one in the scene, so opaque paint lands
+    /// reference-first and the rail's own copper survives it.
+    /// </summary>
+    /// <remarks>
+    /// Both extractors classify rail-first and reference-last, and <c>RailMapRenderer</c> walks the
+    /// list in order with an opaque fill per region (R-rail8-10). On a board whose reference is a
+    /// PLANE — every board this feature is for — that painted the whole map one flat rectangle in
+    /// the spreading colour, which is the picture §2.9 rule 2's safety argument depends on.
+    /// </remarks>
+    [Fact]
+    public void R_rail18_3_TheReferenceIsDrawnFirst_SoTheRailSurvivesTheOpaquePaint()
+    {
+        var scene = ClassSceneOverAPlane();
+
+        var order = scene.Regions.ToList();
+        int lastReference = order.FindLastIndex(r => r.IsReference);
+        int firstRail = order.FindIndex(r => !r.IsReference);
+
+        Assert.True(lastReference >= 0, "no reference region was classified — the fixture is wrong.");
+        Assert.True(firstRail >= 0, "no rail region was classified — the fixture is wrong.");
+        Assert.True(lastReference < firstRail,
+                    $"a reference region is drawn at index {lastReference}, after the rail's at "
+                  + $"{firstRail} — opaque paint then covers the map.");
+    }
+
+    /// <summary>
+    /// The rendered oracle: a pixel ON the supply trace comes back the TRACE colour — <b>paired with
+    /// the same scene built the old way, where the same pixel comes back the reference's.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>The pairing is the whole test</b>, and it must be a RASTER. An SVG records draw commands
+    /// rather than a result, so every region's fill appears in the file whether or not anything was
+    /// painted over it — a colour-presence assertion on the SVG passes in both orders and gates
+    /// nothing, which is exactly what it did when this test was first written that way.
+    /// </remarks>
+    [Fact]
+    public void R_rail18_3_APixelOnTheTraceIsTheTracesColour_AndWasTheReferencesInTheOldOrder()
+    {
+        var scene = ClassSceneOverAPlane();
+        var theme = RailMapTheme.Light;
+
+        // The rail's copper is trace-shaped and its reference is the plane, so the two classes are
+        // genuinely different colours — otherwise this gate could not tell them apart.
+        Assert.NotEqual(theme.ClassTrace, theme.ClassSpreading);
+        Assert.Contains(scene.Regions, r => !r.IsReference && r.Class == PdnCopperClass.Trace);
+
+        var oldOrder = new RailMapScene
+        {
+            Kind    = scene.Kind,
+            Regions = [.. scene.Regions.AsEnumerable().Reverse()],
+            Markers = scene.Markers,
+            Bounds  = scene.Bounds,
+        };
+
+        // A point in the middle of the 0.4 mm trace, away from both markers.
+        Assert.Equal(theme.ClassTrace,     PixelAt(scene,    Mm(15), Mm(0.2)));
+        Assert.Equal(theme.ClassSpreading, PixelAt(oldOrder, Mm(15), Mm(0.2)));
+    }
+
+    /// <summary>What one world point renders as, through the renderer the window draws each frame
+    /// with. Large enough that the 0.4 mm trace is several pixels tall at this fit.</summary>
+    private static SkiaSharp.SKColor PixelAt(RailMapScene scene, long worldX, long worldY)
+    {
+        const int W = 1600, H = 1200;
+
+        using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(W, H));
+        surface.Canvas.Clear(SkiaSharp.SKColors.White);
+
+        var viewport = LayoutViewport.ZoomToFit(scene.Bounds, W, H);
+        RailMapRenderer.Draw(surface.Canvas, scene, viewport, RailMapTheme.Light);
+        surface.Canvas.Flush();
+
+        using var image = surface.Snapshot();
+        using var bitmap = SkiaSharp.SKBitmap.FromImage(image);
+        return bitmap.GetPixel((int)viewport.WorldToScreenX(worldX),
+                               (int)viewport.WorldToScreenY(worldY));
+    }
+
+    /// <summary>A 0.4 mm supply trace with its reference plane spread right across it — the ordinary
+    /// board, and the one the class tab showed as a single rectangle.</summary>
+    private static RailMapScene ClassSceneOverAPlane()
+    {
+        var run = RailDcRun.Run(new RailDcRequest
+        {
+            Document     = DocumentWithOneRail(),
+            Technology   = TestBoard(botVisible: true),
+            DbuPerMicron = Dbu,
+            Shapes =
+            [
+                new RectShape { Layer = Top, X1 = 0, Y1 = 0, X2 = Mm(30), Y2 = Mm(0.4) },
+                new RectShape { Layer = Bot, X1 = -Mm(1), Y1 = -Mm(4), X2 = Mm(31), Y2 = Mm(4.4) },
+            ],
+            Pads =
+            [
+                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2)),
+                new PdnPad("U1", "VDD", "VDD", Mm(29.8), Mm(0.2)),
+            ],
+        });
+
+        Assert.Null(run.Refusal);
+        var scene = RailMapScene.Build(run.Rails[0], RailMapKind.Class, Dbu);
+        Assert.NotEmpty(scene.Regions);
+        return scene;
+    }
+
     // ══ fixtures ══════════════════════════════════════════════════════════════════════════════
 
     private static LayoutView Artwork()

@@ -128,6 +128,26 @@ public sealed record PdnElementOrigin(
     double? InductanceHenries = null);
 
 /// <summary>
+/// Why <see cref="PdnProvenance.PlaneCapacitanceFarads"/> is what it is (R-rail18-2b).
+/// </summary>
+public enum PdnPlaneCapacitanceBasis
+{
+    /// <summary>The extraction computed it — from the mesh's per-cell overlap, or from the graph
+    /// model's polygon intersection. A zero here means the two conductors genuinely do not
+    /// overlap.</summary>
+    Computed,
+
+    /// <summary>The stackup puts no dielectric between this rail's copper and its reference, so
+    /// <c>ε₀εᵣA/h</c> has no <c>h</c>. <b>The one case the stackup sentence was written for</b>, and
+    /// the only one it may be printed for.</summary>
+    NoDielectricStated,
+
+    /// <summary>This model does not compute it at all. Says so, naming itself — never the
+    /// user's stackup.</summary>
+    NotComputed,
+}
+
+/// <summary>
 /// One observation port of the extraction, and the anchor a user actually typed.
 ///
 /// <para><b>A result names the load a user typed</b>, not a node number — <c>U1.VDD</c>, not
@@ -233,6 +253,22 @@ public sealed record PdnProvenance
     /// is stated in <see cref="Notes"/> rather than defaulted.</para>
     /// </summary>
     public double PlaneCapacitanceFarads { get; init; }
+
+    /// <summary>
+    /// <b>Where <see cref="PlaneCapacitanceFarads"/>' zero came from</b> (R-rail18-2b), in
+    /// <see cref="PdnPlatingBasis"/>' style: a defaulted number and an uncomputed one are not the
+    /// same state, and a report that cannot tell them apart says the wrong thing about whichever it
+    /// guesses.
+    /// </summary>
+    /// <remarks>
+    /// The sentence <see cref="PdnCavity"/>'s absent medium was written for — <i>the stackup states
+    /// no dielectric between this rail's copper and its reference</i> — is a statement about the
+    /// USER'S STACKUP. Printing it for a model that simply never computed the number tells every
+    /// user of that model their stackup is wrong, which is what the whole check exists to prevent
+    /// somebody else doing. So the two are distinguished here rather than inferred from a zero.
+    /// </remarks>
+    public PdnPlaneCapacitanceBasis PlaneCapacitanceBasis { get; init; } =
+        PdnPlaneCapacitanceBasis.Computed;
 
     /// <summary>
     /// The area <see cref="PlaneCapacitanceFarads"/> is over, in SQUARE METRES — <b>the OVERLAP of

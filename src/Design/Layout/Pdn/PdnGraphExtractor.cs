@@ -356,6 +356,10 @@ public static class PdnGraphExtractor
         int traces = classification.Count(c => c.Class == PdnCopperClass.Trace);
         int pours = classification.Count(c => c.Class == PdnCopperClass.Spreading);
 
+        double planeCapacitance = PlaneCapacitance(
+            request, railCopper, refCopper, referenceLayer, notes,
+            out double overlapArea, out double h, out var medium, out var capacitanceBasis);
+
         var provenance = new PdnProvenance
         {
             ModelKind = PdnModelKind.Fast,
@@ -363,6 +367,19 @@ public static class PdnGraphExtractor
             RailName = rail.Name,
             ReferenceExtent = rail.ReferenceExtent,
             FrequencyHz = frequencyHz,
+            PlaneSeparationMetres = h,
+            PlaneCapacitanceFarads = planeCapacitance,
+            PlaneCapacitanceBasis = capacitanceBasis,
+            PlaneOverlapSquareMetres = overlapArea,
+            RelativePermittivity = medium?.EpsilonR ?? 0,
+            LossTangent = medium?.TanDelta ?? 0,
+            LossTangentIsClassDefault = medium?.TanDeltaIsClassDefault ?? false,
+            DielectricBasis = medium?.Basis ?? "",
+
+            // The fast reading prices COPPER and stamps no shunt branch at all — R-rail4-4's own
+            // ceiling exists because of that. The capacitance above is the stackup readout and
+            // nothing else, which is exactly what this flag is for.
+            ShuntBranchPresent = false,
             CellSizeMetres = build.CoarsestPourPitchDbu / dbuPerMetre,
             CellSizeBasis =
                 $"the fast reading: {traces} region(s) priced as trace sections at " +
@@ -418,6 +435,109 @@ public static class PdnGraphExtractor
         // out in, and a node numbering that moved between runs would move the drop map with it.
         points.Sort((a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
         return points;
+    }
+
+    // ── R-rail18-2a: the stackup check, on the model that is the DEFAULT ───────────────────────
+
+    /// <summary>
+    /// §4.1's plane capacitance over the rail's real overlap with its reference — the number §9
+    /// calls the cheapest gate in the whole tool, computed by the FAST model as well as the mesh.
+    /// </summary>
+    /// <remarks>
+    /// <b>It was missing here for three briefs, and the silence had a voice.</b>
+    /// <c>RailDcResult.PlaneCapacitanceLine</c> reads a zero as <i>"the stackup states no dielectric
+    /// between this rail's copper and its reference"</i> — a sentence about the USER'S board. The
+    /// fast model is the default, so every board got told its stackup was wrong by the check that
+    /// exists to catch a wrong stackup. <see cref="PdnPlaneCapacitanceBasis"/> is the other half of
+    /// the repair and this is the half that makes the number exist.
+    ///
+    /// <para><b>The arithmetic is <see cref="PdnCavity"/>'s and not a second copy of it.</b> The
+    /// mesh sums <see cref="PdnCavity.CapacitanceFarads"/> over the per-cell overlap of a discretised
+    /// grid; this intersects the polygons exactly and calls the same expression once per layer pair.
+    /// <b>The two therefore agree to the GRID rather than to machine precision</b> — the mesh's
+    /// overlap is quantised to whole cells, so it reads a little under on any shape whose edges do
+    /// not fall on cell boundaries, and 5 % is the tolerance this is gated at rather than
+    /// discovered at.</para>
+    /// </remarks>
+    private static double PlaneCapacitance(
+        PdnExtractionRequest request,
+        Dictionary<LayerKey, Paths64> railCopper,
+        Dictionary<LayerKey, Paths64> refCopper,
+        LayerKey referenceLayer,
+        List<string> notes,
+        out double overlapSquareMetres,
+        out double separationMetres,
+        out PdnMedium? dominant,
+        out PdnPlaneCapacitanceBasis basis)
+    {
+        double dbuPerMetre = request.DbuPerMicron * 1e6;
+        double perSquareDbu = dbuPerMetre * dbuPerMetre;
+
+        var conductors = PdnStackupGeometry.Conductors(request.Technology, request.DbuPerMicron);
+        var reference = PdnStackupGeometry.ConductorOf(conductors, referenceLayer);
+
+        double total = 0;
+        overlapSquareMetres = 0;
+        separationMetres = 0;
+        dominant = null;
+
+        var missing = new List<LayerKey>();
+        var references = Ordered(refCopper).Select(r => DrcRegions.Union(r.Paths)).ToList();
+
+        foreach (var (layer, paths) in Ordered(railCopper))
+        {
+            var medium = PdnCavity.MediumBetween(
+                request.Technology, PdnStackupGeometry.ConductorOf(conductors, layer), reference);
+            if (medium is null) { missing.Add(layer); continue; }
+
+            // The NEAREST pair's separation is the one reported, exactly as the mesh reports it —
+            // one number for a rail that may sit at several distances from the same reference.
+            if (medium.ThicknessMetres > 0 &&
+                (separationMetres == 0 || medium.ThicknessMetres < separationMetres))
+            {
+                separationMetres = medium.ThicknessMetres;
+                dominant = medium;
+            }
+            dominant ??= medium;
+
+            var rail = DrcRegions.Union(paths);
+            foreach (var refPaths in references)
+            {
+                var overlap = Clipper.Intersect(rail, refPaths, LayoutClipper.Rule);
+                double area = Math.Abs(Clipper.Area(overlap)) / perSquareDbu;
+                double c = PdnCavity.CapacitanceFarads(medium.EpsilonR, area, medium.ThicknessMetres);
+                if (!(c > 0)) continue;
+
+                total += c;
+                overlapSquareMetres += area;
+            }
+        }
+
+        // The same two notes the mesh raises, in the same words, for the reason R-rail13-7 gives:
+        // the two models are compared against each other on the user's own board and a warning that
+        // appears on one of them reads as a difference between the boards.
+        if (missing.Count > 0)
+            notes.Add(
+                "The stackup states no dielectric between this rail's copper on " +
+                string.Join(", ", missing.Select(k => $"{k.Layer}/{k.Datatype}")) +
+                " and its reference, so that copper carries no plane capacitance and no dielectric " +
+                "loss. State the dielectric entries between them — C = ε₀εᵣA/h and G = ωC·tan δ are " +
+                "the whole of §4.1's shunt branch.");
+
+        if (dominant is { TanDeltaIsClassDefault: true } d)
+            notes.Add(
+                $"The stackup states no tan δ for this rail's dielectric, so railRF used " +
+                $"{d.TanDelta:0.####} — {d.Basis}. Every peak height in the cavity band is therefore " +
+                $"{RailEsrDefaults.Marking}: tan δ sets how sharp a plane resonance is, which is the " +
+                "difference between a 6 dB bump and a 20 dB one.");
+
+        // NOT the same as "the total came out zero". A rail whose copper simply does not overlap its
+        // reference has a computed zero and no complaint to make about the stackup.
+        basis = dominant is null
+            ? PdnPlaneCapacitanceBasis.NoDielectricStated
+            : PdnPlaneCapacitanceBasis.Computed;
+
+        return total;
     }
 
     private static IEnumerable<(LayerKey Layer, Paths64 Paths)> Ordered(

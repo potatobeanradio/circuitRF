@@ -34,6 +34,7 @@ using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Theming;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Render;
+using CircuitRF.Ui.RailRf;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -539,13 +540,105 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
         RailDocumentIo.SaveToFile(fx.Crail, doc);
     }
 
-    private sealed record Fx(string Root, string Cell, string Clay, string Crail, string Tech);
+    // ══ R-rail18-5 — the verb and the window count the same parts ═════════════════════════════
+
+    /// <summary>
+    /// <b>R-rail10-8, asserted directly.</b> For ONE document, the window's two headline counts —
+    /// how many parts are modelled from a file, and how many carry no bias curve — are the numbers
+    /// <c>circuitrf rail</c> prints.
+    /// </summary>
+    /// <remarks>
+    /// The two disagreed in both directions at once. Review round 2 moved the VERB off the shared
+    /// library's own rows and onto <c>RailSpec.Parts</c>; the WINDOW was left counting the BOM, and
+    /// with no BOM it counted nothing — so the verb printed <i>"0 of 4 part number(s) modelled from
+    /// a file, 1 with no bias curve"</i> for a document whose Parts pane was empty.
+    ///
+    /// <para><b>Run as a PROCESS and read off its own line</b>, rather than by calling the same
+    /// helper twice: what is under test is that two surfaces agree, so a test that shared their
+    /// arithmetic would agree with itself.</para>
+    /// </remarks>
+    [Fact]
+    public void R_rail18_5_TheWindowsPartCountsAreTheVerbsOwn()
+    {
+        var fx = Fixture(parts: true);
+
+        var (exit, stdout, stderr) = RunCli("rail", fx.Crail);
+        Assert.True(exit == 0, stderr);
+
+        var printed = System.Text.RegularExpressions.Regex.Match(
+            stdout, @"(\d+) of (\d+) part number\(s\) modelled from a file, (\d+) with no bias curve");
+        Assert.True(printed.Success, $"the verb printed no parts line:\n{stdout}");
+
+        var vm = WindowOver(fx);
+
+        Assert.Equal(int.Parse(printed.Groups[1].Value), vm.PartsModelledFromFile);
+        Assert.Equal(int.Parse(printed.Groups[3].Value), vm.PartsWithoutBiasCurve);
+
+        // …and the counts are over PART NUMBERS while the table is over refdeses, so this cannot be
+        // satisfied by two numbers that are both the row count.
+        Assert.Equal(4, vm.Parts.Count);
+        Assert.Equal(3, int.Parse(printed.Groups[2].Value));
+        Assert.Equal(1, vm.PartsWithoutBiasCurve);
+    }
+
+    /// <summary>A window over the fixture, with its board and its part library applied exactly as
+    /// <c>DocRailFixtures</c> applies the shipped example's.</summary>
+    private static RailRfViewModel WindowOver(Fx fx)
+    {
+        var document = RailDocumentIo.LoadFromFile(fx.Crail);
+        var view = LayoutPersistence.LoadFromFile(fx.Clay);
+
+        var vm = new RailRfViewModel(document, fx.Crail)
+        {
+            PostToUi = a => a(),
+            RunOffThread = (work, _) => System.Threading.Tasks.Task.FromResult(work()),
+        };
+
+        vm.ApplyImport(
+            new RailImportOptions(),
+            new RailBoardInputs
+            {
+                Shapes = view.Shapes,
+                Technology = TechPersistence.LoadFromFile(fx.Tech),
+                DbuPerMicron = view.DbuPerMicron,
+                ArtworkCellRef = fx.Clay,
+            },
+            library: fx.Crlib is { } crlib ? PartLibraryIo.LoadFromFile(crlib) : null);
+
+        return vm;
+    }
+
+    private sealed record Fx(string Root, string Cell, string Clay, string Crail, string Tech)
+    {
+        /// <summary>The part library, where the fixture was asked for one.</summary>
+        public string? Crlib { get; init; }
+    }
+
+    /// <summary>Two part numbers the library knows and one it does not; ONE of the two carries a
+    /// capacitance-versus-bias curve, so the bias-curve count is neither zero nor everything.</summary>
+    private static PartLibrary PartsFixture()
+    {
+        var library = new PartLibrary { Name = "parts" };
+        library.Rows.Add(new PartLibraryRow
+        {
+            PartNumber = "CAP-100N", CapacitanceFarads = 100e-9,
+            SelfResonantFrequencyHz = 20e6, DielectricClass = "X7R", VoltageRatingV = 16,
+            BiasCurve = { new PartBiasPoint(0, 100e-9), new PartBiasPoint(3.3, 62e-9) },
+        });
+        library.Rows.Add(new PartLibraryRow
+        {
+            PartNumber = "CAP-1U0", CapacitanceFarads = 1e-6,
+            SelfResonantFrequencyHz = 6e6, DielectricClass = "X5R", VoltageRatingV = 10,
+        });
+        return library;
+    }
 
     /// <summary>
     /// A two-layer strip: the rail on TOP, its reference on BOT, a source at one end and a load at the
     /// other, anchored by COORDINATE (see this file's header).
     /// </summary>
-    private Fx Fixture(bool twoRails = false, bool noReference = false, bool cycle = false, string? root = null)
+    private Fx Fixture(bool twoRails = false, bool noReference = false, bool cycle = false,
+                       string? root = null, bool parts = false)
     {
         string wsRoot = root ?? Path.Combine(_root, "Board");
         string cell = Path.Combine(wsRoot, "Panel");
@@ -568,9 +661,29 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
         LayoutPersistence.SaveToFile(clay, LayoutFixture());
 
         string crail = Path.Combine(cell, "Panel.crail");
-        RailDocumentIo.SaveToFile(crail, DocumentFixture(twoRails, noReference, cycle, crail, clay));
+        var doc = DocumentFixture(twoRails, noReference, cycle, crail, clay);
 
-        return new Fx(wsRoot, cell, clay, crail, tech);
+        string? crlib = null;
+        if (parts)
+        {
+            crlib = Path.Combine(wsRoot, "parts.crlib");
+            PartLibraryIo.SaveToFile(crlib, PartsFixture());
+            doc.PartLibraryRef = Path.GetRelativePath(Path.GetDirectoryName(crail)!, crlib);
+
+            // FOUR rows over THREE part numbers, so the two headline counts are different numbers
+            // and a test comparing them cannot pass by accident.
+            foreach (var rail in doc.Rails)
+            {
+                rail.Parts.Add(new RailPart { Refdes = "C1", PartNumber = "CAP-100N", MountingInductanceHenries = 0.85e-9 });
+                rail.Parts.Add(new RailPart { Refdes = "C2", PartNumber = "CAP-100N", MountingInductanceHenries = 0.9e-9 });
+                rail.Parts.Add(new RailPart { Refdes = "C3", PartNumber = "CAP-1U0", MountingInductanceHenries = 1.1e-9 });
+                rail.Parts.Add(new RailPart { Refdes = "C4", PartNumber = "CAP-NOT-IN-LIBRARY" });
+            }
+        }
+
+        RailDocumentIo.SaveToFile(crail, doc);
+
+        return new Fx(wsRoot, cell, clay, crail, tech) { Crlib = crlib };
     }
 
     private static RailDocument DocumentFixture(

@@ -1,38 +1,85 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
-## railRF brief 17 — the class map paints the reference over the rail (2026-09-18)
+## railRF brief 18 — the class map's paint order, and a box in DBU with text in points (2026-09-18)
 
-Found while capturing the user chapter's classification figure, **reported and not fixed**
-(`brief-railrf-17-docs-and-example.md` §6).
+`brief-railrf-18-six-defects.md`, R-rail18-3 and R-rail18-4. Both were found by capturing brief 17's
+figures rather than by a test, and **the suite was green on both**. Brief 17's own entry here is
+superseded and removed rather than left as a second record.
 
-`RailMapScene.BuildClass` copies `result.Classification` in order, and both extractors build that list
-**rail copper first, reference copper last** (`PdnGraphExtractor`: one `Classify` pass over
+### 1. `R-rail18-3` — the tab that exists to make a misclassification visible showed nothing
+
+`RailMapScene.BuildClass` copied `result.Classification` in order, and both extractors build that list
+**rail copper first, reference copper last** (`PdnGraphExtractor` runs one `Classify` pass over
 `railCopper`, then one over `refCopper`). `RailMapRenderer.Draw` walks `scene.Regions` in list order
-and every region is **opaque paint** — which is R-rail8-10's own rule, so that nothing in the map
-depends on the page's background.
+and every region is **opaque paint** — R-rail8-10's own rule, so that nothing in the map depends on
+the page's background.
 
-So the reference conductor is painted last, over everything under it. On a board whose reference is a
-PLANE — which is every board this feature is for — the class tab is one flat rectangle in the
-`Spreading` colour, and the rail's own trace sections are invisible beneath it.
+So the reference was painted last, over everything beneath it. On a board whose reference is a PLANE —
+every board this feature is for — the class tab was one flat rectangle in the `Spreading` colour.
 
-**It is the one tab whose entire job is to let a user see and correct the classification** (§2.9 rule
-2: *"A silent misclassification is the one failure mode of this design … Drawing it is what makes it
-neither"*), so the picture that rule depends on shows nothing on the ordinary case.
+That matters more than a cosmetic ordering usually does, because §2.9 rule 2 is the safety argument
+for having a fast model at all: *"A silent misclassification is the one failure mode of this design …
+**Drawing it is what makes it neither.**"* The picture that rule depends on showed nothing on the
+ordinary case.
 
-Nothing else is affected: the classification itself is right, the ranked breakdown names each trace
-section with its own length, width and square count, and the extraction uses the same decision. The
-defect is the draw order alone.
+**`BuildClass` orders the SCENE; the extractors are untouched.** `result.Classification` is emitted
+`OrderBy(c => c.IsReference ? 0 : 1)` — a stable sort, so within each half the extraction's own order
+survives. The extractors' order is a property of how those two passes are written; the map's is a
+property of what a reader needs to see, and coupling them would let a later change to either silently
+move the picture. `RailMapRegion` gained `IsReference` to carry it, defaulted so the copper tab's
+construction is unchanged.
 
-The obvious fix is to emit the reference regions FIRST in `BuildClass` rather than to reorder the
-extractors, since the extraction's order is a property of how the two passes are written and the map's
-is a property of what a reader needs to see. It is one line and it is still a behaviour change to
-shipping code, which is why it is here rather than in the diff.
+*Consequence worth knowing:* both hit-tests over `scene.Regions` (`RailLayoutOverlay`'s readout and
+its context menu) pick the smallest bbox with a strict `<`, so a tie now resolves to the REFERENCE
+rather than the rail. On a plane reference the plane is the largest region and never wins a tie;
+recorded because the tie-break moved.
 
-**Second, smaller, same file:** `RailMapLegend.Box` is a `Bbox` in DBU while `RailMapRenderer.Font` is
-sized in screen points, so the legend's three labels — the minimum, the caption and the maximum —
-overlap each other once the map is drawn small enough. On the `Power Rail` example that happens below
-roughly a 600 px canvas, which is why `FigureCatalog`'s railRF rows capture at 1600 rather than at the
-1240 the panes alone would need.
+### 2. `R-rail18-4` — a box in DBU with text in points
+
+`RailMapLegend.Box` is a `Bbox` in DBU, placed below the map and sized as a fraction of the content;
+`RailMapRenderer`'s font is sized in screen POINTS. So the plate shrinks with the canvas and the three
+strings — the minimum, the caption and the maximum — do not, and below a certain size they overlap. It
+was never only a window problem: `RailReportPage` and `RailGraphicExport` draw the same legend through
+the same renderer, so an exported `.svg`/`.pdf` of a small map carried the overlap into a file
+somebody keeps.
+
+**Of the three possible answers the fix is SHRINK THE TEXT TO FIT THE BOX**, and the other two are
+each giving up something that is not theirs to give:
+
+- **Widening the box** cannot be done in the renderer — the box is world geometry and
+  `RailMapScene.Bounds` frames it, so a wider plate would draw outside what Zoom to Fit framed, which
+  is §11.6 trap 4 and the very thing this legend's placement exists to satisfy. Widening it in the
+  SCENE would make a world extent depend on a screen font size.
+- **Dropping the caption** below a threshold is the one that looks cheapest and is not available at
+  all. The caption carries the MODEL KIND, and §2.9 rule 1 says every result names the model that
+  produced it — a picture copied out of the window is a result that has left the window behind, so a
+  plate without it is a fast answer that cannot be told from an accurate one. **This was written with
+  a 7 px legibility floor first, and `RailZMapTests.ACopyTakenWithTheImpedanceMapShowing_…` rejected
+  it immediately**: that test asserts `"Accurate model"` is in the exported SVG, and at that export's
+  plate width the caption had been dropped. The gate was already there; the threshold was the mistake.
+
+So all three labels always appear and the text scales without a floor. Small text is recoverable — the
+exports are vector and a window can be widened — where overlapping text is not, and a missing model
+name is not either.
+
+Two structural notes on the implementation. `RailMapRenderer.TryPlate` now owns the plate's screen
+geometry, so the drawing pass and anything asking where the labels land read one rectangle rather than
+two copies of the same arithmetic. And `LayOutLabels` constrains **each side of the centred caption
+separately** — a total-width test is not enough, because one long end label and one short one fits by
+total and still runs into a centred caption. Widths are measured once at `LegendSizePx` and scaled: a
+glyph advance is linear in text size, so one measurement answers every size and the arithmetic stays
+deterministic across the two renders §11.7 compares.
+
+Gates: `RailCopyTests` (reference regions precede rail regions; and a RASTER oracle — a pixel on the
+trace comes back the trace colour, paired with the same scene built the old way where it comes back
+the reference's). `RailBoardViewTests` (a ladder of canvas widths from 160 to 1600 px: no two label
+rectangles intersect at any of them, all three are drawn at all of them, the narrow rungs really are
+shrunk, and wherever the renderer shrank, the OLD full-size layout really did overlap).
+
+**The raster is load-bearing and the first version of that oracle was an SVG scan, which gated
+nothing.** An SVG records draw COMMANDS rather than a result, so every region's fill appears in the
+file whether or not something was painted over it — the colour-presence assertion passed in both
+orders. Anything checking overdraw here has to rasterise.
 
 ---
 

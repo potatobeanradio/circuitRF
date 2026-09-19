@@ -666,7 +666,11 @@
                                 <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
                                 <Button Grid.Column="6" Classes="gridhdr" Content="L mount"/>
                             </Grid>
-                            <ListBox Grid.Row="2" Name="PartsList" Classes="rows"
+                            <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
+                                 MaxHeight constrains the MEASURE and does not clip, so a list taller
+                                 than it simply draws past the card and over the status strip — which
+                                 nobody saw while this pane was empty (R-rail18-5). -->
+                            <ListBox Grid.Row="2" Name="PartsList" Classes="rows" MaxHeight="128"
                                      ItemsSource="{Binding Parts}">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="rvm:RailPartRowViewModel">
@@ -676,8 +680,13 @@
                                              that it is not one. -->
                                         <Grid ColumnDefinitions="60,*,70,70,90,70,60" Margin="0,1"
                                               Classes.unresolved="{Binding IsUnresolved}">
+                                            <!-- WHERE THE ROW CAME FROM, on the row's own face
+                                                 (R-rail18-5a) — typed on the rail, or pre-filled
+                                                 from the bill of materials. A pre-filled number
+                                                 nobody checked is the one that will be wrong. -->
                                             <TextBlock Classes="detailLabel" Text="{Binding Refdes}"
-                                                       HorizontalAlignment="Left" />
+                                                       HorizontalAlignment="Left"
+                                                       ToolTip.Tip="{Binding OriginText}"/>
                                             <TextBlock Grid.Column="1" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding PartNumber}"/>
                                             <TextBlock Grid.Column="2" Classes="detailLabel" 
@@ -735,7 +744,7 @@
                                  a wrong one instantly and would never notice it buried in a curve."
                                  One glance at it checks the permittivity, the overlap area and the
                                  dielectric thickness at once. It is also on the status strip. -->
-                            <Border Classes="card" IsVisible="{Binding HasPlaneCapacitance}">
+                            <Border Classes="card" IsVisible="{Binding ShowStackupCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Stackup"/>
                                     <TextBlock Classes="note" TextWrapping="Wrap"
@@ -743,7 +752,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card">
+                            <Border Classes="card" IsVisible="{Binding ShowDropCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Drop"/>
                                     <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding PortLines}">
@@ -756,7 +765,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card">
+                            <Border Classes="card" IsVisible="{Binding ShowBreakdownCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Breakdown"/>
                                     <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding BreakdownLines}">
@@ -769,7 +778,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card">
+                            <Border Classes="card" IsVisible="{Binding ShowViaCheckCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Via check"/>
                                     <TextBlock Classes="note" Text="{Binding ViaFlagSummary}"/>
@@ -782,7 +791,7 @@
                                  nothing excites is not a problem and a 3 dB peak on the converter's
                                  fifth harmonic is, so the list that pairs the two outranks the table
                                  that merely locates the peaks. -->
-                            <Border Classes="card" IsVisible="{Binding HasCoincidences}">
+                            <Border Classes="card" IsVisible="{Binding ShowCoincidencesCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="On an aggressor line"/>
                                     <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding CoincidenceLines}">
@@ -795,7 +804,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card" IsVisible="{Binding HasMaskVerdict}">
+                            <Border Classes="card" IsVisible="{Binding ShowMaskCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Against the target"/>
                                     <ListBox Classes="rows" MaxHeight="120" ItemsSource="{Binding MaskLines}">
@@ -808,7 +817,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card" IsVisible="{Binding HasAntiResonances}">
+                            <Border Classes="card" IsVisible="{Binding ShowAntiResonancesCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Anti-resonances"/>
                                     <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding AntiResonanceLines}">
@@ -821,7 +830,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Classes="card" IsVisible="{Binding HasRemovalRanking}">
+                            <Border Classes="card" IsVisible="{Binding ShowRemovalCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="If this part came off"/>
                                     <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding RemovalLines}">
@@ -847,7 +856,7 @@
                                  seconds on a real board, against milliseconds for the curve. The
                                  Fast edit loop re-solves on every committed row edit and this can
                                  never be in it. -->
-                            <Border Classes="card">
+                            <Border Classes="card" IsVisible="{Binding ShowPlaneResonancesCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Plane resonances"/>
                                     <Grid ColumnDefinitions="Auto,*,Auto">
@@ -880,7 +889,7 @@
                             <!-- What the frequency answer has to say that is not a curve — a refusal,
                                  or the notes and warnings that travel with the numbers, the
                                  INDICATIVE marking of §9 among them. -->
-                            <Border Classes="card" IsVisible="{Binding HasImpedanceMessage}">
+                            <Border Classes="card" IsVisible="{Binding ShowImpedanceMessageCard}">
                                 <TextBlock Classes="note" Text="{Binding ImpedanceMessage}"
                                            TextWrapping="Wrap"/>
                             </Border>

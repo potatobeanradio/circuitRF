@@ -193,10 +193,8 @@ passing report. Four rules make the two safe to have together:
 2. **The classification is visible and correctable.** The figure above is the `class` tab: it draws which
    copper was read as a trace and which was meshed, and a region can be forced either way. A wide supply
    polygon mistaken for a trace is optimistic and invisible &mdash; drawing it is what makes it neither.
-   In the figure the whole board is one orange region, because a reference plane is spreading copper by
-   definition and it is currently **painted over the rail's own sections**: they are classified, and the
-   breakdown prices them as traces, but the tab does not show them under a plane. See
-   [what is not wired up yet](#notyet).
+   The reference plane is drawn first and the rail's own sections over it, so a board with a plane shows
+   both; click a region to force it either way.
 3. **Fast refuses where it cannot be honest.** Where a source reaches a load *only* through copper
    classified as spreading, the fast model produces no number rather than a smaller one, and the refusal
    names both answers: run Accuracy, or force the region to `trace` if you know the current follows a
@@ -252,7 +250,7 @@ renderer the window draws with. See {{anchor: cli#rail|`rail` in the CLI chapter
 
 ## What railRF will not do {#limits}
 
-Stated plainly, because a tool that is vague about its boundary gets trusted past it.
+Stated plainly:
 
 1. **It is not a full-wave solver and does not become one.** That step is very much heavier for an
    answer this question does not need. circuitRF's planar method-of-moments engine is a different tool
@@ -277,8 +275,8 @@ Stated plainly, because a tool that is vague about its boundary gets trusted pas
 
 ## What is not wired up yet {#notyet}
 
-Three things are representable in a `.crail` and do not yet reach a solve. They are here rather than
-left to be discovered:
+Four things are representable in a `.crail` and do not yet reach a solve, or do not reach the window.
+They are here rather than left to be discovered:
 
 - **A port anchored by refdes does not resolve.** The placement table is read on import and is not
   joined into the extraction, so every port has to be anchored by **coordinate**, and every report row
@@ -289,15 +287,7 @@ left to be discovered:
 - **A series part and a shunt part do not enter the DC solve.** A protection FET, a ferrite or a
   decoupling bank reaches the DC answer only as a source's own series R and L. Over frequency the parts
   are fully modelled from the rail's own part rows.
-- **The class tab paints the reference over the rail.** Region colours are opaque and the reference
-  conductor is drawn last, so on any board with a reference plane the tab shows the plane's
-  classification and hides every trace beneath it. The classification itself is correct &mdash; the
-  ranked breakdown names each trace section and how many squares it is &mdash; and only the picture is
-  affected.
-- **The `DC` / `frequency` strip above the results column sets nothing.** The column is one scrolling
-  list: the DC answers, then the frequency ones, then the run's own notes. Scroll it.
-- **The Parts pane fills from an imported BOM, not from the document.** Parts you typed into the
-  `.crail` are used in full by the frequency answer &mdash; they set every resonance on the curve and
-  every row of the ranking &mdash; but the parts *table* stays empty until a bill of materials is
-  imported. The figures on this page show that: the rail is solved from thirteen capacitors and the
-  pane listing them has no rows.
+- **A part library named by the document is not loaded when the window opens it.** Opening a `.crail`
+  from the project tree reads the rail, the ports and the target; the board and the part library it
+  names are picked up by the import, not by the open. `circuitrf rail` resolves both from the document,
+  so the command line answers a file the window has to be pointed at.

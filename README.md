@@ -61,8 +61,6 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-These install for you alone, need no administrator rights, and update themselves in the background.
-
 > **While circuitRF is in beta, tick *Settings ▸ Security & Permissions ▸ Include beta releases*.**
 > Beta versions are published as GitHub pre-releases, and that box is what puts them on your update
 > channel — without it you stay on the version you installed until the first stable release.
@@ -521,30 +519,6 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 ---
 
-## Adding a standard library component
-
-This is the **recommended first contribution** — and the most valuable thing an RF expert can do. circuitRF
-ships ~20 built-in parts (R, L, C, Vdc, RF tone source, Ground, Term, Pin, current probe, symbolically defined device (SDD), Z-port, SnP/Touchstone, nonlinear C, mutual inductance, ideal transmission line, tuners, …) plus a substrate-aware **microstrip family** (MLIN, MBEND, MTEE, MCROSS, MTAPER, MKLOPF) that carries layout artwork as well as an electrical model. There are still many useful parts **not** yet in the library — a **diode**, a **BJT**, an **ideal transformer**, **coupled lines**, a **circulator/isolator**, lumped **attenuator pads**, and more.
-
-Adding one is a well-trodden path:
-
-1. Read the skill: **[`docs/skills/adding-a-library-component.md`](docs/skills/adding-a-library-component.md)**.
-   It covers both archetypes — a **device** (has ports, stamps into the engine; worked example: the ideal
-   transmission line) and an **annotation** (no ports, e.g. VAR/MEAS) — and lists every file to touch.
-2. The component registry is a single hub — `ComponentTypeRegistry` (`src/Ui/Schematic/ComponentTypeRegistry.cs`);
-   the palette is generated from it, so you never edit palette UI code.
-3. A new device subclasses **`ComponentModel`** (one base for passive *and* active parts), declares its
-   ports + parameters, and implements `Stamp(...)` (linear contribution) and/or `Evaluate(...)`
-   (nonlinear `i`, `q`, and their derivatives). Register it in the model factory and add a golden-reference
-   test.
-4. The companion device walkthrough is
-   [`docs/sonnet-briefs/palette-contributor-guide.md`](docs/sonnet-briefs/palette-contributor-guide.md).
-
-The honest pitch: hand the skill file and your component's equations to Claude Code, and it will do most of
-the C#. Your job is the RF physics — the stamp, the model equations, the reference to check against.
-
----
-
 ## Roadmap & status
 
 circuitRF is **v1 beta**. The engine and editors work; The five "hero"
@@ -638,10 +612,7 @@ and **RF domain knowledge counts as much as software experience.** You don't nee
 programmer — MATLAB/Python scripting experience plus an AI assistant is plenty.
 
 **Good first contributions:**
-- **Add a missing library component** (see [above](#adding-a-standard-library-component)) — the
-  highest-leverage starting point, and a great use of AI.
-- Build a circuit in the schematic editor and **report what's confusing or broken** — alpha feedback is
-  gold.
+- Build a circuit in the schematic editor and **report what's confusing or broken**
 - Improve a design note in `docs/design/`, or a `CLAUDE.md`, where the docs lag the code.
 - Pick up a **roadmap** item (the noise green field is wide open).
 

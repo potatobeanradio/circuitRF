@@ -714,6 +714,11 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "rail.document.refused",
         "rail.document.unreadable",
         "rail.extent.unknown",
+        // Review round 2. The frequency flags a `.crail` legitimately states and the DC verb
+        // cannot answer with — accepted, validated, and said out loud rather than dropped in
+        // silence. It was declared and not recorded here, which is the second time this list
+        // has gone stale (brief 1 §5 is the first), so adding an id now carries recording it.
+        "rail.frequency-flags.not-in-this-phase",
         "rail.mask.no-port",
         "rail.mask.not-found",
         "rail.mask.too-short",

@@ -232,10 +232,25 @@ public sealed class RailDcResult
         get
         {
             var p = Netlist.Provenance;
-            if (!(p.PlaneCapacitanceFarads > 0))
+
+            // R-rail18-2b. THREE STATES, and only one of them is about the user's stackup. A model
+            // that did not compute the number must say that and name itself; a rail whose copper
+            // simply does not overlap its reference has a computed zero and nothing to complain
+            // about. Reaching the stackup sentence through `<= 0` told every user of the default
+            // model that their stackup was wrong.
+            if (p.PlaneCapacitanceBasis == PdnPlaneCapacitanceBasis.NotComputed)
+                return $"Plane capacitance: not computed by {p.Model}. Nothing here is a statement " +
+                       "about the stackup — run the other model to have it checked.";
+
+            if (p.PlaneCapacitanceBasis == PdnPlaneCapacitanceBasis.NoDielectricStated)
                 return "Plane capacitance: none. The stackup states no dielectric between this " +
                        "rail's copper and its reference, so ε₀εᵣA/h has no h — state the dielectric " +
                        "entries between them.";
+
+            if (!(p.PlaneCapacitanceFarads > 0))
+                return "Plane capacitance: none — this rail's copper and its reference do not " +
+                       "overlap anywhere, so ε₀εᵣA/h has no A. The stackup is not the problem; the " +
+                       "reference extent or the reference layer is.";
 
             return $"Plane capacitance {Farads(p.PlaneCapacitanceFarads)} — ε₀εᵣA/h over " +
                    $"{p.PlaneOverlapSquareMetres * 1e4:0.##} cm² of OVERLAP at εr " +

@@ -562,37 +562,44 @@ stderr to fill that pipe's buffer and deadlock a sequential reader.
    the export writes. Call `JsonRun.AddOutput` beside every "Wrote …", and refuse through
    `JsonRun.Fail(CliDiagnostics.…)` rather than `Console.Error.WriteLine` + `return 1` — a refusal
    that is only prose is a refusal a caller has to parse back apart.
-7. Update this file and the verb list in the repo-root `CLAUDE.md`.
+7. **Record every new diagnostic id in `CliStructuredOutputTests.ExpectedIds`, in the same change.**
+   An id is a permanent contract and that list is what makes an accidental change visible; a new one
+   not recorded leaves `DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` RED, so the next
+   person to run the suite inherits a failure that is not theirs. **This has now happened twice** —
+   the `.cdd` arm's four ids, and railRF's `rail.frequency-flags.not-in-this-phase` — which is what
+   makes it a checklist step rather than a habit. The obligation runs the same way a row added to
+   `DocumentKinds.Classify` obliges an arm in `check` and a case in `explain`.
+8. Update this file and the verb list in the repo-root `CLAUDE.md`.
 
-`em` follows 1, 4, 5 and 6 and is deliberately outside 2 and 3: it does not read a `.cnl`, so there is
+`em` follows 1, 4, 5, 6, 7 and 8 and is deliberately outside 2 and 3: it does not read a `.cnl`, so there is
 no chain to select and no directive to override. Its analogue of §5's rule is §8.2's — the one
 override it takes lands in the `EmSetup`, not at the run service, for the same reason.
 
-`check`, `explain` and `read` follow 1, 4, 6 and 7, and their §5 analogue is §10's — they run
+`check`, `explain` and `read` follow 1, 4, 6, 7 and 8, and their §5 analogue is §10's — they run
 nothing and they write nothing.
 
-`render` follows 1, 4, 6 and 7. Its §5 analogue is §13's and it is the same one the authoring verbs
+`render` follows 1, 4, 6, 7 and 8. Its §5 analogue is §13's and it is the same one the authoring verbs
 have in a different costume: **it owns no rendering.** Every pixel comes out of the three renderers in
 `CircuitRF.Render` that the application draws each frame with, so "a headless picture and the GUI's are
 the same picture" is true by construction rather than by care — which is what makes §13.6's byte
 identity a gate rather than an aspiration.
 
-`rail` follows 1, 4, 5, 6 and 7 and is outside 2 and 3: it reads a `.crail` rather than a `.cnl`, so
+`rail` follows 1, 4, 5, 6, 7 and 8 and is outside 2 and 3: it reads a `.crail` rather than a `.cnl`, so
 there is no chain to select and no directive to override. Its §5 analogue is `render`'s and the
 authoring verbs' in one: **it owns no analysis and no rendering** (§17.1). Its §7 rule is `em`'s —
 a refusal exits 1 with the run service's own sentence, a cancellation exits 130 and writes nothing.
 
-`reference` follows 1, 4, 6 and 7 and is outside everything else, because it reads no file either
+`reference` follows 1, 4, 6, 7 and 8 and is outside everything else, because it reads no file either
 (§12). Its §5 analogue is R-aut6-7: **it transcribes nothing.** The prose half is the authored page,
 embedded; the component half is generated from the live registries at every call. A fact typed into
 that verb is a fact that will disagree with the code the first time either changes.
 
-`serve` follows 1 and 7 and is outside all the rest, because it is not a verb that does work: it is
+`serve` follows 1, 7 and 8 and is outside all the rest, because it is not a verb that does work: it is
 the one adapter that dispatches to the others (§11). Its §4 analogue is the inversion of §3.1 —
 stdout is the protocol and the result goes into a frame — and its §5 analogue is R-aut-1: it owns
 no logic at all, so there is nothing for an override to land in.
 
-`convert`, `new` and `import part` follow 1, 4, 6 and 7 and are outside 2, 3 and 5 for the same
+`convert`, `new` and `import part` follow 1, 4, 6, 7 and 8 and are outside 2, 3 and 5 for the same
 reason: they run no analysis. Their §5 analogue is stronger and is the whole of
 `brief-automation-3-authoring-verbs.md` R-aut3-1: **an authoring verb calls the capability the GUI's
 own command calls, and adds nothing of its own.** A verb that re-implements what a view model does

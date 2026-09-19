@@ -561,9 +561,10 @@ public static class FigureCatalog
 
         // ── railRF ──────────────────────────────────────────────────────────────
         // 1600x780 rather than the window's own 1199x741. The three panes are 300 / star / 340 with
-        // a canvas between them, so the width has to leave the middle one enough to be a board -- and
-        // the map legend is a box in DBU with screen-sized text in it, so below about 1500 its three
-        // labels overlap each other.
+        // a canvas between them, so the width has to leave the middle one enough to be a board.
+        // (The map legend used to need this width too -- it is a box in DBU with screen-sized text
+        // in it, so below about 1500 its three labels ran into each other. R-rail18-4 scales the
+        // text to the plate, so that is no longer what sets the width.)
 
         new("railrf-window", DocRailFixtures.Window, 1600, 780,
             WindowFrame.Titled("railRF - Sensor board"),
@@ -571,16 +572,15 @@ public static class FigureCatalog
           + "its ports down the left, the board in the middle showing the drop map, and the DC "
           + "answer with its ranked breakdown on the right."),
 
-        // The class tab on a board with a reference PLANE shows the plane and nothing else: the
-        // reference's own region is classified last and RailMapRenderer paints the list in order
-        // with opaque paint, so it covers every trace under it. The figure is of the tab as it
-        // behaves; src/Render/RESOLVED.md records why, and the chapter says so rather than letting
-        // a reader conclude their traces were not classified.
+        // R-rail18-3: the reference is drawn FIRST now, so the rail's own trace sections survive the
+        // opaque paint. Until then this figure was one flat rectangle -- the reference's region was
+        // classified last and painted over everything -- on every board with a plane, which is every
+        // board this feature is for.
         new("railrf-classification", DocRailFixtures.Classification, 1600, 780,
             WindowFrame.Titled("railRF - Sensor board"),
             "The class tab, which draws what the fast model decided about each piece of copper. "
-          + "Here the whole reference plane is spreading copper and was meshed; the rail's own "
-          + "trace sections are classified too, and are painted over by it."),
+          + "The reference plane is spreading copper and was meshed; the rail's own sections are "
+          + "drawn over it, each in the colour of the class it was priced as."),
 
         new("railrf-impedance", DocRailFixtures.Impedance, 1600, 780,
             WindowFrame.Titled("railRF - Sensor board"),

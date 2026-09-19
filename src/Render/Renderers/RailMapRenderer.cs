@@ -31,6 +31,18 @@ using SkiaSharp;
 
 namespace CircuitRF.Render;
 
+/// <summary>
+/// Where the legend plate's three labels land, and at what size (R-rail18-4) —
+/// <see cref="RailMapRenderer.LayOutLabels"/> decides it, this carries the decision.
+/// </summary>
+/// <param name="TextSizePx">The size all three are drawn at, device pixels. At or below
+/// <see cref="RailMapRenderer.LegendSizePx"/> — the plate never enlarges its own text.</param>
+/// <param name="Cold">The minimum's box, device pixels.</param>
+/// <param name="Caption">The caption's.</param>
+/// <param name="Hot">The maximum's.</param>
+public readonly record struct RailMapLabelLayout(
+    float TextSizePx, SKRect Cold, SKRect Caption, SKRect Hot);
+
 /// <summary>Paints a <see cref="RailMapScene"/>. Draws; decides nothing.</summary>
 public static class RailMapRenderer
 {
@@ -42,8 +54,11 @@ public static class RailMapRenderer
     /// <summary>Label point size, device pixels.</summary>
     public const float LabelSizePx = 10f;
 
-    /// <summary>The legend's own text size, device pixels.</summary>
+    /// <summary>The legend's own text size, device pixels — <b>at full size.</b> See
+    /// <see cref="LayOutLabels"/>: the plate is a world box and the text is in points, so on a small
+    /// enough canvas the three labels do not fit at this size and are drawn smaller.</summary>
     public const float LegendSizePx = 11f;
+
 
     /// <summary>How many bands the legend's ramp is drawn in. Enough to read as continuous, few
     /// enough that two renders of the same scene are trivially identical.</summary>
@@ -226,13 +241,9 @@ public static class RailMapRenderer
     {
         if (scene.Legend is not { } legend) return;
 
-        float x0 = (float)vp.WorldToScreenX(legend.Box.MinX);
-        float x1 = (float)vp.WorldToScreenX(legend.Box.MaxX);
-        float y0 = (float)vp.WorldToScreenY(legend.Box.MaxY);
-        float y1 = (float)vp.WorldToScreenY(legend.Box.MinY);
-        if (x1 - x0 < 2 || y1 - y0 < 2) return;
+        if (!TryPlate(legend, vp, out var plate, out var bar, out float textBaseline)) return;
 
-        var plate = new SKRect(x0, y0, x1, y1);
+        float x0 = plate.Left, x1 = plate.Right, y0 = plate.Top, y1 = plate.Bottom;
 
         // OPAQUE, and this is the one line of this file the §11.7 rule is actually about.
         using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendBackground };
@@ -244,11 +255,7 @@ public static class RailMapRenderer
         };
         canvas.DrawRect(plate, stroke);
 
-        float pad = (y1 - y0) * 0.12f;
-        float barTop = y0 + pad;
-        float barBottom = y0 + (y1 - y0) * 0.5f;
-        float barLeft = x0 + pad;
-        float barRight = x1 - pad;
+        float barTop = bar.Top, barBottom = bar.Bottom, barLeft = bar.Left, barRight = bar.Right;
 
         using var band = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
         for (int i = 0; i < LegendBands; i++)
@@ -259,9 +266,10 @@ public static class RailMapRenderer
             canvas.DrawRect(new SKRect(a, barTop, b + 0.5f, barBottom), band);
         }
 
-        using var font = Font(SkiaFonts.PlexRegular, LegendSizePx);
+        var layout = LayOutLabels(legend, barLeft, barRight, textBaseline);
+
+        using var font = Font(SkiaFonts.PlexRegular, layout.TextSizePx);
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendInk };
-        float textBaseline = y1 - pad;
 
         // The plate's two end labels are the SCENE's — volts on the drop tab, ohms on the |Z| tab.
         // A renderer that chose between them would be deciding what the numbers are, which is the
@@ -270,10 +278,110 @@ public static class RailMapRenderer
         canvas.DrawText(legend.HotLabel, barRight, textBaseline, SKTextAlign.Right, font, ink);
 
         // The caption carries the model kind (§2.9 rule 1: every result says which model produced it,
-        // and a picture pasted into a document is a result that has left the window behind).
-        using var caption = Font(SkiaFonts.PlexSemiBold, LegendSizePx);
+        // and a picture pasted into a document is a result that has left the window behind). It is
+        // therefore ALWAYS drawn — see LayOutLabels.
+        using var caption = Font(SkiaFonts.PlexSemiBold, layout.TextSizePx);
         canvas.DrawText(legend.Caption, (barLeft + barRight) / 2, textBaseline, SKTextAlign.Center,
                         caption, ink);
+    }
+
+    /// <summary>
+    /// The legend plate's screen geometry — <b>the one place it is computed</b>, so the drawing pass
+    /// and anything asking where the labels land read the same rectangle.
+    /// </summary>
+    /// <param name="legend">The plate, whose <see cref="RailMapLegend.Box"/> is in DBU.</param>
+    /// <param name="vp">World → screen.</param>
+    /// <param name="plate">The whole plate, device pixels.</param>
+    /// <param name="bar">The ramp's rectangle inside it.</param>
+    /// <param name="baseline">Where the labels' baseline sits.</param>
+    /// <returns>False where the plate has collapsed to nothing on screen, in which case it is not
+    /// drawn at all.</returns>
+    public static bool TryPlate(
+        RailMapLegend legend, LayoutViewport vp, out SKRect plate, out SKRect bar, out float baseline)
+    {
+        ArgumentNullException.ThrowIfNull(legend);
+
+        float x0 = (float)vp.WorldToScreenX(legend.Box.MinX);
+        float x1 = (float)vp.WorldToScreenX(legend.Box.MaxX);
+        float y0 = (float)vp.WorldToScreenY(legend.Box.MaxY);
+        float y1 = (float)vp.WorldToScreenY(legend.Box.MinY);
+
+        plate = new SKRect(x0, y0, x1, y1);
+        bar = SKRect.Empty;
+        baseline = 0;
+
+        if (x1 - x0 < 2 || y1 - y0 < 2) return false;
+
+        float pad = (y1 - y0) * 0.12f;
+        bar = new SKRect(x0 + pad, y0 + pad, x1 - pad, y0 + (y1 - y0) * 0.5f);
+        baseline = y1 - pad;
+        return true;
+    }
+
+    /// <summary>
+    /// Where the plate's three labels go, and how big they are — <b>the one place that decides it</b>,
+    /// so the window, <c>RailReportPage</c> and <c>RailGraphicExport</c> cannot lay them out three
+    /// ways.
+    /// </summary>
+    /// <remarks>
+    /// <b>R-rail18-4. <c>RailMapLegend.Box</c> is a <see cref="Bbox"/> in DBU and this text is in
+    /// POINTS</b>, so the plate shrinks with the canvas and the text does not: below roughly a 600 px
+    /// canvas the minimum, the caption and the maximum ran into each other — in the window, and in
+    /// every <c>.svg</c> and <c>.pdf</c> copied out of it.
+    ///
+    /// <para><b>Of the three possible answers the fix is SHRINK THE TEXT TO FIT THE BOX</b>, and the
+    /// reason is that the other two give up something that is not theirs to give. WIDENING the box
+    /// cannot be done here — the box is world geometry and <see cref="RailMapScene.Bounds"/> frames
+    /// it, so a renderer that widened the plate would draw outside what Zoom to Fit framed (§11.6
+    /// trap 4, which this legend's placement exists to satisfy); and widening it in the SCENE would
+    /// make a world extent depend on a screen font size. DROPPING THE CAPTION is the one that looks
+    /// cheapest and is not available at all: the caption carries the MODEL KIND, and §2.9 rule 1
+    /// says every result names the model that produced it — a picture copied out of the window is a
+    /// result that has left the window behind, so a plate without it is a fast answer that cannot be
+    /// told from an accurate one. <c>RailZMapTests</c> asserts exactly that, and it is what rejected
+    /// the threshold this was first written with.</para>
+    ///
+    /// <para>So all three labels always appear and the text scales without a floor. Small text is
+    /// recoverable — the exports are vector and the window can be widened; overlapping text is not,
+    /// and a missing model name is not either.</para>
+    ///
+    /// <param name="legend">The plate.</param>
+    /// <param name="left">The bar's left edge, device pixels — where the cold label starts.</param>
+    /// <param name="right">Its right edge — where the hot label ends.</param>
+    /// <param name="baseline">The text baseline, device pixels.</param>
+    public static RailMapLabelLayout LayOutLabels(
+        RailMapLegend legend, float left, float right, float baseline)
+    {
+        ArgumentNullException.ThrowIfNull(legend);
+
+        using var regular = Font(SkiaFonts.PlexRegular, LegendSizePx);
+        using var semibold = Font(SkiaFonts.PlexSemiBold, LegendSizePx);
+
+        float wCold = regular.MeasureText(legend.ColdLabel);
+        float wHot = regular.MeasureText(legend.HotLabel);
+        float wCaption = semibold.MeasureText(legend.Caption);
+
+        float available = Math.Max(0f, right - left);
+        float centre = (left + right) / 2f;
+
+        // Clear space between neighbouring labels, in the SAME units the widths are in, so it scales
+        // with them: labels that merely touch read as one word.
+        const float Gap = LegendSizePx * 0.6f;
+
+        // Each side of the centred caption on its own. A total-width test is not enough — one long
+        // end label and one short one fits by total and still runs into a centred caption.
+        float perSide = Math.Max(wCold, wHot) + wCaption / 2f + Gap;
+        float scale = perSide > 0 ? Math.Min(1f, available / 2f / perSide) : 1f;
+
+        float size = LegendSizePx * scale;
+        float ascent = size;                           // a conservative single-line box
+
+        return new RailMapLabelLayout(
+            size,
+            new SKRect(left, baseline - ascent, left + wCold * scale, baseline),
+            new SKRect(centre - wCaption * scale / 2f, baseline - ascent,
+                       centre + wCaption * scale / 2f, baseline),
+            new SKRect(right - wHot * scale, baseline - ascent, right, baseline));
     }
 
     private static void DrawNote(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme)

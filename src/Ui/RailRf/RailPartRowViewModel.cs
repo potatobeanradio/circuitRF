@@ -32,33 +32,59 @@ public sealed class RailPartRowViewModel
     /// it three ways.</summary>
     public const string UnresolvedText = "unresolved";
 
+    /// <param name="part">The RAIL's own row — <b>the subject</b> (R-rail18-5a). The table lists the
+    /// selected rail's parts; the BOM, the placement and the library each fill a column and none of
+    /// them decides whether a row exists.</param>
     /// <param name="bom">The BOM row, or null where the BOM names no such reference.</param>
     /// <param name="model">What the part library resolved, or null where there is no library.</param>
-    /// <param name="mountingInductanceHenries">The computed mounting loop, or null where the placement
-    /// did not land this part.</param>
+    /// <param name="mountingInductanceHenries">The mounting loop — the document's own where it
+    /// states one, or the computed one — or null where neither exists.</param>
     /// <param name="position">Where the placement put it, already formatted, or null.</param>
     public RailPartRowViewModel(
-        string refdes,
+        RailPart part,
         BomRow? bom,
         PartModelResolution? model,
         double? mountingInductanceHenries,
         string? position)
     {
-        Refdes = refdes;
+        ArgumentNullException.ThrowIfNull(part);
+
+        _part = part;
         _bom = bom;
         _model = model;
+        Refdes = part.Refdes;
         MountingInductanceHenries = mountingInductanceHenries;
         Position = position;
     }
 
+    private readonly RailPart _part;
     private readonly BomRow? _bom;
     private readonly PartModelResolution? _model;
 
     /// <summary>The reference.</summary>
     public string Refdes { get; }
 
-    /// <summary>The internal part number, or <see cref="UnresolvedText"/>.</summary>
-    public string PartNumber => _bom?.PartNumber is { Length: > 0 } p ? p : UnresolvedText;
+    /// <summary>
+    /// The internal part number, or <see cref="UnresolvedText"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The rail's own first, the BOM's where the rail states none</b> (R-rail18-5a). A refdes the
+    /// rail names and the BOM does not is a row with an unresolved part number, which is the state
+    /// this word already exists to say — not a missing row.
+    /// </remarks>
+    public string PartNumber =>
+        _part.PartNumber is { Length: > 0 } own ? own
+        : _bom?.PartNumber is { Length: > 0 } p ? p
+        : UnresolvedText;
+
+    /// <summary>Where this row came from — typed, or pre-filled from the bill of materials. Shown on
+    /// the row, because a pre-filled number nobody checked is the one that will be wrong.</summary>
+    public RailPartOrigin Origin => _part.Origin;
+
+    /// <summary>The same, as the row reads it.</summary>
+    public string OriginText => _part.Origin == RailPartOrigin.Bom
+        ? "pre-filled from the bill of materials"
+        : "typed on the rail";
 
     /// <summary>The marked value, as the BOM states it, or <see cref="UnresolvedText"/>.</summary>
     public string MarkedText => _bom?.Value is { Length: > 0 } v ? v : UnresolvedText;
@@ -127,7 +153,7 @@ public sealed class RailPartRowViewModel
     /// point of listing it is that it is not one.
     /// </remarks>
     public bool IsUnresolved =>
-        _bom?.PartNumber is not { Length: > 0 } || _model is null || _model.Row is null;
+        PartNumber == UnresolvedText || _model is null || _model.Row is null;
 
     /// <summary>What the dielectric class was parsed as, or empty — shown beside the description it
     /// came from, for correction (brief 2's R-rail2-5).</summary>

@@ -61,6 +61,94 @@ public sealed class RailBoardViewTests
 
     private const double CanvasWidth = 420, CanvasHeight = 300;
 
+    // ══ R-rail18-4 — a box in DBU with text in points ════════════════════════════════════════
+
+    /// <summary>
+    /// At every canvas width from a phone-sized pane up to the one the documentation figures capture
+    /// at, <b>the legend's label rectangles do not intersect</b> — and the minimum and the maximum
+    /// are drawn at all of them.
+    /// </summary>
+    /// <remarks>
+    /// <c>RailMapLegend.Box</c> is a <see cref="Bbox"/> in DBU and <c>RailMapRenderer</c>'s font is
+    /// sized in screen points, so the plate shrinks with the canvas and the three strings do not.
+    /// Below roughly 600 px the minimum, the caption and the maximum overlapped — in the window, and
+    /// in every <c>.svg</c> and <c>.pdf</c> <c>RailReportPage</c> and <c>RailGraphicExport</c> draw
+    /// through this same renderer.
+    ///
+    /// <para><b>The ladder is the test.</b> A gate that only checked the widest case is the case
+    /// that already passed; the narrow rungs are the ones that were red.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData(160)]
+    [InlineData(200)]
+    [InlineData(240)]
+    [InlineData(320)]
+    [InlineData(640)]
+    [InlineData(1600)]
+    public void R_rail18_4_TheLegendsThreeLabelsNeverOverlap(int widthPx)
+    {
+        var scene = RailMapScene.Build(ResultOf(out _), RailMapKind.Drop, Dbu);
+        var legend = scene.Legend;
+        Assert.NotNull(legend);
+
+        int heightPx = Math.Max(120, widthPx * 3 / 4);
+        var vp = LayoutViewport.ZoomToFit(scene.Bounds, widthPx, heightPx);
+
+        Assert.True(RailMapRenderer.TryPlate(legend!, vp, out _, out var bar, out float baseline),
+                    "the plate collapsed to nothing at this width.");
+
+        var layout = RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline);
+
+        // All three are always drawn: the caption carries the model kind, and §2.9 rule 1 makes that
+        // the one thing a picture which has left the window must still say.
+        Assert.True(layout.Cold.Width > 0 && layout.Caption.Width > 0 && layout.Hot.Width > 0,
+                    "the plate lost one of its three labels.");
+
+        Assert.False(layout.Cold.IntersectsWith(layout.Caption),
+                     $"the minimum and the caption overlap at {widthPx} px.");
+        Assert.False(layout.Caption.IntersectsWith(layout.Hot),
+                     $"the caption and the maximum overlap at {widthPx} px.");
+        Assert.False(layout.Cold.IntersectsWith(layout.Hot),
+                     $"the minimum and the maximum overlap at {widthPx} px.");
+
+        // ── and the half that gives the assertions above their teeth ──────────────────────────
+        //
+        // Wherever the renderer had to shrink, the OLD full-size layout really did overlap. Without
+        // this the ladder could pass on a renderer that never had a problem — which is how this
+        // defect survived brief 8's own gate.
+        Assert.True(widthPx > 240 || layout.TextSizePx < RailMapRenderer.LegendSizePx,
+                    $"nothing was shrunk at {widthPx} px, so the narrow rungs of this ladder are not "
+                  + "exercising the fix.");
+
+        if (layout.TextSizePx >= RailMapRenderer.LegendSizePx) return;
+
+        var full = FullSizeLabels(legend!, bar, baseline);
+        Assert.True(full.Cold.IntersectsWith(full.Caption) || full.Caption.IntersectsWith(full.Hot)
+                 || full.Cold.IntersectsWith(full.Hot),
+                    $"the text was shrunk at {widthPx} px but the full-size labels did not overlap, "
+                  + "so the shrink was not the fix for anything.");
+    }
+
+    /// <summary>The three label boxes as they were laid out before R-rail18-4 — full size, left,
+    /// centre and right. Built from the SAME measurement the renderer uses (a layout over a plate
+    /// wide enough that nothing scales), so this is the old behaviour rather than a second guess at
+    /// the string widths.</summary>
+    private static RailMapLabelLayout FullSizeLabels(RailMapLegend legend, SKRect bar, float baseline)
+    {
+        var unscaled = RailMapRenderer.LayOutLabels(legend, 0, 100_000f, baseline);
+        Assert.Equal(RailMapRenderer.LegendSizePx, unscaled.TextSizePx);
+
+        float top = baseline - RailMapRenderer.LegendSizePx;
+        float centre = (bar.Left + bar.Right) / 2f;
+
+        return new RailMapLabelLayout(
+            RailMapRenderer.LegendSizePx,
+            new SKRect(bar.Left, top, bar.Left + unscaled.Cold.Width, baseline),
+            new SKRect(centre - unscaled.Caption.Width / 2f, top,
+                       centre + unscaled.Caption.Width / 2f, baseline),
+            new SKRect(bar.Right - unscaled.Hot.Width, top, bar.Right, baseline));
+    }
+
     // ══ fixtures ═════════════════════════════════════════════════════════════════════════════
 
     private static LayoutView Artwork()

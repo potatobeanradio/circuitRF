@@ -105,18 +105,22 @@ Run both. On this board they agree closely:
 | | Drop at U1 |
 |---|---|
 | Fast (the default) | 48.698 mV |
-| Accuracy | 49.488 mV |
+| Accuracy | 49.392 mV |
 
-**1.6 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
+**1.4 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
 wrong in, and the reason the two are worth running once on any board you intend to trust. Most of
 the difference is the reference return: Fast prices the plane at 1.7 mΩ from 38 coarse cells,
-Accuracy at 3.7 mΩ from 327,457. The supply trace itself — the term that actually matters here —
+Accuracy at 3.6 mΩ from 330,902. The supply trace itself — the term that actually matters here —
 agrees to under 1 %.
 
 Those cell counts are the whole of the difference in what the two cost. Accuracy meshes the entire
-reference plane, and on this board the mesh is capped by cell count rather than by the copper's own
-width — so a finer answer is not available by asking, and the cap is what the *"meshed coarsely"*
-note after the run is reporting.
+reference plane, and the mesh it builds here is **three cells across the narrowest copper on the
+rail** — the 0.20 mm BOT run — so a finer answer is available by asking for more cells across it,
+and the 400,000-cell ceiling is not what set this one.
+
+Both models report the same plane capacitance, **1.029 pF over 0.11 cm² at εr 4.3**. That is the
+cheapest check on this page: one glance at it tests the permittivity, the overlap area and the
+dielectric thickness at once, and a stackup copied from the last board shows up there immediately.
 
 ## What this example does not show
 

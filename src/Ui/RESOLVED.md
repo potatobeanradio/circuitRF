@@ -1,44 +1,96 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
-## railRF brief 17 — the parts table and the results tab strip (2026-09-18)
+## railRF brief 18 — the parts table, the tab strip, and the stale diagnostic list (2026-09-18)
 
-Two findings from driving the window as a user for the documentation figures. **Neither is fixed** —
-`brief-railrf-17-docs-and-example.md` §6.
+`brief-railrf-18-six-defects.md`, R-rail18-5, R-rail18-6 and R-rail18-7. The first two were found by
+driving the window as a user for brief 17's figures, and **the suite was green on both**. Brief 17's
+own entry here is superseded and removed rather than left as a second record.
 
-### 1. The parts table fills from the BOM ALONE, so a typed `.crail` shows none of its parts
+### 1. `R-rail18-5` — the parts table was of the BOM, and should be of the RAIL
 
-`RailRfViewModel.RebuildParts` returns early unless `Bom is { Refusal: null }`, and its one `Parts.Add`
-is inside a `foreach` over `bom.Rows`. **`RailSpec.Parts` — the document's own part list — is never
-read.** A `.crail` carrying thirteen capacitors and no imported bill of materials therefore shows an
-empty Parts pane.
+`RailRfViewModel.RebuildParts` returned early unless `Bom is { Refusal: null }`, and its one
+`Parts.Add` sat inside a `foreach` over `bom.Rows`. **`RailSpec.Parts` — the document's own part list
+— was never read.** A `.crail` carrying thirteen capacitors and no imported bill of materials showed
+an empty Parts pane.
 
-The rest of the window uses those rows in full: `BuildSweepRequest` resolves `rail.Parts` through
-`RailPartResolver`, so every resonance on the curve, every anti-resonance attribution and every row of
-the removal ranking comes out of parts the table does not list. The `Power Rail` example is exactly
-that document, and its figures show it.
+Everything else in the window used exactly those rows: `BuildSweepRequest` resolves `rail.Parts`
+through `RailPartResolver`, so every resonance on the curve, every anti-resonance attribution and
+every row of the removal ranking came out of parts the table did not list. R-rail11-8 makes that the
+ordinary P1 case rather than a corner (*"§6 makes P1 artwork-OPTIONAL, so in P1 that number is
+TYPED"*).
 
-**This is the defect review round 2 fixed on the CLI and not here.** `src/Cli/RESOLVED.md` records the
-verb counting bias-curve coverage over the whole shared library instead of the board's parts, and
-states the rule it broke: *"a verb disagreeing with the window about one document"*. The verb was moved
-onto `RailSpec.Parts`; the window's own table was left on the BOM, so the two now disagree in the other
-direction — `circuitrf rail` on the example prints *"0 of 4 part number(s) modelled from a file, 1 with
-no bias curve"* while the window's Parts pane is empty for the same file.
+**The rail's rows are the subject; the three files fill columns.** `RailPartRowViewModel` now takes a
+`RailPart` as its first argument: the BOM supplies the part number where the row states none and the
+marked value, the placement supplies the position, the library supplies the model. A refdes the BOM
+names and the rail does not is **not a row** — it is not on this rail; a refdes the rail names and the
+BOM does not is a row with an unresolved part number, which is the state `UnresolvedText` already
+exists to say. `RailPart.Origin` reaches the row as `OriginText` and is on the refdes cell's tooltip;
+no column was added.
 
-R-rail11-8 makes typed parts the P1 case in so many words (*"in P1 that number is TYPED"*), so this is
-the ordinary P1 workflow rather than a corner of it.
+**It also stops the table being of the whole BOARD.** Listing every refdes the BOM names put another
+rail's decoupling under a header carrying the rail selector — nobody reported it because the pane was
+usually empty. `RebuildForSelectedRail` now calls `RebuildParts`, so changing rails changes the table.
 
-### 2. The `DC` / `frequency` strip sets no card's visibility
+**The two headline counts are over the rail's distinct PART NUMBERS**, which is what `circuitrf rail`
+counts. R-rail10-8: the verb and the window disagreeing about one document is the divergence that rule
+exists against, and they disagreed in both directions at once — review round 2 moved the VERB onto
+`RailSpec.Parts` and left the window on the BOM, so the verb printed *"0 of 4 part number(s) modelled
+from a file, 1 with no bias curve"* for a file whose Parts pane was empty.
 
-`SelectedResultsTab` is an `[ObservableProperty]`, and the only thing that reads it is
-`RailRfWindow.SyncTabs`, which assigns the two `ToggleButton.IsChecked` values. Every card in the
-results column is in ONE `ScrollViewer` and is gated on its own `Has…` property — `HasMaskVerdict`,
-`HasAntiResonances`, `HasRemovalRanking` and the rest — not on the tab. Pressing **frequency** lights
-the button and changes nothing else.
+**One thing the populated table exposed:** the Parts `ListBox` had no `MaxHeight`, unlike every other
+card's. The Grid's own `MaxHeight` constrains the MEASURE and does not clip, so thirteen rows drew
+past the card and over the status strip. Nobody saw it while the pane was empty. Capped at 128, as the
+other cards cap theirs.
 
-It is honest in the sense that everything is present; it is not what a tab strip means. The chapter
-tells a reader to scroll, and `DocRailFixtures.Impedance` scrolls the column to the `Against the
-target` card rather than selecting a tab, because selecting one would have produced the DC figure again
-under a frequency caption.
+**Found on the way and NOT fixed here — it is not one of the six.** Opening a `.crail` from the
+project tree (`WorkspaceViewModel.OpenRailPath` → `RailRfWindow.Show`) constructs the view model and
+nothing else: neither `RailDocument.ArtworkCellRef` nor `PartLibraryRef` is resolved. Only the import
+dialog fills `Board` and `PartLibrary`, which is why `DocRailFixtures` hand-loads all four files.
+`circuitrf rail` resolves both from the document, so the command line answers a file the window has to
+be pointed at. Recorded in the user chapter's *what is not wired up yet* list.
+
+Gates: `RailWindowTests` (a document with no BOM lists its own thirteen parts; a BOM naming another
+rail's parts adds no rows, and a rail row the BOM does not name is still a row). `RailCliVerbTests`
+— **R-rail10-8 asserted directly**: the verb run as a PROCESS and its parts line parsed, against a
+window built over the same fixture. Run as a process rather than by calling the same helper twice,
+because what is under test is that two surfaces agree and a test sharing their arithmetic would agree
+with itself. The fixture has four rows over three part numbers, one of which the library does not
+know, so the two counts are different numbers and neither is the row count.
+
+### 2. `R-rail18-6` — a tab strip that set nothing
+
+`SelectedResultsTab`'s only reader was `RailRfWindow.SyncTabs`, which assigns the two
+`ToggleButton.IsChecked` values. Every card in the results column lived in ONE `ScrollViewer` gated on
+its own `Has…` property. **Pressing `frequency` lit a button and changed nothing else.** Everything
+was present, so nothing was hidden and nothing was wrong — it simply is not what a tab means, and a
+control that looks like it filters and does not is one a user stops trusting.
+
+**Gated rather than removed**, which is the brief's own recommendation and §11.3's reading of the
+strip as a control rather than as decoration: the column is long enough that a reader looking for the
+mask verdict scrolled past four DC cards to reach it.
+
+Each card's visibility is now `Has… && tab == …`, exposed as ten `Show…Card` properties on the view
+model and bound one per card, so **a card with nothing to say still does not appear** — the tab
+narrows what is shown and never forces an empty card into view. `AnnounceCardVisibility` re-raises all
+ten, called from the tab change and from each of the three blocks that announce a new result;
+explicitly, so the coupling is greppable rather than inferred from a property name.
+
+*On an aggressor line* is on the **frequency** half. It reads as a DC-side observation on the shipped
+example, and it is not one: a coincidence is between a SWEPT peak and an aggressor's harmonic, and
+neither half of that exists in a DC answer.
+
+`DocRailFixtures.Impedance` **selects the tab** again instead of scrolling to a named card, and
+`ScrollCardToTop` — which existed only for that — is gone with it.
+
+### 3. `R-rail18-7` — the red test already in the tree
+
+`CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` was failing at HEAD:
+`CliDiagnostics` declares `rail.frequency-flags.not-in-this-phase`, added by review round 2, and the
+committed list did not carry it. One line.
+
+**Twice is a pattern** — brief 1 §5 records a stale `ExpectedIds` already, and the `.cdd` arm's four
+ids before that — so `docs/design/cli.md` §9 now carries recording the id as a numbered checklist
+step, obliging it the way a row added to `DocumentKinds.Classify` obliges an arm in `check`.
 
 ---
 

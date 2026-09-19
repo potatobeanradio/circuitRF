@@ -124,6 +124,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(PlaneCapacitanceLine));
         OnPropertyChanged(nameof(PlaneCapacitanceShort));
         OnPropertyChanged(nameof(HasPlaneCapacitance));
+        AnnounceCardVisibility();
         SyncBoardOverlayResult();
     }
 

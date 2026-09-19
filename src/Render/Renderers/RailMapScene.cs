@@ -88,6 +88,10 @@ public readonly record struct RailMapTile(
 /// document keys one.</param>
 /// <param name="Readout">What the hover says. On a class region this is brief 4's own reason
 /// string, verbatim — R-rail4-3 wrote it to be read here.</param>
+/// <param name="IsReference">True where this is the reference conductor rather than the rail.
+/// <b>It is what fixes the painting order</b> (R-rail18-3): every region is opaque paint, so on a
+/// board whose reference is a PLANE — every board this feature is for — a reference drawn last
+/// covers the whole map.</param>
 public sealed record RailMapRegion(
     LayerKey Layer,
     Paths64 Copper,
@@ -95,7 +99,8 @@ public sealed record RailMapRegion(
     PdnCopperClass Class,
     bool Forced,
     PdnRegionRef Region,
-    string Readout);
+    string Readout,
+    bool IsReference = false);
 
 /// <summary>What one marker on the map is.</summary>
 public enum RailMarkerKind
@@ -318,12 +323,25 @@ public sealed class RailMapScene
         var regions = new List<RailMapRegion>(result.Classification.Count);
         var bounds = Bbox.Empty;
 
-        foreach (var c in result.Classification)
+        // ── R-rail18-3a: THE REFERENCE FIRST, and the SCENE is what orders it ──────────────────
+        //
+        // Both extractors build the classification rail-first and reference-last, because each runs
+        // one Classify pass over the rail's copper and then one over the reference's. Every region
+        // here is OPAQUE paint (R-rail8-10, so that nothing in the map depends on the page
+        // background), and RailMapRenderer walks this list in order — so a reference PLANE drawn
+        // last is one flat rectangle over the whole board, which is what the class tab showed on
+        // every ordinary case.
+        //
+        // The extractors' order is NOT reordered to fix it: theirs is a property of how those two
+        // passes are written and this one is a property of what a reader needs to see. Coupling
+        // them would let a later change to either silently move the picture.
+        foreach (var c in result.Classification.OrderBy(c => c.IsReference ? 0 : 1))
         {
             bounds = bounds.Union(c.Bounds);
             regions.Add(new RailMapRegion(
                 c.Region.Layer, c.Copper, c.Bounds, c.Class, c.Forced, c.Region,
-                (c.IsReference ? "Reference conductor. " : "") + c.Reason));
+                (c.IsReference ? "Reference conductor. " : "") + c.Reason,
+                c.IsReference));
         }
 
         return new RailMapScene

@@ -1,22 +1,23 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
-## railRF brief 17 — three defects the documentation found, and none of them reports a failure (2026-09-18)
+## railRF brief 18 — two defects nothing reported, and the third that was never one (2026-09-18)
 
-Writing the user chapter and the `Power Rail` example meant driving the whole feature as a user does,
-which is a test nothing else in this series performs. Three findings are in this project; the other
-three are in `src/Render/RESOLVED.md` and `src/Ui/RESOLVED.md`. **None was fixed** —
-`brief-railrf-17-docs-and-example.md` §6 is explicit that a gap found while documenting is a finding
-and a possible brief 18, not a change made under cover of documentation.
+`brief-railrf-18-six-defects.md`, R-rail18-1 and R-rail18-2. Both were found by writing brief 17's
+chapter and authoring the `Power Rail` example rather than by a test, **and the suite was green on
+both**: each produced a complete, plausible answer with nothing reporting a failure. The other four
+are in `src/Render/RESOLVED.md` and `src/Ui/RESOLVED.md`. Brief 17's own entry here is superseded by
+this one and has been removed rather than left as a second record of the same thing.
 
-### 1. `MinimumFeatureWidthDbu` over a rail's copper reads ZERO on any multilayer board
+### 1. `R-rail18-1` — a pooled area measurement cannot use a summed total
 
-`PdnMeshExtractor.MinimumFeatureWidthDbu(IReadOnlyList<PdnRegion>)` pools every layer's paths into one
-`Paths64` and measures the pooled set by morphological opening. `LosesArea` compares the opened area
-against `total = Math.Abs(Clipper.Area(all))` — **the SUM of the per-path areas** — while `opened` is the
-area of their geometric UNION. Wherever two pooled paths overlap, the union is smaller than the sum, the
-comparison is unsatisfiable at every width, and the bisection bottoms out at its floor of 1 DBU.
+`PdnMeshExtractor.MinimumFeatureWidthDbu(IReadOnlyList<PdnRegion>)` pooled every layer's copper into
+one `Paths64` and handed it to the `Paths64` overload, which measures by morphological opening. That
+overload's `LosesArea` compares the area of the opened UNION against `total`, **the SUM of the
+per-path areas**. Wherever two pooled paths overlap the sum exceeds the union, the comparison is
+unsatisfiable at every width, and the bisection bottoms out on its floor of 1 DBU.
 
-Reduced to two lines, which is how it was confirmed rather than inferred:
+**A rail on more than one layer crosses itself at every via**, so this was the ordinary case rather
+than a corner:
 
 | pooled set | measured |
 |---|---|
@@ -24,48 +25,108 @@ Reduced to two lines, which is how it was confirmed rather than inferred:
 | **the same square, listed twice** | **0 mm** |
 | the example's TOP copper alone | 0.346 mm |
 | the example's BOT copper alone | 0.199 mm |
-| **TOP and BOT pooled** (they cross at every via) | **0 mm** |
+| **TOP and BOT pooled** | **0 mm** |
 
-A rail on more than one layer crosses itself at every via, so this is the ordinary case rather than a
-corner. **The consequence is the accurate DC cell size**: `baseDeltaDbu` becomes `max(1, 0/3) = 1 DBU`,
-`PdnGrid.Build`'s `MaxCells` coarsening then silently decides the mesh, and the provenance reports
-*"the rail's narrowest copper, 0 mm, at 3 cells across it"* with `CellSizeMetres = 1e-9`. The answer is
-not wrong — the cap produces a workable mesh and the `Power Rail` example's accurate run agrees with its
-fast one to 1.6 % — but **R-rail3-14's rule is not what is running**, and nothing says so in a way a
-reader would take as a fault.
+`baseDeltaDbu` became `max(1, 0/3) = 1 DBU`, so `PdnGrid.Build`'s `MaxCells` coarsening chose the
+accurate mesh instead of R-rail3-14's *"three cells across the narrowest copper"*, and the provenance
+said so in words nobody reads as a fault: *"the rail's narrowest copper, 0 mm, at 3 cells across it"*,
+`CellSizeMetres = 1e-9`.
 
-The single-`Paths64` overload is fine where it is called from `PdnCopperClassifier` and
-`PdnGraphExtractor`, because each of those passes ONE region's own unioned copper.
+**The fix is PER LAYER, not a bigger union.** The quantity wanted is "the narrowest copper this rail
+has anywhere", and copper on two drawing layers is not one 2-D shape — unioning the pooled set would
+make a trace crossing a plane read as plane-wide, which is the other wrong answer and just as
+plausible. Each layer's own unioned copper is measured and the minimum taken across layers. Islands on
+ONE layer stay pooled: they are galvanically separate pieces of the same sheet, and the narrowest of
+three collinear segments is the narrowest copper on that layer.
 
-### 2. `PdnSweep` never sets the plane capacitance, so the Fast model's stackup line is FALSE
+**The `Paths64` overload now UNIONS defensively**, which is the decision R-rail18-1b asked to be
+written down. Its two other callers (`PdnCopperClassifier`, `PdnGraphExtractor`) each pass one
+region's already-unioned copper, so the union costs one Clipper call on a set that is already a union
+— and it removes the precondition entirely rather than documenting it. What unioning does NOT make
+safe is pooling copper from different DRAWING LAYERS into one call; that is a semantic error rather
+than an arithmetic one, and the `PdnRegion`-list overload is the only route a rail's whole copper
+should take. Both halves are said in the overload's own remarks.
 
-`RailDcResult.PlaneCapacitanceLine` exists because §2.4 calls plane capacitance the number *"a designer
-recognises a wrong one instantly and would never notice buried in a curve"*, and it is printed even on a
-DC run so the stackup gets checked. `PdnMeshExtractor` fills `PlaneSeparationMetres`,
-`PlaneCapacitanceFarads` and `PlaneOverlapSquareMetres`; **`PdnGraphExtractor` fills none of them.** So
-on the DEFAULT model, on every board, the line reads:
+**Measured consequence on the `Power Rail` example.** The accurate mesh is now set by the rule that is
+stated: the accurate drop moves from 49.488 mV to **49.392 mV** (1.4 % above the fast reading rather
+than 1.6 %), the reference return from 3.7 mΩ over 327,457 cells to **3.597 mΩ over 330,902**, and the
+run **no longer raises the "mesh was coarsened … to stay under the 400,000-cell ceiling" note at all**.
+`examples/Power Rail/README.md` was updated to the new numbers; the example itself was not re-tuned,
+per the brief's own scope rule.
 
-> Plane capacitance: none. The stackup states no dielectric between this rail's copper and its
-> reference, so ε₀εᵣA/h has no h — state the dielectric entries between them.
+**One thing this exposed and did not change:** a via's BARREL disc is on a via drawing layer and is in
+`regions.Power`, so it participates in the minimum. On a board whose drill is narrower than its
+narrowest trace the cell size is therefore set by copper the mesh never resolves into a layer
+(`ResolveConductors` maps drawing layers to stackup CONDUCTORS, and a via layer is not one).
+`PdnGraphExtractor` already skips via drawing layers for the neighbouring reason — a barrel is a
+BRIDGE rather than sheet copper. It is recorded rather than fixed: it makes the mesh finer and the
+answer more conservative, and deciding it is a change to what the stated rule means.
 
-which is a sentence about the user's stackup, and it is untrue of any stackup that states one. The
-example's does: the same board through Accuracy reports 1.03 pF over 1.12 cm² at εr 4.3. The check that
-was put there to make a wrong stackup obvious instead tells everyone their stackup is wrong.
+Gate: `tests/Ui.Tests/RailRf/PdnMeshExtractorTests.cs` — the two-line oracle (one square measures its
+own width; the same square listed twice measures the same width), the two-layer rail measuring its
+narrower layer, and an end-to-end accurate extraction on a three-conductor board whose provenance
+names a real width and whose `CellSizeMetres` is that width over `CellsAcrossMinimumFeature`. The
+first two were confirmed RED at HEAD and green after, by restoring `PdnMeshExtractor.cs` from `HEAD`
+and re-running them.
+
+### 2. `R-rail18-2` — a check that exists to catch a wrong stackup told everyone theirs was wrong
+
+`RailDcResult.PlaneCapacitanceLine` exists because §2.4 calls plane capacitance the number *"a
+designer recognises a wrong one instantly and would never notice buried in a curve"*, and it is
+printed even on a DC run — where nothing is stamped from it — precisely so the stackup gets checked.
+
+`PdnMeshExtractor` fills `PlaneSeparationMetres`, `PlaneCapacitanceFarads` and
+`PlaneOverlapSquareMetres`. **`PdnGraphExtractor` filled none of them.** So on the DEFAULT model, on
+every board, the line read *"Plane capacitance: none. The stackup states no dielectric between this
+rail's copper and its reference…"* — a statement about the user's stackup, untrue of any stackup that
+states one.
+
+**2a — the fast model computes the same three numbers.** It had everything it needed and no mesh to
+get it from: `PdnGraphExtractor.PlaneCapacitance` intersects the rail's per-layer copper with the
+reference's, one Clipper intersection per (rail layer, reference layer) pair, and takes `h` and the
+medium from `PdnStackupGeometry` / `PdnCavity.MediumBetween` exactly as the mesh side does. **Neither
+reading invents its own arithmetic** — `PdnCavity.CapacitanceFarads` is the one expression and both
+call it. The same two notes the mesh raises (a missing dielectric, a class-default tan δ) are raised
+here in the same words, because §2.9 rule 4 compares the two models on the user's own board and a
+warning appearing on only one of them reads as a difference between the boards.
+
+**The two agree to the GRID rather than to machine precision, and the gate says 5 %** rather than
+discovering it: the mesh sums per-cell overlap on a discretised grid and reads a little under wherever
+an edge does not fall on a cell boundary; the graph intersects the polygons exactly. On the
+`Power Rail` example both now print **1.029 pF over 0.11 cm² at εr 4.3** — identical to the printed
+precision.
+
+*(Brief 17's own note recorded that figure as "1.03 pF over 1.12 cm²". The area was a unit slip in the
+note: the value is 1.12e-5 m², which is 0.112 cm², and 1.12 cm² is not consistent with the same line's
+capacitance at any plausible `h`. Nothing in the code changed it.)*
+
+**2b — "not computed" and "not stated" are different sentences.** `PlaneCapacitanceLine` reached the
+stackup sentence through `<= 0`, so a model that never computed the number blamed the user's stackup
+for its own omission. `PdnProvenance.PlaneCapacitanceBasis` carries the distinction in
+`PdnPlatingBasis`' style — **a defaulted number and an uncomputed one are not the same state** — with
+three members and three sentences: `Computed` (and a zero then means the rail's copper genuinely does
+not overlap its reference, which names the reference extent rather than the stackup),
+`NoDielectricStated` (the original sentence, for the case it was written for), and `NotComputed`
+(which names the MODEL and says nothing about the board).
+
+Gate: `tests/Ui.Tests/RailRf/PdnFastExtractorTests.cs` — Fast reports a capacitance agreeing with the
+mesh's inside 5 %; a stackup with no dielectric between rail and reference still gets the original
+sentence from BOTH models; an uncomputed number names its model, and a source scan finds exactly one
+spelling of the stackup sentence in `RailDcResult.cs`.
 
 ### 3. A through via joins only the two conductors its span NAMES
 
 Not a defect — `DrcConnectivity` is explicit about it — but it is the shape of a real board that
-`R-rail2-14`'s four allowances did not anticipate, and it decided the example's routing. For each
-`StackupKind.Via` entry the walk unions a barrel with *the first touching piece on `SpanFromLayer`* and
-*the first on `SpanToLayer`*, and with nothing else. Two consequences, and the second is the one that
-costs something:
+`R-rail2-14`'s four allowances did not anticipate, and it decided the `Power Rail` example's routing.
+For each `StackupKind.Via` entry the walk unions a barrel with *the first touching piece on
+`SpanFromLayer`* and *the first on `SpanToLayer`*, and with nothing else:
 
 - **An intervening plane is never shorted**, so a board needs no anti-pads for railRF to read it
-  correctly. (The `Power Rail` example draws them anyway, because a real board has them and they are
-  part of the reference's own copper area.)
+  correctly. (The example draws them anyway, because a real board has them and they are part of the
+  reference's own copper area.)
 - **An inner layer the via physically lands on is never CONNECTED either.** A `TOP`→`BOT` through via
-  cannot hand current to `IN3`. A board routed on an inner layer needs a via entry whose span names that
-  layer — a blind or buried via — or the rail comes back as three regions and the load floats.
+  cannot hand current to `IN3`. A board routed on an inner layer needs a via entry whose span names
+  that layer — a blind or buried via — or the rail comes back as three regions and the load floats.
 
 This is why the example's supply runs on `TOP` and `BOT` with the reference on L2, rather than on the
 inner layer the design note's own worked example uses.

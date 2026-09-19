@@ -50,18 +50,16 @@ public static class DocRailFixtures
     /// ranking.
     /// </summary>
     /// <remarks>
-    /// <b>Scrolled, not tab-switched.</b> The results column is ONE scrolling list — the DC cards
-    /// then the frequency ones — and the <c>DC</c>/<c>frequency</c> strip above it sets no card's
-    /// visibility, so selecting a tab would light a button and change nothing in the picture. The
-    /// figure therefore scrolls the list, which is what a reader does.
+    /// <b>Selected, which is what a reader does</b> (R-rail18-6a). The strip used to set no card's
+    /// visibility, so this figure had to scroll the one list past four DC cards to reach the mask
+    /// verdict; the tab now partitions the column and selecting <c>frequency</c> IS the picture.
     /// </remarks>
     public static FigureScene Impedance() =>
-        Scene(RailBoardOverlay.Drop, RailResultsTab.Frequency, scrollTo: "Against the target");
+        Scene(RailBoardOverlay.Drop, RailResultsTab.Frequency);
 
     // ── the scene ─────────────────────────────────────────────────────────────
 
-    private static FigureScene Scene(
-        RailBoardOverlay overlay, RailResultsTab tab, string? scrollTo = null)
+    private static FigureScene Scene(RailBoardOverlay overlay, RailResultsTab tab)
     {
         var vm = Solved();
         vm.SelectedBoardOverlay = overlay;
@@ -110,45 +108,9 @@ public static class DocRailFixtures
                 }
 
                 UiArtworkGenerator.Pump();
-
-                if (scrollTo is { Length: > 0 } header) ScrollCardToTop(root, header);
             },
             Cleanup = vm.Dispose,
         };
-    }
-
-    /// <summary>
-    /// Scrolls the results column so the card headed <paramref name="header"/> is at the top of it.
-    /// </summary>
-    /// <remarks>
-    /// <b>By card, not to the end.</b> The list ends with the run's own notes, which are several
-    /// paragraphs, so scrolling to the bottom fills the column with prose and shows none of the
-    /// answers. It throws rather than falling back to an unscrolled view: a figure captioned as the
-    /// frequency answers and showing the DC ones is the silent-wrong-picture case the catalog's own
-    /// popup rule exists against.
-    /// </remarks>
-    private static void ScrollCardToTop(Control root, string header)
-    {
-        var scroller = root.GetVisualDescendants().OfType<ScrollViewer>()
-            .OrderByDescending(v => v.Extent.Height - v.Viewport.Height)
-            .FirstOrDefault()
-            ?? throw new InvalidOperationException("The railRF window has no scrolling results column.");
-
-        var card = root.GetVisualDescendants().OfType<TextBlock>()
-            .FirstOrDefault(t => string.Equals(t.Text, header, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException(
-                $"No results card headed '{header}'. The frequency figure is OF that card, so a "
-              + "renamed heading has to move the figure with it rather than quietly capturing the "
-              + "DC half again.");
-
-        var at = ((Visual)card).TranslatePoint(default, scroller)
-            ?? throw new InvalidOperationException(
-                $"The '{header}' card is not inside the results column's scroller.");
-
-        scroller.Offset = new Avalonia.Vector(
-            0, Math.Clamp(scroller.Offset.Y + at.Y - 8, 0,
-                          Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height)));
-        UiArtworkGenerator.Pump();
     }
 
     /// <summary>
