@@ -14719,7 +14719,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var menu = Avalonia.Controls.NativeMenu.GetMenu(shellWindow);
         if (menu is null) return;
-        if (ReferenceEquals(Avalonia.Controls.NativeMenu.GetMenu(tornOffWindow), menu)) return;
+
+        // A WINDOW THAT BROUGHT ITS OWN MENU KEEPS IT (owner, 2026-09-19). This used to return early
+        // only when the window already held THIS menu, so a standalone window with a native menu of
+        // its own — railRF's, the first one — had the workspace's hung over the top of it on every
+        // activation: its File, View and Window items replaced by items bound to another window's
+        // view model, and a second menu handed to an exporter that had already bound one, which is
+        // the `ArgumentException("The menu being updated does not match.")` the owner saw. The null
+        // check subsumes the identity check it replaces, since a window this method has already
+        // served holds exactly this instance.
+        if (Avalonia.Controls.NativeMenu.GetMenu(tornOffWindow) is not null) return;
 
         try
         {

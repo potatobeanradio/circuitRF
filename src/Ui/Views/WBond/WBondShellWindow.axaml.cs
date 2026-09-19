@@ -28,7 +28,7 @@ namespace CircuitRF.Ui.Views.WBond;
 /// was already a parameter rather than a lookup. So this shell supplies those four answers and hosts
 /// the unmodified view.</para>
 /// </summary>
-public partial class WBondShellWindow : Window
+public partial class WBondShellWindow : Window, ICrfDocumentWindow
 {
     /// <summary>
     /// Assembly-rule cache for the whole process. Shared so two windows opening designs that name the
@@ -163,11 +163,31 @@ public partial class WBondShellWindow : Window
         }
 
         e.Cancel = true;
-        _ = ConfirmCloseAsync();
+        _ = ReissueCloseAsync();
     }
 
-    private async Task ConfirmCloseAsync()
+    /// <summary>Asks, then closes — the close box's own half. The quit closes its windows itself,
+    /// once every one of them has answered, so it takes <see cref="ConfirmCloseAsync"/> alone.</summary>
+    private async Task ReissueCloseAsync()
     {
+        if (await ConfirmCloseAsync()) Close();
+        else (Avalonia.Application.Current as App)?.AbortQuit();
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="ICrfDocumentWindow.ConfirmCloseAsync"/>
+    /// </summary>
+    /// <remarks>
+    /// <b>It settles the document and stops</b>, rather than closing the window as it used to: the
+    /// quit asks every window before closing any of them, so a window that closed as it answered
+    /// would already be gone by the time a later one was cancelled
+    /// (<see cref="ICrfDocumentWindow"/>). Until that seam existed, quitting circuitRF with a dirty
+    /// design in one of these windows discarded it without asking.
+    /// </remarks>
+    public async Task<bool> ConfirmCloseAsync()
+    {
+        if (_closeConfirmed || !Document.ViewModel.IsDirty) return true;
+
         string name = Document.FilePath is { } p ? Path.GetFileName(p) : "this design";
 
         var answer = await new SaveChangesDialog(
@@ -177,18 +197,18 @@ public partial class WBondShellWindow : Window
             cancelLabel:   "Cancel",
             title:         "Unsaved Changes").ShowDialog<SaveChangesResult>(this);
 
-        if (answer == SaveChangesResult.Cancel) return;
+        if (answer == SaveChangesResult.Cancel) return false;
 
         if (answer == SaveChangesResult.Save)
         {
             await SaveAsync(saveAs: false);
             // A cancelled save picker leaves the document dirty, and that must cancel the close too —
             // otherwise "Save" would silently behave as "Don't Save".
-            if (Document.ViewModel.IsDirty) return;
+            if (Document.ViewModel.IsDirty) return false;
         }
 
         _closeConfirmed = true;
-        Close();
+        return true;
     }
 
     // ── R-wbe-6 — references that resolve to nothing are REPORTED, never silent ──

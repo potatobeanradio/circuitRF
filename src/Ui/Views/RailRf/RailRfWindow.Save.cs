@@ -16,7 +16,7 @@ using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.RailRf;
 
-public partial class RailRfWindow
+public partial class RailRfWindow : ICrfDocumentWindow
 {
     /// <summary>Gives the view model's two commands the half that knows there is a file picker.
     /// The BUTTONS bind to the same commands, so the glyph and the gesture cannot drift.</summary>
@@ -136,6 +136,10 @@ public partial class RailRfWindow
     /// <para>The close is CANCELLED and re-issued rather than blocked: the answer comes from a modal
     /// that cannot be awaited inside the synchronous <c>OnClosing</c>. And a cancelled save PICKER
     /// cancels the close too, or "Save" would quietly behave as "Don't Save".</para>
+    ///
+    /// <para><b>This is not the only way out of the window</b> — quitting circuitRF does not close
+    /// this window, it ends the process, and it once did so without asking. See
+    /// <see cref="ICrfDocumentWindow"/> for that half.</para>
     /// </remarks>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
@@ -146,12 +150,34 @@ public partial class RailRfWindow
         }
 
         e.Cancel = true;
-        _ = ConfirmCloseAsync();
+        _ = ReissueCloseAsync();
     }
 
-    private async Task ConfirmCloseAsync()
+    /// <summary>Asks, then closes — the half of the old <c>ConfirmCloseAsync</c> that belongs to the
+    /// window's own close box and to File ▸ Close, and NOT to the quit, which closes its windows
+    /// itself once every one of them has answered.</summary>
+    private async Task ReissueCloseAsync()
     {
-        if (Vm is not { } vm) return;
+        if (await ConfirmCloseAsync()) Close();
+        else (Avalonia.Application.Current as App)?.AbortQuit();
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="ICrfDocumentWindow.ConfirmCloseAsync"/>
+    /// </summary>
+    /// <remarks>
+    /// <b>It settles the document and stops.</b> It used to close the window itself, which is what
+    /// the close box wants and what a quit must not have: the quit asks every window before closing
+    /// any of them, so a window that closed as it answered would already be gone by the time a later
+    /// one was cancelled (<see cref="ICrfDocumentWindow"/>).
+    ///
+    /// <para>A cancelled save PICKER cancels the close too, or "Save" would quietly behave as
+    /// "Don't Save".</para>
+    /// </remarks>
+    public async Task<bool> ConfirmCloseAsync()
+    {
+        if (_closeConfirmed) return true;
+        if (Vm is not { IsDirty: true } vm) return true;
 
         string name = vm.DocumentPath is { Length: > 0 } p
             ? Path.GetFileName(p)
@@ -164,15 +190,15 @@ public partial class RailRfWindow
             cancelLabel:   "Cancel",
             title:         "Unsaved Changes").ShowDialog<SaveChangesResult>(this);
 
-        if (answer == SaveChangesResult.Cancel) return;
+        if (answer == SaveChangesResult.Cancel) return false;
 
         if (answer == SaveChangesResult.Save)
         {
             await SaveAsync(saveAs: false);
-            if (vm.IsDirty) return;
+            if (vm.IsDirty) return false;
         }
 
         _closeConfirmed = true;
-        Close();
+        return true;
     }
 }

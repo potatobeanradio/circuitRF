@@ -30544,3 +30544,59 @@ with no edit between is the same bytes.
 
 Gate: `tests/Ui.Tests/RailRf/PdnImpedanceTests.cs` — the round trip through the file, the drag that
 marks the document, and the accurate-curve marker that survives a fast-only run.
+
+## railRF is the first standalone window carrying BOTH a document and a native menu — two sweeps met it
+
+Two owner reports from one session (2026-09-19), unrelated to each other and to railRF's own code:
+every application-wide path that sweeps "every other window" was written before a window of this
+shape existed, and each one met it differently.
+
+### The menu bar: the workspace's menu was hung over railRF's own, on every activation
+
+The symptom was `ArgumentException("The menu being updated does not match.")` out of
+`__MicroComIAvnMenuProxy.Update`, printed by `AttachSharedNativeMenuIfMacOS`' own refusal line and
+then three more times off the dispatcher backstop.
+
+`WorkspaceViewModel.TryWireWindowFocusTracking` treats any window that is neither the shell nor a
+foreign workspace's float as a Dock tear-off, and a tear-off has no menu of its own — which is the
+whole reason the shared attach exists. Its only early return was *"this window already holds THIS
+menu"*, so a window holding a DIFFERENT one was a case that could not arise until now. railRF's
+`NativeMenu` is declared in its own AXAML, so every activation handed the exporter a second menu for
+a window that had already bound one, and would have replaced its File, View and Window items with
+items bound to another window's view model.
+
+The guard is now *"the window already holds a menu of any kind"*, which subsumes the identity check
+it replaces — a window this method has already served holds exactly that instance. The
+Harmonica/WBond exclusion beside the call stays: those are DOCK floats, whose host window genuinely
+has no menu until their own per-window attach installs one, and the crash there was a race between
+two attaches rather than a clobber.
+
+### Quitting discarded a dirty `.crail` without asking
+
+`App.Quit` asked every `WorkspaceWindow` and nothing else. A standalone document window answers its
+close prompt the only way a synchronous `OnClosing` can — `e.Cancel = true` and re-issue the close
+once a modal has been awaited — and there was no later dispatcher pass to re-issue on: the last
+workspace window closing runs `NotifyWindowCountChanged` → `CloseAllFloatingWindows` →
+`Environment.Exit` in one pass. The `Close()` that `CloseAllFloatingWindows` issues was cancelled
+exactly as designed, and the process was gone before the dialog could be shown. wBond's shell window
+had the same gap for the same reason; harmonicaRF's has no close prompt at all, which is a separate
+omission and is NOT fixed here.
+
+`ICrfDocumentWindow` is the registration, enumerated rather than named — `ICrfMenuWindow`'s own
+argument, and this bug is what the alternative looks like one window later. Two things it forced:
+
+- **Confirming is not closing.** Both windows' `ConfirmCloseAsync` ended in `Close()`. The quit asks
+  EVERY window before closing ANY of them (MW1 R-mw1-18), so a window that closed as it answered
+  would already be gone by the time a later one was cancelled — the failure that rule exists to
+  prevent, re-entered through a different door. The method now settles the document, marks the window
+  clear to close and returns; `ReissueCloseAsync` is what the close box and File ▸ Close use.
+- **A cancel with no workspace window open has to SHOW the macOS background menu window**, not hide
+  it. That state is reachable now that a standalone document window can be the only thing keeping the
+  application alive, and `NotifyWindowCountChanged` already holds that rule, so `CancelQuit` goes
+  through it rather than repeating half of it.
+
+`QuitAsync` also exits on its own when there is no workspace window to close, since nothing else
+would: the exit it guards rides on `NotifyWindowCountChanged`, which only fires when a
+`WorkspaceWindow` closes.
+
+Gate: `tests/Ui.Tests/RailRf/RailWindowQuitAndMenuTests.cs`.

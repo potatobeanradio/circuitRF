@@ -1118,20 +1118,31 @@ public partial class App : Application
 
         if (_desktop is null) { ExitProcess(); return; }
         var windows = _desktop.Windows.OfType<WorkspaceWindow>().ToList();
-        if (windows.Count == 0) { CloseAllFloatingWindows(); ExitProcess(); return; }
 
-        _ = QuitAsync(windows);
+        // Standalone document windows — railRF, wBond — are asked too (owner, 2026-09-19). They are
+        // not WorkspaceWindows and nothing else on this path touches them: the last workspace window
+        // closing runs CloseAllFloatingWindows and Environment.Exit in one dispatcher pass, so the
+        // e.Cancel-and-re-issue their own close prompt rides on never got a pass to run on and a
+        // dirty .crail went with the process, unasked.
+        var documents = _desktop.Windows.OfType<ICrfDocumentWindow>().ToList();
+
+        if (windows.Count == 0 && documents.Count == 0) { CloseAllFloatingWindows(); ExitProcess(); return; }
+
+        _ = QuitAsync(windows, documents);
     }
 
     /// <summary>
-    /// Asks EVERY workspace window before closing ANY of them (MW1 R-mw1-18).
+    /// Asks EVERY window that owns unsaved work — the workspace windows, then the standalone document
+    /// windows (<see cref="ICrfDocumentWindow"/>) — before closing ANY of them (MW1 R-mw1-18).
     ///
     /// <para><b>Two passes, not one.</b> Closing each window as its own prompt was answered meant
     /// that cancelling the second window's prompt left the first one already gone — the user asked to
     /// keep their work and lost a window doing it. With one window open the two passes are
     /// indistinguishable, which is why this was never visible before.</para>
     /// </summary>
-    private async Task QuitAsync(IReadOnlyList<WorkspaceWindow> windows)
+    private async Task QuitAsync(
+        IReadOnlyList<WorkspaceWindow> windows,
+        IReadOnlyList<ICrfDocumentWindow> documents)
     {
         foreach (var w in windows)
         {
@@ -1144,12 +1155,48 @@ public partial class App : Application
             // Cancelled: nothing has been closed, and the quit is off. Every window is exactly as it
             // was, including the ones that already answered — they are simply marked clear to close,
             // which is harmless until they are actually asked to.
-            AbortQuit();
-            if (OperatingSystem.IsMacOS() && _bgMenuWindow is { IsVisible: true }) _bgMenuWindow.Hide();
+            CancelQuit();
+            return;
+        }
+
+        // The same two passes, over the standalone document windows: a cancel here leaves every
+        // workspace window open as well, for the reason above.
+        foreach (var d in documents)
+        {
+            bool clear;
+            try { clear = await d.ConfirmCloseAsync(); }
+            catch { clear = false; }
+
+            if (clear) continue;
+
+            CancelQuit();
             return;
         }
 
         foreach (var w in windows) w.Close();
+
+        // No workspace window means nothing will close and so nothing will call
+        // NotifyWindowCountChanged — the exit this method's own prompts were guarding has to be made
+        // here. (A standalone document window can outlive the last workspace window on macOS.)
+        if (windows.Count == 0) { CloseAllFloatingWindows(); ExitProcess(); }
+    }
+
+    /// <summary>
+    /// The one spelling of "the user backed out": the quit latch released, and the macOS background
+    /// menu window put back the way an application that is still running wants it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Through <see cref="NotifyWindowCountChanged"/> rather than a Hide of its own</b>, because
+    /// the answer is not always "hide": a cancel with NO workspace window open — which is reachable
+    /// now that a standalone document window can be the only thing keeping the application alive —
+    /// has to SHOW it, or macOS is left with a bare menu bar and no way back to New Workspace. That
+    /// rule already exists, in one place, and it reads the latch <see cref="AbortQuit"/> has just
+    /// released.
+    /// </remarks>
+    private void CancelQuit()
+    {
+        AbortQuit();
+        NotifyWindowCountChanged();
     }
 
     /// <summary>
