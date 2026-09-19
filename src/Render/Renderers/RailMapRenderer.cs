@@ -469,9 +469,11 @@ public static class RailMapRenderer
 
             var colour = marker.Kind switch
             {
-                RailMarkerKind.Source  => theme.Source,
-                RailMarkerKind.ViaFlag => theme.ViaFlag,
-                _                      => theme.Load,
+                RailMarkerKind.Source     => theme.Source,
+                RailMarkerKind.ViaFlag    => theme.ViaFlag,
+                RailMarkerKind.Driven     => theme.Source,
+                RailMarkerKind.MapExtreme => theme.LegendInk,
+                _                         => theme.Load,
             };
 
             fill.Color = colour;
@@ -483,6 +485,25 @@ public static class RailMapRenderer
                 // is not a load, and the two must not look the same (R-rail5-10, seen as a picture).
                 ring.Color = colour;
                 canvas.DrawCircle(x, y, MarkerRadiusPx, ring);
+            }
+            else if (marker.Kind == RailMarkerKind.Driven)
+            {
+                // WHERE THE MAP IS MEASURED FROM — a disc inside a second, wider ring, so it reads
+                // as "this one, of the ports you can already see" rather than as a fifth kind of
+                // thing. The |Z| tab draws every declared port and until this one of them was the
+                // origin of every number on the picture and looked like all the others.
+                canvas.DrawCircle(x, y, MarkerRadiusPx, fill);
+                canvas.DrawCircle(x, y, MarkerRadiusPx, ring);
+                canvas.DrawCircle(x, y, MarkerRadiusPx * 2f, ring);
+            }
+            else if (marker.Kind == RailMarkerKind.MapExtreme)
+            {
+                // The ends of the ramp: a CROSS, which is a pointer at a place rather than a thing
+                // on the board. A disc here would read as a port nobody declared.
+                float r = MarkerRadiusPx * 1.4f;
+                ring.Color = colour;
+                canvas.DrawLine(x - r, y, x + r, y, ring);
+                canvas.DrawLine(x, y - r, x, y + r, ring);
             }
             else
             {

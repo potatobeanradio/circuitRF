@@ -25,6 +25,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using CircuitRF.Design.Layout;
@@ -197,10 +198,12 @@ public sealed class RailZMapTests(ITestOutputHelper output)
         int repaints = 0;
         overlay.OverlayChanged += () => repaints++;
 
-        // Before the plane answer arrives the tab SAYS SO rather than looking like a broken map.
+        // Before the plane answer arrives the tab SAYS SO rather than looking like a broken map —
+        // and it says what the map WOULD show, which is
+        // TheEmptyImpedanceTabSaysWhatTheMapIsAndARefusalTakesItsPlace's own claim.
         overlay.Kind = RailMapKind.Impedance;
         Assert.Empty(overlay.Scene.Tiles);
-        Assert.Contains("plane resonances", overlay.Scene.Note!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RailMapScene.EmptyImpedanceNote, overlay.Scene.Note);
 
         overlay.Plane = plane.Answer;
 
@@ -336,6 +339,379 @@ public sealed class RailZMapTests(ITestOutputHelper output)
 
         Assert.NotNull(refused.Refusal);
         Assert.Null(refused.Answer);
+    }
+
+    // ══ The shipped example, and the empty tab ═══════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>The |Z| map is reachable on the SHIPPED example, with nothing typed.</b>
+    /// </summary>
+    /// <remarks>
+    /// It was not, and no test said so because every gate here runs on the uniform rectangle above
+    /// — whose narrowest copper IS the plane, so the two cell-size rules never collide on it. On a
+    /// real board they always do: R-rail3-14's feature rule sizes the DC cell to resolve the
+    /// narrowest TRACE's resistance, which on the Power Rail example is 0.066 mm and 61,129 cavity
+    /// cells against the dense solve's 4,000. Every press of Find was refused, at every frequency,
+    /// and the refusal named two knobs — a coarser cell, or a lower band top — of which the second
+    /// does nothing here (λ/20 at 100 MHz in εr 4.3 is wider than the board, so halving the
+    /// frequency changed the mesh by nothing at all).
+    ///
+    /// <para>Driven on the shipped document rather than a fixture for the reason
+    /// <c>RailWindowTests</c> already gives: what is under test is that a board somebody can open
+    /// produces the picture the window offers them.</para>
+    /// </remarks>
+    [Fact]
+    public void TheShippedExampleProducesAnImpedanceMapWithNoCellSizeTyped()
+    {
+        string crail = Path.Combine(
+            RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
+
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+        Assert.Empty(vm.LoadDocumentReferences());
+        Assert.Null(vm.MeshCellMetres);          // nothing typed — the state the example opens in
+
+        var board = vm.Board!;
+        var rq = new RailDcRequest
+        {
+            Document       = vm.Document,
+            Shapes         = board.Shapes,
+            Technology     = board.Technology,
+            DbuPerMicron   = board.DbuPerMicron,
+            LengthFormat   = board.LengthFormat,
+            Pads           = board.Pads,
+            NetPoints      = board.NetPoints,
+            ReferenceNet   = board.ReferenceNet,
+            BoardOutline   = board.BoardOutline,
+            SeriesElements = board.SeriesElements,
+            ShuntParts     = board.ShuntParts,
+            Model          = PdnModelKind.Accurate,
+        };
+
+        var result = RailPlaneRun.Run(new RailPlaneRequest
+        {
+            Board       = rq,
+            RailName    = vm.Document.Rails[0].Name,
+            FrequencyHz = vm.Document.Rails[0].Band.StopHz,
+        });
+
+        Assert.Null(result.Refusal);
+        Assert.NotEmpty(result.Answer!.ImpedanceMap);
+
+        // The mesh it chose is the cavity's, not the DC rules' — and it SAYS so, because a map at a
+        // cell size the rest of the window is not at is one somebody will compare square for square
+        // against the drop map.
+        double chosen = result.Provenance!.CellSizeMetres;
+        output.WriteLine(
+            $"{result.Answer.ImpedanceMap.Count:N0} map cells at {chosen * 1e3:0.###} mm");
+        Assert.True(chosen > 0.2e-3,
+            $"the cavity took the DC rules' own {chosen * 1e3:0.###} mm cell, which is the " +
+            "collision this closes");
+        Assert.Contains(result.Answer.Notes, n => n.Contains("meshed itself", StringComparison.Ordinal));
+
+        // This rail is three galvanically separate pieces, so the drive reaches one of them and
+        // the other two solve to exactly zero — which is NOT a low impedance. They are counted and
+        // named rather than dropped into an uncoloured patch nobody can account for.
+        Assert.Equal(3, result.Answer.Pieces);
+        Assert.True(result.Answer.UnreachableCells > 0);
+        Assert.Contains(result.Answer.Notes,
+            n => n.Contains("cannot reach", StringComparison.Ordinal)
+              && n.Contains("UNCOLOURED", StringComparison.Ordinal));
+        output.WriteLine(
+            $"{result.Answer.UnreachableCells:N0} of {result.Answer.ImpedanceMap.Count:N0} " +
+            $"cells unreachable across {result.Answer.Pieces} pieces");
+
+        // ── And it drew, WITH ITS CALLOUTS, having never run the DC solve ────────────────────
+        //
+        // `null` is the DC result here and that is the whole point: the plane run does not need
+        // one. Until this the |Z| map's callouts came only from the DC answer, so pressing Find
+        // without ever pressing Run gave a correct map with no ports on it at all — the driven
+        // one included, which is the origin of every number on the picture (owner, 2026-09-19).
+        var scene = RailMapScene.Build(null, RailMapKind.Impedance, Dbu, result.Answer);
+        Assert.NotEmpty(scene.Tiles);
+        Assert.Null(scene.Note);
+
+        var named = scene.Markers.Select(m => m.Label).ToList();
+        Assert.Contains("U1.VDD", named);
+        Assert.Contains("U3.VDD", named);
+
+        var drive = Assert.Single(scene.Markers, m => m.Kind == RailMarkerKind.Driven);
+        Assert.Equal(result.Answer.MapPortName, drive.Label);
+
+        // One glyph per port, never two — the DC run's markers and the plane's own are merged by
+        // name, and a duplicate would read as two ports on one pad.
+        Assert.Equal(named.Count, named.Distinct().Count());
+
+        // And where a DC result IS present the two agree about the PLACE, which is what makes
+        // merging them by name legitimate.
+        var withDc = RailMapScene.Build(
+            RailDcRun.Run(rq).Rails[0], RailMapKind.Impedance, Dbu, result.Answer);
+        foreach (var m in scene.Markers.Where(m => m.Label.Contains('.', StringComparison.Ordinal)))
+        {
+            var same = withDc.Markers.FirstOrDefault(o => o.Label == m.Label);
+            Assert.NotNull(same);
+            Assert.Equal((m.X, m.Y), (same!.X, same.Y));
+        }
+    }
+
+    /// <summary>
+    /// <b>A stated cell size is never re-meshed, and the refusal names a size that would fit.</b>
+    /// </summary>
+    /// <remarks>
+    /// The auto-fit above must not reach the knob the convergence sweeps turn — a run that
+    /// silently re-meshed a stated cell would make those sweeps measure nothing. So that case
+    /// stays a refusal, and the negative half here is what stops the fit being written as
+    /// "coarsen until it fits" with no exception for it.
+    /// </remarks>
+    [Fact]
+    public void AStatedCellSizeIsRefusedRatherThanReMeshed()
+    {
+        // Request already STATES 1 mm — see its own remarks for why the fixture pins the pitch.
+        var result = RailPlaneRun.Run(new RailPlaneRequest
+        {
+            Board       = Request(secondPort: false),
+            RailName    = "VDD",
+            FrequencyHz = FirstMode * 1.2,
+            // A ceiling this rectangle's 600 cells is over, so the stated size collides with it.
+            Modes       = new PdnModeOptions { MaxCells = 200 },
+        });
+
+        Assert.NotNull(result.Refusal);
+        Assert.Contains("cell size this run states", result.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("mm.", result.Refusal, StringComparison.Ordinal);
+        output.WriteLine(result.Refusal);
+    }
+
+    /// <summary>
+    /// <b>The empty |Z| tab says what the picture would show, and a REFUSAL replaces it.</b>
+    /// </summary>
+    /// <remarks>
+    /// Two faults in one state. The sentence was railRF's own vocabulary — "it is the plane pair's
+    /// own answer" — followed by directions to a card on another tab; and because a refused run
+    /// leaves <c>Plane</c> null on purpose, that same sentence was what a user saw after pressing
+    /// Find and being refused, with the refusal printed on the tab they had left (owner,
+    /// 2026-09-19). So the window owns the empty state now: one sentence, from one string, beside
+    /// the button that answers it.
+    /// </remarks>
+    [Fact]
+    public void TheEmptyImpedanceTabSaysWhatTheMapIsAndARefusalTakesItsPlace()
+    {
+        // ONE string, shared with the renderer — a window and a headless render that disagreed
+        // about an empty state is exactly how the old sentence survived unread.
+        Assert.DoesNotContain("plane pair's own answer", RailMapScene.EmptyImpedanceNote,
+                              StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ohms", RailMapScene.EmptyImpedanceNote, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Find", RailMapScene.EmptyImpedanceNote, StringComparison.Ordinal);
+
+        var vm = new RailRfViewModel(new RailDocument { Name = "empty" }, "");
+        Assert.Equal(RailMapScene.EmptyImpedanceNote, vm.ImpedanceFinderNote);
+
+        vm.PlaneRefusal = "This plane pair meshes to 61,129 cavity cells.";
+        Assert.True(vm.HasPlaneRefusal);
+        Assert.Equal("This plane pair meshes to 61,129 cavity cells.", vm.ImpedanceFinderNote);
+
+        // And the renderer does NOT centre a second copy under the window's own panel.
+        var overlay = new RailLayoutOverlay
+        {
+            Result = Dc(), DbuPerMicron = Dbu, Kind = RailMapKind.Impedance,
+        };
+        Assert.Contains("ohms", overlay.Scene.Note!, StringComparison.OrdinalIgnoreCase);
+
+        overlay.EmptyNoteShownByHost = true;
+        Assert.Null(overlay.Scene.Note);
+
+        // A tab WITH a map is unaffected — the suppression is of an empty tab's sentence only,
+        // and the window's own panel goes away with it.
+        var plane = Modes(FirstMode * 1.2);
+        Assert.Null(plane.Refusal);
+        overlay.Plane = plane.Answer;
+        Assert.NotEmpty(overlay.Scene.Tiles);
+
+        vm.Board = BoardInputs();
+        vm.SelectedBoardOverlay = RailBoardOverlay.Impedance;
+        Assert.True(vm.ShowImpedanceFinder, "the empty |Z| tab must offer the controls that fill it.");
+
+        vm.Plane = plane.Answer;
+        Assert.True(vm.HasImpedanceMap);
+        Assert.False(vm.ShowImpedanceFinder,
+                     "the panel stayed over a map it is the empty state for.");
+
+        // …and the frequency does NOT go away with it. The map is at ONE frequency, so changing it
+        // is the next thing anybody does, and hiding the box behind a tab switch is the detour
+        // this tab's own controls exist to end (owner, 2026-09-19).
+        Assert.True(vm.ShowImpedanceRefind, "there is no way to re-run this map at another frequency.");
+        Assert.Contains("|Z| at", vm.ImpedanceMapAt, StringComparison.Ordinal);
+        Assert.Contains(plane.Answer!.MapPortName, vm.ImpedanceMapAt, StringComparison.Ordinal);
+
+        // The two are exclusive — one frequency control on screen, never two.
+        Assert.NotEqual(vm.ShowImpedanceFinder, vm.ShowImpedanceRefind);
+    }
+
+    /// <summary>
+    /// <b>The run reports the stage it is on, and the stages name the size of the problem.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner asked for a progress bar, 2026-09-19. There is no honest percentage to show: the
+    /// dominant cost is one dense LAPACK call inside <c>PdnModeSolver</c> — cubic in the cell
+    /// count, no callbacks, nothing to subdivide — so a determinate bar would animate a number
+    /// nobody computed. What the run can report is which of four things it is doing and how big
+    /// the problem turned out to be, which is the part that explains the wait.
+    ///
+    /// <para><b>The re-mesh stage is the one worth gating.</b> It is the reason a run on a real
+    /// board takes as long as it does, and it is invisible in the result — an auto-fit that
+    /// re-extracted twice and a run that never needed to look identical once the map is up.</para>
+    /// </remarks>
+    [Fact]
+    public void TheRunReportsItsStagesAndNamesTheSizeOfTheProblem()
+    {
+        var stages = new List<string>();
+
+        var result = RailPlaneRun.Run(new RailPlaneRequest
+        {
+            Board       = Request(secondPort: false),
+            RailName    = "VDD",
+            FrequencyHz = FirstMode * 1.2,
+            Progress    = stages.Add,
+        });
+
+        Assert.Null(result.Refusal);
+        foreach (string st in stages) output.WriteLine(st);
+
+        Assert.Contains(stages, s => s.Contains("extracting", StringComparison.Ordinal));
+        Assert.Contains(stages, s => s.Contains("dense step", StringComparison.Ordinal));
+        Assert.Contains(stages, s => s.Contains("mapping", StringComparison.Ordinal));
+
+        // The slow stage names the CELL COUNT, which is what the cost is cubic in — a stage line
+        // that said only "solving" would not explain why one board waits and another does not.
+        Assert.Contains(stages, s => s.Contains("cavity cells", StringComparison.Ordinal));
+
+        // In order, and the solve is reported BEFORE it is paid for rather than after.
+        Assert.True(stages.FindIndex(s => s.Contains("extracting", StringComparison.Ordinal))
+                  < stages.FindIndex(s => s.Contains("dense step", StringComparison.Ordinal)));
+        Assert.True(stages.FindIndex(s => s.Contains("dense step", StringComparison.Ordinal))
+                  < stages.FindIndex(s => s.Contains("mapping", StringComparison.Ordinal)));
+
+        // The auto-fit's own stage fires only when it fires. This rectangle states its cell size,
+        // so nothing is re-meshed and nothing claims to have been.
+        Assert.DoesNotContain(stages, s => s.Contains("re-meshing", StringComparison.Ordinal));
+    }
+
+    /// <summary>The fixture board, as the window holds it.</summary>
+    private static RailBoardInputs BoardInputs()
+    {
+        var request = Request(secondPort: false);
+        return new RailBoardInputs
+        {
+            Shapes       = request.Shapes,
+            Technology   = request.Technology,
+            DbuPerMicron = request.DbuPerMicron,
+            Pads         = request.Pads,
+        };
+    }
+
+    /// <summary>
+    /// <b>A flat map says it is flat, the caption names the reading that produced it, and the
+    /// copper the drive cannot reach is accounted for.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19, running the shipped board at 10 MHz: <i>"I got a gradient from 2.405 kΩ
+    /// to 2.405 kΩ … does that answer make sense? From where to where?"</i> Three separate faults
+    /// behind one screenshot, and the number itself was right.
+    ///
+    /// <para><b>1. A flat field is the correct answer down there and looked like a broken one.</b>
+    /// 10 MHz is 1/268 of that plane pair's first mode, so it is still a lumped capacitor — one
+    /// connected piece, one equipotential, 1/ωC and no spatial structure at all. Drawn as a
+    /// two-ended ramp with the same number at both ends, which reads as a failure.</para>
+    ///
+    /// <para><b>2. The caption carried the WINDOW's model kind.</b> It read
+    /// <c>result.Netlist.Provenance.ModelKind</c> — the DC run's — so a window on the Fast model
+    /// captioned this "Fast model". <c>RailPlaneRun</c> always meshes; it cannot be a fast answer.
+    /// §2.9 rule 1 makes a result carrying the WRONG model worse than one carrying none.</para>
+    ///
+    /// <para><b>3. 454 of the board's 2,544 cells vanished silently.</b> Cells on a galvanically
+    /// separate piece have no path to the drive, so they solve to exactly zero volts and |Z| = 0 —
+    /// which is −∞ on a log ramp and dropped. The copper under them drew uncoloured, identical to
+    /// copper that is not on the rail. Zero there is "not reachable", not "a dead short".</para>
+    ///
+    /// <para>Driven on the fixture rectangle, which is ONE piece and has its own first mode at
+    /// 2.4 GHz — so a low frequency reproduces fault 1 and 2 exactly, and the shipped board's
+    /// third piece is what
+    /// <see cref="TheShippedExampleProducesAnImpedanceMapWithNoCellSizeTyped"/> reaches.</para>
+    /// </remarks>
+    [Fact]
+    public void FarBelowTheFirstModeTheMapIsFlatAndSaysSoRatherThanDrawingAGradient()
+    {
+        // Two decades and more below this rectangle's first mode — the regime the owner was in.
+        var plane = Modes(FirstMode / 100.0);
+        Assert.Null(plane.Refusal);
+
+        var answer = plane.Answer!;
+        Assert.True(answer.MapIsFlat,
+            $"the field varies by {answer.SpatialSpread:0.0000}×, so this is not the flat case.");
+
+        // The FLAT case is the claim, and it is a claim about physics: 1/ωC of the pair's own
+        // capacitance, with no 'where' in it.
+        double z = answer.ImpedanceMap.Max(c => c.OhmsMagnitude);
+        double lumped = 1.0 / (2 * Math.PI * answer.MapFrequencyHz
+                               * plane.Provenance!.PlaneCapacitanceFarads);
+        output.WriteLine($"map {z:0.#} Ω vs 1/ωC {lumped:0.#} Ω over {answer.Cells.Count} cells");
+        Assert.True(Math.Abs(z / lumped - 1.0) < 0.25,
+            $"a flat map far below the first mode IS the pair's own 1/ωC — {z:0.#} Ω against " +
+            $"{lumped:0.#} Ω");
+
+        Assert.Contains(answer.Notes, n => n.Contains("FLAT", StringComparison.Ordinal)
+                                        && n.Contains("lumped capacitor", StringComparison.Ordinal));
+
+        // ── the plate ─────────────────────────────────────────────────────────────────────────
+        var scene = RailMapScene.Build(Dc(), RailMapKind.Impedance, Dbu, answer);
+        Assert.Contains("EVERYWHERE", scene.Legend!.Caption, StringComparison.Ordinal);
+
+        // The plate reads ONE value, and the ramp is collapsed so the board paints one colour.
+        // Left alone, Normalise stretches a tenth of a percent across the whole cold-to-hot ramp
+        // and draws a rainbow out of the fourth significant digit — which is the picture that
+        // came with the two identical labels.
+        Assert.Equal(scene.Legend.ColdLabel, scene.Legend.HotLabel);
+        Assert.Equal(scene.ColdValue, scene.HotValue);
+        Assert.All(scene.Tiles, t => Assert.Equal(0, scene.Normalise(t.Value)));
+
+        // …and it is captioned with the reading that produced it, which is ALWAYS the mesh.
+        Assert.Equal(PdnModelKind.Accurate, answer.ModelKind);
+        Assert.Contains("Accurate model", scene.Legend.Caption, StringComparison.Ordinal);
+
+        // A flat field gets NO extreme markers — two arbitrary cells of one equipotential are not
+        // a gradient, and pointing at them would invent one.
+        Assert.DoesNotContain(scene.Markers, m => m.Kind == RailMarkerKind.MapExtreme);
+
+        // ── but the DRIVE is marked, which is the "from where" half ───────────────────────────
+        var drive = Assert.Single(scene.Markers, m => m.Kind == RailMarkerKind.Driven);
+        Assert.Equal(answer.MapPortName, drive.Label);
+        Assert.Contains("measured FROM here", drive.Readout, StringComparison.Ordinal);
+
+        // ── and a map WITH structure marks both ends, so "to where" has an answer too ─────────
+        var near = Modes(FirstMode * 0.9);
+        Assert.Null(near.Refusal);
+        Assert.False(near.Answer!.MapIsFlat,
+            "close to the first mode the field must have structure, or the negative half proves nothing.");
+
+        var lively = RailMapScene.Build(Dc(), RailMapKind.Impedance, Dbu, near.Answer);
+        var ends = lively.Markers.Where(m => m.Kind == RailMarkerKind.MapExtreme).ToList();
+        Assert.Equal(2, ends.Count);
+        Assert.NotEqual((ends[0].X, ends[0].Y), (ends[1].X, ends[1].Y));
+        foreach (var e in ends) output.WriteLine($"{e.Label} at ({e.X}, {e.Y})");
+
+        // Both ends are inside what Zoom to Fit frames — a callout outside the copper's bbox is
+        // §11.6 trap 4, and these two are placed by the FIELD rather than by the artwork.
+        foreach (var e in ends)
+            Assert.True(lively.Bounds.Contains(e.X, e.Y), $"{e.Label} is outside the scene bounds.");
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitrf.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return dir!.FullName;
     }
 
     // ══ fixtures ═════════════════════════════════════════════════════════════════════════════

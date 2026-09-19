@@ -305,8 +305,13 @@ public static class RailDcRun
     /// changes about the reading. Sharing this builder is what stops the two extractions differing
     /// in anything else — a second copy would drift in the reference extent or the class overrides
     /// and the modes would be of a board the drop map is not of.</param>
+    /// <param name="mesh">Overrides <see cref="RailDcRequest.Mesh"/> for this one extraction.
+    /// <b>Brief 15's plane run only</b>, which sizes the cavity's mesh to the mode solver's own
+    /// ceiling — see <c>RailPlaneRun.Fit</c> for why the DC cell size is the wrong one there. Null
+    /// takes the request's own, which is every other caller.</param>
     internal static PdnExtractionRequest RequestFor(
-        RailDcRequest request, RailSpec rail, double frequencyHz = 0) => new()
+        RailDcRequest request, RailSpec rail, double frequencyHz = 0,
+        PdnMeshSettings? mesh = null) => new()
     {
         Rail            = rail,
         FrequencyHz     = frequencyHz,
@@ -321,7 +326,7 @@ public static class RailDcRun
         SeriesElements  = request.SeriesElements,
         ShuntParts      = request.ShuntParts,
         Settings        = request.Document.Settings,
-        Mesh            = request.Mesh,
+        Mesh            = mesh ?? request.Mesh,
         Graph           = request.Graph,
         ClassOverrides  = request.Document.ClassOverrides,
     };

@@ -25,6 +25,7 @@ using System.Threading.Tasks;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Engine.Pdn;
+using CircuitRF.Render;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -57,6 +58,93 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasModes));
         OnPropertyChanged(nameof(PlaneMessage));
         OnPropertyChanged(nameof(HasPlaneMessage));
+        AnnounceImpedanceMap();
+    }
+
+    // ── §2.4's map has its own controls ON ITS OWN TAB (owner, 2026-09-19) ─────────────────────
+    //
+    // The |Z| tab used to be a dead end. It said "No |Z| map yet" and pointed at a card on a
+    // DIFFERENT tab, so producing the picture meant leaving it; and because a refused run leaves
+    // Plane null on purpose — the previous answer is worth more than a cleared one — the tab went
+    // on saying "no map yet" to somebody who had just pressed Find and been refused, with the
+    // refusal printed somewhere they were not looking. On the shipped Power Rail example that was
+    // every press: see RailPlaneRun.Fit for the mesh collision that made it so.
+    //
+    // So the frequency box, the Find button, the busy line and the refusal are all on the tab that
+    // shows the map. The Plane resonances card keeps all four as well, because the MODE LIST is a
+    // frequency-tab answer and it is driven by the same command and the same box.
+
+    /// <summary>True once there is an impedance map to draw.</summary>
+    public bool HasImpedanceMap => Plane is { Refusal: null } p && p.ImpedanceMap.Count > 0;
+
+    /// <summary>True while the |Z| tab is showing and has no map on it — when its own controls and
+    /// its own sentence are what the board panel draws.</summary>
+    /// <remarks><b>And only with a board on screen.</b> The empty-board placeholder is centred
+    /// too, and two centred panels on one canvas is the collision the map note already had with
+    /// it.</remarks>
+    public bool ShowImpedanceFinder =>
+        HasBoard && SelectedBoardOverlay == RailBoardOverlay.Impedance && !HasImpedanceMap;
+
+    /// <summary>
+    /// True when the |Z| tab is showing a map — when the frequency controls move to a compact
+    /// strip over the top of it rather than going away.
+    /// </summary>
+    /// <remarks>
+    /// <b>The map is at ONE frequency, so changing the frequency is the main thing to do next</b>
+    /// (owner, 2026-09-19: <i>"how do I change the frequency for it after I've run one?"</i>).
+    /// The first cut hid the controls the moment a map appeared and left the Plane resonances
+    /// card on the Frequency tab as the only way back — which is the same "leave the picture to
+    /// change the picture" this tab's own controls existed to end, reintroduced one state later.
+    ///
+    /// <para>A strip and not the centred panel: the panel is an EMPTY state and carries the
+    /// sentence explaining what the map is, and a reader looking at a map has already had that
+    /// answered. It sits at the top because the bottom two corners are the value readout and the
+    /// cursor position.</para>
+    /// </remarks>
+    public bool ShowImpedanceRefind =>
+        HasBoard && SelectedBoardOverlay == RailBoardOverlay.Impedance && HasImpedanceMap;
+
+    /// <summary>What the strip says the map on screen is of.</summary>
+    public string ImpedanceMapAt =>
+        Plane is { Refusal: null } p && p.ImpedanceMap.Count > 0
+            ? $"|Z| at {PdnMask.Hertz(p.MapFrequencyHz)} from {p.MapPortName}"
+            : "";
+
+    /// <summary>
+    /// What the empty |Z| tab says: the last run's refusal, or what the map is for.
+    /// </summary>
+    /// <remarks>
+    /// The default half is <see cref="RailMapScene.EmptyImpedanceNote"/> and not a second copy —
+    /// the renderer prints the same sentence where there is no window to print it, and two
+    /// spellings of one empty state is how they come to disagree.
+    /// </remarks>
+    public string ImpedanceFinderNote =>
+        PlaneRefusal is { Length: > 0 } why ? why : RailMapScene.EmptyImpedanceNote;
+
+    /// <summary>Why the last plane run produced nothing, or empty.</summary>
+    /// <remarks>Kept apart from <see cref="PlaneMessage"/>, which also carries the NOTES of a run
+    /// that succeeded: the |Z| tab prints a refusal in place of its own sentence and must not
+    /// print a success summary there.</remarks>
+    [ObservableProperty]
+    private string _planeRefusal = "";
+
+    partial void OnPlaneRefusalChanged(string value)
+    {
+        OnPropertyChanged(nameof(ImpedanceFinderNote));
+        OnPropertyChanged(nameof(HasPlaneRefusal));
+    }
+
+    /// <summary>True when the last plane run was refused.</summary>
+    public bool HasPlaneRefusal => PlaneRefusal.Length > 0;
+
+    /// <summary>Re-raises everything the |Z| tab's own panel binds.</summary>
+    internal void AnnounceImpedanceMap()
+    {
+        OnPropertyChanged(nameof(HasImpedanceMap));
+        OnPropertyChanged(nameof(ShowImpedanceFinder));
+        OnPropertyChanged(nameof(ShowImpedanceRefind));
+        OnPropertyChanged(nameof(ImpedanceFinderNote));
+        OnPropertyChanged(nameof(ImpedanceMapAt));
     }
 
     /// <summary>The extraction the plane answer is of — <b>its own</b>, not the DC run's.</summary>
@@ -96,11 +184,35 @@ public sealed partial class RailRfViewModel
     }
 
     /// <summary>True when the plane run can do something.</summary>
-    public bool CanRunPlane => CanRun && Board is not null && PlaneFrequencyHz is not null;
+    /// <remarks><b>Off while one is in flight.</b> This run is tens of seconds and the press has
+    /// to be visibly taken — the same rule Run and Accuracy already follow (owner, 2026-09-19).</remarks>
+    public bool CanRunPlane =>
+        CanRun && Board is not null && PlaneFrequencyHz is not null && !IsFindingModes;
 
     /// <summary>True while a plane run is in flight.</summary>
     [ObservableProperty]
     private bool _isFindingModes;
+
+    partial void OnIsFindingModesChanged(bool value)
+    {
+        PlaneResonancesCommand.NotifyCanExecuteChanged();
+        if (!value) PlaneStage = "";
+    }
+
+    /// <summary>
+    /// What the plane run is doing right now — <b>the progress the |Z| tab can honestly show</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A stage and an indeterminate bar, never a percentage</b> (owner asked for a progress
+    /// bar, 2026-09-19). The dominant cost of this run is one dense LAPACK call: cubic in the
+    /// cell count, no callbacks, nothing to subdivide. A determinate bar would therefore be
+    /// animating a number nobody computed. What the run CAN say is which of four things it is on
+    /// and how big the problem turned out to be — "re-meshing at 0.42 mm, 4,700 cells is over the
+    /// 4,000 the dense solve stops at" is the sentence that explains a thirty-second wait, and a
+    /// bar creeping at an invented rate explains none of it.
+    /// </remarks>
+    [ObservableProperty]
+    private string _planeStage = "";
 
     /// <summary>The plane run currently in flight, or null — what a test awaits.</summary>
     internal Task? PendingPlane { get; private set; }
@@ -143,6 +255,9 @@ public sealed partial class RailRfViewModel
 
         CancelPlaneInFlight();
 
+        PlaneRefusal = "";
+        PlaneStage = "starting…";
+
         var cts = new CancellationTokenSource();
         _planeCts = cts;
         IsFindingModes = true;
@@ -155,6 +270,8 @@ public sealed partial class RailRfViewModel
             RailName = railName,
             FrequencyHz = hz,
             MapPortIndex = 0,
+            // Off the run's thread and onto the UI's, like every other cross-thread report here.
+            Progress = stage => PostToUi(() => { if (IsFindingModes) PlaneStage = stage; }),
         };
 
         var token = cts.Token;
@@ -187,8 +304,9 @@ public sealed partial class RailRfViewModel
 
         if (task.IsFaulted)
         {
-            PlaneMessage = "The plane-pair run did not finish: " +
-                           task.Exception?.GetBaseException().Message;
+            PlaneMessage = PlaneRefusal =
+                "The plane-pair run did not finish: " +
+                task.Exception?.GetBaseException().Message;
             cts.Dispose();
             return;
         }
@@ -203,11 +321,12 @@ public sealed partial class RailRfViewModel
             // NOTHING replaces what is on screen — the previous answer stays, and the refusal is
             // what changes. A map cleared by a refusal is a picture the user cannot get back
             // without re-running the whole thing.
-            PlaneMessage = why;
+            PlaneMessage = PlaneRefusal = why;
             return;
         }
 
         Plane = result.Answer;
+        PlaneRefusal = "";
         PlaneMessage = string.Join(
             " ",
             new[]
@@ -238,5 +357,6 @@ public sealed partial class RailRfViewModel
         Plane = null;
         PlaneProvenance = null;
         PlaneMessage = "";
+        PlaneRefusal = "";
     }
 }

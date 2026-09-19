@@ -117,6 +117,28 @@ public enum RailMarkerKind
 
     /// <summary>A layer transition whose worst via is over its limit (brief 6).</summary>
     ViaFlag,
+
+    /// <summary>
+    /// The port an impedance map is driven FROM — <b>the "where" in "|Z| from where to here"</b>.
+    /// </summary>
+    /// <remarks>
+    /// The |Z| tab draws every declared port, and until this one of them was special and none of
+    /// them looked it: the caption said "from U1.VDD" and the picture gave a reader no way to find
+    /// which callout that was (owner, 2026-09-19). Every number on the map is measured from this
+    /// point, so it is the one mark the map cannot be read without.
+    /// </remarks>
+    Driven,
+
+    /// <summary>
+    /// Where an impedance map reaches its highest or lowest reachable value.
+    /// </summary>
+    /// <remarks>
+    /// The legend plate prints two numbers and, on its own, says nothing about WHERE either of
+    /// them is — which is the question a reader of this map has ("from where to where?"). Added
+    /// only where the field has structure: on a flat map the extremes are two arbitrary cells of
+    /// one equipotential and pointing at them would invent a gradient that is not there.
+    /// </remarks>
+    MapExtreme,
 }
 
 /// <summary>A marker at a resolved coordinate, DBU.</summary>
@@ -495,6 +517,26 @@ public sealed class RailMapScene
         };
     }
 
+    /// <summary>
+    /// What an empty |Z| tab says — <b>one copy, because the window prints it too</b>.
+    /// </summary>
+    /// <remarks>
+    /// The window draws its own Find controls over this tab and prints this sentence beside them
+    /// rather than letting the renderer centre a second copy underneath; headless, where there is
+    /// no button, the renderer's centred note is the only one. Both have to be the same sentence,
+    /// so there is one.
+    ///
+    /// <para><b>It says what the picture would SHOW</b> (owner, 2026-09-19). The sentence this
+    /// replaced said the map "is the plane pair's own answer" and then gave directions to a card
+    /// on a different tab — internal vocabulary followed by a treasure hunt, and a reader who had
+    /// never seen the map still did not know what they were being offered.</para>
+    /// </remarks>
+    public static string EmptyImpedanceNote =>
+        "No impedance map yet. It colours the board by how many ohms the power plane presents " +
+        "between the chosen load pin and every other point on the plane, at one frequency — so " +
+        "you can see WHERE the impedance is high and not just that it is. It is a separate solve " +
+        "from Run because it costs tens of seconds: pick a frequency and press Find.";
+
     // ── |Z|: §2.4's other picture, and the tab brief 8 left empty ──────────────────────────────
 
     /// <summary>
@@ -514,11 +556,7 @@ public sealed class RailMapScene
     private static RailMapScene BuildImpedance(
         RailDcResult? result, PdnPlaneAnswer? plane, int dbuPerMicron)
     {
-        if (plane is null)
-            return Empty(RailMapKind.Impedance,
-                "No |Z| map yet. It is the plane pair's own answer and it is a separate run — " +
-                "the Plane resonances card, on the Frequency results tab: type the frequency you " +
-                "want the map at and press Find.");
+        if (plane is null) return Empty(RailMapKind.Impedance, EmptyImpedanceNote);
 
         if (plane.Refusal is { } refusal)
             return Empty(RailMapKind.Impedance, refusal);
@@ -534,10 +572,16 @@ public sealed class RailMapScene
         var mapBounds = Bbox.Empty;
         double cold = double.PositiveInfinity, hot = double.NegativeInfinity;
 
+        // Where the two ends of the ramp ARE, which the plate alone cannot say — see
+        // RailMarkerKind.MapExtreme.
+        PdnCellRef? coldAt = null, hotAt = null;
+
         foreach (var cell in plane.ImpedanceMap)
         {
             // A cell reading zero or a non-finite ohm has no place on a logarithmic ramp, and it is
             // dropped rather than clamped: a tile at an invented value is a tile a reader believes.
+            // Zero means the DRIVE CANNOT REACH THIS CELL — PdnPlaneModes counts those and says so,
+            // because uncoloured copper otherwise looks like copper that is not on the rail.
             double db = DecibelOhms(cell.OhmsMagnitude);
             if (!double.IsFinite(db)) continue;
 
@@ -546,8 +590,8 @@ public sealed class RailMapScene
                 new Bbox(cell.Cell.CentreX - half, cell.Cell.CentreY - half,
                          cell.Cell.CentreX + half, cell.Cell.CentreY + half));
 
-            if (db < cold) cold = db;
-            if (db > hot) hot = db;
+            if (db < cold) { cold = db; coldAt = cell.Cell; }
+            if (db > hot) { hot = db; hotAt = cell.Cell; }
         }
 
         if (tiles.Count == 0)
@@ -560,17 +604,46 @@ public sealed class RailMapScene
         var clip = result is null ? [] : ClipPaths(result);
         foreach (var paths in clip.Values) mapBounds = mapBounds.Union(BoundsOf(paths));
 
-        var markers = result is null ? [] : MarkersOf(result);
+        var markers = ImpedanceMarkers(result, plane, coldAt, hotAt, cold, hot);
         var bounds = result is null ? mapBounds : mapBounds.Union(MarkerBounds(result, dbuPerMicron));
+        foreach (var m in markers)
+        {
+            long reach = MarkerReachDbu(dbuPerMicron);
+            bounds = bounds.Union(new Bbox(m.X - reach, m.Y - reach, m.X + reach, m.Y + reach));
+        }
 
         string rail = result?.RailName ?? "";
-        string model = result is null ? "" : " · " + ModelName(result.Netlist.Provenance.ModelKind);
         string driven = plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "";
 
-        var legend = LegendFor(
-            bounds, cold, hot,
-            $"{rail}{model} · |Z| at {PdnMask.Hertz(plane.MapFrequencyHz)}{driven}",
-            db => Ohms(OhmsFromDecibels(db)));
+        // ── THE MODEL KIND IS THE PLANE ANSWER'S, NOT THE WINDOW'S (owner, 2026-09-19) ────────
+        //
+        // This read result.Netlist.Provenance.ModelKind — the DC run's — so a window sitting on
+        // the Fast model captioned this picture "Fast model". It never is: RailPlaneRun ALWAYS
+        // meshes, whatever the window is set to, because the fast reading refuses above a tenth of
+        // the first cavity resonance and the cavity band is by definition above that. §2.9 rule 1
+        // is that every result says which model produced it, and a result carrying the wrong one
+        // is worse than one carrying none.
+        string model = " · " + ModelName(plane.ModelKind);
+
+        // A FLAT map's plate says so instead of printing one number at both ends of a ramp. The
+        // reason lives on the answer's notes (PdnPlaneModes) — this is the half that is on the
+        // picture, so a copy of it carries the caveat too.
+        string caption = (plane.MapIsFlat
+            ? $"{rail}{model} · |Z| {Ohms(OhmsFromDecibels(hot))} EVERYWHERE at " +
+              $"{PdnMask.Hertz(plane.MapFrequencyHz)}{driven} — below the first mode"
+            : $"{rail}{model} · |Z| at {PdnMask.Hertz(plane.MapFrequencyHz)}{driven}")
+            .TrimStart(' ', '·').TrimStart();
+
+        // ── A FLAT FIELD IS PAINTED FLAT, and this is the half that was actually on screen ────
+        //
+        // Normalise stretches whatever span it is given across the WHOLE cold-to-hot ramp, so a
+        // field varying by a tenth of a percent was drawn as a full rainbow — a dramatic gradient
+        // made entirely of the fourth significant digit, over a plate printing the same number at
+        // both ends (owner, 2026-09-19). Collapsing the span paints one colour, which is what a
+        // plane pair below its first mode looks like, and the plate then reads one value.
+        if (plane.MapIsFlat) cold = hot;
+
+        var legend = LegendFor(bounds, cold, hot, caption, db => Ohms(OhmsFromDecibels(db)));
 
         return new RailMapScene
         {
@@ -583,6 +656,85 @@ public sealed class RailMapScene
             HotValue  = hot,
             Bounds    = legend is null ? bounds : bounds.Union(legend.Box),
         };
+    }
+
+    /// <summary>
+    /// The |Z| tab's own markers: every one the drop map draws, with the DRIVEN port promoted, and
+    /// the two ends of the ramp pointed at where the field has ends worth pointing at.
+    /// </summary>
+    /// <remarks>
+    /// <b>"From where to where" is the question this map asks and could not answer.</b> The
+    /// caption named the driven port and the plate printed two numbers; nothing on the picture
+    /// said which callout was the drive, and nothing at all said where either end of the ramp was
+    /// (owner, 2026-09-19).
+    /// </remarks>
+    private static List<RailMapMarker> ImpedanceMarkers(
+        RailDcResult? result, PdnPlaneAnswer plane, PdnCellRef? coldAt, PdnCellRef? hotAt,
+        double cold, double hot)
+    {
+        var markers = result is null ? [] : MarkersOf(result);
+
+        // ── THE MAP DRAWS ITS OWN PORTS, because it does not need the DC run and never did ────
+        //
+        // These came only from MarkersOf(result) — the DC answer — so pressing Find without ever
+        // pressing Run produced a correct |Z| map with NO callouts on it at all, the driven port
+        // included (owner, 2026-09-19). That is the one mark the picture cannot be read without:
+        // every number on it is measured from that point, and the caption names a port the board
+        // gave the reader no way to find.
+        //
+        // The plane answer carries its own ports, placed by the same rule MarkersOf uses, so the
+        // two agree pixel for pixel where both exist. Added by NAME where the DC run supplied
+        // none — not unconditionally, because the DC marker's readout carries the port's measured
+        // drop and this one cannot, and two glyphs on one pad read as two ports.
+        var already = new HashSet<string>(markers.Select(m => m.Label), StringComparer.Ordinal);
+
+        foreach (var port in plane.Ports)
+        {
+            if (!already.Add(port.Name)) continue;
+
+            markers.Add(new RailMapMarker(
+                port.DrawsCurrent ? RailMarkerKind.Load : RailMarkerKind.Observation,
+                port.X, port.Y, port.Name,
+                $"{port.Name} — an observation port of this plane pair. Run the rail for its DC " +
+                "drop and its share of the current."));
+        }
+
+        // The drive, promoted in place rather than added beside — two glyphs on one pad would read
+        // as two ports.
+        if (plane.MapPortName is { Length: > 0 } name)
+            for (int i = 0; i < markers.Count; i++)
+                if (string.Equals(markers[i].Label, name, StringComparison.Ordinal))
+                {
+                    markers[i] = markers[i] with
+                    {
+                        Kind = RailMarkerKind.Driven,
+                        Readout =
+                            $"{name} — every ohm on this map is measured FROM here, at " +
+                            $"{PdnMask.Hertz(plane.MapFrequencyHz)}. " + markers[i].Readout,
+                    };
+                    break;
+                }
+
+        // The ends of the ramp, where there is a ramp. On a flat field these are two arbitrary
+        // cells of one equipotential and marking them would invent a gradient that is not there.
+        if (!plane.MapIsFlat && coldAt is { } lo && hotAt is { } hi)
+        {
+            markers.Add(new RailMapMarker(
+                RailMarkerKind.MapExtreme, hi.CentreX, hi.CentreY,
+                $"highest {Ohms(OhmsFromDecibels(hot))}",
+                $"The highest |Z| on this map: {Ohms(OhmsFromDecibels(hot))} from " +
+                $"{plane.MapPortName} at {PdnMask.Hertz(plane.MapFrequencyHz)} — the hot end of " +
+                "the plate, and the place on the board it is at."));
+
+            markers.Add(new RailMapMarker(
+                RailMarkerKind.MapExtreme, lo.CentreX, lo.CentreY,
+                $"lowest {Ohms(OhmsFromDecibels(cold))}",
+                $"The lowest |Z| on this map: {Ohms(OhmsFromDecibels(cold))} from " +
+                $"{plane.MapPortName} at {PdnMask.Hertz(plane.MapFrequencyHz)} — the cold end of " +
+                "the plate."));
+        }
+
+        return markers;
     }
 
     /// <summary>The rail's copper, per drawing layer — what the shading is clipped to.</summary>

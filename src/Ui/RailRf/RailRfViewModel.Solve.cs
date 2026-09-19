@@ -62,6 +62,7 @@ public sealed partial class RailRfViewModel
     partial void OnBoardChanged(RailBoardInputs? value)
     {
         OnPropertyChanged(nameof(HasBoard));
+        AnnounceImpedanceMap();
         OnPropertyChanged(nameof(HasNoPickableNets));
         SyncPourPick();
         OnPropertyChanged(nameof(TechnologyPath));

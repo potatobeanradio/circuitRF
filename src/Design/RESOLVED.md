@@ -1,5 +1,107 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The |Z| map far below the first mode: a flat answer that looked like a broken one (2026-09-19)
+
+Owner, running the shipped board at 10 MHz: *"I got a gradient from 2.405 kΩ to 2.405 kΩ … does
+that answer make sense? From where to where?"*
+
+**The number is right.** Measured: the +3V3 plane pair is **7.98 pF** of bare copper-to-copper
+capacitance, and 1/ωC at 10 MHz is 1,996 Ω against the map's 2,405 Ω — the same thing, the
+difference being the pair's own series terms. The first cavity mode is at **2.677 GHz**, so 10 MHz
+is **1/268 of it**. That far under resonance a plane pair is a LUMPED CAPACITOR: one connected
+piece is one equipotential, every reachable cell reads the same ohms, and there is no *where* for a
+map to show. The map is correct and has nothing to say, which is a state it had no way to express.
+
+Three faults sat behind that one screenshot, and none of them is the arithmetic.
+
+**1. A flat field was painted as a full rainbow.** `RailMapScene.Normalise` stretches whatever span
+it is handed across the whole cold-to-hot ramp, so a field varying by **0.003 %** was drawn as a
+dramatic gradient made entirely of the fourth significant digit, under a plate printing the same
+number at both of its ends. `PdnPlaneAnswer.SpatialSpread`/`MapIsFlat` measure it (threshold 1 %);
+a flat map collapses its own ramp to one colour, its plate reads one value, and the answer carries
+a note giving both numbers that make the claim checkable — how far below the first mode the
+frequency is, and the 1/ωC the map is reporting in place of a field.
+
+*Unreachable cells are excluded from that spread, and must stay excluded* — they read exactly zero,
+and a ratio against zero would report the flattest possible field as the most structured one there
+is.
+
+**2. 454 of the board's 2,544 cells vanished silently.** This rail is **three galvanically separate
+pieces**. A cavity cell on a piece the drive cannot reach has no edge to the driven piece, so its
+MNA node carries only its own shunt capacitor and no injection: **V = 0 exactly, so |Z| = 0**. That
+is −∞ on a log ramp, the renderer drops the tile, and the copper under it draws uncoloured —
+indistinguishable from copper that is not on this rail at all. **Zero there means "not reachable",
+not "a dead short"**, which is the opposite of what a reader takes from it. Counted as
+`UnreachableCells`, named in a note, and the cursor readout over one now says so instead of
+printing `0 Ω`.
+
+**3. `PdnMask.Ohms` did not scale upward.** A PDN mask lives in milliohms, so the kΩ decade never
+came up; the flat note printed `2404.777 Ω` beside a plate reading `2.405 kΩ` — one number, two
+spellings, in one window. It now scales both ways.
+
+`PdnPlaneAnswer` also carries its own `ModelKind` now, for the caption fault recorded in
+`src/Ui/RESOLVED.md`: the |Z| plate was reading the DC run's.
+
+## The |Z| map was unreachable on every real board: two cell-size rules, one mesh (2026-09-19)
+
+Owner report, on the shipped Power Rail example: pressing **|Z|** in the Board area showed a
+sentence they could not parse, and the map never appeared. Both halves were real and the second one
+was total — **the |Z| map could not be produced on that document at all, at any frequency.**
+
+**What collided.** `PdnMeshExtractor` sizes a cell by the SMALLER of two rules (R-rail14-2):
+λ/20 at the extraction frequency, and R-rail3-14's FEATURE rule — enough cells across the narrowest
+current-carrying conductor that a thin trace's RESISTANCE comes out right. `RailPlaneRun` inherited
+the DC request wholesale, so the cavity got the DC answer to a DC question. On the Sensor board the
+narrowest copper is a fraction of a millimetre, so the cell is **0.066 mm and the cavity is 61,129
+cells** — against the dense mode solve's ceiling of 4,000. Refused, every time.
+
+**Three things worth keeping from it.**
+
+1. **A plane pair's modes do not depend on a trace hanging off it.** Paying 61,129 cells to resolve
+   a 0.2 mm trace's resistance buys nothing the mode list or the map contains. The feature rule is
+   correct and is the wrong rule here — which is why the fix is a cavity-specific mesh and not a
+   loosened ceiling.
+
+2. **The refusal named two knobs and one of them was inert.** `PdnModeSolver`'s sentence offers
+   "state a coarser cell, or find the modes against a lower band top, since λ/20 at half the
+   frequency is twice the cell." On this board λ/20 at 100 MHz in εr 4.3 is **72 mm — wider than
+   the board** — so the wavelength rule never binds and halving the frequency changes the mesh by
+   *nothing at all*. Measured directly: 100 MHz and 1 GHz both produced 230,786 conductor cells at
+   0.066 mm. Advice that cannot work reads exactly like advice that can.
+
+3. **No test caught it because every gate ran on a uniform rectangle.** `RailZMapTests`' fixture is
+   a 30 × 20 mm plane pair whose narrowest copper IS the plane, so the two rules agree on it and
+   the collision is unrepresentable. `TheShippedExampleProducesAnImpedanceMapWithNoCellSizeTyped`
+   runs on the real document for that reason.
+
+**The fix — `RailPlaneRun.Fit`.** With no cell size stated, the cavity sizes its own mesh: n cells
+of side Δ cover about n·Δ², so the Δ that lands on a target count follows from the extraction
+already in hand (no second reading of the geometry, which is that file's standing rule). It
+coarsens until the mesh is at or under the ceiling, in at most four re-extractions, and reports
+what it chose on the ANSWER's own notes — a map drawn at a cell size the rest of the window is not
+at is one somebody will compare against the drop map square for square. On the Sensor board that is
+**0.745 mm and 2,544 cells**, converged in two extractions.
+
+**The target is not the ceiling, and that is the part most likely to be "simplified" later.** The
+solve is cubic: `PdnModeOptions.MaxCells`' own measurements are 800 cells → 0.7 s, 1,575 → 4.4 s,
+3,200 → **36 s**, 4,000 → about 70 s. An auto-fit aimed at the ceiling makes every board that needs
+one wait a minute for a picture somebody is clicking to look around in, and buys resolution nobody
+asked for — six modes of a plane pair do not need a 63 × 63 grid to sit on. `AutoFitCells` is 1,500;
+the ceiling stays what it always was, a refusal threshold.
+
+**A STATED cell size is never re-meshed.** It is the knob the convergence sweeps turn, and a run
+that silently replaced it would make those sweeps measure nothing — so that case stays a refusal,
+and the refusal now names a size that would have fitted.
+`AStatedCellSizeIsRefusedRatherThanReMeshed` is the negative half, without which the fit would
+reasonably be rewritten as "coarsen until it fits" with no exception for it.
+
+`RailDcRun.RequestFor` gained an optional `mesh` override for this — one builder still, because two
+would drift in the reference extent or the class overrides and the modes would be of a board the
+drop map is not of. `PdnPlaneModes.CavityCellCount` answers "what will this cost" without building
+any matrices, which is what makes the fit cheap enough to run before paying for the solve.
+
+The message half of the report is in `src/Ui/RESOLVED.md`.
+
 ## railRF's exporters moved here so the WINDOW could have an Export button (2026-09-19)
 
 Owner report: *Compare… and Export are disabled in the UI with a tooltip saying they are not wired

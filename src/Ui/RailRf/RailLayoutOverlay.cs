@@ -146,11 +146,43 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// </remarks>
     public string? Readout => _readout;
 
+    private bool _emptyNoteShownByHost;
+
+    /// <summary>
+    /// Set by a host that prints an empty tab's sentence itself, so the renderer does not centre a
+    /// second copy of it underneath.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window puts the |Z| tab's frequency box and Find button over the canvas</b>
+    /// (owner, 2026-09-19), and the sentence belongs with the button that answers it. The
+    /// renderer's centred note is what a clipboard copy, a report page and a headless render still
+    /// get — none of those has a button — so the note is not removed from the SCENE BUILDER, only
+    /// from the scene this overlay hands the canvas. It is the same collision the board's own
+    /// "No board yet" placeholder already had with the map note.
+    ///
+    /// <para>Only an EMPTY tab's note is suppressed. A refusal is a note too, and the host prints
+    /// that one in the same place for the same reason.</para>
+    /// </remarks>
+    public bool EmptyNoteShownByHost
+    {
+        get => _emptyNoteShownByHost;
+        set { if (_emptyNoteShownByHost != value) { _emptyNoteShownByHost = value; Invalidate(); } }
+    }
+
     /// <summary>The scene currently being drawn. Built on demand and cached until an input changes,
     /// because a pan must not re-run the field sampling.</summary>
-    public RailMapScene Scene =>
-        _scene ??= RailMapScene.Build(_result, _kind, _dbuPerMicron, _plane)
-                               .WithLegendMovedBy(_legendDx, _legendDy);
+    public RailMapScene Scene => _scene ??= BuildScene();
+
+    private RailMapScene BuildScene()
+    {
+        var scene = RailMapScene.Build(_result, _kind, _dbuPerMicron, _plane)
+                                .WithLegendMovedBy(_legendDx, _legendDy);
+
+        if (_emptyNoteShownByHost && _kind == RailMapKind.Impedance && scene.Tiles.Count == 0)
+            scene = RailMapScene.Empty(RailMapKind.Impedance);
+
+        return scene;
+    }
 
     // ── the legend is DRAGGABLE (owner, 2026-09-19) ────────────────────────────────────────────
 
@@ -494,6 +526,20 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
         if (bestD2 > (double)reach * reach) return null;
 
         var hit = plane.ImpedanceMap[best];
+
+        // ── ZERO IS "NO CONNECTION", NOT "NO IMPEDANCE" ──────────────────────────────────────
+        //
+        // A cell on a galvanically separate piece of the rail has no path to the drive, so its
+        // node carries no injected current and solves to exactly zero volts. Printing that as
+        // "0 Ω" reads as a dead short to the very place a reader is trying to understand — it is
+        // the opposite of what is true. These cells are uncoloured on the map for the same
+        // reason; the readout says why rather than leaving the blank patch unexplained.
+        if (!(hit.OhmsMagnitude > 0))
+            return $"Not reachable from {plane.MapPortName}. This copper is on one of the " +
+                   $"{plane.Pieces} galvanically separate pieces of this rail, and no current " +
+                   "from that drive flows in it — so it has no impedance to it, rather than a " +
+                   "low one.";
+
         string where = $"{RailMapScene.Ohms(hit.OhmsMagnitude)} at " +
                        $"{PdnMask.Hertz(plane.MapFrequencyHz)}" +
                        (plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "");

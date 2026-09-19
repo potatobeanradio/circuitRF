@@ -228,11 +228,20 @@ public sealed class PdnMask
         :            $"{f:0.###} Hz";
 
     /// <summary>An impedance as a report spells it, on <see cref="Hertz"/>'s reasoning.</summary>
+    /// <remarks>
+    /// <b>It scales UP as well as down</b>, which it did not until the |Z| map needed it. A PDN
+    /// mask lives in milliohms so the upward decade never came up there; a plane pair's own
+    /// impedance two decades below its first resonance is kilohms, and the map printed
+    /// "2404.777 Ω" on a plate that said "2.405 kΩ" beside it — one number, two spellings, in one
+    /// window (owner, 2026-09-19).
+    /// </remarks>
     public static string Ohms(double r) =>
         !double.IsFinite(r) ? "(none)"
-        : r >= 1     ? $"{r:0.###} Ω"
-        : r >= 1e-3  ? $"{r * 1e3:0.###} mΩ"
-        :              $"{r * 1e6:0.###} µΩ";
+        : Math.Abs(r) >= 1e6  ? $"{r / 1e6:0.###} MΩ"
+        : Math.Abs(r) >= 1e3  ? $"{r / 1e3:0.###} kΩ"
+        : Math.Abs(r) >= 1    ? $"{r:0.###} Ω"
+        : Math.Abs(r) >= 1e-3 ? $"{r * 1e3:0.###} mΩ"
+        :                       $"{r * 1e6:0.###} µΩ";
 }
 
 /// <summary>

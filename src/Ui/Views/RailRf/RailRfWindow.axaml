@@ -1100,7 +1100,7 @@
                                 <mi:MaterialIcon Kind="GradientVertical" Width="14" Height="14"/>
                             </Button>
                             <Button Classes="tabbtn" Name="ImpedanceTab"
-                                    ToolTip.Tip="|Z| — the impedance map over frequency">
+                                    ToolTip.Tip="|Z| — how many ohms the plane presents between the chosen load pin and every point on the board, at ONE frequency. Not a sweep: the curve over frequency is on the Frequency results tab.">
                                 <mi:MaterialIcon Kind="Omega" Width="14" Height="14"/>
                             </Button>
                             <Button Classes="tabbtn" Name="ClassTab"
@@ -1206,6 +1206,98 @@
                             <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
                                        IsVisible="{Binding !HasBoard}"
                                        Text="No board yet. Import one — the artwork lands in the open workspace as an ordinary cell with a layout view."/>
+                            <!-- ── §2.4's |Z| MAP, WITH ITS OWN CONTROLS (owner, 2026-09-19) ────
+                                 The |Z| tab used to be a dead end: a sentence in railRF's own
+                                 vocabulary ("it is the plane pair's own answer") followed by
+                                 directions to a card on a DIFFERENT tab. Worse, a refused run
+                                 leaves Plane null on purpose — the previous map is worth more
+                                 than a cleared one — so the tab went on saying "no map yet" to
+                                 somebody who had just pressed Find and been refused, with the
+                                 refusal printed on the tab they had left.
+
+                                 So the box, the button, the busy line and the refusal are here,
+                                 on the tab that shows the picture. The Plane resonances card on
+                                 the Frequency tab is unchanged and drives the same command — the
+                                 MODE LIST is a frequency-tab answer and belongs beside the curve.
+
+                                 The renderer's own centred note is suppressed while this shows
+                                 (RailLayoutOverlay.EmptyNoteShownByHost); the sentence below is
+                                 the same string, from RailMapScene.EmptyImpedanceNote, so the
+                                 window and a headless render cannot come to spell it
+                                 differently. -->
+                            <Border IsVisible="{Binding ShowImpedanceFinder}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    MaxWidth="420" Margin="16" Padding="14,12" CornerRadius="6"
+                                    Background="{DynamicResource SystemChromeLowColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="10">
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Classes.warn="{Binding HasPlaneRefusal}"
+                                                         Text="{Binding ImpedanceFinderNote}"/>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                                        <TextBlock Classes="detailLabel rowlbl" Text="At"
+                                                   VerticalAlignment="Center"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding PlaneFrequencyEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The frequency the map is read at. It also sets the mesh, the copper's skin-effect resistance and the dielectric's loss, so the map and the modes are both of it. Opens on the top of this rail's band."/>
+                                        <Button Grid.Column="2" Name="ImpedanceFindButton"
+                                                Content="Find" FontSize="11" Padding="12,3"
+                                                Command="{Binding PlaneResonancesCommand}"
+                                                ToolTip.Tip="Extract the plane pair at that frequency, solve its modes and map |Z| over it. Several seconds — it is never run automatically."/>
+                                    </Grid>
+                                    <!-- ── PROGRESS: STAGES AND AN INDETERMINATE BAR ─────────
+                                         Never a percentage. The dominant cost is one dense LAPACK
+                                         call — cubic in the cell count, no callbacks, nothing to
+                                         subdivide — so a determinate bar would be animating a
+                                         number nobody computed. The stage line carries what the
+                                         run is doing AND how big the problem turned out to be,
+                                         which is what actually explains the wait. -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding IsFindingModes}">
+                                        <ProgressBar IsIndeterminate="True" Height="3"
+                                                     Minimum="0" Maximum="1"/>
+                                        <TextBlock Classes="note" TextWrapping="Wrap"
+                                                   Text="{Binding PlaneStage}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ── CHANGING THE FREQUENCY WITH A MAP UP (owner, 2026-09-19) ────
+                                 The map is at ONE frequency, so the next thing anybody wants is
+                                 another one. Hiding the controls the moment a map appeared left
+                                 the Frequency tab's card as the only way back — the same "leave
+                                 the picture to change the picture" the tab's own controls exist
+                                 to end. A STRIP and not the centred panel: that one is an empty
+                                 state and carries the sentence saying what the map is, which a
+                                 reader looking at a map has already had answered. Top centre,
+                                 because both bottom corners are readouts. -->
+                            <Border IsVisible="{Binding ShowImpedanceRefind}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                                    Margin="6" Padding="8,3" CornerRadius="4"
+                                    Background="{DynamicResource SystemChromeLowColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="3">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Classes="note" VerticalAlignment="Center"
+                                                   Text="{Binding ImpedanceMapAt}"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="re-run at"
+                                                   VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                        <ctl:InlineEditText Classes="val" Width="90"
+                                                            Text="{Binding PlaneFrequencyEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="A new frequency for the map. The cavity is re-extracted at it, because the mesh, the copper's skin-effect resistance and the dielectric's loss are all of the frequency the map is read at."/>
+                                        <Button Content="Find" FontSize="11" Padding="10,2"
+                                                Command="{Binding PlaneResonancesCommand}"
+                                                ToolTip.Tip="Re-run the plane pair at that frequency."/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="3" IsVisible="{Binding IsFindingModes}">
+                                        <ProgressBar IsIndeterminate="True" Height="3"
+                                                     Minimum="0" Maximum="1"/>
+                                        <TextBlock Classes="note" TextWrapping="Wrap" MaxWidth="360"
+                                                   Text="{Binding PlaneStage}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                         </Panel>
                         </DockPanel>
                     </Border>
@@ -1494,8 +1586,12 @@
                                                 Command="{Binding PlaneResonancesCommand}"
                                                 ToolTip.Tip="Extract the plane pair at that frequency and solve its modes. Tens of seconds on a real board — it is never run automatically."/>
                                     </Grid>
-                                    <TextBlock Classes="note" Text="finding the modes…"
-                                               IsVisible="{Binding IsFindingModes}"/>
+                                    <StackPanel Spacing="3" IsVisible="{Binding IsFindingModes}">
+                                        <ProgressBar IsIndeterminate="True" Height="3"
+                                                     Minimum="0" Maximum="1"/>
+                                        <TextBlock Classes="note" TextWrapping="Wrap"
+                                                   Text="{Binding PlaneStage}"/>
+                                    </StackPanel>
                                     <ScrollViewer MaxHeight="140" IsVisible="{Binding HasModes}"
                                                   HorizontalScrollBarVisibility="Disabled"
                                                   VerticalScrollBarVisibility="Auto">

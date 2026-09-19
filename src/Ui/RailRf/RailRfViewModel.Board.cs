@@ -144,6 +144,11 @@ public sealed partial class RailRfViewModel
     {
         BoardOverlayLayer.ReadoutChanged += r => PostToUi(() => BoardReadout = r);
 
+        // The window prints the empty |Z| tab's sentence itself, beside the Find button that
+        // answers it, so the renderer must not centre a second copy under them — the same
+        // collision "No board yet" already had with the map note.
+        BoardOverlayLayer.EmptyNoteShownByHost = true;
+
         // R-rail8-11: forcing a region is a DOCUMENT edit and a re-solve, which is why the overlay
         // asks rather than writing. The override is keyed by PdnRegionRef — a drawing layer and a
         // vertex the geometry itself determines — so it survives a re-import, which is exactly when a
@@ -444,8 +449,11 @@ public sealed partial class RailRfViewModel
         _                          => RailMapKind.Copper,
     };
 
-    partial void OnSelectedBoardOverlayChanged(RailBoardOverlay value) =>
+    partial void OnSelectedBoardOverlayChanged(RailBoardOverlay value)
+    {
         BoardOverlayLayer.Kind = MapKindOf(value);
+        AnnounceImpedanceMap();
+    }
 
     /// <summary>Hands the overlay the rail the window is showing. Called whenever the result or the
     /// selected rail changes.</summary>

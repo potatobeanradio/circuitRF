@@ -238,7 +238,7 @@ public sealed class RailBoardViewTests
         // The |Z| tab with no plane answer — the note the owner hit, taken from the scene itself
         // rather than retyped, so this cannot pass against a sentence nothing shows.
         string note = RailMapScene.Build(ResultOf(out _), RailMapKind.Impedance, Dbu).Note!;
-        Assert.Contains("separate run", note, StringComparison.Ordinal);
+        Assert.Equal(RailMapScene.EmptyImpedanceNote, note);
 
         const float W = 420, H = 300;
         var layout = RailMapRenderer.LayOutNote(note, W, H);

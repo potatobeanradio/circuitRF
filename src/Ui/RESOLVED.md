@@ -1,5 +1,141 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF — the |Z| map needed a DC run to draw its own ports, and no way back to the box (2026-09-19)
+
+Three more from the owner driving the |Z| tab, all of them states the first pass created or left.
+
+**The callouts came from the DC answer, so Find alone drew none.** *"I don't see the start and end
+points of the |Z| until I perform a Run — only then did U1 and U3 render."* `BuildImpedance` took
+its markers from `MarkersOf(result)`, and `result` is the **DC** result, null until somebody
+presses Run. But the plane run does not need a DC run and never did: `CanRunPlane` gates on the run
+GATE, not on a completed solve, so Find produces a correct map on a board that has never been
+solved — with no ports on it at all, **the driven one included**. That is the one mark the picture
+cannot be read without, because every number on it is measured from that point and the caption
+names a port the board gave the reader no way to find.
+
+`PdnPlaneAnswer.Ports` is the fix: the plane pair carries its own ports, placed by the rule
+`MarkersOf` already states — *the anchor's resolved pads first, a cavity cell only where the anchor
+resolved to none* — so a port drawn from the plane answer and the same port drawn from a DC result
+land on the same pixel. That equality is asserted rather than assumed, because it is what makes
+merging the two lists **by name** legitimate. They are merged rather than concatenated: the DC
+marker's readout carries the port's measured drop and this one cannot, and two glyphs on one pad
+read as two ports.
+
+*Still degraded without a Run, and deliberately not chased:* `ClipPaths` also reads the DC result,
+so an unrun board's tiles are not clipped to the copper outline. The cavity cells only exist where
+rail and reference overlap, so the shape is already right — the edges are stair-stepped at the cell
+pitch instead of following the artwork. A wrong-looking edge, not a wrong picture.
+
+**A progress bar, and why it is not a percentage.** There is no honest one to show: the dominant
+cost is a single dense LAPACK call inside `PdnModeSolver`, cubic in the cell count, with no
+callbacks and nothing to subdivide, so a determinate bar would animate a number nobody computed.
+`RailPlaneRequest.Progress` reports STAGES instead — extracting, re-meshing, solving, mapping —
+and each names the size of the problem it found: *"re-meshing at 0.42 mm — 4,700 cavity cells is
+over the 4,000 the dense solve stops at"* is the sentence that explains a thirty-second wait. The
+re-mesh stage is the one worth having, because an auto-fit that re-extracted twice and a run that
+never needed to are indistinguishable once the map is up. An indeterminate bar sits under it, in
+all three places the run can be started from.
+
+**And the frequency box came back.** *"How do I change the frequency after I've run one?"* — the
+first cut hid the tab's controls the moment a map appeared, leaving the Frequency tab's card as the
+only way back, which is the same *leave the picture to change the picture* those controls existed
+to end, reintroduced one state later. `ShowImpedanceRefind` puts a compact strip at the top of the
+canvas naming what is on screen (`|Z| at 10 MHz from U1.VDD`) with the box and Find beside it. A
+strip and not the centred panel: that one is an EMPTY state and carries the sentence explaining
+what the map is, which a reader looking at a map has already had answered. Top, because both bottom
+corners are already readouts. The two are asserted mutually exclusive — one frequency control on
+screen, never two.
+
+## railRF — the |Z| plate said "Fast model" about a mesh answer, and nothing said where (2026-09-19)
+
+Two faults found from the owner's 10 MHz run of the shipped board. The flat-field half of that
+report is in `src/Design/RESOLVED.md`; these two are the picture's.
+
+**The caption carried the WINDOW's model kind, not the answer's.** `BuildImpedance` read
+`result.Netlist.Provenance.ModelKind` — the **DC** run's — so a window sitting on the Fast model
+captioned the |Z| map "Fast model". It never is one: `RailPlaneRun`'s own header says it **always
+meshes**, whatever the window is set to, because the fast reading refuses above a tenth of the
+first cavity resonance and the cavity band is by definition above that. §2.9 rule 1 is that every
+result says which model produced it, and **a result carrying the wrong model is worse than one
+carrying none** — this one asserted the cheaper reading about the expensive answer, which is the
+exact direction that rule exists to prevent. `PdnPlaneAnswer.ModelKind` is its own now, so the
+caption cannot be wrong about it again.
+
+**"From where to where?" had no answer on the picture.** The caption said *from U1.VDD* and the
+plate printed two numbers; nothing on the board marked which of the callouts was the drive, and
+nothing at all marked where either end of the ramp was. A reader reasonably took the plate's two
+ends for two *places* — which is what the owner's question was.
+
+Two marker kinds close it:
+
+- **`RailMarkerKind.Driven`** — the port the map is measured FROM, promoted **in place** rather
+  than added beside the existing callout, because two glyphs on one pad read as two ports. Drawn
+  as the ordinary disc inside a second, wider ring, so it says "this one, of the ports you can
+  already see" rather than introducing a fifth kind of thing.
+- **`RailMarkerKind.MapExtreme`** — the cells the plate's cold and hot ends are at, as a CROSS
+  (a pointer at a place; a disc would read as a port nobody declared). **Added only where the
+  field has structure**: on a flat map the extremes are two arbitrary cells of one equipotential,
+  and marking them would invent the gradient the collapse just removed. `Bounds` unions them, so
+  Zoom to Fit frames a callout placed by the FIELD rather than by the artwork (§11.6 trap 4).
+
+Gate: `RailZMapTests.FarBelowTheFirstModeTheMapIsFlatAndSaysSoRatherThanDrawingAGradient`, which
+carries both halves — the flat case with no extreme markers, and a second run near the first mode
+whose field does have ends, without which "only where there is structure" would pass against a
+feature that never fires.
+
+## railRF — the |Z| tab was a dead end, and its sentence was written for us (2026-09-19)
+
+Owner report: pressing **|Z|** in the Board area on the Sensor board example showed *"No |Z| map
+yet. It is the plane pair's own answer and it is a separate run — the Plane resonances card, on the
+Frequency results tab: type the frequency you want the map at and press Find."* Two objections, and
+a third fault neither of them names.
+
+**"Own answer" is our vocabulary, not anyone's.** The phrase means something precise inside this
+codebase — the cavity is a different extraction from the DC one, so its result is a second object
+beside `RailDcResult` — and precisely nothing to a reader looking at an empty panel. The rest of
+the sentence was directions to a control on a different tab. So the note said neither *what the
+picture would show* nor *what to press*, which are the only two things an empty state is for.
+
+The replacement is one string, `RailMapScene.EmptyImpedanceNote`, and it leads with the picture:
+how many ohms the plane presents between the chosen load pin and every other point on the board,
+at one frequency — *so you can see WHERE the impedance is high and not just that it is.* It is one
+string because the WINDOW prints it beside its own button and the RENDERER centres it where there
+is no button (a clipboard copy, a report page, a headless render), and two spellings of one empty
+state is how the first one survived so long unread.
+
+**The third fault: that sentence was also what a REFUSED run showed.** `FinishPlane` deliberately
+leaves `Plane` null on a refusal — the previous map is worth more than a cleared one, and that is
+still right — so the tab went on saying "no map yet" to somebody who had just pressed Find and been
+told why it could not run, with the refusal printed on the card they had left. On this example that
+was **every** press: `src/Design/RESOLVED.md` has the mesh collision that made the run unrunnable
+there. A refusal now replaces the sentence, in the warning colour, on the tab the user is looking
+at. `PlaneRefusal` is kept apart from `PlaneMessage`, which also carries the notes of a run that
+SUCCEEDED — the |Z| tab must not print a success summary in place of its own sentence.
+
+**And the controls moved onto the picture.** The frequency box, Find, the busy line and the refusal
+are all on the |Z| tab now, centred over the canvas; the Plane resonances card on the Frequency tab
+is unchanged and drives the same command, because the MODE LIST is a frequency-tab answer and
+belongs beside the curve. Two things that had to be handled for that:
+
+- **The renderer's centred note had to stop.** Two centred sentences on one canvas is the exact
+  collision "No board yet" already had with the map note (fixed the day before, 2026-09-18).
+  `RailLayoutOverlay.EmptyNoteShownByHost` strips it from the scene THIS OVERLAY hands the canvas
+  and not from `RailMapScene.Build`, so a copy, a report and a headless render still carry it —
+  none of those has a button. Only an EMPTY tab's note is suppressed; a legend and tiles are
+  untouched.
+- **`CanRunPlane` is now false while a run is in flight.** This run is tens of seconds, and a
+  button that stays live reads as a dead button — the same finding as the Accuracy press the day
+  before.
+
+`ShowImpedanceFinder` is gated on `HasBoard` for the placeholder-collision reason above, and
+re-raised from the board change, the tab change and the plane answer — the three things that can
+move it. The |Z| tab's own tooltip said "the impedance map over frequency", which is what it is
+NOT: it is one frequency, and the curve over frequency is the Frequency results tab.
+
+Gates: `RailZMapTests.TheEmptyImpedanceTabSaysWhatTheMapIsAndARefusalTakesItsPlace`, plus
+`TheShippedExampleProducesAnImpedanceMapWithNoCellSizeTyped` for the half that made the tab
+unreachable in the first place.
+
 ## railRF — a fourth manual pass: the pick button, the plot, the flash, and a box with nowhere to go (2026-09-19)
 
 Six items. Two of them are the same shape as things already "fixed" in the pass above, and both of
