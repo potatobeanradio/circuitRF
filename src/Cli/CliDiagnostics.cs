@@ -2536,6 +2536,25 @@ internal static class CliDiagnostics
       + "SI and nothing is an expression. The flags that state these quantities are --source, "
       + "--load, --target-drop, --target-z, --reference and --extent.", ("name", name));
 
+    /// <summary>
+    /// The frequency-domain flags this verb reads and this PHASE cannot answer with.
+    /// </summary>
+    /// <remarks>
+    /// <b>A note rather than a refusal, and never silence.</b> <c>--target-z</c>, <c>--mask</c> and
+    /// <c>--aggressor</c> state a Z(f) target, a per-port ceiling and an excitation set; every one of
+    /// them is read, validated against the document and written onto the rail, and every one of them
+    /// is then invisible in a DC answer. That is <c>cli.md</c> §3.3's accepted-and-dropped defect —
+    /// <i>the run answered a different question than the one asked</i> — and it is the same defect
+    /// <see cref="RailSetNotApplicable"/> refuses one flag along. It is a note here rather than a
+    /// refusal because a caller running one `.crail` headlessly wants the DC answer out of a document
+    /// that legitimately states both halves; what they may not have is the flag going by in silence.
+    /// </remarks>
+    public static Diagnostic RailFrequencyFlagsNotInThisPhase(string flags) => Diagnostic.Create(
+        "rail.frequency-flags.not-in-this-phase", DiagnosticSeverity.Warning,
+        "{flags} state the FREQUENCY answer — Z(f) against a target, and what excites it — and this "
+      + "verb answers the DC question. They were read and validated and are not in this result. The "
+      + "rail's own window is where Z(f) is run today.", ("flags", flags));
+
     public static Diagnostic RailValueMalformed(string option, string text, string example)
         => Diagnostic.Create(
             "rail.value.malformed", DiagnosticSeverity.Error,

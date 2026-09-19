@@ -2477,3 +2477,41 @@ the answer §9 says nobody investigates.
 2 mm** — falling by four on each halving, which is the unit-cell ladder's own `(kΔ)²/24` dispersion and
 nothing else. §7 asks for better than 2 % with monotone convergence; both halves hold, and the coarsest
 rung is deliberately outside the tolerance so the ladder is measuring something.
+
+---
+
+## railRF review round 2 — two findings in the peak table's own text (2026-09-18)
+
+Review of briefs 9-16. Both are in what a user READS, which is where §2.4 puts the value of this
+whole table.
+
+### 1. `FindPeaks`' doc comment described the wrong flank
+
+The summary said *"standing at least `prominenceDb` above the LOWER of its two flanking minima"* and
+the code measures against `Math.Max(Flank(-1), Flank(+1))` — the HIGHER one, which is topographic
+prominence's own key col and is correct. The comment is the thing that was wrong, and it is the kind
+of wrong that gets "fixed": measuring against the lower minimum would report a 0.2 dB ripple on the
+shoulder of a real 20 dB peak as a 20 dB anti-resonance of its own, because the walk down its outer
+flank runs to the floor of the band. That is exactly the shoulder `DefaultProminenceDb` exists to
+suppress, so the comment now says which flank and why.
+
+### 2. `PdnCoincidenceRow.Describe` spelled every harmonic past the third with a bare "th"
+
+`21th`, `22th`, `31th`. §2.4 calls this sentence *the sentence the tool exists to produce* and a
+converter's declared harmonic count runs into the twenties on these boards, so the suffix is computed
+now (`second`, `third`, then `4th` … with the 11-13 exception).
+
+### Reported, not changed: `PdnFieldMap` builds and factorises a matrix
+
+The series overview's scope rule reads *"nothing under `src/Design/Layout/Pdn/` or `src/Engine/Pdn/`
+builds a matrix, factorises anything, or owns a result type"*, and `PdnFieldMap.Impedance` builds an
+`MnaSystem`, stamps the cavity into it and calls `Factorize`/`Solve`. Brief 3's comment-stripped scan
+(`PdnMeshExtractorTests.NothingUnderPdnSolvesAnything`) gates only the `src/Design` half, so nothing
+caught it.
+
+It is defensible and is probably what should have happened: brief 14 §6 says in as many words *"no
+new solver — CSparse's complex LU is what `SParameterEngine` already uses"*, `MnaSystem` is this
+repo's one assembler rather than a second one, and an N-cell impedance field genuinely cannot be
+read back out of an `ElaboratedNetlist` sweep. But the overview's sentence and the code disagree, and
+one of the two should move — either the scan extends to `src/Engine/Pdn/` and this is refactored, or
+the overview's rule is narrowed to the `src/Design` half it was really about. An owner call.

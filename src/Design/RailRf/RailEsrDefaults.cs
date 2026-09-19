@@ -130,7 +130,12 @@ public static class RailEsrDefaults
     {
         if (string.IsNullOrWhiteSpace(dielectricClass)) return null;
 
-        Span<char> buf = stackalloc char[dielectricClass.Length];
+        // The house guard (GerberMacro.cs): a stackalloc sized by an INPUT string is a stack
+        // overflow waiting for a malformed file, and a stack overflow cannot be caught. A dielectric
+        // class is four characters; a cell of a maintained table that lost its delimiter is not.
+        Span<char> buf = dielectricClass.Length <= 256
+            ? stackalloc char[dielectricClass.Length]
+            : new char[dielectricClass.Length];
         int n = 0;
         foreach (char c in dielectricClass)
             if (char.IsAsciiLetterOrDigit(c)) buf[n++] = char.ToUpperInvariant(c);
@@ -261,7 +266,8 @@ public static class RailEsrDefaults
 
         static string Squash(string s)
         {
-            Span<char> buf = stackalloc char[s.Length];
+            // Sized by a stackup layer's NAME — see CanonicalClass for the guard and why.
+            Span<char> buf = s.Length <= 256 ? stackalloc char[s.Length] : new char[s.Length];
             int n = 0;
             foreach (char c in s) if (char.IsAsciiLetterOrDigit(c)) buf[n++] = char.ToUpperInvariant(c);
             return new string(buf[..n]);

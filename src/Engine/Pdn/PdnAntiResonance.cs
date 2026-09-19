@@ -149,7 +149,14 @@ public static class PdnAntiResonance
 
     /// <summary>
     /// Every local maximum of <paramref name="magnitudeOhms"/> standing at least
-    /// <paramref name="prominenceDb"/> above the lower of its two flanking minima.
+    /// <paramref name="prominenceDb"/> above the <b>HIGHER</b> of its two flanking minima.
+    ///
+    /// <para>The higher one, which is topographic prominence's own key col and not a typo for the
+    /// lower: a peak is only as prominent as the shallower of the two saddles that separate it from
+    /// its neighbours. Measuring against the LOWER one would report a 0.2 dB ripple sitting on the
+    /// shoulder of a real 20 dB peak as a 20 dB anti-resonance of its own, because the walk down its
+    /// outer flank runs all the way to the floor of the band — which is exactly the shoulder this
+    /// threshold exists to suppress.</para>
     ///
     /// <para><b>The endpoints are never peaks.</b> A curve rising into the top of the band has its
     /// maximum at the last sample and that is a statement about where the sweep stopped, not about

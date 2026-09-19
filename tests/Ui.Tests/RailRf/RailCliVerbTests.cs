@@ -427,6 +427,118 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
 
     // ── the fixture ──────────────────────────────────────────────────────────
 
+    // ── R-rail10-5 / R-rail11-6: the headline counts are about THE BOARD ─────
+
+    /// <summary>
+    /// <b>The provenance banner counts the parts on the RAIL, not the rows in the library.</b>
+    ///
+    /// <para>R-rail11-6 calls "how many parts are modelled from a file" a headline number, and
+    /// R-rail10-5 puts it in every export because a file read six months later has no status strip.
+    /// Both are statements about the board. Counting the LIBRARY's own rows instead answers a
+    /// different question with the same-looking number — a shared library of many rows in front of a
+    /// one-part rail prints the library's totals, and they read as a checked board. The window
+    /// computes it over the BOM's part numbers (<c>RailRfViewModel.RebuildParts</c>), so counting
+    /// rows here would also be a verb disagreeing with the window about one document, which is what
+    /// R-rail10-8 exists against.</para>
+    ///
+    /// <para>The fixture makes the two answers different on purpose: three rows, one part fitted.</para>
+    /// </summary>
+    [Fact]
+    public void TheProvenanceCountsThePartsOnTheRailAndNotTheLibrarysOwnRows()
+    {
+        var fx = Fixture();
+        WithPartLibrary(fx, fitted: "CAP-A");
+
+        var (exit, stdout, stderr) = RunCli("rail", fx.Crail);
+        output.WriteLine(stdout);
+        Assert.True(exit == 0, stderr);
+
+        Assert.Contains("0 of 1 part number(s) modelled from a file, 0 with no bias curve",
+                        stdout, StringComparison.Ordinal);
+
+        // The negative, and it is the whole point: the library holds three rows, two of them with a
+        // file and two with no curve. A banner reading those totals would be reporting the library.
+        Assert.DoesNotContain(" of 3 part number(s)", stdout, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A rail that declares no part at all has <b>no coverage</b>, which is not a coverage of zero —
+    /// the same rule that governs having no library, one row along.
+    /// </summary>
+    [Fact]
+    public void ARailWithNoPartRowsSaysSoRatherThanPrintingZero()
+    {
+        var fx = Fixture();
+        WithPartLibrary(fx, fitted: null);
+
+        var (exit, stdout, stderr) = RunCli("rail", fx.Crail);
+        Assert.True(exit == 0, stderr);
+        Assert.Contains("no part is declared on the rail(s) reported here", stdout, StringComparison.Ordinal);
+        Assert.DoesNotContain("part(s) modelled from a file", stdout, StringComparison.Ordinal);
+    }
+
+    // ── cli.md §3.3: a flag this phase cannot answer with is SAID ────────
+
+    /// <summary>
+    /// <b><c>--target-z</c>, <c>--mask</c> and <c>--aggressor</c> are read, validated, and then not
+    /// in a DC answer — so the verb says so.</b>
+    ///
+    /// <para>Accepted-and-dropped is the defect <c>cli.md</c> §3.3 records, and it is the same one
+    /// <c>--set</c> is refused for one flag along. A mask that changed no number on the page and
+    /// went by in silence reads exactly like a mask that was honoured.</para>
+    /// </summary>
+    [Fact]
+    public void TheFrequencyDomainFlagsAreNotSilentlyDropped()
+    {
+        var fx = Fixture();
+
+        var (exit, _, stderr) = RunCli(
+            "rail", fx.Crail, "--target-z", "2.5mOhm", "--aggressor", "converter=2.2MHz x5");
+
+        Assert.True(exit == 0, stderr);
+        Assert.Contains("--target-z, --aggressor", stderr, StringComparison.Ordinal);
+        Assert.Contains("FREQUENCY answer", stderr, StringComparison.Ordinal);
+
+        // And nothing is said when nothing was asked — a note on every run is a note nobody reads.
+        var (plainExit, _, plainErr) = RunCli("rail", fx.Crail);
+        Assert.Equal(0, plainExit);
+        Assert.DoesNotContain("FREQUENCY answer", plainErr, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Three library rows — two file-modelled, two without a bias curve — and at most one of them
+    /// actually fitted to the rail, so the board's counts and the library's cannot coincide.
+    /// </summary>
+    private static void WithPartLibrary(Fx fx, string? fitted)
+    {
+        var library = new PartLibrary { Name = "Parts" };
+        library.Rows.Add(new PartLibraryRow
+        {
+            PartNumber = "CAP-A", DielectricClass = "X7R",
+            CapacitanceFarads = 1e-6, SelfResonantFrequencyHz = 5.31e6,
+        });
+        library.Rows.Add(new PartLibraryRow
+        {
+            PartNumber = "CAP-B", DielectricClass = "X7R",
+            CapacitanceFarads = 1e-7, SelfResonantFrequencyHz = 16e6, ModelRef = "capb.s2p",
+        });
+        library.Rows.Add(new PartLibraryRow
+        {
+            PartNumber = "CAP-C", DielectricClass = "C0G",
+            CapacitanceFarads = 1e-9, SelfResonantFrequencyHz = 100e6, ModelRef = "capc.s2p",
+        });
+        library.Rows[0].BiasCurve.Add(new PartBiasPoint(0, 1e-6));
+
+        string path = Path.Combine(fx.Cell, "Parts.crlib");
+        PartLibraryIo.SaveToFile(path, library);
+
+        var doc = RailDocumentIo.LoadFromFile(fx.Crail);
+        doc.PartLibraryRef = Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(fx.Crail))!, path);
+        if (fitted is not null)
+            doc.Rails[0].Parts.Add(new RailPart { Refdes = "C1", PartNumber = fitted });
+        RailDocumentIo.SaveToFile(fx.Crail, doc);
+    }
+
     private sealed record Fx(string Root, string Cell, string Clay, string Crail, string Tech);
 
     /// <summary>

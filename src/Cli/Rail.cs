@@ -217,6 +217,22 @@ internal static class Rail
 
         if (ApplyOverrides(o, doc, board!, input.DocumentPath) is { } overrideRefusal) return overrideRefusal;
 
+        // Accepted-and-dropped is the defect `cli.md` §3.3 records, and it is the same one
+        // CliDiagnostics.RailSetNotApplicable refuses one flag along: --target-z, --mask and
+        // --aggressor are read, validated and written onto the rail, and then a DC answer has
+        // nowhere to show any of them. Said out loud rather than left to a caller to notice that a
+        // mask they supplied changed no number on the page.
+        var frequencyFlags = new List<string>();
+        if (o.TargetZ is not null)       frequencyFlags.Add("--target-z");
+        if (o.Masks.Count > 0)           frequencyFlags.Add("--mask");
+        if (o.Aggressors.Count > 0)      frequencyFlags.Add("--aggressor");
+        if (frequencyFlags.Count > 0)
+        {
+            var note = CliDiagnostics.RailFrequencyFlagsNotInThisPhase(Join(frequencyFlags));
+            Console.Error.WriteLine("note: " + note.Render());
+            JsonRun.Note(note);
+        }
+
         if (doc.Refusal() is { } docRefusal)
             return JsonRun.Fail(CliDiagnostics.RailDocumentRefused(input.DocumentPath, docRefusal));
 
@@ -855,6 +871,7 @@ internal static class Rail
         int PartsModelledFromFile,
         bool Indicative,
         string? PartLibraryPath,
+        int PartsReferenced,
         string ArtworkPath,
         string TechnologyPath)
     {
@@ -864,7 +881,13 @@ internal static class Rail
             PartLibraryPath is null
                 ? "no part library resolved: no part is modelled from a file and no bias-curve "
                 + "coverage is known"
-                : $"{PartsModelledFromFile} part(s) modelled from a file, "
+                // Nothing to count is not a count of nothing. A rail that declares no part rows has
+                // no decoupling bank IN THE DOCUMENT, and printing "0 part(s) modelled from a file"
+                // there reads as a checked board that came back clean.
+                : PartsReferenced == 0
+                ? "no part is declared on the rail(s) reported here, so nothing was asked of the "
+                + "part library: no bias-curve coverage is known"
+                : $"{PartsModelledFromFile} of {PartsReferenced} part number(s) modelled from a file, "
                 + $"{PartsWithoutBiasCurve} with no bias curve"
                 + (Indicative
                     ? " — some ESRs are class defaults, so any peak height derived from them is INDICATIVE"
@@ -899,20 +922,38 @@ internal static class Rail
             }
         }
 
-        // With no BOM there is nothing to ask coverage ABOUT but the library's own rows, which is an
-        // honest statement of what the library holds — and where there is no library at all the count
-        // is not zero, it is unknown, which RailProvenance.Lines says rather than printing a 0 that
-        // reads as "checked, and all fine".
-        var coverage = library?.Coverage(library.Rows.Select(row => row.PartNumber));
+        // R-rail11-6's two headline counts are about THE PARTS ON THIS BOARD, and the board's parts
+        // are the rails' own rows — `RailSpec.Parts`, each carrying the internal part number the
+        // model attaches to. Asking `PartLibrary.Coverage` about the LIBRARY's own rows instead
+        // answers a different question with the same-looking number: a shared library of 500 rows in
+        // front of a twelve-part rail prints "412 with no bias curve" and the count reads as a
+        // statement about the board. The window computes it over the BOM's part numbers
+        // (`RailRfViewModel.RebuildParts`), and a verb whose provenance disagrees with the window's
+        // status strip about the same document is exactly the divergence R-rail10-8 exists against.
+        //
+        // A rail with no part rows at all has a coverage of NOTHING rather than a coverage of zero,
+        // which RailProvenance.Lines says out loud — the same rule that governs having no library.
+        var referenced = rails
+            .SelectMany(r => r.Parts)
+            .Select(p => p.PartNumber)
+            .Where(pn => !string.IsNullOrWhiteSpace(pn))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var coverage = library is not null && referenced.Count > 0 ? library.Coverage(referenced) : null;
+
+        int fromFile = library is null ? 0
+            : referenced.Count(pn => library.ResolveModel(pn).Source == PartModelSource.AttachedFile);
 
         return new RailProvenance(
             o.Model == PdnModelKind.Accurate ? "Accuracy (meshed)" : "Fast",
             extent,
             temperature,
             coverage?.WithoutBiasCurve.Count ?? 0,
-            library?.Rows.Count(row => row.ModelSource == PartModelSource.AttachedFile) ?? 0,
+            fromFile,
             coverage is { Indicative.Count: > 0 },
             libraryPath,
+            referenced.Count,
             board?.ClayPath ?? "(none)",
             board is null ? "(none)" : board.Technology.Name);
     }

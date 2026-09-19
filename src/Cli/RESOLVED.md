@@ -2302,3 +2302,59 @@ on the first run.
   remarks: a picture on the fallback palette is honestly a picture of geometry, where copper priced
   with no thickness and no conductivity produces numbers indistinguishable from numbers with physics
   behind them.
+
+---
+
+## railRF review round 2 — two defects in the `rail` verb, neither of which reported a failure (2026-09-18)
+
+Review of briefs 9-16. Both findings are in `src/Cli/Rail.cs` and both produce a run that exits 0
+with a plausible page.
+
+### 1. The provenance banner counted the LIBRARY's rows, not the board's parts
+
+`Provenance` asked `PartLibrary.Coverage` about `library.Rows.Select(row => row.PartNumber)` — every
+row the library holds. `Coverage`'s parameter is named `referencedPartNumbers` and R-rail11-6's two
+headline numbers are statements about **the board**: *how many parts are modelled from a file*, and
+*how many have no bias curve*. A shared library of 500 rows in front of a twelve-part rail therefore
+printed the library's own totals into the console banner, the CSV comment header, the `.npy`
+provenance group and `--json` — as a number that reads like a checked board.
+
+The board's parts were available the whole time: `RailSpec.Parts` is the document's own part list,
+each row carrying the internal part number the model attaches to (brief 11's `RailPart`). The verb
+now counts over the parts of the rails it is REPORTING, and resolves each through
+`PartLibrary.ResolveModel` for the file count.
+
+**It was also a verb disagreeing with the window about one document.** `RailRfViewModel.RebuildParts`
+computes the same two numbers over `bom.PartNumbers` — the parts on the board — so the status strip
+and the CLI banner answered differently for the same `.crail`. That is what R-rail10-8's rule is
+about, and a source scan cannot see it because both sides are one call into `src/Design`.
+
+**A rail with no part rows now says so rather than printing a zero.** Nothing to count is not a count
+of nothing — the same rule the "no part library resolved" line already followed one row along.
+
+### 2. `--target-z`, `--mask` and `--aggressor` were accepted and dropped in silence
+
+All three are parsed, validated against the document (`--mask` even refuses a mask that lands on no
+port, for exactly this reason: *"a mask that landed on nothing is a mask that will not be applied,
+and a silent one reads on the report exactly like a mask that was honoured"*) and written onto the
+rail — and then the verb runs `RailDcRun` and prints a DC answer, where none of the three can appear.
+
+That is `cli.md` §3.3's accepted-and-dropped defect, and it is the one this same file already refuses
+`--set` for, one flag along. It is a NOTE rather than a refusal (`CliDiagnostics.
+RailFrequencyFlagsNotInThisPhase`, stderr + `--json`), because a `.crail` legitimately states both
+halves and a caller wanting the DC answer out of one should get it — what they may not have is the
+flag going by without a word.
+
+### Reported, not changed: `rail` still cannot produce Z(f)
+
+`PdnSweep` (brief 12) is reachable only from `RailRfViewModel.Response` and from tests. The verb's
+`-o out.sNp` is still `CliDiagnostics.RailTouchstoneNotYet`, its CSV still carries
+*"anti-resonances: none are reported here … this is the DC phase"*, and §2.4's coincidence check —
+*the sentence the tool exists to produce* — has no headless spelling at all.
+
+Brief 10 wrote that refusal as a P0 placeholder in so many words (R-rail10-4: *"at P0 this is a
+refusal naming `--accurate` and the phase"*), and brief 12 shipped the sweep without coming back for
+it. Wiring it is a real piece of work — a band/grid surface on the verb, the Touchstone write, the
+frequency tables in the CSV and on the page — so it is recorded here as an owner decision rather than
+taken unasked. §5's claim that *a board can be gated in CI* is true of the DC half today and of
+nothing above it.

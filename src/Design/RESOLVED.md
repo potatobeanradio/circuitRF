@@ -8007,3 +8007,20 @@ worth keeping.
   compute one from" while naming a defaulted plating thickness in the same clause. Both halves are
   true — the thickness is defaulted, which is exactly why there is no annulus worth computing over —
   but the sentence reads as a contradiction.
+
+---
+
+## railRF review round 2 — an unbounded `stackalloc` on input text (2026-09-18)
+
+Review of briefs 9-16. `RailEsrDefaults.CanonicalClass` and its private `Squash` both sized a
+`stackalloc char[...]` by the LENGTH OF THEIR ARGUMENT — a part library row's dielectric-class field
+and a stackup layer's name. Both are file content, and a stack overflow is the one .NET failure a
+`catch` cannot reach: a maintained table that lost a delimiter takes the process down with no
+diagnostic, in a method whose whole job is to answer "is this string a class I recognise".
+
+The house guard already existed one project over — `GerberMacro.cs` writes
+`s.Length <= 256 ? stackalloc char[s.Length] : new char[s.Length]` — and both sites now carry it. A
+dielectric class is four characters; the heap path never runs on well-formed input.
+
+(`src/Render/DataDisplay/Models/WspTrace.cs:304` has the same unguarded shape and predates this
+series. Reported rather than changed, since it is outside railRF's diff.)

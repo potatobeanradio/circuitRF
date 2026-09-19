@@ -58,11 +58,28 @@ public sealed record PdnCoincidenceRow(
         $"{Peak.Contributors} at {PdnMask.Hertz(Peak.FrequencyHz)}, {PdnMask.Ohms(Peak.PeakOhms)}" +
         (Peak.MarginDb is { } m && m < 0 ? $" ({-m:0.#} dB over its mask)" : "") +
         (Indicative ? " (indicative)" : "") +
-        $" — {Harmonic switch { 1 => $"the {AggressorName}'s own fundamental",
-                               2 => $"the {AggressorName}'s second harmonic",
-                               3 => $"the {AggressorName}'s third harmonic",
-                               _ => $"the {AggressorName}'s {Harmonic}th harmonic" }} " +
+        $" — {(Harmonic == 1
+                  ? $"the {AggressorName}'s own fundamental"
+                  : $"the {AggressorName}'s {Ordinal(Harmonic)} harmonic")} " +
         $"at {PdnMask.Hertz(AggressorHz)}, {SeparationFraction:P1} away.";
+
+    /// <summary>
+    /// <c>second</c>, <c>third</c>, then <c>4th</c> … — the spelling a report reads.
+    /// </summary>
+    /// <remarks>
+    /// The suffix is computed rather than a bare <c>"th"</c>: a converter's harmonic count runs into
+    /// the twenties on these boards, and <c>21th</c> in the sentence §2.4 calls <i>the sentence the
+    /// tool exists to produce</i> is the kind of thing a reader stops on.
+    /// </remarks>
+    private static string Ordinal(int n) =>
+        n switch
+        {
+            2 => "second",
+            3 => "third",
+            _ => n + (n % 100 is >= 11 and <= 13
+                          ? "th"
+                          : (n % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" }),
+        };
 }
 
 /// <summary>§2.4's coincidence check.</summary>
