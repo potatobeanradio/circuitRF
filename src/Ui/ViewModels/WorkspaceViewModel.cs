@@ -3199,13 +3199,53 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // edit history (a layout showing a wirebond cell has the wires' snapshot stack beside its own
     // command stack, WB40), and only the document can say which of them the user edited last. Defaulted
     // on IUndoableDocument to the single-stack behaviour, so every other document type is unaffected.
+    //
+    // ── AND IT ONLY ACTS WHEN THIS WINDOW IS THE ONE IN FRONT ────────────────────────────────────
+    //
+    // Owner report, 2026-09-18: a primitive moved in a `.clay` document window, then Ctrl/⌘+Z pressed
+    // with the railRF window in front — and the layout window performed the undo, which should only
+    // have happened while IT had focus.
+    //
+    // Nothing was wrong with the routing: `Edit ▸ Undo` is a `NativeMenuItem` with `Gesture="Meta+Z"`,
+    // and on macOS a menu key equivalent belongs to the APPLICATION, not to a window. railRF,
+    // harmonicaRF, wBond and the Match Designer are all shown UNOWNED and carry no menu of their own,
+    // so the workspace's menu stays the app menu while any of them is in front and its accelerators go
+    // on firing into the workspace behind them. ⌘Z pressed in one of those windows undid whatever the
+    // workspace's ACTIVE DOCUMENT had last done — an edit in a window the user was not looking at,
+    // with nothing on screen saying so, and no way to tell it had happened until the file was saved.
+    //
+    // A menu acts on the window in front. That is what this guard says, and it is checked at EXECUTE
+    // rather than in CanExecute: enablement is re-evaluated on stack changes, not on activation, so a
+    // CanExecute guard would leave the item disabled after focus came back until something else
+    // happened to re-query it.
     [RelayCommand(CanExecute = nameof(CanUndo))]
-    private void Undo() => _activeUndoTarget?.UndoLast();
+    private void Undo() { if (IsShellWindowActive()) _activeUndoTarget?.UndoLast(); }
     private bool CanUndo() => _activeUndoTarget?.CanUndoLast ?? false;
 
     [RelayCommand(CanExecute = nameof(CanRedo))]
-    private void Redo() => _activeUndoTarget?.RedoLast();
+    private void Redo() { if (IsShellWindowActive()) _activeUndoTarget?.RedoLast(); }
     private bool CanRedo() => _activeUndoTarget?.CanRedoLast ?? false;
+
+    /// <summary>
+    /// True when this workspace's own window — or one of the floating panels it owns — is the active
+    /// top-level.
+    /// </summary>
+    /// <remarks>
+    /// <b>A float counts.</b> A panel torn off this workspace is this workspace; ⌘Z pressed in one has
+    /// always meant "undo my document" and still does.
+    ///
+    /// <para><b>And no window active at all means YES.</b> That is not a real state a user reaches — it
+    /// is what a test host, a headless run and the moment between two activations look like. Refusing
+    /// there would make the command untestable and would turn an unknown into a silent no-op, which is
+    /// the failure mode this whole guard exists to remove rather than to add a second one of.</para>
+    /// </remarks>
+    private bool IsShellWindowActive()
+    {
+        if (Views.WorkspaceLocator.ActiveWindow() is not { } active) return true;
+
+        if (active is Views.WorkspaceWindow shell) return ReferenceEquals(shell.DataContext, this);
+        return active is Dock.CrfHostWindow { OwningWorkspace: { } owner } && ReferenceEquals(owner, this);
+    }
 
     private void SetActiveUndoTarget(IEditHistoryDocument? target)
     {
@@ -10787,6 +10827,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         foreach (string path in captured.Schematic) DiscardSessionIfUnreferenced(path);
         foreach (string path in captured.Layout)    DiscardLayoutSessionIfUnreferenced(path);
     }
+
+    /// <summary>
+    /// The LIVE <see cref="LayoutView"/> for a <c>.clay</c> — the one object every surface showing that
+    /// document shares — or null when nothing has it open.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately does NOT create one</b>, which is the whole difference between this and
+    /// <see cref="GetOrCreateLayoutSession"/>. That method is the open funnel: it reads the file,
+    /// attaches wirebond sidecars, runs the interface, moved-cell and permit scans and posts what they
+    /// find. A window that only wants to LOOK at the artwork must not cause any of that — railRF
+    /// resolves its own copy through <c>RailArtwork</c> and asks this only in order to prefer the
+    /// shared one where a shared one already exists.
+    /// </remarks>
+    internal LayoutView? LiveLayoutModel(string absClayPath) =>
+        _layoutRegistry.TryGet(Path.GetFullPath(absClayPath), out var vm) && vm is not null
+            ? vm.Model
+            : null;
 
     /// <summary>Layout counterpart of <see cref="DiscardSessionIfUnreferenced"/>.</summary>
     private void DiscardLayoutSessionIfUnreferenced(string absClayPath)

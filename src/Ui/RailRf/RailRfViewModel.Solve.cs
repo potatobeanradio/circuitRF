@@ -482,6 +482,7 @@ public sealed partial class RailRfViewModel
         Shapes         = board.Shapes,
         Technology     = board.Technology,
         DbuPerMicron   = board.DbuPerMicron,
+        LengthFormat   = board.LengthFormat,
         Pads           = board.Pads,
         NetPoints      = board.NetPoints,
         ReferenceNet   = board.ReferenceNet,

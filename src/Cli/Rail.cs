@@ -264,6 +264,7 @@ internal static class Rail
             Shapes         = board!.View.Shapes,
             Technology     = board.Technology,
             DbuPerMicron   = board.View.DbuPerMicron,
+            LengthFormat   = board.LengthFormat,
             Model          = o.Model,
         });
 
@@ -394,7 +395,13 @@ internal static class Rail
     /// <param name="Technology">The stackup.</param>
     /// <param name="ClayPath">Where the artwork came from, for the report.</param>
     /// <param name="BaseDir">What an instance's <c>CellRef</c> resolves against.</param>
-    private sealed record BoardInputs(LayoutView View, Technology Technology, string ClayPath, string BaseDir);
+    private sealed record BoardInputs(LayoutView View, Technology Technology, string ClayPath, string BaseDir)
+    {
+        /// <summary>The artwork's own units — what every coordinate on this run's report reads in
+        /// (owner, 2026-09-18). The `.clay`'s own display unit, which is what the layout editor shows
+        /// the same board in.</summary>
+        public RailLengthFormat LengthFormat => RailLengthFormat.For(View);
+    }
 
     /// <summary>
     /// Resolves the artwork and the stackup by the WALKS the application already performs — the
@@ -524,7 +531,7 @@ internal static class Rail
             if (ApplyLoad(spec, targets) is { } r) return r;
 
         foreach (string spec in o.Masks)
-            if (ApplyMask(spec, targets) is { } r) return r;
+            if (ApplyMask(spec, targets, board.LengthFormat) is { } r) return r;
 
         foreach (string spec in o.Aggressors)
             if (ApplyAggressor(spec, targets) is { } r) return r;
@@ -642,7 +649,7 @@ internal static class Rail
     /// than on the rail — so the un-anchored spelling states which ports it means rather than being a
     /// rail-level target with a different name.
     /// </remarks>
-    private static int? ApplyMask(string spec, List<RailSpec> rails)
+    private static int? ApplyMask(string spec, List<RailSpec> rails, RailLengthFormat format)
     {
         var (left, right, split) = Split(spec);
         string file = split ? right : spec;
@@ -664,8 +671,7 @@ internal static class Rail
         foreach (var rail in rails)
             for (int i = 0; i < rail.Loads.Count; i++)
             {
-                if (port is not null &&
-                    !string.Equals(rail.Loads[i].Anchor.Describe(), port, StringComparison.OrdinalIgnoreCase))
+                if (port is not null && !NamesPort(rail.Loads[i].Anchor, port, format))
                     continue;
                 rail.Loads[i] = rail.Loads[i] with { Mask = target };
                 applied = true;
@@ -677,8 +683,22 @@ internal static class Rail
             ? null
             : JsonRun.Fail(CliDiagnostics.RailMaskNoPort(
                 file, port ?? "(every port)",
-                Join([.. rails.SelectMany(r => r.Loads).Select(l => l.Anchor.Describe())])));
+                Join([.. rails.SelectMany(r => r.Loads).Select(l => l.Anchor.Describe(format))])));
     }
+
+    /// <summary>
+    /// Whether <paramref name="typed"/> names this anchor.
+    /// </summary>
+    /// <remarks>
+    /// <b>Either spelling is accepted, and that is not laxity.</b> The report prints a coordinate
+    /// anchor in the BOARD's units now, so that is the spelling a user copies off it — but the
+    /// `.crail` itself holds DBU, which is the spelling anything written before this change used and
+    /// the only one that is independent of what unit the layout happens to be displayed in. Refusing
+    /// one of the two would break a script for a reason that has nothing to do with the script.
+    /// </remarks>
+    private static bool NamesPort(RailPortAnchor anchor, string typed, RailLengthFormat format) =>
+        string.Equals(anchor.Describe(format), typed, StringComparison.OrdinalIgnoreCase)
+     || string.Equals(anchor.Describe(), typed, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Two columns per line — a frequency and a limit, each with its own unit — and
     /// <c>#</c> starts a comment. Base SI on the way in, as every number in a `.crail` is.</summary>

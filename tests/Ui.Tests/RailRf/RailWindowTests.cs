@@ -1116,6 +1116,220 @@ public class RailWindowTests
         }
     }
 
+    // ══ Owner round 2, 2026-09-18 — the board panel is a VIEW of the .clay ══════════════════════
+
+    /// <summary>
+    /// <b>The board panel draws the layout's OWN model, not a copy of its shapes.</b>
+    /// </summary>
+    /// <remarks>
+    /// This is the whole of the live-view fix: an edit in the layout editor mutates that
+    /// <c>LayoutView</c>, which raises its own <c>Changed</c>, which <c>LayoutCanvas</c> is already
+    /// subscribed to. Asserted as object identity rather than by driving an edit and looking at
+    /// pixels, because identity is the property that makes every later edit live — a test that moved
+    /// one shape would pass just as well against a copy that happened to be re-read.
+    /// </remarks>
+    [Fact]
+    public void TheBoardPanelBindsTheLayoutsOwnModelWhenThereIsOne()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var vm = new RailRfViewModel
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+
+        Assert.Same(view, vm.BoardLayout!.Model);
+    }
+
+    /// <summary>
+    /// An artwork edit drops the numbers — and does NOT rebuild the viewport.
+    /// </summary>
+    /// <remarks>
+    /// Both halves matter and they pull opposite ways. A result computed against copper that has since
+    /// moved is the one thing this window's status strip exists to prevent; re-fitting the view while
+    /// the user is watching it is the tool taking the picture away at the moment they are using it. So:
+    /// the result goes, the <see cref="LayoutEditorViewModel"/> stays the same object.
+    /// </remarks>
+    [Fact]
+    public void AnArtworkEditClearsTheResultAndKeepsTheViewport()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var vm = new RailRfViewModel
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+
+        var boundBefore = vm.BoardLayout;
+        vm.NotifyArtworkChanged();
+
+        Assert.Same(boundBefore, vm.BoardLayout);
+        Assert.Null(vm.Current);
+    }
+
+    /// <summary>
+    /// <b>The railRF board canvas is a viewer.</b> Every route into the layout's own tools is gated;
+    /// navigation and the overlay are not.
+    /// </summary>
+    /// <remarks>
+    /// A source scan rather than a synthesised gesture, and deliberately: what is under test is that no
+    /// editing call site was MISSED, which is a property of the file and not of one input. It was worse
+    /// than a stray gesture before the gate — <c>LayoutView.Shapes</c> is a list of references, so the
+    /// snapshot the panel drew shared every shape object with the real document and a drag here mutated
+    /// it from outside its command stack.
+    /// </remarks>
+    [Fact]
+    public void TheBoardCanvasIsReadOnlyAndEveryEditingCallGoesThroughTheGate()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+        var canvas = Regex.Match(xaml, @"<ctl:LayoutCanvas\s+Name=""BoardCanvas""[^>]*?>", RegexOptions.Singleline);
+        Assert.True(canvas.Success);
+        Assert.Contains(@"ReadOnly=""True""", canvas.Value, StringComparison.Ordinal);
+
+        // Every call that could CHANGE the document goes through EditTarget, which is null in
+        // read-only mode. A new one reaching for _viewModel directly is how this gets broken.
+        //
+        // The assertion is "not on _viewModel", not "on EditTarget": the same member names exist on
+        // ILayoutCanvasOverlay, whose calls are DELIBERATELY still made — railRF's own overlay reads
+        // the board out under the cursor and declines every gesture, and gating it would take the
+        // readout away as well.
+        string src = Src("src/Ui/Controls/LayoutCanvas.cs");
+        foreach (string mutator in new[]
+                 {
+                     "OnPointerPressed(wx", "OnPointerMoved(wx", "OnPointerReleased(wx",
+                     "OnKeyDown(e.Key", "DropBitmap(", "CommitDragInstancePlacement(",
+                     "SetGripLockArmed(true)", "DeselectAllCommand", "CommitCompanionMove()",
+                 })
+            foreach (System.Text.RegularExpressions.Match m in
+                     Regex.Matches(src, @"_viewModel[?!]?\." + Regex.Escape(mutator)))
+                Assert.Fail($"LayoutCanvas calls {m.Value} on _viewModel rather than through "
+                          + "EditTarget, so it still runs on a read-only canvas.");
+    }
+
+    /// <summary>
+    /// <b>A menu accelerator acts on the window in front.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>Edit ▸ Undo</c> is a <c>NativeMenuItem</c> with <c>Gesture="Meta+Z"</c>, and on macOS that is
+    /// an APPLICATION key equivalent. railRF is shown unowned and carries no menu of its own, so ⌘Z
+    /// pressed there was undoing whatever the workspace's active document had last done — an edit in a
+    /// window the user was not looking at, with nothing on screen saying so.
+    /// </remarks>
+    [Fact]
+    public void UndoAndRedoActOnlyWhenTheWorkspaceWindowIsInFront()
+    {
+        string src = Src("src/Ui/ViewModels/WorkspaceViewModel.cs");
+
+        foreach (string command in new[] { "UndoLast()", "RedoLast()" })
+        {
+            var m = Regex.Match(src, @"private void (?:Undo|Redo)\(\)[^
+]*" + Regex.Escape(command));
+            Assert.True(m.Success, $"{command} is no longer reached from a one-line command body.");
+            Assert.Contains("IsShellWindowActive()", m.Value, StringComparison.Ordinal);
+        }
+
+        // And the unowned tool windows are the reason: the guard has to be able to SEE one, which a
+        // workspace-windows-only lookup cannot.
+        Assert.Contains("public static Window? ActiveWindow()",
+            Read("src/Ui/Views/WorkspaceLocator.cs"), StringComparison.Ordinal);
+    }
+
+    // ══ Owner round 2 — DBU is a storage unit, not a reading unit ═══════════════════════════════
+
+    /// <summary>
+    /// A coordinate anchor reads in the BOARD's units, and says "DBU" only when nothing stated one.
+    /// </summary>
+    [Fact]
+    public void ACoordinateAnchorReadsInTheBoardsOwnUnits()
+    {
+        var anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) };
+
+        Assert.Equal("(26.5, 9.875) mm", anchor.Describe(new RailLengthFormat(LayoutUnit.Mm, 1000)));
+        Assert.Equal("(26500, 9875) µm", anchor.Describe(new RailLengthFormat(LayoutUnit.Um, 1000)));
+
+        // No artwork, no unit — and it says so rather than picking one. A number printed in a unit
+        // nobody stated is the trap every unit note in this repository is about.
+        Assert.Equal("(26500000, 9875000) DBU", anchor.Describe());
+    }
+
+    /// <summary>
+    /// The window's own rows, the parts placement column and the mesh cell all read in board units.
+    /// </summary>
+    /// <remarks>
+    /// Driven through the view model rather than scanned, because the claim is about what a user sees
+    /// and each of these three reaches the format by a different route: a row holds a FUNCTION, the
+    /// parts column calls it per rebuild, and the mesh cell both formats and PARSES through it.
+    /// </remarks>
+    [Fact]
+    public void TheWindowsCoordinatesAndMeshCellReadInBoardUnits()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var document = new RailDocument();
+        var rail = new RailSpec { Name = "+3V3", NetName = "+3V3" };
+        rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) } });
+        document.Rails.Add(rail);
+
+        var vm = new RailRfViewModel(document, null)
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+
+        Assert.Equal("(26.5, 9.875) mm", Assert.Single(vm.Loads).Anchor);
+
+        // The mesh cell round-trips through the same unit, and an explicit suffix still overrides.
+        vm.MeshCellEntry = "0.2";
+        Assert.Equal(0.2e-3, vm.MeshCellMetres!.Value, 12);
+        Assert.Equal("0.2 mm", vm.MeshCellEntry);
+
+        vm.MeshCellEntry = "50 µm";
+        Assert.Equal(50e-6, vm.MeshCellMetres!.Value, 12);
+    }
+
+    /// <summary>
+    /// Changing the board's display unit re-states the strings, on the activation that follows.
+    /// </summary>
+    /// <remarks>
+    /// A display unit raises no <c>Changed</c> event — the layout editor deliberately keeps it off the
+    /// undo stack and out of the notification the spatial index listens to — so there is nothing to
+    /// subscribe to and the window asks on activation instead. What is asserted here is the asking.
+    /// </remarks>
+    [Fact]
+    public void ChangingTheBoardsDisplayUnitRestatesTheCoordinates()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var document = new RailDocument();
+        var rail = new RailSpec { Name = "+3V3", NetName = "+3V3" };
+        rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) } });
+        document.Rails.Add(rail);
+
+        var vm = new RailRfViewModel(document, null)
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+        var row = Assert.Single(vm.Loads);
+        Assert.Equal("(26.5, 9.875) mm", row.Anchor);
+
+        // The layout editor's unit picker writes straight to the model.
+        view.DisplayUnit = LayoutUnit.Um;
+
+        int restated = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(row.Anchor)) restated++; };
+        vm.RefreshIfUnitChanged();
+
+        Assert.Equal(1, restated);
+        Assert.Equal("(26500, 9875) µm", row.Anchor);
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Layout.Pdn;
 using Clipper2Lib;
 
@@ -23,11 +25,41 @@ public sealed record RailBoardInputs
     /// <summary>The artwork, flattened to shapes in DBU.</summary>
     public required IReadOnlyList<LayoutShape> Shapes { get; init; }
 
+    /// <summary>
+    /// The layout this artwork came from, where railRF is looking at a <c>.clay</c> somebody can have
+    /// open — so the board panel can show it LIVE rather than as a snapshot.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same object the layout session holds, deliberately</b> — the board shown here is meant
+    /// to be a live view of the <c>.clay</c>, not a snapshot of it (owner, 2026-09-18). An edit in
+    /// that document mutates this <see cref="LayoutView"/> and raises its <c>Changed</c> event, which
+    /// is what the railRF window repaints on. Nothing is copied and nothing is polled.
+    ///
+    /// <para>Null for a board that came from an import into a throwaway directory, or wherever no
+    /// session is open on the file — <see cref="Shapes"/> is still the artwork either way, and it is
+    /// what the EXTRACTION reads. This is only what the picture is drawn from.</para>
+    /// </remarks>
+    public LayoutView? View { get; init; }
+
     /// <summary>The stackup.</summary>
     public required Technology Technology { get; init; }
 
     /// <summary>The artwork's DBU resolution.</summary>
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
+
+    /// <summary>
+    /// The unit every coordinate and every length off this board READS in — the layout's own display
+    /// unit. Every coordinate readout and every result on this window reads in the board file's own
+    /// units rather than in DBU (owner, 2026-09-18).
+    /// </summary>
+    /// <remarks>
+    /// Taken from <see cref="View"/> where there is one, so it is the unit the layout editor is
+    /// showing the very same artwork in — two windows on one board disagreeing about its units would
+    /// be worse than either choice. <see cref="RailLengthFormat.Dbu"/> with no artwork, which prints
+    /// the integer and says "DBU" rather than picking a unit nobody stated.
+    /// </remarks>
+    public RailLengthFormat LengthFormat =>
+        View is { } v ? RailLengthFormat.For(v) : RailLengthFormat.Dbu;
 
     /// <summary>The board's pads, as the netlist or a placement join knows them.</summary>
     public IReadOnlyList<PdnPad> Pads { get; init; } = [];

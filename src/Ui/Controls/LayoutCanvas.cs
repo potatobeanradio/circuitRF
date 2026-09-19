@@ -220,6 +220,42 @@ public sealed class LayoutCanvas : Control
         _viewModel?.IsTypingLabel == true || NavigationKeysSuppressed?.Invoke() == true;
 
     /// <summary>
+    /// <b>A VIEWER, not an editor.</b> The artwork is drawn, navigated and hit-read exactly as ever;
+    /// nothing reaches the layout's own tools, selection, clipboard or undo stack.
+    /// </summary>
+    /// <remarks>
+    /// <b>railRF is why this exists</b> — its board panel let primitives be dragged, and it should
+    /// not (owner, 2026-09-18). That window's board is a VIEW of a <c>.clay</c> somebody else owns:
+    /// the way to change the geometry is to open that document and edit it, and watch this repaint.
+    ///
+    /// <para><b>And it was worse than a stray gesture.</b> railRF's board view holds the same
+    /// <see cref="LayoutShape"/> OBJECTS the layout session holds — <c>LayoutView.Shapes</c> is a list
+    /// of references, and copying the list copies the references. So a primitive dragged here mutated
+    /// the real document's model, from outside its command stack: nothing marked it dirty, nothing
+    /// could undo it, and the next save wrote it.</para>
+    ///
+    /// <para><b>Navigation is deliberately NOT suppressed</b>, and neither is the overlay. Pan, zoom,
+    /// the wheel, F, Z, Ctrl/⌘ +/-, the arrow-key pan, the zoom box and
+    /// <see cref="ILayoutCanvasOverlay"/>'s own hit reading all go on working — a read-only canvas the
+    /// user cannot move around is not a viewer, it is a picture. What is gated is every route into
+    /// <see cref="LayoutEditorViewModel"/> that could CHANGE something, which is what
+    /// <see cref="EditTarget"/> names.</para>
+    /// </remarks>
+    public bool ReadOnly { get; set; }
+
+    /// <summary>
+    /// The view model as an EDIT target — null in <see cref="ReadOnly"/> mode.
+    /// </summary>
+    /// <remarks>
+    /// One gate, read at every mutating call site, rather than an <c>if</c> per handler: every one of
+    /// those sites is already null-conditional on the view model (a canvas with nothing bound is an
+    /// ordinary state), so routing them through this makes read-only exactly the state they already
+    /// handle. A new editing call that reaches for <c>_viewModel</c> directly is the way this gets
+    /// broken, which is why <c>LayoutCanvasReadOnlyTests</c> scans for it.
+    /// </remarks>
+    private LayoutEditorViewModel? EditTarget => ReadOnly ? null : _viewModel;
+
+    /// <summary>
     /// Repaints because the OVERLAY changed. Deliberately does not touch <see cref="_pathCache"/>:
     /// the layout's geometry has not moved, and invalidating its cached paths is precisely the
     /// "cheap overlay becomes a 500k-shape redraw" failure WB17 exists to prevent.
@@ -444,7 +480,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnDoubleTapped(object? _, TappedEventArgs e)
     {
-        if (_viewModel is null || _viewModel.ActiveTool != LayoutEditorViewModel.Tool.Select) return;
+        if (EditTarget is null || _viewModel!.ActiveTool != LayoutEditorViewModel.Tool.Select) return;
 
         var pos   = e.GetPosition(this);
         double wx = CurrentViewport.ScreenToWorldX(pos.X);
@@ -804,7 +840,7 @@ public sealed class LayoutCanvas : Control
             if ((e.KeyModifiers & KeyModifiers.Control) != 0)
             {
                 ContextMenuTarget = null; // L1-fix: no pending target -> the Opening handler cancels
-                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), 0, SnapTolDbu(),
+                EditTarget?.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), 0, SnapTolDbu(),
                                         GripLockTolDbu());
                 InvalidateVisual();
                 e.Handled = true;
@@ -850,8 +886,8 @@ public sealed class LayoutCanvas : Control
                 // A press that landed on nothing means "deselect" whichever selection the user was
                 // holding — including the layout's, which the overlay cannot reach.
                 if (_canvasOverlay.ConsumedPressWasEmptySpace)
-                    _viewModel.DeselectAllCommand.Execute(null);
-                else
+                    EditTarget?.DeselectAllCommand.Execute(null);
+                else if (EditTarget is not null)
                 {
                     // …and a press it DID hit arms the other half of a mixed selection, so a pad
                     // selected beside a bond wire comes along with it. See
@@ -867,13 +903,13 @@ public sealed class LayoutCanvas : Control
                 return;
             }
 
-            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu(),
-                                        GripLockTolDbu());
+            EditTarget?.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu(),
+                                         GripLockTolDbu());
 
             // The mirror of the branch above: the LAYOUT owns this press, so the overlay's own
             // selection follows it — unless that press resolved a new one, in which case it means
             // "just this" and a wire selected earlier must not come along.
-            if (_canvasOverlay is { } companionOverlay)
+            if (EditTarget is not null && _canvasOverlay is { } companionOverlay)
             {
                 companionOverlay.CompanionPressResolvedNewSelection = _viewModel.LastPressResolvedNewSelection;
                 companionOverlay.BeginCompanionMove();
@@ -886,7 +922,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnImageFileDragOver(object? _, DragEventArgs e)
     {
-        if (TryExtractImagePath(e) is not null) { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
+        if (!ReadOnly && TryExtractImagePath(e) is not null) { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
         else e.DragEffects = DragDropEffects.None;
     }
 
@@ -894,10 +930,10 @@ public sealed class LayoutCanvas : Control
     {
         TakeKeyboardFocus();
         var path = TryExtractImagePath(e);
-        if (path is null || _viewModel is null) return;
+        if (path is null || EditTarget is null) return;
         var pos = e.GetPosition(this);
         var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
-        _viewModel.DropBitmap(path, wx, wy, ViewportWidthDbu());
+        EditTarget.DropBitmap(path, wx, wy, ViewportWidthDbu());
         e.Handled = true;
         InvalidateVisual();
     }
@@ -944,7 +980,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnCellDragOver(object? sender, DragEventArgs e)
     {
-        if (_viewModel is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
+        if (EditTarget is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
 
         var payload = TryParseCellDragPayload(e);
         if (payload is null) { e.DragEffects = DragDropEffects.None; return; }
@@ -975,7 +1011,7 @@ public sealed class LayoutCanvas : Control
         // SchematicCanvas.OnCellDrop).
         _viewModel?.CancelDragInstancePlacement();
 
-        if (_viewModel is not { } vm) return;
+        if (EditTarget is not { } vm) return;
         var payload = TryParseCellDragPayload(e);
         if (payload is null) return;
         if (vm.WouldDragCellBeSelfReference(payload.CellAbsPath)) return; // DragOver already refused the cursor for this case
@@ -1006,7 +1042,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnPaletteDragOver(object? sender, DragEventArgs e)
     {
-        if (_viewModel is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
+        if (EditTarget is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
 
         var payload = TryParsePaletteDragPayload(e);
         if (payload is null) { e.DragEffects = DragDropEffects.None; return; }
@@ -1064,7 +1100,7 @@ public sealed class LayoutCanvas : Control
         TakeKeyboardFocus();
         _viewModel?.CancelPaletteDragGhost();
 
-        if (_viewModel is not { } vm) return;
+        if (EditTarget is not { } vm) return;
         var payload = TryParsePaletteDragPayload(e);
         if (payload is null) return;
 
@@ -1735,7 +1771,7 @@ public sealed class LayoutCanvas : Control
             // The overlay is driving: push ITS delta into the layout editor so the layout's half of a
             // mixed selection follows. One delta, from one snap decision — re-deriving it here is how
             // the two halves end up a step apart.
-            if (_canvasOverlay.CompanionDragDelta is { } overlayDelta && _viewModel is { } companionVm)
+            if (_canvasOverlay.CompanionDragDelta is { } overlayDelta && EditTarget is { } companionVm)
             {
                 companionVm.SetCompanionMoveDuplicate(_canvasOverlay.DuplicateDragArmed);
                 companionVm.CompanionMoveTo(overlayDelta.Dx, overlayDelta.Dy);
@@ -1751,11 +1787,11 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
-        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu(),
+        EditTarget?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu(),
                                    GripLockTolDbu());
 
         // …and the mirror: the LAYOUT is driving, so the overlay's half follows its delta.
-        if (_viewModel?.MoveDragDelta is { } layoutDelta)
+        if (EditTarget?.MoveDragDelta is { } layoutDelta)
             _canvasOverlay?.CompanionMoveTo(layoutDelta.Dx, layoutDelta.Dy);
 
         // R-pch-12: the pointer shape is half of "you can see which gesture you are about to get", and
@@ -1838,7 +1874,7 @@ public sealed class LayoutCanvas : Control
 
         if (_canvasOverlay?.OnPointerReleased((long)Math.Round(wx), (long)Math.Round(wy)) == true)
         {
-            _viewModel?.CommitCompanionMove();
+            EditTarget?.CommitCompanionMove();
             PushOverlaySnapMarker();   // the gesture is over, so this clears the glyph
             InvalidateVisual();
             return;
@@ -1847,8 +1883,8 @@ public sealed class LayoutCanvas : Control
         // Both halves close, whichever one drove: the overlay's companion move is armed on every
         // press it declined, and one left open would go on translating wires under the next gesture.
         _canvasOverlay?.CommitCompanionMove();
-        _viewModel?.CommitCompanionMove();
-        _viewModel?.OnPointerReleased(wx, wy, e.KeyModifiers, SnapTolDbu());
+        EditTarget?.CommitCompanionMove();
+        EditTarget?.OnPointerReleased(wx, wy, e.KeyModifiers, SnapTolDbu());
         InvalidateVisual();
     }
 
@@ -1892,7 +1928,7 @@ public sealed class LayoutCanvas : Control
         if (e.Key is Key.LeftAlt or Key.RightAlt)
         {
             _altHeld = true;
-            _viewModel?.SetGripLockArmed(true);
+            EditTarget?.SetGripLockArmed(true);
             UpdateCursor();
             InvalidateVisual();
         }
@@ -1901,10 +1937,10 @@ public sealed class LayoutCanvas : Control
         // coordinates it was copied from) — never let a clipboard shortcut race with an already-armed
         // placement. The two keys the ghost ACTS on are marked handled so neither reaches a window
         // KeyBinding or a default button above this canvas.
-        if (_viewModel?.IsPastePlacementActive == true)
+        if (EditTarget?.IsPastePlacementActive == true)
         {
             bool consumed = e.Key is Key.Escape or Key.Enter or Key.Return;
-            _viewModel.OnKeyDown(e.Key, e.KeyModifiers);
+            EditTarget.OnKeyDown(e.Key, e.KeyModifiers);
             if (consumed) e.Handled = true;
             InvalidateVisual();
             return;
@@ -1957,18 +1993,20 @@ public sealed class LayoutCanvas : Control
         if (ctrl && !NavigationSuppressed && e.Key is Key.OemPlus or Key.Add)      { ZoomIn();  e.Handled = true; return; }
         if (ctrl && !NavigationSuppressed && e.Key is Key.OemMinus or Key.Subtract) { ZoomOut(); e.Handled = true; return; }
 
+        // COPY stays on a read-only canvas and the other four do not: a copy takes nothing away and
+        // railRF's own Ctrl/⌘+C rides this very event (R-rail9-6). Cut, paste and duplicate all write.
         if (ctrl && e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
-        if (ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
-        if (ctrl && shift && e.Key == Key.V) { ClipboardPasteInPlaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
-        if (ctrl && e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
-        if (ctrl && e.Key == Key.D) { DuplicateRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (!ReadOnly && ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (!ReadOnly && ctrl && shift && e.Key == Key.V) { ClipboardPasteInPlaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (!ReadOnly && ctrl && e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (!ReadOnly && ctrl && e.Key == Key.D) { DuplicateRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
 
         // Arrow keys pan the VIEW when nothing is selected — see CanvasArrowPan. After the overlay
         // branch above (a wBond overlay with its own selection nudges its wires first) and before the
         // view model's, whose arrow branch is the layout nudge this defers to.
         if (TryArrowPan(e)) { e.Handled = true; return; }
 
-        _viewModel?.OnKeyDown(e.Key, e.KeyModifiers);
+        EditTarget?.OnKeyDown(e.Key, e.KeyModifiers);
         InvalidateVisual();
     }
 
@@ -1996,6 +2034,10 @@ public sealed class LayoutCanvas : Control
         if (e.Key is Key.LeftAlt or Key.RightAlt)
         {
             _altHeld = false;
+            // DISARM goes to the view model directly, where the ARM above goes through EditTarget.
+            // The asymmetry is deliberate: arming is editor state a read-only canvas must not enter,
+            // and clearing a latch is something every exit from a gesture owes unconditionally — the
+            // rule OnCanvasLostFocus already keeps, and the one a held-key bug is always a breach of.
             _viewModel?.SetGripLockArmed(false);
             UpdateCursor();
             InvalidateVisual();

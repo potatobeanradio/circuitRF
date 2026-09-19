@@ -47,6 +47,18 @@ public sealed class RailDcRequest
     /// <summary>The artwork's DBU resolution.</summary>
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 
+    /// <summary>
+    /// How a coordinate or a length coming off this artwork is SPELLED on a report row.
+    /// </summary>
+    /// <remarks>
+    /// <b>DBU is what a coordinate IS; this is what it reads as</b> (owner, 2026-09-18). Beside
+    /// <c>DbuPerMicron</c> rather than derived from it, because the resolution is only half the
+    /// answer — the other half is the layout's own display unit, which nothing here can infer.
+    /// Defaulted to <see cref="RailLengthFormat.Dbu"/>, which prints the integer and says "DBU" out
+    /// loud rather than picking a unit nobody stated.
+    /// </remarks>
+    public RailLengthFormat LengthFormat { get; init; } = RailLengthFormat.Dbu;
+
     /// <summary>The board's pads, as the netlist or a placement join knows them.</summary>
     public IReadOnlyList<PdnPad> Pads { get; init; } = [];
 
@@ -301,6 +313,7 @@ public static class RailDcRun
         Shapes          = request.Shapes,
         Technology      = request.Technology,
         DbuPerMicron    = request.DbuPerMicron,
+        LengthFormat    = request.LengthFormat,
         Pads            = request.Pads,
         NetPoints       = request.NetPoints,
         ReferenceNet    = request.ReferenceNet,
@@ -350,7 +363,7 @@ public static class RailDcRun
                 p.DcCurrentA));
         }
 
-        var sources = SourceShares(rail, pdn, solution);
+        var sources = SourceShares(rail, pdn, solution, request.LengthFormat);
         var breakdown = Breakdown(request, pdn, solution);
 
         // §2.4's via check. It reads the currents this solve already produced — brief 3 stamped each
@@ -442,7 +455,7 @@ public static class RailDcRun
     /// negative on its own branch.</para>
     /// </summary>
     private static List<RailSourceShare> SourceShares(
-        RailSpec rail, PdnNetlist pdn, LinearDcSolution solution)
+        RailSpec rail, PdnNetlist pdn, LinearDcSolution solution, RailLengthFormat format)
     {
         var shares = new List<RailSourceShare>(rail.Sources.Count);
         var delivered = new double[rail.Sources.Count];
@@ -466,7 +479,7 @@ public static class RailDcRun
 
         for (int k = 0; k < rail.Sources.Count; k++)
             shares.Add(new RailSourceShare(
-                k, rail.Sources[k].Anchor.Describe(), rail.Sources[k].OpenCircuitVoltageV,
+                k, rail.Sources[k].Anchor.Describe(format), rail.Sources[k].OpenCircuitVoltageV,
                 delivered[k], total != 0 ? delivered[k] / total : 0.0));
 
         return shares;

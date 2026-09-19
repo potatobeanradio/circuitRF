@@ -185,8 +185,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
         if (SelectedRail is { } rail)
         {
-            foreach (var s in rail.Sources) Sources.Add(Track(new RailSourceRowViewModel(rail, s)));
-            foreach (var l in rail.Loads) Loads.Add(Track(new RailLoadRowViewModel(rail, l)));
+            foreach (var s in rail.Sources) Sources.Add(Track(new RailSourceRowViewModel(rail, s, BoardLengthFormat)));
+            foreach (var l in rail.Loads) Loads.Add(Track(new RailLoadRowViewModel(rail, l, BoardLengthFormat)));
             foreach (var a in rail.Aggressors) Aggressors.Add(Track(new RailAggressorRowViewModel(rail, a)));
         }
 
@@ -600,25 +600,26 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     /// </remarks>
     public string MeshCellEntry
     {
-        get => _meshCellMicrons is { } um ? $"{RailValueFormat.Significant(um, 4)} µm" : "";
+        // IN THE BOARD'S OWN UNITS, read and written (owner, 2026-09-18). It was micrometres
+        // unconditionally, which on a PCB drawn in mils or millimetres is a field asking for a number
+        // in a unit nothing else on the window uses. LayoutUnits.TryParse still accepts an explicit
+        // suffix, so a user who types "0.2 mm" into a µm board is understood.
+        get => MeshCellMetres is { } m ? BoardLengthFormat().Metres(m) : "";
         set
         {
             string trimmed = (value ?? "").Trim();
-            _meshCellMicrons =
-                trimmed.Length == 0 ? null
-                : double.TryParse(trimmed.TrimEnd('µ', 'u', 'm', ' '),
-                                  System.Globalization.NumberStyles.Float,
-                                  System.Globalization.CultureInfo.InvariantCulture, out double um)
-                    ? um : _meshCellMicrons;
+            _meshCellMetres = trimmed.Length == 0
+                ? null
+                : BoardLengthFormat().ParseMetres(trimmed) ?? _meshCellMetres;
             OnPropertyChanged();
         }
     }
 
-    private double? _meshCellMicrons;
+    private double? _meshCellMetres;
 
     /// <summary>The cell size <c>Accuracy</c> is asked for, in METRES — <c>PdnMeshSettings</c>'
     /// own unit — or null for the extractor's computed one, which is the ordinary case.</summary>
-    internal double? MeshCellMetres => _meshCellMicrons is { } um ? um * 1e-6 : null;
+    internal double? MeshCellMetres => _meshCellMetres;
 
     private static double? ParseCelsius(string? text)
     {

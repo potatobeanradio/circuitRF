@@ -122,7 +122,8 @@ public sealed partial class RailRfViewModel
             var model = partNumber.Length > 0 ? PartLibrary?.ResolveModel(partNumber) : null;
 
             string? position = placedBy.TryGetValue(part.Refdes, out var placement)
-                ? $"({placement.X}, {placement.Y}) DBU" + (placement.Mirror ? " · bottom" : "")
+                ? BoardLengthFormat().Point(placement.X, placement.Y)
+                  + (placement.Mirror ? " · bottom" : "")
                 : null;
 
             var built = new RailPartRowViewModel(

@@ -79,6 +79,23 @@ public static class WorkspaceLocator
     public static IReadOnlyList<WorkspaceWindow> AllWindows()
         => Desktop() is { } desktop ? [.. desktop.Windows.OfType<WorkspaceWindow>()] : [];
 
+    /// <summary>
+    /// The application's active top-level, of any kind — a workspace shell, a floating panel, or one
+    /// of the unowned tool windows (railRF, harmonicaRF, wBond, the Match Designer).
+    /// </summary>
+    /// <remarks>
+    /// <b>Any kind is the point.</b> On macOS a <c>NativeMenuItem</c>'s <c>Gesture</c> is an
+    /// APPLICATION key equivalent: it fires while any window of the app is in front, including the
+    /// unowned ones that carry no menu of their own. A command on that menu that wants to act on "the
+    /// window the user is looking at" has to be able to see that the answer is not a workspace at all,
+    /// which <see cref="AllWindows"/> — workspace shells only — cannot say.
+    ///
+    /// <para>Null when nothing is active, which is a test host, a headless run, or the instant between
+    /// two activations. Callers treat that as "no reason to refuse", never as "refuse".</para>
+    /// </remarks>
+    public static Window? ActiveWindow()
+        => Desktop()?.Windows.FirstOrDefault(w => w.IsActive);
+
     private static Window? WindowOf(object? source) => source switch
     {
         Window w  => w,

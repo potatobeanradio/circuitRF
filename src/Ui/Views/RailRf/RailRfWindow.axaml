@@ -614,7 +614,13 @@
                                  placeholder below is centred too — so a window with nothing imported
                                  drew the two sentences on top of each other (owner, 2026-09-18). One
                                  empty state, and it is the one that says what to do next. -->
+                            <!-- READ-ONLY. railRF SHOWS the board; the way to change the geometry is
+                                 to open the `.clay` and edit it there, and watch this repaint
+                                 (owner, 2026-09-18). Everything else about the control is unchanged —
+                                 pan, zoom, F, Z, the zoom box and the overlay's own hit reading all
+                                 work exactly as the layout editor's do, which is §11.6's whole rule. -->
                             <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"
+                                              ReadOnly="True"
                                               IsVisible="{Binding HasBoard}"
                                               ViewModel="{Binding BoardLayout}">
                                 <!-- ONE ContextMenu instance, declared here and never constructed by

@@ -125,6 +125,18 @@ public sealed class PdnExtractionRequest
     /// <summary>The artwork's DBU resolution.</summary>
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 
+    /// <summary>
+    /// How a coordinate or a length coming off this artwork is SPELLED on a report row.
+    /// </summary>
+    /// <remarks>
+    /// <b>DBU is what a coordinate IS; this is what it reads as</b> (owner, 2026-09-18). Beside
+    /// <c>DbuPerMicron</c> rather than derived from it, because the resolution is only half the
+    /// answer — the other half is the layout's own display unit, which nothing here can infer.
+    /// Defaulted to <see cref="RailLengthFormat.Dbu"/>, which prints the integer and says "DBU" out
+    /// loud rather than picking a unit nobody stated.
+    /// </remarks>
+    public RailLengthFormat LengthFormat { get; init; } = RailLengthFormat.Dbu;
+
     /// <summary>The board's pads, as the board netlist or a placement join knows them.</summary>
     public IReadOnlyList<PdnPad> Pads { get; init; } = [];
 

@@ -68,9 +68,17 @@ public sealed record RailPortAnchor
         return null;
     }
 
-    /// <summary>How this anchor reads on a report row — <c>U1.VDD</c>, <c>BT1</c>, or the point.</summary>
-    public string Describe() =>
+    /// <summary>
+    /// How this anchor reads on a report row — <c>U1.VDD</c>, <c>BT1</c>, or the point.
+    /// </summary>
+    /// <param name="format">
+    /// The artwork's own units, so a coordinate anchor reads as a place on the board rather than as a
+    /// database integer (owner, 2026-09-18). Omitted where there is no artwork to take units from —
+    /// the refusals in this file, which are about the FILE and are in the file's own unit — and the
+    /// string then says DBU out loud rather than picking a unit nobody stated.
+    /// </param>
+    public string Describe(RailLengthFormat? format = null) =>
         IsPad
             ? (Pin is { Length: > 0 } p ? $"{Refdes}.{p}" : Refdes!)
-            : Point is { } xy ? $"({xy.X}, {xy.Y}) DBU" : "(no anchor)";
+            : Point is { } xy ? (format ?? RailLengthFormat.Dbu).Point(xy.X, xy.Y) : "(no anchor)";
 }

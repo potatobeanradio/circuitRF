@@ -66,6 +66,12 @@ public sealed class PdnSweepRequest
     /// <summary>The grid, or null to take <see cref="RailSpec.Band"/>'s own.</summary>
     public double[]? FrequenciesHz { get; init; }
 
+    /// <summary>
+    /// How a coordinate anchor is spelled on a port label — the artwork's own units rather than DBU
+    /// (owner, 2026-09-18). Defaulted to <see cref="RailLengthFormat.Dbu"/>, which says so out loud.
+    /// </summary>
+    public RailLengthFormat LengthFormat { get; init; } = RailLengthFormat.Dbu;
+
     /// <summary>Which of §2.9's two readings this answer belongs beside. <b>Carried, not used</b> —
     /// P1's sweep is lumped either way (see this file's own header), and the kind is what lets the
     /// window keep a Fast curve beside an Accurate one rather than replacing it.</summary>
@@ -299,7 +305,7 @@ public static class PdnSweep
 
         for (int k = 0; k < rail.Loads.Count; k++)
         {
-            var mask = MaskFor(rail, rail.Loads[k], notes);
+            var mask = MaskFor(rail, rail.Loads[k], notes, request.LengthFormat);
             var curve = magnitudes[k];
             var report = PdnMask.Judge(mask, freqs, curve, indicative);
 
@@ -313,7 +319,7 @@ public static class PdnSweep
                     mask?.LimitAt(freqs[i]), indicative));
 
             portRows.Add(new PdnPortImpedance(
-                k, rail.Loads[k].Anchor.Describe(), curve, mask, report, peaks,
+                k, rail.Loads[k].Anchor.Describe(request.LengthFormat), curve, mask, report, peaks,
                 PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction)));
         }
 
@@ -610,7 +616,7 @@ public static class PdnSweep
         for (int p = 0; p < ports; p++) portValues[p] = p + 1;
 
         var labels = new string[ports];
-        for (int p = 0; p < ports; p++) labels[p] = request.Rail.Loads[p].Anchor.Describe();
+        for (int p = 0; p < ports; p++) labels[p] = request.Rail.Loads[p].Anchor.Describe(request.LengthFormat);
 
         var flat = new Complex[freqs.Length * ports * ports];
         for (int fi = 0; fi < freqs.Length; fi++)
@@ -639,12 +645,13 @@ public static class PdnSweep
     /// observation port, so a mask lives on the load row), and the rail's single-number target
     /// otherwise.
     /// </summary>
-    private static PdnMask? MaskFor(RailSpec rail, RailLoad load, List<string> notes)
+    private static PdnMask? MaskFor(RailSpec rail, RailLoad load, List<string> notes,
+                                    RailLengthFormat format)
     {
         if (load.Mask?.Mask is { Count: >= 2 } points)
             return PdnMask.Piecewise(
                 points.Select(p => new PdnMaskPoint(p.FrequencyHz, p.LimitOhms)),
-                $"{load.Anchor.Describe()}'s own mask");
+                $"{load.Anchor.Describe(format)}'s own mask");
 
         if (rail.ImpedanceTarget is not { } target || target.FlatTargetOhms is not { } ohms)
             return null;

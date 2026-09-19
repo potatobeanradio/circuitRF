@@ -66,6 +66,26 @@ its part library &mdash; so a document opens with its board already on screen. A
 resolves is **reported and does not stop the open**: the rails, the ports and the target are the
 document and are still readable, and the status strip says why the board is not there.
 
+<div class="callout note">
+<span class="label">The board panel is a view, not an editor</span>
+<p>railRF <b>shows</b> the artwork; it does not let you change it. Open the <code>.clay</code> in the
+layout editor and edit it there &mdash; when both windows are open on the same board they share one
+document, so what you draw appears in railRF as you draw it. Every result is <b>cleared</b> when the
+copper moves, because the numbers were measured on the board you have just changed; press
+<b>Run</b> again.</p>
+<p>Everything else about the panel is the layout editor's: the same pan, the same wheel zoom, the same
+<b>F</b>, <b>Z</b>, Ctrl/&#8984; +/&minus; and arrow keys.</p>
+</div>
+
+<div class="callout note">
+<span class="label">Coordinates read in the board's own units</span>
+<p>Every position, length and mesh size on this window &mdash; source and load anchors, the placement
+column, the drop table, the labels over the artwork, the <b>Mesh cell</b> setting &mdash; is shown in the
+unit the <b>layout</b> is set to, which is the same unit the layout editor shows that board in. Change
+it there and railRF follows. Positions are stored as exact database units and only <i>displayed</i> in
+yours, so nothing is rounded by the choice.</p>
+</div>
+
 ## What you provide {#provide}
 
 | | |
@@ -231,7 +251,7 @@ basis nobody can check afterwards.
 | **Via plating** | The plated barrel thickness a via's current limit is computed from, in µm. **Empty is not a default:** railRF reads the thickness from the stackup's own via entry where one states it, takes this where it does not, and falls back to a drill-size table as a sanity band &mdash; and every flag says which of the three produced it. Clearing the field puts that behaviour back rather than leaving the last number standing. |
 | **Via rise** | The temperature **rise**, in °C, a via's current limit is stated at. A budget, not a temperature: there is no thermal model in railRF and nothing else reads this number. 10 °C is the usual convention. |
 | **Temperature** | The one temperature every resistance in the document is computed at. Copper is **+0.39 %/K**, so this is not a detail: the same trace at 85 °C is about 25 % worse than at 20 °C. It is on the status strip on every frame and on every report for that reason. |
-| **Mesh cell** | How finely **Accuracy** meshes, as a cell size in µm. **Empty is the ordinary case** &mdash; it reads *automatic*, and the extractor computes a cell size from the artwork itself. A number here overrides that. The fast model never reads it at all; it traces instead. |
+| **Mesh cell** | How finely **Accuracy** meshes, as a cell size **in the board's own display unit**. **Empty is the ordinary case** &mdash; it reads *automatic*, and the extractor computes a cell size from the artwork itself. A number here overrides that; a unit typed explicitly (`50 µm`) is honoured whatever the board is set to. The fast model never reads it at all; it traces instead. |
 
 ### Reference extent
 

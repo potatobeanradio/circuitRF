@@ -1305,7 +1305,7 @@ internal sealed class GraphBuild(
                   $"{worst.Region.Describe()}";
 
             return
-                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe()} only through {where}, " +
+                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(request.LengthFormat)} only through {where}, " +
                 "which the fast model read as spreading rather than as a trace. The closed form has " +
                 "no bounded error across copper the current fans out in, and the error it would make " +
                 "is OPTIMISTIC — so the fast model produces no number here rather than a smaller one. " +

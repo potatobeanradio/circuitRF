@@ -20,10 +20,18 @@ public sealed partial class RailLoadRowViewModel : ObservableObject
 
     private readonly RailSpec _rail;
 
-    public RailLoadRowViewModel(RailSpec rail, RailLoad load)
+    /// <summary>
+    /// How this row spells a coordinate anchor — a FUNCTION rather than a captured value, because the
+    /// board's display unit can change under an open window (the layout editor's own unit picker) and
+    /// a row holding the unit it was built with would go on printing the old one.
+    /// </summary>
+    private readonly Func<RailLengthFormat> _lengthFormat;
+
+    public RailLoadRowViewModel(RailSpec rail, RailLoad load, Func<RailLengthFormat>? lengthFormat = null)
     {
         _rail = rail;
         _load = load;
+        _lengthFormat = lengthFormat ?? (static () => RailLengthFormat.Dbu);
     }
 
     private RailLoad _load;
@@ -34,8 +42,12 @@ public sealed partial class RailLoadRowViewModel : ObservableObject
     /// <summary>Raised after a committed edit — the window's cue to re-solve (R-rail7-5).</summary>
     public event EventHandler? Edited;
 
-    /// <summary>"U1.VDD", or the coordinate where there is no pad to name.</summary>
-    public string Anchor => _load.Anchor.Describe();
+    /// <summary>"U1.VDD", or the coordinate — in the BOARD's units — where there is no pad to
+    /// name.</summary>
+    public string Anchor => _load.Anchor.Describe(_lengthFormat());
+
+    /// <summary>The board's display unit changed, so the anchor column has to be re-read.</summary>
+    public void NotifyAnchorChanged() => OnPropertyChanged(nameof(Anchor));
 
     /// <summary>
     /// The DC current, as the settable column shows it — or <see cref="ObserveText"/>.

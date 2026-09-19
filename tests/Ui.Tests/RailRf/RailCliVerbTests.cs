@@ -814,6 +814,11 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
         Shapes       = LayoutPersistence.LoadFromFile(fx.Clay).Shapes,
         Technology   = TechPersistence.LoadFromFile(fx.Tech),
         DbuPerMicron = Dbu,
+        // The ARTWORK's own display unit, which is what the verb takes (owner, 2026-09-18: every
+        // coordinate reads in board units, not DBU). Omitting it here made this byte gate fail the
+        // first time the verb printed a coordinate anchor differently from this reference — which is
+        // what the gate is for, and the fix is to build the reference the way the verb builds it.
+        LengthFormat = RailLengthFormat.For(LayoutPersistence.LoadFromFile(fx.Clay)),
         Model        = PdnModelKind.Fast,
     };
 

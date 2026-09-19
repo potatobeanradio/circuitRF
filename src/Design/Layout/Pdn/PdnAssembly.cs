@@ -484,7 +484,7 @@ internal sealed class PdnAssembly
             if (power.Count == 0)
             {
                 _diagnostics.Add(
-                    $"{part.Refdes} is anchored at {part.Anchor.Describe()}, which is not on this " +
+                    $"{part.Refdes} is anchored at {part.Anchor.Describe(_req.LengthFormat)}, which is not on this " +
                     "rail's copper. It was not added.");
                 continue;
             }
@@ -530,7 +530,7 @@ internal sealed class PdnAssembly
         for (int k = 0; k < _req.Rail.Sources.Count; k++)
         {
             var src = _req.Rail.Sources[k];
-            string name = src.Anchor.Describe();
+            string name = src.Anchor.Describe(_req.LengthFormat);
             string where = $"Rail '{_req.Rail.Name}'s source {k + 1} ({name})";
 
             var power = PowerNodesFor(src.Anchor);
@@ -604,7 +604,7 @@ internal sealed class PdnAssembly
         for (int k = 0; k < _req.Rail.Loads.Count; k++)
         {
             var load = _req.Rail.Loads[k];
-            string name = load.Anchor.Describe();
+            string name = load.Anchor.Describe(_req.LengthFormat);
             string where = $"Rail '{_req.Rail.Name}'s load {k + 1} ({name})";
 
             var power = PowerNodesFor(load.Anchor);

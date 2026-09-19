@@ -29378,3 +29378,119 @@ title-bar buttons are distinguished at the top. The *what is not wired up yet* l
 bullet, which was this round's item 2.
 
 Gates: `RailWindowTests` (eight tests, one per claim), `WorkspaceScannerTests` (two).
+
+## railRF — round 2 from the outside: the board is a VIEW (2026-09-19)
+
+Four reports, and the first three are one design decision the window had never actually made.
+
+### 1. The board panel was a snapshot, and it shared its shapes with the real document
+
+Reported from the shipped Power Rail example: both the `.clay` and the `.crail` open, an edit made to
+the layout in its own document window, and nothing changing in railRF — where the expectation was that
+the board shown there is a live view of the `.clay` itself.
+
+`RebuildBoardLayout` copied `board.Shapes` into a `LayoutView` of its own and bound the canvas to
+that. Stale was the half that was reported. **The half that was not is worse:
+`LayoutView.Shapes` is a list of REFERENCES**, so the copy shared every `LayoutShape` OBJECT with
+the layout session — and railRF's canvas was fully editable. A primitive dragged in the railRF window
+mutated the real document's model from outside its command stack: nothing marked it dirty, nothing
+could undo it, and the next save wrote it. Neither window said anything, because as far as either was
+concerned nothing had happened.
+
+**The fix is the mechanism hierarchy already uses.** One `LayoutEditorViewModel` per `.clay` path in
+the workspace's session registry is what makes a pushed-in sub-cell show its parent's edits; railRF
+now binds a SECOND view model over that same `LayoutView`. Pan, zoom and selection belong to the view
+model, so the two windows keep their own; the geometry is one object, so an edit in the layout editor
+IS an edit to what railRF draws — and `LayoutCanvas` already subscribes to its bound model's
+`Changed` and patches its path and tile caches incrementally from the `LayoutChangeInfo`. **Nothing
+in railRF repaints on that event**; being bound to the live model is the repaint. What the window
+does subscribe for is the half the canvas cannot know: the DC result was measured on copper that has
+just moved, so it is cleared. **The viewport is deliberately NOT rebuilt** — the user is watching the
+board while they edit it, and re-fitting under them would be the tool taking the picture away at the
+moment they are using it.
+
+**Adoption is on open and on every activation.** `WorkspaceViewModel.LiveLayoutModel` is a
+NON-creating lookup, which is the whole difference between it and `GetOrCreateLayoutSession` — that
+method is the open funnel and reads the file, attaches wirebond sidecars and runs three scans that
+post to Messages. A window that only wants to LOOK must cause none of that. Asking again on
+activation covers the order the report did not hit (railRF opened first): the moment the user comes
+back to the window it adopts the shared model and is live from then on, and it needs no "a session
+appeared" event, which does not exist and would have to be invented and torn down.
+
+### 2. …so the canvas is read-only now
+
+`LayoutCanvas.ReadOnly`, and one gate — `EditTarget`, which is the view model or null. Every
+mutating call site was already null-conditional on the view model, so routing them through it makes
+read-only exactly the state they already handled. **Navigation is deliberately not suppressed**, and
+neither is the overlay: pan, wheel, `F`, `Z`, Ctrl/⌘ +/-, the arrow-key pan, the zoom box and
+`ILayoutCanvasOverlay`'s own hit reading all go on working, because a read-only canvas the user
+cannot move around is not a viewer, it is a picture. §11.6's rule is that railRF's board navigates
+*exactly* as the layout editor does, and that rule is unchanged.
+
+Two asymmetries worth knowing. **Ctrl/⌘+C stays and the other four clipboard keys go**: a copy takes
+nothing away, and railRF's own copy (R-rail9-6) rides that very event. And **arming the Alt grip-lock
+is gated while disarming it is not** — arming is editor state a read-only canvas must not enter,
+clearing a latch is something every exit from a gesture owes unconditionally, which is the rule
+`OnCanvasLostFocus` already keeps and that every held-key bug in this repository has been a breach of.
+
+### 3. ⌘Z in the railRF window undid an edit in the layout window
+
+Reported: a primitive moved in the layout window, then ⌘Z pressed with the railRF window in front —
+and the layout window performed the undo, which should only have happened while IT had focus.
+
+Nothing was wrong with the routing. `Edit ▸ Undo` is a `NativeMenuItem` with `Gesture="Meta+Z"`, and
+**on macOS a menu key equivalent belongs to the APPLICATION, not to a window**. railRF, harmonicaRF,
+wBond and the Match Designer are all shown UNOWNED and carry no menu of their own, so the workspace's
+menu stays the app menu while any of them is in front and its accelerators go on firing into the
+workspace behind them. ⌘Z undid whatever the workspace's active document had last done — in a window
+the user was not looking at, with nothing on screen saying so.
+
+A menu acts on the window in front, so `Undo`/`Redo` now check that. **Checked at EXECUTE rather than
+in `CanExecute`**: enablement is re-evaluated on undo-stack changes, not on activation, so a
+`CanExecute` guard would leave the item disabled after focus came back until something else happened
+to re-query it. A float belonging to this workspace counts as this workspace. **No window active at
+all means yes** — that is a test host and a headless run, not a state a user reaches, and refusing
+there would turn an unknown into a silent no-op, which is the failure this guard removes rather than
+adds one of.
+
+### 4. DBU on the face of the window
+
+Reported across four messages: source and load positions, the mesh cell setting, the drop table and
+the text drawn over the artwork were all in DBU, and every one of them should read in the board file's
+own units.
+
+DBU is what a coordinate IS; it is not what it reads as. `(26500000, 9875000) DBU` and `(26.5, 9.875)
+mm` are the same place and only one of them can be checked against a board.
+
+`RailLengthFormat` carries the two halves of the answer — the layout's display unit and its
+resolution — from the board inputs to whatever prints, and `RailPortAnchor.Describe` takes it. That
+one seam covers more than it looks: the map markers over the artwork read `RailPortDrop.Name` and
+`RailSourceShare.Name`, which are built at solve time, so putting the format on `RailDcRequest` fixes
+the overlay text as well as the tables. The parts placement column and the `Mesh cell` field take it
+directly, and the mesh cell now **parses** through it too (an explicit `50 µm` still wins, so nobody
+is trapped in the board's unit).
+
+**A caller with no artwork gets `RailLengthFormat.Dbu`, which prints the integer and says "DBU" out
+loud** — not a default of micrometres. A number printed in a unit nobody stated is a number that reads
+as correct and is wrong by three orders of magnitude.
+
+**Two things this had to be careful about.** The format is a FUNCTION on the view model and on each
+row, asked afresh at every use, because the layout editor's unit picker can change it under an open
+window and a value captured when a row was built would go on printing the old unit. And a display
+unit **raises no `Changed` event** — the layout editor deliberately keeps it off the undo stack and
+out of the notification the spatial index listens to — so there is nothing to subscribe to and the
+window re-states its strings on ACTIVATION, which is the moment a user who just changed the unit
+comes back to look.
+
+On the command line the report prints in board units too, and `--mask <port>=file` **accepts either
+spelling**: the board-unit one a user copies off the report, and the DBU one the `.crail` itself holds
+and anything written before this change used. Refusing one would break a script for a reason that has
+nothing to do with the script.
+
+**The byte gate caught this, which is what it is for.** `RailCliVerbTests`' two report tests compare
+the verb run as a process against an in-process `RailReportPage` call; the in-process reference did
+not pass a `LengthFormat` and the two disagreed the moment the verb printed a coordinate anchor
+differently. The fix is to build the reference the way the verb builds it, not to relax the
+comparison.
+
+Gates: `RailWindowTests` (seven more), `WorkspaceScannerTests`, `RailCliVerbTests`.

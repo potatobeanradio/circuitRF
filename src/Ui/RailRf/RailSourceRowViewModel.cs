@@ -23,10 +23,16 @@ public sealed partial class RailSourceRowViewModel : ObservableObject
 {
     private readonly RailSpec _rail;
 
-    public RailSourceRowViewModel(RailSpec rail, RailSource source)
+    /// <summary>How this row spells a coordinate anchor — see the load row's own field for why it is
+    /// a function rather than a value.</summary>
+    private readonly Func<RailLengthFormat> _lengthFormat;
+
+    public RailSourceRowViewModel(RailSpec rail, RailSource source,
+                                  Func<RailLengthFormat>? lengthFormat = null)
     {
         _rail = rail;
         _source = source;
+        _lengthFormat = lengthFormat ?? (static () => RailLengthFormat.Dbu);
     }
 
     private RailSource _source;
@@ -38,8 +44,12 @@ public sealed partial class RailSourceRowViewModel : ObservableObject
     /// re-extract and re-solve. Never raised by a half-typed field.</summary>
     public event EventHandler? Edited;
 
-    /// <summary>"BT1.1", or the coordinate where there is no pad to name.</summary>
-    public string Anchor => _source.Anchor.Describe();
+    /// <summary>"BT1.1", or the coordinate — in the BOARD's units — where there is no pad to
+    /// name.</summary>
+    public string Anchor => _source.Anchor.Describe(_lengthFormat());
+
+    /// <summary>The board's display unit changed, so the anchor column has to be re-read.</summary>
+    public void NotifyAnchorChanged() => OnPropertyChanged(nameof(Anchor));
 
     /// <summary>What model this row carries, as the row's own second line reads.</summary>
     public string ModelSummary =>

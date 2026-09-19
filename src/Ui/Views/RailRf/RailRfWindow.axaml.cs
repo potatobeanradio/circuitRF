@@ -48,6 +48,7 @@ public partial class RailRfWindow : Window
         WireImportButton();
         WireOpenButton();
         WireBoardCanvas();
+        WireLiveArtwork();
 
         // The railRF chapter of the reference, through the launcher every other Help button in the
         // application uses — the Match Designer's own line.
@@ -315,6 +316,7 @@ public partial class RailRfWindow : Window
         notes = vm.LoadDocumentReferences();
 
         var window = new RailRfWindow { DataContext = vm };
+        window.AdoptLiveArtwork();   // prefer the shared session's model where the .clay is open
         Open[key] = window;
         window.Closed += (_, _) =>
         {
