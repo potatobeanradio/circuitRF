@@ -7701,3 +7701,172 @@ mesh's R-L: the distributed netlist exists and solves, and nothing routes it int
 That is deliberate — brief 13's own deliverable list is three additions to the extractors, and the
 shunt branch that a distributed sweep would want is brief 14 — but §2.8's sentence about every
 observation port on a rail reading the same curve is still what the window prints.
+
+## railRF brief 14 — the cavity, and the six things the shunt branch turned up (2026-09-18)
+
+`docs/sonnet-briefs/brief-railrf-14-cavity.md`, P2b. §4.1's last two terms — `C = ε₀εᵣΔ²/h` to the
+reference plane and `G = ωC·tan δ` across it — plus the sampling that makes a narrow plane resonance
+findable. `PdnCavity` is where both expressions and the medium they are of now live; `PdnCavityTests`
+is the gate.
+
+**The phasing argument survives into the code, and it is not a hedge.** §4.5: a 60 × 50 mm board on
+FR-4 has its first mode at about 1.2 GHz and the excitation set of §2.2 tops out at 50 MHz. Nothing
+here was built at the expense of the earlier phases — the DC path is bit-identical (the shunt branch
+is not stamped at ω = 0), and the cell-size change below cannot coarsen a DC mesh.
+
+### 1. The area is the OVERLAP, and `min(A₁, A₂)` is not it
+
+R-rail14-3 says the plane capacitance is over the real overlap rather than the outline, and the
+obvious reading of that on a mesh is "the smaller of the two conductors' cell areas". **It is wrong
+whenever the two coppers are in different parts of the same cell** — a trace on one conductor and a
+plane on the other, a split, the edge of an antipad field — and it would price a capacitance between
+two pieces of metal that do not face each other, optimistically and by an amount that depends only
+on how the grid lines happened to fall. `MeshBuilder.OverlapAreas` rasterises the actual Clipper
+intersection of the two unioned coppers, which is why `MeshLayer` now keeps its union rather than
+re-unioning on demand. The gate is a 20 mm × 2 mm rail trace over a 20 mm × 20 mm plane: the right
+answer is ten times smaller than either conductor's own area.
+
+### 2. More than one dielectric between a plane pair combines in SERIES, which is not an average
+
+An inner pair split by a core and two prepregs is three `StackupKind.Dielectric` entries, and the
+capacitance of the stack is the series combination of the three:
+
+```
+1/C = Σ hᵢ/(ε₀εᵣᵢA)      →      εᵣ_eff = Σhᵢ / Σ(hᵢ/εᵣᵢ)
+```
+
+a harmonic mean weighted by thickness. On a 100 µm core of εr 4.3 beside a 100 µm film of εr 9 the
+arithmetic mean says 6.65 and the right answer is 5.81 — **13 %, straight onto the headline number
+§9 says a designer recognises at a glance**. The loss tangent combines on the same weights (each
+entry's share of the RECIPROCAL capacitance, which is its share of the voltage), and the flag that
+brief 11's per-class figure was used anywhere travels with it. `PdnCavity.MediumBetween` is the one
+place this happens, over `PdnStackupGeometry.DielectricsBetween`, which is the existing z walk with
+its via entries skipped for the reason that file's header already gives.
+
+### 3. ε₀ is DERIVED from µ₀ and c, and that is about the plane pair rather than about precision
+
+The same two planes carry `L = µ₀h` per square (`PdnInductance`) and `C = ε₀εᵣA/h` (`PdnCavity`), and
+the wave on them travels at `1/√(LC)`. Two independently-typed constants let that velocity drift
+from `c/√εᵣ` in the ninth digit for no reason anyone could point at — and **every cavity frequency
+this series computes is that velocity over a length**. So `PdnCavity.Epsilon0 = 1/(µ₀c²)` off
+`PdnInductance.MuZero`: one electromagnetic basis, and the pair's L and C cannot come to disagree
+about the medium. (`EmProblem.Eps0` makes the same choice; it is out of scope here by the brief's own
+"no `CircuitRF.Engine.Mom` types" rule, apart from the sampler.)
+
+### 4. `ParallelRlcModel` is the wrong element for a cell's shunt, and for a matrix reason
+
+The shunt branch is `ωC(tan δ + j)` and PRLC says exactly that in one line. It also **always opens a
+Group-2 branch for its inductor**, so a cavity mesh of a few thousand cells would carry a few
+thousand extra branch currents for an `L` that is identically zero. Two Group-1 elements —
+`CapacitorModel` and `ResistorModel` at `1/G` — stamp the same admittance and add no unknown. This is
+the same trap brief 13 hit from the other side with `SeriesRlcModel`, and no new `ComponentModel`
+exists either way (overview §1f).
+
+The `G` resistor deliberately reports **no `ResistanceOhms` on its origin**. §2.4's ranked breakdown
+sorts on DC drop, this element does not exist at ω = 0, and a megohm shunt sorted into that table
+would head it while contributing nothing. `PdnOriginKind.PlaneShunt` is likewise distinct from
+`Shunt` because a `Shunt` is a PART with a refdes that §2.4's removal ranking may offer to delete,
+and the plane pair's own capacitance is the board.
+
+### 5. The adaptive sweep's DECISIONS were reusable; its grid-bisection LOOP deliberately was not
+
+§4.4 names `PlanarAdaptiveSweep` as the mechanism and the brief says not to write a second refiner.
+**One scope note, stated rather than assumed:** the brief's §6 names `PlanarAdaptiveSweep` as the
+single `CircuitRF.Engine.Mom` exception, and the code also calls `PlanarResonanceSearch`. That is
+the same mechanism rather than a second one — it lives in the sampler's own settings record
+(`PlanarAdaptiveSettings.Search`), it seeds itself from `PlanarAdaptiveSweep`'s interpolant and it
+stops on `PlanarAdaptiveSweep`'s criterion — and it is the half that actually finds a narrow
+resonance, for the reason in point 2 below. Naming only the outer type in the brief predates ANT-9.
+
+What `PdnAdaptiveSweep` reuses is everything that decides — `PlanarResonanceSearch` for the
+crossings and the bracketing, seeded from `PlanarAdaptiveSweep`'s own interpolant and judged on its
+own |ΔS| criterion. **The grid-bisection half is not reused, and that is a decision with two
+reasons:**
+
+1. `PlanarSolve`'s refinement solves a SUBSET of the requested grid and models the rest, because a
+   de-embedded full-wave point costs 48–72 s there. A PDN point is one sparse complex solve, so the
+   saving is worth nothing — and §2.4's mask verdict, anti-resonance table and coincidence rows are
+   all read off the curve AT the requested points. A modelled point in a mask verdict is an
+   interpolation reported as a measurement.
+2. **Refinement cannot find a narrow resonance anyway, and the EM work already measured that**
+   (ANT-9): it bisects INDICES of the requested grid, so every frequency it is allowed to look at is
+   already solved. On a high-Q response it can solve 86 % of a 51-point grid, miss its tolerance by
+   twenty times and never once look where the resonance is.
+
+So the whole requested grid is solved and the search ADDS what the grid stepped over, reported in
+`PdnSweepResult.AddedHz` and in a note — ANT-9's narrowed property, in the same words. The gate is
+R-rail14-4's own: the peak being FOUND, with the negative half beside it (a log grid of the same
+point count reads a third of the true peak and looks entirely smooth). It is ON by default in the
+window, because §4.4 says it is not optional and because the table it feeds is one of the three
+answers §2.4 exists to produce.
+
+`PlanarSolve.Run`'s own loop stays where it is: re-pointing it at a shared refiner means re-running
+the `Category=Benchmark` adaptive-sweep tier (`AdaptiveSweepTests.T4_1`/`T4_2`, 3–4 min each) to
+prove bit-identity, which is more than this brief's budget. Nothing is duplicated by leaving it —
+the criterion, the interpolant, the seeding and the search are all single-sourced; what is not
+shared is thirty lines of interval bookkeeping that the PDN path does not execute at all.
+
+### 6. A port sits half a cell in, and that is the whole residual against the closed form
+
+The cavity-impedance gate meshes a plane-pair strip exactly one cell wide, which makes it the
+classical LC ladder discretisation of a uniform line — each cell `C'Δ`, each edge `L'Δ` and `R'Δ`,
+all three arrived at from the AREAS — with a textbook `Z_in = Z₀·coth(γℓ)` to check against,
+loss included.
+
+It agrees to well under 1 % below and through the first mode, and **what is left is first order in Δ
+and is not the shunt branch**: the port attaches at the first cell's CENTRE, half a cell in from the
+copper's edge, so the stub the mesh presents is `ℓ − Δ/2` long. Measured at 0.30·f₁: **2.56 % at
+Δ = 2 mm, 1.29 % at 1 mm, 0.65 % at 0.5 mm** — halving with the pitch, three times over, which is
+§7's "monotone convergence in cell size" and is asserted rather than described. A later reader who
+reads that 0.65 % as a modelling error in `C` would go looking in the wrong file.
+
+The same offset is why the **quarter-wave zero at 0.5·f₁ is deliberately not in the ratio gate**: |Z|
+passes through zero there, a ratio is the wrong measure of anything (0.56 Ω against the line's
+0.003 Ω, on a curve whose own scale `Z₀` is 18 Ω), and the zero is not a mode — §4.5's `f_mn` are the
+half-wave family, so "below and through the first one" does not reach it.
+
+### 7. R-rail14-5's "stated fraction" has to be 5 %, and 1 % would have failed the gate it is in
+
+R-rail4-4's ceiling is a tenth of the first cavity resonance, on the argument that leaving a
+distributed shunt out costs `tan(βa)/βa − 1` and that this is 3.4 % there. So **the fraction the
+threshold is checked against must be above 3.4 %, or the assertion inverts**: the 1 % point is at
+`f₁/18`, BELOW the ceiling, and "the threshold is at or below where the shunt matters" would be
+false by construction rather than by defect. 5 % is §7's own Fast-versus-Accurate agreement
+tolerance and is the right number for that reason — the shunt branch may not move |Z| by more than
+the two readings are allowed to differ, anywhere Fast is allowed to answer. Measured on a 50 mm
+strip the 5 % point is 180 MHz against a 145 MHz ceiling: honest, and within a factor of two, which
+the gate also asserts so the ceiling cannot be made safe by making it meaningless.
+
+The two solves differ in **exactly** the shunt branch: the netlist is extracted once per frequency
+and the `PlaneShunt` components are removed from the copy, descending by index. Comparing the mesh
+against `PdnGraphExtractor` instead would have compared two readings of the copper as well, and the
+copper is not what is under test.
+
+### 8. Both cell-size rules bind now, and the basis says which one did
+
+Brief 3 set the cell size from the narrowest current-carrying conductor and warned that the
+wavelength rule binds from this brief onward. It does, and the cell is the **smaller** of the two —
+the two failures are silent and in opposite directions: too coarse for the feature loses a thin
+trace's resistance, too coarse for the wavelength loses the resonance the cavity band exists to
+find. `PdnProvenance.CellSizeBasis` names the rule that bound and, where the other was close, what
+it asked for. A STATED cell size is still honoured exactly — it is the knob the convergence sweeps
+turn — but one coarser than λ/20 now produces a note, because that curve looks entirely normal and
+is missing its own resonance.
+
+`PdnMeshExtractor.LargestEpsilonR` is shared with `PdnGraphExtractor`, which had its own copy: the
+fast model's cavity-band refusal and the mesh's wavelength cell size are the same statement about
+the same stackup, and two readings of it could quietly come to disagree about where Fast stops being
+honest.
+
+### 9. The plane capacitance is a SENTENCE on the result, not a number two writers format
+
+§9 asks for the extracted plane capacitance "as a single number early and prominently". It is
+`RailDcResult.PlaneCapacitanceLine`, for the reason R-rail5-2 puts the voltage-interpolation rule on
+the result: the window and the headless report may not disagree about the same number at the same
+moment, and the two are written by different briefs. It is the FIRST card in the window's results
+column and it is on the always-on status strip, and `circuitrf rail` prints it above the tables.
+
+It is present on a **DC** run, where nothing was stamped from it — at ω = 0 the shunt branch vanishes
+and the stackup is exactly as worth checking. `PdnProvenance.ShuntBranchPresent` is therefore a
+different question from "is the capacitance non-zero", and a reader comparing two curves needs to be
+able to tell a run that modelled the cavity from one that only measured its stackup.

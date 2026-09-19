@@ -157,6 +157,16 @@ public sealed partial class RailRfViewModel
             Parts   = resolver.ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail)),
             Sources = sources,
             Model   = kind,
+
+            // ── R-rail14-4: ON, because §4.4 says it is not optional ───────────────────────────
+            //
+            // "Plane resonances are narrow and a log grid steps straight over one." The anti-
+            // resonance table, the mask verdict and the coincidence rows are all read off this
+            // curve's own axis, so a peak the grid stepped over is missing from three answers at
+            // once and the window has nothing to show that it is. Every point the search adds is
+            // solved and is reported in the result's notes, which is where the strip reads them
+            // from; a PDN point is one sparse complex solve, so the budget costs milliseconds.
+            Sampling = PdnSamplingSettings.Default,
         };
     }
 

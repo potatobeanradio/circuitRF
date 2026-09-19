@@ -942,6 +942,10 @@ internal static class Rail
             if (result.SourceVoltageV is { } sv) Console.WriteLine($"  source:  {sv:0.####} V");
             if (result.ChainedFrom is { } chain) Console.WriteLine($"  chained: {chain.Describe()}");
 
+            // R-rail14-3 / §9: early and prominently, above the tables rather than under them —
+            // the number a designer recognises as wrong at a glance and would never go looking for.
+            Console.WriteLine($"  plane C: {result.PlaneCapacitanceLine}");
+
             Console.WriteLine("  Ports");
             foreach (var port in result.Ports) Console.WriteLine($"    {port.Describe()}");
 

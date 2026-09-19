@@ -207,6 +207,52 @@ public sealed class RailDcResult
         "Copper is +0.39 %/K, so at 85 °C the same trace is about 25 % worse; railRF is not a " +
         "thermal tool and does not derate.";
 
+    // ── R-rail14-3: the highest-value sanity check in the tool, and it must not be buried ───────
+
+    /// <summary>
+    /// <b>The extracted plane capacitance, as ONE number, in the same words the window and the
+    /// headless report both print.</b>
+    ///
+    /// <para>§9: <i>"The stackup is usually wrong. Designers copy a stackup from the last board. …
+    /// railRF shows the extracted plane capacitance as a single number early and prominently,
+    /// because a designer recognises a wrong one instantly and would never notice it buried in a
+    /// curve."</i> It is <c>ε₀εᵣA/h</c> over the real OVERLAP of the two conductors, so one glance
+    /// checks the permittivity, the area and the dielectric thickness at once — which is what makes
+    /// it worth more than its cost.</para>
+    ///
+    /// <para><b>One sentence on the RESULT, for the reason <see cref="VoltageAt"/> is one rule on
+    /// the result</b> (R-rail5-2): a window and a report that disagreed about the same number at the
+    /// same moment would make both unusable, and the two are written by different briefs.</para>
+    ///
+    /// <para>It is present on a DC run, where nothing was stamped from it. At ω = 0 §4.1's shunt
+    /// branch vanishes; the stackup is exactly as worth checking.</para>
+    /// </summary>
+    public string PlaneCapacitanceLine
+    {
+        get
+        {
+            var p = Netlist.Provenance;
+            if (!(p.PlaneCapacitanceFarads > 0))
+                return "Plane capacitance: none. The stackup states no dielectric between this " +
+                       "rail's copper and its reference, so ε₀εᵣA/h has no h — state the dielectric " +
+                       "entries between them.";
+
+            return $"Plane capacitance {Farads(p.PlaneCapacitanceFarads)} — ε₀εᵣA/h over " +
+                   $"{p.PlaneOverlapSquareMetres * 1e4:0.##} cm² of OVERLAP at εr " +
+                   $"{p.RelativePermittivity:0.###}, tan δ {p.LossTangent:0.####}" +
+                   (p.LossTangentIsClassDefault ? $" ({RailEsrDefaults.Marking})" : "") + ".";
+        }
+    }
+
+    /// <summary>A capacitance as this report spells it, on <c>PdnMask.Ohms</c>' reasoning: one
+    /// spelling, so a status strip and a report page cannot disagree about what 2.1e-9 F is called.</summary>
+    internal static string Farads(double c) =>
+        !double.IsFinite(c) || c <= 0 ? "(none)"
+        : c >= 1e-6 ? $"{c * 1e6:0.###} µF"
+        : c >= 1e-9 ? $"{c * 1e9:0.###} nF"
+        : c >= 1e-12 ? $"{c * 1e12:0.###} pF"
+        :              $"{c * 1e15:0.###} fF";
+
     // ── R-rail5-2: the FIELD, and its interpolation stated once ────────────────────────────────
 
     /// <summary>

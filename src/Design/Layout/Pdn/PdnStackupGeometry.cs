@@ -96,4 +96,40 @@ public static class PdnStackupGeometry
     /// it lands on, and its own length is what sets its partial inductance.</summary>
     public static double SpanMetres(PdnConductorZ? a, PdnConductorZ? b) =>
         a is null || b is null ? 0.0 : Math.Abs(a.MidMetres - b.MidMetres);
+
+    /// <summary>
+    /// Every <see cref="StackupKind.Dielectric"/> entry lying strictly BETWEEN two conductors, top
+    /// first — what the field of §4.1's shunt branch actually crosses.
+    ///
+    /// <para><b>A list rather than one layer, because a plane pair is routinely separated by more
+    /// than one.</b> An inner pair split by a core and two prepregs is three entries, and
+    /// <see cref="PdnCavity.MediumBetween"/> combines them in SERIES — which is not the same as
+    /// averaging them, and the difference is the whole of the extracted plane capacitance on a
+    /// mixed-dielectric stack.</para>
+    ///
+    /// <para>Empty where either conductor is missing, where they are the same one, or where the
+    /// stackup puts nothing between them. <b>The same rule as <see cref="SeparationMetres"/></b>:
+    /// a conductor is not its own return.</para>
+    /// </summary>
+    public static IReadOnlyList<StackupLayer> DielectricsBetween(
+        Technology tech, PdnConductorZ? a, PdnConductorZ? b)
+    {
+        var between = new List<StackupLayer>();
+        if (tech is null || a is null || b is null || a.Index == b.Index) return between;
+
+        int lo = Math.Min(a.Index, b.Index), hi = Math.Max(a.Index, b.Index);
+        int seen = 0;
+
+        // A VIA ENTRY OCCUPIES NO Z — this file's header — so it is skipped here exactly as
+        // Conductors() skips it, or a stackup that declares its PTH between two conductors would
+        // shift every dielectric below it into the wrong pair.
+        foreach (var l in tech.Stackup.Layers)
+        {
+            if (l.Kind == StackupKind.Via) continue;
+            if (l.Kind == StackupKind.Conductor) { seen++; continue; }
+            if (l.Kind == StackupKind.Dielectric && seen > lo && seen <= hi) between.Add(l);
+        }
+
+        return between;
+    }
 }

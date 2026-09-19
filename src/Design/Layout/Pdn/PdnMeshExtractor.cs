@@ -59,6 +59,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.RailRf;
+using CircuitRF.Engine.Pdn;
 
 namespace CircuitRF.Design.Layout.Pdn;
 
@@ -199,29 +200,48 @@ public static class PdnMeshExtractor
     public const double ReferenceTemperatureCelsius = 20.0;
 
     /// <summary>
-    /// <b>The OTHER cell-size rule, stated here so a later reader cannot find only one of them.</b>
+    /// <b>The OTHER cell-size rule, and from brief 14 BOTH of them bind — the cell is the SMALLER.</b>
     ///
     /// <para>§4.1 sizes cells by the shortest wavelength in the dielectric, Δ ≤ λ_min/20 — 7.2 mm at
-    /// 1 GHz on FR-4, 1.4 mm at 5 GHz. That rule exists to resolve the CAVITY, and it binds from
-    /// brief 14 onward.</para>
+    /// 1 GHz on FR-4, 1.4 mm at 5 GHz. That rule exists to resolve the CAVITY: a cell longer than
+    /// that cannot carry the phase across itself, so the plane resonance it is meant to produce is
+    /// simply not in the model. It binds from brief 14 onward, which is why this method is now
+    /// called at every non-zero frequency and not only consulted.</para>
     ///
-    /// <para><b>At DC the binding constraint is not wavelength at all — it is GEOMETRY.</b> A cell
-    /// must resolve the narrowest conductor that carries current, or a 0.15 mm trace becomes a cell
-    /// wide and its resistance is wrong by whatever the cell size is. So the DC cell size comes from
-    /// <see cref="MinimumFeatureWidthDbu"/>, with local refinement under every port region, and this
-    /// method is not called at ω = 0.</para>
+    /// <para><b>The other constraint is not wavelength at all — it is GEOMETRY, and it binds at every
+    /// frequency including DC.</b> A cell must resolve the narrowest conductor that carries current,
+    /// or a 0.15 mm trace becomes a cell wide and its resistance is wrong by whatever the cell size
+    /// is. That is <see cref="MinimumFeatureWidthDbu"/>, with local refinement under every port
+    /// region.</para>
     ///
-    /// <para>A later reader who sees only the wavelength rule will "fix" the DC mesh to it and
-    /// quietly lose every thin trace: 7.2 mm cells on 0.3 mm traces. That is why both rules are in
-    /// one file, each with the reason it exists.</para>
+    /// <para><b>So the cell size is the smaller of the two, and each exists for its own reason</b>
+    /// (R-rail3-14, R-rail14-2). They are stated together here because a later reader who sees only
+    /// the wavelength rule will "fix" the mesh to it and quietly lose every thin trace — 7.2 mm
+    /// cells on 0.3 mm traces — and a reader who sees only the feature rule will run the cavity band
+    /// on a mesh that cannot hold a resonance. Neither failure reports anything; the extraction
+    /// names which rule bound it in <see cref="PdnProvenance.CellSizeBasis"/> so it does.</para>
     /// </summary>
-    /// <param name="frequencyHz">The top of the band being solved.</param>
-    /// <param name="epsilonR">The dielectric's relative permittivity.</param>
+    /// <param name="frequencyHz">The top of the band being solved. Zero — DC — returns infinity,
+    /// which is this rule saying it does not bind rather than a guard.</param>
+    /// <param name="epsilonR">The dielectric's relative permittivity. <b>The LARGEST in the
+    /// stackup</b>, which is the shortest wavelength and so the smallest cell.</param>
     public static double WavelengthCellSizeMetres(double frequencyHz, double epsilonR)
     {
-        const double C0 = 299_792_458.0;
         if (!(frequencyHz > 0) || !(epsilonR > 0)) return double.PositiveInfinity;
-        return C0 / (frequencyHz * Math.Sqrt(epsilonR)) / 20.0;
+        return PdnCavity.SpeedOfLight / (frequencyHz * Math.Sqrt(epsilonR)) / 20.0;
+    }
+
+    /// <summary>The largest relative permittivity any dielectric of the stackup states — the
+    /// shortest wavelength on the board, which is what <see cref="WavelengthCellSizeMetres"/> has to
+    /// be sized for. <b>Shared with <see cref="PdnGraphExtractor"/></b>, whose own cavity-band
+    /// refusal is derived from the same number and must not be derived from a second reading.</summary>
+    internal static double LargestEpsilonR(Technology tech)
+    {
+        double best = 1.0;
+        if (tech is null) return best;
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Dielectric && l.Epsr > best) best = l.Epsr;
+        return best;
     }
 
     /// <summary>Copper resistivity at <paramref name="celsius"/>, from a conductivity quoted at
@@ -290,17 +310,58 @@ public static class PdnMeshExtractor
         long baseDeltaDbu;
         string cellBasis;
 
+        // ── R-rail14-2: BOTH rules bind now, and the cell is the smaller of the two ────────────
+        //
+        // WavelengthCellSizeMetres carries the whole argument; what is here is only the choice. The
+        // basis names which one bound, because the two fail in opposite directions and neither
+        // failure reports anything: too coarse for the feature loses a thin trace's resistance, too
+        // coarse for the wavelength loses the resonance the cavity band exists to find.
+        double epsilonR = LargestEpsilonR(tech);
+        double lambdaMetres = WavelengthCellSizeMetres(request.FrequencyHz, epsilonR);
+        long lambdaDbu = double.IsFinite(lambdaMetres) && lambdaMetres > 0
+            ? Math.Max(1, (long)Math.Floor(lambdaMetres * dbuPerMetre))
+            : long.MaxValue;
+
         if (request.Mesh.CellSizeMetres is { } stated && stated > 0)
         {
             baseDeltaDbu = Math.Max(1, (long)Math.Round(stated * dbuPerMetre));
             cellBasis = $"stated: {stated * 1e3:0.###} mm";
+
+            // A STATED size is honoured and never silently narrowed — it is the knob the convergence
+            // sweeps turn — but a stated size coarser than the wavelength rule produces a curve with
+            // no resonance in it and looks entirely normal, so it is said.
+            if (baseDeltaDbu > lambdaDbu)
+                notes.Add(
+                    $"The stated cell size, {stated * 1e3:0.###} mm, is coarser than the " +
+                    $"{lambdaMetres * 1e3:0.###} mm the shortest wavelength asks for at " +
+                    $"{PdnMask.Hertz(request.FrequencyHz)} in εr {epsilonR:0.###} (λ/20). A cell longer " +
+                    "than that cannot carry the phase across itself, so a plane resonance in this " +
+                    "band is not in the model at all — the curve will look smooth and be missing it.");
         }
         else
         {
             int across = Math.Max(1, request.Mesh.CellsAcrossMinimumFeature);
-            baseDeltaDbu = Math.Max(1, minFeature / across);
-            cellBasis = $"the rail's narrowest copper, {minFeature / dbuPerMetre * 1e3:0.###} mm, " +
-                        $"at {across} cells across it";
+            long featureDbu = Math.Max(1, minFeature / across);
+            string featureBasis =
+                $"the rail's narrowest copper, {minFeature / dbuPerMetre * 1e3:0.###} mm, " +
+                $"at {across} cells across it";
+
+            if (lambdaDbu < featureDbu)
+            {
+                baseDeltaDbu = Math.Max(1, lambdaDbu);
+                cellBasis =
+                    $"the shortest wavelength at {PdnMask.Hertz(request.FrequencyHz)} in εr " +
+                    $"{epsilonR:0.###}, λ/20 = {lambdaMetres * 1e3:0.###} mm — smaller here than " +
+                    featureBasis;
+            }
+            else
+            {
+                baseDeltaDbu = featureDbu;
+                cellBasis = featureBasis +
+                    (lambdaDbu == long.MaxValue
+                        ? ""
+                        : $" — smaller here than λ/20, {lambdaMetres * 1e3:0.###} mm");
+            }
         }
 
         // ── the reference extent, applied HERE and stamped (R-rail3-5) ─────────────────────────
@@ -347,9 +408,20 @@ public static class PdnMeshExtractor
         double crossover = SkinCrossover(mesh, request.FrequencyHz, notes);
 
         // ── the netlist ────────────────────────────────────────────────────────────────────────
+        var media = PlaneMedia(request, mesh, referenceLayer, notes);
+
         var asm = new PdnAssembly(request, mesh, celsius, notes, diagnostics);
         StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
+
+        // ── R-rail14-3: the readout §9 says must not be buried ─────────────────────────────────
+        double planeCapacitance = StampCavity(
+            mesh, asm, request.DbuPerMicron, request.FrequencyHz, media, out double overlapArea);
+
         if (asm.Build() is { } refusal) return PdnExtraction.Refused(refusal, regions);
+
+        var dominantMedium = media.Values
+            .OrderByDescending(m => m.ThicknessMetres > 0 ? 1 : 0)
+            .FirstOrDefault();
 
         var provenance = new PdnProvenance
         {
@@ -362,6 +434,13 @@ public static class PdnMeshExtractor
             SkinCrossoverHz = crossover,
             CellSizeMetres = baseDeltaDbu / dbuPerMetre,
             CellSizeBasis = cellBasis,
+            PlaneCapacitanceFarads = planeCapacitance,
+            PlaneOverlapSquareMetres = overlapArea,
+            RelativePermittivity = dominantMedium?.EpsilonR ?? 0,
+            LossTangent = dominantMedium?.TanDelta ?? 0,
+            LossTangentIsClassDefault = dominantMedium?.TanDeltaIsClassDefault ?? false,
+            DielectricBasis = dominantMedium?.Basis ?? "",
+            ShuntBranchPresent = request.FrequencyHz > 0 && planeCapacitance > 0,
             PortRefinementRatio = refineBands.Count > 0 ? Math.Max(1, request.Mesh.PortRefinementRatio) : 1,
             CopperTemperatureCelsius = celsius,
             CellCount = mesh.CellCount,
@@ -756,6 +835,11 @@ public static class PdnMeshExtractor
         public required bool IsReference { get; init; }
         public required PdnConductor Conductor { get; init; }
         public Paths64 Copper { get; } = [];
+
+        /// <summary>The same copper, unioned — kept because R-rail14-3's shunt branch needs the
+        /// INTERSECTION of two conductors' copper and unioning twice is both a cost and a chance for
+        /// the two readings to differ.</summary>
+        public Paths64 Union { get; set; } = [];
         public double[] Area { get; set; } = [];
         public int[] Node { get; set; } = [];
     }
@@ -834,6 +918,7 @@ public static class PdnMeshExtractor
             foreach (var ml in _layers)
             {
                 var copper = DrcRegions.Union(ml.Copper);
+                ml.Union = copper;
                 ml.Area = Rasterise(copper);
                 ml.Node = new int[ml.Area.Length];
 
@@ -949,6 +1034,29 @@ public static class PdnMeshExtractor
             }
 
             return area;
+        }
+
+        /// <summary>
+        /// The copper area per cell where BOTH conductors have copper — R-rail14-3's overlap, which
+        /// is what §4.1's shunt branch is of.
+        ///
+        /// <para><b>The real intersection, never the smaller of the two areas.</b> A cell holding a
+        /// trace on one conductor and a plane on the other has two areas that both exceed their
+        /// overlap, and on a board with a cutout, an antipad field or a split the two coppers are
+        /// routinely in DIFFERENT parts of the same cell. min(A₁, A₂) would price a capacitance
+        /// between two pieces of metal that do not face each other — optimistically, and by an amount
+        /// that depends only on how the grid lines happened to fall.</para>
+        ///
+        /// <para>Empty where the two never meet, which is a real board: a rail pour that nowhere
+        /// overlaps its reference has no plane capacitance and is not an error.</para>
+        /// </summary>
+        public double[] OverlapAreas(MeshLayer rail, MeshLayer reference)
+        {
+            Prepare();
+            if (rail.Union.Count == 0 || reference.Union.Count == 0) return [];
+            var meet = Clipper.BooleanOp(
+                ClipType.Intersection, rail.Union, reference.Union, LayoutClipper.Rule);
+            return meet.Count == 0 ? [] : Rasterise(meet);
         }
 
         public PdnCellRef CellRef(MeshLayer ml, int i, int j) =>
@@ -1113,6 +1221,126 @@ public static class PdnMeshExtractor
                 "and only L and the solve change per point.");
 
         return lowest;
+    }
+
+    /// <summary>
+    /// §4.1's medium for every meshed rail conductor — the dielectric the shunt branch is of,
+    /// combined in series by <see cref="PdnCavity.MediumBetween"/>.
+    ///
+    /// <para><b>Per conductor for the reason <see cref="PlaneSeparation"/> is per conductor</b>: a
+    /// rail on the outer layer and a rail on an inner one are different distances from the same
+    /// reference AND cross different dielectrics to reach it. The reference's own cells take
+    /// nothing from this — a cell's capacitance is stamped once, between the two conductors it is
+    /// between, and the reference is the far plate of that one element rather than a second one.</para>
+    ///
+    /// <para>Absent where the stackup puts no dielectric between the pair, which is reported once
+    /// and never defaulted: an assumed FR-4 would put a plausible capacitance on every cell of the
+    /// board and nothing would say where it came from.</para>
+    /// </summary>
+    private static Dictionary<LayerKey, PdnMedium> PlaneMedia(
+        PdnExtractionRequest request, MeshBuilder mesh, LayerKey referenceLayer, List<string> notes)
+    {
+        var conductors = PdnStackupGeometry.Conductors(request.Technology, request.DbuPerMicron);
+        var reference = PdnStackupGeometry.ConductorOf(conductors, referenceLayer);
+        var media = new Dictionary<LayerKey, PdnMedium>();
+        var missing = new List<LayerKey>();
+
+        foreach (var ml in mesh.Layers)
+        {
+            if (ml.IsReference || media.ContainsKey(ml.Layer)) continue;
+            var medium = PdnCavity.MediumBetween(
+                request.Technology, PdnStackupGeometry.ConductorOf(conductors, ml.Layer), reference);
+            if (medium is null) missing.Add(ml.Layer);
+            else media[ml.Layer] = medium;
+        }
+
+        if (missing.Count > 0)
+            notes.Add(
+                "The stackup states no dielectric between this rail's copper on " +
+                string.Join(", ", missing.Select(k => $"{k.Layer}/{k.Datatype}")) +
+                " and its reference, so that copper carries no plane capacitance and no dielectric " +
+                "loss. State the dielectric entries between them — C = ε₀εᵣA/h and G = ωC·tan δ are " +
+                "the whole of §4.1's shunt branch.");
+
+        // R-rail14-3. tan δ is one of the two numbers §2.2 names as most often wrong, and a class
+        // default is not a measurement: every peak height in the cavity band computed from one is
+        // INDICATIVE, which is the same word and the same treatment brief 11 gives an ESR.
+        foreach (var m in media.Values.Where(m => m.TanDeltaIsClassDefault).Take(1))
+            notes.Add(
+                $"The stackup states no tan δ for this rail's dielectric, so railRF used " +
+                $"{m.TanDelta:0.####} — {m.Basis}. Every peak height in the cavity band is therefore " +
+                $"{RailEsrDefaults.Marking}: tan δ sets how sharp a plane resonance is, which is the " +
+                "difference between a 6 dB bump and a 20 dB one.");
+
+        return media;
+    }
+
+    /// <summary>
+    /// §4.1's last two terms, one pair per cell where BOTH conductors have copper:
+    /// <c>C = ε₀εᵣ·A/h</c> to the reference plane, and <c>G = ω·C·tan δ</c> across it.
+    ///
+    /// <para><b>The total it returns is the readout §9 asks for</b> — "railRF shows the extracted
+    /// plane capacitance as a single number early and prominently, because a designer recognises a
+    /// wrong one instantly and would never notice it buried in a curve." It is summed HERE, over the
+    /// same cells that were stamped and from the same expression, rather than recomputed from an
+    /// outline afterwards: a readout that could differ from the model it describes is worse than no
+    /// readout, because it would be believed.</para>
+    ///
+    /// <para><b>Nothing is stamped at ω = 0 and the total is still computed.</b> §2.8: at DC the
+    /// shunt branch vanishes and the system stays real, symmetric and positive-definite — but the
+    /// stackup sanity check is exactly as valuable on a DC run, and it costs one multiplication per
+    /// cell.</para>
+    /// </summary>
+    private static double StampCavity(
+        MeshBuilder mesh, PdnAssembly asm, int dbuPerMicron, double frequencyHz,
+        IReadOnlyDictionary<LayerKey, PdnMedium> media, out double overlapSquareMetres)
+    {
+        double dbuPerMetre = dbuPerMicron * 1e6;
+        double perSquareDbu = dbuPerMetre * dbuPerMetre;
+        var grid = mesh.Grid;
+
+        double total = 0;
+        overlapSquareMetres = 0;
+
+        foreach (var ml in mesh.Layers)
+        {
+            if (ml.IsReference || !media.TryGetValue(ml.Layer, out var medium)) continue;
+
+            foreach (var rl in mesh.Layers)
+            {
+                if (!rl.IsReference) continue;
+
+                var overlap = mesh.OverlapAreas(ml, rl);
+                if (overlap.Length == 0) continue;
+
+                for (int j = 0; j < grid.Ny; j++)
+                    for (int i = 0; i < grid.Nx; i++)
+                    {
+                        int k = j * grid.Nx + i;
+                        int a = ml.Node[k], b = rl.Node[k];
+                        if (a < 0 || b < 0 || !(overlap[k] > 0)) continue;
+
+                        double area = overlap[k] / perSquareDbu;
+                        double c = PdnCavity.CapacitanceFarads(
+                            medium.EpsilonR, area, medium.ThicknessMetres);
+                        if (!(c > 0)) continue;
+
+                        total += c;
+                        overlapSquareMetres += area;
+
+                        if (!(frequencyHz > 0)) continue;
+
+                        asm.StageCavityShunt(
+                            $"cavity.{ml.Layer.Layer}_{ml.Layer.Datatype}.{i}.{j}", a, b,
+                            c, PdnCavity.ConductanceSiemens(frequencyHz, c, medium.TanDelta),
+                            $"{area * 1e6:0.###} mm² of plane pair over " +
+                            $"{medium.ThicknessMetres * 1e6:0.#} µm of εr {medium.EpsilonR:0.###}",
+                            mesh.CellRef(ml, i, j), mesh.CellRef(rl, i, j));
+                    }
+            }
+        }
+
+        return total;
     }
 
     private static void StampMesh(

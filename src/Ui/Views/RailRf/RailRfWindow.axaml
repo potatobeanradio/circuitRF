@@ -728,6 +728,21 @@
                     <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="0">
+                            <!-- ── FIRST, and §9 is explicit about why ──────────────────────
+                                 "The stackup is usually wrong. Designers copy a stackup from the
+                                 last board. … railRF shows the extracted plane capacitance as a
+                                 single number EARLY AND PROMINENTLY, because a designer recognises
+                                 a wrong one instantly and would never notice it buried in a curve."
+                                 One glance at it checks the permittivity, the overlap area and the
+                                 dielectric thickness at once. It is also on the status strip. -->
+                            <Border Classes="card" IsVisible="{Binding HasPlaneCapacitance}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Stackup"/>
+                                    <TextBlock Classes="note" TextWrapping="Wrap"
+                                               Text="{Binding PlaneCapacitanceLine}"/>
+                                </StackPanel>
+                            </Border>
+
                             <Border Classes="card">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Drop"/>

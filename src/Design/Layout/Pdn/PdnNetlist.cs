@@ -58,6 +58,18 @@ public enum PdnOriginKind
     /// the netlist and contributing no DC path, which is correct and occasionally surprising
     /// (R-rail3-4).</summary>
     Shunt,
+
+    /// <summary>
+    /// §4.1's shunt branch — one cell's own <c>C = ε₀εᵣA/h</c> to the reference plane, or the
+    /// <c>G = ωC·tan δ</c> across it (R-rail14-2).
+    ///
+    /// <para><b>Distinct from <see cref="Shunt"/> on purpose, and it is not a fussy distinction.</b>
+    /// A <see cref="Shunt"/> is a PART: it has a refdes, a user can take it off the board, and
+    /// §2.4's removal ranking is about exactly that set. The plane pair's own capacitance is the
+    /// BOARD, it has no refdes, and a ranking that offered to remove it would be offering to remove
+    /// the stackup.</para>
+    /// </summary>
+    PlaneShunt,
 }
 
 /// <summary>
@@ -202,6 +214,68 @@ public sealed record PdnProvenance
     /// across a sweep has to know where the reuse stops being valid.</para>
     /// </summary>
     public double SkinCrossoverHz { get; init; } = double.PositiveInfinity;
+
+    /// <summary>
+    /// <b>R-rail14-3 — the extracted plane capacitance, in FARADS, and §9 says it must not be
+    /// buried.</b>
+    ///
+    /// <para>"The stackup is usually wrong. Designers copy a stackup from the last board. … railRF
+    /// shows the extracted plane capacitance as A SINGLE NUMBER EARLY AND PROMINENTLY, because a
+    /// designer recognises a wrong one instantly and would never notice it buried in a curve." It is
+    /// <c>ε₀εᵣA/h</c> over the real OVERLAP of the two conductors — see
+    /// <see cref="PlaneOverlapSquareMetres"/> — so one glance at it checks the permittivity, the
+    /// area and the dielectric thickness at once, which is what makes it the cheapest real gate in
+    /// the whole tool.</para>
+    ///
+    /// <para><b>Present on a DC extraction too</b>, where nothing was stamped from it: at ω = 0
+    /// §4.1's shunt branch vanishes (<see cref="ShuntBranchPresent"/> says so) but the stackup is
+    /// exactly as worth checking. Zero where the stackup gives no dielectric between the pair, which
+    /// is stated in <see cref="Notes"/> rather than defaulted.</para>
+    /// </summary>
+    public double PlaneCapacitanceFarads { get; init; }
+
+    /// <summary>
+    /// The area <see cref="PlaneCapacitanceFarads"/> is over, in SQUARE METRES — <b>the OVERLAP of
+    /// the rail's copper and its reference, never either one's outline</b> (R-rail14-3).
+    ///
+    /// <para>On a board with a cutout, an antipad field or a split the overlap is smaller than
+    /// either plane, and reading the outline instead over-states the capacitance by exactly the
+    /// fraction that is not plane pair. Carried beside the capacitance because the two together are
+    /// what let a reader check <c>h</c>: <c>h = ε₀εᵣA/C</c>.</para>
+    /// </summary>
+    public double PlaneOverlapSquareMetres { get; init; }
+
+    /// <summary>The relative permittivity the shunt branch was computed with — the SERIES-effective
+    /// one where the pair is separated by more than one dielectric entry
+    /// (<see cref="PdnCavity.MediumBetween"/>). Zero where the stackup gave none.</summary>
+    public double RelativePermittivity { get; init; }
+
+    /// <summary>
+    /// The loss tangent <c>G = ωC·tan δ</c> was computed with. <b>§2.2 names it as one of the two
+    /// stackup numbers most often wrong</b> — "it sets how sharp the cavity resonances are, which is
+    /// the difference between a 6 dB bump and a 20 dB one" — which is why it is reported rather than
+    /// merely used.
+    /// </summary>
+    public double LossTangent { get; init; }
+
+    /// <summary>True where the stackup stated no tan δ and brief 11's per-class figure supplied one
+    /// (R-rail11-5). <b>Every peak height in the cavity band is then indicative</b>, in exactly the
+    /// sense an ESR from a class default is.</summary>
+    public bool LossTangentIsClassDefault { get; init; }
+
+    /// <summary>The sentence naming which dielectric entries produced
+    /// <see cref="RelativePermittivity"/> and <see cref="LossTangent"/>, and who stated what.</summary>
+    public string DielectricBasis { get; init; } = "";
+
+    /// <summary>
+    /// Whether §4.1's shunt branch is actually IN this netlist.
+    ///
+    /// <para><b>Not the same question as "is <see cref="PlaneCapacitanceFarads"/> non-zero".</b> A DC
+    /// extraction carries the capacitance as a readout and stamps nothing from it, and a reader
+    /// comparing two curves has to be able to tell a run that modelled the cavity from one that
+    /// only measured its stackup.</para>
+    /// </summary>
+    public bool ShuntBranchPresent { get; init; }
 
     /// <summary>The mesh pitch, in METRES, before local refinement.</summary>
     public required double CellSizeMetres { get; init; }

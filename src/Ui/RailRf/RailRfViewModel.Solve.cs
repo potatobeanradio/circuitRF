@@ -121,6 +121,9 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasBothModels));
         OnPropertyChanged(nameof(PortLines));
         OnPropertyChanged(nameof(BreakdownLines));
+        OnPropertyChanged(nameof(PlaneCapacitanceLine));
+        OnPropertyChanged(nameof(PlaneCapacitanceShort));
+        OnPropertyChanged(nameof(HasPlaneCapacitance));
         SyncBoardOverlayResult();
     }
 
@@ -187,6 +190,31 @@ public sealed partial class RailRfViewModel
           + $" · {RailValueFormat.FormatWithUnit(b.CurrentA, RailQuantity.Current)}"
           + (b.ElementCount > 1 ? $" · {b.ElementCount} elements" : "")),
     ];
+
+    /// <summary>
+    /// <b>R-rail14-3 / §9 — the extracted plane capacitance, and it is deliberately in TWO places.</b>
+    ///
+    /// <para><i>"railRF shows the extracted plane capacitance as a single number early and
+    /// prominently, because a designer recognises a wrong one instantly and would never notice it
+    /// buried in a curve."</i> So it is the first card in the results column and it is on the status
+    /// strip, which is always on screen. The sentence is <c>RailDcResult</c>'s own, so the window
+    /// and the headless report cannot come to disagree about the same number.</para>
+    ///
+    /// <para>Empty before a run — there is nothing extracted to report, and a card reading "0 F"
+    /// would be a stackup finding about a board nobody has solved.</para>
+    /// </summary>
+    public string PlaneCapacitanceLine => SelectedRailResult?.PlaneCapacitanceLine ?? "";
+
+    /// <summary>Whether the plane-capacitance card has anything to say yet.</summary>
+    public bool HasPlaneCapacitance => PlaneCapacitanceLine.Length > 0;
+
+    /// <summary>The same number, short enough for the status strip — the full sentence is on the
+    /// card.</summary>
+    public string PlaneCapacitanceShort =>
+        SelectedRailResult?.Netlist.Provenance is { PlaneCapacitanceFarads: > 0 } p
+            ? $"plane C {RailDcResult.Farads(p.PlaneCapacitanceFarads)}" +
+              (p.LossTangentIsClassDefault ? " (tan δ indicative)" : "")
+            : "";
 
     /// <summary>"2 transitions flagged", or the clear case said aloud.</summary>
     public string ViaFlagSummary
@@ -482,6 +510,10 @@ public sealed partial class RailRfViewModel
             if (ElapsedText.Length > 0) parts.Add(ElapsedText);
             parts.Add($"{_document.Settings.CopperTemperatureCelsius:0.#} °C");
             parts.Add("reference " + ExtentText(ReferenceExtent));
+
+            // R-rail14-3. Always on screen, because §9's whole complaint is that a wrong stackup is
+            // recognised instantly and never gone looking for.
+            if (PlaneCapacitanceShort.Length > 0) parts.Add(PlaneCapacitanceShort);
 
             if (PartsModelledFromFile > 0)
                 parts.Add($"{PartsModelledFromFile} part(s) modelled from a file");

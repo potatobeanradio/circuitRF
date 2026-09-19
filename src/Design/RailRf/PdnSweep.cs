@@ -39,6 +39,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Engine;
+using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Pdn;
 using NumFlat;
 using RfCore;
@@ -69,6 +70,18 @@ public sealed class PdnSweepRequest
     /// P1's sweep is lumped either way (see this file's own header), and the kind is what lets the
     /// window keep a Fast curve beside an Accurate one rather than replacing it.</summary>
     public PdnModelKind Model { get; init; } = PdnModelKind.Fast;
+
+    /// <summary>
+    /// <b>R-rail14-4 — how the band is SAMPLED, and null is the requested grid exactly.</b>
+    ///
+    /// <para>§4.4: adaptive sampling "is not optional once the cavity band is in scope: plane
+    /// resonances are narrow and a log grid steps straight over one." With settings here, the EM
+    /// engine's own resonance search adds the frequencies the grid missed and says which
+    /// (<see cref="PdnSweepResult.AddedHz"/>); with null, the axis is the grid asked for, point for
+    /// point. It is a setting rather than always-on because the added points change the x axis of a
+    /// curve somebody may be overlaying on a measurement taken at their own frequencies.</para>
+    /// </summary>
+    public PdnSamplingSettings? Sampling { get; init; }
 
     /// <summary>§2.4's "a stated fraction". See <see cref="PdnCoincidence.DefaultFraction"/>.</summary>
     public double CoincidenceFraction { get; init; } = PdnCoincidence.DefaultFraction;
@@ -139,6 +152,21 @@ public sealed record PdnSweepResult(
     IReadOnlyList<string> Notes,
     IReadOnlyList<string> Warnings)
 {
+    /// <summary>
+    /// <b>R-rail14-4 — the frequencies the resonance search ADDED to the grid that was asked for.</b>
+    ///
+    /// <para>Empty where no sampling settings were given, which is the requested grid point for
+    /// point. Reported rather than folded in silently: a curve whose x axis grew is one nobody can
+    /// compare against a measurement taken on the axis they asked for, and "the tool found something
+    /// between your points" is the useful half of the sentence.</para>
+    /// </summary>
+    public IReadOnlyList<double> AddedHz { get; init; } = [];
+
+    /// <summary>What the search located, with each one's f₀, Q and the width it was bracketed to.
+    /// <b>The modes themselves are brief 15</b>; these are the peaks of THIS curve at THIS port,
+    /// which is a different claim and a weaker one.</summary>
+    public IReadOnlyList<PlanarResonance> Resonances { get; init; } = [];
+
     /// <summary>Which of §2.9's two readings this belongs beside.</summary>
     public PdnModelKind ModelKind { get; init; } = PdnModelKind.Fast;
 
@@ -228,9 +256,34 @@ public static class PdnSweep
             ? [.. request.FrequenciesHz]
             : Grid(rail.Band);
 
+        // ── R-rail14-4: the grid a resonance can hide between is not the grid that gets judged ──
+        //
+        // §4.4: "plane resonances are narrow and a log grid steps straight over one." Everything
+        // below — the mask verdict, the anti-resonance table, the coincidence rows and the removal
+        // ranking — is read off THIS axis, so a peak the grid stepped over is absent from all four
+        // at once and nothing reports it. PdnAdaptiveSweep adds what the grid missed, through the EM
+        // engine's own sampler; with no sampling settings the axis is the requested grid exactly.
+        int ports = rail.Loads.Count;
+        var sampled = PdnAdaptiveSweep.Run(
+            freqs, new Complex(request.PortReferenceOhms, 0), request.Sampling,
+            f => SolveOne(request, branches, f, ports));
+
+        freqs = sampled.FrequenciesHz;
+        notes.AddRange(sampled.Notes);
+
+        var portZ0 = new Complex[ports];
+        Array.Fill(portZ0, new Complex(request.PortReferenceOhms, 0));
+
         var zMatrices = new Mat<Complex>[freqs.Length];
-        var sMatrices = new Mat<Complex>[freqs.Length];
-        var magnitudes = Solve(request, branches, freqs, zMatrices, sMatrices);
+        var sMatrices = sampled.S;
+        var magnitudes = new double[ports][];
+        for (int k = 0; k < ports; k++) magnitudes[k] = new double[freqs.Length];
+
+        for (int fi = 0; fi < freqs.Length; fi++)
+        {
+            zMatrices[fi] = RFNetwork.SToZ(sMatrices[fi], portZ0);
+            for (int k = 0; k < ports; k++) magnitudes[k][fi] = zMatrices[fi][k, k].Magnitude;
+        }
 
         var data = Pack(request, freqs, zMatrices, sMatrices);
 
@@ -239,7 +292,7 @@ public static class PdnSweep
 
         // ── the per-port answer ────────────────────────────────────────────────────────────────
 
-        var ports = new List<PdnPortImpedance>(rail.Loads.Count);
+        var portRows = new List<PdnPortImpedance>(rail.Loads.Count);
         var aggressors = rail.Aggressors
             .Select(a => new PdnAggressorLine(a.Name, a.FrequencyHz, a.Harmonics))
             .ToArray();
@@ -259,7 +312,7 @@ public static class PdnSweep
                                 b.Group!, b.Member!, Admittance(b, freqs[i]))),
                     mask?.LimitAt(freqs[i]), indicative));
 
-            ports.Add(new PdnPortImpedance(
+            portRows.Add(new PdnPortImpedance(
                 k, rail.Loads[k].Anchor.Describe(), curve, mask, report, peaks,
                 PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction)));
         }
@@ -272,10 +325,12 @@ public static class PdnSweep
 
         // ── §2.4's capacitor ranking ───────────────────────────────────────────────────────────
 
-        var removal = Rank(request, branches, freqs, ports, notes);
+        var removal = Rank(request, branches, freqs, portRows, notes);
 
-        return new PdnSweepResult(null, data, freqs, ports, removal, notes, warnings)
+        return new PdnSweepResult(null, data, freqs, portRows, removal, notes, warnings)
         {
+            AddedHz = sampled.AddedHz,
+            Resonances = sampled.Resonances,
             ModelKind = request.Model,
             Model = request.Model == PdnModelKind.Accurate ? "Accurate (mesh)" : "Fast (graph)",
             RailName = rail.Name,
@@ -437,24 +492,32 @@ public static class PdnSweep
 
         for (int fi = 0; fi < freqs.Length; fi++)
         {
-            using var netlist = Assemble(request, branches, freqs[fi], ports);
-            var ds = SParameterEngine.Run(netlist, [freqs[fi]]);
-
-            var cube = ds["S"];
-            var raw = cube.ComplexValues;
-
-            var s = new Mat<Complex>(ports, ports);
-            for (int i = 0; i < ports; i++)
-                for (int j = 0; j < ports; j++)
-                    s[i, j] = raw[i * ports + j];
-
-            sOut[fi] = s;
-            zOut[fi] = RFNetwork.SToZ(s, z0);
+            sOut[fi] = SolveOne(request, branches, freqs[fi], ports);
+            zOut[fi] = RFNetwork.SToZ(sOut[fi], z0);
 
             for (int k = 0; k < ports; k++) magnitudes[k][fi] = zOut[fi][k, k].Magnitude;
         }
 
         return magnitudes;
+    }
+
+    /// <summary>
+    /// One assembly and one solve at ONE frequency. <b>Named because R-rail14-4's sampler is handed
+    /// it as a probe</b> — the search decides which frequencies exist and this decides what is at
+    /// them, and keeping the two apart is what lets the EM engine's own sampler drive a PDN sweep
+    /// without knowing anything about one.
+    /// </summary>
+    private static Mat<Complex> SolveOne(
+        PdnSweepRequest request, List<Branch> branches, double frequencyHz, int ports)
+    {
+        using var netlist = Assemble(request, branches, frequencyHz, ports);
+        var raw = SParameterEngine.Run(netlist, [frequencyHz])["S"].ComplexValues;
+
+        var s = new Mat<Complex>(ports, ports);
+        for (int i = 0; i < ports; i++)
+            for (int j = 0; j < ports; j++)
+                s[i, j] = raw[i * ports + j];
+        return s;
     }
 
     /// <summary>

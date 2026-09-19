@@ -195,6 +195,51 @@ internal sealed class PdnAssembly
             null, inductanceHenries));
     }
 
+    /// <summary>
+    /// Stages one cell's §4.1 shunt branch — <c>C</c> to the reference plane and, where the
+    /// dielectric is lossy, the <c>G = ωC·tan δ</c> across it (R-rail14-2).
+    ///
+    /// <para><b>Two Group-1 elements and no new unknown, which is why it is not one element.</b>
+    /// A <c>CapacitorModel</c> stamps jωC and a <c>ResistorModel</c> stamps 1/R, both straight onto
+    /// the admittance matrix; together they are the <c>ωC(tan δ + j)</c> §4.1 asks for.
+    /// <c>ParallelRlcModel</c> would say the same thing in one line and is the wrong element here:
+    /// it always opens a Group-2 branch for its inductor, so a cavity mesh of a few thousand cells
+    /// would carry a few thousand extra branch currents for an L that is identically zero. NO NEW
+    /// <c>ComponentModel</c> EXISTS ANYWHERE IN THIS SERIES (overview §1f) and none is needed.</para>
+    ///
+    /// <para><b>The loss is stamped as a RESISTANCE at this frequency's own ω</b>, exactly as the
+    /// skin-effect sheet resistance is: the extraction is FOR one frequency (§2.8), and the sweep
+    /// re-extracts. A G held from one point to the next would make tan δ fall as 1/f and flatten
+    /// every resonance in the band above it.</para>
+    /// </summary>
+    public void StageCavityShunt(
+        string path, int a, int b, double capacitanceFarads, double conductanceSiemens,
+        string description, PdnCellRef? from, PdnCellRef? to)
+    {
+        if (!(capacitanceFarads > 0) || a == b) return;
+
+        _staged.Add(new PdnStaged(
+            "C", path + ".c", [a, b],
+            new Dictionary<string, Value>(StringComparer.Ordinal) { ["C"] = new Value(capacitanceFarads) },
+            new CapacitorModel(), PdnOriginKind.PlaneShunt,
+            $"{description} — {capacitanceFarads * 1e12:0.###} pF to the reference plane",
+            from, to, null, null));
+
+        if (!(conductanceSiemens > 0)) return;
+
+        _staged.Add(new PdnStaged(
+            "R", path + ".g", [a, b],
+            new Dictionary<string, Value>(StringComparer.Ordinal)
+            { ["R"] = new Value(1.0 / conductanceSiemens) },
+            new ResistorModel(), PdnOriginKind.PlaneShunt,
+            $"{description} — dielectric loss, G = ωC·tan δ = {conductanceSiemens * 1e6:0.###} µS",
+            from, to, null,
+            // NOT reported as a resistance the ranked breakdown can sort on: §2.4 ranks where the DC
+            // DROP is, this element carries none (it does not exist at ω = 0), and a megohm shunt
+            // sorted into that table would head it while contributing nothing.
+            null));
+    }
+
     // ── §4.2 ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
