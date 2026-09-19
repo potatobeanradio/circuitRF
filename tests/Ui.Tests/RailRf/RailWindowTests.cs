@@ -1699,6 +1699,74 @@ public class RailWindowTests
     }
 
     /// <summary>
+    /// <b>The pick button is dead until a net is highlighted, and it says which of its two things
+    /// it will do.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: <i>"I press it and nothing happens."</i> Both halves of that are real.
+    /// The command was enabled with nothing selected and returned immediately, and on a net this
+    /// document ALREADY carries as a rail — which is the state the shipped example opens in —
+    /// <c>PickRail</c> selects the existing rail rather than adding a second one, so the press
+    /// moved a selector that was already where it was going.
+    /// </remarks>
+    [Fact]
+    public void ThePickButtonIsGatedOnASelection_AndSaysWhichOfItsTwoThingsItWillDo()
+    {
+        string path = Path.Combine(
+            RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(path), path);
+        vm.LoadDocumentReferences();
+
+        Assert.False(vm.PickSelectedNetCommand.CanExecute(null));
+
+        // A net this document does NOT already carry: the button offers to make it one.
+        Assert.DoesNotContain("GND", vm.Rails);
+        vm.SelectedNet = "GND";
+        Assert.True(vm.PickSelectedNetCommand.CanExecute(null));
+        Assert.Equal("Make it a rail", vm.PickRailButtonText);
+
+        vm.PickSelectedNetCommand.Execute(null);
+        Assert.Contains("GND", vm.Rails);
+        Assert.Equal("GND", vm.SelectedRailName);
+
+        // And now the same press would only SELECT it, which the face says before it is pressed.
+        Assert.Equal("Show this rail", vm.PickRailButtonText);
+    }
+
+    /// <summary>
+    /// <b>The window renders the marker info boxes it creates.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: adding a marker on the results plot showed no info box. The providers
+    /// were all wired the day before — so <c>DataDisplayViewModel</c> really did build a
+    /// <c>MarkerInfoBoxViewModel</c> — and nothing in the AXAML rendered
+    /// <c>PlotHost.MarkerInfoBoxes</c>, so the box existed and had nowhere to be drawn. This is the
+    /// same omission the Match Designer's own overlay comment records, one layer further out.
+    ///
+    /// <para>The second half is the container sync: without it the container keeps
+    /// <c>BuildPlotHost</c>'s seed rectangle at the origin, and a box is placed in the top left of
+    /// the WINDOW rather than beside its marker.</para>
+    /// </remarks>
+    [Fact]
+    public void TheWindowRendersTheMarkerInfoBoxesItCreates()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+
+        Assert.Contains("PlotHost.MarkerInfoBoxes", xaml, StringComparison.Ordinal);
+        Assert.Contains("MarkerInfoBoxView", xaml, StringComparison.Ordinal);
+
+        // Placed on a Canvas at the view model's own coordinates — anything else ignores a drag.
+        Assert.Contains("Canvas.Left", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewLeft", xaml, StringComparison.Ordinal);
+
+        // And the container's rectangle is kept equal to the PlotControl's, or every box lands at
+        // the window's origin.
+        string code = Src("src/Ui/Views/RailRf/RailRfWindow.axaml.cs");
+        Assert.Contains("NotifyViewProperties", code, StringComparison.Ordinal);
+        Assert.Contains("LayoutUpdated", code, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// <b>An anchor is typed on the row that prints it, in both of its forms.</b>
     /// </summary>
     /// <remarks>

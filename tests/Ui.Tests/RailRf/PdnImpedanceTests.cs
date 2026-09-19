@@ -565,8 +565,22 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         Assert.Contains(curves, c => c.Properties.LineType == LineType.Dashed);
         Assert.Contains(curves, c => c.Properties.LineType == LineType.Solid);
 
-        Assert.Contains("Fast model", vm.ImpedancePlot.CustomTitle, StringComparison.Ordinal);
-        Assert.Contains("Accuracy", vm.ImpedancePlot.CustomTitle, StringComparison.Ordinal);
+        // ── THE TITLE NAMES THE PICTURE, AND THE PANEL IS THE CURVES' (owner, 2026-09-19) ──
+        //
+        // It used to spell out the model kinds and what the vertical lines were. Both are said
+        // elsewhere on screen — the model kind is on the status strip on every frame — so the
+        // claim they carried is asserted where it now lives rather than dropped.
+        Assert.Equal("|Z| over frequency", vm.ImpedancePlot.CustomTitle);
+        Assert.Contains("Accuracy", vm.StatusLine, StringComparison.Ordinal);
+
+        // And the margin is sized for ONE label column, not one per trace. With thirteen traces of
+        // the one quantity the left margin hit its 0.40 clamp and the curves were left in just over
+        // half the panel; the Y label is plot-wide, so exactly one rotated column is ever drawn.
+        Assert.True(vm.ImpedancePlot.Traces.Count > 5,
+                    "fewer traces than the defect needed, so this is not exercising it.");
+        Assert.True(vm.ImpedancePlot.Axes.Viewport.Width > 0.75,
+                    $"the curves have {vm.ImpedancePlot.Axes.Viewport.Width:P0} of the panel's width — "
+                  + "the Y-label margin is still being charged per trace.");
 
         // §2.4's four tables are beside the curve, not only in the result object — each is a card in
         // the docked results list and each is gated on its own bool, so an empty one is absent rather

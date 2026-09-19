@@ -26,6 +26,8 @@
         xmlns:ctl="using:CircuitRF.Ui.Controls"
         xmlns:conv="using:CircuitRF.Ui.Converters"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
+        xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.RailRf.RailRfWindow"
         x:DataType="rvm:RailRfViewModel"
@@ -479,8 +481,16 @@
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
-                                    <Button Content="Make it a rail" FontSize="10" Padding="8,2"
-                                            HorizontalAlignment="Stretch"
+                                    <!-- NOT FULL WIDTH, AND NOT LIVE WITH NOTHING PICKED (owner,
+                                         2026-09-19). A stretched button reads as the card's own
+                                         header rather than as the action on the list above it, and
+                                         one that is enabled while nothing is highlighted answers a
+                                         press with silence. Its face also says which of the two
+                                         things it will do, because a net that is already a rail is
+                                         SELECTED rather than added — see PickRailButtonText. -->
+                                    <Button Content="{Binding PickRailButtonText}"
+                                            FontSize="10" Padding="10,2"
+                                            HorizontalAlignment="Right"
                                             Command="{Binding PickSelectedNetCommand}"
                                             ToolTip.Tip="The rail takes the net's own name. It states no reference layer — that is the next step, and it is confirmed rather than assumed."/>
                                 </StackPanel>
@@ -618,6 +628,55 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- ── Aggressors: an INPUT, not a decoration (§2.2) ────────
+                                 A PDN peak matters if something on the board excites it, and this list is
+                                 the only input that knows whether it does — so it belongs with the other
+                                 inputs, under Target, and not beside the parts table (owner, 2026-09-19).
+                                 It sat in the board column because both it and the parts table are about
+                                 what is ON the board; what that cost was a third of the height of the one
+                                 panel in this window that is a PICTURE, to a list of at most a few rows. -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                                        <TextBlock Classes="cardhdr" Text="Aggressors" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="from the BOM" FontSize="10"
+                                                Padding="6,0" MinHeight="0" Margin="0,0,4,2"
+                                                IsVisible="{Binding HasRecognisedAggressors}"
+                                                Command="{Binding AcceptRecognisedAggressorsCommand}"
+                                                ToolTip.Tip="Add every crystal and converter the BOM reader recognised. Each row says it came from the BOM — a pre-filled frequency nobody checked is exactly the one that will be wrong."/>
+                                        <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,2,2"
+                                                Command="{Binding AddAggressorCommand}"
+                                                ToolTip.Tip="Add an aggressor line by hand">
+                                            <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                        </Button>
+                                        <Button Grid.Column="3" Classes="rowbtn" Margin="0,0,0,2"
+                                                Command="{Binding RemoveAggressorCommand}"
+                                                CommandParameter="{Binding #AggressorList.SelectedItem}"
+                                                ToolTip.Tip="Remove the selected aggressor">
+                                            <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                        </Button>
+                                    </Grid>
+                                    <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
+                                             ItemsSource="{Binding Aggressors}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailAggressorRowViewModel">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                                    <TextBlock Classes="lbl" Text="{Binding Summary}"/>
+                                                    <!-- WHERE IT CAME FROM, on the row's own face. -->
+                                                    <TextBlock Grid.Column="1" Classes="note" Margin="6,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Text="{Binding OriginText}"/>
+                                                    <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                                               IsVisible="{Binding IsFlagged}"
+                                                               ToolTip.Tip="{Binding Refusal}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
                             <!-- ── The regulator offer (§2.3) ──────────────────────────── -->
                             <Border Classes="card" IsVisible="{Binding HasRegulatorOffers}">
                                 <StackPanel Spacing="3">
@@ -647,7 +706,7 @@
 
             <!-- ══ BOARD ═════════════════════════════════════════════════ -->
             <Border Grid.Column="1" Classes="pane">
-                <Grid RowDefinitions="Auto,*,Auto,Auto">
+                <Grid RowDefinitions="Auto,*,Auto">
                     <Grid ColumnDefinitions="Auto,*">
                         <TextBlock Classes="panelhdr" Text="Board" VerticalAlignment="Center"/>
                         <!-- THE SAME FOUR BUTTONS THE LAYOUT EDITOR CARRIES, in the same order and
@@ -822,55 +881,8 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- ── Aggressors: an INPUT, not a decoration (§2.2) ────────
-                         A PDN peak matters if something on the board excites it, and this list is the
-                         only input that knows whether it does. Beside the parts table because both
-                         are about what is ON the board, and above the bottom bar because both are
-                         read while the board is being looked at. -->
-                    <Border Grid.Row="2" Classes="card" Margin="0,5,0,0">
-                        <StackPanel Spacing="3">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-                                <TextBlock Classes="cardhdr" Text="Aggressors" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="from the BOM" FontSize="10"
-                                        Padding="6,0" MinHeight="0" Margin="0,0,4,2"
-                                        IsVisible="{Binding HasRecognisedAggressors}"
-                                        Command="{Binding AcceptRecognisedAggressorsCommand}"
-                                        ToolTip.Tip="Add every crystal and converter the BOM reader recognised. Each row says it came from the BOM — a pre-filled frequency nobody checked is exactly the one that will be wrong."/>
-                                <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,2,2"
-                                        Command="{Binding AddAggressorCommand}"
-                                        ToolTip.Tip="Add an aggressor line by hand">
-                                    <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
-                                </Button>
-                                <Button Grid.Column="3" Classes="rowbtn" Margin="0,0,0,2"
-                                        Command="{Binding RemoveAggressorCommand}"
-                                        CommandParameter="{Binding #AggressorList.SelectedItem}"
-                                        ToolTip.Tip="Remove the selected aggressor">
-                                    <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
-                                </Button>
-                            </Grid>
-                            <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
-                                     ItemsSource="{Binding Aggressors}">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="rvm:RailAggressorRowViewModel">
-                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
-                                            <TextBlock Classes="lbl" Text="{Binding Summary}"/>
-                                            <!-- WHERE IT CAME FROM, on the row's own face. -->
-                                            <TextBlock Grid.Column="1" Classes="note" Margin="6,0,0,0"
-                                                       VerticalAlignment="Center"
-                                                       Text="{Binding OriginText}"/>
-                                            <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
-                                                       Foreground="{DynamicResource CrfWarningBrush}"
-                                                       IsVisible="{Binding IsFlagged}"
-                                                       ToolTip.Tip="{Binding Refusal}"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </StackPanel>
-                    </Border>
-
                     <!-- ── The parts table (R-rail7-9) ─────────────────────────── -->
-                    <Border Grid.Row="3" Classes="card" Margin="0,5,0,0">
+                    <Border Grid.Row="2" Classes="card" Margin="0,5,0,0">
                         <Grid RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
                             <TextBlock Classes="cardhdr" Text="Parts"/>
                             <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
@@ -1179,42 +1191,89 @@
 
                      The bullseye is the glyph because the button is named for what its answer IS,
                      not for the mesh that produces it; the mesh is in the tooltip, with its cost. -->
-                <!-- ── ToolTip.Placement, on every button of this row ────────────────────────
-                     Avalonia anchors a tooltip at the POINTER by default (ToolTip.PlacementProperty
-                     is registered with PlacementMode.Pointer), so the popup's corner lands on the
-                     cursor hotspot. Anywhere with room below, the popup opens down-and-right of the
-                     cursor and nothing touches it. This row is the BOTTOM edge of the window, so
-                     there is no room below and the positioner flips the popup UP — onto the pointer.
-                     The pointer is then inside a different top-level, the button loses :pointerover,
-                     the service closes the tip, the pointer is back on the button, and
-                     BetweenShowDelay (100 ms) means the next open is immediate. That loop is the
-                     reported flashing when the pointer rests on the Accuracy button (owner,
-                     2026-09-19), and it is worst on the tallest tooltip in the row, which was this
-                     one. Anchoring to the CONTROL takes the pointer out of the geometry: the popup
-                     sits above the button, never under the cursor, whatever the window's position
-                     on screen. -->
+                <!-- ── ToolTip.Placement AND ToolTip.VerticalOffset, on every button of this row
+                     THE OFFSET IS THE OTHER HALF, AND WITHOUT IT THE PLACEMENT DOES NOTHING. The
+                     flash was reported again after Placement="Top" alone (owner, 2026-09-19), and
+                     this time it was read out of the shipping Avalonia.Controls.dll rather than
+                     argued from the symptom:
+
+                       ToolTip.VerticalOffsetProperty is registered with a DEFAULT OF 20.0
+
+                     — a sensible default for PlacementMode.Pointer, where it drops the popup clear
+                     of the cursor. ManagedPopupPositioner adds that offset to the gravitated anchor
+                     point unconditionally (`Gravitate(GetAnchorPoint(...), size, g) + offset`), so
+                     under Placement="Top" it pushes the popup 20 px back DOWN, over the top 20 px of
+                     a button that is about 32 px tall. The popup therefore still lands under the
+                     pointer, the button still loses :pointerover to a different top-level,
+                     ToolTipService still closes the tip, and BetweenShowDelay's 100 ms still makes
+                     the re-open immediate. That is the loop, and it is worst on the tallest tooltip
+                     in the row, which is this one.
+
+                     -4 puts the popup fully above the button with a small gap. Placement alone is
+                     not enough and the offset alone would be worse — together they take the pointer
+                     out of the geometry entirely, wherever the window sits on screen. -->
                 <Button Name="AccuracyButton" Padding="6,3"
                         Classes.ToolActive="{Binding IsShowingAccuracy}"
                         Classes.flagged="{Binding IsModelKindFlagged}"
                         Command="{Binding AccuracyCommand}"
-                        ToolTip.Placement="Top"
+                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="Accuracy — run the mesh solve. It lights while the accurate reading is on screen; press it again to go back to the fast one, and an edit does the same on its own. Never entered automatically and never left silently; both readings stay, so the two are compared on this board.">
                     <mi:MaterialIcon Kind="Bullseye" Width="16" Height="16"/>
                 </Button>
                 <Button Name="CompareButton" Content="Compare…" FontSize="11" Padding="10,3"
                         IsEnabled="{Binding CanExport}"
-                        ToolTip.Placement="Top"
+                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="This design against another .crail — the one that is known to work. Both sides are solved at the model kind on screen, the same rail is matched by name, and the ports and parts pair by refdes and pin."/>
                 <Button Name="ExportButton" Content="Export" FontSize="11" Padding="10,3"
                         IsEnabled="{Binding CanExport}"
-                        ToolTip.Placement="Top"
+                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="CSV, .npy, .mat, .txt, or the report page as SVG or PDF — the extension picks the format, exactly as circuitrf rail -o does, and both write the same bytes."/>
                 <Button Name="RunButton" Content="Run" FontSize="11" Padding="14,3"
                         IsDefault="True"
                         Command="{Binding RunCommand}"
-                        ToolTip.Placement="Top"
+                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="{Binding RunBlockedReason}"/>
             </StackPanel>
         </Grid>
+
+        <!-- ── The marker info-box overlay (owner, 2026-09-19) ────────────────────────────────
+             A MARKER'S BOX HAD NOWHERE TO BE DRAWN. The last round gave this window's PlotControl
+             every provider it asks its host for, so a double-click DOES add a marker and
+             DataDisplayViewModel DOES build a MarkerInfoBoxViewModel for it — and nothing in the
+             window rendered that collection, so the box existed and was invisible. This is the
+             Match Designer's own overlay, item for item, and it is the other half of that wiring.
+
+             IT SPANS THE WHOLE WINDOW rather than the results pane. A box is DRAGGABLE and belongs
+             to the display and not to the plot it was made from; the results column is 340 px wide
+             and a box pinned inside it could not be moved off its own curve. Placed last so it
+             renders above everything, and ROWSPAN across all four rows of the root grid.
+
+             Background="{x:Null}" on both the ItemsControl and its Canvas: a null background is not
+             hit-testable, so every click falls through to whatever is underneath, while each
+             MarkerInfoBoxView sets Background="Transparent" and is hit-testable itself.
+
+             RailRfWindow.SyncPlotContainers keeps ImpedanceContainer's Left/Top/Width/Height equal
+             to the PlotControl's rectangle IN THIS PANEL'S COORDINATES, which is the space
+             ViewLeft/ViewTop are in. -->
+        <ItemsControl Name="MarkerInfoBoxLayer" Grid.Row="0" Grid.RowSpan="4"
+                      ItemsSource="{Binding PlotHost.MarkerInfoBoxes}"
+                      Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="{x:Null}"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                    <ddvw:MarkerInfoBoxView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
     </Grid>
 </Window>

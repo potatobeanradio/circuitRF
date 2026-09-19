@@ -10,10 +10,13 @@
 //     Someone who has learned one of these windows has learned the other, and a near-miss is worse
 //     than an absence because it is discovered by being wrong.
 //
-// So this overlay DECLINES every gesture. OnPointerPressed, OnPointerMoved, OnPointerReleased and
-// OnKeyDown all return false, unconditionally, and the canvas's own state machine sees every event
-// untouched. What the overlay does with a pointer move is read a value out and publish it; what it
-// does with a press is nothing at all.
+// So this overlay DECLINES every NAVIGATION gesture. OnKeyDown returns false unconditionally, and a
+// pointer event is consumed in exactly two states, neither of which the canvas has a meaning for:
+// the pour pick of §2.3 step 2 (armed by the window, and only while nothing named a net), and a
+// drag of the legend plate, which starts only on a press INSIDE that plate. Everything else
+// reaches the canvas's own state machine untouched — its marquee, its pan and its hit test go on
+// working over the map, which is §11.6's whole instruction. What the overlay does with an ordinary
+// pointer move is read a value out and publish it.
 //
 // The one thing railRF adds is R-rail8-4's WIDER keyboard gate, and it is deliberately not here:
 // it is LayoutCanvas.NavigationKeysSuppressed, a predicate the window supplies. A gate belongs on
@@ -145,7 +148,48 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     /// <summary>The scene currently being drawn. Built on demand and cached until an input changes,
     /// because a pan must not re-run the field sampling.</summary>
-    public RailMapScene Scene => _scene ??= RailMapScene.Build(_result, _kind, _dbuPerMicron, _plane);
+    public RailMapScene Scene =>
+        _scene ??= RailMapScene.Build(_result, _kind, _dbuPerMicron, _plane)
+                               .WithLegendMovedBy(_legendDx, _legendDy);
+
+    // ── the legend is DRAGGABLE (owner, 2026-09-19) ────────────────────────────────────────────
+
+    /// <summary>
+    /// How far the user has dragged the legend plate from where the scene put it, in DBU.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is VIEW STATE and it is not persisted</b>, exactly as the pan and the zoom of the
+    /// panel it sits in are not. The default position is a fact about the map — the scene derives
+    /// it from the content's own bbox — and where a reader has since pushed the plate to see what
+    /// is under it is a fact about this session's look at it. Writing it into the <c>.crail</c>
+    /// would make the document dirty on a gesture that changed no input and no number.
+    ///
+    /// <para>Applied by <see cref="RailMapScene.WithLegendMovedBy"/>, which is below the firewall,
+    /// so the window's own copy-to-clipboard and report pages draw the plate where the window has
+    /// it rather than where it started.</para>
+    /// </remarks>
+    public (long X, long Y) LegendOffset
+    {
+        get => (_legendDx, _legendDy);
+        set
+        {
+            if (_legendDx == value.X && _legendDy == value.Y) return;
+            (_legendDx, _legendDy) = value;
+            _scene = null;                 // the BOX moved; nothing else about the scene changed
+            OverlayChanged?.Invoke();
+        }
+    }
+
+    private long _legendDx, _legendDy;
+
+    /// <summary>Where the drag started, in DBU, or null while no drag is in flight.</summary>
+    private (long X, long Y)? _legendGrab;
+
+    /// <summary>The offset the drag started from, so a cancel or a jitter cannot accumulate.</summary>
+    private (long X, long Y) _legendGrabOffset;
+
+    /// <summary>True while the pointer is dragging the plate — read by a test, and by nothing else.</summary>
+    public bool IsDraggingLegend => _legendGrab is not null;
 
     private void Invalidate()
     {
@@ -255,7 +299,20 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// </remarks>
     public bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount)
     {
-        if (PourPick is null || clickCount != 1 || modifiers != KeyModifiers.None) return false;
+        if (clickCount != 1 || modifiers != KeyModifiers.None) return false;
+
+        // THE PLATE FIRST, because it is drawn on top of whatever is under it and a press that
+        // lands on it is unambiguously about it. Consuming the press is what keeps the canvas's
+        // marquee and pan from starting underneath the drag — the same reason the pour pick below
+        // consumes its own.
+        if (Scene.Legend is { } legend && legend.Box.Contains(worldX, worldY))
+        {
+            _legendGrab = (worldX, worldY);
+            _legendGrabOffset = (_legendDx, _legendDy);
+            return true;
+        }
+
+        if (PourPick is null) return false;
         return PourPick(worldX, worldY, tolDbu);
     }
 
@@ -280,11 +337,30 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// </remarks>
     public bool OnPointerMoved(long worldX, long worldY, long tolDbu, bool leftButtonDown, KeyModifiers modifiers)
     {
+        // A DRAG IN FLIGHT OWNS THE MOVE. It is measured from where the press landed rather than
+        // from the last move, so a frame the canvas coalesced away costs nothing, and it is added
+        // to the offset the press STARTED from, so the plate cannot creep by accumulating its own
+        // rounding. The readout is not published while dragging: the value under the cursor is
+        // whatever the plate is covering, which is not what the reader is pointing at.
+        if (_legendGrab is { } grab)
+        {
+            if (!leftButtonDown) { _legendGrab = null; return true; }
+
+            LegendOffset = (_legendGrabOffset.X + worldX - grab.X,
+                            _legendGrabOffset.Y + worldY - grab.Y);
+            return true;
+        }
+
         SetReadout(ReadoutAt(worldX, worldY, tolDbu));
         return false;
     }
 
-    public bool OnPointerReleased(long worldX, long worldY) => false;
+    public bool OnPointerReleased(long worldX, long worldY)
+    {
+        if (_legendGrab is null) return false;
+        _legendGrab = null;
+        return true;
+    }
 
     /// <summary>Declines every key, so every navigation gesture reaches the canvas. railRF's addition
     /// to the keyboard is a GATE on the canvas, not a handler here — see this file's header.</summary>

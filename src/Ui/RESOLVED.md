@@ -1,5 +1,88 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF — a fourth manual pass: the pick button, the plot, the flash, and a box with nowhere to go (2026-09-19)
+
+Six items. Two of them are the same shape as things already "fixed" in the pass above, and both of
+those were fixed from an argument rather than from the code that raises the event — which is the
+lesson of the round.
+
+### 1. "Make it a rail" was full width, and pressing it did nothing
+
+Both halves were real and they are different faults.
+
+It was `HorizontalAlignment="Stretch"`, which on a card whose only other content is a list reads as
+the card's own header rather than as the action on the list. It is right-aligned now.
+
+The press: the command was enabled with nothing highlighted and returned immediately
+(`if (SelectedNet is { Length: > 0 } net) …`), so the first press anyone makes on an untouched card
+is silent. And on a net the document ALREADY carries as a rail — which is the state the shipped
+Power Rail example opens in, since its `.ipc` names the rail it was built around — `PickRail`
+SELECTS the existing rail rather than adding a second one of the same name, so the press moved a
+selector that was already where it was going. Neither is a bug in what the button does; both are
+the button not saying what it will do.
+
+`CanPickSelectedNet` gates the command, and `PickRailButtonText` puts the answer on the face:
+"Make it a rail", or "Show this rail" when the highlighted net is already one.
+
+### 2. The Aggressors list moved to the specification column
+
+Owner's proposal, and it is right for the reason the card's own comment gave for the opposite
+placement: it was beside the parts table because both are about what is ON the board. What that
+cost was a third of the height of the one panel in the window that is a PICTURE, spent on a list of
+at most a few rows. It is an INPUT, so it now sits with the other inputs, under Target.
+
+### 3. The plot kept 55 % of its panel, and its title had grown a clause a round
+
+Both in `src/Render/RESOLVED.md` under the same date — the viewport arithmetic is `Plot`'s. The
+title is now "|Z| over frequency" and nothing else: it had carried the model kinds and a sentence
+explaining the aggressor lines, and the model kind is on the status strip on every frame, two
+panels away and always visible.
+
+### 4. The Accuracy button still flashed, and the previous fix was half of one
+
+**The pass above diagnosed this from Avalonia's behaviour rather than from its code, and got half
+of it.** `ToolTip.Placement="Top"` was correct and did nothing on its own:
+
+    ToolTip.VerticalOffsetProperty = RegisterAttached<…>("VerticalOffset", 20.0)
+
+A default of 20, which is a sensible drop below the CURSOR under `PlacementMode.Pointer` and is
+applied unconditionally under every other placement —
+`ManagedPopupPositioner.Calculate`'s `GetUnconstrained` is
+`Gravitate(GetAnchorPoint(anchorRect, a), translatedSize, g) + offset`. Under Placement Top that
+pushes the popup 20 px back DOWN, over the top 20 px of a button about 32 px tall. So the popup
+still landed under the pointer, the pointer was still inside a different top-level, the button
+still lost `:pointerover`, `ToolTipService` still closed the tip, and `BetweenShowDelay`'s 100 ms
+still made the re-open immediate. The loop was untouched.
+
+`ToolTip.VerticalOffset="-4"` beside each `Placement="Top"` puts the popup fully above the button
+with a small gap. **Read out of the shipping assembly with `ilspycmd`, which is where this should
+have started** — the same note this file already carries about the flashing tree highlight, and the
+same mistake made again one section further up.
+
+### 5. A marker's info box had nowhere to be drawn
+
+The pass above gave the results `PlotControl` every provider it asks its host for, so a
+double-click really does add a marker and `DataDisplayViewModel` really does build a
+`MarkerInfoBoxViewModel` for it. Nothing in the window rendered `PlotHost.MarkerInfoBoxes`, so the
+box existed and was invisible — the Match Designer's own omission, one layer further out.
+
+The window now carries that window's overlay item for item: an `ItemsControl` over a `Canvas`, both
+`Background="{x:Null}"` so neither is hit-testable and every click falls through, each
+`MarkerInfoBoxView` hit-testable on its own `Background="Transparent"`. It spans the whole window
+rather than the results pane, because a box is draggable and the results column is 340 px wide.
+
+**And the container's rectangle had to be synced.** `BuildPlotHost` seeds `ImpedanceContainer` at
+the origin, 320 × 198; `PlaceInfoBoxInLogicalCoords` places a new box in that space, so without the
+sync a box lands at the top left of the WINDOW rather than beside its marker. `SyncPlotContainer`
+is the Match Designer's `SyncPlotContainers` for one plot, on `LayoutUpdated` rather than
+`SizeChanged` because the results pane's `ScrollViewer` can move the plot without resizing it.
+
+### 6. The legend is draggable
+
+In `src/Render/RESOLVED.md` — the scene half is below the firewall, and the gesture is
+`RailLayoutOverlay`'s, which is the second pointer event that file consumes.
+
+
 ## railRF — a third manual pass: the board menu, the plot, and two buttons (2026-09-19)
 
 Owner report, eight items. Six were controls that had never been wired to anything; two needed a

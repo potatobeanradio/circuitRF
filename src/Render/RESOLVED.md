@@ -1,5 +1,67 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF, fourth pass: a plot that kept a third of its width, and a legend pinned to the screen (2026-09-19)
+
+The two items of that round that landed below the firewall. The window's half is in
+`src/Ui/RESOLVED.md` under the same date.
+
+### The Rect viewport charged a Y-label column per TRACE, including the ones it would never draw
+
+Owner report: the |Z| plot in railRF's results panel does not use the width available to it.
+
+`Plot.SetAxesViewport`'s Rect case sized the left margin as
+`clamp(0.10 + LeftAxisTraces.Count * 0.05, 0.13, 0.40)` — one column per left-axis trace, which is
+exactly right when `AxesRenderer.DrawTitleAndAxisLabels` is drawing one rotated label per trace.
+It is not drawing them when the plot has a Y label of its own: that branch is
+`else if (!plot.CustomYLabelOn)`, and with a plot-wide label exactly ONE label is drawn. railRF's
+plot carries thirteen traces of the one quantity (ports × two model kinds, plus masks and aggressor
+harmonics), so it pinned the margin at the 0.40 clamp for twelve labels that do not exist and left
+the curves 55 % of the panel.
+
+The count is now the number of label COLUMNS — `YLabel`/`Y2Label` non-empty is one — which also
+covers the Rect CONTOUR plot, whose Y label is likewise plot-wide ("Imaginary (Ω)"). Nothing else
+about the arithmetic changed.
+
+**And the viewport has to be recomputed after the label is set.** `SetAxesViewport` runs off the
+`Traces` collection changing, and railRF sets `CustomYLabelOn` after the last trace is added — so
+the margin kept the width it was given while the column stack was still thirteen deep. One explicit
+call in `RailRfViewModel.RebuildImpedancePlot` closes it; without it the fix above is invisible on
+the first paint and appears only once an aggressor line happens to be added afterwards.
+
+### The legend's text was the one thing in a world-geometry plate that was screen-fixed
+
+Owner report: the drop map's legend text stops growing when you zoom in far.
+
+`RailMapRenderer.LayOutLabels` fitted the three strings with `scale = Math.Min(1f, available / 2f /
+perSide)` — a shrink with a ceiling at `LegendSizePx`. The plate is world geometry, deliberately
+(§11.6 trap 4: it has to be framed by Zoom to Fit), so zooming in grew its border, its ramp and the
+gaps between the labels while the labels stopped at 11 px. The further in a reader went, the smaller
+the legend read, and no zoom brought it back.
+
+The clamp is gone and the size is fitted to TWO constraints, the smaller winning: the bar's width as
+before, and the LABEL BAND — what the plate has left under the ramp — which is new and is what stops
+a legend whose strings happen to be short from sizing itself off a width it cannot use and drawing
+through the plate's own floor. `LegendSizePx` is now only the size the strings are measured at.
+
+### The legend is draggable, and the offset is view state
+
+`RailMapScene.WithLegendMovedBy` translates the plate and re-unions `Bounds` with it, so a plate
+dragged clear of the copper is still framed by Zoom to Fit. It is applied to the SCENE and not
+inside `LegendFor`, because where the plate goes by default is a fact about the map and where the
+user has since pushed it is not — a default that depended on a drag would move every time the
+content did.
+
+The gesture is `RailLayoutOverlay`'s, and it is the second thing that file consumes a pointer event
+for (the pour pick was the first). A press is taken only INSIDE the plate; everything else is
+declined, because anything an overlay consumes never reaches the canvas's marquee, pan and hit test,
+and §11.6 is that those keep working over the map. The drag is measured from the press rather than
+from the previous move, so a coalesced frame costs nothing and the plate cannot creep by
+accumulating its own rounding. The offset is **not persisted**: it is view state exactly as the
+pan and the zoom of that panel are, and writing it into the `.crail` would dirty the document on a
+gesture that changed no input and no number. The window's report page reads it, so a copied picture
+has the plate where the window has it.
+
+
 ## railRF map: 64,907 draw calls a frame, and the image that could not replace them (2026-09-19)
 
 The follow-on to the section below, and the half that was actually costing the frame rate. Caching

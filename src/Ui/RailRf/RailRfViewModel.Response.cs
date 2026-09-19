@@ -348,10 +348,14 @@ public sealed partial class RailRfViewModel
                     plot.Traces.Add(curve);
         }
 
+        // ── THE TITLE NAMES THE PICTURE AND NOTHING ELSE (owner, 2026-09-19) ──────────────────
+        //
+        // It used to carry the model kinds and, below, what the vertical lines were. Both are
+        // already on screen — the status strip states the model kind on every frame, and "both
+        // models in hand" sits beside it — so the title was a third copy of one of them growing a
+        // clause at a time, on the narrowest panel in the window.
         plot.CustomTitleOn = true;
-        plot.CustomTitle = kinds.Length > 1
-            ? $"|Z| at each observation port — {ModelName(kinds[0])} and {ModelName(kinds[^1])}"
-            : $"|Z| at each observation port — {ModelName(kinds[0])}";
+        plot.CustomTitle   = "|Z| over frequency";
 
         // ── ONE Y LABEL, not one per trace (owner, 2026-09-19) ────────────────────────────────
         //
@@ -365,26 +369,20 @@ public sealed partial class RailRfViewModel
         plot.CustomYLabelOn = true;
         plot.CustomYLabel   = "|Z| (dBΩ)";
 
+        // AND THE VIEWPORT HAS TO BE RECOMPUTED FOR IT. Plot.SetAxesViewport sizes the left margin
+        // from the number of label COLUMNS, which a plot-wide Y label makes one — but it runs off
+        // the Traces collection changing, and the label is set after the last add. Without this the
+        // margin keeps the width it was given while the label column stack was still thirteen deep.
+        plot.SetAxesViewport();
+
         plot.Autoscale(force: true);
 
         // AFTER the autoscale. See this file's own header.
         var aggressors = AggressorTraces(primary, plot);
         foreach (var line in aggressors) plot.Traces.Add(line);
 
-        // WHAT THE VERTICAL LINES ARE, said on the picture — the owner read them as unexplained
-        // green traces railing up and down (2026-09-19). They are annotation rather
-        // than data — §2.2's "a 3 dB peak sitting on the converter's fifth harmonic is a problem" —
-        // and with the per-trace Y labels gone there is nothing else on the plot that names them.
-        if (aggressors.Count > 0)
-            plot.CustomTitle += aggressors.Count == 1
-                ? "  ·  the vertical line is an aggressor harmonic"
-                : "  ·  the vertical lines are aggressor harmonics";
-
         AnnounceRebuiltPlot();
     }
-
-    private static string ModelName(PdnModelKind kind) =>
-        kind == PdnModelKind.Fast ? "Fast model" : "Accuracy";
 
     /// <summary>
     /// One port's |Z| in dBΩ, as an ordinary cube-bound trace over the sweep's own Z cube.

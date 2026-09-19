@@ -194,8 +194,13 @@ public partial class RailRfWindow
                                        .Select(x => new RailReportSection(x.Heading, x.Lines))],
             Board      = vm.BoardLayout?.Model,
             Technology = vm.Board?.Technology,
+            // WITH THE LEGEND WHERE THE WINDOW HAS IT. The plate is draggable (2026-09-19) and a
+            // report page that put it back at the default would not be a picture of what the user
+            // is looking at. The offset is the overlay's, because that is where the gesture lands.
             Map        = RailMapScene.Build(first, RailMapKind.Drop,
-                                            vm.Board?.DbuPerMicron ?? 1000),
+                                            vm.Board?.DbuPerMicron ?? 1000)
+                                     .WithLegendMovedBy(vm.BoardOverlayLayer.LegendOffset.X,
+                                                        vm.BoardOverlayLayer.LegendOffset.Y),
             Theme      = ThemeService.Active,
             Variant    = ClipboardRenderPolicy.Resolve().Variant,
             BaseDir    = vm.ExportBaseDir,

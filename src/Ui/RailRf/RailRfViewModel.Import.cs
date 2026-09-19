@@ -149,6 +149,12 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private string? _selectedNet;
 
+    partial void OnSelectedNetChanged(string? value)
+    {
+        PickSelectedNetCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(PickRailButtonText));
+    }
+
     /// <summary>True while there is a list to pick from — a board file or a board netlist named the
     /// nets.</summary>
     public bool HasPickableNets => AvailableNets.Count > 0;
@@ -158,11 +164,38 @@ public sealed partial class RailRfViewModel
     /// an empty list.</summary>
     public bool HasNoPickableNets => Board is not null && AvailableNets.Count == 0;
 
+    /// <summary>True while a net is highlighted, which is the only state the pick button can act in.</summary>
+    /// <remarks>
+    /// <b>The button used to be enabled with nothing selected and did nothing when pressed</b>
+    /// (owner, 2026-09-19). A control that is live and silent is indistinguishable from a control
+    /// that is broken, and the gate is one line — the list above it is the argument.
+    /// </remarks>
+    public bool CanPickSelectedNet => SelectedNet is { Length: > 0 };
+
+    /// <summary>
+    /// What the pick button says, which depends on whether the highlighted net is ALREADY a rail.
+    /// </summary>
+    /// <remarks>
+    /// <b>The second half of the same report.</b> <see cref="PickRail"/> selects an existing rail
+    /// rather than adding a second one of the same name, so pressing it on a net this document
+    /// already carries — the shipped example's own, opened and clicked straight away — moved a
+    /// selector that was already on that rail and looked exactly like a dead button. The button now
+    /// says which of the two it will do before it is pressed.
+    /// </remarks>
+    public string PickRailButtonText =>
+        SelectedNet is { Length: > 0 } net && _document.Rail(net) is not null
+            ? "Show this rail"
+            : "Make it a rail";
+
     /// <summary>Makes the highlighted net a rail — the list route of §2.3 step 2.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanPickSelectedNet))]
     private void PickSelectedNet()
     {
-        if (SelectedNet is { Length: > 0 } net) PickRail(net);
+        if (SelectedNet is { Length: > 0 } net)
+        {
+            PickRail(net);
+            OnPropertyChanged(nameof(PickRailButtonText));
+        }
     }
 
     /// <summary>

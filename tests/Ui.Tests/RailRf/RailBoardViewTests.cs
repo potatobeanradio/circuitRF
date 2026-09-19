@@ -97,7 +97,10 @@ public sealed class RailBoardViewTests
         Assert.True(RailMapRenderer.TryPlate(legend!, vp, out _, out var bar, out float baseline),
                     "the plate collapsed to nothing at this width.");
 
-        var layout = RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline);
+        // The band height DrawLegend passes — the plate's own floor under the ramp. Without it this
+        // is not the geometry the renderer lays out.
+        var layout = RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline,
+                                                  baseline - bar.Bottom);
 
         // All three are always drawn: the caption carries the model kind, and §2.9 rule 1 makes that
         // the one thing a picture which has left the window must still say.
@@ -127,6 +130,95 @@ public sealed class RailBoardViewTests
                  || full.Cold.IntersectsWith(full.Hot),
                     $"the text was shrunk at {widthPx} px but the full-size labels did not overlap, "
                   + "so the shrink was not the fix for anything.");
+    }
+
+    /// <summary>
+    /// <b>The legend's text grows with the zoom, and it never stops growing.</b>
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: the plate's text stopped scaling once zoomed in far. It was capped at
+    /// <c>LegendSizePx</c> — <c>Math.Min(1f, …)</c> — so the plate, which is world geometry, went on
+    /// growing around three labels that did not, and the further in a reader went the smaller the
+    /// legend read. The whole point of the plate being world geometry is that it is part of the
+    /// picture; its text was the one thing in it pinned to the screen.
+    ///
+    /// <para>The ladder is the test, in BOTH directions, and the rung that matters is the one above
+    /// the old ceiling: a fix that only removed the clamp at small sizes would pass a
+    /// zoomed-out-only check.</para>
+    /// </remarks>
+    [Fact]
+    public void TheLegendsTextTracksTheZoom_UpwardsAsWellAsDown()
+    {
+        var scene = RailMapScene.Build(ResultOf(out _), RailMapKind.Drop, Dbu);
+        var legend = scene.Legend;
+        Assert.NotNull(legend);
+
+        float SizeAt(double zoom)
+        {
+            var vp = LayoutViewport.ZoomToFit(scene.Bounds, CanvasWidth * zoom, CanvasHeight * zoom);
+            Assert.True(RailMapRenderer.TryPlate(legend!, vp, out _, out var bar, out float baseline),
+                        $"the plate collapsed at {zoom}x.");
+            return RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline,
+                                                baseline - bar.Bottom).TextSizePx;
+        }
+
+        float outFar = SizeAt(0.5), fit = SizeAt(1), inNear = SizeAt(4), inFar = SizeAt(16);
+
+        Assert.True(outFar < fit, $"zooming out did not shrink the text ({outFar} vs {fit}).");
+        Assert.True(fit < inNear, $"zooming in did not grow the text ({fit} vs {inNear}).");
+        Assert.True(inNear < inFar,
+                    $"the text stopped growing past {inNear} px — this is the reported defect.");
+
+        // ABOVE the old ceiling, which is what makes the two assertions above about the fix rather
+        // than about the shrink that was already there.
+        Assert.True(inFar > RailMapRenderer.LegendSizePx,
+                    $"nothing ever grew past LegendSizePx ({inFar}), so the clamp is still in force.");
+    }
+
+    // ══ the legend is draggable (owner, 2026-09-19) ══════════════════════════════════════════
+
+    /// <summary>
+    /// <b>A press inside the plate drags it, and a press anywhere else still belongs to the
+    /// canvas.</b>
+    /// </summary>
+    /// <remarks>
+    /// The second half is the one that could regress §11.6: an overlay that consumed presses
+    /// generally would take the marquee, the pan and the hit test away from the board for as long as
+    /// the pointer was over the map. So this asserts both the gesture and its scope, and that the
+    /// scene's <c>Bounds</c> follow the plate — otherwise Zoom to Fit would cut off a legend the
+    /// user had just dragged clear of the copper (§11.6 trap 4).
+    /// </remarks>
+    [Fact]
+    public void TheLegendPlateIsDragged_AndNothingElseIsConsumed()
+    {
+        var overlay = WithResult(out _);
+        overlay.Kind = RailMapKind.Drop;
+
+        var box = overlay.Scene.Legend!.Box;
+        long cx = (box.MinX + box.MaxX) / 2, cy = (box.MinY + box.MaxY) / 2;
+
+        // A press OFF the plate is declined, so the canvas's own gestures are untouched.
+        Assert.False(overlay.OnPointerPressed(box.MaxX + Mm(5), cy, 0, KeyModifiers.None, 1));
+        Assert.False(overlay.IsDraggingLegend);
+
+        Assert.True(overlay.OnPointerPressed(cx, cy, 0, KeyModifiers.None, 1));
+        Assert.True(overlay.IsDraggingLegend);
+
+        Assert.True(overlay.OnPointerMoved(cx + Mm(4), cy + Mm(3), 0, leftButtonDown: true,
+                                           KeyModifiers.None));
+        Assert.True(overlay.OnPointerReleased(cx + Mm(4), cy + Mm(3)));
+        Assert.False(overlay.IsDraggingLegend);
+
+        var moved = overlay.Scene.Legend!.Box;
+        Assert.Equal(box.MinX + Mm(4), moved.MinX);
+        Assert.Equal(box.MinY + Mm(3), moved.MinY);
+
+        // …and the fit still frames it.
+        Assert.True(overlay.ContentBounds().Contains(moved.MaxX, moved.MaxY),
+                    "the plate was dragged outside what Zoom to Fit would frame.");
+
+        // The move after the release is an ordinary hover again.
+        Assert.False(overlay.OnPointerMoved(cx, cy, 0, leftButtonDown: false, KeyModifiers.None));
     }
 
     /// <summary>
@@ -171,7 +263,11 @@ public sealed class RailBoardViewTests
     /// the string widths.</summary>
     private static RailMapLabelLayout FullSizeLabels(RailMapLegend legend, SKRect bar, float baseline)
     {
-        var unscaled = RailMapRenderer.LayOutLabels(legend, 0, 100_000f, baseline);
+        // A bar wide enough that the width never binds, and a band capped at LegendSizePx so the
+        // OTHER constraint lands exactly on full size — which is what "full size" meant before the
+        // text was allowed to grow past it (2026-09-19).
+        var unscaled = RailMapRenderer.LayOutLabels(legend, 0, 100_000f, baseline,
+                                                    RailMapRenderer.LegendSizePx);
         Assert.Equal(RailMapRenderer.LegendSizePx, unscaled.TextSizePx);
 
         float top = baseline - RailMapRenderer.LegendSizePx;

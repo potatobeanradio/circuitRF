@@ -830,8 +830,17 @@ namespace CircuitRF.Render.DataDisplay
                 }
                 case PlotType.Rect:
                 {
-                    int    nl    = LeftAxisTraces.Count;
-                    int    nr    = RightAxisTraces.Count;
+                    // ── THE MARGIN IS PER LABEL COLUMN, AND A PLOT-WIDE LABEL IS ONE COLUMN ──
+                    //
+                    // AxesRenderer draws one rotated label PER LEFT-AXIS TRACE only while the plot
+                    // has no Y label of its own; with one set it draws exactly one and the per-trace
+                    // loop does not run at all. Counting traces regardless charged 5 % of the width
+                    // for every label that was never going to be drawn — railRF's |Z| plot carries
+                    // thirteen traces of the one quantity, hit the 0.40 clamp at both ends of the
+                    // arithmetic below, and left its curves in just over half the panel (owner,
+                    // 2026-09-19).
+                    int    nl    = string.IsNullOrEmpty(YLabel)  ? LeftAxisTraces.Count  : 1;
+                    int    nr    = string.IsNullOrEmpty(Y2Label) ? RightAxisTraces.Count : 1;
                     double left  = Math.Min(Math.Max(0.13, 0.10 + nl * 0.05), 0.40);
                     double right = Axes.ShowSecondary
                         ? Math.Min(Math.Max(0.13, 0.10 + nr * 0.05), 0.40)

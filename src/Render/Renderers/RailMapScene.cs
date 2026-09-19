@@ -188,6 +188,44 @@ public sealed class RailMapScene
     /// </remarks>
     public Bbox Bounds { get; init; } = Bbox.Empty;
 
+    /// <summary>
+    /// The same scene with its legend plate moved by <paramref name="dx"/>, <paramref name="dy"/>
+    /// DBU — <b>the one place the plate is moved</b>, so the window, the clipboard and the report
+    /// cannot put it in three places.
+    /// </summary>
+    /// <remarks>
+    /// <b>The offset is applied to the SCENE and not inside <see cref="LegendFor"/></b>, because
+    /// where the plate goes by default is a fact about the map and where the user has since put it
+    /// is not: a default that depended on a drag would change every time the content did.
+    ///
+    /// <para><see cref="Bounds"/> is re-unioned with the moved box, so a plate dragged clear of the
+    /// copper is still framed by Zoom to Fit — §11.6 trap 4, which is the whole reason the legend
+    /// is world geometry. It is a union and not a recomputation: the rest of the content is
+    /// unchanged, and a scene that shrank its own bounds on a drag would make the fit depend on
+    /// where the plate had been.</para>
+    /// </remarks>
+    public RailMapScene WithLegendMovedBy(long dx, long dy)
+    {
+        if (Legend is not { } legend || (dx == 0 && dy == 0)) return this;
+
+        var box = new Bbox(legend.Box.MinX + dx, legend.Box.MinY + dy,
+                           legend.Box.MaxX + dx, legend.Box.MaxY + dy);
+
+        return new RailMapScene
+        {
+            Kind       = Kind,
+            Tiles      = Tiles,
+            Clip       = Clip,
+            Regions    = Regions,
+            Markers    = Markers,
+            Legend     = legend with { Box = box },
+            Note       = Note,
+            Bounds     = Bounds.Union(box),
+            ColdValue  = ColdValue,
+            HotValue   = HotValue,
+        };
+    }
+
     /// <summary>The highest voltage the map holds — the cold end of the ramp.</summary>
     public double ColdValue { get; init; }
 

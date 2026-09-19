@@ -128,6 +128,49 @@ public partial class RailRfWindow : Window
         plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
         plot.MarkerAdded += container.OnMarkerAdded;
         container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
+
+        // The container's logical rectangle must equal the PlotControl's real one, because that is
+        // the coordinate space a marker info box is placed and dragged in — see MarkerInfoBoxLayer's
+        // own note in the AXAML. LayoutUpdated rather than SizeChanged: the results pane's
+        // ScrollViewer can MOVE this plot without resizing it, and a box that stayed behind would be
+        // pointing at nothing.
+        LayoutUpdated += (_, _) => SyncPlotContainer();
+        SyncPlotContainer();
+    }
+
+    /// <summary>
+    /// Keeps <c>ImpedanceContainer</c>'s rectangle equal to the results <c>PlotControl</c>'s, in the
+    /// info-box layer's coordinates.
+    /// </summary>
+    /// <remarks>
+    /// <b>The Match Designer's <c>SyncPlotContainers</c>, for one plot.</b> Without it the container
+    /// keeps the seed rectangle <c>BuildPlotHost</c> gave it — origin (0, 0), 320 x 198 — so
+    /// <c>DataDisplayViewModel.PlaceInfoBoxInLogicalCoords</c> puts a new marker's box at the top
+    /// left of the WINDOW rather than beside its marker.
+    ///
+    /// <para><c>LayoutUpdated</c> fires on every pass, so a rectangle that has not actually moved is
+    /// returned on rather than re-published: <c>NotifyViewProperties</c> walks every info box.</para>
+    /// </remarks>
+    private void SyncPlotContainer()
+    {
+        if (_boundPlotContainer is not { } container) return;
+
+        var plot  = ImpedancePlotControl;
+        var layer = MarkerInfoBoxLayer;
+        if (plot.Bounds.Width < 1 || plot.Bounds.Height < 1) return;
+        if (plot.TranslatePoint(default, layer) is not { } origin) return;
+
+        if (Math.Abs(container.Left   - origin.X)           < 0.5
+         && Math.Abs(container.Top    - origin.Y)           < 0.5
+         && Math.Abs(container.Width  - plot.Bounds.Width)  < 0.5
+         && Math.Abs(container.Height - plot.Bounds.Height) < 0.5)
+            return;
+
+        container.Left   = origin.X;
+        container.Top    = origin.Y;
+        container.Width  = plot.Bounds.Width;
+        container.Height = plot.Bounds.Height;
+        container.NotifyViewProperties();
     }
 
     // ── Escape: nothing is selected (owner, 2026-09-19) ──────────────────────────────
