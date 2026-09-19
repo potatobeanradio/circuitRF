@@ -35,6 +35,7 @@ using Avalonia.Input;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
+using CircuitRF.Engine.Pdn;
 using CircuitRF.Render;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
@@ -88,6 +89,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     public Action? CopyRequested { get; set; }
 
     private RailDcResult? _result;
+    private PdnPlaneAnswer? _plane;
     private RailMapKind _kind = RailMapKind.Copper;
     private int _dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
     private RailMapTheme _theme = RailMapTheme.Fallback;
@@ -100,6 +102,22 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     {
         get => _result;
         set { if (!ReferenceEquals(_result, value)) { _result = value; Invalidate(); } }
+    }
+
+    /// <summary>
+    /// The plane pair's own answer — §4.5's modes and §2.4's |Z| map — or null before one exists.
+    /// </summary>
+    /// <remarks>
+    /// <b>A second result beside <see cref="Result"/>, and it has to be.</b> §4.1's shunt branch
+    /// vanishes at ω = 0, so the DC netlist holds no cavity and the map is of its own extraction at
+    /// its own frequency (<c>RailPlaneRun</c>'s header carries the argument). What the DC result
+    /// still supplies is the copper to clip to and the markers to draw, which is why the |Z| scene
+    /// reads both.
+    /// </remarks>
+    public PdnPlaneAnswer? Plane
+    {
+        get => _plane;
+        set { if (!ReferenceEquals(_plane, value)) { _plane = value; Invalidate(); } }
     }
 
     /// <summary>Which tab is showing. <b>Switching it rebuilds the SCENE and nothing else</b>
@@ -142,7 +160,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     /// <summary>The scene currently being drawn. Built on demand and cached until an input changes,
     /// because a pan must not re-run the field sampling.</summary>
-    public RailMapScene Scene => _scene ??= RailMapScene.Build(_result, _kind, _dbuPerMicron);
+    public RailMapScene Scene => _scene ??= RailMapScene.Build(_result, _kind, _dbuPerMicron, _plane);
 
     private void Invalidate()
     {
@@ -254,6 +272,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
         if (nearestMarker is { } marker) return marker.Readout;
 
         if (scene.Kind == RailMapKind.Drop) return DropReadoutAt(scene, x, y);
+        if (scene.Kind == RailMapKind.Impedance) return ImpedanceReadoutAt(scene, x, y);
 
         // The class tab: the SMALLEST region whose extent covers the point, so a small piece sitting
         // inside a pour's bounding box is what answers rather than the pour.
@@ -288,7 +307,55 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
             ? $", {(src - v) * 1e3:0.###} mV below the source"
             : "";
 
-        return $"{v:0.####} V on layer {l.Layer}/{l.Datatype}{drop}";
+        return $"{RailMapScene.Volts(v)} on layer {l.Layer}/{l.Datatype}{drop}";
+    }
+
+    /// <summary>
+    /// What the |Z| map reads under the cursor, and <b>what the modes say about that place</b>.
+    /// </summary>
+    /// <remarks>
+    /// §2.4's whole question about the cavity is a question about a PLACE — <i>"a mode whose maximum
+    /// sits on the load pin field is a problem; the same mode with its maximum in a corner is
+    /// not"</i> — so the readout names the mode with the largest field here rather than only the
+    /// ohms. The ohms come out of the ANSWER rather than back out of the tile: the tile carries
+    /// decibels because the ramp is logarithmic, and converting them back would be a second
+    /// arithmetic on a number that is already held exactly.
+    /// </remarks>
+    private string? ImpedanceReadoutAt(RailMapScene scene, long x, long y)
+    {
+        if (_plane is not { Refusal: null } plane || plane.ImpedanceMap.Count == 0) return null;
+
+        int best = -1;
+        double bestD2 = double.MaxValue;
+        for (int i = 0; i < plane.ImpedanceMap.Count; i++)
+        {
+            var cell = plane.ImpedanceMap[i].Cell;
+            double dx = cell.CentreX - x, dy = cell.CentreY - y;
+            double d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) { bestD2 = d2; best = i; }
+        }
+
+        if (best < 0) return null;
+
+        // Off the copper entirely: the map is clipped to the artwork, so a cursor a long way from
+        // every cell is over nothing this overlay drew.
+        long reach = Math.Max(1, RailMapScene.MetresToDbu(plane.CellSizeMetres, _dbuPerMicron));
+        if (bestD2 > (double)reach * reach) return null;
+
+        var hit = plane.ImpedanceMap[best];
+        string where = $"{RailMapScene.Ohms(hit.OhmsMagnitude)} at " +
+                       $"{PdnMask.Hertz(plane.MapFrequencyHz)}" +
+                       (plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "");
+
+        var mode = plane.Modes
+            .Where(m => best < m.Field.Count)
+            .OrderByDescending(m => Math.Abs(m.Field[best]))
+            .FirstOrDefault();
+
+        return mode is null || !(Math.Abs(mode.Field[best]) > 0)
+            ? where
+            : where + $" · the {PdnMask.Hertz(mode.FrequencyHz)} mode is at " +
+                      $"{Math.Abs(mode.Field[best]):0.00} of its own peak here";
     }
 
     // ── R-rail8-11: forcing a region, from the class tab ───────────────────────────────────────

@@ -2422,3 +2422,58 @@ on a peak violating its target by 6 dB is a bigger problem than a direct hit on 
 10, and ordering by separation puts them the other way round. A peak may legitimately appear on
 more than one row — a peak on both a converter harmonic and a crystal fundamental is excited by
 both, and collapsing the two would drop the name of one, which is the whole content of the row.
+
+
+## railRF brief 15 — the cavity modes, and what the eigenproblem actually costs (2026-09-18)
+
+`PdnModeSolver` and `PdnFieldMap` are §4.5's generalised eigenproblem and §2.4's impedance map. Four
+things came out of building them that would cost someone real time to rediscover.
+
+**The generalised problem reduces exactly, and it has to.** §4.5's system is `K v = ω²·C v` with `K`
+the graph Laplacian weighted by `1/L` and `C` the diagonal of the cells' own capacitances. `C` is
+diagonal and positive, so `A = C^(−1/2)·K·C^(−1/2)` turns it into a standard symmetric problem with no
+approximation anywhere — and that is not tidiness. **LAPACK's generalised driver requires the first
+matrix to be positive DEFINITE and `K` is only semi-definite**: its null space is one vector per
+connected piece of the plane pair, which is the ω = 0 "mode" of a capacitor nothing is driving. A
+generalised call would fail, or worse succeed on a matrix it had read only the upper triangle of —
+`ModalDecomposition`'s own header records NumFlat's Hermitian-only behaviour for the complex case and
+the same caution applies here. The zero modes are then skipped by COUNTING the connected pieces with a
+union-find rather than by thresholding the eigenvalues, which is exact and says what it is doing.
+
+**The cost, measured on the design note's own board (R-rail15-5).** The solve is dense and cubic. On a
+uniform plane pair, single-threaded through NumFlat/OpenBLAS, Debug build:
+
+| cells | wall clock | managed heap delta |
+|---|---|---|
+| 800 (32 × 25) | 0.66 s | 19 MB |
+| 1,575 (45 × 35) | 4.38 s | 74 MB |
+| **3,200 (64 × 50)** — §4.1's own 90 × 70 mm at 1.4 mm | **35.9 s** | **298 MB** |
+
+Eight times the time for twice the cells, which is n³ exactly — and that ratio is also the evidence
+that the LAPACK call dominates rather than the managed assembly loop, which is O(edges) and would have
+scaled as 4×. **So the Debug/Release question does not arise here**: the work is native.
+
+§3's argument ("the difference between a minute and a day") survives, and "cheap" does not: **36 s is
+not the milliseconds one sweep point costs**, and that is why brief 15 puts the plane run on its own
+button rather than in the Fast edit loop, and why `PdnModeOptions.MaxCells` is 4,000 — a little over
+the note's own board, about 70 s at the top of it, and a refusal that names the CELL SIZE as the knob.
+A shift-and-invert Lanczos would be far cheaper and was not built: its convergence knobs are wrong in
+ways that look like physics, since a mode that has not converged is a mode at the wrong frequency and
+nothing about the number says so. That trade is worth revisiting only with a gate that would catch it.
+
+**The eigenvector's sign is arbitrary and the map is not.** An eigensolver may legitimately return
+`v` on one run and `−v` on the next; drawn on a cold-to-hot ramp those are different pictures, and
+brief 9's clipboard gate and brief 17's figures both require one result to render as one set of bytes.
+`PdnMode.Field` therefore normalises explicitly — largest magnitude to exactly `+1`, lowest index on a
+tie — rather than leaving it to LAPACK.
+
+**A port's reading is the PEAK over its cells, never the mean.** §4.3 ties every cell under a load's
+pads into one port. A mode with a null through the middle of a BGA's power field averages to nearly
+nothing over it while being at full amplitude on both halves — the optimistic direction, and exactly
+the answer §9 says nobody investigates.
+
+**Acceptance, measured.** `tests/Engine.Tests/Pdn/PdnModeTests.cs` runs §7's rectangle: 60 × 42 mm on
+εr 4.3, first six modes against `f_mn`. Worst error **3.32 % at Δ = 6 mm, 0.84 % at 3 mm, 0.37 % at
+2 mm** — falling by four on each halving, which is the unit-cell ladder's own `(kΔ)²/24` dispersion and
+nothing else. §7 asks for better than 2 % with monotone convergence; both halves hold, and the coarsest
+rung is deliberately outside the tolerance so the ladder is measuring something.

@@ -102,7 +102,7 @@ public static class RailMapRenderer
                 using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
                 foreach (var tile in group.Value)
                 {
-                    paint.Color = theme.Ramp(scene.Normalise(tile.ValueV));
+                    paint.Color = theme.Ramp(scene.Normalise(tile.Value));
                     canvas.DrawRect(RectOf(tile, vp), paint);
                 }
             }
@@ -263,8 +263,11 @@ public static class RailMapRenderer
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendInk };
         float textBaseline = y1 - pad;
 
-        canvas.DrawText(Volts(legend.ColdValue), barLeft, textBaseline, SKTextAlign.Left, font, ink);
-        canvas.DrawText(Volts(legend.HotValue), barRight, textBaseline, SKTextAlign.Right, font, ink);
+        // The plate's two end labels are the SCENE's — volts on the drop tab, ohms on the |Z| tab.
+        // A renderer that chose between them would be deciding what the numbers are, which is the
+        // one thing R-rail8-13 says this file does not do.
+        canvas.DrawText(legend.ColdLabel, barLeft, textBaseline, SKTextAlign.Left, font, ink);
+        canvas.DrawText(legend.HotLabel, barRight, textBaseline, SKTextAlign.Right, font, ink);
 
         // The caption carries the model kind (§2.9 rule 1: every result says which model produced it,
         // and a picture pasted into a document is a result that has left the window behind).
@@ -272,9 +275,6 @@ public static class RailMapRenderer
         canvas.DrawText(legend.Caption, (barLeft + barRight) / 2, textBaseline, SKTextAlign.Center,
                         caption, ink);
     }
-
-    private static string Volts(double v) =>
-        Math.Abs(v) >= 1.0 ? $"{v:0.####} V" : $"{v * 1e3:0.###} mV";
 
     private static void DrawNote(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme)
     {

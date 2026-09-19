@@ -278,9 +278,20 @@ public static class RailDcRun
 
     // ── the extraction request, which differs per rail in exactly one field ────────────────────
 
-    private static PdnExtractionRequest RequestFor(RailDcRequest request, RailSpec rail) => new()
+    /// <summary>
+    /// The extraction request for one rail.
+    /// </summary>
+    /// <param name="frequencyHz">What the extraction is FOR (§2.8). <b>Zero is DC and is this
+    /// method's own default</b>, because the DC answer is what <see cref="Run"/> asks for; brief
+    /// 15's plane run passes the frequency it wants the cavity at, which is the ONE thing it
+    /// changes about the reading. Sharing this builder is what stops the two extractions differing
+    /// in anything else — a second copy would drift in the reference extent or the class overrides
+    /// and the modes would be of a board the drop map is not of.</param>
+    internal static PdnExtractionRequest RequestFor(
+        RailDcRequest request, RailSpec rail, double frequencyHz = 0) => new()
     {
         Rail            = rail,
+        FrequencyHz     = frequencyHz,
         Shapes          = request.Shapes,
         Technology      = request.Technology,
         DbuPerMicron    = request.DbuPerMicron,

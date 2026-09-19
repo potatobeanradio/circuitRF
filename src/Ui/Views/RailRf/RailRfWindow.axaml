@@ -834,6 +834,49 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- ── §2.4's plane resonances (P2b) ────────────────────────────
+                                 "The cavity modes of your actual shape with a field map each, and
+                                 |Z| across the whole plane at a chosen frequency. A MODE WHOSE
+                                 MAXIMUM SITS ON THE LOAD PIN FIELD IS A PROBLEM; the same mode with
+                                 its maximum in a corner is not, and only the map distinguishes
+                                 them." So every row here names a frequency AND a place, and the map
+                                 it goes with is the board panel's |Z| tab.
+
+                                 ITS OWN BUTTON, for §2.9's own reason — the same reason Accuracy is
+                                 one. The mode solve is dense and cubic in the cell count: tens of
+                                 seconds on a real board, against milliseconds for the curve. The
+                                 Fast edit loop re-solves on every committed row edit and this can
+                                 never be in it. -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Plane resonances"/>
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <TextBlock Classes="detailLabel" Text="At"/>
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            Text="{Binding PlaneFrequencyEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The frequency the cavity is read at. It sets the mesh (λ/20 there), the copper's skin-effect resistance and the dielectric's loss — so the modes and the |Z| map are both of it. Opens on the top of this rail's band."/>
+                                        <Button Grid.Column="2" Name="PlaneResonancesButton"
+                                                Content="Find" FontSize="11" Padding="10,2"
+                                                Margin="6,0,0,0"
+                                                Command="{Binding PlaneResonancesCommand}"
+                                                ToolTip.Tip="Extract the plane pair at that frequency and solve its modes. Tens of seconds on a real board — it is never run automatically."/>
+                                    </Grid>
+                                    <TextBlock Classes="note" Text="finding the modes…"
+                                               IsVisible="{Binding IsFindingModes}"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding ModeLines}"
+                                             IsVisible="{Binding HasModes}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Classes="note" TextWrapping="Wrap"
+                                               Text="{Binding PlaneMessage}"
+                                               IsVisible="{Binding HasPlaneMessage}"/>
+                                </StackPanel>
+                            </Border>
+
                             <!-- What the frequency answer has to say that is not a curve — a refusal,
                                  or the notes and warnings that travel with the numbers, the
                                  INDICATIVE marking of §9 among them. -->

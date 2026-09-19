@@ -28,6 +28,7 @@
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
+using CircuitRF.Engine.Pdn;
 using Clipper2Lib;
 
 namespace CircuitRF.Render;
@@ -51,14 +52,26 @@ public enum RailMapKind
     Class,
 }
 
-/// <summary>One square of the drop map, in DBU.</summary>
+/// <summary>One square of a map, in DBU.</summary>
 /// <param name="Layer">The drawing layer its copper is on — the map is clipped per layer.</param>
 /// <param name="CentreX">DBU.</param>
 /// <param name="CentreY">DBU.</param>
 /// <param name="HalfSpanDbu">Half the tile's side.</param>
-/// <param name="ValueV">The rail's own voltage there.</param>
+/// <param name="Value">
+/// What the map reads there, <b>in whatever the scene's own ramp is in</b> — volts on the drop map
+/// and decibels relative to one ohm on the |Z| map.
+///
+/// <para>Not two fields and not a unit beside it, because <see cref="RailMapScene.Normalise"/> is
+/// the only thing that reads this and it is a ratio: the tile's place on the ramp. What the number
+/// MEANS is said once, in <see cref="RailMapLegend.ColdLabel"/> and
+/// <see cref="RailMapLegend.HotLabel"/>, which is where a reader looks.</para>
+///
+/// <para>The |Z| map is in dB and that is not cosmetic: a PDN impedance spans four decades, so a
+/// linear ramp over it colours all but the top decade the same and the map says nothing about the
+/// place a designer is looking at.</para>
+/// </param>
 public readonly record struct RailMapTile(
-    LayerKey Layer, long CentreX, long CentreY, long HalfSpanDbu, double ValueV);
+    LayerKey Layer, long CentreX, long CentreY, long HalfSpanDbu, double Value);
 
 /// <summary>
 /// One piece of copper the scene draws as an area: a classification region, or an island of the
@@ -113,12 +126,23 @@ public sealed record RailMapMarker(RailMarkerKind Kind, long X, long Y, string L
 /// The scale plate — <b>inside the picture</b> (R-rail8-9), in world units (see this file's header).
 /// </summary>
 /// <param name="Box">Where it sits, DBU.</param>
-/// <param name="ColdValue">The value at the cold end of the ramp.</param>
+/// <param name="ColdValue">The value at the cold end of the ramp, in the tiles' own units.</param>
 /// <param name="HotValue">The value at the hot end.</param>
 /// <param name="Caption">What the plate is titled — it carries the model kind, because §2.9 rule 1
 /// says every result says which model produced it and a picture copied out of the window is a
 /// result.</param>
-public sealed record RailMapLegend(Bbox Box, double ColdValue, double HotValue, string Caption);
+/// <param name="ColdLabel">The cold end AS THE PLATE PRINTS IT — "3.6812 V", "1.2 mΩ".</param>
+/// <param name="HotLabel">The hot end, same.</param>
+/// <remarks>
+/// <b>The two labels are formatted here and not by the renderer</b>, which is R-rail8-13's own rule
+/// applied to text: the scene is the pure function of the result and the renderer paints it and
+/// decides nothing. It became load-bearing when the |Z| map arrived — the plate reads volts on one
+/// tab and ohms on another, and a renderer that chose between them would be deciding what the
+/// numbers are.
+/// </remarks>
+public sealed record RailMapLegend(
+    Bbox Box, double ColdValue, double HotValue, string Caption,
+    string ColdLabel, string HotLabel);
 
 /// <summary>
 /// Everything one board tab draws, as a pure function of the result. Nothing here is an Avalonia or
@@ -165,13 +189,21 @@ public sealed class RailMapScene
     /// <summary>The lowest — the hot end.</summary>
     public double HotValue { get; init; }
 
-    /// <summary>Where <paramref name="v"/> sits on the ramp, 0 (cold) … 1 (hot). A flat field reads
-    /// 0 everywhere rather than dividing by zero, which is the honest picture of a rail with no drop
-    /// on it.</summary>
+    /// <summary>
+    /// Where <paramref name="v"/> sits on the ramp, 0 (cold) … 1 (hot). A flat field reads 0
+    /// everywhere rather than dividing by zero, which is the honest picture of a rail with no drop
+    /// on it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The span may be NEGATIVE and that is not a guard against a bad scene</b>: on the drop map
+    /// the cold end is the HIGHEST voltage — the source — and on the |Z| map it is the LOWEST
+    /// impedance, because hot means "worst" on both and worst is the other direction. Only the
+    /// zero-span case is special; it is the flat field, and it is not an error.
+    /// </remarks>
     public double Normalise(double v)
     {
         double span = ColdValue - HotValue;
-        return span <= 0 ? 0 : Math.Clamp((ColdValue - v) / span, 0, 1);
+        return span == 0 || double.IsNaN(span) ? 0 : Math.Clamp((ColdValue - v) / span, 0, 1);
     }
 
     /// <summary>A scene that draws nothing — what every tab shows before a solve.</summary>
@@ -216,12 +248,21 @@ public sealed class RailMapScene
     /// <param name="kind">Which tab.</param>
     /// <param name="dbuPerMicron">The artwork's resolution — the only thing the metres↔DBU bridge
     /// needs.</param>
-    public static RailMapScene Build(RailDcResult? result, RailMapKind kind, int dbuPerMicron)
+    /// <param name="plane">
+    /// The plane pair's own answer (brief 15), or null where none has been computed.
+    /// </param>
+    /// <remarks>
+    /// <b>The |Z| tab takes a SECOND result and that is not an inconsistency.</b> §4.1's shunt
+    /// branch vanishes at ω = 0, so the DC run's netlist carries no cavity at all and the map is of
+    /// a different extraction — at the frequency the map is at, meshed to λ/20 there. What the DC
+    /// result still supplies is the copper to clip to and the markers to draw, which are the same
+    /// artwork on every tab (R-rail8-12).
+    /// </remarks>
+    public static RailMapScene Build(
+        RailDcResult? result, RailMapKind kind, int dbuPerMicron, PdnPlaneAnswer? plane = null)
     {
         if (kind == RailMapKind.Impedance)
-            return Empty(kind,
-                "The |Z| map arrives with the frequency model. This tab is here so the strip is " +
-                "complete and nothing moves when it is filled.");
+            return BuildImpedance(result, plane, dbuPerMicron);
 
         if (result is null) return Empty(kind, "No result yet. Run the rail.");
 
@@ -359,14 +400,16 @@ public sealed class RailMapScene
         double cold = double.NegativeInfinity, hot = double.PositiveInfinity;
         foreach (var t in tiles)
         {
-            if (t.ValueV > cold) cold = t.ValueV;
-            if (t.ValueV < hot) hot = t.ValueV;
+            if (t.Value > cold) cold = t.Value;
+            if (t.Value < hot) hot = t.Value;
         }
         if (tiles.Count == 0) { cold = 0; hot = 0; }
 
         var markers = MarkersOf(result);
         var bounds = mapBounds.Union(MarkerBounds(result, dbuPerMicron));
-        var legend = LegendFor(bounds, cold, hot, result);
+        var legend = LegendFor(
+            bounds, cold, hot,
+            $"{result.RailName} · {ModelName(result.Netlist.Provenance.ModelKind)}", Volts);
 
         return new RailMapScene
         {
@@ -378,6 +421,95 @@ public sealed class RailMapScene
             ColdValue  = cold,
             HotValue   = hot,
             Bounds     = legend is null ? bounds : bounds.Union(legend.Box),
+        };
+    }
+
+    // ── |Z|: §2.4's other picture, and the tab brief 8 left empty ──────────────────────────────
+
+    /// <summary>
+    /// §2.4's <i>"|Z| across the whole plane at a chosen frequency"</i>, over the same artwork and
+    /// through the same painter as the drop map.
+    /// </summary>
+    /// <remarks>
+    /// <b>The ramp is logarithmic and the drop map's is not</b> — see <see cref="RailMapTile.Value"/>.
+    /// A PDN impedance field routinely spans four decades between the driven port and a resonance,
+    /// and a linear ramp over that colours everything but the top decade the same.
+    ///
+    /// <para>The MARKERS are what make this picture answer the question §2.4 asks. "A mode whose
+    /// maximum sits on the load pin field is a problem; the same mode with its maximum in a corner
+    /// is not" — a map with no load callout on it cannot distinguish those, so the callouts are on
+    /// the |Z| tab for the same reason they are on the drop tab and not as decoration.</para>
+    /// </remarks>
+    private static RailMapScene BuildImpedance(
+        RailDcResult? result, PdnPlaneAnswer? plane, int dbuPerMicron)
+    {
+        if (plane is null)
+            return Empty(RailMapKind.Impedance,
+                "No |Z| map yet. It is the plane pair's own answer and it is a separate run — " +
+                "find the plane resonances, at the frequency you want the map at.");
+
+        if (plane.Refusal is { } refusal)
+            return Empty(RailMapKind.Impedance, refusal);
+
+        if (plane.ImpedanceMap.Count == 0)
+            return Empty(RailMapKind.Impedance,
+                "This plane pair has modes and no impedance map: nothing drove one. " +
+                string.Join(" ", plane.Notes));
+
+        long half = Math.Max(1, MetresToDbu(plane.CellSizeMetres, dbuPerMicron) / 2);
+
+        var tiles = new List<RailMapTile>(plane.ImpedanceMap.Count);
+        var mapBounds = Bbox.Empty;
+        double cold = double.PositiveInfinity, hot = double.NegativeInfinity;
+
+        foreach (var cell in plane.ImpedanceMap)
+        {
+            // A cell reading zero or a non-finite ohm has no place on a logarithmic ramp, and it is
+            // dropped rather than clamped: a tile at an invented value is a tile a reader believes.
+            double db = DecibelOhms(cell.OhmsMagnitude);
+            if (!double.IsFinite(db)) continue;
+
+            tiles.Add(new RailMapTile(cell.Cell.Layer, cell.Cell.CentreX, cell.Cell.CentreY, half, db));
+            mapBounds = mapBounds.Union(
+                new Bbox(cell.Cell.CentreX - half, cell.Cell.CentreY - half,
+                         cell.Cell.CentreX + half, cell.Cell.CentreY + half));
+
+            if (db < cold) cold = db;
+            if (db > hot) hot = db;
+        }
+
+        if (tiles.Count == 0)
+            return Empty(RailMapKind.Impedance,
+                "Every cell of this impedance map read zero ohms, which is not a field. " +
+                string.Join(" ", plane.Notes));
+
+        // COLD is the LOWEST impedance here and the HIGHEST voltage on the drop map, because hot
+        // means "worst" on both — see Normalise.
+        var clip = result is null ? [] : ClipPaths(result);
+        foreach (var paths in clip.Values) mapBounds = mapBounds.Union(BoundsOf(paths));
+
+        var markers = result is null ? [] : MarkersOf(result);
+        var bounds = result is null ? mapBounds : mapBounds.Union(MarkerBounds(result, dbuPerMicron));
+
+        string rail = result?.RailName ?? "";
+        string model = result is null ? "" : " · " + ModelName(result.Netlist.Provenance.ModelKind);
+        string driven = plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "";
+
+        var legend = LegendFor(
+            bounds, cold, hot,
+            $"{rail}{model} · |Z| at {PdnMask.Hertz(plane.MapFrequencyHz)}{driven}",
+            db => Ohms(OhmsFromDecibels(db)));
+
+        return new RailMapScene
+        {
+            Kind      = RailMapKind.Impedance,
+            Tiles     = tiles,
+            Clip      = clip,
+            Markers   = markers,
+            Legend    = legend,
+            ColdValue = cold,
+            HotValue  = hot,
+            Bounds    = legend is null ? bounds : bounds.Union(legend.Box),
         };
     }
 
@@ -408,7 +540,9 @@ public sealed class RailMapScene
     /// most likely to be looking at — and §11.6 trap 4 is precisely about content that sits outside
     /// the copper's own bbox being framed rather than cut off.
     /// </remarks>
-    private static RailMapLegend? LegendFor(Bbox content, double cold, double hot, RailDcResult result)
+    private static RailMapLegend? LegendFor(
+        Bbox content, double cold, double hot, string caption,
+        Func<double, string> label)
     {
         if (content.IsEmpty) return null;
 
@@ -430,12 +564,41 @@ public sealed class RailMapScene
             content.MinX + plateW,
             content.MinY - gap);
 
-        string model = result.Netlist.Provenance.ModelKind == PdnModelKind.Accurate
-            ? "Accurate model"
-            : "Fast model";
-
-        return new RailMapLegend(box, cold, hot, $"{result.RailName} · {model}");
+        return new RailMapLegend(box, cold, hot, caption, label(cold), label(hot));
     }
+
+    /// <summary>What the plate calls the model that produced a result (§2.9 rule 1).</summary>
+    private static string ModelName(PdnModelKind kind) =>
+        kind == PdnModelKind.Accurate ? "Accurate model" : "Fast model";
+
+    /// <summary>Volts, as the drop map's plate and the board readout both print them.</summary>
+    public static string Volts(double v) =>
+        Math.Abs(v) >= 1.0 ? $"{v:0.####} V" : $"{v * 1e3:0.###} mV";
+
+    /// <summary>
+    /// Ohms over the six decades a PDN map actually covers, as the |Z| plate prints them.
+    /// </summary>
+    /// <remarks>
+    /// <b>Engineering prefixes rather than a fixed unit</b>: the same map routinely holds 800 µΩ at
+    /// the driven port and 40 Ω on a resonance, and a plate reading "0.0008" at one end says nothing
+    /// a reader can use.
+    /// </remarks>
+    public static string Ohms(double ohms) =>
+        !double.IsFinite(ohms) ? "—"
+        : Math.Abs(ohms) >= 1e3 ? $"{ohms / 1e3:0.###} kΩ"
+        : Math.Abs(ohms) >= 1.0 ? $"{ohms:0.###} Ω"
+        : Math.Abs(ohms) >= 1e-3 ? $"{ohms * 1e3:0.###} mΩ"
+        : $"{ohms * 1e6:0.###} µΩ";
+
+    /// <summary>
+    /// Decibels relative to one ohm, which is what an impedance TILE carries — see
+    /// <see cref="RailMapTile.Value"/> for why the |Z| ramp is logarithmic and the drop ramp is not.
+    /// </summary>
+    public static double DecibelOhms(double ohms) =>
+        ohms > 0 ? 20.0 * Math.Log10(ohms) : double.NegativeInfinity;
+
+    /// <summary>The inverse, for a readout that has a tile and wants the ohms back.</summary>
+    public static double OhmsFromDecibels(double db) => Math.Pow(10.0, db / 20.0);
 
     /// <summary>The plate's width, as a fraction of the map's own.</summary>
     public const double LegendWidthFraction = 0.40;

@@ -193,6 +193,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         RebuildReferenceOptions();
         RefreshTargets();
         RefreshRunGate();
+        SyncPlaneFrequencyDefault();
 
         OnPropertyChanged(nameof(SelectedRail));
         OnPropertyChanged(nameof(StatusLine));

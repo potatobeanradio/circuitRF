@@ -29023,3 +29023,62 @@ Gate: `tests/Ui.Tests/RailRf/PdnImpedanceTests.cs`'s `R_rail12_3_…`, which run
 `PdnSweep` behind a stubbed DC solve and asserts the TRACES — the window owns which curves exist
 and the Data Display owns how they are drawn, and a pixel assertion here would be testing the
 second through the first.
+
+
+## railRF brief 15 — the |Z| map, and the four things that had to change to fill an empty tab (2026-09-18)
+
+Brief 8 created the `|Z|` tab and left it saying so. Filling it needed more than a scene builder, and
+each of the four is worth knowing about.
+
+**The |Z| tab takes a SECOND result, and it has to.** §4.1's shunt branch vanishes at ω = 0 by
+construction, so the DC run's netlist — the one the drop map is of — carries no plane capacitance and
+no inductance either. There is literally no cavity in it. So `RailLayoutOverlay` now holds a
+`PdnPlaneAnswer` beside its `RailDcResult`, from its own extraction at its own frequency, meshed to
+λ/20 THERE (a different mesh from the DC one on every board where the two cell-size rules disagree).
+What the DC result still supplies is the copper to clip to and the markers to draw, which are the same
+artwork on every tab — R-rail8-12's rule unchanged. `RailMapScene.Build` therefore takes an optional
+fourth argument rather than growing a second entry point.
+
+**The plane run is a BUTTON, for §2.9's own reason.** `QueueResolve` re-solves on every committed row
+edit; the mode solve is 36 s on the design note's own 3,200-cell board (`src/Engine/RESOLVED.md`).
+Folding it into the Fast edit loop would make a window nobody could type in. It is `RailPlaneRun`, off
+the UI thread, cancellable, with the frequency in a box beside it — and the frequency is an INPUT
+rather than a display knob because that one number sets the mesh, the copper's skin-effect resistance
+and the dielectric's `G = ωC·tan δ` all at once. A map "at some other frequency" would carry this
+frequency's losses.
+
+**A refusal does NOT clear the map.** `FinishPlane` leaves the previous answer standing and changes
+only the message, for the same reason the DC loop does: a picture cleared by a refusal is one the user
+cannot get back without paying for the whole run again.
+
+**The legend's end labels moved into the scene, and that is R-rail8-13 applied to text.** The plate
+read volts through a `Volts()` helper in `RailMapRenderer`; it now reads whatever the tab's own
+quantity is, and a renderer choosing between volts and ohms would be deciding what the numbers are —
+which is the one thing that file does not do. `RailMapLegend` carries `ColdLabel`/`HotLabel`
+pre-formatted, `RailMapTile.ValueV` became `Value` because a tile now carries volts or decibel-ohms,
+and `RailMapScene.Normalise` no longer treats a negative span as a degenerate case: **on the drop map
+the cold end is the HIGHEST voltage and on the |Z| map it is the LOWEST impedance**, because hot means
+"worst" on both and worst is the other direction. Only a zero span is special, and that is the flat
+field rather than an error.
+
+**The |Z| ramp is logarithmic and the drop ramp is not.** A PDN impedance field spans four decades
+between the driven port and a resonance; a linear ramp over that colours everything but the top decade
+the same and the map says nothing about the place a designer is looking at. Tiles therefore carry dB
+relative to one ohm and the plate prints engineering ohms, which is one conversion in one place.
+
+**The clipboard needed nothing, and that is the finding.** Brief 9's overlay parameter list is keyed
+on `RailMapScene`, not on a map KIND, so the |Z| map rode `LayoutClipboard.MakeExportContext`'s
+existing `railMap` entry unchanged — the trap the brief warned about (an overlay nobody added to the
+list) could not be sprung. `RailZMapTests` re-runs that gate with the |Z| overlay active anyway,
+including its negative half, because "it happened to be general enough" is only worth knowing if
+something holds it that way.
+
+**A determinism gate on SVG text has to strip Skia's clip-path ids.** They come from a counter that
+lives in the PROCESS, in hex, so the second render in one process legitimately writes `cl_a` where the
+first wrote `cl_7` — the same counter that makes a documentation-figure run report hundreds of changed
+files that are not changes. Everything else is compared verbatim, which is where a flipped eigenvector
+sign would show.
+
+Gates: `tests/Ui.Tests/RailRf/RailZMapTests.cs` (six tests, ~2 s) — the mode frequency against the
+sweep's own |Z| peak on the same board, the per-port readings, the overlay's three rules, brief 9's
+copy gate, determinism, and the DC refusal.

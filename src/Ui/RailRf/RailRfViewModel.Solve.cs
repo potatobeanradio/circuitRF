@@ -237,6 +237,7 @@ public sealed partial class RailRfViewModel
         ByModel.Clear();
         Current = null;
         ClearSweeps();
+        ClearPlane();
     }
 
     // ── The run gate (R-rail7-8) ──────────────────────────────────────────────────────────────
@@ -270,6 +271,8 @@ public sealed partial class RailRfViewModel
         CanRun = why is null;
         RunCommand.NotifyCanExecuteChanged();
         AccuracyCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanRunPlane));
+        PlaneResonancesCommand.NotifyCanExecuteChanged();
 
         // The gate's own reason is a refusal in R-rail7-4's sense whenever it names a control, so it
         // shows in the strip and turns that control red rather than hiding behind a disabled button.
