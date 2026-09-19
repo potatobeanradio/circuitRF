@@ -8521,3 +8521,65 @@ The fix is that the **anti-pad is how artwork says which layers a barrel connect
 the barrel is a connection, a clearance round it is not. So the join now considers every conductor
 between the two span ends and unions the ones the via actually touches. The "a via touching only one
 side connects nothing yet" rule is unchanged — what widened is which conductors are candidates.
+
+## The Smith gripper inverse: which plane the projection happens in, and where a pin lands (2026-09-19)
+
+`brief-smith-3-gripper-inverse.md`. `SmithInverse` is closed form in every case and the round trip
+is exact for every parameter in §4.3's table, but the brief's table leaves two things underspecified
+and both of them are the difference between a drag that feels right and one that feels broken.
+
+**1. The table is written for a series SRLC and a shunt PRLC, and the document allows both in
+either placement.** `SmithComponentMap.AllowedPlacement` returns null for those two kinds, so a
+shunt SRLC and a series PRLC are legal documents with no row in the table. The rule that covers all
+of them: the required element immittance is EXACT in the placement's own additive form (Z_e = Z_d −
+Z_in for series, Y_e = Y_d − Y_in for shunt), so inverting it to the element's own form loses
+nothing, and the projection then happens where the parameter is LINEAR — Z for SRLC and Z1P, Y for
+PRLC, and the placement's own form for the single-parameter R, L and C.
+
+That last clause is not a simplification of the first. §4.3 spells a shunt R as
+`1/R = Re(Y_d) − Re(Y_in)` rather than `R = Re(Z_d − Z_in)`, and the two are different numbers: the
+reachable set of a shunt conductance is a horizontal ray in Y and nothing like a straight line in Z.
+For the single-parameter kinds the placement's form IS where the locus is straight, so taking a real
+or imaginary part there is a true orthogonal projection. For the composite kinds it is not — a shunt
+SRLC's locus in Y is a circle — and the choice made here projects orthogonally in Z instead. Both
+readings invert exactly for a REACHABLE drag; they differ only in where an unreachable one lands,
+and this one is a one-liner per parameter rather than a circle fit.
+
+**2. "Pins at the boundary" means two different places, and picking the wrong one is a visible
+defect.** A parameter that enters LINEARLY (a series R, a series L, a shunt C, an SRLC's L) has a
+reachable set running from zero outward, so a negative demand pins at ZERO. A parameter that enters
+RECIPROCALLY (a shunt R, a series C, a shunt L, an SRLC's C, a PRLC's R and L) reaches its demand's
+boundary only as the parameter goes to INFINITY — a shunt R reaches zero conductance at R = ∞ — so
+there is no representable boundary to sit on and the current value is held instead, with the limit
+named in the reason. Clamping that second class to zero would swing a near-open shunt R to a dead
+short under a two-pixel move, in the direction opposite the one the drag went.
+
+**Three smaller things.**
+
+- **`tan θ = 0` is a threshold, not an equality.** A HALF-WAVE line transforms nothing and its
+  tangent is 1.22e-16, not 0. Testing for exact zero sends that case into a quadratic whose leading
+  coefficient is a rounding error; the guard is `|tan θ| < 1e-12` and it catches every multiple of a
+  half wave, which is what "the drag is inert" actually means.
+- **A stub's Z₀ needs no quadratic.** §4.3's complex quadratic is the TLIN's, because a line
+  TRANSFORMS an impedance. A stub ADDS an admittance, so `Z₀ = tan θ/B` (open) and
+  `Z₀ = −1/(B·tan θ)` (shorted) are one-liners — and the three line kinds share a `Parameters` row,
+  so the Z₀ inverse would otherwise have been written once and been wrong for two of them.
+- **The TLIN's length inverse needs the same unwrapping the stub's does.** R-smith3-3 names the stub
+  only, but Γ' = Γ·e^(−2jθ) is periodic in θ with period π just as `atan` is, so reading the angle
+  difference as a principal value jumps E by a whole 180°·F_ref/f. Both length inverses go through
+  one `Length` helper for that reason. The period is 180°·F_ref/f and not 180°, because E is quoted
+  at the element's own reference frequency while the rotation happens at f.
+
+**What the gate could not see until it was made to.** `TheTlineZ0Quadratic_TakesThePhysicalRoot`
+first passed against a fixture where the rejected root had a NEGATIVE real part — so the sign filter
+alone decided, and replacing "nearest the current value" with "the first root that is positive" went
+undetected. The fixture is now an input impedance where BOTH roots are positive-real and the
+physical one is the second the quadratic hands back. Verified by mutation, along with the
+placement split on C and the branch unwrapping; each of the three deliberate breaks fails the test
+that claims to hold it.
+
+Worth recording for whoever revisits the selection rule: preferring the root with the smallest
+imaginary part would be more robust than proximity to the current value — the spurious root in that
+fixture carries j46.7 where the physical one is exactly real — but §4.3 prescribes proximity, and a
+drag whose current value has wandered far from the answer is the case where the two rules disagree.
+Not changed.
