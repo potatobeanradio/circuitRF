@@ -65,7 +65,7 @@ public sealed class QuasiStaticKernel : IEmKernel
 
         if (!(problem.LengthMeters > 0))
             return EmSuitability.No(
-                $"The propagation length is {problem.LengthMeters:G4} m. A per-unit-length kernel " +
+                $"The propagation length is {SurfaceMesher.Eng(problem.LengthMeters)}m. A per-unit-length kernel " +
                 "needs a positive line length to form s-parameters from.");
 
         var regionCheck = CheckRegions(problem);
@@ -116,7 +116,8 @@ public sealed class QuasiStaticKernel : IEmKernel
             var r = problem.Regions[i];
             if (!(r.YTop > r.YBottom))
                 return EmSuitability.No(
-                    $"Dielectric region {i} runs from y = {r.YBottom:G4} to y = {r.YTop:G4} m, which " +
+                    $"Dielectric region {i} runs from y = {SurfaceMesher.Eng(r.YBottom)}m to " +
+                    $"y = {SurfaceMesher.Eng(r.YTop)}m, which " +
                     "is empty or inverted. Regions are ordered bottom-to-top.");
             if (r.Material.EpsR < 1)
                 return EmSuitability.No(
@@ -130,8 +131,8 @@ public sealed class QuasiStaticKernel : IEmKernel
             if (top == bot) continue;
             string what = bot > top ? "a gap" : "an overlap";
             return EmSuitability.No(
-                $"Dielectric regions {i} and {i + 1} leave {what} between y = {top:G4} and " +
-                $"y = {bot:G4} m; regions must tile the y axis without gaps or overlap. This analysis's " +
+                $"Dielectric regions {i} and {i + 1} leave {what} between y = {SurfaceMesher.Eng(top)}m and " +
+                $"y = {SurfaceMesher.Eng(bot)}m; regions must tile the y axis without gaps or overlap. This analysis's " +
                 "2.5D premise is horizontal, laterally infinite interfaces — a vertical or sloped " +
                 "dielectric boundary is out of scope. THE FULL-WAVE PLANAR ANALYSIS DOES NOT HELP " +
                 "HERE EITHER, AND NOT BECAUSE IT IS UNFINISHED: it now takes an arbitrary stratified " +
@@ -144,7 +145,7 @@ public sealed class QuasiStaticKernel : IEmKernel
 
         if (!double.IsNegativeInfinity(problem.Regions[0].YBottom) && problem.Ground is null)
             return EmSuitability.No(
-                $"The bottom dielectric region starts at y = {problem.Regions[0].YBottom:G4} m with no " +
+                $"The bottom dielectric region starts at y = {SurfaceMesher.Eng(problem.Regions[0].YBottom)}m with no " +
                 "ground plane below it, so the stack is not closed. Either extend it to " +
                 "double.NegativeInfinity or add a ground plane.");
 

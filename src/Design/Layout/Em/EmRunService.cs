@@ -281,14 +281,12 @@ public static class EmRunService
             return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings, null);
 
         var kernel  = new PlanarKernel();
-        var verdict = kernel.CanSolve(problem);
-        if (!verdict.Ok)
-            return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
-                                         verdict.Reason);
+        var previewFmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
 
         // The ports, then the ground paths they grow — the same order and the same arguments
-        // RunPlanar uses. A preview of the bare extraction would be a preview of a structure the run
-        // does not solve, and the port's own footprint would be missing from the mesh.
+        // RunPlanar uses, INCLUDING its reason for asking them before the kernel's verdict. A
+        // preview of the bare extraction would be a preview of a structure the run does not solve,
+        // and the port's own footprint would be missing from the mesh.
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
             source.View.DisplayUnit,
@@ -298,6 +296,11 @@ public static class EmRunService
         if (!ports.Ok)
             return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
                                          ports.Refusal);
+
+        var verdict = kernel.CanSolve(problem, previewFmt);
+        if (!verdict.Ok)
+            return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
+                                         verdict.Reason);
 
         var meshed = ports.Ports.Count > 0
             ? PlanarGroundPath.Extend(problem, ports.Ports).Problem
@@ -664,6 +667,16 @@ public static class EmRunService
     /// staleness → <c>.npy</c> → <c>.snp</c>. <b>R-res-6: the same <c>DataSet</c> shape, the same
     /// predictable <c>.snp</c> path, the same writer.</b> Nothing new is minted here — a second
     /// naming convention would orphan every schematic reference the first one made.
+    ///
+    /// <para><b>PORTS ARE ASKED BEFORE <c>CanSolve</c>, AND THE ORDER IS THE POINT</b> (user report,
+    /// 2026-09-18). Both are prerequisites, so whichever is asked first is the one a user with two
+    /// problems ever reads — and a board with NO PORT LABELS AT ALL got the kernel's via
+    /// electrical-length paragraph instead of "this layout has no port labels". The port refusal is
+    /// about something the user did or did not draw; the kernel's verdict is a physics limit on a
+    /// structure there is, as yet, no reason to solve. Port extraction is geometry-only and costs
+    /// nothing, and by this line <c>PlanarExtractor</c> has already refused every no-metal case, so
+    /// nothing is lost by asking it first. <see cref="Preview"/> and the EM panel's own
+    /// <c>BlockingReason</c> order the two the same way for the same reason.</para>
     /// </summary>
     private static EmRunResult RunPlanar(
         EmSetup setup, EmLayoutSource source, string resultsRoot,
@@ -673,15 +686,7 @@ public static class EmRunService
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
-
-        var verdict = kernel.CanSolve(problem);
-        if (!verdict.Ok)
-        {
-            var d = EmDiagnostics.Forwarded("kernel", verdict.Reason);
-            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
-                KernelName: choice.KernelName, Diagnostic: d);
-        }
+        var lengthFmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
 
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
         // by name rather than guessed (R-res-5).
@@ -696,6 +701,15 @@ public static class EmRunService
             var d = EmDiagnostics.Forwarded("ports", ports.Refusal);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 ports.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
+
+        var verdict = kernel.CanSolve(problem, lengthFmt);
+        if (!verdict.Ok)
+        {
+            var d = EmDiagnostics.Forwarded("kernel", verdict.Reason);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);
         }
 
@@ -823,6 +837,16 @@ public static class EmRunService
             // because nothing past this point runs, which is the whole point — a note does not
             // survive onto the file and the file is what the next person opens.
             var d = EmDiagnostics.Forwarded("port-clearance", ex.Message);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
+        catch (PlanarPortCollisionRefusedException ex)
+        {
+            // Two of the user's port labels landed on one cut. The user's geometry, so a refusal
+            // rather than an EngineError — the same treatment, and for the same reason, as the feed
+            // clearance above. See PlanarPorts.ResolveAll.
+            var d = EmDiagnostics.Forwarded("ports", ex.Message);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);

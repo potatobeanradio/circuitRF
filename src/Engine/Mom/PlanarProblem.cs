@@ -357,7 +357,7 @@ public sealed record PlanarProblem(
                 if (Math.Abs(z - zi) <= 1e-12 * Math.Max(1.0, stack.TopZ)) onInterface = true;
             if (!onInterface)
                 return EmSuitability.No(
-                    $"Conductor level '{Layers[i].Name}' sits at z = {z:G6} m, which is not an " +
+                    $"Conductor level '{Layers[i].Name}' sits at z = {SurfaceMesher.Eng(z)}m, which is not an " +
                     $"interface of the medium ({stack}). A level BURIED inside a dielectric is " +
                     $"representable in the Green's function — LayeredSpectralGreens takes any height " +
                     $"— but the mesher's shared tensor grid and the via basis both assume a level is " +
@@ -369,8 +369,8 @@ public sealed record PlanarProblem(
             if (!(LevelZ(i) > LevelZ(i - 1)))
                 return EmSuitability.No(
                     $"Conductor levels must be ordered strictly BOTTOM-TO-TOP: level {i - 1} " +
-                    $"('{Layers[i - 1].Name}') is at z = {LevelZ(i - 1):G6} m and level {i} " +
-                    $"('{Layers[i].Name}') at z = {LevelZ(i):G6} m. The mesh's cell order is " +
+                    $"('{Layers[i - 1].Name}') is at z = {SurfaceMesher.Eng(LevelZ(i - 1))}m and level {i} " +
+                    $"('{Layers[i].Name}') at z = {SurfaceMesher.Eng(LevelZ(i))}m. The mesh's cell order is " +
                     $"(LayerIndex, IY, IX) and a via's basis is signed by which of its two levels is " +
                     $"the lower one (R-msh-2, R-via-5); both are contracts everything downstream " +
                     $"indexes by, and neither survives an unordered level list.");

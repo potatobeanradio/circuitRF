@@ -3,6 +3,31 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md`.
 
+## A REFUSED mesh reported "0 unknown(s) over 0 cell(s)", as a Success (2026-09-18)
+
+User report, from the same imported board as the refusal-ordering fix in `src/Design/RESOLVED.md`.
+The designer pressed Mesh and the Messages panel settled on
+
+> Meshing '<cell>' — building the grid - 0 unknown(s) over 0 cell(s)
+
+which reads as a mesh that ran and found no metal. The board has 139 shapes on Top Copper. What
+actually happened is that `SurfaceMesher`'s **pre-build guard** fired — the one that stops when the
+grid would be millions of cells before a single one is tested against metal (that geometry needs on
+the order of 4.28 million) — and its `Refused(...)` factory returns a report with `CellCount` and
+`UnknownCount` at **zero** and the whole diagnosis in `Refusal`.
+
+`MeshOutcomeText` read the counters first, so the refusal was discarded; and
+`WorkspaceViewModel`'s mesh row finished at a hard-coded `MessageLevel.Success`. Both are fixed:
+the outcome is `pr.Refusal ?? "<counters>"`, and the row's level comes from the new
+`MeshWasRefused`. Nothing threw, which is why neither showed up as an error — a budget refusal is
+reported in the report, not as an exception.
+
+The same session's `BlockingReason` reorder (`PortRefusal` ahead of `KernelRefusal`) is recorded in
+`src/Design/RESOLVED.md`; `PlanarBudgetRefusal` is still last in that chain, which is why this row
+was the only place the ceiling was said at all on that board.
+
+Gate: `tests/Ui.Tests/Em/EmRefusalOrderTests.cs`.
+
 ## The EM setup pipeline crossed the UI firewall, so `circuitrf em` exists (2026-08-26)
 
 `docs/sonnet-briefs/brief-cli-em-verb.md`. Nothing here was rewritten and no physics changed: the

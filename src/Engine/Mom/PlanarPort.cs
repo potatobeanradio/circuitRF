@@ -668,6 +668,19 @@ public sealed class PlanarFeedClearanceRefusedException : InvalidOperationExcept
 }
 
 /// <summary>
+/// <b>Two ports resolved to one cut, so the run is REFUSED.</b> Caught by the run service and
+/// reported as a refusal for the same reason <see cref="PlanarFeedClearanceRefusedException"/> is:
+/// it is the user's geometry, not a fault in circuitRF, and "EngineError" would read as the latter.
+/// See <see cref="PlanarPorts.ResolveAll"/> for the measurement that put it here.
+/// </summary>
+public sealed class PlanarPortCollisionRefusedException(string message, int firstPort, int secondPort)
+    : InvalidOperationException(message)
+{
+    public int FirstPort  { get; } = firstPort;
+    public int SecondPort { get; } = secondPort;
+}
+
+/// <summary>
 /// What a port resolved to on a particular mesh — R-prt-2's report. Everything a user (or L8e's
 /// panel) needs in order to see where the reference plane actually landed, and everything
 /// <see cref="PlanarCalibration"/> needs in order to rebuild the port's neighbourhood exactly (D4).
@@ -960,7 +973,76 @@ public static class PlanarPorts
         ArgumentNullException.ThrowIfNull(ports);
         var list = new List<PlanarPortResolution>(ports.Count);
         foreach (var p in ports) list.Add(Resolve(mesh, p));
+        RefuseCoincidentCuts(list);
         return list;
+    }
+
+    /// <summary>
+    /// <b>TWO PORTS MAY NOT DRIVE THE SAME ROOFTOP ROW, AND UNTIL NOW NOTHING SAID SO</b> (user
+    /// report, 2026-09-18).
+    ///
+    /// <para>This is the across-ports half of a rule the two-cut resolution already enforces WITHIN
+    /// one port — see <c>TryResolveTwoCut</c>'s "landed on the SAME rooftop row" refusal. Two port
+    /// labels on one cut of one conductor are one terminal wearing two numbers: the same basis
+    /// functions are excited by both and read back by both, so the matrix is not a network of the
+    /// ports the user thinks they drew.</para>
+    ///
+    /// <para><b>Measured, not reasoned into place.</b> A designer's imported board carried two port
+    /// labels at bit-identical coordinates and the run wrote a complete <c>.s3p</c> with no
+    /// complaint. Reproduced on the shipped Klopfenstein taper example by copying its port 2 onto
+    /// itself as port 3: the clean, passive two-port became a three-port with 40 of 47 rows
+    /// NON-PASSIVE (worst σ_max = 1.0428) whose own caveat says "what produced the gain is not
+    /// identified here" — and the two coincident ports were even peeled by DIFFERENT feed-lead
+    /// lengths (179.58 mil against 89.58 mil) for what is one piece of metal. A plausible wrong
+    /// answer with an unattributable passivity violation is the exact failure shape this file
+    /// refuses everywhere else.</para>
+    ///
+    /// <para><b>Only the POSITIVE cuts are compared.</b> A two-cut port's NEGATIVE terminal is
+    /// deliberately left out: two ports sharing one return conductor's cut is a configuration
+    /// someone may mean, and refusing it would be a narrowing nothing here has measured. What is
+    /// refused is the case with no reading at all.</para>
+    /// </summary>
+    private static void RefuseCoincidentCuts(List<PlanarPortResolution> resolved)
+    {
+        for (int i = 0; i < resolved.Count; i++)
+            for (int j = i + 1; j < resolved.Count; j++)
+                if (Indistinguishable(resolved[i], resolved[j]))
+                    throw new PlanarPortCollisionRefusedException(
+                        $"Ports {resolved[i].Number} and {resolved[j].Number} resolved to the SAME " +
+                        $"CUT \u2014 the same rooftop row, the same side, the same direction, on level " +
+                        $"{resolved[i].LayerIndex}. That is one terminal wearing two numbers, not two " +
+                        "ports: both excite those basis functions and both read them back, so the " +
+                        "s-parameters would be a complete, plausible matrix of a structure nobody " +
+                        "drew \u2014 the measured symptom is a network that is not passive, with nothing " +
+                        "able to say why. Move one port to the terminal you meant it to be, or " +
+                        "delete it; two labels at the same place on one conductor end is usually a " +
+                        "duplicate.",
+                        resolved[i].Number, resolved[j].Number);
+    }
+
+    /// <summary>
+    /// Whether two resolutions are the same TERMINAL \u2014 every property that identifies where a port
+    /// drives, equal.
+    ///
+    /// <para><b>Every clause below is load-bearing, and two of them were put there by fixtures that
+    /// are legitimately close to this.</b> A shared basis index alone is NOT enough: on a
+    /// deliberately coarse mesh the two ends of a short line share their one interior edge, and they
+    /// are told apart by <see cref="PlanarPortResolution.Side"/> and
+    /// <see cref="PlanarPortResolution.IncidenceSign"/> (<c>ModalErrorBoxTests</c>); two ports of a
+    /// coupled pair at one reference plane sit on different conductors and are told apart by their
+    /// transverse spans, and where a mesh is too coarse to separate them the MODAL calibration has
+    /// its own, better-diagnosed refusal to make (<c>GroupSeparationRemedyTests</c>). So this asks
+    /// for indistinguishability, not overlap.</para>
+    /// </summary>
+    private static bool Indistinguishable(PlanarPortResolution a, PlanarPortResolution b)
+    {
+        if (a.LayerIndex != b.LayerIndex || a.Kind != b.Kind || a.Side != b.Side) return false;
+        if (a.IncidenceSign != b.IncidenceSign) return false;
+        if (a.BasisIndices.Count != b.BasisIndices.Count || a.BasisIndices.Count == 0) return false;
+
+        var set = new HashSet<int>(a.BasisIndices);
+        foreach (int x in b.BasisIndices) if (!set.Contains(x)) return false;
+        return true;
     }
 
     public static bool TryResolve(PlanarMesh mesh, PlanarPort port,

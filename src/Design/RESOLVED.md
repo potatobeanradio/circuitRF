@@ -1,5 +1,32 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The EM run asked the kernel's verdict before it asked whether there were any ports (2026-09-18)
+
+User report. An experienced designer opened an imported two-layer board, pressed Simulate with **no
+port labels placed at all**, and was shown the full-wave kernel's via electrical-length paragraph —
+a correct statement about a physics limit, and the wrong sentence for someone who has not drawn a
+port yet. His own summary: *"the EM part did not say anything though I did not had placed a single
+port on the board."*
+
+`EmPortExtraction` has said exactly the right thing since it was written (*"This layout has no port
+labels, so the full-wave planar kernel has nothing to drive. Use the Port tool to…"*). Nothing was
+missing. **`EmRunService.RunPlanar` and `Preview` simply called `PlanarKernel.CanSolve` first**, and
+only one refusal is ever shown, so the port sentence was unreachable whenever the kernel also had an
+opinion. The EM panel's own `BlockingReason` ordered the two the same way and had the same hole.
+
+Both now ask the ports first. The argument is that a port refusal is about something the user did or
+did not DRAW, while the kernel's verdict is a limit on solving a structure there is as yet no reason
+to solve; and by that line `PlanarExtractor` has already refused every no-metal case, so asking port
+extraction — which is geometry-only and free — first costs nothing and loses no diagnosis.
+
+**It also made `circuitrf check` more useful than the reorder was aimed at.** On the reported board
+the preflight now reports all ten resolved ports (*"Port 5 ('P5') at (136519.92, 167949.88 µm) was
+taken to be on the conductor's low-x (left) end…"*) beside the kernel refusal, where before the
+refusal came first and the port resolutions were never computed. That is how the duplicate P5/P6 in
+that file became visible at all — see `src/Engine/Mom/RESOLVED.md`, same date.
+
+Gate: `tests/Ui.Tests/Em/EmRefusalOrderTests.cs`.
+
 ## railRF brief 18 — two defects nothing reported, and the third that was never one (2026-09-18)
 
 `brief-railrf-18-six-defects.md`, R-rail18-1 and R-rail18-2. Both were found by writing brief 17's

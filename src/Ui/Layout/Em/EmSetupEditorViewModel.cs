@@ -463,15 +463,31 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     }
 
     /// <summary>The mesh row's own outcome, appended to the end of the row it already owns — so the
-    /// finished line still says WHAT was meshed rather than collapsing to a bare "done".</summary>
+    /// finished line still says WHAT was meshed rather than collapsing to a bare "done".
+    ///
+    /// <para><b>A REFUSED report carries its refusal, and it used to be silently swallowed</b> (user
+    /// report, 2026-09-18). <c>SurfaceMesher</c>'s pre-build guard — the one that fires when the
+    /// grid would be millions of cells before a single one is tested against metal — returns a
+    /// report with <c>CellCount</c> and <c>UnknownCount</c> at ZERO and the reason in
+    /// <c>Refusal</c>. Reading the counters first turned that into "0 unknown(s) over 0 cell(s)",
+    /// which reads like a mesh that ran and found nothing rather than a mesh that was refused, and
+    /// it went out at <c>MessageLevel.Success</c>. See <see cref="MeshWasRefused"/>, which the
+    /// Messages row reads to pick its level.</para></summary>
     public string MeshOutcomeText()
     {
         if (PlanarMeshReport is { } pr)
-            return $"{pr.UnknownCount:N0} unknown(s) over {pr.CellCount:N0} cell(s)";
+            return pr.Refusal ?? $"{pr.UnknownCount:N0} unknown(s) over {pr.CellCount:N0} cell(s)";
         if (MeshReport is { } mr)
             return $"{mr.UnknownCount:N0} unknown(s)";
         return PlanarExtractionRefusal ?? ExtractionRefusal ?? "nothing to mesh";
     }
+
+    /// <summary>Whether <see cref="MeshOutcomeText"/> is a refusal rather than a mesh — so the
+    /// Messages row that prints it can say so at the right level instead of reporting every outcome
+    /// as a success.</summary>
+    public bool MeshWasRefused =>
+        PlanarMeshReport is { } pr ? pr.Refusal is not null
+        : MeshReport is null;
 
     /// <summary>R-msh-8's numbers, in the engine's own units, formatted once. The panel prints this;
     /// it computes nothing.
@@ -592,9 +608,21 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// consume, so they can never disagree about what is being solved.</summary>
     public EmProblem? Problem { get; private set; }
 
+    /// <summary>
+    /// The one sentence the panel shows for why Simulate is off — the FIRST of the refusals that
+    /// apply, so their order decides which one a user with two problems ever reads.
+    ///
+    /// <para><b><see cref="PortRefusal"/> comes before <see cref="KernelRefusal"/>, and that is the
+    /// order, not an accident</b> (user report, 2026-09-18). A board with no port labels at all was
+    /// shown the kernel's via electrical-length paragraph — a correct, dense statement about a
+    /// physics limit — and nothing whatever about the ports it did not have, so the reader went
+    /// looking for a stackup mistake. A port refusal is about something the user did or did not
+    /// draw; the kernel's verdict is a limit on solving a structure there is no reason to solve
+    /// yet. <c>EmRunService.RunPlanar</c> and <c>Preview</c> order the two the same way.</para>
+    /// </summary>
     public string? BlockingReason =>
         SelectedKernel == EmAnalysisKind.Planar
-            ? PlanarExtractionRefusal ?? KernelRefusal ?? PortRefusal ?? PlanarBudgetRefusal
+            ? PlanarExtractionRefusal ?? PortRefusal ?? KernelRefusal ?? PlanarBudgetRefusal
             : InternalPortOnTheWrongKernel ?? ExtractionRefusal ?? KernelRefusal;
 
     /// <summary>
@@ -1837,7 +1865,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
 
-        var verdict = new PlanarKernel().CanSolve(planar.Problem!);
+        var verdict = new PlanarKernel().CanSolve(
+            planar.Problem!, EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron));
         KernelRefusal = verdict.Ok ? null : verdict.Reason;
 
         var ports = EmPortExtraction.Extract(

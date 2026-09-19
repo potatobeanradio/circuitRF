@@ -1,5 +1,27 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## "Technology X has 2 issues" sent a user hunting (2026-09-18)
+
+User report. Told in the Messages panel that his technology had two issues and to open it in the
+Technology editor, an experienced designer opened it and replied *"can't see where the 2 issues are
+in the tech file"*.
+
+The counts were on the tab headers the whole time (`TechEditorViewModel.TabHeader` renders
+"Stackup (1)"), and the banner lists each tab's problems in full — but only on the tab that owns
+them, so three of the four tabs show nothing, and a header reading "Stackup (1)" is not something
+anyone notices without being told to look at a header.
+
+`PostTechDiagnostics` now names the owning tabs — *"has 2 issues (Stackup 1, Interchange 1) — open
+it in the Technology editor; each tab header carries the count of what it owns, and the banner on
+that tab lists them in full"* — using the editor's own tab spellings, so "DRC Rules" names the tab
+the reader is being sent to.
+
+**This is not the recital the roll-up exists to avoid.** It is still one line, and it grows with the
+number of TABS (at most four) rather than with the number of problems — a Gerber import measured
+twenty-odd, which is why the roll-up is there. Asking `TechValidation.Analyze` a second time is not
+a second derivation either: `Validate`, which produced `TechResolution.Diagnostics`, IS `Analyze`
+with the areas dropped.
+
 ## railRF brief 18 — the parts table, the tab strip, and the stale diagnostic list (2026-09-18)
 
 `brief-railrf-18-six-defects.md`, R-rail18-5, R-rail18-6 and R-rail18-7. The first two were found by

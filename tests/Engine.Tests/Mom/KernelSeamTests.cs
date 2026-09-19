@@ -50,7 +50,11 @@ public class KernelSeamTests
         };
         string r = Refusal(q);
         Assert.Contains("gap", r, StringComparison.Ordinal);
-        Assert.Contains("0.0015", r, StringComparison.Ordinal);
+        // Both edges of the gap, in SI engineering notation. It read "0.0015" until 2026-09-18,
+        // when a designer reported a raw-metres length in an EM refusal as a units bug; every
+        // user-facing distance in these messages carries an SI prefix now.
+        Assert.Contains("1.5 mm", r, StringComparison.Ordinal);
+        Assert.Contains("1.6 mm", r, StringComparison.Ordinal);
         Assert.Contains("vertical or sloped", r, StringComparison.Ordinal);
         // L8e/D6: this refusal used to point at L8 and was MISLEADING the moment kernel B shipped —
         // B is ONE grounded slab with ONE conductor level, so it cannot model a sloped dielectric

@@ -77,8 +77,8 @@ public sealed record GroundedSlab(double HeightM, EmMaterial Material)
         if (Math.Abs(metalHeightM - slabHeightM) > 1e-12 * Math.Max(1, slabHeightM))
             return EmSuitability.No(
                 $"This is GroundedSlab, which by construction places its one conductor layer on the " +
-                $"TOP SURFACE of the slab (z = h = {slabHeightM:G6} m); this stackup puts it at " +
-                $"z = {metalHeightM:G6} m. Buried and multi-level metal are the GENERAL layered " +
+                $"TOP SURFACE of the slab (z = h = {SurfaceMesher.Eng(slabHeightM)}m); this stackup puts it at " +
+                $"z = {SurfaceMesher.Eng(metalHeightM)}m. Buried and multi-level metal are the GENERAL layered " +
                 $"path: give the medium as a LayerStack and set each PlanarConductorLayer's own ZM, " +
                 $"and LayeredSpectralGreens takes any source and observer height.");
 

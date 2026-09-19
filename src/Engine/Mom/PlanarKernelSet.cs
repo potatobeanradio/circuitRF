@@ -286,11 +286,23 @@ public sealed record PlanarLevels(IReadOnlyList<double> Z, double GroundZ = 0.0)
     /// name the frequency that WOULD pass rather than only the direction to move in. Zero omits that
     /// sentence, which is what a unit test constructing a bare wavenumber wants.
     /// </param>
-    public EmSuitability CanRepresentVias(double kMax, bool hasGroundAttachment = false, double fHiHz = 0)
+    /// <param name="lengthFormat">
+    /// How the via's LENGTH is spelled in the refusal. Null is
+    /// <see cref="SurfaceMesher.DefaultLengthFormat"/> — SI engineering notation, so a 1.4651 mm via
+    /// reads "1.465mm" and not "0.001465 m". <b>It used to be a raw <c>{ell:G4} m</c></b>, which is the
+    /// one number in this refusal a reader has to act on and the one it printed least readably (owner
+    /// report, 2026-09-18: a designer read it as a units bug and went looking for a wrong stackup
+    /// entry). A caller with a layout open passes the layout's own display unit, which is the rule
+    /// every other length in an EM message already follows — see <c>EmLengthFormat</c>.
+    /// </param>
+    public EmSuitability CanRepresentVias(double kMax, bool hasGroundAttachment = false, double fHiHz = 0,
+                                          SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
+        var fmt = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
+
         for (int i = 0; i + 1 < Z.Count; i++)
         {
-            var v = CheckOne(kMax, LengthOf(i), $"The via between levels {i} and {i + 1}", fHiHz);
+            var v = CheckOne(kMax, LengthOf(i), $"The via between levels {i} and {i + 1}", fHiHz, fmt);
             if (!v.Ok) return v;
         }
 
@@ -298,20 +310,21 @@ public sealed record PlanarLevels(IReadOnlyList<double> Z, double GroundZ = 0.0)
             for (int i = 0; i < Z.Count; i++)
             {
                 var v = CheckOne(kMax, AttachmentLengthOf(i),
-                                 $"The ground via from the plane up to level {i}", fHiHz);
+                                 $"The ground via from the plane up to level {i}", fHiHz, fmt);
                 if (!v.Ok) return v;
             }
 
         return EmSuitability.Yes;
     }
 
-    private static EmSuitability CheckOne(double kMax, double ell, string subject, double fHiHz = 0)
+    private static EmSuitability CheckOne(double kMax, double ell, string subject, double fHiHz,
+                                          SurfaceMesher.PlanarLengthFormat fmt)
     {
         double kl = kMax * ell;
         if (kl <= MaxElectricalLength) return EmSuitability.Yes;
 
         return EmSuitability.No(
-            $"{subject} is {ell:G4} m long, i.e. k·ℓ = {kl:G4} at the top of the sweep, above this " +
+            $"{subject} is {fmt(ell)} long, i.e. k·ℓ = {kl:G4} at the top of the sweep, above this " +
             $"kernel's floor of {MaxElectricalLength}. A vertical basis here is a SINGLE z-rooftop " +
             $"spanning the whole run, so the current it carries is UNIFORM along it — a limit on the " +
             $"BASIS, not on the quadrature: the z-integral of the Green's function is resolved " +

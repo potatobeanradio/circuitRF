@@ -267,7 +267,7 @@ public static class RlgcExtractor
         double wheelerHz = 0;
         foreach (double f in report.WheelerValidAboveHz) wheelerHz = Math.Max(wheelerHz, f);
 
-        notes.Add($"Wheeler recession Δ = {delta:G4} m; ∂L/∂n evaluated once, frequency-independent (R-mom-12).");
+        notes.Add($"Wheeler recession Δ = {SurfaceMesher.Eng(delta)}m; ∂L/∂n evaluated once, frequency-independent (R-mom-12).");
         notes.Add($"[C], [C₀] and ∂L/∂n filled {fills}× total — independent of the frequency count (R-mom-11).");
 
         return new RlgcModel(names, cComplex, c0, l, eeff, surfaces, rdc, wheelerHz, fills, residual, notes);

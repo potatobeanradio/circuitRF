@@ -3,6 +3,55 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md` and `src/Ui/Layout/Em/RESOLVED.md`.
 
+## Two user-report fixes in the planar port and via refusals (2026-09-18)
+
+An experienced designer imported a two-layer reference board, pointed an EM setup at it, and
+reported two things. Neither was wrong physics; both were the engine SAYING something wrong.
+
+### 1. A via refusal printed its length in raw metres
+
+`PlanarLevels.CheckOne` spelled the via's length `{ell:G4} m`, so a 1.4651 mm through-hole read
+**"0.001465 m long"**. That number is the one quantity in an otherwise dense paragraph a reader has
+to act on, and the designer read it as a units bug and went looking for a wrong stackup entry.
+
+`CanRepresentVias` now takes a `SurfaceMesher.PlanarLengthFormat?`, defaulting to
+`DefaultLengthFormat` (SI engineering notation → "1.465 mm"); `PlanarKernel.CanSolve` takes one too
+and hands it down, and `EmRunService` / the EM panel pass the layout's own display unit through
+`EmLengthFormat`, which is the rule every other length in an EM message has followed since
+2026-08-15. On the reported board it now reads **"1465.072 µm"** — the `.clay`'s own unit.
+
+The same pass replaced the remaining raw-metre spellings in user-facing EM refusals:
+`PlanarKernel`'s via-crosses-an-interface message, `PlanarProblem`'s two level checks,
+`LayeredMedium`'s grounded-slab check, `QuasiStaticKernel`'s four region/length refusals and
+`RlgcExtractor`'s Wheeler-recession note. **The internal invariant guards were deliberately left
+alone** — `Dcim`, `SpectralGreens`, `InteriorStaticGreens` and `SommerfeldIntegral` throw at `G6` on
+purpose; those are programming errors, and an exact number is what a reader of one wants.
+
+### 2. Two port labels on one terminal produced a complete, non-passive answer, silently
+
+`PlanarPorts.ResolveAll` resolved each port independently and never compared the results. The
+designer's board carried **P5 and P6 at bit-identical coordinates** and circuitRF wrote the file.
+
+Reproduced on the shipped Klopfenstein taper by copying its port 2 onto itself as port 3: the clean,
+passive two-port became a three-port with **40 of 47 rows NOT PASSIVE (worst σ_max = 1.0428)**, whose
+own caveat says *"what produced the gain is not identified here"*, and whose two coincident ports
+were even peeled by **different feed-lead lengths (179.58 mil against 89.58 mil)** for one piece of
+metal. The unmodified example flags nothing, so the coincident port is the whole of the difference.
+
+`ResolveAll` now refuses with `PlanarPortCollisionRefusedException`, which `EmRunService` reports as
+a **Refused** (the user's geometry) rather than an `EngineError`, exactly as
+`PlanarFeedClearanceRefusedException` is.
+
+**The rule is INDISTINGUISHABILITY, not overlap, and that was earned twice.** A shared basis index
+alone fails two legitimate fixtures: on `ModalErrorBoxTests`' deliberately coarse mesh the two ends
+of a short line share their one interior rooftop (`bases=2`, both ports on basis 0) and are told
+apart only by `Side`/`IncidenceSign`; and where a coupled pair's mesh is too coarse to separate the
+modes, `GroupSeparationRemedyTests` has a far better-diagnosed refusal to make and must keep making
+it. So the guard asks for same layer, same kind, same side, same incidence sign AND set-equal basis
+indices — the case with no reading at all.
+
+Gates: `tests/Ui.Tests/Em/EmRefusalOrderTests.cs`.
+
 ## MIM-14 — the floor was a stale measurement, and it is 200 (2026-09-16)
 
 `brief-em-mim-14-refloor-the-full-wave-limit.md`. **`PlanarLevels.FullWaveCellOverSeparation` moves

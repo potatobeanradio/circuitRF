@@ -115,7 +115,12 @@ public sealed class PlanarKernel
     /// a layer the technology does not describe — are the Ui-side <c>PlanarExtractor</c>'s and are
     /// worded there; this is the split §10.3.4 already describes for kernel A, applied unchanged.
     /// </summary>
-    public EmSuitability CanSolve(PlanarProblem problem)
+    /// <param name="lengthFormat">How a refusal spells a LENGTH. Null is SI engineering notation
+    /// (<see cref="SurfaceMesher.DefaultLengthFormat"/>); a caller with a layout open passes that
+    /// layout's own display unit, the same rule every other EM message follows. See
+    /// <see cref="PlanarLevels.CanRepresentVias"/>' own parameter for why this exists.</param>
+    public EmSuitability CanSolve(PlanarProblem problem,
+                                  SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
 
@@ -147,11 +152,11 @@ public sealed class PlanarKernel
 
         if (problem.MaxFrequencyHz > 0)
         {
-            var midpoint = MidpointRuleVerdict(problem, problem.MaxFrequencyHz);
+            var midpoint = MidpointRuleVerdict(problem, problem.MaxFrequencyHz, lengthFormat);
             if (!midpoint.Ok) return midpoint;
         }
 
-        var oneRegion = EveryViaLiesInOneMediumRegion(problem);
+        var oneRegion = EveryViaLiesInOneMediumRegion(problem, lengthFormat);
         if (!oneRegion.Ok) return oneRegion;
 
         return EmSuitability.Yes;
@@ -175,9 +180,11 @@ public sealed class PlanarKernel
     /// height pair and never asked which region the rest of the via was in — so this is a narrowing,
     /// stated rather than buried, of a case nothing ever validated.</para>
     /// </summary>
-    private static EmSuitability EveryViaLiesInOneMediumRegion(PlanarProblem problem)
+    private static EmSuitability EveryViaLiesInOneMediumRegion(
+        PlanarProblem problem, SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         if (problem.ViaList.Count == 0) return EmSuitability.Yes;
+        var fmt = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
         var stack = problem.EffectiveStack;
 
         foreach (var via in problem.ViaList)
@@ -201,7 +208,7 @@ public sealed class PlanarKernel
             return EmSuitability.No(
                 $"The via between {(via.ToGround ? "the ground plane" : $"level {via.LowerLayerIndex}")} " +
                 $"and level {via.UpperLayerIndex} spans " +
-                $"z = {SurfaceMesher.Eng(lo)}m to {SurfaceMesher.Eng(hi)}m, which crosses a " +
+                $"z = {fmt(lo)} to {fmt(hi)}, which crosses a " +
                 $"dielectric interface of the medium (region {rLo} to region {rHi}). This kernel " +
                 $"integrates a via's Green's function over its length in CLOSED FORM, and that form " +
                 $"is written in the source region's own asymptotic coefficients — a via with two " +
@@ -219,7 +226,8 @@ public sealed class PlanarKernel
     /// in the fastest-slowing medium anywhere in the stack — the same rule R-msh-3 uses for the mesh —
     /// because that is the shortest wavelength any part of the via can see.
     /// </summary>
-    private static EmSuitability MidpointRuleVerdict(PlanarProblem problem, double fHiHz)
+    private static EmSuitability MidpointRuleVerdict(
+        PlanarProblem problem, double fHiHz, SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
         // A GROUND via needs only ONE meshed level, so the two-level guard below is not the right
         // question for it: its span is the plane up to its own metal.
@@ -234,7 +242,8 @@ public sealed class PlanarKernel
         // L9e's GEOMETRIC arm (and with it NarrowestViaFootprint) is gone: the z-integral it bounded
         // is resolved, and the ℓ/w curve it was measured on is flat. What is left is electrical and
         // is about the BASIS — see PlanarLevels.CanRepresentVias.
-        return PlanarLevels.From(problem).CanRepresentVias(2.0 * Math.PI / lambdaG, ground, fHiHz);
+        return PlanarLevels.From(problem).CanRepresentVias(2.0 * Math.PI / lambdaG, ground, fHiHz,
+                                                           lengthFormat);
     }
 
     /// <summary>The pre-solve mesh and R17's verdict — §10.5's "report the unknown count before
@@ -420,7 +429,7 @@ public sealed class PlanarKernel
         // R-via-6 at the sweep's ACTUAL top, which CanSolve can only guess at from MaxFrequencyHz.
         double fHi = 0;
         foreach (double f in freqsHz) fHi = Math.Max(fHi, f);
-        var midpoint = MidpointRuleVerdict(meshed, fHi);
+        var midpoint = MidpointRuleVerdict(meshed, fHi, lengthFormat);
         if (!midpoint.Ok) throw new InvalidOperationException(midpoint.Reason);
 
         // ── LF3 — AND A DE-EMBEDDING CEILING THE ACCELERATOR WOULD CLEAR TURNS IT ON ────────────

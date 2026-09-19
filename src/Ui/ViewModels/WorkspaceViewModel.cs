@@ -1065,10 +1065,52 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         int n = resolution.Diagnostics.Count;
         Messages.Warning(
-            $"Technology \"{resolution.Tech.Name}\" has {n} issue{(n == 1 ? "" : "s")} — open it in the " +
-            "Technology editor to see them, listed on the tab that owns each one.",
+            $"Technology \"{resolution.Tech.Name}\" has {n} issue{(n == 1 ? "" : "s")}{TabBreakdown(resolution)} — " +
+            "open it in the Technology editor; each tab header carries the count of what it owns, " +
+            "and the banner on that tab lists them in full.",
             resolution.ResolvedPath);
     }
+
+    /// <summary>
+    /// " (Stackup 1, Interchange 2)" — which TABS own the rolled-up problems, so the one-line
+    /// summary is a direction rather than an errand.
+    ///
+    /// <para>User report, 2026-09-18: told a technology had 2 issues, a designer opened the editor
+    /// and could not find them. The counts were on the tab headers all along, but a header reading
+    /// "Stackup (1)" is not something you notice when you have not been told to look at a header —
+    /// and the problems themselves only show on the tab that owns them, so three of the four tabs
+    /// show nothing at all. Naming the tabs here costs a few words and removes the hunt.</para>
+    ///
+    /// <para>This is NOT the reciting the roll-up exists to avoid: it is still one line, and it
+    /// still grows with the number of TABS (at most four) rather than with the number of problems
+    /// (a Gerber import measured twenty-odd).</para>
+    ///
+    /// <para>Asking <see cref="TechValidation.Analyze"/> again is not a second derivation of
+    /// anything: <c>TechValidation.Validate</c>, which produced
+    /// <see cref="TechResolution.Diagnostics"/>, IS <c>Analyze</c> with the areas dropped. The tab
+    /// NAMES are the Technology editor's own, spelled the way its headers spell them, so "DRC
+    /// Rules" here names the tab the reader is being sent to.</para>
+    /// </summary>
+    private static string TabBreakdown(TechResolution resolution)
+    {
+        if (resolution.Tech is null) return "";
+
+        var byArea = TechValidation.Analyze(resolution.Tech)
+                                   .GroupBy(p => p.Area)
+                                   .Select(g => $"{TabName(g.Key)} {g.Count()}")
+                                   .ToList();
+        return byArea.Count == 0 ? "" : $" ({string.Join(", ", byArea)})";
+    }
+
+    /// <summary>A <see cref="TechProblemArea"/> spelled the way the Technology editor's own tab
+    /// header spells it — the string the reader is about to go looking for.</summary>
+    private static string TabName(TechProblemArea area) => area switch
+    {
+        TechProblemArea.Stackup     => "Stackup",
+        TechProblemArea.Drc         => "DRC Rules",
+        TechProblemArea.Interchange => "Interchange",
+        _                           => "Layers",
+    };
 
     /// <summary>Technology files whose validation problems have already been summarized in the Messages
     /// panel. Keyed by absolute path; a path is forgotten when that technology next resolves clean, and
@@ -8168,7 +8210,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
         // — only the appended outcome text remains, same as the Analysis/EM rows above.
-        live.Finish(MessageLevel.Success, vm.MeshOutcomeText(), keepBar: false);
+        //
+        // The LEVEL is the mesh's own verdict, not a constant. A refused mesh settles this row too
+        // (nothing threw — SurfaceMesher reports a budget refusal in the report rather than as an
+        // exception), and reporting it as a Success is how a user came to read a refusal as a mesh
+        // that ran; see EmSetupEditorViewModel.MeshOutcomeText.
+        live.Finish(vm.MeshWasRefused ? MessageLevel.Error : MessageLevel.Success,
+                    vm.MeshOutcomeText(), keepBar: false);
     }
 
     /// <summary>Drives the mesh row. The mesher reports through the STAGE counter only (it also runs
