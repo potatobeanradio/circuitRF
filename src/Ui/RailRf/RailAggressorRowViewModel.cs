@@ -84,6 +84,28 @@ public sealed partial class RailAggressorRowViewModel : ObservableObject
         set => Commit(_aggressor with { Harmonics = Math.Max(1, value) });
     }
 
+    /// <summary>
+    /// The harmonic count in the settable column, as text.
+    /// </summary>
+    /// <remarks>
+    /// <b>A string because the control is the one every other settable value on this window uses</b>
+    /// — <c>InlineEditText</c> binds <c>Text</c>, and a row where two of its three values could be
+    /// typed and the third could not is the same report this row already carries (owner,
+    /// 2026-09-19). A value that does not parse, or one below 1, is REFUSED and the field snaps
+    /// back: <see cref="Commit"/> notifies whether or not anything changed, exactly as
+    /// <see cref="FrequencyEntry"/> relies on.
+    /// </remarks>
+    public string HarmonicsEntry
+    {
+        get => _aggressor.Harmonics.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        set => Commit(int.TryParse(value?.Trim(),
+                                   System.Globalization.NumberStyles.Integer,
+                                   System.Globalization.CultureInfo.InvariantCulture,
+                                   out int n) && n >= 1
+            ? _aggressor with { Harmonics = n }
+            : _aggressor);
+    }
+
     /// <summary>"×8", or empty for the fundamental alone — what the compact row shows.</summary>
     public string HarmonicsText => _aggressor.Harmonics > 1 ? $"×{_aggressor.Harmonics}" : "";
 
@@ -120,6 +142,7 @@ public sealed partial class RailAggressorRowViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(FrequencyEntry));
         OnPropertyChanged(nameof(Harmonics));
+        OnPropertyChanged(nameof(HarmonicsEntry));
         OnPropertyChanged(nameof(HarmonicsText));
         OnPropertyChanged(nameof(OriginText));
         OnPropertyChanged(nameof(Summary));

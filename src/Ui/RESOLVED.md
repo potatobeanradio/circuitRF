@@ -30210,3 +30210,201 @@ sitting: a reader who gave the artwork the whole window to review one board gets
 time they open *that* board.
 
 Gates: `tests/Ui.Tests/RailRf/RailPaneToggleTests.cs` and `RailSaveTests.cs`.
+
+## railRF — a menu bar, a title that names a file, editable aggressors, and a plot that was invisible in dark mode (2026-09-19)
+
+Five reports from a fifth manual pass over the window. Four are the same shape — the window was
+built as "the Match Designer's window, structurally", and each of these is a piece of that window it
+did not take.
+
+### 1. An aggressor could be added and then never named or tuned
+
+The row was ONE control: a `TextBlock` bound to `Summary`. The view model had `Name`,
+`FrequencyEntry` and `Harmonics` and nothing on screen reached any of them — and double-clicking a
+`TextBlock` opens no editor, which is why the report arrived as "the inline text editor doesn't
+appear". So `+` made a row that could not be given a meaning.
+
+It is three `InlineEditText`s now, the same control and the same contract as the source and load
+rows above it, which had been given exactly this fix earlier the same day. `HarmonicsEntry` is new
+and is a STRING for that reason: the control binds `Text`, and a row where two of its three values
+could be typed and the third could not is the same report again. A value the parser refuses — or a
+harmonic count below 1 — is rejected and the field snaps back, because `Commit` notifies whether or
+not anything changed.
+
+### 2. There was no menu bar at all, so there was no way back to the window it was opened from
+
+A railRF window is shown UNOWNED, deliberately, so it can go behind the workspace. That is the right
+behaviour and it is also how a window gets lost, and this one offered nothing to find it again. Zoom
+to Fit had the matching problem from the other end: it existed only on the board panel's own
+toolbar, which is hidden with that panel.
+
+Three menus, on both surfaces, hand-mirrored as every other menu bar in this application is.
+
+- **File** — `Open…`, `Save`, `Save as…`, `Import Board…`, `Report…`, `Export…`, `Compare…`,
+  `Close`: the toolbar, in the toolbar's order. **Every item is a second ROUTE and never a second
+  implementation.** Each binds a command whose hook the window installs, and each hook calls the
+  method the matching button's `Click` already calls (`OpenDocumentAsync`, `ImportBoardAsync`,
+  `ExportAsync`, `CompareAsync`) — a menu item with a picker of its own would be a second Open and a
+  second Export, drifting from the buttons beside them the first time either was touched, silently,
+  because both would keep producing a plausible dialog. `Close` goes through `OnClosing`, so it is
+  not a route around the unsaved-work prompt the close button already asks.
+- **View** — Zoom to Fit, then a checkbox per panel and one for the results readouts. Every item
+  binds the command its toolbar lamp already runs, so the menu and the lamp cannot disagree about
+  what is showing, and the last-showing panel's item dims itself because the command's own
+  `CanExecute` is what dims the button.
+- **Window** — resolved through `WorkspaceViewModel.EnumerateWindowEntries`, not through a second
+  enumeration written here. That method already answers this properly (shell, torn-off documents,
+  floating tools, standalone editors, other workspaces, each in its own band with the one dirty
+  bullet), and a second list is a list that disagrees with the first one the first time either
+  changes. `CrfWindowMenu` is the shared wrapper; a process with no workspace window in it falls
+  back to listing what is open by title rather than reporting nothing.
+
+**railRF is now in circuitRF's own Window menu too**, and it got there by implementing
+`ICrfMenuWindow` — which is the whole registration, and which that interface exists to make
+sufficient. It had been missing from that menu since it shipped, which is exactly the silence the
+interface was introduced to prevent.
+
+Three traps, all previously paid for elsewhere and all re-encountered here:
+
+- **An empty `ItemsSource` makes a `MenuItem` a LEAF.** `HasSubMenu` is reported from the item count,
+  so a Window menu that starts empty opens nothing and its `SubmenuOpened` — the thing that would
+  have filled it — can never fire. Seeded at construction as well as rebuilt on open.
+- **On macOS the in-window `Menu` is hidden, so `SubmenuOpened` never fires there at all.**
+  `NativeMenu.NeedsUpdate` is the counterpart, and it is the only refresh hook that runs on that
+  platform.
+- **A `NativeMenuItem`'s `Gesture` is FUNCTIONAL on macOS.** `Zoom to Fit` therefore carries none: a
+  bare `F` key equivalent is taken by the menu before any control sees it, including the
+  `InlineEditText` rows that make up half this window. `F` belongs to the board canvas, which already
+  answers it; the in-window item's `InputGesture` is display-only and cannot become a second handler.
+  The same fact is why **no File item carries a `Gesture` either** — ⌘O, ⌘S, ⇧⌘S and ⌘W are
+  `Window.KeyBindings`, in both the Ctrl and Meta spellings, and spelling them on the native menu as
+  well would arm one keystroke twice. That is harmonicaRF's and wBond's own shape.
+
+A fourth, from the File menu itself: **a menu item is dimmed by its Command's `CanExecute`, and a
+`RelayCommand` re-asks only when it is told to.** `Report…`, `Export…` and `Compare…` are gated on
+`CanExport`, which is a plain property notification — enough for the toolbar buttons, which carry
+`IsEnabled="{Binding CanExport}"` and re-read it themselves, and not enough for a menu item, which
+would have stayed at whatever it was at construction. `RefreshExportCommands` is called from the one
+place `CanExport` is announced.
+
+### 3. The title did not name a file, and said nothing about where it was
+
+`railRF — evk_1v8` names a document; `evk_1v8.crail` names a FILE, which is what a user opens, saves,
+sends and puts under revision control. The extension is APPENDED to the document's own `Name` rather
+than taken from the path, so the name in the file still wins and is never doubled onto one that
+already carries it.
+
+The path is the half a file name cannot say — on a machine with this board in three places it is the
+whole question — so it is the title's tooltip, and right-clicking the title reveals the file through
+the shared `FileReveal` (Finder / Explorer / File Manager, one spelling of that decision). A window
+that has never been saved says so rather than offering a dead item.
+
+Then, on the owner's follow-up: **the in-window text is the file name ALONE**. `railRF — ` stays on
+the OS title bar, where the window is one row among every window on the machine; inside the window it
+is a word already read, over content that could not be anything else. Two properties, `Title` and
+`DocumentLabel`, both carrying the dirty bullet.
+
+### 4. The readouts could take most of the results column and could not be put away
+
+The DC and frequency readouts are a stack of text cards under the plot, and on a tall column they
+take more of it than the one picture in that panel. A toggle in the results strip, behind a rule
+because it is a different kind of control from the two answer tabs beside it.
+
+**It is not a fifth panel**, and that is why it has no `CanExecute` gate: it divides the results
+COLUMN rather than the window, so it can never reach the state the four panel toggles are defended
+against, and gating it anyway would refuse the one press the request is about — the results panel
+alone, given over entirely to the curve. It is document state like the four, for the same reason, and
+absent from the `.crail` still means shown.
+
+**The ceiling is the load-bearing half.** `CapResultsPlot` exists because an `AspectRatioPanel` in an
+`Auto` row is offered an infinite height, so the cap is the only thing holding the plot; hiding the
+cards with the old cap still in force would free the space and leave the plot exactly as it was. The
+hidden-text share is 0.88 rather than 1.0 — the remainder is the pane's own padding and the header
+row with the tab strip in it, and a ceiling of the full height would let the panel measure taller
+than the space actually under that header and clip its own lower edge, which is the failure the cap
+was written for in the first place.
+
+### 5. In dark mode the plot, its markers and their info boxes were drawn in the light palette
+
+The window took the Match Designer's `Bind` and its marker overlay and its `SyncPlotContainers` — and
+not its `SyncPlotTheme`. Nothing ever told the `PlotControl` which theme variant was in force, so it
+kept `RenderTheme.Light`, its default, against a dark panel.
+
+**Both halves are set, because they reach different pixels.** `PlotControl.PlotTheme` is what the
+control draws the axes, the grid, the labels and the markers with; `DataDisplayViewModel.Theme` is
+what repaints the marker info boxes (they resolve it through a `Func<RenderTheme>` pointing at it).
+Setting only the first leaves the boxes light; setting only the second leaves the plot light.
+
+The palette is the Data Display's own and no railRF invention, on the owner's instruction: the plot
+here IS a `PlotControl` fed from a `DataSet`, so a reader who knows the Data Display should recognise
+it, and the variant is chosen exactly as `DisplayWindowViewModel.UpdateThemeFromSystem` chooses it.
+Applied on `ActualThemeVariantChanged` AND once when the view model arrives — a window opened in dark
+mode never raises the change event.
+
+Gates: `tests/Ui.Tests/RailRf/RailWindowChromeTests.cs`, beside `RailPaneToggleTests.cs`.
+
+## railRF — markers are kept in the `.crail` (2026-09-19)
+
+A marker on the results plot is a READING somebody took: the frequency they wanted, and what the
+impedance is there. It is the thing a user comes to this window for. The document said nothing about
+markers at all, so every one of them was gone the moment the window closed.
+
+### What is stored, and why it is not a trace reference
+
+`RailSpec.Markers`, per rail — the plot shows one rail at a time and its curves are that rail's
+observation ports, so a document-wide list would carry a reading from one rail onto another's
+picture and label it with the other's numbers.
+
+Each marker names **the reading and the port**, never a trace: every trace on that plot is rebuilt
+from the sweep on each re-solve, which is every committed edit, so a marker pinned to a trace object
+would be pinned to something that does not survive a keystroke. That pair is exactly
+`RailRfViewModel.CurveKey`, which `RebuildImpedancePlot` already matches curves across a rebuild
+with — one identity, not two.
+
+Two details that look odd and are the live model's own:
+
+- **The frequency is the marker's `PositionStatic.X`, not its `Freq`.** On a CUBE-BOUND trace — which
+  every curve here is (`Trace.IsCubeXMarker`) — the position is `PositionStatic` = (cube X, curve
+  index) and `Freq` stays 0; that is what `PlotControl.TryAddMarkerNearPoint` writes and what the
+  renderer resolves from. Storing `Freq` would have stored zero for every marker.
+- **The info-box position is nullable, and never a NaN.** The Data Display spells "never placed" as
+  `NaN`, which `System.Text.Json` refuses to write — the `.cdd` side already carries a note about a
+  mid-rebuild serialization throwing on exactly that. Absent is what this format says instead, and
+  the display then places the box where it would place a new one. Writing 0,0 would have pinned every
+  reopened box to the corner.
+
+`MarkerKind` is NOT stored: it is derived from the trace on restore (`IsFamily`), because a stored
+value could disagree with the curve it was restored onto.
+
+### Both halves are per CURVE, and that is the part that would have lost work
+
+**Restore** runs off the tail of `RebuildImpedancePlot`, once per curve — the first rebuild in which
+that curve exists. After that the live `Marker` objects are what the user is working with and
+`Carry` moves them across each re-solve as OBJECTS (its own note says why: a marker rebuilt as an
+equal-but-different object loses its selection, its box position and its m-number).
+
+**Capture** rebuilds the list from the curves that have been restored, and **keeps verbatim every
+saved marker whose curve has not**. The accurate curve exists only after `Accuracy` has been pressed,
+so a capture that spoke for the whole document would delete every marker on the reading that is not
+currently drawn — silently, on the next redraw. One flag for the plot had the mirror-image bug:
+the first rebuild would set it, and the accurate curve's markers would never be restored at all.
+A `HashSet` of curve keys is what makes the two symmetric, and it also makes a capture that lands
+mid-rebuild (no curves for an instant) a no-op by construction rather than by timing.
+
+### Moving a marker marks the document
+
+Owner's instruction, and it is why the capture hangs off `DataDisplayViewModel.ContentChanged` rather
+than running at save time. That is the same channel a `.cdd` document's own dirty check runs off, so
+the marker drag, the INFO-BOX drag, the rename in the marker editor and the box's close all reach it.
+A hand-maintained list of marker events is a list that misses one, and each miss is work lost with no
+bullet on the title to say so.
+
+It compares before it writes, because `ContentChanged` is a broad channel — a pan, a redraw, a
+selection — and a write on every one of them would re-serialize the document for a frame that changed
+nothing. `IsDirty` here is a byte comparison of the serialized document, so no write means no mark.
+
+The list is ordered by reading, port, number and frequency on the way out, so a document saved twice
+with no edit between is the same bytes.
+
+Gate: `tests/Ui.Tests/RailRf/PdnImpedanceTests.cs` — the round trip through the file, the drag that
+marks the document, and the accurate-curve marker that survives a fast-only run.

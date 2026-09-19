@@ -58,6 +58,8 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(DocumentPath));
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(DocumentLabel));
+        OnPropertyChanged(nameof(DocumentPathTip));
     }
 
     /// <summary>Re-reads the dirty mark. Called from the edit funnel, not from each edit.</summary>
@@ -65,6 +67,7 @@ public sealed partial class RailRfViewModel
     {
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(DocumentLabel));
     }
 
     /// <summary>The document the window opened on, before anything was edited.</summary>

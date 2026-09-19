@@ -1335,6 +1335,53 @@ A fifth was added on 2026-09-19, at the owner's request:
    closing the document). Until this, every edit the window made — the rail set, the sources and
    loads, the targets, the four settings, the class overrides — lived only as long as the window did.
 
+A sixth followed on the same day, from a pass over the window:
+
+6. **It has a menu bar, of three menus.** **File** is the toolbar in the toolbar's order — `Open…`,
+   `Save`, `Save as…`, `Import Board…`, `Report…`, `Export…`, `Compare…`, `Close` — and it is a second
+   *route*, never a second implementation: each item binds a command whose hook calls the method that
+   button's own `Click` already calls, so there is one Open, one Export and one Compare. `Report…`,
+   `Export…` and `Compare…` dim until something has been solved, which a menu item needs told
+   (`CanExecute` is re-asked where `CanExport` is announced) where a button re-reads the property for
+   itself. **View** carries `Zoom to Fit` and a checkbox for each of the four panels plus the results
+   readouts — every one of them the same command its toolbar lamp runs, never a second copy of the
+   state. **Window** lists every open circuitRF window, selectable to bring it to the front, resolved
+   through the workspace's own enumeration so there is one ordering rule rather than two; railRF
+   appears in *circuitRF's* Window menu for the same reason, by implementing `ICrfMenuWindow`. That
+   pairing is the point: a railRF window is shown UNOWNED so it can go behind the workspace, which is
+   correct and is also how a window gets lost. Both surfaces are hand-mirrored (the macOS `NativeMenu`
+   and the in-window `Menu`), as every other menu bar in this application is — and **the four
+   keystrokes (⌘O, ⌘S, ⇧⌘S, ⌘W) live in `Window.KeyBindings` only**: a `NativeMenuItem`'s `Gesture` is
+   *functional* on macOS, so spelling one there as well would arm the same keystroke twice, while the
+   in-window `InputGesture` is display-only and cannot.
+
+   Three smaller things came with it. **The title names a FILE** — `evk_1v8.crail`, extension and all
+   — with the full path on its tooltip and a *Reveal in Finder / Explorer* on its context menu, through
+   the one shared `FileReveal`; the text drawn in the window is the file name alone, while the OS title
+   bar keeps `railRF — `. **The aggressor rows are settable**: name, frequency and harmonic count are
+   `InlineEditText` like every other value in the specification column, where the row had been one
+   read-only summary line and `+` therefore made a row nobody could name or tune. And **the results
+   readouts have their own toggle** in the results strip, behind a rule: off, the text cards go and the
+   plot's height ceiling lifts to take the space, which is the whole of what that control buys.
+
+   **And the markers on the results plot are kept in the `.crail`** (`RailSpec.Markers`). A marker is
+   a reading somebody took — the thing they came to the window for — and the document said nothing
+   about markers at all, so every one was gone when the window closed. Each is stored by what a curve
+   IS, the READING and the PORT, which is the same key the window already carries a user's edits
+   across a re-solve with: every trace on that plot is rebuilt from the sweep on each committed edit,
+   so a marker pinned to a trace object would be pinned to something that does not survive a
+   keystroke. Restore and capture are both **per curve**, because the accurate reading's curve exists
+   only after `Accuracy` has been pressed — a capture that rebuilt the list from what is drawn would
+   quietly delete the markers of the reading that is not on screen. **Moving a marker, or its info
+   box, marks the document**: the capture runs off `DataDisplayViewModel.ContentChanged`, the same
+   channel a `.cdd`'s own dirty check runs off, so a drag, a rename and a close are all seen.
+
+   **And the results plot follows the light/dark variant.** It is a real Data Display `PlotControl`, so
+   it wears the Data Display's own palette — `RenderTheme.Light` / `RenderTheme.Dark`, chosen exactly as
+   a Data Display document chooses it. Both halves are set: the control's own `PlotTheme` draws the
+   axes, grid, labels and markers, and the host's `Theme` repaints the marker info boxes. Neither was
+   set at all before, so in dark mode all of it was drawn in the light palette.
+
 ## 11.4 Where it opens from
 
 From the Tools menu for a new document, and by double-clicking a railRF document in the project tree. A

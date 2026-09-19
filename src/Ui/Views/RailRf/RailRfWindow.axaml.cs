@@ -93,14 +93,29 @@ public partial class RailRfWindow : Window
             vm.PostToUi = a => Dispatcher.UIThread.Post(a);
             vm.RunOffThread = (work, token) => System.Threading.Tasks.Task.Run(work, token);
             InstallSaveHook(vm);
+            InstallMenuHooks(vm);
 
             SyncTabs();
             SyncPanes();
             BindBoardOverlay(vm);
             BindImpedancePlot(vm);
             BindBoardRulerUnits();
+            SyncPlotTheme();
             vm.PropertyChanged += OnVmPropertyChanged;
         };
+
+        // ── The menu bar ──────────────────────────────────────────────────────────────────
+        // SEEDED HERE as well as rebuilt on open. An Avalonia MenuItem reports HasSubMenu from its
+        // item COUNT, so a Window menu that starts empty is a LEAF: clicking it opens nothing and
+        // SubmenuOpened — the thing that would have filled it — can never fire. That is a
+        // self-latching dead menu, and WorkspaceWindow shipped it once already.
+        RebuildWindowMenu();
+        Opened    += (_, _) => { EnsureWindowNativeItem(); RebuildWindowMenu(); };
+        Activated += (_, _) => RebuildWindowMenu();
+
+        // A theme change is a different event from a theme VARIANT change, and this window paints
+        // its plot from the variant — see SyncPlotTheme.
+        ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
     }
 
     // ── The results plot ─────────────────────────────────────────────────────────────
@@ -541,6 +556,11 @@ public partial class RailRfWindow : Window
                                 or nameof(RailRfViewModel.ShowResults))
             SyncPanes();
 
+        // The readouts toggle changes the plot's CEILING, which is a code-behind number rather than
+        // a binding — see CapResultsPlot. Nothing about the columns moves, so SyncPanes is not it.
+        else if (e.PropertyName is nameof(RailRfViewModel.ShowResultText))
+            CapResultsPlot();
+
         // A new board is a new LayoutEditorViewModel — and with it a new resolution and a new unit
         // for the rulers to label in.
         else if (e.PropertyName is nameof(RailRfViewModel.BoardLayout))
@@ -601,6 +621,22 @@ public partial class RailRfWindow : Window
     private const double ResultsPlotHeightShare = 0.45;
 
     /// <summary>
+    /// The share it may take with the readouts hidden (owner, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>Not 1.0, and the remainder is not slack.</b> The pane's own bounds include its padding and
+    /// the header row with the tab strip in it; a ceiling of the full height would let the panel
+    /// measure taller than the space actually under that header and clip its own lower edge, which
+    /// is the exact failure the cap was written for in the first place. What is left over is those
+    /// two, measured on the shipping window.
+    ///
+    /// <para>It is still a CEILING: an <c>AspectRatioPanel</c> takes the height its WIDTH divides
+    /// to, so on a narrow column the plot is smaller than this and nothing sits under it. That is
+    /// the same letterboxing it does in any bounded row.</para>
+    /// </remarks>
+    private const double ResultsPlotHeightShareTextHidden = 0.88;
+
+    /// <summary>
     /// Keeps the results plot from growing taller than the pane that has to show it AND the cards
     /// under it.
     /// </summary>
@@ -622,7 +658,14 @@ public partial class RailRfWindow : Window
         double pane = ResultsPane.Bounds.Height;
         if (pane <= 0) return;
 
-        double cap = pane * ResultsPlotHeightShare;
+        // WITH THE READOUTS OFF THE CEILING LIFTS, which is the whole of what that toggle buys: the
+        // cards' own row collapses to nothing and the plot is the only thing left to fill the pane.
+        // Re-run on the toggle as well as on a resize — see OnVmPropertyChanged.
+        double share = Vm?.ShowResultText == false
+            ? ResultsPlotHeightShareTextHidden
+            : ResultsPlotHeightShare;
+
+        double cap = pane * share;
         if (Math.Abs(ImpedancePlotHost.MaxHeight - cap) > 0.5) ImpedancePlotHost.MaxHeight = cap;
     }
 

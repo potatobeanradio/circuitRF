@@ -49,6 +49,90 @@
          rest without being text fields, and a Backspace landing on one would remove a marker the
          user was not looking at. A TextBox that has focus handles Delete itself, so typing is
          unaffected. -->
+    <!-- ── Surface 1: the macOS menu bar, hand-mirrored with the in-window Menu below ──────────
+         Attached to THIS WINDOW rather than to the application, because NativeMenu.Menu is a
+         per-AvaloniaObject attached property and Avalonia does not fall back to an application-scope
+         menu for a key window that has none — a railRF window with no menu of its own shows a bare
+         app menu on macOS, which is the state this window was in.
+
+         The INSTANCE is fixed for the window's lifetime (src/Ui/CLAUDE.md's own invariant): the
+         Window menu's contents are rebuilt by clearing and refilling ITS Items, never by setting a
+         second NativeMenu here. -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <!-- FILE IS THE TOOLBAR, IN ITS ORDER, and every item binds the command whose hook calls
+                 the button's own method (RailRfWindow.InstallMenuHooks). It is a second ROUTE to
+                 those operations and never a second implementation.
+
+                 NO Gesture on Save/Save as…/Open/Close, deliberately: a NativeMenuItem's Gesture is
+                 functional on macOS and Window.KeyBindings already binds ⌘S / ⇧⌘S / ⌘O / ⌘W there,
+                 so spelling them here as well would arm the same keystroke twice. harmonicaRF's and
+                 wBond's own File menus take the same shape for the same reason; the in-window items'
+                 InputGesture is display-only and cannot. -->
+            <NativeMenuItem Header="File">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Open…"         Command="{Binding OpenDocumentCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Save"          Command="{Binding SaveCommand}"/>
+                        <NativeMenuItem Header="Save As…"      Command="{Binding SaveAsCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Import Board…" Command="{Binding ImportBoardCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Report…"       Command="{Binding ReportCommand}"/>
+                        <NativeMenuItem Header="Export…"       Command="{Binding ExportCommand}"/>
+                        <NativeMenuItem Header="Compare…"      Command="{Binding CompareCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Close"         Command="{Binding CloseCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <NativeMenuItem Header="View">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <!-- NO Gesture, deliberately. A NativeMenuItem's Gesture is FUNCTIONAL on
+                             macOS, and a bare "F" key equivalent is taken by the menu before any
+                             control sees it — including the InlineEditText rows that make up half
+                             this window. F belongs to the board canvas, which already answers it;
+                             the in-window item's InputGesture is display-only for the same reason. -->
+                        <NativeMenuItem Header="Zoom to Fit" Command="{Binding ZoomToFitCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <!-- MODE=ONEWAY, and it is not decoration. A checkbox item that wrote BACK
+                             would toggle the property itself and the Command would then toggle it a
+                             second time — a menu item that does nothing, silently. The tick is a
+                             READING of the view model; the Command is the only writer. -->
+                        <NativeMenuItem Header="Specification" ToggleType="CheckBox"
+                                        IsChecked="{Binding ShowSpecification, Mode=OneWay}"
+                                        Command="{Binding ToggleSpecificationCommand}"/>
+                        <NativeMenuItem Header="Board" ToggleType="CheckBox"
+                                        IsChecked="{Binding ShowBoard, Mode=OneWay}"
+                                        Command="{Binding ToggleBoardCommand}"/>
+                        <NativeMenuItem Header="Parts" ToggleType="CheckBox"
+                                        IsChecked="{Binding ShowParts, Mode=OneWay}"
+                                        Command="{Binding TogglePartsCommand}"/>
+                        <NativeMenuItem Header="Results" ToggleType="CheckBox"
+                                        IsChecked="{Binding ShowResults, Mode=OneWay}"
+                                        Command="{Binding ToggleResultsCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Results Readouts" ToggleType="CheckBox"
+                                        IsChecked="{Binding ShowResultText, Mode=OneWay}"
+                                        Command="{Binding ToggleResultTextCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Populated in the code-behind (RebuildWindowMenu), off the same enumeration the
+                 in-window surface uses — NativeMenu has no ItemsSource, which is why WorkspaceWindow
+                 builds its own Window menu there too. Its NeedsUpdate is the macOS counterpart of
+                 SubmenuOpened, and it is the only hook that fires here: the in-window Menu is hidden
+                 on macOS, so its SubmenuOpened never runs at all. -->
+            <NativeMenuItem Header="Window">
+                <NativeMenuItem.Menu><NativeMenu/></NativeMenuItem.Menu>
+            </NativeMenuItem>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
     <Window.KeyBindings>
         <KeyBinding Gesture="Delete" Command="{Binding DeleteSelectedMarkersCommand}"/>
         <!-- Save, on both spellings, as every other gesture in this application is bound. The
@@ -61,6 +145,13 @@
         <KeyBinding Gesture="Meta+S"       Command="{Binding SaveCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SaveAsCommand}"/>
         <KeyBinding Gesture="Meta+Shift+S" Command="{Binding SaveAsCommand}"/>
+        <!-- The File menu's other two keystrokes, bound HERE and only displayed there — one
+             keystroke to one handler, on both platforms. Close goes through OnClosing, so ⌘W asks
+             about unsaved work exactly as the window's own close button does. -->
+        <KeyBinding Gesture="Ctrl+O"       Command="{Binding OpenDocumentCommand}"/>
+        <KeyBinding Gesture="Meta+O"       Command="{Binding OpenDocumentCommand}"/>
+        <KeyBinding Gesture="Ctrl+W"       Command="{Binding CloseCommand}"/>
+        <KeyBinding Gesture="Meta+W"       Command="{Binding CloseCommand}"/>
     </Window.KeyBindings>
 
     <Window.Styles>
@@ -319,10 +410,119 @@
 
     <Grid RowDefinitions="Auto,*,Auto,Auto">
 
-        <!-- ── Title bar ─────────────────────────────────────────────────── -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,6">
-            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
+        <!-- ── Menu bar and title bar ────────────────────────────────────────
+             THE TWO SHARE ROW 0 rather than the menu taking a row of its own, so nothing else in
+             this window has to be renumbered and the marker-info overlay's RowSpan still covers
+             everything. -->
+        <StackPanel Grid.Row="0">
+
+        <!-- ── railRF's OWN MENU BAR (owner, 2026-09-19) ────────────────────────────────────────
+             This window had NO menu at all. Two things followed from that and both were reported:
+             there was no Zoom to Fit anywhere but the board panel's own toolbar — which is hidden
+             with that panel — and there was no way back to the circuitRF windows this one was
+             opened from, because railRF is shown UNOWNED so it can go behind them.
+
+             TWO SURFACES, HAND-MIRRORED, exactly as WorkspaceWindow, HarmonicaMenuView and
+             WBondMenuView already maintain theirs: the macOS NativeMenu attached to this Window
+             (below), and this in-window Menu, which macOS hides because the native bar carries it.
+             Anything added here must go on BOTH, or it exists on one platform only.
+
+             THREE MENUS. File is a second ROUTE to the toolbar below it — every item binds the
+             command whose hook calls that button's own method, so there is one implementation of
+             Open, of Export and of Compare, not two. View and Window are what had no home at all:
+             Zoom to Fit lived only on the board panel's toolbar, which goes with that panel, and
+             nothing anywhere led back to the circuitRF windows this one was opened from. -->
+        <Menu Name="RailMenuBar" IsVisible="{OnPlatform True, macOS=False}">
+            <MenuItem Header="_File" Padding="8,4">
+                <!-- InputGesture is DISPLAY ONLY (Window.KeyBindings is what actually binds these),
+                     which is what keeps one keystroke to one handler — see the native surface's note. -->
+                <MenuItem Header="_Open…" Command="{Binding OpenDocumentCommand}"
+                          InputGesture="Ctrl+O"
+                          ToolTip.Tip="A .crail, or a .clay layout from any workspace. The layout's own technology reference is what supplies the stackup."/>
+                <Separator/>
+                <MenuItem Header="_Save" Command="{Binding SaveCommand}" InputGesture="Ctrl+S"/>
+                <MenuItem Header="Save _As…" Command="{Binding SaveAsCommand}" InputGesture="Ctrl+Shift+S"/>
+                <Separator/>
+                <MenuItem Header="_Import Board…" Command="{Binding ImportBoardCommand}"
+                          ToolTip.Tip="The artwork, and the placement, BOM and netlist that go with it."/>
+                <Separator/>
+                <MenuItem Header="_Report…" Command="{Binding ReportCommand}"
+                          ToolTip.Tip="The drop, the breakdown, the via flags and what they were computed at, as a page drawn by the same renderers the window draws with."/>
+                <MenuItem Header="_Export…" Command="{Binding ExportCommand}"
+                          ToolTip.Tip="CSV, .npy, .mat, .txt, or the report page as SVG or PDF — the extension picks the format, exactly as circuitrf rail -o does."/>
+                <MenuItem Header="_Compare…" Command="{Binding CompareCommand}"
+                          ToolTip.Tip="This design against another .crail — the one that is known to work."/>
+                <Separator/>
+                <MenuItem Header="_Close" Command="{Binding CloseCommand}" InputGesture="Ctrl+W"/>
+            </MenuItem>
+
+            <MenuItem Header="_View" Padding="8,4">
+                <!-- InputGesture is DISPLAY ONLY in Avalonia (HotKey is the functional one), which
+                     is exactly what is wanted: F is the board canvas's own key and this label must
+                     not become a second handler for it. -->
+                <MenuItem Header="Zoom to _Fit" Command="{Binding ZoomToFitCommand}"
+                          InputGesture="F"
+                          ToolTip.Tip="Frame the whole board. The same gesture the board panel's own button and its F key run — here as well because that toolbar goes with the panel."/>
+                <Separator/>
+                <!-- THE SAME FIVE COMMANDS THE TOOLBAR LAMPS RUN, never a second copy of the
+                     state. Each is a CheckBox against the property its button lights from, so the
+                     menu and the lamp cannot disagree; the last showing panel's item dims itself,
+                     because the Command's own CanExecute is what dims the button. -->
+                <!-- MODE=ONEWAY — see the native surface's note: the tick READS the view model and
+                     the Command is the only writer, so a click cannot toggle it twice. -->
+                <MenuItem Header="_Specification" ToggleType="CheckBox"
+                          IsChecked="{Binding ShowSpecification, Mode=OneWay}"
+                          Command="{Binding ToggleSpecificationCommand}"/>
+                <MenuItem Header="_Board" ToggleType="CheckBox"
+                          IsChecked="{Binding ShowBoard, Mode=OneWay}"
+                          Command="{Binding ToggleBoardCommand}"/>
+                <MenuItem Header="_Parts" ToggleType="CheckBox"
+                          IsChecked="{Binding ShowParts, Mode=OneWay}"
+                          Command="{Binding TogglePartsCommand}"/>
+                <MenuItem Header="_Results" ToggleType="CheckBox"
+                          IsChecked="{Binding ShowResults, Mode=OneWay}"
+                          Command="{Binding ToggleResultsCommand}"/>
+                <Separator/>
+                <MenuItem Header="Results _Readouts" ToggleType="CheckBox"
+                          IsChecked="{Binding ShowResultText, Mode=OneWay}"
+                          Command="{Binding ToggleResultTextCommand}"
+                          ToolTip.Tip="The text cards under the results plot. Off, the plot takes the height they were using."/>
+            </MenuItem>
+
+            <!-- Every open circuitRF window, selectable to bring it to the front. Contents are
+                 rebuilt just before either surface opens — window lifetime and dirty state both
+                 change constantly, and the menu is only ever read at the moment it is shown. It is
+                 SEEDED at construction as well, because an Avalonia MenuItem reports HasSubMenu
+                 from its item count: an empty ItemsSource makes this a leaf, and SubmenuOpened then
+                 never fires at all. That is a self-latching dead menu and WorkspaceWindow already
+                 shipped it once. -->
+            <MenuItem Name="WindowMenuItem" Header="_Window" Padding="8,4"
+                      SubmenuOpened="OnWindowMenuOpened"/>
+        </Menu>
+
+        <Grid ColumnDefinitions="*,Auto" Margin="8,6">
+            <!-- ── THE FILE NAME, ITS PATH AND A WAY TO GO THERE (owner, 2026-09-19) ────────────
+                 The title carries the extension, so what is on screen is the name of a FILE. Its
+                 tooltip is the full path, which is the half a title cannot say — on a machine with
+                 this board in three places, which copy is the whole question. And right-clicking it
+                 reveals that file in the platform's own file manager, which is the same item,
+                 spelled by the same platform test, that the project tree and the document tabs
+                 already carry (FileReveal).
+
+                 THE FILE NAME AND NOTHING ELSE (owner, 2026-09-19). "railRF —" stays on the OS
+                 title bar, where the window is one row among every window on the machine; in the
+                 window it is a word already read, over content that could not be anything else.
+                 DocumentLabel is that half; Title, on the Window above, is still the full one. -->
+            <TextBlock Name="TitleText" Text="{Binding DocumentLabel}" FontSize="14" FontWeight="SemiBold"
+                       VerticalAlignment="Center" HorizontalAlignment="Left"
+                       ToolTip.Tip="{Binding DocumentPathTip}">
+                <TextBlock.ContextMenu>
+                    <!-- ONE ContextMenu instance, filled on Opening — the shape the board canvas
+                         below already uses, and for the same reason: a ContextMenu is a popup with
+                         its own visual root, so items built fresh per right-click stack up. -->
+                    <ContextMenu Name="TitleContextMenu" Opening="OnTitleContextMenuOpening"/>
+                </TextBlock.ContextMenu>
+            </TextBlock>
             <!-- Icons, not words — the schematic editor's toolbar shape, which the Match Designer
                  already took: a bare MaterialIcon at 16 px in a Padding="6,3" button, with the word
                  that would have been on the face moved into ToolTip.Tip.
@@ -496,6 +696,8 @@
                 </Button>
             </StackPanel>
         </Grid>
+
+        </StackPanel>
 
         <!-- ── The three columns (§11.3) ──────────────────────────────────── -->
         <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="300,*,340">
@@ -746,7 +948,7 @@
                                                 ToolTip.Tip="Add every crystal and converter the BOM reader recognised. Each row says it came from the BOM — a pre-filled frequency nobody checked is exactly the one that will be wrong."/>
                                         <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,2,2"
                                                 Command="{Binding AddAggressorCommand}"
-                                                ToolTip.Tip="Add an aggressor line by hand">
+                                                ToolTip.Tip="Add an aggressor line by hand. The new row states nothing — double-click its name, its frequency or its harmonic count and type.">
                                             <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
                                         </Button>
                                         <Button Grid.Column="3" Classes="rowbtn" Margin="0,0,0,2"
@@ -761,13 +963,33 @@
                                              SelectedItem="{Binding SelectedAggressor, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailAggressorRowViewModel">
-                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
-                                                    <TextBlock Classes="lbl" Text="{Binding Summary}"/>
+                                                <!-- ── EVERY VALUE ON THIS ROW IS SETTABLE (owner, 2026-09-19)
+                                                     It was one TextBlock bound to Summary, so "+" made a row
+                                                     nobody could name or tune: the view model had Name,
+                                                     FrequencyEntry and Harmonics and nothing on screen reached
+                                                     any of them, and a double-click on a TextBlock opens no
+                                                     editor. Same control and same contract as the source and
+                                                     load rows above — InlineEditText, which is a TextBlock at
+                                                     rest and a TextBox once double-clicked, and whose refused
+                                                     value snaps back because the row notifies either way. -->
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,1">
+                                                    <ctl:InlineEditText Classes="val" MinWidth="40"
+                                                                        HorizontalContentAlignment="Left"
+                                                                        Text="{Binding Name, Mode=TwoWay}"
+                                                                        Watermark="what it is"
+                                                                        ToolTip.Tip="What is doing the exciting — &quot;32 kHz xtal&quot;, &quot;converter&quot;. It names the row on the plot and in the coincidence list."/>
+                                                    <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="52"
+                                                                        Text="{Binding FrequencyEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="The fundamental. A frequency pre-filled from the BOM that nobody checked is exactly the one that will be wrong — so check it here."/>
+                                                    <ctl:InlineEditText Grid.Column="2" Classes="val" MinWidth="26"
+                                                                        Margin="3,0,0,0"
+                                                                        Text="{Binding HarmonicsEntry, Mode=TwoWay}"
+                                                                        ToolTip.Tip="How many harmonics to draw and check. 1 is the fundamental alone; a converter&apos;s fifth landing on a 3 dB peak is the sentence this list exists to produce."/>
                                                     <!-- WHERE IT CAME FROM, on the row's own face. -->
-                                                    <TextBlock Grid.Column="1" Classes="note" Margin="6,0,0,0"
+                                                    <TextBlock Grid.Column="3" Classes="note" Margin="6,0,0,0"
                                                                VerticalAlignment="Center"
                                                                Text="{Binding OriginText}"/>
-                                                    <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                    <TextBlock Grid.Column="4" Text="⚑" FontSize="11" Margin="3,0,0,0"
                                                                Foreground="{DynamicResource CrfWarningBrush}"
                                                                IsVisible="{Binding IsFlagged}"
                                                                ToolTip.Tip="{Binding Refusal}"/>
@@ -1082,6 +1304,29 @@
                                     ToolTip.Tip="Frequency — |Z| against the target, the anti-resonances and what the aggressors land on">
                                 <mi:MaterialIcon Kind="SineWave" Width="14" Height="14"/>
                             </Button>
+                            <!-- ── THE READOUTS TOGGLE (owner, 2026-09-19) ─────────────────────
+                                 The DC and frequency readouts under the plot can take a sizable
+                                 share of this column, and a reader studying the curve wants that
+                                 share back. Off, the plot's own ceiling is lifted and it takes the
+                                 height they were using — RailRfWindow.CapResultsPlot owns that
+                                 arithmetic, because a plot in an Auto row is offered an infinite
+                                 height and the cap is the only thing holding it.
+
+                                 SEPARATED BY A RULE from the two tabs beside it, because it is a
+                                 different kind of control: those pick WHICH answer, this one
+                                 changes how much of the panel the picture gets. Lit while the
+                                 readouts are showing, on Button.ToolActive's accent — the one lamp
+                                 this window uses everywhere. Not one of the four panel lamps: it
+                                 divides this column rather than the window, so it has no last-one-
+                                 showing rule and never dims. -->
+                            <Border Width="1" VerticalAlignment="Stretch" Margin="3,2"
+                                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+                            <Button Classes="tabbtn" Name="ResultTextButton"
+                                    Classes.ToolActive="{Binding ShowResultText}"
+                                    Command="{Binding ToggleResultTextCommand}"
+                                    ToolTip.Tip="Readouts — show or hide the text under the plot. Off, the plot takes the height they were using; every number is still there when they come back.">
+                                <mi:MaterialIcon Kind="CardTextOutline" Width="14" Height="14"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
 
@@ -1120,8 +1365,11 @@
                     </ctl:AspectRatioPanel>
 
                     <!-- A DOCKED LIST PANEL, not a modal sheet (§11.1) — so a user can click through
-                         rows and watch the map and the curve change. -->
-                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+                         rows and watch the map and the curve change. Hidden by the Readouts toggle
+                         above; hiding it collapses this star row to nothing, which is what lets the
+                         plot's raised ceiling actually be used. -->
+                    <ScrollViewer Grid.Row="2" IsVisible="{Binding ShowResultText}"
+                                  HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="0">
                             <!-- ── FIRST, and §9 is explicit about why ──────────────────────

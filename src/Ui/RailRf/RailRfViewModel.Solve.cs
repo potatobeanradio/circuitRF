@@ -125,6 +125,9 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ViaFlagSummary));
         OnPropertyChanged(nameof(HasBothModels));
         OnPropertyChanged(nameof(CanExport));
+        // The MENU items are dimmed by their commands' own CanExecute, which re-asks only when it is
+        // told to — see RefreshExportCommands. The toolbar buttons follow the notification above.
+        RefreshExportCommands();
         OnPropertyChanged(nameof(ExportBlockedReason));
         OnPropertyChanged(nameof(ExportResults));
         OnPropertyChanged(nameof(PortLines));

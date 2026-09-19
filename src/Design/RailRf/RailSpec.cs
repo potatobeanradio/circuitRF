@@ -110,6 +110,20 @@ public sealed class RailSpec
     public List<RailAggressor> Aggressors { get; } = [];
 
     /// <summary>
+    /// The markers a reader put on this rail's |Z| curve (owner, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>Per RAIL, not per document.</b> The plot shows one rail at a time, and its curves are that
+    /// rail's observation ports — a marker at 2.2 MHz on port 0 of the 1V8 rail says nothing about
+    /// port 0 of the 3V3 rail, so a document-wide list would carry a reading from one rail onto
+    /// another's picture and label it with the other's numbers.
+    ///
+    /// <para>It is a reading somebody took rather than anything the solve produces: nothing here is
+    /// an input to an extraction, a sweep or a report. See <see cref="RailMarker"/>.</para>
+    /// </remarks>
+    public List<RailMarker> Markers { get; } = [];
+
+    /// <summary>
     /// Every part on this rail — the decoupling bank and the bulk (§2.2, "The parts").
     ///
     /// <para><b>Not a second bill of materials.</b> What it carries that a BOM cannot is the

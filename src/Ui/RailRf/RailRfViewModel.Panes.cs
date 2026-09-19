@@ -1,4 +1,5 @@
-// Which of the window's four panels are on screen (owner, 2026-09-19).
+// Which of the window's four panels are on screen (owner, 2026-09-19) — and, beside them, whether
+// the results column draws its text cards, which is a division of ONE panel rather than a fifth.
 //
 // ── DOCUMENT STATE, ON THE OWNER'S OWN INSTRUCTION ────────────────────────────────────────────
 //
@@ -52,6 +53,29 @@ public sealed partial class RailRfViewModel
         get => _document.Panels.ShowResults;
         set => SetPanel(v => _document.Panels.ShowResults = v, ShowResults, value);
     }
+
+    /// <summary>
+    /// The text cards under the results plot (owner, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a fifth panel, and deliberately outside the "at least one is showing" rule.</b> It
+    /// divides the RESULTS COLUMN rather than the window: turning it off leaves that column showing
+    /// its plot, which is the thing the request is about — the drop and the frequency readouts can
+    /// take a sizable share of a column whose other half is the one picture in this window, and a
+    /// reader studying the curve wants that share back. So it has no <c>CanExecute</c> gate; there
+    /// is no state it can reach with nothing on screen.
+    ///
+    /// <para>Document state like the four beside it, for the same reason: the question is about a
+    /// BOARD — this curve, read this way — and not about a sitting.</para>
+    /// </remarks>
+    public bool ShowResultText
+    {
+        get => _document.Panels.ShowResultText;
+        set => SetPanel(v => _document.Panels.ShowResultText = v, ShowResultText, value);
+    }
+
+    [RelayCommand]
+    private void ToggleResultText() => ShowResultText = !ShowResultText;
 
     /// <summary>
     /// Whether the centre column is drawn at all — the board and the parts table SHARE it.
@@ -120,8 +144,9 @@ public sealed partial class RailRfViewModel
         if (current == value) return;
 
         // The invariant, defended at the WRITE as well as at the button — a caller that is not the
-        // button (a test, a future menu item) must not be able to empty the window either.
-        if (!value && ShownPanelCount <= 1) return;
+        // button (a test, a menu item) must not be able to empty the window either. It counts the
+        // FOUR PANELS only: the result text is inside one of them and hiding it empties nothing.
+        if (!value && name != nameof(ShowResultText) && ShownPanelCount <= 1) return;
 
         write(value);
         OnPropertyChanged(name);
@@ -148,6 +173,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ShowBoard));
         OnPropertyChanged(nameof(ShowParts));
         OnPropertyChanged(nameof(ShowResults));
+        OnPropertyChanged(nameof(ShowResultText));
         OnPropertyChanged(nameof(ShowBoardColumn));
         OnPropertyChanged(nameof(PartsFillsBoardColumn));
         RefreshPanelCommands();

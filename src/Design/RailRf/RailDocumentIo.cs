@@ -133,6 +133,7 @@ public static class RailDocumentIo
             ShowBoard         = d.Panels.ShowBoard,
             ShowParts         = d.Panels.ShowParts,
             ShowResults       = d.Panels.ShowResults,
+            ShowResultText    = d.Panels.ShowResultText,
         },
         Rails = d.Rails.Count > 0 ? [.. d.Rails.Select(ToFile)] : null,
         // Deterministic order, so a document saved twice with no edit in between is the same bytes
@@ -169,6 +170,7 @@ public static class RailDocumentIo
         Loads                  = r.Loads.Count      > 0 ? [.. r.Loads.Select(ToFile)]      : null,
         Aggressors             = r.Aggressors.Count > 0 ? [.. r.Aggressors.Select(ToFile)] : null,
         Parts                  = r.Parts.Count      > 0 ? [.. r.Parts.Select(ToFile)]      : null,
+        Markers                = r.Markers.Count    > 0 ? [.. r.Markers.Select(ToFile)]    : null,
     };
 
     private static CrailSource ToFile(RailSource s) => new()
@@ -196,6 +198,22 @@ public static class RailDocumentIo
         Pin    = NullIfEmpty(a.Pin),
         PointX = a.Point?.X,
         PointY = a.Point?.Y,
+    };
+
+    private static CrailMarker ToFile(RailMarker m) => new()
+    {
+        Model       = m.Model,
+        Port        = m.Port,
+        FrequencyHz = m.FrequencyHz,
+        CurveIndex  = m.CurveIndex,
+        Index       = m.Index,
+        Name        = NullIfEmpty(m.Name),
+        // NEVER a NaN. System.Text.Json refuses to write one, and a marker nobody has dragged has
+        // no box position at all — absent is what this format says for that, and the renderer then
+        // places it exactly where it would place a new one.
+        InfoBoxX    = double.IsFinite(m.InfoBoxX ?? double.NaN) ? m.InfoBoxX : null,
+        InfoBoxY    = double.IsFinite(m.InfoBoxY ?? double.NaN) ? m.InfoBoxY : null,
+        ShowInfoBox = m.ShowInfoBox,
     };
 
     private static CrailAggressor ToFile(RailAggressor a) => new()
@@ -254,6 +272,7 @@ public static class RailDocumentIo
                 ShowBoard         = f.Panels?.ShowBoard         ?? true,
                 ShowParts         = f.Panels?.ShowParts         ?? true,
                 ShowResults       = f.Panels?.ShowResults       ?? true,
+                ShowResultText    = f.Panels?.ShowResultText    ?? true,
             },
         };
 
@@ -292,6 +311,7 @@ public static class RailDocumentIo
         foreach (var l in r.Loads      ?? []) spec.Loads.Add(FromFile(l));
         foreach (var a in r.Aggressors ?? []) spec.Aggressors.Add(FromFile(a));
         foreach (var p in r.Parts      ?? []) spec.Parts.Add(FromFile(p));
+        foreach (var m in r.Markers    ?? []) spec.Markers.Add(FromFile(m));
         return spec;
     }
 
@@ -322,6 +342,17 @@ public static class RailDocumentIo
         // otherwise read back as (x, 0) — a point on the board, and a plausible one.
         Point  = a is { PointX: { } x, PointY: { } y } ? (x, y) : null,
     };
+
+    private static RailMarker FromFile(CrailMarker m) =>
+        new(m.Model, m.Port, m.FrequencyHz ?? 0)
+        {
+            CurveIndex  = m.CurveIndex ?? 0,
+            Index       = m.Index ?? 1,
+            Name        = m.Name ?? "",
+            InfoBoxX    = m.InfoBoxX,
+            InfoBoxY    = m.InfoBoxY,
+            ShowInfoBox = m.ShowInfoBox ?? true,
+        };
 
     private static RailAggressor FromFile(CrailAggressor a) =>
         new(a.Name ?? "", a.FrequencyHz ?? 0, a.Harmonics ?? 1) { Origin = a.Origin };
@@ -404,6 +435,7 @@ public static class RailDocumentIo
         public bool? ShowBoard         { get; set; }
         public bool? ShowParts         { get; set; }
         public bool? ShowResults       { get; set; }
+        public bool? ShowResultText    { get; set; }
     }
 
     private sealed class CrailSettings
@@ -430,6 +462,23 @@ public static class RailDocumentIo
         public List<CrailLoad>?       Loads                  { get; set; }
         public List<CrailAggressor>?  Aggressors             { get; set; }
         public List<CrailPart>?       Parts                  { get; set; }
+        public List<CrailMarker>?     Markers                { get; set; }
+    }
+
+    /// <summary>One marker on this rail's |Z| curve. <see cref="CrailMarker.InfoBoxX"/> and
+    /// <see cref="CrailMarker.InfoBoxY"/> are absent for a marker nobody has dragged — see
+    /// <see cref="RailMarker"/> for why that is not written as a NaN.</summary>
+    private sealed class CrailMarker
+    {
+        public PdnModelKind Model       { get; set; } = PdnModelKind.Fast;
+        public int          Port        { get; set; }
+        public double?      FrequencyHz { get; set; }
+        public int?         CurveIndex  { get; set; }
+        public int?         Index       { get; set; }
+        public string?      Name        { get; set; }
+        public double?      InfoBoxX    { get; set; }
+        public double?      InfoBoxY    { get; set; }
+        public bool?        ShowInfoBox { get; set; }
     }
 
     private sealed class CrailAnchor

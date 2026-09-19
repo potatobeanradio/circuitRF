@@ -692,6 +692,159 @@ public class PdnImpedanceTests(ITestOutputHelper output)
                         xaml, StringComparison.Ordinal);
     }
 
+    // ── Markers persist in the `.crail` (owner, 2026-09-19) ──────────────────
+
+    /// <summary>
+    /// A marker survives closing the document: it is written into the <c>.crail</c>, it comes back
+    /// on the same curve at the same frequency, and its info box comes back where it was dragged to.
+    /// </summary>
+    /// <remarks>
+    /// <b>A marker is a reading somebody took</b> — the thing they came to this window for — and the
+    /// document said nothing about markers at all, so every one of them was gone the moment the
+    /// window closed.
+    ///
+    /// <para><b>The trace it is restored onto is matched on <c>CurveKey</c></b>, the reading and the
+    /// port, which is the same key <c>RebuildImpedancePlot</c> already carries a user's edits across
+    /// a re-solve with. A marker pinned to a trace OBJECT would be pinned to something that does not
+    /// survive a keystroke: every trace here is rebuilt from the sweep on each committed edit.</para>
+    ///
+    /// <para><b>The marker is placed here the way <c>PlotControl.TryAddMarkerNearPoint</c> places
+    /// one on a cube-bound trace</b> — <c>PositionStatic</c> = (cube X, curve index), <c>Freq</c>
+    /// left at 0 — because there is no headless Avalonia host in this project to raise a real
+    /// double-click on. That is the same reason the double-click rule above is gated by a source
+    /// scan.</para>
+    /// </remarks>
+    [Fact]
+    public void AMarkerIsWrittenIntoTheCrail_AndComesBackOnItsOwnCurveAtItsOwnFrequency()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var curve = vm.ImpedancePlot.Traces.Single(t => t.CubeName == "Z");
+        PlaceMarker(curve, index: 3, hz: 2.5e6, boxX: 140.5, boxY: 62.25);
+        vm.CaptureMarkers();
+
+        var saved = Assert.Single(vm.Document.Rails[0].Markers);
+        Assert.Equal(PdnModelKind.Fast, saved.Model);
+        Assert.Equal(0, saved.Port);
+        Assert.Equal(2.5e6, saved.FrequencyHz, 0);
+        Assert.Equal(3, saved.Index);
+        Assert.Equal(140.5, saved.InfoBoxX!.Value, 3);
+        Assert.Equal(62.25, saved.InfoBoxY!.Value, 3);
+
+        // Through the file, and back into a window that has never seen it.
+        string json = RailDocumentIo.Serialize(vm.Document);
+        Assert.Contains("\"Markers\"", json);
+
+        var reopened = Window(RailDocumentIo.Deserialize(json));
+        reopened.RunCommand.Execute(null);
+
+        var restored = Assert.Single(
+            reopened.ImpedancePlot.Traces.Single(t => t.CubeName == "Z").Markers);
+        Assert.Equal(2.5e6, restored.PositionStatic.X, 0);
+        Assert.Equal(3, restored.Index);
+        Assert.Equal(140.5, restored.InfoBoxPos.X, 3);
+        Assert.Equal(62.25, restored.InfoBoxPos.Y, 3);
+
+        // A document with no markers still says nothing about them, so an untouched `.crail` is the
+        // bytes it was.
+        Assert.DoesNotContain("\"Markers\"", RailDocumentIo.Serialize(Window().Document));
+    }
+
+    /// <summary>
+    /// Moving a marker — or its info box — marks the document, which is what puts the bullet on the
+    /// title and makes closing the window ask.
+    /// </summary>
+    /// <remarks>
+    /// <b>The owner's own instruction.</b> It works because the capture runs off
+    /// <c>DataDisplayViewModel.ContentChanged</c>, the same channel a <c>.cdd</c> document's own
+    /// dirty check runs off — so the info-box drag and the marker editor's rename are seen as well
+    /// as the add and the move. A hand-maintained list of marker events would be a list that misses
+    /// one.
+    /// </remarks>
+    [Fact]
+    public void MovingAMarkerMarksTheDocumentAsUnsaved()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var curve = vm.ImpedancePlot.Traces.Single(t => t.CubeName == "Z");
+        var marker = PlaceMarker(curve, index: 1, hz: 1.0e6, boxX: 10, boxY: 10);
+        vm.CaptureMarkers();
+
+        // Pretend it has just been saved: what is on screen is what is on disk.
+        vm.NoteSaved("/boards/evk/evk.crail");
+        Assert.False(vm.IsDirty);
+
+        // Drag the marker along the curve.
+        marker.PositionStatic = new Vector2(4.0e6f, 0f);
+        vm.CaptureMarkers();
+        Assert.True(vm.IsDirty);
+        Assert.Equal(4.0e6, vm.Document.Rails[0].Markers[0].FrequencyHz, 0);
+
+        // And dragging only the BOX is an edit too — it is what the reader arranged.
+        vm.NoteSaved("/boards/evk/evk.crail");
+        marker.InfoBoxPos = new PlotPoint(200, 90);
+        vm.CaptureMarkers();
+        Assert.True(vm.IsDirty);
+    }
+
+    /// <summary>
+    /// A marker on the ACCURATE curve is not deleted while only the fast one is drawn, and it is
+    /// put back the moment that curve exists.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the failure that would have lost work silently.</b> The accurate reading exists
+    /// only after Accuracy has been pressed, so a capture that rebuilt the list from what is
+    /// currently on the plot would quietly delete every marker belonging to the reading that is not
+    /// on screen — and a restore driven by one flag for the whole plot would never put them back,
+    /// because the first rebuild would have set it. Both halves are per CURVE for that reason.
+    /// </remarks>
+    [Fact]
+    public void AMarkerOnTheAccurateCurveSurvivesWhileOnlyTheFastOneIsDrawn()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+        vm.AccuracyCommand.Execute(null);
+        Assert.True(vm.HasBothImpedanceCurves);
+
+        var accurate = vm.ImpedancePlot.Traces.First(
+            t => t.CubeName == "Z" && t.Properties.LineType == LineType.Solid);
+        PlaceMarker(accurate, index: 2, hz: 3.0e6, boxX: 20, boxY: 30);
+        vm.CaptureMarkers();
+
+        Assert.Equal(PdnModelKind.Accurate, Assert.Single(vm.Document.Rails[0].Markers).Model);
+
+        // Reopen and run the FAST reading only. The accurate curve is not on the plot, so nothing
+        // can speak for its markers — and the capture that runs on every redraw must not.
+        var reopened = Window(RailDocumentIo.Deserialize(RailDocumentIo.Serialize(vm.Document)));
+        reopened.RunCommand.Execute(null);
+        Assert.False(reopened.HasBothImpedanceCurves);
+        Assert.Empty(reopened.ImpedancePlot.Traces.Single(t => t.CubeName == "Z").Markers);
+        Assert.Single(reopened.Document.Rails[0].Markers);
+
+        // Accuracy brings its curve back, and the marker with it.
+        reopened.AccuracyCommand.Execute(null);
+        var back = Assert.Single(reopened.ImpedancePlot.Traces
+            .First(t => t.CubeName == "Z" && t.Properties.LineType == LineType.Solid).Markers);
+        Assert.Equal(3.0e6, back.PositionStatic.X, 0);
+    }
+
+    /// <summary>
+    /// One marker, placed the way <c>PlotControl</c> places one on a cube-bound trace.
+    /// </summary>
+    private static Marker PlaceMarker(Trace curve, int index, double hz, double boxX, double boxY)
+    {
+        var marker = new Marker(curve, 0.0, isMulti: false, isDelta: false, index, FreqUnit.MHz)
+        {
+            MarkerKind     = MarkerKind.Polyline,
+            PositionStatic = new Vector2((float)hz, 0f),
+            InfoBoxPos     = new PlotPoint(boxX, boxY),
+        };
+        curve.Markers.Add(marker);
+        return marker;
+    }
+
     /// <summary>
     /// A window with a board, a confirmed reference, a part library and a stubbed DC solve — so the
     /// FREQUENCY answer under test is the real <see cref="PdnSweep"/> and nothing else is.
@@ -711,7 +864,13 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         rail.Aggressors.Add(new RailAggressor("converter", 1.5e6, 4));
         rail.ImpedanceTarget = RailTarget.OfFlatImpedance(milliohms: 200);
         doc.Rails.Add(rail);
+        return Window(doc);
+    }
 
+    /// <summary>The same window over a document that already exists — what reopening a saved
+    /// <c>.crail</c> gives you, with the board and the library this fixture supplies.</summary>
+    private static RailRfViewModel Window(RailDocument doc)
+    {
         var vm = new RailRfViewModel(doc, null)
         {
             PostToUi     = a => a(),

@@ -105,6 +105,12 @@ public sealed partial class RailRfViewModel
     {
         foreach (var box in PlotHost.MarkerInfoBoxes.Where(b => b.IsSelected).ToList())
             box.Container.RemoveMarkerWithUndo(box.Marker, box.Trace);
+
+        // Removal goes through the plot host's undo stack, whose StateChanged raises ContentChanged
+        // — so this is belt-and-braces rather than the only route. It is here because a Delete that
+        // did not mark the document is the one case where the omission loses a reading rather than
+        // an addition, and that is worth not depending on another class's event ordering.
+        CaptureMarkers();
     }
 
     /// <summary>The container holding <see cref="ImpedancePlot"/>.</summary>
@@ -154,6 +160,11 @@ public sealed partial class RailRfViewModel
         ImpedancePlot.Axes.XScale = AxisScale.Log;
 
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
+
+        // MARKERS ARE DOCUMENT STATE, and this is the channel they are noticed on — the same one a
+        // `.cdd` document's own dirty check runs off, so an info-box drag and a rename are seen as
+        // well as an add and a move. See RailRfViewModel.Markers.cs.
+        PlotHost.ContentChanged += (_, _) => CaptureMarkers();
     }
 
     // ── the frequency answer, filed by model kind ──────────────────────────────────────────────
@@ -602,6 +613,12 @@ public sealed partial class RailRfViewModel
         // which none of these did — so without this it opens on the cards of traces that no longer
         // exist, or, as it did, on none at all.
         ImpedanceContainer.Inspector.ReloadTraceCards();
+
+        // THE DOCUMENT'S OWN MARKERS, once per CURVE — the first rebuild in which that curve exists.
+        // After that `Carry` above is what moves the live objects across a re-solve, and the document
+        // is written back from them. Per curve rather than per plot because the accurate reading
+        // arrives later than the fast one; see RailRfViewModel.Markers.cs.
+        RestoreMarkers();
 
         AnnounceRebuiltPlot();
     }

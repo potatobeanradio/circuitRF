@@ -69,8 +69,21 @@ public sealed class RailPanels
     /// <summary>The results column.</summary>
     public bool ShowResults { get; set; } = true;
 
+    /// <summary>
+    /// The text cards under the results plot — the drop, the breakdown, the via check, the
+    /// coincidences. <b>Not a fifth panel</b>: it divides the results column rather than the window,
+    /// so it takes no part in <see cref="AnyShown"/>'s "at least one panel" rule.
+    /// </summary>
+    /// <remarks>
+    /// Off, the plot is free to take the height the cards were using — which is the whole of the
+    /// request (owner, 2026-09-19): the readouts can be a sizable share of a column whose other half
+    /// is the one picture in that panel.
+    /// </remarks>
+    public bool ShowResultText { get; set; } = true;
+
     /// <summary>The state a document that says nothing opens in — what the file OMITS.</summary>
-    public bool AllShown => ShowSpecification && ShowBoard && ShowParts && ShowResults;
+    public bool AllShown =>
+        ShowSpecification && ShowBoard && ShowParts && ShowResults && ShowResultText;
 
     /// <summary>
     /// Whether anything at all is showing. <b>At least one panel always is</b> (owner,

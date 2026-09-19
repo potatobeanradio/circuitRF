@@ -113,10 +113,54 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     public string Title =>
         (IsDirty ? "• " : "") + "railRF" + (DocumentName is { Length: > 0 } n ? $" — {n}" : "");
 
+    /// <summary>
+    /// What the text at the top left of the window says — <b>the file name alone</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>No "railRF —" prefix, on the owner's instruction</b> (2026-09-19). The application's name
+    /// belongs in the OS title bar, where a window is one row among every other window on the
+    /// machine; inside the window it is a word the reader has already read, repeated above content
+    /// that could not be anything else. The dirty bullet stays on both, because it is the one mark
+    /// that is information rather than decoration.
+    ///
+    /// <para>A window that has never been saved and holds no board says so rather than showing an
+    /// empty strip.</para>
+    /// </remarks>
+    public string DocumentLabel =>
+        (IsDirty ? "• " : "") + (DocumentName is { Length: > 0 } n ? n : "untitled");
+
+    /// <summary>
+    /// The document's FILE NAME, extension and all — <c>evk_1v8_compact.crail</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The extension is on purpose</b> (owner, 2026-09-19). A railRF document is a file a user
+    /// opens, saves, sends and puts under revision control, and a bare stem does not say which of
+    /// the several circuitRF documents named after this board it is. The document's own
+    /// <see cref="RailDocument.Name"/> still wins over the path — a board is named in the file and
+    /// that name is what the rest of the window reads — so the extension is APPENDED to it rather
+    /// than taken from disk, and never doubled for a name that already carries one.
+    /// </remarks>
     private string? DocumentName =>
-        _document.Name is { Length: > 0 } n ? n
-        : _documentPath is { Length: > 0 } p ? System.IO.Path.GetFileNameWithoutExtension(p)
+        _document.Name is { Length: > 0 } n ? WithCrailExtension(n)
+        : _documentPath is { Length: > 0 } p ? System.IO.Path.GetFileName(p)
         : null;
+
+    private static string WithCrailExtension(string name) =>
+        name.EndsWith(RailDocumentIo.Extension, StringComparison.OrdinalIgnoreCase)
+            ? name
+            : name + RailDocumentIo.Extension;
+
+    /// <summary>
+    /// The full path this document came from, for the title's tooltip — or the sentence that says
+    /// there is not one yet.
+    /// </summary>
+    /// <remarks>
+    /// A title says which document; only the path says <i>which copy of it</i>, and on a machine
+    /// with a board in three places that is the whole question. A window that has never been saved
+    /// answers it rather than showing an empty tip, which reads as a broken tooltip.
+    /// </remarks>
+    public string DocumentPathTip =>
+        _documentPath is { Length: > 0 } p ? p : "Not saved yet — Save writes it somewhere.";
 
     /// <summary>Replaces the document this window shows — what the import and a re-open do.</summary>
     public void SetDocument(RailDocument document, string? path)
@@ -127,6 +171,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // A fast curve beside an accurate one from a DIFFERENT board is worse than no comparison at
         // all (PdnResultsByModel's own note), so the results go with the document.
         ClearResults();
+        ForgetRestoredMarkers();   // a new document's markers are its own — see the rail-change note
         RebuildRails();
         AnnouncePanels();
         CaptureSnapshot();
@@ -135,6 +180,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(Document));
         OnPropertyChanged(nameof(DocumentPath));
         OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(DocumentLabel));
+        OnPropertyChanged(nameof(DocumentPathTip));
     }
 
     // ── The rail selector (§11.3's fourth point) ───────────────────────────────────────────────
@@ -156,7 +203,14 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _selectedRailName;
 
-    partial void OnSelectedRailNameChanged(string? value) => RebuildForSelectedRail();
+    partial void OnSelectedRailNameChanged(string? value)
+    {
+        // The plot is about to show a DIFFERENT rail's ports, and a curve key is the reading and the
+        // port — which both rails have. Without this the markers still on the plot would be captured
+        // onto the rail being moved to. See RailRfViewModel.Markers.cs.
+        ForgetRestoredMarkers();
+        RebuildForSelectedRail();
+    }
 
     /// <summary>The selected rail, or null where the document holds none.</summary>
     public RailSpec? SelectedRail =>
