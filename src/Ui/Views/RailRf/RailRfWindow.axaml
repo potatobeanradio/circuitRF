@@ -270,14 +270,20 @@
             </Setter>
         </Style>
 
-        <!-- A tab in either strip. A ToggleButton rather than a TabControl: both strips switch a
-             property the view model owns (which OVERLAY, which results half) and neither carries
-             content of its own, so a TabControl would be a content host with nothing in it. -->
-        <Style Selector="ToggleButton.tab">
-            <Setter Property="FontSize"                   Value="10"/>
-            <Setter Property="Padding"                    Value="8,2"/>
-            <Setter Property="MinHeight"                  Value="0"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <!-- A tab in either strip: the board panel's four maps, and the results panel's two halves.
+             Only the metrics — the lamp is Button.ToolActive's, above, which is the point of them
+             being toolbar buttons at all.
+
+             A Button and not a ToggleButton or a TabControl. Both strips switch a property the view
+             model owns (which OVERLAY, which results half) and neither carries content of its own,
+             so a TabControl would be a content host with nothing in it; and a ToggleButton toggles
+             ITSELF on click, so clicking the selected tab turned the strip off and left the panel
+             showing something no tab claimed — a state SyncTabs had to re-assert against on every
+             click. A lamp set from the view model's property cannot reach it at all. -->
+        <Style Selector="Button.tabbtn">
+            <Setter Property="Padding"   Value="6,3"/>
+            <Setter Property="MinWidth"  Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
         </Style>
 
     </Window.Styles>
@@ -687,14 +693,33 @@
                              artwork underneath is the same on all four; brief 8 draws each map. -->
                         <StackPanel Grid.Column="1" Name="OverlayTabs" Orientation="Horizontal"
                                     Spacing="2" HorizontalAlignment="Right" Margin="0,0,0,6">
-                            <ToggleButton Classes="tab" Content="copper" Name="CopperTab"
-                                          ToolTip.Tip="The artwork as drawn, with this rail's own copper highlighted"/>
-                            <ToggleButton Classes="tab" Content="drop" Name="DropTab"
-                                          ToolTip.Tip="The drop map — the artwork coloured by node voltage"/>
-                            <ToggleButton Classes="tab" Content="|Z|" Name="ImpedanceTab"
-                                          ToolTip.Tip="The |Z| map over frequency"/>
-                            <ToggleButton Classes="tab" Content="class" Name="ClassTab"
-                                          ToolTip.Tip="Which copper the fast model treated as a trace and which it meshed. A requirement, not a diagnostic: a wide supply polygon mistaken for a trace is optimistic and invisible."/>
+                            <!-- ── FOUR TOOLBAR BUTTONS, not four word tabs (owner, 2026-09-19) ──
+                                 The same shape as the zoom row to their left and as every tool
+                                 button in the layout editor: a 14 px Material glyph in a
+                                 Padding="6,3" button, the word moved onto the tooltip, and
+                                 Button.ToolActive's accent lamp for the one in force. A Button and
+                                 not a ToggleButton for the reason SyncTabs already had to work
+                                 around — a ToggleButton toggles ITSELF on click, so clicking the
+                                 selected tab turned the strip off and left the board showing an
+                                 overlay no tab claimed. The lamp is set from the view model's own
+                                 property, so the strip cannot reach a state the view model does not
+                                 name. -->
+                            <Button Classes="tabbtn" Name="CopperTab"
+                                    ToolTip.Tip="Copper — the artwork as drawn, with this rail's own copper highlighted">
+                                <mi:MaterialIcon Kind="LayersOutline" Width="14" Height="14"/>
+                            </Button>
+                            <Button Classes="tabbtn" Name="DropTab"
+                                    ToolTip.Tip="Drop — the artwork coloured by node voltage">
+                                <mi:MaterialIcon Kind="GradientVertical" Width="14" Height="14"/>
+                            </Button>
+                            <Button Classes="tabbtn" Name="ImpedanceTab"
+                                    ToolTip.Tip="|Z| — the impedance map over frequency">
+                                <mi:MaterialIcon Kind="Omega" Width="14" Height="14"/>
+                            </Button>
+                            <Button Classes="tabbtn" Name="ClassTab"
+                                    ToolTip.Tip="Class — which copper the fast model treated as a trace and which it meshed. A requirement, not a diagnostic: a wide supply polygon mistaken for a trace is optimistic and invisible.">
+                                <mi:MaterialIcon Kind="ShapeOutline" Width="14" Height="14"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
 
@@ -923,8 +948,19 @@
                         <TextBlock Classes="panelhdr" Text="Results" VerticalAlignment="Center"/>
                         <StackPanel Grid.Column="1" Name="ResultsTabStrip" Orientation="Horizontal"
                                     Spacing="2" HorizontalAlignment="Right" Margin="0,0,0,6">
-                            <ToggleButton Classes="tab" Content="DC" Name="DcTab"/>
-                            <ToggleButton Classes="tab" Content="frequency" Name="FrequencyTab"/>
+                            <!-- The same toolbar shape as the board panel's four, for the same
+                                 reason (owner, 2026-09-19). SineWave is the LAYOUT EDITOR's own EM
+                                 glyph — the one place in the application that already means "over
+                                 frequency" — so it is spent here rather than on the |Z| MAP beside
+                                 it, which is a picture of a place and wears the ohm sign. -->
+                            <Button Classes="tabbtn" Name="DcTab"
+                                    ToolTip.Tip="DC — the drop, the ranked breakdown and the via flags">
+                                <mi:MaterialIcon Kind="CurrentDc" Width="14" Height="14"/>
+                            </Button>
+                            <Button Classes="tabbtn" Name="FrequencyTab"
+                                    ToolTip.Tip="Frequency — |Z| against the target, the anti-resonances and what the aggressors land on">
+                                <mi:MaterialIcon Kind="SineWave" Width="14" Height="14"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
 
@@ -1143,22 +1179,40 @@
 
                      The bullseye is the glyph because the button is named for what its answer IS,
                      not for the mesh that produces it; the mesh is in the tooltip, with its cost. -->
+                <!-- ── ToolTip.Placement, on every button of this row ────────────────────────
+                     Avalonia anchors a tooltip at the POINTER by default (ToolTip.PlacementProperty
+                     is registered with PlacementMode.Pointer), so the popup's corner lands on the
+                     cursor hotspot. Anywhere with room below, the popup opens down-and-right of the
+                     cursor and nothing touches it. This row is the BOTTOM edge of the window, so
+                     there is no room below and the positioner flips the popup UP — onto the pointer.
+                     The pointer is then inside a different top-level, the button loses :pointerover,
+                     the service closes the tip, the pointer is back on the button, and
+                     BetweenShowDelay (100 ms) means the next open is immediate. That loop is the
+                     reported flashing when the pointer rests on the Accuracy button (owner,
+                     2026-09-19), and it is worst on the tallest tooltip in the row, which was this
+                     one. Anchoring to the CONTROL takes the pointer out of the geometry: the popup
+                     sits above the button, never under the cursor, whatever the window's position
+                     on screen. -->
                 <Button Name="AccuracyButton" Padding="6,3"
                         Classes.ToolActive="{Binding IsShowingAccuracy}"
                         Classes.flagged="{Binding IsModelKindFlagged}"
                         Command="{Binding AccuracyCommand}"
-                        ToolTip.Tip="Accuracy — run the mesh solve. It lights while the numbers on screen are the accurate reading, and goes out as soon as an edit puts the fast one back. Never entered automatically and never left silently; the fast result stays, so the two are compared on this board.">
+                        ToolTip.Placement="Top"
+                        ToolTip.Tip="Accuracy — run the mesh solve. It lights while the accurate reading is on screen; press it again to go back to the fast one, and an edit does the same on its own. Never entered automatically and never left silently; both readings stay, so the two are compared on this board.">
                     <mi:MaterialIcon Kind="Bullseye" Width="16" Height="16"/>
                 </Button>
                 <Button Name="CompareButton" Content="Compare…" FontSize="11" Padding="10,3"
                         IsEnabled="{Binding CanExport}"
+                        ToolTip.Placement="Top"
                         ToolTip.Tip="This design against another .crail — the one that is known to work. Both sides are solved at the model kind on screen, the same rail is matched by name, and the ports and parts pair by refdes and pin."/>
                 <Button Name="ExportButton" Content="Export" FontSize="11" Padding="10,3"
                         IsEnabled="{Binding CanExport}"
+                        ToolTip.Placement="Top"
                         ToolTip.Tip="CSV, .npy, .mat, .txt, or the report page as SVG or PDF — the extension picks the format, exactly as circuitrf rail -o does, and both write the same bytes."/>
                 <Button Name="RunButton" Content="Run" FontSize="11" Padding="14,3"
                         IsDefault="True"
                         Command="{Binding RunCommand}"
+                        ToolTip.Placement="Top"
                         ToolTip.Tip="{Binding RunBlockedReason}"/>
             </StackPanel>
         </Grid>

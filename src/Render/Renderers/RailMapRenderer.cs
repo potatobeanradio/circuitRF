@@ -154,26 +154,42 @@ public static class RailMapRenderer
     {
         if (scene.Tiles.Count == 0) return;
 
+        var plan = PlanFor(scene, theme);
+
+        // What is actually on screen, in world DBU, widened by one tile so a tile straddling the
+        // edge still paints its visible half. Clipped-away tiles cost nothing to skip and a canvas
+        // call each to draw, which is the whole of the zoomed-in case.
+        double vminX = vp.VisibleMinX, vmaxX = vp.VisibleMaxX;
+        double vminY = vp.VisibleMinY, vmaxY = vp.VisibleMaxY;
+
         // One pass per drawing layer, because the clip is per layer: the shading has to stop at the
         // artwork's own edge and not at the sampling grid's, and a grid cell straddling the edge of a
         // trace would otherwise paint copper that is not there.
-        foreach (var group in GroupByLayer(scene))
+        using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+
+        foreach (var group in plan.Layers)
         {
-            if (hiddenLayers?.Contains(group.Key) == true) continue;
+            if (hiddenLayers?.Contains(group.Layer) == true) continue;
 
             canvas.Save();
             try
             {
-                if (scene.Clip.TryGetValue(group.Key, out var paths) && paths.Count > 0)
+                if (scene.Clip.TryGetValue(group.Layer, out var paths) && paths.Count > 0)
                 {
                     using var clip = ToPath(paths, vp);
                     canvas.ClipPath(clip, SKClipOperation.Intersect, antialias: true);
                 }
 
-                using var paint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
-                foreach (var tile in group.Value)
+                var tiles = group.Tiles;
+                var colours = group.Colours;
+                for (int i = 0; i < tiles.Length; i++)
                 {
-                    paint.Color = theme.Ramp(scene.Normalise(tile.Value));
+                    var tile = tiles[i];
+                    long half = tile.HalfSpanDbu;
+                    if (tile.CentreX + half < vminX || tile.CentreX - half > vmaxX) continue;
+                    if (tile.CentreY + half < vminY || tile.CentreY - half > vmaxY) continue;
+
+                    paint.Color = colours[i];
                     canvas.DrawRect(RectOf(tile, vp), paint);
                 }
             }
@@ -181,8 +197,40 @@ public static class RailMapRenderer
         }
     }
 
-    private static List<KeyValuePair<LayerKey, List<RailMapTile>>> GroupByLayer(RailMapScene scene)
+    // ── the per-scene draw plan, and why a cache is here at all ────────────────────────────────
+    //
+    // A drop map is one rect per extraction cell, and on the accurate reading that is the MESH —
+    // tens to hundreds of thousands of them. Every frame of a pan used to rebuild a dictionary of
+    // lists holding every tile, and to re-evaluate the colour ramp for every tile, before drawing
+    // any of them: work that is a pure function of the scene and the theme, repeated at the frame
+    // rate. On a real board with the drop map on, that is the whole of the reported "panning and
+    // zoom frame rate is terribly slow", and with Accuracy on as well it is under one frame a
+    // second (owner, 2026-09-19).
+    //
+    // NOTHING HERE CHANGES A PIXEL. The grouping is the same grouping in the same emission order,
+    // the colour is the same colour, and the rects are still produced by RectOf off the live
+    // viewport — so the two-renders-of-one-scene identity brief 9's clipboard gate and brief 17's
+    // figures depend on is untouched. What is removed is only the repetition.
+    //
+    // Keyed on the scene by REFERENCE, in a weak table: a scene is immutable and is replaced
+    // wholesale whenever the result changes (RailLayoutOverlay.Invalidate drops it), so a live scene
+    // is exactly the right lifetime and a dead one must not be held. The theme is stored alongside
+    // and the plan recomputed when it changes, which is a theme switch and not a frame.
+    private sealed record TileLayerPlan(LayerKey Layer, RailMapTile[] Tiles, SKColor[] Colours);
+
+    private sealed class TilePlan
     {
+        public required RailMapTheme Theme { get; init; }
+        public required IReadOnlyList<TileLayerPlan> Layers { get; init; }
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RailMapScene, TilePlan> Plans = new();
+
+    private static TilePlan PlanFor(RailMapScene scene, RailMapTheme theme)
+    {
+        if (Plans.TryGetValue(scene, out var cached) && ReferenceEquals(cached.Theme, theme))
+            return cached;
+
         var byLayer = new Dictionary<LayerKey, List<RailMapTile>>();
         var order = new List<LayerKey>();
         foreach (var tile in scene.Tiles)
@@ -197,7 +245,19 @@ public static class RailMapRenderer
 
         // Emission order is the scene's own, not a dictionary's: two renders of one scene have to be
         // byte-identical (brief 9's clipboard gate and brief 17's figures both depend on it).
-        return [.. order.Select(k => new KeyValuePair<LayerKey, List<RailMapTile>>(k, byLayer[k]))];
+        var layers = new List<TileLayerPlan>(order.Count);
+        foreach (var key in order)
+        {
+            var tiles = byLayer[key].ToArray();
+            var colours = new SKColor[tiles.Length];
+            for (int i = 0; i < tiles.Length; i++)
+                colours[i] = theme.Ramp(scene.Normalise(tiles[i].Value));
+            layers.Add(new TileLayerPlan(key, tiles, colours));
+        }
+
+        var plan = new TilePlan { Theme = theme, Layers = layers };
+        Plans.AddOrUpdate(scene, plan);
+        return plan;
     }
 
     private static SKRect RectOf(RailMapTile tile, LayoutViewport vp)

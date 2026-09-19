@@ -273,6 +273,36 @@ public class RailWindowTests
         Assert.Equal(PdnModelKind.Accurate, vm.ResultsModelKind);
     }
 
+    /// <summary>
+    /// Pressing Accuracy while it is showing the accurate reading puts the Fast one back, without
+    /// re-solving anything.
+    /// </summary>
+    /// <remarks>
+    /// Reported by the owner on 2026-09-19: once Accuracy is on there is no way to turn it off.
+    /// The lamp going out on the next edit is §2.9's "never left silently" and it is not an answer to
+    /// a press. Both readings are already in hand, so this is a SWITCH and not a run — which is what
+    /// the solve count asserts: leaving the mesh must not cost another solve of anything.
+    /// </remarks>
+    [Fact]
+    public void PressingAccuracyWhileItIsLit_GoesBackToTheFastReading_WithoutSolvingAgain()
+    {
+        var vm = Ready(out _);
+
+        vm.RunCommand.Execute(null);
+        vm.AccuracyCommand.Execute(null);
+        Assert.True(vm.IsShowingAccuracy);
+
+        int solves = vm.SolvesStarted;
+        vm.AccuracyCommand.Execute(null);
+
+        Assert.False(vm.IsShowingAccuracy);
+        Assert.Equal(PdnModelKind.Fast, vm.ResultsModelKind);
+        Assert.Equal(solves, vm.SolvesStarted);
+
+        // And the mesh answer is kept, so pressing it again is a switch back rather than a re-run.
+        Assert.True(vm.ByModel.ContainsKey(PdnModelKind.Accurate));
+    }
+
     /// <summary><b>Accuracy is never entered automatically.</b> Every edit stays in Fast.</summary>
     [Fact]
     public void R_rail7_5_AnEditNeverEntersAccuracy()

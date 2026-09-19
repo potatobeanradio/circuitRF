@@ -655,7 +655,20 @@ public sealed class RailMapScene
         foreach (var origin in result.Netlist.Origins)
         {
             if (origin.Kind != PdnOriginKind.SourceBranch) continue;
-            if ((origin.From ?? origin.To) is not { } cell) continue;
+
+            // ── THE ANCHOR'S OWN PADS FIRST, and the cell only as a fallback ──────────────────
+            //
+            // A source branch's From/To are the cells of its two TIED nodes, and a tied node
+            // reports the union-find representative of its set — an arbitrary member, which on a
+            // via-stitched rail sits on another layer. Worse here: this branch stamps From as null,
+            // so the fallback below reads the REFERENCE cell and marks the source on the ground
+            // plane. Both together are why the example board's U2 marker appeared inside the IN3
+            // pour on one reading and above it on another (owner, 2026-09-19). PdnElementOrigin.At
+            // is the centroid of the pads the anchor named, which is a place and does not move.
+            (long X, long Y) where;
+            if (origin.At is { } at) where = at;
+            else if ((origin.From ?? origin.To) is { } cell) where = (cell.CentreX, cell.CentreY);
+            else continue;
 
             var share = result.Sources.FirstOrDefault(
                 s => origin.Refdes is { Length: > 0 } r &&
@@ -668,20 +681,24 @@ public sealed class RailMapScene
                   $"{share.ShareOfTotal:P0} of this rail's total" +
                   (share.OpenCircuitVoltageV is { } v ? $", from {v:0.####} V open circuit" : "");
 
-            markers.Add(new RailMapMarker(RailMarkerKind.Source, cell.CentreX, cell.CentreY, label, readout));
+            markers.Add(new RailMapMarker(RailMarkerKind.Source, where.X, where.Y, label, readout));
         }
 
         // Loads and observation ports, from the port bindings — every one of them, including the ones
         // that draw nothing (R-rail5-10).
         foreach (var port in result.Netlist.Ports)
         {
-            var cell = FirstPowerCell(port.Cells);
-            if (cell is not { } c) continue;
+            // Same rule as the sources above: the anchor's own pads, and a cell only where the
+            // anchor resolved to none.
+            (long X, long Y) where;
+            if (port.At is { } at) where = at;
+            else if (FirstPowerCell(port.Cells) is { } c) where = (c.CentreX, c.CentreY);
+            else continue;
 
             var drop = result.Ports.FirstOrDefault(p => p.Index == port.Index);
             markers.Add(new RailMapMarker(
                 port.DcCurrentA is null ? RailMarkerKind.Observation : RailMarkerKind.Load,
-                c.CentreX, c.CentreY, port.Name, drop?.Describe() ?? port.Name));
+                where.X, where.Y, port.Name, drop?.Describe() ?? port.Name));
         }
 
         // Flagged via transitions (brief 6) — on the WORST via of the field, which is what the flag

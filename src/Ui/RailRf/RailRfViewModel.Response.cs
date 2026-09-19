@@ -353,10 +353,32 @@ public sealed partial class RailRfViewModel
             ? $"|Z| at each observation port — {ModelName(kinds[0])} and {ModelName(kinds[^1])}"
             : $"|Z| at each observation port — {ModelName(kinds[0])}";
 
+        // ── ONE Y LABEL, not one per trace (owner, 2026-09-19) ────────────────────────────────
+        //
+        // A Rect plot with no custom Y label draws a ROTATED LABEL COLUMN PER LEFT-AXIS TRACE in
+        // the Skia margin (AxesRenderer.DrawTitleAndAxisLabels), which is the right default when a
+        // plot holds three curves of different quantities. This plot holds one quantity and as many
+        // traces as the design has ports, models, masks and aggressor harmonics — thirteen on the
+        // shipped example — so the column stack took most of the panel's width and left the curves
+        // in a sliver. Every trace here is |Z| in dBΩ, so the honest label is one label, and it is
+        // set AFTER the traces because that is the only thing it depends on.
+        plot.CustomYLabelOn = true;
+        plot.CustomYLabel   = "|Z| (dBΩ)";
+
         plot.Autoscale(force: true);
 
         // AFTER the autoscale. See this file's own header.
-        foreach (var line in AggressorTraces(primary, plot)) plot.Traces.Add(line);
+        var aggressors = AggressorTraces(primary, plot);
+        foreach (var line in aggressors) plot.Traces.Add(line);
+
+        // WHAT THE VERTICAL LINES ARE, said on the picture — the owner read them as unexplained
+        // green traces railing up and down (2026-09-19). They are annotation rather
+        // than data — §2.2's "a 3 dB peak sitting on the converter's fifth harmonic is a problem" —
+        // and with the per-trace Y labels gone there is nothing else on the plot that names them.
+        if (aggressors.Count > 0)
+            plot.CustomTitle += aggressors.Count == 1
+                ? "  ·  the vertical line is an aggressor harmonic"
+                : "  ·  the vertical lines are aggressor harmonics";
 
         AnnounceRebuiltPlot();
     }
@@ -441,9 +463,14 @@ public sealed partial class RailRfViewModel
             // The fundamental at full weight, its harmonics lighter — §2.4's own description, and
             // the difference between a plot that says WHICH line a peak landed on and one that says
             // only that some line is near it.
+            // DASHED AND LIGHT, never a solid full-weight stroke: a solid vertical line the same
+            // weight as a curve reads as data that went off the scale, which is exactly how it was
+            // read (owner, 2026-09-19). LineType has two members here, so dashed is the whole of
+            // the vocabulary; the weight carries the rest, and the fundamental is still the heavier
+            // of the two so which line a peak landed on stays readable.
             var trace = CubeTrace($"{name} × {harmonic}", slice: null, CubeTransform.None,
                                   $"{name} × {harmonic}",
-                                  Style(3, LineType.Solid, harmonic == 1 ? 1.0 : 0.5));
+                                  Style(3, LineType.Dashed, harmonic == 1 ? 0.75 : 0.4));
             trace.SetCubeData([hz, hz], null, [lo, hi], "freq", "Hz", PlotType.Rect, FreqUnit.MHz);
             lines.Add(trace);
         }

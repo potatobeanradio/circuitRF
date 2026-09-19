@@ -1163,6 +1163,34 @@ public sealed class RailBoardViewTests
             : PointerUpdateKind.LeftButtonReleased;
 
     /// <summary>An overlay carrying a real solved rail — the one the map tests draw.</summary>
+    // ══ The markers land on the pads their anchors name (owner, 2026-09-19) ════════════════════
+
+    /// <summary>
+    /// A source and a load marker sit at the pad the anchor names, not at the cell of a tied node.
+    /// </summary>
+    /// <remarks>
+    /// The report was that the example board's <c>U2</c> source marker appeared inside the IN3 pour
+    /// on one reading and above it on another. Both halves of the cause are here: a tied node
+    /// reports its union-find REPRESENTATIVE, an arbitrary member of the pin field that can be on
+    /// another layer; and the source branch stamps no <c>From</c> at all, so the fallback read the
+    /// REFERENCE cell and marked the source on the ground plane. This fixture's source is at
+    /// <c>BT1.1</c> — one pad, at a known place — so a marker anywhere else is the defect, and the
+    /// distance is asserted against the pad rather than the picture.
+    /// </remarks>
+    [Fact]
+    public void SourceAndLoadMarkers_SitOnTheirAnchorsOwnPads()
+    {
+        var overlay = WithResult(out _);
+
+        var source = Assert.Single(overlay.Scene.Markers.Where(m => m.Kind == RailMarkerKind.Source));
+        Assert.Equal(Mm(0.2), source.X);
+        Assert.Equal(Mm(0.2), source.Y);
+
+        var load = Assert.Single(overlay.Scene.Markers.Where(m => m.Kind == RailMarkerKind.Load));
+        Assert.Equal(Mm(29.8), load.X);
+        Assert.Equal(Mm(0.2), load.Y);
+    }
+
     private static RailLayoutOverlay WithResult(out RailDcResult result)
     {
         result = ResultOf(out _);

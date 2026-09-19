@@ -201,6 +201,79 @@ public sealed partial class RailRfViewModel
         return true;
     }
 
+    // ── Placing a port from the board (owner, 2026-09-19) ─────────────────────────────────────
+
+    /// <summary>
+    /// The refdes and pin of the pad nearest <paramref name="xDbu"/>/<paramref name="yDbu"/>, or
+    /// null where no pad of this board is within <paramref name="tolDbu"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The rail's own net first.</b> A pad the anchor names has to be one the extractor can then
+    /// resolve on THIS rail, so a pad on the rail's net wins over a nearer one that is not — the
+    /// same rule <see cref="RailAnchorEntry.Tip"/> filters its candidate list by, for the same
+    /// reason: an anchor the tooltip offers and the solve refuses is worse than no offer.
+    ///
+    /// <para>Pads with no refdes are skipped. What is being built from this is a REFDES anchor, and
+    /// a nameless pad cannot spell one; the coordinate form is the answer there and is always
+    /// offered beside it.</para>
+    /// </remarks>
+    public (string Refdes, string? Pin)? PadAt(long xDbu, long yDbu, long tolDbu)
+    {
+        string? net = SelectedRail?.NetName;
+        double bestD2 = (double)tolDbu * tolDbu;
+        (string, string?)? best = null;
+        bool bestOnNet = false;
+
+        foreach (var pad in BoardPads())
+        {
+            if (pad.Refdes is not { Length: > 0 } refdes) continue;
+
+            double dx = pad.X - (double)xDbu, dy = pad.Y - (double)yDbu;
+            double d2 = dx * dx + dy * dy;
+            if (d2 > bestD2) continue;
+
+            bool onNet = net is { Length: > 0 }
+                      && string.Equals(pad.Net, net, StringComparison.OrdinalIgnoreCase);
+
+            // On-net beats nearer; among equals, nearer wins.
+            if (best is not null && bestOnNet && !onNet) continue;
+            if (best is not null && bestOnNet == onNet && d2 >= bestD2) continue;
+
+            best = (refdes, pad.Pin is { Length: > 0 } ? pad.Pin : null);
+            bestOnNet = onNet;
+            bestD2 = d2;
+        }
+
+        return best;
+    }
+
+    /// <summary>Adds a source row on this rail, anchored where the user right-clicked.</summary>
+    /// <remarks>
+    /// The same three lines <c>AddSource</c> runs, with the anchor filled in instead of left empty —
+    /// so the row is complete the moment it appears and the Fast loop has something to solve. It is
+    /// not a second way of making a source: both go through <c>RailSpec.Sources</c> and
+    /// <c>RebuildForSelectedRail</c>, which is what keeps the row, the document and the solve one
+    /// thing.
+    /// </remarks>
+    public void PlaceSource(RailPortAnchor anchor)
+    {
+        if (SelectedRail is not { } rail) return;
+        rail.Sources.Add(new RailSource { Anchor = anchor });
+        RebuildForSelectedRail();
+        QueueResolve();
+    }
+
+    /// <summary>Adds a load row on this rail, anchored where the user right-clicked.</summary>
+    /// <remarks><b>With no current</b>, exactly as <c>AddLoad</c> does — an observation port, never
+    /// a zero nobody typed (§2.2, Q-16).</remarks>
+    public void PlaceLoad(RailPortAnchor anchor)
+    {
+        if (SelectedRail is not { } rail) return;
+        rail.Loads.Add(new RailLoad { Anchor = anchor });
+        RebuildForSelectedRail();
+        QueueResolve();
+    }
+
     /// <summary>
     /// Rebuilds the board layout from the imported artwork.
     /// </summary>

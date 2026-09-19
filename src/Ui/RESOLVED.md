@@ -1,5 +1,184 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF — a third manual pass: the board menu, the plot, and two buttons (2026-09-19)
+
+Owner report, eight items. Six were controls that had never been wired to anything; two needed a
+measurement before anything could be said about them.
+
+### 1. The Accuracy button flashed while the pointer was over it
+
+**Diagnosed rather than observed** — this one could not be reproduced from a test, so what follows
+is an argument from Avalonia's own code, and it should be checked against the window.
+
+`ToolTip.PlacementProperty` is registered with `PlacementMode.Pointer`, so a tooltip's corner is
+placed at the cursor hotspot rather than against the control. Anywhere with room below, the popup
+opens down-and-right and nothing touches the pointer. This row is the window's BOTTOM edge, so the
+positioner flips the popup UP — onto the pointer. The pointer is then inside a different top-level,
+the button loses `:pointerover`, `ToolTipService` closes the tip, the pointer is back on the button,
+and `BetweenShowDelay` is 100 ms — so the next open is immediate rather than after `ShowDelay`'s
+400 ms. That is a repeating open/close cycle at the pointer, which is what a flash is.
+
+It is worst on the TALLEST tooltip in a row, and the commit the day before had made this one the
+tallest in its row while also making the button the smallest. Every button on that row now carries
+`ToolTip.Placement="Top"`, which takes the pointer out of the geometry entirely: the popup is
+anchored to the control, above it, wherever the window sits on screen.
+
+### 2. Accuracy could not be turned off
+
+Reported: once the Accuracy button is on there is no way to turn it off again.
+
+The lamp was designed to go out by itself on the next edit — §2.9's "never left silently" — and that
+is right, but it is not an answer to a PRESS. A lit button that stays lit when pressed is a control
+that does not respond.
+
+Pressing it while lit now puts the Fast reading back. It is a SWITCH and not a re-solve: both
+readings are already in `ByModel`, so re-running the mesh in order to leave the mesh would be tens of
+seconds spent producing a number the window is already holding. `SolvesStarted` is what the test
+asserts on. Where no fast reading exists yet — Accuracy was the first thing pressed — it runs one,
+because there is nothing to switch to.
+
+### 3. The board's context menu was the layout editor's
+
+Right-clicking the artwork offered Convert to Arc, Delete Vertex, Clear All Rulers, Flatten
+Hierarchy, Explode Array, Group into Cell… — every EDIT `LayoutCanvas.BuildContextMenuItems` builds
+for a layout document. railRF hosts that canvas so the board pans and zooms by exactly its gestures
+(§11.6), and the window's own doc comment claimed the menu was "the layout editor's own, minus
+everything that is about a layout document". It was not: it called that method verbatim. The board
+panel is a READ-ONLY view whose own tooltip says the way to change the geometry is to open the
+layout and edit it there.
+
+The window builds its own two groups now, with exactly one separator between them:
+
+    Place Source at U2.OUT        ← or "Place Source here" off a pad
+    Place Load at U2.OUT
+    Copper: treat as a trace      ← class tab only, the overlay's own rows
+    Copper: treat as spreading
+    Copper: use the measured classification
+    ─────────────
+    Copy
+    Copy Coordinate
+
+Above the line is what acts on the PLACE that was clicked; below it is what goes to the clipboard.
+The copper-class rows are the overlay's (`RailLayoutOverlay.BuildContextMenuItems`) because only the
+picture knows which region is under the pointer — the overlay no longer contributes Copy or any
+separator of its own, which is what keeps the count at one.
+
+**A pad under the pointer changes what the two place rows say AND what they write**, which was the
+owner's own question and the answer is yes. On `U2.OUT` the anchor is that refdes and pin; on bare
+copper it is the coordinate. That is not cosmetic: a refdes anchor resolves to every pad of a pin
+field and survives the artwork being re-imported at a different origin, and a coordinate does
+neither. `RailRfViewModel.PadAt` prefers a pad on the rail's own net over a nearer one that is not,
+which is the rule `RailAnchorEntry.Tip` already filters its candidate list by — an anchor the window
+offers and the solve then refuses is worse than no offer.
+
+Copy Coordinate writes the pair in the board's own display unit, which is exactly the spelling
+`RailAnchorEntry.Parse` takes back (a comma means a coordinate, read through
+`RailLengthFormat.ParsePoint`). A coordinate copied in DBU would have to be converted by hand before
+it could be pasted into the window it came from.
+
+### 4. The U2 marker moved between readings
+
+Reported: on the Power Rail example's sensor board the U2 indicator shows up in different places
+between one look and the next — sometimes inside the IN3 pour, sometimes above it.
+
+Two causes, both in where a marker was drawn rather than in the drawing.
+
+`PdnAssembly` ties a pin field into one node and `CellOf` reports that node's UNION-FIND
+REPRESENTATIVE — an arbitrary member of the tied set, which on a via-stitched rail sits on another
+layer and several millimetres away. Nothing about it is wrong electrically; it is simply not a place.
+And the source branch is stamped with `From = null`, so `MarkersOf`'s `origin.From ?? origin.To`
+fell through to the REFERENCE cell and marked the source on the ground plane.
+
+`PdnElementOrigin.At` and `PdnPortBinding.At` now carry the centroid of the pads the anchor named,
+computed by `PdnAssembly.AnchorPoint` off `PdnAttachments.Resolve` — the same resolution the
+extractor already performs. Pads do not move between the fast and the accurate reading, so neither
+does the marker. `RailBoardViewTests.SourceAndLoadMarkers_SitOnTheirAnchorsOwnPads` asserts the
+coordinate against the fixture's pad rather than against the picture.
+
+### 5. The results plot
+
+Three separate things.
+
+**Double-click added no marker.** Nothing in this window had ever given the `PlotControl` a host. A
+`PlotControl` asks its host for the next marker index, the info-box view model, the container and the
+selected markers, and a host that is null answers "nothing" to all four, silently; and
+`HandleDoubleTapAt`'s own doc comment says the HOST calls it on DoubleTapped, and nobody did.
+`RailRfWindow.BindImpedancePlot` is `MatchDesignerWindow`'s own `Bind`, which exists because that
+window got this exact report on 2026-08-20.
+
+**Twelve Y-axis label columns.** A Rect plot with no custom Y label draws one rotated label column
+per left-axis trace in the Skia margin. That is the right default for a plot holding three curves of
+different quantities; this plot holds ONE quantity and as many traces as the design has ports, models,
+masks and aggressor harmonics — thirteen on the shipped example — so the stack took most of the
+panel's width. `CustomYLabelOn` with `"|Z| (dBΩ)"` is the honest label, since every trace on it is
+that.
+
+**The green vertical lines.** They are the aggressor harmonics — §2.2's own reason for the feature
+is that a large peak nothing excites is not a problem and a small one sitting on a converter
+harmonic is — drawn from the
+bottom of the autoscaled window to the top — which is why they appeared to rail between −12 and −24.
+They were solid and full weight, which reads as data that went off the scale. Dashed and lighter now,
+with the fundamental still the heavier of the two, and the plot title says what they are — which it
+has to, because removing the per-trace Y labels removed the only thing that named them.
+
+### 6. Panning, wheel zoom and the frame rate — measured, and only partly explained
+
+Reported: panning and zooming is very slow with the drop map on, and under one frame a second with
+the accurate reading on as well. Scroll-wheel zoom with it.
+
+`RailMapRenderer.DrawTiles` rebuilt a dictionary of per-layer tile lists, and re-evaluated the colour
+ramp for every tile, on EVERY FRAME — work that is a pure function of the scene and the theme. It
+also drew every tile whatever the viewport. Both are fixed: the grouping and the colours are computed
+once per (scene, theme) into a `ConditionalWeakTable` keyed on the scene, and tiles outside the
+visible world rect are skipped. **No pixel changes** — same grouping, same emission order, same
+colours, same `RectOf` off the live viewport — which is why `RailCopyTests`' byte-identity gate still
+passes untouched.
+
+Measured on the shipped Power Rail example, Debug, a 900×700 surface, twenty frames of a pan:
+
+| | tiles | before | after |
+|---|---|---|---|
+| Fast, full extent    | 11,920 | 4.53 ms/frame  | 3.57 ms/frame |
+| Accurate, full extent| 64,907 | 16.90 ms/frame | 11.35 ms/frame |
+| 102k synthetic, zoomed 20× | 102,400 | 13.42 ms/frame | 0.44 ms/frame |
+
+**This does not add up to one frame a second, and that is worth writing down rather than glossing.**
+The worst measured overlay draw on that board is ~11 ms; the scene is built once and cached (60 ms
+Accurate, 6.7 ms Fast) and a pan does not rebuild it; the cursor readout's full tile scan is 1.49 ms
+per pointer move on the accurate reading, and a left-button pan returns before it is even called. So
+the remaining gap is somewhere this pass did not reach — a larger board than the example, the whole
+window's frame rather than the map's, or something that invalidates per pointer event. The next probe
+is the one measurement nobody has: the same board at the same zoom on the COPPER tab against the DROP
+tab, which is what separates the map's cost from the frame's.
+
+### 7. Both tab strips are toolbar buttons now
+
+Asked for: the four board-map buttons rendered as toolbar buttons in the layout editor's style, with
+Material.Icons glyphs — and then the results strip's two the same way.
+
+Six buttons, one `Button.tabbtn` style, 14 px glyphs in a `Padding="6,3"` button — the same shape as
+the zoom row beside them — with the word moved onto the tooltip and `Button.ToolActive`'s accent for
+the one in force:
+
+| | glyph | why |
+|---|---|---|
+| copper | `LayersOutline` | the artwork as drawn |
+| drop | `GradientVertical` | a coloured field, which is what the map is |
+| \|Z\| | `Omega` | ohms, at a place |
+| class | `ShapeOutline` | what kind of thing each piece of copper was taken to be |
+| DC | `CurrentDc` | |
+| frequency | `SineWave` | |
+
+**`SineWave` is spent on *frequency* and not on the |Z| map**, which is the owner's own pointer: it
+is the layout editor's EM setup glyph, so it already means "over frequency" somewhere in this
+application, and two controls one pane apart meaning different things by one mark is worse than
+either choice on its own.
+
+Ordinary `Button`s and not `ToggleButton`s, which removes the re-assertion `SyncTabs` already had to
+perform: a `ToggleButton` toggles ITSELF on click, so clicking the selected tab turned the strip off
+and left the panel showing something no tab claimed. The dead `ToggleButton.tab` style went with
+them.
+
 ## railRF — seven defects from a manual pass over the window (2026-09-19)
 
 Owner report, in his own order. Six of the seven are the same shape: something the window SAID or

@@ -4,9 +4,12 @@ using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CircuitRF.Design.RailRf;
 using CircuitRF.Render;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.Views.Match;
@@ -71,9 +74,60 @@ public partial class RailRfWindow : Window
 
             SyncTabs();
             BindBoardOverlay(vm);
+            BindImpedancePlot(vm);
             BindBoardRulerUnits();
             vm.PropertyChanged += OnVmPropertyChanged;
         };
+    }
+
+    // ── The results plot ─────────────────────────────────────────────────────────────
+
+    private PlotContainerViewModel? _boundPlotContainer;
+
+    /// <summary>
+    /// Gives the results <c>PlotControl</c> its host, which is what makes its markers work.
+    /// </summary>
+    /// <remarks>
+    /// <b>The Match Designer's own <c>Bind</c>, and the same omission it was written for.</b> A
+    /// <c>PlotControl</c> asks its HOST for the next marker index, the info-box view model, the
+    /// container and the selected markers, and a host that is null answers "nothing" to all four —
+    /// silently. Nothing in this window had ever supplied them, so a double-click on this plot did
+    /// nothing at all — reported by the owner on 2026-09-19 as a double click that adds no marker,
+    /// which is the same report that window got on 2026-08-20 and the same cause.
+    ///
+    /// <para><c>HandleDoubleTapAt</c> is documented as "called by the HOST on DoubleTapped" — it is
+    /// not wired by the control — so the subscription below is the whole of the feature: a
+    /// double-click near a trace adds a marker there, one on empty plot area opens Plot
+    /// Properties.</para>
+    ///
+    /// <para>Bound once per view model. The container is the one <see cref="RailRfViewModel"/>
+    /// built, never a second one: two containers over one plot would number markers
+    /// independently.</para>
+    /// </remarks>
+    private void BindImpedancePlot(RailRfViewModel vm)
+    {
+        var container = vm.ImpedanceContainer;
+        if (ReferenceEquals(_boundPlotContainer, container)) return;
+        _boundPlotContainer = container;
+
+        var plot = ImpedancePlotControl;
+
+        plot.NextMarkerIndexProvider     = container.GetNextMarkerIndex;
+        plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+        plot.ContainerProvider           = () => container;
+        plot.SelectedMarkersProvider     = container.GetSelectedMarkers;
+        plot.StepSelectedMarkersHandler  = container.StepSelectedMarkers;
+
+        plot.DoubleTapped += (_, args) =>
+        {
+            plot.HandleDoubleTapAt(args.GetPosition(plot));
+            args.Handled = true;
+        };
+
+        plot.PlotChanged += container.OnPlotChanged;
+        plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+        plot.MarkerAdded += container.OnMarkerAdded;
+        container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
     }
 
     // ── Escape: nothing is selected (owner, 2026-09-19) ──────────────────────────────
@@ -194,8 +248,6 @@ public partial class RailRfWindow : Window
         _boundOverlay = vm.BoardOverlayLayer;
         _boundOverlay.OverlayChanged += OnOverlayChanged;
 
-        _boundOverlay.CopyRequested = CopyBoard;
-
         BoardCanvas.CanvasOverlay = _boundOverlay;
         ApplyMapTheme();
     }
@@ -239,21 +291,101 @@ public partial class RailRfWindow : Window
     }
 
     /// <summary>
-    /// Rebuilds the board menu's rows from the recorded right-click, and cancels when there are none.
+    /// railRF's OWN board menu: place a port where the click landed, and copy.
     /// </summary>
     /// <remarks>
-    /// The layout editor's own <c>OnLayoutContextMenuOpening</c>, minus everything that is about a
-    /// layout document (Pop Out, Re-reference Cell…) — railRF's board is not one and offers no edits.
-    /// Rebuilt per opening rather than reused: re-subscribing a retained item's <c>Click</c> fires its
-    /// action N times on the Nth opening, which is the mistake the single-instance rule exists to stop
-    /// reintroducing.
+    /// <b>It does not call <c>LayoutCanvas.BuildContextMenuItems</c>, and that was the defect.</b>
+    /// This window hosts the layout editor's canvas so the board pans and zooms by exactly its
+    /// gestures (§11.6) — but it is a READ-ONLY view of a <c>.clay</c> the layout editor owns, and
+    /// the canvas's own menu is a list of EDITS to that document: Convert to Arc, Delete Vertex,
+    /// Flatten Hierarchy, Group into Cell…, Clear All Rulers. Every one of them was on this menu
+    /// (owner, 2026-09-19) and none of them belongs on a window that states in its own tooltip that
+    /// the way to change the geometry is to open the layout and edit it there.
+    ///
+    /// <para><b>Two groups, one separator.</b> Above: what acts on the PLACE that was clicked — a
+    /// source, a load, and on the class tab the copper-class rows, which are the overlay's own
+    /// (<see cref="RailLayoutOverlay.BuildContextMenuItems"/>) because only the picture knows which
+    /// region is under the pointer. Below: what goes to the clipboard.</para>
+    ///
+    /// <para><b>A pad under the pointer changes what the two place rows SAY and what they write.</b>
+    /// On <c>U2.OUT</c> the rows read "Place Source at U2.OUT" and the anchor is that refdes and
+    /// pin; on bare copper they read "Place Source here" and the anchor is the coordinate. That is
+    /// not cosmetic: a refdes anchor resolves to every pad of a pin field and survives the artwork
+    /// being re-imported at a different origin, and a coordinate does neither (§2.2,
+    /// <c>PdnAttachments.Resolve</c>). The coordinate form is still always available — it is what
+    /// Copy Coordinate puts on the clipboard, in exactly the spelling the anchor column parses.</para>
+    ///
+    /// <para>Rebuilt per opening rather than reused: re-subscribing a retained item's <c>Click</c>
+    /// fires its action N times on the Nth opening, which is the mistake the single-instance rule
+    /// exists to stop reintroducing.</para>
     /// </remarks>
     private void OnBoardContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (BoardCanvas.ConsumeContextMenuTarget() is not { } t) { e.Cancel = true; return; }
+        if (Vm is not { } vm) { e.Cancel = true; return; }
 
-        var items = BoardCanvas.BuildContextMenuItems(t.Wx, t.Wy);
-        if (items.Count == 0) { e.Cancel = true; return; }
+        long x = (long)Math.Round(t.Wx), y = (long)Math.Round(t.Wy);
+        long tol = BoardCanvas.ContextMenuHitTolDbu;
+
+        var place = new List<object>();
+
+        // A rail has to exist before a port can hang on it — with none, the two rows would make a
+        // row on nothing. Disabled with the reason rather than hidden, which is the house rule for
+        // a control whose absence would otherwise read as "this window cannot do that".
+        var pad = vm.PadAt(x, y, tol);
+        var anchor = pad is { } p
+            ? new RailPortAnchor { Refdes = p.Refdes, Pin = p.Pin }
+            : new RailPortAnchor { Point = (x, y) };
+        string at = pad is { } q
+            ? $" at {(q.Pin is { Length: > 0 } pin ? $"{q.Refdes}.{pin}" : q.Refdes)}"
+            : " here";
+
+        string? noRail = vm.SelectedRail is null
+            ? "There is no rail to hang a port on yet. Pick the power net first."
+            : null;
+
+        MenuItem PlaceRow(string header, Action act)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = noRail is null };
+            if (noRail is { } why) ToolTip.SetTip(mi, why);
+            else mi.Click += (_, _) => act();
+            return mi;
+        }
+
+        place.Add(PlaceRow("Place Source" + at, () => vm.PlaceSource(anchor)));
+        place.Add(PlaceRow("Place Load" + at, () => vm.PlaceLoad(anchor)));
+
+        // The class tab's three copper rows act on the region under the click, so they belong in
+        // this group and not beside the clipboard rows.
+        place.AddRange(vm.BoardOverlayLayer.BuildContextMenuItems(t.Wx, t.Wy, tol, null, BoardCanvas));
+
+        var copy = new MenuItem { Header = "Copy" };
+        copy.Click += (_, _) => CopyBoard();
+
+        // In the board's own display unit and comma-separated, because that is what the anchor
+        // column of a source or load row PARSES (RailAnchorEntry.Parse: a comma means a coordinate,
+        // read through RailLengthFormat.ParsePoint). A coordinate copied in DBU would have to be
+        // converted by hand before it could be pasted back into the window it came from.
+        var copyCoord = new MenuItem { Header = "Copy Coordinate" };
+        string coordinate = vm.BoardLengthFormat().Point(x, y);
+        copyCoord.Click += async (_, _) =>
+        {
+            try
+            {
+                if (GetTopLevel(this)?.Clipboard is { } clipboard)
+                    await clipboard.SetTextAsync(coordinate);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[railRF] Copy Coordinate failed: {ex.Message}");
+            }
+        };
+
+        var items = new List<object>(place.Count + 3);
+        items.AddRange(place);
+        items.Add(new Separator());
+        items.Add(copy);
+        items.Add(copyCoord);
 
         if (sender is ContextMenu menu) menu.ItemsSource = items;
     }
@@ -397,22 +529,24 @@ public partial class RailRfWindow : Window
     /// Keeps the two strips showing what the view model says.
     /// </summary>
     /// <remarks>
-    /// <b>Re-asserted rather than left to the toggle</b>: a <c>ToggleButton</c> toggles itself on
+    /// <b>Re-asserted rather than left to the control</b>: a <c>ToggleButton</c> toggles itself on
     /// click, so clicking the already-selected tab would otherwise turn the strip OFF and leave the
     /// board showing an overlay no tab claims. Setting all of them from the one property means the
-    /// strip cannot get into a state the view model does not name.
+    /// strip cannot get into a state the view model does not name — and it is why the four map
+    /// buttons are ordinary <c>Button</c>s wearing <c>Button.ToolActive</c>'s lamp rather than
+    /// toggles: there is no self-toggle to re-assert against, only a lamp to set.
     /// </remarks>
     private void SyncTabs()
     {
         var overlay = Vm?.SelectedBoardOverlay ?? RailBoardOverlay.Copper;
-        CopperTab.IsChecked    = overlay == RailBoardOverlay.Copper;
-        DropTab.IsChecked      = overlay == RailBoardOverlay.Drop;
-        ImpedanceTab.IsChecked = overlay == RailBoardOverlay.Impedance;
-        ClassTab.IsChecked     = overlay == RailBoardOverlay.Class;
+        CopperTab.Classes.Set("ToolActive",    overlay == RailBoardOverlay.Copper);
+        DropTab.Classes.Set("ToolActive",      overlay == RailBoardOverlay.Drop);
+        ImpedanceTab.Classes.Set("ToolActive", overlay == RailBoardOverlay.Impedance);
+        ClassTab.Classes.Set("ToolActive",     overlay == RailBoardOverlay.Class);
 
         var tab = Vm?.SelectedResultsTab ?? RailResultsTab.Dc;
-        DcTab.IsChecked        = tab == RailResultsTab.Dc;
-        FrequencyTab.IsChecked = tab == RailResultsTab.Frequency;
+        DcTab.Classes.Set("ToolActive",        tab == RailResultsTab.Dc);
+        FrequencyTab.Classes.Set("ToolActive", tab == RailResultsTab.Frequency);
     }
 
     // ── Opening ───────────────────────────────────────────────────────────────

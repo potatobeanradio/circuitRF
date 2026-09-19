@@ -169,9 +169,13 @@ public sealed partial class RailRfViewModel
     /// every committed row edit). That is "never left silently" spelled as a lamp rather than as a
     /// sentence at the far end of the status strip.
     ///
-    /// <para>Which is also why it is a lit BUTTON and not a ToggleButton: there is nothing to
-    /// toggle off. Pressing it again re-runs the mesh; going back to Fast is what Run does, or
-    /// what the next keystroke does on its own.</para>
+    /// <para><b>Pressing it again puts the Fast reading back</b> — reported by the owner on
+    /// 2026-09-19 as a button that cannot be turned off again. The lamp going out by itself on the
+    /// next edit is correct and is not enough — a user who pressed a lit button and watched it stay
+    /// lit has a control that does not answer. §2.9's rule is that the accurate reading is never
+    /// entered automatically and never left SILENTLY; a deliberate press is the opposite of silent,
+    /// and the mesh answer is kept in <see cref="ByModel"/> either way, so nothing is thrown
+    /// away.</para>
     /// </remarks>
     public bool IsShowingAccuracy => Current?.Kind == PdnModelKind.Accurate;
 
@@ -460,11 +464,30 @@ public sealed partial class RailRfViewModel
     /// and the window then shows BOTH results — the Fast one it already had stays in
     /// <see cref="ByModel"/>, which is what lets brief 12 draw the fast curve beside the accurate one
     /// and measure the error on this design rather than promise it in a document.
+    ///
+    /// <para><b>And pressing it while it is lit goes back to the Fast reading</b>, which is the half
+    /// that was missing: the lamp had no way out but an edit. It is a SWITCH of what is on screen
+    /// and not a re-solve — both readings are already in hand, so re-running the mesh to leave the
+    /// mesh would be tens of seconds to show a number the window is already holding. Where no fast
+    /// reading exists yet (Accuracy was the first thing pressed) it runs one, because there is
+    /// nothing to switch to.</para>
     /// </remarks>
     [RelayCommand(CanExecute = nameof(CanStartRun))]
     private void Accuracy()
     {
-        if (Board is { } board) Start(board, PdnModelKind.Accurate);
+        if (Board is not { } board) return;
+
+        if (!IsShowingAccuracy) { Start(board, PdnModelKind.Accurate); return; }
+
+        if (ByModel.TryGetValue(PdnModelKind.Fast, out var fast))
+        {
+            Current = fast;
+            AcceptSweep(fast.Kind, fast.Sweep);
+        }
+        else
+        {
+            Start(board, PdnModelKind.Fast);
+        }
     }
 
     private void Start(RailBoardInputs board, PdnModelKind kind)

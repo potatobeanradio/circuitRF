@@ -79,7 +79,8 @@ internal sealed record PdnStaged(
     PdnOriginKind Kind, string Description,
     PdnCellRef? From, PdnCellRef? To, string? Refdes,
     double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null,
-    PdnViaBarrel? Barrel = null, double? InductanceHenries = null);
+    PdnViaBarrel? Barrel = null, double? InductanceHenries = null,
+    (long X, long Y)? At = null);
 
 internal sealed class PdnAssembly
 {
@@ -556,7 +557,8 @@ internal sealed class PdnAssembly
                         new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) },
                         new ResistorModel(), PdnOriginKind.SourceResistance,
                         $"{name}'s series resistance, {ohms * 1e3:0.###} mΩ",
-                        CellOf(np), CellOf(nr), src.Anchor.Refdes, ohms));
+                        CellOf(np), CellOf(nr), src.Anchor.Refdes, ohms,
+                        At: AnchorPoint(src.Anchor)));
 
                 _notes.Add(
                     $"{name} states no open-circuit voltage, so it contributes its impedance and no " +
@@ -571,7 +573,7 @@ internal sealed class PdnAssembly
                 new Dictionary<string, Value>(StringComparer.Ordinal) { ["Vdc"] = new Value(volts) },
                 new VdcModel(), PdnOriginKind.SourceBranch,
                 $"{name} at {volts:0.###} V open circuit",
-                null, CellOf(nr), src.Anchor.Refdes, null));
+                null, CellOf(nr), src.Anchor.Refdes, null, At: AnchorPoint(src.Anchor)));
 
             if (internalNode != np)
                 _staged.Add(new PdnStaged(
@@ -579,7 +581,7 @@ internal sealed class PdnAssembly
                     new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(r!.Value) },
                     new ResistorModel(), PdnOriginKind.SourceResistance,
                     $"{name}'s series resistance, {r.Value * 1e3:0.###} mΩ",
-                    null, CellOf(np), src.Anchor.Refdes, r.Value));
+                    null, CellOf(np), src.Anchor.Refdes, r.Value, At: AnchorPoint(src.Anchor)));
             else
                 _notes.Add(
                     $"{name} states no series resistance, so it is an ideal source at DC. On an " +
@@ -650,13 +652,36 @@ internal sealed class PdnAssembly
                     : $"{name}, observed",
                 CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
 
-            _ports.Add(new PdnPortBinding(k, name, load.Anchor, np, nr, cells, load.DcCurrentA));
+            _ports.Add(new PdnPortBinding(k, name, load.Anchor, np, nr, cells, load.DcCurrentA,
+                                          AnchorPoint(load.Anchor)));
         }
 
         return null;
     }
 
     // ── node bookkeeping ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Where an anchor actually is on the board — the centroid of the pads it names, or null where
+    /// it names none.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is what a marker is drawn at, and it is not <c>CellOf(Merge(nodes))</c>.</b> Merging
+    /// ties a pin field into one node and the cell that node reports is the union-find
+    /// REPRESENTATIVE — one arbitrary member of the tied set, which on a via-stitched rail is
+    /// routinely on another layer and several millimetres away. Nothing about that place is wrong
+    /// electrically; it is simply not a place, and a mark drawn there moves between two readings of
+    /// one unchanged design. The pads do not move.
+    /// </remarks>
+    private (long X, long Y)? AnchorPoint(RailPortAnchor anchor)
+    {
+        var pads = PdnAttachments.Resolve(anchor, _req.Pads);
+        if (pads.Count == 0) return null;
+
+        long sx = 0, sy = 0;
+        foreach (var (x, y) in pads) { sx += x; sy += y; }
+        return (sx / pads.Count, sy / pads.Count);
+    }
 
     private List<int> PowerNodesFor(RailPortAnchor anchor)
     {
@@ -755,7 +780,8 @@ internal sealed class PdnAssembly
 
             _origins.Add(new PdnElementOrigin(
                 componentIndex, s.Kind, s.Description, s.From, s.To, s.Refdes,
-                s.ResistanceOhms, s.LengthMetres, s.WidthMetres, s.Barrel, s.InductanceHenries));
+                s.ResistanceOhms, s.LengthMetres, s.WidthMetres, s.Barrel, s.InductanceHenries,
+                s.At));
         }
 
         if (dropped > 0)

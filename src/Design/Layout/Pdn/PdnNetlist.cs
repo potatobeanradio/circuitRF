@@ -114,6 +114,14 @@ public readonly record struct PdnCellRef(
 /// because brief 6's via check computes a current limit from the drill, the plating, the plating's
 /// own basis and the span — and a check that had to parse those back out of a sentence would be a
 /// second reading of the geometry that could disagree with the first one.</param>
+/// <param name="At">Where the thing this element IS actually sits on the board, where the question
+/// has an answer — the centroid of the pads its anchor named. <b>Not the same as
+/// <paramref name="From"/></b>, and that difference is a reported defect: a source or load anchor
+/// resolves to a set of cells that are TIED into one node, and the cell a tied node reports is the
+/// union-find representative — an arbitrary member of the set, which on a via-stitched rail can be
+/// on a different LAYER from the pad. A marker drawn there moves when nothing about the design has
+/// (owner, 2026-09-19: the example board's U2 source appeared inside the IN3 pour on one reading
+/// and above it on another). The anchor's own pads do not move, so that is what is carried.</param>
 public sealed record PdnElementOrigin(
     int ComponentIndex,
     PdnOriginKind Kind,
@@ -125,7 +133,8 @@ public sealed record PdnElementOrigin(
     double? LengthMetres = null,
     double? WidthMetres = null,
     PdnViaBarrel? Barrel = null,
-    double? InductanceHenries = null);
+    double? InductanceHenries = null,
+    (long X, long Y)? At = null);
 
 /// <summary>
 /// Why <see cref="PdnProvenance.PlaneCapacitanceFarads"/> is what it is (R-rail18-2b).
@@ -162,6 +171,9 @@ public enum PdnPlaneCapacitanceBasis
 /// <param name="Cells">Every cell tied into this port, power and reference together.</param>
 /// <param name="DcCurrentA">The current it draws, or null where this is an observation port and
 /// nothing else (§2.2, Q-16 — an unstated current is never a defaulted zero).</param>
+/// <param name="At">Where this port sits on the board — the centroid of the pads its anchor named,
+/// or null where the anchor resolved to none. <b>Read in preference to <paramref name="Cells"/> by
+/// anything that draws a mark</b>, for the reason <c>PdnElementOrigin.At</c> states.</param>
 public sealed record PdnPortBinding(
     int Index,
     string Name,
@@ -169,7 +181,8 @@ public sealed record PdnPortBinding(
     int PowerNode,
     int ReferenceNode,
     IReadOnlyList<PdnCellRef> Cells,
-    double? DcCurrentA);
+    double? DcCurrentA,
+    (long X, long Y)? At = null);
 
 /// <summary>
 /// Which model produced this, which reference extent was used, what was defaulted, what was refused

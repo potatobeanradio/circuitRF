@@ -1,5 +1,41 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF map: the per-frame work that was a pure function of the scene (2026-09-19)
+
+Reported by the owner: panning and zooming the board is very slow with the drop map on, and under
+one frame a second with the accurate reading on as well. Scroll-wheel zoom with it.
+
+`RailMapRenderer.DrawTiles` rebuilt a dictionary of per-layer tile lists, and re-evaluated
+`theme.Ramp(scene.Normalise(tile.Value))` for every tile, on EVERY FRAME. Both are a pure function of
+the scene and the theme, and a drop map is one rect per extraction cell — 64,907 of them on the
+shipped Power Rail example at the accurate reading. It also drew every tile whatever the viewport,
+so a zoomed-in pan paid for the whole board.
+
+The grouping and the colours are now computed once per (scene, theme) into a
+`ConditionalWeakTable<RailMapScene, TilePlan>`, and tiles outside the visible world rect are skipped.
+Keyed on the scene by REFERENCE because a scene is immutable and is replaced wholesale whenever the
+result changes (`RailLayoutOverlay.Invalidate` drops it), so a live scene is exactly the right
+lifetime and a dead one must not be held.
+
+**No pixel changes, and that was a constraint rather than a hope**: same grouping in the same
+emission order, same colours, same rects from `RectOf` off the live viewport. `RailCopyTests`'
+byte-identity gate passes untouched, which is the check that matters — it compares the window's
+clipboard copy against the report's own render.
+
+Measured, Debug, 900×700, twenty frames of a pan:
+
+| | tiles | before | after |
+|---|---|---|---|
+| Power Rail example, Fast, full extent | 11,920 | 4.53 ms/frame | 3.57 ms/frame |
+| Power Rail example, Accurate, full extent | 64,907 | 16.90 ms/frame | 11.35 ms/frame |
+| synthetic, zoomed 20× | 102,400 | 13.42 ms/frame | 0.44 ms/frame |
+
+**It does not account for one frame a second**, and `src/Ui/RESOLVED.md`'s own entry for this pass
+says where the remaining gap was and was not looked for. What is settled is that the scene is built
+once and cached (60 ms accurate, 6.7 ms fast) and a pan does not rebuild it, and that the draw is now
+bounded by what is on screen rather than by what the board holds.
+
+
 ## The port markers were missing from the one tab the window opens on (2026-09-19)
 
 Owner report on the shipped Power Rail example: *"I don't see those (U2, U1, U3) in the artwork …
