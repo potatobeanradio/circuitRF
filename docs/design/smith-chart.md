@@ -1,0 +1,1051 @@
+# circuitRF — Smith Chart: narrowband matching, by hand, with the chart doing the arguing
+
+**Status:** **PROPOSED** — rev 1, for review · **Date:** 2026-09-19 · **Phase:** P1…P3, see §9
+**Reads with:** `docs/design/match.md` §9 (the Designer this one is deliberately *not*, and the window
+conventions this one borrows), `docs/design/harmonicarf.md` §7.2 (the interactive Smith chart that
+already exists, and what it proved), `docs/design/data-display.md` (the plot layer this reuses whole),
+`docs/design/vswr-locus-gamma-plane.md` (the Γ-plane circle closed form), `docs/design/trace-markers-design.md`,
+`docs/design/loadpull-contours.md` §labels (the label boxes the load points reuse),
+`docs/design/project-file-formats.md` (where `.csmith` sits), `docs/design/ui-architecture.md` (the
+firewall), `docs/design/cli.md` (the P3 verb).
+
+**What this document decides.** The element set and what each one's *trajectory* means; what the chart
+is normalized to; how a gripper drag inverts to a component value; how the network survives a round trip
+through the system clipboard into a real `.csch` and back; and where every piece lives relative to the UI
+firewall. **Four questions were put to the owner before it was written** and all four are answered in
+§3.5, §3.4, §3.6 and §9. **Five further instructions arrived during drafting** and are folded in: a TLIN
+carries a settable characteristic impedance as well as a length (§3.3); *Smith Chart* becomes an **On
+Launch Action** in Settings (§5.9); the tool is a **circuitRF document, not an application** (§5.1) —
+which is what makes the On Launch row legal; the network drawing can be **mirrored** so the generator
+sits on the right (§5.5); and **every editable value in the window is an `InlineEditText`** (§5.3).
+
+---
+
+## 1. What it is, in one paragraph
+
+The Smith Chart tool is a **scratchpad for narrowband impedance matching done by hand**. You state the
+generator's impedance — one number, or a table over frequency, or an imported `.s1p` — and then cascade
+two-pin elements outward from it, in series and in shunt, watching where the impedance seen at the far
+end lands. The chart draws **one curve per element**: the path the impedance takes as that element grows
+from nothing to its set value, so the network is not a list of numbers but a visible walk across the
+chart. Every joint in that walk carries a **gripper**, and dragging one changes the element it belongs to
+and moves everything downstream of it live. That last sentence is the whole tool: the question a matching
+network actually poses is *"if I make this one a bit bigger, where does the load end up?"*, and this
+answers it by letting you drag it and look.
+
+---
+
+## 2. Scope
+
+### 2.1 In scope
+
+- One **linear cascade** from a generator to an observation point called the *load*, built from two-pin
+  elements placed in series or in shunt (§3.3).
+- A **live** Smith chart: per-element trajectories, grippers, sliders, all redrawn during the drag.
+- **Per-frequency load points**, labelled, for every row of the generator table; and an optional swept
+  band through them (§3.6).
+- **Markers** with VSWR circles, and **overlaid data** — Touchstone files and S-parameter cubes — so an
+  S11, an S22 or a pair of stability circles can sit under the work.
+- A **constant-Q pair of arcs**, draggable, with a shift-modified quarter-step.
+- **Undo/redo** over every edit, including drags and the clipboard operations.
+- **Clipboard both ways**: the network out as vector/bitmap/`.csch`; a compatible `.csch` selection in.
+- **Mirroring the network drawing**, so the generator sits on the right and the cascade grows leftward.
+- Persistence in a **`.csmith`** document that opens like any other circuitRF document.
+
+### 2.2 Non-goals, and what to use instead
+
+- **No synthesis.** Nothing here computes a network for you. That is the Match Designer's entire job
+  (`match.md`), and the two tools are answers to different questions: the Designer is *broadband*, built
+  on a Fano-optimum filter prototype with Norton transforms and a solutions list; this is *narrowband*,
+  and the user is the algorithm. Adding "solve it for me" here would make the Designer's synthesis exist
+  in two places, and the second copy would be worse.
+- **No optimizer, no goal, no error function.** A network is judged by looking at it.
+- **Nothing nonlinear, no power, no dBm.** The generator has an impedance and no available power.
+  Everything in this tool is a linear immittance, and a "gain" readout would be inventing a quantity the
+  model does not have.
+- **No branching, no hierarchy, no sub-cells.** One cascade, ground on the shunt side. That constraint is
+  not a simplification to be relaxed later — it is what makes the per-element trajectory *mean* something,
+  because a walk across a chart has to be a walk.
+- **No layout, no artwork, no physical length.** A TLIN is an ideal line with a characteristic impedance
+  and an electrical length. `MLIN` and the microstrip family are a schematic's business.
+- **A `.csmith` is not simulated by the engine.** It is evaluated in closed form (§4) — and gated against
+  the engine (§4.6), which is a different and stronger statement than being run by it.
+
+### 2.3 What already exists, and is reused rather than rebuilt
+
+A large fraction of this tool is already in the repository. Cataloguing it up front, because the design
+below is mostly an assembly.
+
+| need | existing component | where |
+|---|---|---|
+| Smith grid, arcs, numbering, zoom-aware labels | `AxesRenderer.DrawSmithGrid` | `src/Render/DataDisplay/Renderers` |
+| the chart control: pan, zoom, marker add/drag/hit-test, inspector, context menu | `PlotControl` + `Plot`/`Trace`/`Marker` | `src/Ui/DataDisplay` + `src/Render/DataDisplay/Models` |
+| constant-VSWR circle about a marker, closed form, any VSWR | `LoadpullSurface.VswrLocus` (Γ plane) | `src/RfCore/Loadpull` |
+| the VSWR-circle drag inverse | `HarmonicaVswrHandle.VswrThroughEx` | `src/Ui/Harmonica` |
+| labelled boxes on a curve, world-unit spaced, padded, staggered | `ContourRenderer.DrawIsoLineLabel` / `ComputeLabelAnchors` | `src/Render/DataDisplay/Renderers` |
+| stability circles, S↔Z↔Y, derived traces | `Trace.DerivedParameters`, `TraceResolve` | `src/Render/DataDisplay` |
+| Touchstone read/write, renormalization, S↔Z↔Y | `TouchstoneIO`, `RFNetwork`, `SNP`, `RfHelpers` | `src/RfCore` |
+| an S-parameter file fitted once and sampled many times | `SnpInterpolator`, `TouchstoneCache` | `src/RfCore` |
+| drawing a ladder as a real schematic | `SchematicRenderer` | `src/Render/Renderers` |
+| projecting a ladder onto editable schematic objects | `MatchSchematicModel` / `MatchSchematicCopy` | `src/Ui/Match` |
+| copy a selection as JSON + SVG + PDF + PNG + `CF_ENHMETAFILE` | `SchematicClipboard.CopyAsync` | `src/Ui/Clipboard` |
+| paste a schematic selection back | `SchematicClipboard.PasteAsync` | `src/Ui/Clipboard` |
+| copy a plot as PDF + SVG + JSON + bitmap | `PlotExporter.CopyPlotToClipboardAsync` | `src/Ui/DataDisplay` |
+| marker-guarded clipboard JSON, framework-free | `RailClipboard` (the shape to copy) | `src/Design/RailRf` |
+| a document with a tab, dirty mark, Save/Save As, tear-off, undo routing | `DataDisplayDocument` | `src/Ui/DataDisplay` |
+| `.csmith` reader/writer conventions | `RailDocumentIo` (the shape to copy) | `src/Design/RailRf` |
+| value+unit entry, validation, formatting | `InlineEditText`, `MatchValueFormat` | `src/Ui/Controls`, `src/Ui/Match` |
+| the window's chrome rules | `MatchDesignerWindow.axaml` | `src/Ui/Views/Match` |
+
+**What is genuinely new** is short: the cascade evaluator and its per-element trajectories (§4.1–§4.2),
+the gripper inverse (§4.3), the constant-Q arcs (§4.4), the topology recognizer for an incoming `.csch`
+(§6.2), and the document plus its window.
+
+---
+
+## 3. The model
+
+### 3.1 The generator
+
+The generator is **an impedance and nothing else** — a table of rows, each a frequency and a complex
+impedance:
+
+```
+f (Hz)        R (Ω)     X (Ω)
+1.8e9         12.0      −8.5
+2.0e9         11.4      −9.1
+2.2e9         10.9      −9.8
+```
+
+- **At least one row.** A single row is the ordinary case ("50 Ω at 2 GHz"); a table is what makes the
+  per-frequency load points (§3.6) interesting.
+- **Rows are sorted by frequency and frequencies are unique.** A duplicate row is a refusal naming the
+  frequency, not a silent last-wins.
+- **Import `.s1p`** reads the file through `TouchstoneIO`, converts S11 to Z against the file's *own*
+  stated reference impedance, and writes **one table row per file frequency**. A file with a
+  per-port reference that is not the one in its `#` line is read the way `TouchstoneIO` reads it and no
+  other way — this tool adds no second Touchstone interpretation.
+- **Conjugate** is a one-shot, undoable edit of the table: every row's X is negated in place. It is *not*
+  a persistent flag. A flag would mean the number in the table and the number the tool uses disagree,
+  and there is no way to display that which does not eventually mislead someone.
+- **The import copies values in; the path is provenance only.** The `.csmith` stores the numbers, not a
+  reference to the `.s1p`, so a document is portable on its own and an archived or moved workspace cannot
+  break it. The source path is recorded for display and for a **Re-import** button that repeats the read.
+  This is the opposite choice from the overlays (§5.7), and deliberately: an overlay is reference material
+  the user is comparing against, while the generator is part of the design.
+
+### 3.2 The cascade
+
+An ordered list of elements, index 0 nearest the generator. Each element is **Series** (in the through
+path) or **Shunt** (from the through path to ground). There are no other placements, no branches and no
+nesting.
+
+```
+     ┌─────┐
+Zgen │     ├──[ e0 ]──┬──[ e2 ]──┬── ... ──● load
+     └─────┘          │          │
+                    [ e1 ]     [ e3 ]
+                      ⏚          ⏚
+```
+
+The state carried along the walk is **the impedance looking back toward the generator**:
+
+```
+Z₀    = Z_gen(f)
+series:   Z_{k+1} = Z_k + Z_e(f)
+shunt:    Z_{k+1} = 1 / ( 1/Z_k + Y_e(f) )
+2-port:   Z_{k+1} = Z₂₂ − Z₁₂·Z₂₁ / (Z₁₁ + Z_k)      (port 1 faces the generator)
+```
+
+and the observation point — **the load** — is the far end. **There is no load element.** Nothing
+terminates the cascade; the load is where you *read*, which is why the tool can show the impedance
+"that would be seen at the load" without the user having to assert what the load is. A user who wants
+to see a specific load termination on the chart places a marker at it, or overlays its `.s1p`.
+
+**Every element may be disabled** without being deleted (a checkbox on its row). A disabled element
+contributes nothing, draws no trajectory, and keeps its values and its place. This costs one boolean and
+it is the difference between trying something and losing it.
+
+### 3.3 The element vocabulary
+
+Every element maps **one to one onto a component circuitRF already has**, and that is the binding
+constraint on this list rather than a convenience. It is what lets §6.1 paste the network into a real
+schematic that really simulates, and it is what keeps this tool from growing a private component model
+that agrees with nothing.
+
+| element | placement | `SymbolKind` / engine | parameters (base SI) | sliders | default gripper parameter |
+|---|---|---|---|---|---|
+| R | series, shunt | `Resistor` / `R` | R | 1 | R |
+| L | series, shunt | `Inductor` / `L` | L | 1 | L |
+| C | series, shunt | `Capacitor` / `C` | C | 1 | C |
+| SRLC | series, shunt | `Srlc` / `SRLC` | R, L, C | 3 | L |
+| PRLC | series, shunt | `Prlc` / `PRLC` | R, L, C | 3 | C |
+| Z1P | series, shunt | `ZPort` (`NumPorts=1`) / `ZPort` | Z (complex, constant over f) | 2 (Re, Im) | Im |
+| S1P | series, shunt | `Snp` (`NumPorts=1`) / `SnP` | file reference | — | — |
+| S2P | series only | `Snp` (`NumPorts=2`) / `SnP` | file reference | — | — |
+| TLIN | series | `Tline` / `TLIN` | Z₀, E (at F_ref) | 2 | E |
+| TLIN — open stub | shunt | `Tline` / `TLIN`, far end open | Z₀, E (at F_ref) | 2 | E |
+| TLIN — shorted stub | shunt | `Tline` / `TLIN`, far end grounded | Z₀, E (at F_ref) | 2 | E |
+
+Element impedances at angular frequency ω, all of them the textbook ones:
+
+```
+R      Z = R                        Y = 1/R
+L      Z = jωL                      Y = 1/(jωL)
+C      Z = 1/(jωC)                  Y = jωC
+SRLC   Z = R + jωL + 1/(jωC)
+PRLC   Y = 1/R + 1/(jωL) + jωC
+Z1P    Z = Z                        (a complex constant; no frequency dependence — that is the point of it)
+S1P    Z = Z_file·(1+S₁₁)/(1−S₁₁)    S₁₁ interpolated to ω, referenced to the file's own Z
+S2P    the Z-parameter form above, S interpolated to ω then converted
+TLIN   Z_{k+1} = Z₀·(Z_k + jZ₀·tanθ)/(Z₀ + jZ_k·tanθ)
+open   Y = j·tanθ / Z₀
+short  Y = 1 / (jZ₀·tanθ)
+```
+
+**A 2-port only ever goes in series.** A shunt one-port is what `S1P` and `Z1P` are for, and a 2-port
+with its second port grounded is a different component than the one the user placed. An `S2P` whose file
+turns out to have one port is a refusal naming the file and the element, not a silent promotion.
+
+#### The TLIN's two parameters, and the frequency its length is quoted at
+
+A TLIN carries **both** a characteristic impedance Z₀ and an electrical length E — owner, mid-review, and
+it matters more than it looks: on a Smith chart the line's Z₀ sets *which circle* the rotation happens on
+and E sets *how far around*, so a tool that fixed Z₀ at 50 Ω could not draw the most common move there is.
+Both get a slider and either can be the gripper's parameter.
+
+**E is quoted at the element's own reference frequency F_ref, and the length scales with frequency:**
+
+```
+θ(f) = (π/180) · E · f / F_ref
+```
+
+This is `TLIN`'s own semantics (`Z`, `E`, `F`) and it is not negotiable, because the whole reason the
+load point is plotted at several frequencies is to see the network come apart at the band edges — and a
+line whose electrical length did not change with frequency would be the one element in the cascade that
+never did.
+
+- **F_ref defaults to the design frequency at the moment the element is placed**, and is an editable field
+  on the element's row. It does **not** follow the design frequency afterwards: a line that silently
+  re-specified itself whenever the user retuned the chart would be a different physical line each time,
+  and the load points would stop meaning anything. The status strip says so once, the first time a design
+  frequency change leaves a TLIN's F_ref behind.
+- A **quarter-wave-and-beyond stub** is legal and its trajectory is interesting; see §4.2.
+
+### 3.4 What the chart is normalized to — owner decision
+
+**A single, real, document-wide reference impedance Z₀_chart, default 50 Ω**, user-settable. Γ is the
+ordinary voltage reflection coefficient against it:
+
+```
+Γ = (Z − Z₀_chart) / (Z + Z₀_chart)
+```
+
+Every overlay (§5.7) is renormalized to it on the way in, and the grid is the ordinary Smith grid, fixed.
+
+**And a conjugate-match target is drawn.** At each generator-table frequency the tool draws a faint,
+un-selectable target glyph at `Γ(conj(Z_gen(f)))`. Landing that frequency's load point on its target *is*
+the conjugate match, and the readout strip states the mismatch in dB for the design frequency. This is
+what a moving, generator-referenced normalization would have bought, without the cost of it — a grid
+whose meaning changes under the user's hands whenever the generator or the design frequency is edited,
+and an overlay that has to be renormalized per frequency to stay comparable.
+
+The alternative was considered and rejected on exactly that ground; it is recorded in §12 as Q-2 in case
+review disagrees, because the code difference is one function.
+
+### 3.5 The trajectory rule — owner decision
+
+Each enabled element draws **one curve**, from the impedance at its input to the impedance at its output.
+The rule is **scale the element's immittance, not its component values**:
+
+```
+series :  Z(t) = Z_in + t·Z_e(ω)        t ∈ [0,1]
+shunt  :  Y(t) = Y_in + t·Y_e(ω)        t ∈ [0,1]
+TLIN   :  θ(t) = t·θ_total              (the line formula, at the line's own Z₀)
+stub   :  θ(t) = t·θ_total              (the stub admittance, added to Y_in)
+S1P/S2P:  no parameter — a dashed chord from Γ_in to Γ_out, and no gripper
+```
+
+For an L, a C or an R this is exactly the classical construction and produces exactly the classical
+curves: a series reactance walks a **constant-resistance** circle, a shunt susceptance walks a
+**constant-conductance** circle, a series resistance walks the real-part line, a shunt conductance the
+same in the Y plane. Nothing about the familiar picture changes.
+
+What it buys is that **there are no special cases for the multi-parameter elements**. An SRLC's
+`Z_in + t(R + jX)` is a straight segment in the Z plane and therefore a circular arc in Γ — one curve, one
+gripper, no discontinuity. The alternative, scaling the component *values*, is the reading the phrase
+"from 0 to its value" most naturally suggests and it does not survive contact with a capacitor: as C→0 the
+reactance −1/ωC runs to −∞, so an SRLC's trajectory would leave the chart at t→0 and come back, and a PRLC's
+would do the dual. That is a true picture of a nonsensical question.
+
+**Trajectories are sampled in t, never in the derived quantity.** Sampling a stub's susceptance uniformly
+would put no points where the curve is moving fastest; sampling θ uniformly is correct everywhere,
+including through the pole (§4.2). Sampling is adaptive on chord error in *canvas* space with a fixed
+budget, so a curve is as smooth as the zoom deserves and no smoother.
+
+**Direction is drawn.** Each trajectory carries a small arrowhead at its midpoint pointing from input to
+output, because two adjacent arcs sharing a gripper are otherwise ambiguous about which way the walk goes.
+
+### 3.6 Frequency: three different things, kept apart
+
+1. **The design frequency.** One number. It is what the trajectories are drawn at, what the sliders'
+   reactances are computed at, and what the readout strip reports. It is **free** — it need not be a row
+   of the generator table. `Z_gen` is **linearly interpolated in R and X** between the two bracketing
+   rows; a design frequency **outside** the table's span is a **refusal**, not an extrapolation, and the
+   sentence names the table's span. (A single-row table is the exception: one row means one impedance,
+   flat, and the design frequency is free.)
+2. **The table frequencies.** Every generator-table row produces a **load point** on the chart, with a
+   small label box naming the frequency — the same `ContourRenderer.DrawIsoLineLabel` box the loadpull
+   iso-lines use, placed by the same anchor walk, so the two surfaces cannot drift apart in appearance.
+   The design frequency's point is drawn emphasised; the others are secondary. Each carries its
+   conjugate-match target (§3.4).
+3. **The swept band — optional, off by default (owner decision).** A start/stop/npts band, drawn as a
+   thin continuous locus through the load points. This is what makes bandwidth visible on a tool whose
+   premise is that bandwidth is not the question, and it costs one evaluation per point of arithmetic
+   that is already measured in nanoseconds. `Z_gen` across the band is interpolated from the table by the
+   rule above, and the band is **clamped to the table's span with a stated note** rather than refused —
+   a band is a viewing choice, where a design frequency is a design input.
+
+---
+
+## 4. The arithmetic
+
+All of it is closed form. There is no matrix, no solve, no iteration anywhere in the interactive path.
+
+### 4.1 The cascade evaluator
+
+`SmithCascade.Evaluate(design, f)` walks §3.2's recurrence and returns the impedance at **every** node —
+N+1 of them for N elements — not just the last. The whole chart is a projection of that one array, and
+computing it costs a handful of complex divides per element. A 12-element network over a 201-point sweep
+is under 2,500 element evaluations; the budget for a drag frame is not in question and no caching,
+warm-starting or scheduling is proposed. **If a future element makes this untrue, that element is the
+thing to reconsider** — an interactive Smith chart that has to schedule frames is a different and much
+worse tool, as harmonicaRF's `FrameScheduler` exists to prove.
+
+Touchstone-backed elements (`S1P`, `S2P`) and the generator's own interpolation are the only places where
+per-frequency data is fitted. The fit is built **once per file, at load**, through `SnpInterpolator` behind
+`TouchstoneCache`, and reused for every sample — the S-parameter engine's own defect of re-fitting its
+splines at every frequency point is recorded in `src/Engine/RESOLVED.md` and there is no reason to repeat
+it in the one place where the cost would land inside a drag.
+
+### 4.2 Per-element trajectories
+
+Each enabled element emits a polyline in the Γ plane by sampling §3.5's parameter. Three details are worth
+stating because each one has a wrong version that looks right:
+
+- **A trajectory that passes through Γ = 1.** A stub longer than a quarter wave has `tan θ` run through a
+  pole, so its susceptance sweeps to +∞ and returns from −∞. On the chart that is not a discontinuity at
+  all: `Y_in + jB` for B over the whole real line is exactly the **closed constant-conductance circle**,
+  traversed through the Γ = 1 point. Sampling in θ walks it correctly and continuously; sampling in B
+  cannot. The polyline is emitted as one path, and the renderer's own clip to the unit disc handles the
+  single vertex that lands on the boundary.
+- **A negative-real-part impedance is drawn, not hidden.** An active `S2P` or a Z1P with negative R puts
+  a node outside the unit circle. The chart's window is the Data Display's ordinary autoscale, which
+  already enforces a unit-circle minimum on a Smith plot and grows past it when the data asks
+  (`Plot.AutoscaleEnforceUnityMinimum`). Clamping to the disc would be a lie about a stability result.
+- **A disabled element emits nothing**, and the gripper between its neighbours belongs to the next
+  *enabled* element. There is no zero-length stub sitting invisibly in the chain.
+
+### 4.3 The gripper inverse — drag to a value
+
+A gripper sits at **every node** of the walk: N+1 of them for N elements.
+
+- **Node 0 is the generator and is an anchor, not a gripper.** It is drawn (so the walk has a visible
+  start) and it does not drag. The generator is edited in its own panel, where the frequency table lives;
+  a drag would have to guess which row it meant.
+- **Node k, for k ≥ 1, drags element k−1.** It changes exactly one parameter of that element — its
+  **active parameter**, which is the one whose slider was last touched and defaults per §3.3's table.
+  Nodes k+1 … N follow. **This is the feature**: dragging a mid-cascade element and watching the load
+  point move is the single most-named behaviour in the tool's specification.
+
+The inverse is closed form in every case, because the reachable set of a single free parameter is a known
+locus and the answer is the projection of the drag point onto it. Writing `Z_d = Z₀_chart·(1+Γ_d)/(1−Γ_d)`
+for the drag point and `Z_in`/`Y_in` for the element's input:
+
+```
+series R        R     = Re(Z_d) − Re(Z_in)
+series L        L     = (Im(Z_d) − Im(Z_in)) / ω
+series C        C     = −1 / (ω·(Im(Z_d) − Im(Z_in)))
+shunt  R        1/R   = Re(Y_d) − Re(Y_in)
+shunt  L        L     = −1 / (ω·(Im(Y_d) − Im(Y_in)))
+shunt  C        C     = (Im(Y_d) − Im(Y_in)) / ω
+SRLC on L       L     = (X_target + 1/(ωC)) / ω              X_target = Im(Z_d) − Im(Z_in)
+SRLC on C       C     = 1 / (ω·(ωL − X_target))
+SRLC on R       R     = Re(Z_d) − Re(Z_in)
+PRLC            the duals of the three above, in Y
+Z1P on Im       Im(Z) = Im(Z_d) − Im(Z_in)         (series; the Y dual for shunt)
+TLIN on E       project Γ_d onto the rotation circle, read the angle, E = 180·θ/π · F_ref/f
+TLIN on Z₀      one real unknown in the line equation — solved by the closed quadratic, see below
+stub on E       θ from the required susceptance: θ = atan(Z₀·B_req) (open) or atan(−1/(Z₀·B_req)) (short),
+                unwrapped into the branch the current E is in so a drag does not jump a half-turn
+```
+
+Only the component of the drag that the parameter can reach is used; the perpendicular component is
+discarded. That is not an approximation — it is what "drag along the arc" means, and it is why the
+gripper follows the curve rather than the cursor.
+
+**The TLIN's Z₀ inverse** is the one that is not a one-liner. Requiring `Z_out = Z_d` in the line equation
+and treating Z₀ as the unknown gives `j·tanθ·Z₀² + (Z_k − Z_d)·Z₀ − j·tanθ·Z_k·Z_d = 0`, a complex
+quadratic in Z₀ whose two roots are computed directly; the tool takes the root with positive real part
+nearest the current value, and when neither is physical it pins and says so (below). At `tanθ = 0` the
+equation degenerates — a zero-length line transforms nothing — and the drag is inert, which is correct.
+
+**Physicality is enforced at the pin, and reported.** L, C and R are non-negative; a TLIN's Z₀ is
+positive; an electrical length is non-negative. A drag demanding otherwise **pins at the boundary and the
+status strip names the parameter and the limit** — it does not silently produce a negative inductance,
+and it does not stop tracking the cursor either, so the gripper stays under the user's hand at the pin.
+
+**One drag is one undo entry.** Every pointer-move during a drag mutates the model, and the undo entry is
+pushed on *release*, carrying the before-value captured on *press*. This is not a style preference: the
+Match Designer shipped a defect where a two-way-bound slider's coercing write-back reached an unguarded
+setter *during* `Undo`, so every undo added an entry and eight edits took fourteen undos to unwind. The
+lesson is recorded in `src/Ui/Match/RESOLVED.md` and the rule that comes out of it is stated here as a
+requirement: **a control's write-back is not an edit, and the model's value setter must be able to say
+whether it is being driven by the user or by a restore.**
+
+### 4.4 The constant-Q arcs
+
+For normalized `z = r + jx`, constant Q means `|x| = Q·r`. Substituting `z = (1+Γ)/(1−Γ)` with `Γ = u+jv`:
+
+```
+r = (1 − u² − v²) / ((1−u)² + v²)          x = 2v / ((1−u)² + v²)
+
+x = Q·r   ⇒   u² + v² + (2/Q)·v − 1 = 0   ⇒   u² + (v + 1/Q)² = 1 + 1/Q²
+```
+
+So each branch is **a true circle**, and the pair is:
+
+```
+inductive branch (x > 0):   centre (0, −1/Q),  radius √(1 + 1/Q²)
+capacitive branch (x < 0):  centre (0, +1/Q),  radius √(1 + 1/Q²)
+```
+
+Both pass exactly through Γ = ±1, which is the reason they are drawn as the arc **inside the unit disc
+only** — the renderer's existing disc clip does it, and no arc-endpoint arithmetic is needed. Q → ∞
+degenerates to the unit circle itself and Q → 0 to the real axis; both are drawn correctly by the same
+formula, and neither is a special case.
+
+**Dragging one sets Q**, closed form: the drag point maps to `z_d` and `Q = |x_d| / r_d`. Dragging either
+branch moves both, because they are one setting. `r_d ≤ 0` — a drag outside the passive region — has no
+finite Q; the drag pins at the last valid value and the strip says so. **Holding shift rounds to the
+nearest 0.25**, applied to the computed Q before it is stored, so a shift-drag lands on exact quarters
+and a subsequent un-shifted drag starts from the exact quarter rather than from a rounded display of
+something else.
+
+The Q line is chrome, not data: it carries no marker, is drawn beneath the trajectories, and is excluded
+from autoscale.
+
+### 4.5 Markers, VSWR, and the readout
+
+Markers are the Data Display's own `Marker` objects on the Smith `Plot`, which means placement, drag,
+hit-test, the info box, the context menu, the editor and persistence all come for free — including
+`VswrEnabled`/`VswrValue`, whose circle is `LoadpullSurface.VswrLocus` in the Γ plane (the closed form in
+`vswr-locus-gamma-plane.md`) and whose drag inverse is `HarmonicaVswrHandle.VswrThroughEx`. The one
+correction that file records is worth repeating here because this tool will invite the same mistake: a
+constant-VSWR circle about a marker is **not** centred on that marker unless the marker is at Γ = 0.
+
+The status strip reports, for the design frequency: the load impedance in R + jX, Γ in polar and
+rectangular, VSWR, and the conjugate-match mismatch in dB. Every number is the one the evaluator
+produced, formatted by `MatchValueFormat`, never re-derived for display.
+
+### 4.6 How this is gated — the engine is the oracle
+
+The evaluator is closed form and the engine is not, and that is precisely what makes the gate worth
+having. **For every element type and both placements, a test builds the equivalent `.cnl` — a `Port` with
+the generator's impedance, the cascade as real component lines, a `Port` at the load — runs the ordinary
+S-parameter analysis, converts S₁₁ back to an impedance, and compares against `SmithCascade.Evaluate`.**
+
+This is the strongest acceptance anchor available and it is cheap, because §3.3's one-to-one mapping onto
+existing components is what makes the equivalent netlist *writable*. Its real value is not catching an
+arithmetic slip; it is catching a **convention** slip — a sign, a port order, a reference impedance, a
+`tan` where a `cot` belongs — which is the class of error that produces a plausible picture. Tolerance:
+1e-9 relative on Z, which is the numerical floor, not an engineering allowance.
+
+The same test is what proves §6.1's claim that the copied schematic is the network the user was looking
+at, since it runs the same netlist.
+
+---
+
+## 5. The window
+
+### 5.1 It is a document, not an application — owner decision
+
+harmonicaRF, wBond and railRF each open a **window** of their own, and each has a reason: harmonicaRF and
+wBond ship as standalone binaries, and railRF's centre panel is the layout editor's canvas. **The Smith
+Chart tool has neither reason**, and the owner's instruction is explicit: treat it as a circuitRF
+document.
+
+So `.csmith` opens as a **docked `Document`** in the workspace shell, exactly as a `.cdd` does, and it
+inherits — rather than re-implements — the whole of what that means:
+
+- a document tab, a `•` dirty mark, and participation in **Save**, **Save All** and close-time prompting,
+  through `IFileBackedDocument`;
+- **Ctrl/Cmd+Z routed by the shell** through `IEditHistoryDocument`, which is the interface that exists
+  because a *floating* Data Display once undid an edit in an unfocused schematic — on macOS the menu bar
+  is app-global and the shell's Undo command must be able to reach whichever document is key;
+- **tear-off and floating**, the Window Layout, and restoration of open documents on reopen;
+- appearing in the **project tree** when it lives in a workspace, with double-click to open, and the same
+  single-instance rule every document type has (a second open focuses the first);
+- **needing no workspace**: a scratch `.csmith` opens with nothing else loaded, on harmonicaRF's own
+  terms, and Save As gives it a home.
+
+There is no standalone `smithRF` binary and none is proposed. This is a document type.
+
+### 5.2 Layout
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ • lna_input_match.csmith                                                        (document tab)│
+├───────────────────────┬──────────────────────────────────────────────────────────────────────┤
+│ GENERATOR             │                                                                      │
+│  f        R      X    │                     ╭────────────────────────╮                       │
+│  1.80 G  12.0  −8.5   │                   ╭─┤                        ├─╮                     │
+│  2.00 G  11.4  −9.1   │                  │     ·2.20G                  │                    │
+│  2.20 G  10.9  −9.8   │                  │        ⊕      ╭──────╮      │                    │
+│             [+]  [−]  │                  │      ·2.00G ──╯      ╰── ·  │                    │
+│                       │                   ╰─┤        ·1.80G          ├─╯                     │
+│  [ Import .s1p… ]     │                     ╰────────────────────────╯                       │
+│  [ Conjugate ]        │                                                                      │
+│                       │      · load point, labelled     ⊕ conj(Z_gen) target                 │
+│  Chart Z₀  [ 50  ] Ω  │      ─── element trajectory     ○ gripper                            │
+│  Design f  [ 2.0 ] GHz│                                                                      │
+│                       │                                                                      │
+│  [x] Sweep            │                                                                      │
+│      1.8 … 2.2 GHz    │                                                                      │
+│      201 pts          │                                                                      │
+│  [x] Constant Q  1.75 │                                                                      │
+│                       │                                                                      │
+│  OVERLAYS      [+][−] │                                                                      │
+│   lna_s2p · S11       │                                                                      │
+│   lna_s2p · µ-circles │                                                                      │
+├───────────────────────┴──────────────────────────────────────────────────────────────────────┤
+│ NETWORK                                      [ Add ▾ ] [ Insert ▾ ] [ Delete ] [ ⇅ ] [ ⇄ ]   │
+│                                                                                              │
+│         ┌───┐        ┌────┐         ┌────┐                                                   │
+│    G ───┤   ├────┬───┤ L2 ├─────┬───┤ TL1├──────● load                                       │
+│         └───┘   ═╪═  └────┘    ═╪═  └────┘                                                   │
+│          L1      C1             C2                                                           │
+│                  ⏚              ⏚                                                            │
+│                                                                                              │
+│  L2   L  [═══════════●═════════]   3.90 nH        [x] enabled                                │
+├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 2.000 GHz · load 49.1 + j1.8 Ω · Γ 0.019 ∠61° · VSWR 1.04 · conj. mismatch 0.02 dB           │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The proportions are the point: **the chart is the tool** and takes the large majority of the area; the
+network strip below it is tall enough for one row of symbols plus the slider for the selected element;
+the generator column is narrow. The splitters are draggable and their positions persist in the document.
+
+### 5.3 Chrome — borrowed, not invented
+
+`match.md` §9 and `railrf.md` §11.1–§11.2 already settled this window's conventions over roughly ten
+rounds of owner review, and this tool takes them rather than re-deciding them:
+
+- **Two-tier chrome**: `Border.pane` for a region, `Border.card` for a group inside it; one tile border,
+  6 px corners. **Sentence-case headings.** **Label left, value right**, numbers in one right-aligned
+  column whether settable or read-only.
+- Settable values are **`InlineEditText`** — see below, where this is a rule rather than a convention.
+- **Centred text in comboboxes and on buttons**; the one standing exception is a click-to-sort column
+  header, which stays left-aligned with its column.
+- **A status strip that states numbers**, and refusals that appear in it *with numbers in them*, with the
+  offending input turning red.
+- **Compact sliders** (the negative-margin trick) so a slider in a row does not make the row tall.
+- Advanced settings live behind **Settings**, not on the face of the window.
+
+#### Every editable value in this tool is an `InlineEditText` — owner instruction
+
+Not "most", and not "the ones in the specification pane". **Every** number, name and expression the user
+can change in this window is an `InlineEditText`: the generator table's f, R and X cells; the chart Z₀;
+the design frequency; the sweep's start, stop and point count; the constant-Q value; every parameter
+value beside every slider; a TLIN's F_ref; each element's instance name; each slider's range endpoints;
+and an overlay row's label.
+
+The reason is the one the owner gives: the control is already carrying the Match Designer's specification
+pane, railRF's source/load/aggressor rows and harmonicaRF's readout strip, so **the user has already
+learned it and we have already debugged it**. What comes with it, free and identically:
+
+- **The three-key contract, which is the same everywhere in this application** — Return commits and sets
+  `e.Handled` (or the hosting window's default button swallows it), LostFocus commits, Escape reverts.
+  The control's own doc comment says why it is worth naming: *getting any one of the three wrong is an
+  edit the user loses by clicking away*, and it is the kind of bug that is reported months later as
+  "sometimes it doesn't take".
+- **Double-click to open**, never single-click — a single click opens an editor the user only meant to
+  click past.
+- **The unit is part of the text and is not selected.** `Text` carries the whole `"1.5 nH"`; opening
+  pre-selects only `"1.5"`, so typing replaces the number and keeps the unit. That is the schematic
+  editor's own inline-edit behaviour.
+- **`HorizontalContentAlignment` is honoured by the resting text *and* the open box together**, which is
+  what makes §5.3's right-aligned value column work: a value that jumps to the left edge when it opens
+  reads as a different control appearing rather than the same one opening.
+- **`Watermark`** for an empty optional field, dimmed and never committed.
+
+**The one thing to decide rather than inherit is the hosting**, and the control's own remarks name the
+two that exist: the Designer's rows swap the box **in place** because a row is a fixed grid cell, while
+the readout strip **floats** its box in a `Canvas` overlay because its columns are width-shared and an
+in-place box would shove every column sideways. The generator table is the only grid of cells in this
+window, and its three columns are **fixed-width by construction** (a frequency and two ohm values), so
+it takes the in-place hosting. Nothing here needs the floating overlay, which is the more delicate of
+the two.
+
+### 5.4 The chart
+
+A `PlotControl` in `PlotType.Smith`, fed a `Plot` the view model rebuilds from the evaluator. Its traces
+are: one per enabled element (the trajectories), one for the load points, one for the conjugate targets,
+one for the optional swept band, and one per overlay. Pan, zoom, the marker context menu, the plot
+inspector, axis limits and **copy the plot to the clipboard** are the control's own and are not
+re-implemented.
+
+**Grippers and the constant-Q arcs are a new overlay seam on `PlotControl`**, not a second Smith chart.
+This is railRF's choice rather than harmonicaRF's, and for railRF's reason: harmonicaRF wrote its own
+canvas because it had a frame budget to defend and a contour pipeline to schedule, and this tool has
+neither. The seam is small — a drawing callback in canvas space, a hit-test that returns a handle, and
+press/move/release — and it is the same shape as the `ILayoutCanvasOverlay` the layout canvas already
+exposes to wBond and railRF. **A second Smith renderer is the thing this avoids**, because the two would
+drift and the difference would be invisible until someone compared a screenshot with an export.
+
+Gripper appearance is deliberately understated (the specification says *subtle*): a small hollow ring in
+the trajectory's own colour, brightening on hover, filled while dragging. They are drawn above the
+trajectories and **below** the markers, following harmonicaRF's own z-order rule.
+
+### 5.5 The network strip
+
+The network is drawn by **`SchematicRenderer`** — the renderer the schematic editor draws every frame
+with — over a projected model built exactly as `MatchSchematicModel` builds the Designer's ladder pane.
+It is a **projection, not an editable schematic**: there is no selection model, no wire tool and no
+free placement, because the topology is a list.
+
+- **Selection** is by click, on the symbol or on its label; the selected element's sliders appear beneath.
+- **Add** appends at the end (nearest the load); **Insert** places before the selected element; the
+  buttons carry a menu of the §3.3 vocabulary, each entry naming series or shunt.
+- **Reorder** by drag along the strip, or by the ⇅ buttons.
+- **Delete** removes the selected element; the chain closes up.
+- Instance names are auto-assigned per type (`L1`, `L2`, `C1`, `TL1`, …), editable, unique, and are what
+  §6.1 carries into a real schematic.
+- The strip scrolls horizontally, and **Zoom to Fit** is its default on any change that alters the count.
+
+#### Mirror — owner instruction
+
+**One button on the strip's toolbar flips the drawing so the generator is on the right and the cascade
+grows leftward.** It is the schematic editor's own Mirror Horizontal control, taken verbatim rather than
+re-drawn: `MaterialIcon Kind="FlipHorizontal"`, 16 × 16, `Classes="SelectionBtn"`, `Padding="6,3"`, with a
+tooltip naming its accelerator — the same glyph the schematic and layout toolbars already carry for the
+same idea, so it needs no learning.
+
+**It mirrors the drawing and nothing else.** Stating the three halves of that separately, because each
+has a wrong version:
+
+- **The topology does not change.** Element 0 is still the one nearest the generator, the list order is
+  untouched, and §3.2's recurrence runs exactly as before. The flag reaches only the projection, where it
+  negates the direction the x-cursor advances.
+- **The symbols mirror too, not just their positions.** Each projected component gets `MirrorX = true`,
+  which `SchematicGeometry.LocalToWorld` already honours for pin coordinates as well as for the glyph.
+  This is not cosmetic: an `S2P`'s port-1 marking means something, and a symbol that kept its handedness
+  while its position reflected would draw port 1 on the *load* side of a part whose file says otherwise.
+- **The chart does not mirror, and there is no button offering to.** The Γ plane's orientation is fixed
+  by physics — inductive above the real axis, capacitive below — and a mirrored Smith chart is simply a
+  wrong one.
+
+It is a **view setting**: it lives in the document's `View` block (§7), it marks the document dirty, and
+it is **one undo entry**, on the Data Display's own precedent that a persisted view change is undoable
+(`PushAxesWindowChange`). A discrete toggle costs one entry and a user who flips it by accident should be
+able to take it back with the key they already use.
+
+**The generator panel does not move.** It stays where §5.2 puts it, to the left of the chart, because it
+is a docked panel with a persisted splitter and the instruction was about the network rendering. That is
+a reading rather than a certainty, and it is Q-16 in §12.
+
+### 5.6 The value sliders
+
+One row per settable parameter of the selected element — one for an L, three for an SRLC, two for a
+TLIN, and **none at all for an `S1P` or `S2P`**, whose value is a file. Selecting one shows its file
+reference, its port count and its frequency span, and nothing to drag.
+Each row is a label, a compact slider and an `InlineEditText` showing the value with its unit.
+
+- **The slider is logarithmic** over a range centred on the current value, one decade either side by
+  default, for R/L/C/Z₀. It is **linear** for an electrical length and for the real and imaginary parts
+  of a Z1P. The range is shown at the ends and is editable (right-click ▸ *Set range…*); typing a value
+  outside the range re-centres it rather than clamping.
+- **Dragging a slider is live**: every step re-evaluates and redraws. One drag is one undo entry, on §4.3's
+  terms and for §4.3's reason.
+- **The last-touched parameter becomes the element's active parameter** — which is what the gripper drags.
+  The active row is marked, so the connection between "the slider I just used" and "the handle on the
+  chart" is visible rather than remembered.
+
+### 5.7 Overlays
+
+Additional data on the chart, from either of the two sources circuitRF already has:
+
+- **a Touchstone file**, referenced by a path **relative to the document** (the `.cdd` convention, and the
+  one that survives an archived or moved workspace — the repointing work in the archive/Window-Layout
+  round is what made relative references actually resolve);
+- **a cube in an open `DataSet`**, referenced the way a Data Display trace card references one.
+
+Each overlay row picks its quantity through the **existing** trace machinery: a raw S-parameter
+(`S11`, `S22`, …), a virtual Z or Y, or a derived `DerivedParameters` mode — of which
+`SourceStabilityCircle` and `LoadStabilityCircle` are the two this tool was asked for by name. All of it
+is renormalized to Z₀_chart on the way in (§3.4).
+
+Overlays are **reference material**: they are not part of the cascade, they carry their own colour and
+style, they may carry markers, and they are excluded from the chart's autoscale unless the row says
+otherwise.
+
+### 5.8 Menus and commands
+
+The document contributes to the shell's menus rather than owning a menu bar (§5.1):
+
+- **File** — New Smith Chart, Open, Save, Save As, Close, all the shell's own.
+- **Edit** — Undo, Redo, Cut/Copy/Paste routed to whichever pane has focus (§6).
+- **View** — Zoom to Fit (chart), Zoom to Fit (network), Show/hide: grippers, targets, Q arcs, labels.
+- **Insert** — the §3.3 vocabulary, mirroring the network strip's Add menu, so every element is reachable
+  from the keyboard.
+- **Tools ▸ Smith Chart** creates a new scratch document, beside *harmonicaRF*, *Match Designer* and
+  *railRF*. Both the native (macOS) and in-window copies of that menu must be edited together; the two
+  surfaces are hand-maintained and the file says so.
+
+### 5.9 On Launch — owner instruction
+
+`Settings ▸ General ▸ On Launch Action` gains a **Smith Chart** row, which opens a new scratch `.csmith`
+at startup. This is possible *because* of §5.1 — every existing member of that list is a document, and
+railRF and wBond are absent from it for the same reason.
+
+**The trap, already documented beside the code and repeated here because this change walks straight into
+it:** `LaunchAction` is **serialized as an ordinal**, and the Settings combobox is populated by a
+positional string array whose index is cast directly to the enum. So:
+
+- `NewSmithChart` is **appended** to `LaunchAction`, never inserted;
+- `"Smith Chart"` is **appended** to `SettingsView.LoadGeneralPrefs`'s array, never reordered;
+- and the two must be edited in the same commit, because reordering either one silently changes what
+  every already-saved `preferences.json` means.
+
+`ExecuteLaunchActionAsync` and `ApplyOnLaunchActionForNewWorkspace` each gain the case. A test asserts the
+array's length and order against the enum, so the next person cannot get it wrong quietly.
+
+---
+
+## 6. The clipboard
+
+**No clipboard code is written.** The owner's instruction is explicit and it is also the cheapest
+possible route: the schematic editor's copy path has had a great deal of debugging invested in it —
+Windows' `CF_ENHMETAFILE` in particular, which must be written in a *single* P/Invoke session because
+Avalonia's `SetDataAsync` empties the clipboard and keeps ownership — and every bit of that is reused as
+a call rather than as a pattern.
+
+### 6.1 Copy the network out
+
+Right-click the network strip ▸ **Copy**. A projection built exactly as `MatchSchematicCopy` builds the
+Designer's — real `EditableComponent`s at the coordinates the strip drew them at, real `EditableWire`
+spine segments in the gaps between series bodies, one ground per shunt column — is handed to
+**`SchematicClipboard.CopyAsync`**. That one call produces, simultaneously:
+
+- **the schematic JSON**, which pastes into a real `.csch` as real, editable components;
+- **SVG** and **PDF** vector, which paste into Keynote and (via the EMF path) PowerPoint as vectors;
+- **PNG**, for everything else.
+
+Two decisions about what the copied circuit *contains*:
+
+- **The generator becomes a `TermG` with `Num=1` and `Z` = the generator impedance at the design
+  frequency**, and **the load end becomes a `TermG` with `Num=2` and `Z` = Z₀_chart** — so what lands in a
+  schematic is a complete, runnable two-port, not a fragment with dangling ends. No analysis card is
+  copied: a pasted selection is a fragment of a circuit, and the TestBench it lands in owns its analyses.
+- **A `Term` carries one impedance, so a multi-row generator table is a lossy projection.** When the table
+  has more than one row the status strip says so on copy, naming the frequency that was used. It is
+  stated rather than prevented, because the copy is still the right circuit at the design frequency and
+  that is what a user pasting into a presentation or a schematic wants.
+
+**The copy follows the mirror** (§5.5). `MatchSchematicCopy`'s own stated rule is that a copy is *the
+drawing on screen, not the flattened cell* — it places every component at the coordinates the pane drew
+it at — and this tool takes that rule with it. Someone who flipped the network to make a figure and then
+copied it would not thank us for un-flipping it on the way out. The pasted circuit is electrically
+identical either way; only its geometry is reflected, and `MirrorX` travels on each component so a
+2-port's port 1 still faces the generator.
+
+The claim that "the copy is the network you were looking at" is not asserted — §4.6's gate runs the same
+netlist through the engine, so the two agree by test.
+
+### 6.2 Paste a `.csch` selection in
+
+Right-click the network strip ▸ **Paste**. `SchematicClipboard.PasteAsync` returns components and wires;
+a **recognizer** then decides whether they form a cascade this tool can represent, and either replaces the
+network wholesale or refuses with a sentence naming what stopped it.
+
+The recognizer builds the net graph and requires, in this order:
+
+1. every component is either a §3.3 element type, a ground, or a `Term`/`Port`;
+2. every non-ground net has degree 2, except the two end nets;
+3. exactly two end nets exist, and the walk between them is unique — **any branch is a refusal naming the
+   net**;
+4. every element hanging off the through path has its other pin on ground, and no other component does;
+5. no component carries a parameter this tool cannot represent (an expression, a swept variable, a
+   hierarchical reference) — **a refusal naming the instance and the parameter**, because silently
+   dropping an expression would change the circuit.
+
+**Which end is the generator** is decided by: a `Term`/`Port` with the lowest `Num`, if there is one;
+otherwise **the end that matches the strip's current mirror setting** — leftmost by x when the drawing
+runs generator-left, rightmost when it is mirrored (§5.5). The geometric fallback had to be stated that
+way rather than as a bare "leftmost", because a flipped strip would otherwise reverse every pasted
+network that carried no port, silently and half the time. The strip states which of the two rules fired,
+because they can disagree and the user is the only one who knows which they meant.
+
+The refusals matter more than the successes. A permissive reader that accepted *part* of a paste would
+replace a user's network with something that is not what they copied and report success — which is
+exactly the failure `RailClipboard`'s marker guard exists to prevent, and the reason it is quoted in §2.3
+as the shape to copy.
+
+**One paste is one undo entry**, restoring the entire previous network.
+
+### 6.3 Copy the chart
+
+Right-click the chart ▸ **Copy**, or Edit ▸ Copy with the chart focused, calls
+**`PlotExporter.CopyPlotToClipboardAsync`** — PDF, SVG, the Data Display config JSON, and a 2× bitmap, all
+on the clipboard at once. Trajectories, grippers, targets, Q arcs and markers are all in the rendered
+picture, because they are all in the `Plot` and its overlay.
+
+Every emitted SVG goes through `SvgFontNormalizer` on the way out of Skia's SVG device, as every other
+export in the repository does. That is not optional and it is not this tool's business to know why.
+
+---
+
+## 7. Persistence — the `.csmith`
+
+`.csmith` is read and written by `SmithDesignIo`, which **mirrors `RailDocumentIo` exactly**, which mirrors
+`EmSetupPersistence`, which mirrors `TechPersistence`: `System.Text.Json`, `WriteIndented`, enums as
+strings, `WhenWritingNull`, a `FormatVersion` that **refuses a newer file rather than half-reading it**,
+an atomic write, and a gzip sniff on load. A fifth spelling of the same thing would be a fifth thing to
+keep in step.
+
+**Numbers are stored in base SI**, and the scale lives nowhere near them: a frequency field is hertz, an
+inductance henries, a capacitance farads, an impedance ohms. This is the sweep-unit trap recorded in
+`src/Engine/RESOLVED.md` — a mark read without its scale once produced a run at 2 Hz that looked entirely
+normal — and it is worth restating for a tool whose inputs are all picohenries and gigahertz.
+
+**The one deliberate exception is electrical length, stored in degrees in a field named `…Deg`**, following
+`RailTarget`'s millivolts precedent. The rule the base-SI convention actually protects is *"a number must
+not be readable at the wrong scale"*, and a field whose name carries its unit satisfies it. Radians would
+match the letter and would disagree with `TLIN`'s own `E` parameter, the schematic, the UI and every
+textbook, at four conversion sites.
+
+```
+SmithDesign
+  FormatVersion, Name
+  Chart        : Z0Ohm, DesignFrequencyHz, Window (Γ extents), ShowGrippers/Targets/Labels
+  Generator    : Rows[ { FrequencyHz, ResistanceOhm, ReactanceOhm } ], SourcePath (provenance only)
+  Elements[]   : Kind, Placement, Name, Enabled, ActiveParameter,
+                 Values{ ROhm, LHenry, CFarad, Z0Ohm, ElectricalLengthDeg, ReferenceFrequencyHz,
+                         ImpedanceOhm{Re,Im} },   FileRef (relative, S1P/S2P only),
+                 SliderRange{ Min, Max } per parameter
+  Sweep        : Enabled, StartHz, StopHz, Points
+  ConstantQ    : Enabled, Q
+  Overlays[]   : Source (relative path | cube ref), Quantity | Derived, Style, Renormalize
+  Markers[]    : the Data Display Marker shape, verbatim
+  View         : splitter positions, network scroll/zoom, MirrorNetwork
+```
+
+**Validated on the way out as well as in**: a document that cannot be read back is a document that was
+never written, and the alternative is a file whose only symptom is that it refuses to open next week.
+The **clipboard** flavour skips the outbound validation, on `RailDocumentIo.SerializeUnvalidated`'s own
+reasoning — a half-built design is exactly what someone copies while they are still working, and a copy
+that writes nothing leaves the *previous* copy on the clipboard for the next paste to find.
+
+The extension is registered with the shell like every other document type, so a double-click opens it;
+`project-file-formats.md` gains a row.
+
+---
+
+## 8. Architecture
+
+The rule is `ui-architecture.md`: nothing below `src/Ui` may reference a UI framework, and
+`tests/Firewall.Tests` enforces it transitively.
+
+| piece | home | why |
+|---|---|---|
+| `SmithDesign`, the element records, `SmithDesignIo` (`.csmith`), `SmithClipboard` (marker-guarded JSON) | `src/Design/Smith/` | The document layer, beside `RailRf/` and on its terms. Framework-free, so the P3 verb and the tests reach it with no display. |
+| `SmithCascade` — the evaluator, the trajectories, the gripper inverse, the constant-Q circles | `src/Design/Smith/` | Arithmetic over a document, the way the EM extractors beside it are. It reaches `RfCore` for Touchstone and renormalization, which `src/Design` already references. **Not `src/Engine`**: Engine's own rule is "no domain types", and this takes element records. |
+| the chart | **reused**: `src/Render/DataDisplay` + `PlotControl` | One Smith renderer in the product (§5.4). |
+| the network drawing | **reused**: `SchematicRenderer` in `src/Render/Renderers` | The renderer the schematic editor draws with, below the firewall since RND-1. |
+| the gripper / Q-arc overlay | `src/Ui/Smith/` (draw callback) + the seam on `PlotControl` | Transient chrome. The overlay *description* is framework-free; the input handling is not. |
+| `SmithChartDocument`, the view model, the window content, the clipboard wiring | `src/Ui/Smith/`, `src/Ui/Views/Smith/` | The only part that docks, undoes, or observes a canvas. |
+| the `smith` CLI verb | `src/Cli/Smith.cs` | P3. Argument parsing, refusals and reporting only — `Authoring.cs`' standing rule. |
+
+**Naming, to avoid a collision that would otherwise be discovered late:** the model is `SmithDesign`
+(mirroring `MatchDesign`) and the Dock document is `SmithChartDocument` (mirroring `DataDisplayDocument`).
+`SmithDocument` is used for neither, because it would be the obvious name for both.
+
+**Nothing in `src/Design/Smith/` draws and nothing in `src/Render` edits**, which is the pair of sentences
+each of those `.csproj` files already makes about itself. This tool is the easy case for both.
+
+---
+
+## 9. Phasing — owner decision
+
+Three phases. The owner's instruction is that the window ships first and the headless verb follows, with
+the arithmetic below the firewall **from day one** so that P3 is wiring rather than a refactor.
+
+**P1 — the tool.** The document and its `.csmith`; the generator panel with `.s1p` import and Conjugate;
+the element vocabulary; the evaluator and the trajectories; the network strip; selection and sliders;
+grippers and their inverse; undo/redo; the per-frequency load points and the conjugate targets; both
+clipboard directions; Tools ▸ Smith Chart and the On Launch row. **This is the whole tool as specified**,
+and it is the phase to build if only one is ever built.
+
+**P2 — the surrounding material.** Overlays (Touchstone, cubes, stability circles); markers and VSWR
+circles; the constant-Q arcs; the swept band; the element enable/disable and reordering polish.
+Everything here is independently useful and none of it is needed to match an impedance.
+
+**P3 — headless.** `circuitrf smith <f.csmith>` evaluating a document and writing the load Γ as a
+Touchstone `.s1p` (`-o`), or the chart as a picture through the existing `render` path. The verb calls the
+same `src/Design/Smith` functions the window calls and holds no logic of its own; the gate is the one
+every other verb has — the CLI as a *process*, byte for byte against the in-process call, plus a
+comment-stripped source scan proving the view model kept no second copy.
+
+---
+
+## 10. Acceptance
+
+**The invariants worth a test each:**
+
+1. **Every element, both placements, against the engine.** §4.6: the closed-form cascade versus an
+   S-parameter run of the equivalent `.cnl`, to 1e-9 relative on Z. This is the anchor.
+2. **The classical constructions.** A series L from a real Z sits on that Z's constant-resistance circle
+   to machine precision; a shunt C on the constant-conductance circle. Cheap, and it is what a user
+   checks by eye.
+3. **The gripper inverse is exact.** For each parameter in §4.3's table: drag to a Γ that is reachable,
+   read the value back, re-evaluate, and land on the drag point to machine precision.
+4. **A stub through the pole is continuous.** A 135° open stub's trajectory is one polyline whose
+   successive canvas-space steps are bounded — no jump, no NaN, no dropped segment.
+5. **The constant-Q circle is the constant-Q locus.** Sample the drawn circle, map to z, and assert
+   `|x|/r = Q` to machine precision on every sample, over Q ∈ {0.5, 1, 3, 10, 100}.
+6. **A drag is one undo entry**, and *n* edits take *n* undos. The regression this exists to prevent is
+   the Match Designer's, and the test is the same shape: count entries across a synthetic drag, then undo
+   to the start.
+7. **Round trip through the clipboard.** Copy a network, paste it back, and the resulting element list is
+   identical in type, placement, order and value.
+8. **Every refusal in §6.2 fires, and names its instance.** One test per rule, with the sentence asserted
+   — a refusal whose text does not identify the offending object is not a refusal anyone can act on.
+9. **Mirroring is view-only.** Flip the strip and assert that no element value, no node impedance and no
+   chart point changed — and that every projected component's `MirrorX` flipped and its pin world
+   coordinates reflected, so the symbols really did turn round with their positions.
+10. **A mirrored network survives the clipboard.** Copy a mirrored network, paste it back into a
+    *non*-mirrored strip, and get the same element list in the same order — the §6.2 end-rule regression,
+    which is the one this change could introduce.
+11. **`.csmith` round-trips**, refuses a newer `FormatVersion`, and stores base SI (assert a picohenry
+   round-trips as `1e-12`, not as `1`).
+12. **The `LaunchAction` ordinal contract** (§5.9): the combobox array's length and order against the enum.
+13. **Firewall**: no new test is needed and that is the point — `src/Design/Smith/` is a folder inside
+    an already-gated project, so `tests/Firewall.Tests`' existing transitive assertion covers it the
+    moment the files land. **No new project is created below the firewall**, which is what makes that
+    true; anything here that reaches for Avalonia fails the build rather than the review.
+
+**Cost.** All of the above is arithmetic and file I/O; none of it is a benchmark and none of it should be
+tagged `Category=Benchmark`. The suite for this tool belongs in `tests/Ui.Tests`, beside the Match and
+railRF tests, and is expected to run in seconds.
+
+---
+
+## 11. Traps already paid for elsewhere
+
+Each of these is a defect the repository has already found and fixed somewhere else, and each one is on
+this tool's path. They are listed so that the implementation inherits the fix rather than the bug.
+
+- **An inline editor has three keys and all three must work.** Return commits, LostFocus commits, Escape
+  reverts. `InlineEditText` already gets this right; the trap is writing a *fourth* editor somewhere in
+  this window that gets one of them wrong, which is why §5.3 makes "every editable value" a rule rather
+  than a default.
+- **A coercing control's write-back is not an edit.** The Match Designer's slider reached an unguarded
+  setter during `Undo`, so every undo added an entry and redo was wiped (§4.3). Publish bounds before
+  value; gate the setter on whether the user or a restore is driving it.
+- **`LaunchAction` is an ordinal and the Settings combobox is positional** (§5.9). Append only.
+- **Base SI in the document, with the scale nowhere near the number** (§7). The 2 Hz sweep is the standing
+  example.
+- **A shared cached object must be cloned before it is narrowed.** `TechnologyCache` hands back a shared
+  instance and `render`'s layer selection had to clone it — the defect that only appears on the *second*
+  call in the same process. Any per-render narrowing of a `Plot`, a theme or a trace list here follows the
+  same rule.
+- **A renderer's target canvas is an argument, not an assumption.** `ContourRenderer` once drew every
+  contour on every Smith plot to the first target it was given. The overlay seam passes its canvas
+  explicitly.
+- **`SkiaFonts` and `ThemeResolver` fall back silently with no app host.** Both are ordinary embedded
+  resources in `src/Render` now; a headless render of this chart must produce the same bytes as the
+  window's, and that is what makes it possible.
+- **Windows' `CF_ENHMETAFILE` must be written in one P/Invoke session** (§6). Reuse the call; do not write
+  a second clipboard path.
+- **A marker's info box needs somewhere to be drawn.** railRF's `PlotControl` had markers before it had a
+  panel to host their boxes in, in the control's own coordinate space. This window hosts them from the
+  start.
+- **A constant-VSWR circle is not centred on its marker** unless the marker is at Γ = 0 (§4.5).
+- **`git log --follow` does not cross the RfCore merge**; `git blame` does. Irrelevant to the code and
+  relevant the first time someone reads the history of a file this tool touches.
+
+---
+
+## 12. Open questions
+
+Numbered so review can answer them by number. Q-1 … Q-4 were put to the owner before this document was
+written and are recorded closed, with the reasoning, in the sections named.
+
+**Closed before drafting:**
+
+- **Q-1 — the trajectory rule.** *Closed:* scale the element's immittance, not its component values (§3.5).
+- **Q-2 — what the chart is normalized to.** *Closed:* a fixed real Z₀, plus conjugate-match target glyphs
+  (§3.4). Worth re-raising only if review wants the generator-referenced grid; the code difference is one
+  function and the cost is a grid that moves under the user.
+- **Q-3 — the swept band.** *Closed:* optional, off by default (§3.6).
+- **Q-4 — how far beyond the window.** *Closed:* window first, CLI verb as P3, arithmetic below the
+  firewall from day one (§9).
+
+**Closed during drafting, by owner instruction:**
+
+- **Q-5 — a TLIN's characteristic impedance.** *Closed:* settable, with its own slider, alongside the
+  electrical length (§3.3).
+- **Q-6 — On Launch.** *Closed:* Smith Chart is an On Launch Action (§5.9).
+- **Q-7 — window or document.** *Closed:* a circuitRF document, docked, with no standalone binary (§5.1).
+- **Q-8 — mirroring the network drawing.** *Closed:* one toolbar button, the schematic editor's own
+  `FlipHorizontal`; the drawing and the symbols mirror, the topology and the chart do not (§5.5).
+- **Q-9 — the inline editor.** *Closed:* every editable value in the tool is an `InlineEditText` (§5.3).
+
+**Open:**
+
+- **Q-10 — should `F_ref` track the design frequency by default?** §3.3 says no, and gives the reason: a
+  line that re-specifies itself on every retune is a different physical line each time, and the
+  multi-frequency load points stop meaning anything. But the common mental model is *"a 30° line"*, and a
+  user who never leaves one frequency would never notice the difference. The default is one line of code
+  either way; the reasoning is the part that needs review.
+- **Q-11 — should `S1P` be in the element vocabulary?** The specification names `S2P`, series and shunt
+  `Z1P`, and an `.s1p` import for the *generator*. §3.3 adds `S1P` as an element on the grounds that a
+  measured one-port — a real capacitor's file — is the obvious thing to put in shunt, and that it costs
+  nothing given `S2P` is already there. Confirm or drop.
+- **Q-12 — what should the gripper drag on a three-parameter element?** §4.3's answer is "the active
+  parameter", which is the last slider touched. The alternative is a fixed per-type choice (L for SRLC,
+  C for PRLC) with no mode at all. The active-parameter rule is more capable and has the property that
+  the handle's meaning depends on invisible state, which is a real cost.
+- **Q-13 — the two ends of the walk are the only places this deviates from the specification.** The ask
+  was a gripper at *each* start and end point; §4.3 makes **node 0 an anchor** (it would have to guess
+  which generator-table row a drag meant) and leaves **node N draggable**, where it drags the *last*
+  element. Both are arguable. Node N in particular is correct and possibly surprising: a user may expect
+  to drag "the load" and have the tool solve the network, which it will not and cannot do. The
+  alternatives are a draggable node 0 that edits the design frequency's generator row in place, and an
+  anchored node N with the last element dragged from node N−1.
+- **Q-14 — does the network strip need a second row for long cascades?** Ten elements fit; twenty
+  scroll. A wrapped two-row ladder is a drawing problem, not a model problem, and can wait until someone
+  builds a twenty-element narrowband match — which would be an odd thing to do.
+- **Q-15 — should a `.csmith` be able to reference a workspace cell** as an overlay source, rather than
+  only a file or an open cube? It would mean resolving a cell reference, which is a walk-up with its own
+  refusals, for a feature the user did not ask for. Recorded, not designed.
+- **Q-16 — when the network is mirrored, should the generator PANEL move to the right of the chart
+  too?** §5.5 says no: the instruction named the network rendering, and the panel is a docked region with
+  a persisted splitter, so moving it is a window-layout change rather than a drawing one. The argument
+  the other way is real — a generator panel on the far left of a window whose network runs right-to-left
+  is slightly incongruous — and the cost is a column swap plus deciding what happens to the splitter
+  position when it swaps back.
+
+---
+
+## 13. What this document deliberately does not decide
+
+- The exact JSON property names in §7's sketch; those settle at implementation, as every other format's
+  have, against the conventions the section names.
+- Colours. This tool uses the active circuitRF theme through `RenderTheme`/`ThemeService` and introduces
+  no palette of its own — harmonicaRF's phosphor-green theme exists because it is a standalone
+  instrument, and this is a document.
+- Keyboard shortcuts beyond the shell's own, which are the shell's to assign.
+- Whether the `smith` verb should also emit the per-node impedances as a `DataSet`. It should probably be
+  able to, and P3 is the place to decide it.
