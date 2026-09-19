@@ -760,6 +760,72 @@
                                     <TextBlock Classes="note" Text="{Binding ViaFlagSummary}"/>
                                 </StackPanel>
                             </Border>
+
+                            <!-- ── The frequency answer (§2.4 "Over frequency") ──────────────
+                                 THE COINCIDENCE LIST IS FIRST, and it is first on purpose: §2.4
+                                 calls it "the sentence the tool exists to produce". A 9 dB peak
+                                 nothing excites is not a problem and a 3 dB peak on the converter's
+                                 fifth harmonic is, so the list that pairs the two outranks the table
+                                 that merely locates the peaks. -->
+                            <Border Classes="card" IsVisible="{Binding HasCoincidences}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="On an aggressor line"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding CoincidenceLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" IsVisible="{Binding HasMaskVerdict}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Against the target"/>
+                                    <ListBox Classes="rows" MaxHeight="120" ItemsSource="{Binding MaskLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" IsVisible="{Binding HasAntiResonances}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Anti-resonances"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding AntiResonanceLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" IsVisible="{Binding HasRemovalRanking}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="If this part came off"/>
+                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding RemovalLines}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- What the frequency answer has to say that is not a curve — a refusal,
+                                 or the notes and warnings that travel with the numbers, the
+                                 INDICATIVE marking of §9 among them. -->
+                            <Border Classes="card" IsVisible="{Binding HasImpedanceMessage}">
+                                <TextBlock Classes="note" Text="{Binding ImpedanceMessage}"
+                                           TextWrapping="Wrap"/>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

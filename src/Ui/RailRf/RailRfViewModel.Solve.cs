@@ -29,7 +29,20 @@ namespace CircuitRF.Ui.RailRf;
 /// <param name="Result">What briefs 3-6 returned.</param>
 /// <param name="ElapsedMilliseconds">What it cost — what makes the price of <c>Accuracy</c> obvious
 /// BEFORE it is pressed.</param>
-public sealed record RailResultView(PdnModelKind Kind, RailDcRunResult Result, double ElapsedMilliseconds);
+public sealed record RailResultView(PdnModelKind Kind, RailDcRunResult Result, double ElapsedMilliseconds)
+{
+    /// <summary>
+    /// The frequency answer computed in the same pass, or null where this document cannot be swept
+    /// yet (brief 12).
+    ///
+    /// <para><b>In the same value as the DC answer for the same reason the model kind is</b>: the
+    /// window shows a drop table and an impedance curve side by side, and two fields updated in
+    /// sequence would put one run's curve over another run's numbers for a frame. And it is computed
+    /// in the same off-thread pass, so a rail with a large decoupling bank does not spend the
+    /// removal ranking's own <c>parts × points</c> solves on the UI thread.</para>
+    /// </summary>
+    public PdnSweepResult? Sweep { get; init; }
+}
 
 public sealed partial class RailRfViewModel
 {
@@ -195,6 +208,7 @@ public sealed partial class RailRfViewModel
         CancelInFlight();
         ByModel.Clear();
         Current = null;
+        ClearSweeps();
     }
 
     // ── The run gate (R-rail7-8) ──────────────────────────────────────────────────────────────
@@ -358,14 +372,18 @@ public sealed partial class RailRfViewModel
         IsSolving = true;
 
         var request = BuildRequest(board, kind);
+        // Both requests are built HERE, on the UI thread, because both read the document rows the
+        // user is editing — the same rule BuildRequest has always followed.
+        var sweepRequest = BuildSweepRequest(kind);
         var token = cts.Token;
 
         Pending = RunOffThread(() =>
         {
             var watch = Stopwatch.StartNew();
             var result = SolveFunc(request, token);
+            var sweep = sweepRequest is null ? null : SweepFunc(sweepRequest);
             watch.Stop();
-            return new RailResultView(kind, result, watch.Elapsed.TotalMilliseconds);
+            return new RailResultView(kind, result, watch.Elapsed.TotalMilliseconds) { Sweep = sweep };
         }, token)
         .ContinueWith(t => PostToUi(() => Finish(t, cts, token)),
                       CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
@@ -411,6 +429,7 @@ public sealed partial class RailRfViewModel
         // ATOMIC. The kind and the numbers are one value; see RailResultView's own note.
         ByModel[view.Kind] = view;
         Current = view;
+        AcceptSweep(view.Kind, view.Sweep);
     }
 
     private void CancelInFlight()

@@ -342,12 +342,9 @@ public sealed class RailPartResolver
             return CopyWithSource(subcircuit, PartModelSource.AttachedFile);
         }
 
-        SNP? snp;
-        string? readFailure = null;
-        try   { snp = (FileReader ?? (p => TouchstoneIO.ReadFile(p)))(path); }
-        catch (Exception ex) { snp = null; readFailure = ex.Message; }
+        var measured = ReadMeasured(path, out string? readFailure);
 
-        if (snp is null || snp.IsEmpty)
+        if (measured is null)
             return Unresolved(row.PartNumber, refdes, mountingH,
                 $"Part '{row.PartNumber}' attaches the file '{System.IO.Path.GetFileName(path)}', " +
                 "which could not be read" + (readFailure is { } m ? $" ({m})" : "") + ". The file " +
@@ -355,19 +352,7 @@ public sealed class RailPartResolver
                 "— a file that cannot be read and a file that was never attached must not produce " +
                 "the same answer.");
 
-        int portA = 1, portB = snp.Ports >= 2 ? 2 : 1;
-        var mode = snp.Ports >= 2 ? Extraction : PassiveExtraction.OnePort;
-
-        Mat<Complex>[] matrices = snp.Matrices;
-        Complex[] z0 = snp.Z0PerPort ?? [.. Enumerable.Repeat(snp.Z0, snp.Ports)];
-
-        var z = PassiveMetrics.Impedance(matrices, z0, mode, portA, portB);
-        double? srf = PassiveMetrics.SelfResonance(snp.Frequencies, z);
-
-        var health = MeasureFileHealth ? TryHealth(snp) : null;
-
-        var measured = new RailMeasuredPart(path, snp.Frequencies, z, srf, health);
-
+        double? srf = measured.SelfResonanceHz;
         var warnings = new List<string>();
         if (measured.CapacitanceFarads is null)
             warnings.Add(
@@ -405,6 +390,42 @@ public sealed class RailPartResolver
             Measured                  = measured,
             Warnings                  = warnings,
         };
+    }
+
+    /// <summary>
+    /// One vendor file, read into the part's own measured sweep — or null, with the reason, where it
+    /// could not be read.
+    /// </summary>
+    /// <remarks>
+    /// <b>Public because a SOURCE has one too</b> (R-rail11-9: a published output-impedance curve is
+    /// "a part like any other"), and a second copy of this six-line block would be a second reading
+    /// of the same file that could disagree with the first about the extraction mode, the port pair
+    /// or which reactance crossing is the resonance. <see cref="Extraction"/>,
+    /// <see cref="FileReader"/> and <see cref="MeasureFileHealth"/> all apply exactly as they do to
+    /// a part.
+    /// </remarks>
+    public RailMeasuredPart? ReadMeasured(string path, out string? failure)
+    {
+        failure = null;
+
+        SNP? snp;
+        try   { snp = (FileReader ?? (p => TouchstoneIO.ReadFile(p)))(path); }
+        catch (Exception ex) { snp = null; failure = ex.Message; }
+
+        if (snp is null || snp.IsEmpty) return null;
+
+        int portA = 1, portB = snp.Ports >= 2 ? 2 : 1;
+        var mode = snp.Ports >= 2 ? Extraction : PassiveExtraction.OnePort;
+
+        Mat<Complex>[] matrices = snp.Matrices;
+        Complex[] z0 = snp.Z0PerPort ?? [.. Enumerable.Repeat(snp.Z0, snp.Ports)];
+
+        var z = PassiveMetrics.Impedance(matrices, z0, mode, portA, portB);
+
+        return new RailMeasuredPart(
+            path, snp.Frequencies, z,
+            PassiveMetrics.SelfResonance(snp.Frequencies, z),
+            MeasureFileHealth ? TryHealth(snp) : null);
     }
 
     private static TouchstoneHealthReport? TryHealth(SNP snp)

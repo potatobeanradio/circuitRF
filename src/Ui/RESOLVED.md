@@ -28967,3 +28967,59 @@ alone here only because no report names them.
 
 Gate: `AThicknessSurvivesARoundTripThroughAnotherDisplayUnit` in
 `tests/Ui.Tests/GerberRunTogetherNamesTests.cs`, which does the focus round trip with nothing typed.
+
+
+## railRF brief 12 — the |Z| plot, and the two things that would have made it look broken (2026-09-18)
+
+`brief-railrf-12-impedance.md` R-rail12-3. Brief 7 built the plot HOST and left it empty; this fills
+it. There is still no drawing code in `RailRfViewModel.Response.cs` — §11.1's "PlotControls in
+rectangular mode, fed from a DataSet, never a bespoke chart" holds, and the curve, the target and
+every aggressor line are ordinary `Trace` objects.
+
+### 1. The aggressor lines have to go on AFTER the autoscale
+
+A vertical line is a two-point trace spanning the Y window, and this display has **no per-trace
+autoscale exclusion**. A line added before `Autoscale(force: true)` sets the Y range to its own
+endpoints and squashes every curve to nothing. So they are built from the window the autoscale
+chose. Moving that one call is the edit to this file that produces a plot that looks broken for a
+reason nobody would guess.
+
+### 2. dB on the Y axis, because `Axes` has a `Log` X and no `Log` Y
+
+§2.4 asks for log-log. `AxisScale.Log` exists on `Axes.XScale` only. A PDN curve spans four decades
+of ohms, so a linear Y renders the entire low band as a flat line on the floor. dBΩ is the same
+picture with the axis this display can have — and it is the axis every number in this brief is
+already quoted in: a mask margin, an anti-resonance's margin and a removal ranking are all
+decibels, so on this axis a margin is a distance a reader can measure off the picture.
+
+### 3. The trace spec is authored as TEXT and resolved by `CubeTraceSpecParser`
+
+`dB(Z[:, 2, 2])`, parsed by the same type the trace card and the `plot` verb use, rather than an
+`AxisSlice[]` filled in here. That parser is where R-rail12-2's rule lives — an integer on an
+`i`/`j` axis is a 1-BASED PORT NUMBER — and building the slice by hand would be a second place that
+convention is decided. The two would then differ by one silently, and on a reciprocal Z matrix the
+wrong curve is not wrong-looking at all.
+
+`Trace` has no constructor that does not take an `SNP`, and the cube path ignores it, so a one-point
+placeholder is what every cube-bound trace in this repository is built on (`PlotInspectorViewModel`
+and `HarmonicaTracePicker` both do exactly this).
+
+### 4. The sweep rides in `RailResultView`, not in a second field
+
+The window shows a drop table and an impedance curve side by side. Two fields updated in sequence
+would put one run's curve over another run's numbers for a frame — the same argument
+`RailResultView` already makes about the model kind, so the sweep is a property of that one value
+and is computed in the same off-thread pass. That also keeps the removal ranking's own
+`parts × points` solves off the UI thread. Both requests are built on the UI thread, because both
+read document rows the user is editing.
+
+### 5. A count is not a visibility
+
+`IsVisible="{Binding CoincidenceLines.Count}"` does not bind — Avalonia's default converter does
+not turn an `int` into a `bool`. Each of the four result cards is gated on its own bool property
+instead, so an empty table is absent rather than a heading over nothing.
+
+Gate: `tests/Ui.Tests/RailRf/PdnImpedanceTests.cs`'s `R_rail12_3_…`, which runs the real
+`PdnSweep` behind a stubbed DC solve and asserts the TRACES — the window owns which curves exist
+and the Data Display owns how they are drawn, and a pixel assertion here would be testing the
+second through the first.

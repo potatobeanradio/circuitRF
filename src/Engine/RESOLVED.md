@@ -2337,3 +2337,88 @@ linear component and collected nothing. Neither did `SParameterEngine`'s NONLINE
 So in a harmonic-balance run, a microstrip line outside its validity range reported nothing, and a
 System block whose S is not passive queued a message that was never collected. Both are one line
 each; the HB one also means every `IReportsWarnings` model is heard in HB for the first time.
+
+
+## railRF brief 12 — the mask, the peaks, the coincidences and the ranking (2026-09-18)
+
+`brief-railrf-12-impedance.md`. Four files under `src/Engine/Pdn/` — `PdnMask`,
+`PdnAntiResonance`, `PdnCoincidence`, `PdnRemovalRanking` — on `PdnBreakdown`'s own terms: numeric
+arrays in, rows out, no `Technology`, no `LayoutView`, no `RailDocument`, no matrix.
+
+### 1. Q-9's 7.1 MHz is a first-order figure and the circuit does not agree with it
+
+The design note's own sanity check (§8.2 Q-9) quotes the bulk-against-ceramic anti-resonance at
+**7.1 MHz**, which is `1/(2π√(L_mount · C_ceramic))` over the bulk's 5 nH mounting loop and the
+0402's 100 nF. That treats the ceramic as a pure capacitor. At an anti-resonance the two branches'
+reactances CANCEL, so the ceramic's own inductance adds to the bulk's and the answer is
+`1/(2π√((L_bulk + L_ceramic) · C_ceramic))` = **6.50 MHz, 8.7 % below**.
+
+Q-9's other three numbers — 104 kHz, 5.3 MHz, 16 MHz — are exact and come straight out of the part
+models. The fourth is the only one that needed a circuit, and it is the only one that moved. The
+gate is against the circuit's closed form, not the note's: a test that reproduced 7.1 MHz would be
+a test of an approximation railRF is not entitled to make.
+
+### 2. An inductive branch has a NEGATIVE imaginary admittance, and that is the whole attribution
+
+`Y = 1/(R + jX)`, so `Im Y` carries the opposite sign to the reactance. The attribution of
+R-rail12-5 is nothing more than summing each bank's admittance at the peak and taking the largest
+on each side of zero — but the sign is exactly the kind of thing that produces a table naming the
+two contributors the wrong way round while looking entirely reasonable, so it is stated on
+`PdnBranchAdmittance.Admittance` rather than left in the reader's head.
+
+Two guards go with it. A branch whose susceptance is under `ContributorFloor` (1e-3 of the largest
+single contribution) is on NEITHER side — that is what "a branch that is neither is not named"
+means numerically, and without it a source's series resistance or a part far off resonance gets
+named as a contributor because its rounding happened to fall one way. And a peak with no
+contributor on one side reports **"not attributed"** rather than half a label: "L(C3–C9) against
+nothing" reads as a finding about C3–C9 when it is a finding about the method's limits.
+
+### 3. A mask is judged in LOG-LOG, is not judged outside its own band, and reports excursions
+
+Three decisions, each of which has a plausible wrong alternative:
+
+- **Interpolated in log f and log ohms.** A PDN mask is drawn and quoted on log-log axes, so
+  "flat to 1 MHz then rising" is a straight line THERE. A linear interpolation between two points a
+  decade apart sits up to 30 % off the ceiling the author believes they drew, in the direction that
+  passes a design that does not meet it.
+- **Outside the stated band nothing is judged, and that is not a pass.** `LimitAt` returns null and
+  `UnjudgedPoints` counts it. A sweep running a decade past the mask's last point would otherwise
+  report a clean pass over frequencies the target never spoke about. For the same reason a
+  TRANSIENT target's mask stops at the knee `0.35/t_rise` rather than at the sweep's top.
+- **One row per contiguous EXCURSION, at its worst point** — not one per sample. A single peak
+  crossing the ceiling covers tens of grid points, and the row count would otherwise move with the
+  sweep's point density, which is a setting rather than a property of the design.
+
+### 4. The removal ranking takes a DELEGATE, and there is no sensitivity path at all
+
+§2.4 states the reason and the arithmetic backs it: removing branch `p` gives `Z' = Z/(1 − Z·Y_p)`
+exactly, while a first-order step from `∂Z/∂Y_p = −Z²` gives `Z' ≈ Z(1 + Z·Y_p)`. The two agree
+only while `|Z·Y_p| ≪ 1`, and at an anti-resonance `ΣY` is the near-cancellation of two large
+susceptances so `|Z·Y_p|` is of order one — the approximation has left its neighbourhood, not
+merely lost precision. On the committed fixture the two differ by more than 3 dB.
+
+So `PdnRemovalRanking.Rank` takes `Func<int, double>` and there is no fast option beside it,
+because an option is a thing a future caller will reach for.
+
+`DisplayResolutionDb` is **0.05**, set by the column's own one-decimal format rather than chosen:
+§2.6 reads this table as "five parts show 0.0 dB", so anything that rounds to 0.0 dB IS 0.0 dB, and
+a part flagged redundant while its row read 0.1 would be a table arguing with itself. A removal
+that IMPROVES the margin (a peak moving away from where the mask is tightest) is clamped to zero
+growth rather than reported negative — the column would then read as advice to delete the part,
+which this table has not earned: it has judged one rail against one mask and knows nothing about
+why the part is there.
+
+### 5. The coincidence window's default is the capacitor tolerance, not a round number
+
+`PdnCoincidence.DefaultFraction` is **0.10**. A part's resonance moves as `1/√C`, so the ±20 %
+tolerance an ordinary ceramic is bought to moves f₀ by about ∓10 % on its own — before Q-12's bias
+derating, before the mounting loop varies with placement, and before the converter's own switching
+frequency moves with load and temperature. A peak drawn 8 % away from a line on THIS model lands on
+it for some fraction of the parts actually fitted, which is the failure the check exists to catch;
+a tighter window would report only the coincidences that had already happened.
+
+Rows are ordered by **mask margin first and peak height only where there is no mask**: a near-miss
+on a peak violating its target by 6 dB is a bigger problem than a direct hit on one that passes by
+10, and ordering by separation puts them the other way round. A peak may legitimately appear on
+more than one row — a peak on both a converter harmonic and a crystal fundamental is excited by
+both, and collapsing the two would drop the name of one, which is the whole content of the row.

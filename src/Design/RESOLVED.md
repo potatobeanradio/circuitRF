@@ -7470,3 +7470,101 @@ nothing, since no real one is.
 series R-L-C in the shunt-through fixture built in memory from its closed form
 (`S21 = 2Z/(2Z + Z0)`), so the file path is tested against a KNOWN answer with no disk — not against
 a second copy of our own reading of it. All 179 `RailRf` tests pass, `Firewall.Tests` 12/12.
+
+
+## railRF brief 12 — the frequency run, and the five things it had to decide (2026-09-18)
+
+`brief-railrf-12-impedance.md`. `PdnSweep` in `src/Design/RailRf/` is the whole design-side
+deliverable: it builds the netlist, hands it to `SParameterEngine`, converts the S it gets back to
+Z, packs a `DataSet`, and calls the four `src/Engine/Pdn` types for the mask, the peaks, the
+coincidences and the ranking. Findings about those four are in `src/Engine/RESOLVED.md`.
+
+### 1. The netlist is REBUILT at every frequency, and that is the design rather than a shortcut
+
+A part's ESR is not a constant. A class default is `DF/(2πfC)` and falls as 1/f; a measured one is
+Re Z out of the part's own file. A netlist assembled once with one ESR is a different circuit from
+the one §2.2 describes, and the error is largest exactly at the resonances this brief exists to
+find — the depth of every minimum and the height of every anti-resonance is set by ESR. So each
+point gets its own assembly, which is also literally what §4.4's "one sparse complex MNA system per
+frequency" says.
+
+That decision is what makes the second one legal: **a branch is stamped as the exact `R + jX` it
+has at the frequency being assembled** — a resistor in series with one reactance of the right sign,
+through an internal node. There is no two-terminal model in circuitRF that takes an arbitrary
+complex impedance, and synthesising a fixed R-L-C whose reactance happened to match at every point
+is precisely what a per-point assembly exists to avoid.
+
+### 2. A part with no ESR basis is NOT stamped, and the reason is not tidiness
+
+R-rail11-3 already says a part with no file, no stated ESR and no recognised dielectric class gets
+no class default. The consequence here is stronger than it looks: a lossless branch makes every
+anti-resonance it takes part in **unbounded**, so stamping it with zero ESR does not produce a
+slightly optimistic answer, it produces an infinite one at an arbitrary frequency. Such parts are
+counted and named on the result's warnings, next to `RailPartModelSet.Summary`, exactly as
+`PdnAssembly.StampShunts` already counts a part with no capacitance.
+
+The same choice was NOT available out of band on a MEASURED part, and the third option was taken:
+**outside a vendor file's own band the ESR is HELD at the nearest end the file states, and the
+result says so once per part.** Dropping the branch there changes the topology between one sweep
+point and the next, which manufactures an anti-resonance at the file's band edge out of nothing;
+zero ESR is the unbounded case above. A held figure is wrong by a bounded amount in a band where
+the part's own reactance dominates it anyway, and the sentence is what stops it reading as a
+measurement. (`RailMeasuredPart.EsrOhmsAt` still returns NaN out of band — the clamp is the
+caller's, stated at the call site, rather than a change to the rule that type owns.)
+
+### 3. An ideal source is a REFUSAL, not a note
+
+A source stating neither a series resistance nor a series inductance shorts the rail to its
+reference at every frequency, so |Z| is identically zero and every mask passes. That is the absence
+of an answer rather than an optimistic one, so it is refused naming `SeriesResistanceOhms` — the
+house spelling. The DC side takes the same row as an ideal source and merely NOTES it, which is
+right there: at DC an ideal source still leaves the copper, the vias and the series parts between
+itself and the load, so the answer is a real number that flatters. Over frequency there is nothing
+left.
+
+### 4. At P1 every observation port on a rail reads the same curve, and the result says so
+
+§6 makes P1 the lumped PDN, so the rail is one node and every part, source and port hangs on it.
+Several observation ports therefore give an exactly rank-1 Z matrix. That is honest — the model
+contains nothing that could make them differ, and the distributed low band is brief 13 — but it
+looks like a bug, so a rail with more than one load carries a note saying it.
+
+(The S-to-Z conversion is unaffected by that rank: `Z + Z₀I` is invertible for any Z, and
+`(I − S) = 2Z₀(Z + Z₀I)⁻¹` is too. About eleven significant figures survive the
+`Z = Z₀(1+S)/(1−S)` cancellation at 1 mΩ against a 50 Ω reference, which is ample;
+`PdnSweepRequest.PortReferenceOhms` exists for the case somebody finds where it is not.)
+
+### 5. `RailPartResolver.ReadMeasured` is public because a SOURCE has a file too
+
+R-rail11-9 says a published output-impedance curve is "a part like any other", and brief 12 is the
+first caller that has to read one. The six lines that turn an `SNP` into a `RailMeasuredPart` —
+which port pair, which extraction mode, which reactance crossing is the resonance — are now one
+method that `FromFile` calls and the window calls. A second copy would have been a second reading
+of the same file that could disagree with the first about any of those three, on a part that
+resolved perfectly well through the other path.
+
+### Gate
+
+`tests/Ui.Tests/RailRf/PdnImpedanceTests.cs`, 9 tests plus the guarded acceptance anchor. Every
+fixture's answer is known by construction — a two-branch board's anti-resonance is
+`1/(2π√(LC))` and nothing about that comes out of circuitRF.
+
+**§7's acceptance anchor SKIPS and will keep skipping until real bytes land.** It wants a published
+measured PDN from the open SI literature reproduced within the tolerance that literature states.
+Synthesising a curve to match would turn the one gate in this series that is not our own arithmetic
+into another piece of it, so it is a `FixtureFact` on `testdata/railrf/measured-pdn/` — the board as
+a `.crail`, the digitised |Z(f)| as two columns, and a `# tolerance_db=` header the test refuses to
+run without, because a reference file that does not carry the publication's own tolerance cannot
+gate anything. Same two-tier shape as Q-18's reader gates.
+
+### Two brief premises the arithmetic did not support
+
+- **Q-9's 7.1 MHz** is a first-order figure; the circuit says 6.50 MHz. `src/Engine/RESOLVED.md` §1.
+- **"A part in parallel with a lower-ESL neighbour 2 mm away ranks 0.0 dB"** (R-rail12-6) is not
+  true where the margin actually lives. A mounting loop only decides a branch ABOVE its own
+  resonance; below it the branch is `1/(jωC)` and two parts of the same capacitance contribute the
+  same susceptance whatever they are mounted on. The worst margin sits at the anti-resonance, which
+  is below both ceramics' resonances — so a twin mounted 4× worse ranks **1.6 dB, not 0.0**.
+  Shadowing by ESL is a statement about the band above resonance; what swamps a part where the
+  margin is, is CAPACITANCE. Both rows are asserted in the gate, the wrong-premise one included, so
+  a later change that quietly made it read 0.0 dB would fail.

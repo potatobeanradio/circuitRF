@@ -842,3 +842,8 @@ src/Engine/Mom/PlanarStaticAim.cs|The drive potential has {potential.Count} entr
 # reported as a refusal by whoever asked for it and never reaches this method; the sentence
 # exists for whoever writes the caller that gets it wrong, and no user reads it.
 src/Design/Layout/Pdn/PdnModelKind.cs|A refused extraction names no model kind and is not filed as a result.
+
+# railRF brief 12 — an INTERNAL invariant on PdnMask.Piecewise. RailTarget.Refusal already refuses a
+# mask with fewer than two points, naming the rail and the row, so a user never reaches this; the
+# sentence exists for whoever writes the second caller.
+src/Engine/Pdn/PdnMask.cs|A piecewise mask needs at least two usable points so it spans a band.
