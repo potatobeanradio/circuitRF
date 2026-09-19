@@ -119,7 +119,8 @@ public static class RailMapRenderer
     /// scene on every click. See <see cref="RailPartHighlight"/>.</param>
     public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme,
                             IReadOnlySet<LayerKey>? hiddenLayers = null,
-                            RailPartHighlight? highlight = null)
+                            RailPartHighlight? highlight = null,
+                            bool batchTiles = false)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
@@ -131,7 +132,7 @@ public static class RailMapRenderer
         canvas.ClipRect(new SKRect(0, 0, (float)viewport.Width, (float)viewport.Height));
         try
         {
-            DrawTiles(canvas, scene, viewport, theme, hiddenLayers);
+            DrawTiles(canvas, scene, viewport, theme, hiddenLayers, batchTiles);
             DrawRegions(canvas, scene, viewport, theme, hiddenLayers);
             DrawMarkers(canvas, scene, viewport, theme);
 
@@ -150,11 +151,12 @@ public static class RailMapRenderer
     // ── the drop map ───────────────────────────────────────────────────────────────────────────
 
     private static void DrawTiles(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme,
-                                  IReadOnlySet<LayerKey>? hiddenLayers)
+                                  IReadOnlySet<LayerKey>? hiddenLayers, bool batchTiles)
     {
         if (scene.Tiles.Count == 0) return;
 
         var plan = PlanFor(scene, theme);
+        var meshes = batchTiles ? MeshFor(plan) : null;
 
         // What is actually on screen, in world DBU, widened by one tile so a tile straddling the
         // edge still paints its visible half. Clipped-away tiles cost nothing to skip and a canvas
@@ -178,6 +180,12 @@ public static class RailMapRenderer
                 {
                     using var clip = ToPath(paths, vp);
                     canvas.ClipPath(clip, SKClipOperation.Intersect, antialias: true);
+                }
+
+                if (meshes is not null && meshes.TryGetValue(group.Layer, out var mesh))
+                {
+                    DrawMesh(canvas, mesh, vp);
+                    continue;
                 }
 
                 var tiles = group.Tiles;
@@ -222,6 +230,15 @@ public static class RailMapRenderer
     {
         public required RailMapTheme Theme { get; init; }
         public required IReadOnlyList<TileLayerPlan> Layers { get; init; }
+
+        /// <summary>The batched form, built on first use and only when a caller asked for it — see
+        /// <see cref="MeshFor"/>. Null until then.
+        ///
+        /// <para><b>There is deliberately no "only worth it above N tiles" threshold.</b> One was
+        /// written and removed: the two forms draw the same picture, so a threshold buys nothing —
+        /// and it silently made this file's own equality gate VACUOUS, because every layer of the
+        /// gate's fixture fell under it and the batched path the test names was never run.</para></summary>
+        public IReadOnlyDictionary<LayerKey, TileMesh>? Meshes;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RailMapScene, TilePlan> Plans = new();
@@ -258,6 +275,129 @@ public static class RailMapRenderer
         var plan = new TilePlan { Theme = theme, Layers = layers };
         Plans.AddOrUpdate(scene, plan);
         return plan;
+    }
+
+    // ── the batched map, and why the rectangles are issued as ONE operation ────────────────────
+    //
+    // ONE DRAW CALL PER LAYER INSTEAD OF ONE PER EXTRACTION CELL. The plan above removed the
+    // per-frame REBUILD of the tile lists and the colour ramp; this removes the per-frame ISSUE,
+    // which is the part that was actually costing the frame. On a four-layer sensor board with
+    // Accuracy on, the drop map is 64,907 tiles and every one of them was a separate
+    // canvas.DrawRect on a Metal-backed surface — on every frame, AND on every pointer move, since
+    // LayoutCanvas.OnPointerMoved invalidates unconditionally. A `sample` of the running
+    // application caught the render thread pegged at 100% with 86% of it inside one Skia function
+    // under the canvas-playback chain and the GPU essentially idle: the cost was Skia's
+    // PER-OPERATION CPU work, multiplied by 64,907 (owner, 2026-09-19 — panning at about one frame
+    // a second, and the bare cursor no better).
+    //
+    // ── WHY VERTICES AND NOT AN IMAGE ─────────────────────────────────────────────────────────
+    //
+    // Pre-painting each layer into one image and blitting it is the obvious answer and it is WRONG
+    // here, which is worth recording because it looks right and it measured pixel-perfect on the
+    // board it was written against. A sheet has to assume the tiles lie on a lattice, and they do
+    // not: RailMapScene's interpolated branch takes `half = step / 2` in INTEGER division, so on an
+    // odd step every tile is one DBU narrower than its own spacing. The error is invisible per tile
+    // and accumulates across a few hundred of them into a whole-tile shift — 0.53% of the picture
+    // wrong by up to 225 levels on the very first fixture it was gated against.
+    //
+    // A triangle list assumes nothing. Each tile is two triangles at its OWN corners, so a tile that
+    // does not abut its neighbour does not abut it here either, and the picture is the rectangles'
+    // picture whatever the scene put in it. Built once in world coordinates and drawn under the
+    // viewport's own matrix, so one mesh serves every pan and zoom.
+    //
+    // NOT ON BY DEFAULT, and that is the point of the argument. The report and the clipboard draw
+    // through VectorPage to SVG and PDF, where the map has to stay VECTOR — vertices would flatten
+    // to a triangle soup and an SVG of a drop map is a thing people zoom into. The window opts in;
+    // every headless caller keeps the rectangles. Same split as `render --detail screen` versus
+    // `--detail full`, and for the same reason.
+
+    /// <summary>One layer's tiles as a triangle list, in world DBU relative to its own origin.</summary>
+    /// <param name="Vertices">Two triangles per tile, each triangle flat-coloured because its three
+    /// vertices carry the same colour.</param>
+    /// <param name="OriginX">What the vertex coordinates are relative to. <b>Not a tidiness
+    /// measure</b>: a vertex is a <c>float</c>, whose 24-bit mantissa stops being exact at about
+    /// 1.7e7, and a board's DBU coordinates reach past that. Relative to the layer's own corner they
+    /// do not.</param>
+    /// <param name="OriginY">Same.</param>
+    private sealed record TileMesh(SKVertices Vertices, long OriginX, long OriginY);
+
+    private static IReadOnlyDictionary<LayerKey, TileMesh>? MeshFor(TilePlan plan)
+    {
+        if (plan.Meshes is { } built) return built;
+
+        var meshes = new Dictionary<LayerKey, TileMesh>();
+        foreach (var group in plan.Layers)
+            if (BuildMesh(group) is { } mesh)
+                meshes[group.Layer] = mesh;
+
+        plan.Meshes = meshes;
+        return meshes;
+    }
+
+    private static TileMesh? BuildMesh(TileLayerPlan group)
+    {
+        var tiles = group.Tiles;
+        if (tiles.Length == 0) return null;
+
+        long ox = long.MaxValue, oy = long.MaxValue;
+        foreach (var t in tiles)
+        {
+            if (t.CentreX - t.HalfSpanDbu < ox) ox = t.CentreX - t.HalfSpanDbu;
+            if (t.CentreY - t.HalfSpanDbu < oy) oy = t.CentreY - t.HalfSpanDbu;
+        }
+
+        var points  = new SKPoint[tiles.Length * 6];
+        var colours = new SKColor[tiles.Length * 6];
+
+        for (int i = 0, v = 0; i < tiles.Length; i++)
+        {
+            var t = tiles[i];
+            float x0 = t.CentreX - t.HalfSpanDbu - ox, x1 = t.CentreX + t.HalfSpanDbu - ox;
+            float y0 = t.CentreY - t.HalfSpanDbu - oy, y1 = t.CentreY + t.HalfSpanDbu - oy;
+            var c = group.Colours[i];
+
+            points[v + 0] = new SKPoint(x0, y0);
+            points[v + 1] = new SKPoint(x1, y0);
+            points[v + 2] = new SKPoint(x1, y1);
+            points[v + 3] = new SKPoint(x0, y0);
+            points[v + 4] = new SKPoint(x1, y1);
+            points[v + 5] = new SKPoint(x0, y1);
+            for (int k = 0; k < 6; k++) colours[v + k] = c;
+            v += 6;
+        }
+
+        return new TileMesh(SKVertices.CreateCopy(SKVertexMode.Triangles, points, colours), ox, oy);
+    }
+
+    /// <summary>
+    /// Draws a layer's mesh under the viewport's own transform.
+    /// </summary>
+    /// <remarks>
+    /// The matrix is <see cref="RectOf"/>'s arithmetic expressed once instead of per tile: the scale
+    /// is the zoom, Y is negated because the world is Y-up and the screen is Y-down, and the
+    /// translation puts the mesh's origin where <see cref="LayoutViewport.WorldToScreenX"/> and
+    /// <see cref="LayoutViewport.WorldToScreenY"/> put it. No culling — the whole mesh is one
+    /// operation, and asking the GPU to discard what is off screen is cheaper than splitting it.
+    /// </remarks>
+    private static readonly SKPaint MeshPaint =
+        new() { IsAntialias = false, Style = SKPaintStyle.Fill, Color = SKColors.White };
+
+    private static void DrawMesh(SKCanvas canvas, TileMesh mesh, LayoutViewport vp)
+    {
+        canvas.Save();
+        try
+        {
+            canvas.Translate((float)vp.WorldToScreenX(mesh.OriginX), (float)vp.WorldToScreenY(mesh.OriginY));
+            canvas.Scale((float)vp.Zoom, -(float)vp.Zoom);
+
+            // WHITE, AND IT IS NOT COSMETIC. SKBlendMode.Modulate MULTIPLIES the vertex colour by
+            // the paint's, so handing it the shared tile paint — whose Color is whatever the last
+            // rectangle set, and black on a frame that drew none — renders the entire map black
+            // with its coverage pixel-for-pixel correct. That is a map that is wrong in the one way
+            // a coverage check cannot see, which is why the gate compares COLOURS.
+            canvas.DrawVertices(mesh.Vertices, SKBlendMode.Modulate, MeshPaint);
+        }
+        finally { canvas.Restore(); }
     }
 
     private static SKRect RectOf(RailMapTile tile, LayoutViewport vp)

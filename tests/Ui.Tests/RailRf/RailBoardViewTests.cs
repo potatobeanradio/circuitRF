@@ -833,6 +833,80 @@ public sealed class RailBoardViewTests
         return rgba || bgra;
     }
 
+    /// <summary>
+    /// The batched map and the rectangle map are <b>the same picture, pixel for pixel</b>.
+    /// </summary>
+    /// <remarks>
+    /// The window draws the drop and |Z| maps as one triangle list per layer rather than one
+    /// <c>DrawRect</c> per extraction cell (<c>RailMapRenderer</c>'s own header carries the
+    /// measurement: 64,907 rectangles per frame on a four-layer sensor board, re-issued on every
+    /// pointer move, and a render thread at 100%). Every headless caller keeps the rectangles,
+    /// because the report and the clipboard are vector.
+    ///
+    /// <para><b>So the claim that has to hold is EQUALITY, not speed.</b> A timing gate here would
+    /// measure the machine; what can go wrong is the batch drifting from the rectangles — a
+    /// transposed matrix, a Y flip, float precision on a far-from-origin board, a blend mode that
+    /// tints the vertex colours. Each shows up as a pixel difference and nothing else.</para>
+    ///
+    /// <para>The first attempt at this pre-painted each layer into an IMAGE and blitted it. It was
+    /// pixel-perfect on the board it was written against and this gate caught it at 0.53% of the
+    /// picture wrong by up to 225 levels, because a sheet has to assume the tiles lie on a lattice
+    /// and <see cref="RailMapScene"/>'s interpolated branch does not put them on one. That is what
+    /// this test is for.</para>
+    /// </remarks>
+    [Fact]
+    public void TheBatchedMapIsPixelIdenticalToTheRectangleMap()
+    {
+        var overlay = WithResult(out _);
+
+        foreach (var kind in new[] { RailMapKind.Drop, RailMapKind.Impedance })
+        {
+            overlay.Kind = kind;
+            if (overlay.Scene.Tiles.Count == 0) continue;   // the |Z| tab is empty without a plane run
+
+            byte[] rectangles = RenderMap(overlay, batchTiles: false);
+
+            // A COVERAGE CHECK FIRST, because equality alone passed a map that was entirely black:
+            // the batch modulated its vertex colours by a paint that was not white, which is
+            // pixel-for-pixel correct in coverage and wrong in every colour. If this fixture ever
+            // stops painting, the equality below stops meaning anything.
+            Assert.True(Painted(rectangles) > 500,
+                $"{kind}: only {Painted(rectangles)} painted pixels, so this gate is not looking at a map.");
+
+            Assert.Equal(rectangles, RenderMap(overlay, batchTiles: true));
+        }
+    }
+
+    /// <summary>How many pixels of a render are not the white page.</summary>
+    private static int Painted(byte[] pixels)
+    {
+        int n = 0;
+        for (int i = 0; i + 3 < pixels.Length; i += 4)
+            if (pixels[i] != 255 || pixels[i + 1] != 255 || pixels[i + 2] != 255) n++;
+        return n;
+    }
+
+    /// <summary>Renders the overlay's scene through <see cref="RailMapRenderer"/> directly, so the
+    /// batched and rectangle forms can be asked for side by side.</summary>
+    private static byte[] RenderMap(RailLayoutOverlay overlay, bool batchTiles)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(PixelsWide, PixelsHigh));
+        surface.Canvas.Clear(SKColors.White);
+
+        var bounds = overlay.Scene.Bounds;
+        var viewport = bounds.IsEmpty
+            ? new LayoutViewport(0, 0, 1, PixelsWide, PixelsHigh)
+            : LayoutViewport.ZoomToFit(bounds, PixelsWide, PixelsHigh);
+
+        RailMapRenderer.Draw(surface.Canvas, overlay.Scene, viewport, overlay.Theme,
+                             hiddenLayers: null, highlight: null, batchTiles: batchTiles);
+        surface.Canvas.Flush();
+
+        using var image = surface.Snapshot();
+        using var pixels = image.PeekPixels();
+        return pixels.GetPixelSpan().ToArray();
+    }
+
     /// <summary>Two renders of one scene are byte-identical — brief 9's clipboard gate and brief 17's
     /// documentation figures both depend on it.</summary>
     [Fact]

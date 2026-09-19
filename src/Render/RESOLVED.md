@@ -1,5 +1,70 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF map: 64,907 draw calls a frame, and the image that could not replace them (2026-09-19)
+
+The follow-on to the section below, and the half that was actually costing the frame rate. Caching
+the tile plan removed the per-frame REBUILD; the per-frame ISSUE remained, and it was one
+`canvas.DrawRect` per extraction cell — 64,907 of them on the owner's sensor board with Accuracy on,
+re-issued on every frame AND on every pointer move, since `LayoutCanvas.OnPointerMoved` ends in an
+unconditional `InvalidateVisual`.
+
+**The CPU measurement said the problem was not there, and it was wrong in a way worth recording.** A
+headless raster render of that scene is 21 ms/frame at 2800×1800 in Debug — about 50 FPS, against a
+report of one. The gap is the BACKEND: the window draws through `SkSurfaces::WrapCAMetalLayer`, and
+Ganesh's per-operation CPU cost (clip stack, op bounds, chaining, resource lookup) is tens of times
+the raster backend's, which just blits. A `sample` of the running application settled it — the render
+thread pegged at 100%, 3,409 of 3,943 samples inside ONE Skia function under the canvas-playback
+chain, and the Metal frames in the low tens. Nothing about that is visible from a raster probe, and
+two earlier `sample` runs caught the app idle and said nothing at all, which is its own lesson about
+profiling an interactive window.
+
+Fixed by issuing each layer's tiles as ONE operation: a triangle list, two triangles per tile, built
+once per (scene, theme) in world DBU and drawn under the viewport's own matrix. Vertices are stored
+relative to the layer's own corner because a vertex is a `float` and a board's DBU coordinates run
+past the 24-bit mantissa's exact range.
+
+**An IMAGE was the first attempt and it is the interesting failure.** Pre-painting each layer at the
+pitch of its own finest tile and blitting it is fewer calls still (three sheets, 0.8 MB total), and it
+measured PIXEL-PERFECT on the board it was written against — 0 of 20,160,000 bytes. It is wrong
+anyway: a sheet has to assume the tiles lie on a lattice, and `RailMapScene`'s interpolated branch
+takes `half = step / 2` in INTEGER division, so on an odd step every tile is one DBU narrower than its
+own spacing. Invisible per tile, it accumulates across a few hundred into a whole-tile shift — 0.53%
+of the picture wrong by up to 225 levels on the first fixture it met. A triangle list assumes nothing:
+each tile is two triangles at its own corners, so tiles that do not abut do not abut here either.
+
+**Two traps, both of which produce a picture whose COVERAGE is exactly right:**
+
+- `SKBlendMode.Modulate` MULTIPLIES the vertex colour by the paint's. Handed the shared tile paint —
+  whose `Color` is whatever the last rectangle set, and black on a frame that drew none — the whole
+  map renders black with its coverage pixel-for-pixel correct. The mesh has its own white paint now,
+  and the gate compares colours rather than coverage because of this.
+- The equality gate was VACUOUS on its first pass. A `MinTilesToBatch` threshold meant every layer of
+  the test fixture fell under it, so the batched path the test names was never run and the test passed
+  against the black map. The threshold is gone — the two forms draw the same picture, so it bought
+  nothing — and the gate now asserts the render is painted before it asserts the two agree.
+
+Not on by default. The report and the clipboard go through `VectorPage` to SVG and PDF, where the map
+stays vector; the window opts in with `batchTiles: true`. Same split as `render --detail screen`
+versus `--detail full`.
+
+Verified on the owner's board, rects versus batch, 2800×1800:
+
+| viewport | painted px | bytes differing |
+|---|---|---|
+| fit | 1,761,734 | 0 of 20,160,000 |
+| 8× on the copper | 4,711,457 | 0 of 20,160,000 |
+| 40× on the copper | 4,176,260 | 0 of 20,160,000 |
+
+Gate: `RailBoardViewTests.TheBatchedMapIsPixelIdenticalToTheRectangleMap`, confirmed to catch the
+black-map regression by reintroducing it rather than by assuming it would.
+
+**Still open, and deliberately not touched here:** `RailLayoutOverlay.DropReadoutAt` scans all 64,907
+tiles on every pointer move and `RailDcResult.VoltageAt` then scans every cell on the layer. Measured
+at 2.2 ms per move in Debug — real, bounded, and nowhere near the frame cost, so it is recorded rather
+than optimised. `LayoutCanvas.OnPointerMoved`'s unconditional `InvalidateVisual` is the other half of
+why a bare cursor cost a full frame; it belongs to the layout editor, not to railRF.
+
+
 ## railRF map: the per-frame work that was a pure function of the scene (2026-09-19)
 
 Reported by the owner: panning and zooming the board is very slow with the drop map on, and under

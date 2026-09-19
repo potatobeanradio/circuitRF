@@ -205,8 +205,21 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     private RailPartHighlight? _partHighlight;
 
+    /// <summary>
+    /// Paints the map for the WINDOW, which is the one caller that asks for the blitted form.
+    /// </summary>
+    /// <remarks>
+    /// <b><c>batchTiles: true</c>, and it is the whole of the frame-rate fix.</b> An accurate
+    /// reading's drop map is one tile per extraction cell — 64,907 of them on a four-layer sensor
+    /// board — and each was a separate <c>DrawRect</c> on every frame and on every pointer move,
+    /// which is a render thread pegged at 100% and about one frame a second. The renderer's own
+    /// header carries the measurement, why it is a triangle list and not an image, and the reason
+    /// the default is off: the report and the clipboard go to SVG and PDF, where the map stays
+    /// vector.
+    /// </remarks>
     public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme) =>
-        RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight);
+        RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight,
+                             batchTiles: true);
 
     /// <summary>
     /// The union of the map, the legend, the source and load markers and the via callouts — <b>not
