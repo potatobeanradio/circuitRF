@@ -8583,3 +8583,44 @@ imaginary part would be more robust than proximity to the current value — the 
 fixture carries j46.7 where the physical one is exactly real — but §4.3 prescribes proximity, and a
 drag whose current value has wandered far from the answer is the case where the two rules disagree.
 Not changed.
+
+## The constant-Q arcs and the swept band — five things the closed form turned up (2026-09-19)
+
+`brief-smith-9-q-and-sweep.md`, `src/Design/Smith/SmithQArcs.cs` and `SmithBand.cs`.
+
+**The in-disc range has to be EMITTED, and the design note's reason for not emitting it is wrong.**
+§4.4 and the brief both say the arcs are drawn as the portion inside the unit disc because *"the
+renderer's existing disc clip does it, and no arc-endpoint arithmetic is needed."* There is no such
+clip on a trace. A Smith `Plot` clips its traces to the PLOT BOX (`PlotRenderer.ViewportClipRect`) and
+deliberately not to the disc — `R-smith5-4`'s own rule is that a node outside the unit circle is
+DRAWN, because clamping to the disc would be a lie about a stability result. Emitting the whole circle
+would therefore have painted the other half of each branch straight across the chart. The range is
+closed form anyway and costs one `atan`: on the inductive circle `|Γ|² = 1 − (2/Q)·v`, so the arc is
+inside the disc exactly where `v > 0`, which is `θ ∈ [atan(1/Q), π − atan(1/Q)]` — and both ends land
+on Γ = ±1 with no intersection to solve.
+
+**Γ = ±1 are the one place |x|/r is not Q, and the gate says so rather than loosening.** Both branches
+pass exactly through the open and the short, where `r` and `x` vanish or diverge together: the ratio's
+LIMIT is Q and its value is 0/0. The gate asserts the invariant over the interior samples and pins the
+two endpoints as a separate claim, which is the honest statement. Interior accuracy is a few times
+1e-15 relative — the map forms `1 − u² − v²`, which on the circle equals `(2/Q)·v` and so cancels to a
+few ulps of 1 near the ends.
+
+**The capacitive branch is the inductive one CONJUGATED, not derived again.** "The two are mirror
+images about the real axis" is then exactly true rather than true to 1e-16, and the gate can assert it
+with no tolerance at all. Deriving the second circle from its own centre would have been a second
+chance for them to stop being mirror images.
+
+**The drag inverse never forms z.** `Q = |x|/r = |2v| / (1 − u² − v²)` — the `(1−u)² + v²` both halves
+carry cancels, so the answer is two multiplies and a divide, and the denominator's SIGN is the sign of
+r. A point on or outside the unit circle falls out as "no Q" rather than as a negative one, which is
+what `R-smith9-2`'s `r_d ≤ 0` pin needs, and a purely resistive drag falls out as Q = 0, which is the
+real axis itself rather than a pair of arcs. Both pin and neither returns an infinity or a NaN.
+
+**A `.csmith` block written "only when the feature is ON" throws that feature's settings away — and it
+did so WITHIN the session.** Brief 1 wrote `sweep` and `constantQ` only while enabled, on the reading
+that absent means off. Absent has to mean *untouched*: the undo stack is a serialize/deserialize round
+trip through that same writer, so unchecking the band's box and checking it again handed back the
+defaults, with the user's own start, stop and point count gone and nothing said anywhere. The rule is
+now `SmithDesignIo.IsDefault`, and a document nobody has touched still writes neither block, so no
+existing file changes.

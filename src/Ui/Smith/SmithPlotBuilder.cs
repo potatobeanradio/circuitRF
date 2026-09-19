@@ -161,6 +161,22 @@ internal static class SmithPlotBuilder
             loads.Add(new SmithLoadPoint(SmithCascade.Gamma(nodes[^1].Z, z0),
                                          FrequencyLabel(f), IsDesignFrequency: true));
 
+        // ── the constant-Q arcs (R-smith9-1) ─────────────────────────────────
+        //
+        //  CLOSED FORM, and none of it is here: SmithQArcs owns the circle and the in-disc range, so
+        //  brief 10's headless render draws the same two arcs this window does. Q is guaranteed
+        //  finite and positive by SmithDesign.Refusal, and the guard below is what keeps a document
+        //  the strip is ALREADY complaining about from throwing on its way to the screen.
+        Complex[] qInd = [], qCap = [];
+        if (design.ConstantQ.Enabled && double.IsFinite(design.ConstantQ.Q) && design.ConstantQ.Q > 0)
+        {
+            qInd = SmithQArcs.Arc(design.ConstantQ.Q, inductive: true);
+            qCap = SmithQArcs.Arc(design.ConstantQ.Q, inductive: false);
+        }
+
+        // ── the swept band (R-smith9-4) ──────────────────────────────────────
+        var band = SmithBand.Evaluate(design, documentDirectory);
+
         return new SmithChartScene
         {
             Nodes            = nodes,
@@ -168,8 +184,28 @@ internal static class SmithPlotBuilder
             Trajectories     = curves,
             LoadPoints       = loads,
             ConjugateTargets = targets,
+            QArcInductive    = qInd,
+            QArcCapacitive   = qCap,
+            Band             = band.Gamma,
+            BandClampNote    = band.Clamped ? BandClampNote(band) : null,
         };
     }
+
+    /// <summary>
+    /// The sentence a clamped band puts in the status strip, <b>naming the span it was clamped
+    /// to</b> (<c>R-smith9-4</c>).
+    /// </summary>
+    /// <remarks>
+    /// The frequencies are spelled by <see cref="FrequencyLabel"/> — the strip's own spelling — which
+    /// is why the sentence is composed here rather than in <see cref="SmithBand"/>: that file is
+    /// below the firewall and <c>MatchValueFormat</c> is not, and a second spelling of a frequency is
+    /// a second answer nobody can tell apart from the first.
+    /// </remarks>
+    private static string BandClampNote(SmithBandResult band)
+        => $"The swept band was clamped to the generator table's span, "
+         + $"{FrequencyLabel(band.StartHz)} to {FrequencyLabel(band.StopHz)} — a band is a viewing "
+         + "choice, so it is narrowed to what the table can answer for rather than refused. The "
+         + "generator impedance is interpolated between rows, never extrapolated past them.";
 
     /// <summary>The status strip's own spelling of a frequency, so the label on the chart and the
     /// sentence along the bottom cannot disagree about which point is which.</summary>
@@ -197,6 +233,18 @@ internal static class SmithPlotBuilder
         plot.Traces.Clear();
         var keys = new List<SmithTraceKey>();
 
+        // ── the constant-Q arcs, FIRST (R-smith9-3) ──────────────────────────
+        //
+        //  BENEATH THE TRAJECTORIES, which is what first means: a trace's draw order is its order in
+        //  this collection, and the arcs are chrome the work is read against rather than part of it.
+        //
+        //  They carry NO MARKER (IsAnnotation, which is exactly "not a reading" — no Add Marker
+        //  entry, no double-click, no row in another trace's readout) and they are out of the
+        //  AUTOSCALE (R-smith5-4): the pair passes through Γ = ±1 at every Q, so a chart that framed
+        //  them would be pinned to the whole unit disc forever and the cascade would never fill it.
+        AddQArc(plot, keys, "Q (inductive)",  scene.QArcInductive);
+        AddQArc(plot, keys, "Q (capacitive)", scene.QArcCapacitive);
+
         // ── one per ENABLED element ──────────────────────────────────────────
         foreach (var curve in scene.Trajectories)
         {
@@ -212,6 +260,24 @@ internal static class SmithPlotBuilder
 
             SetGamma(trace, curve.Gamma);
             Add(plot, keys, ElementLabel(element, curve.ElementIndex), trace);
+        }
+
+        // ── the swept band (R-smith9-4) ──────────────────────────────────────
+        //
+        //  BEFORE the load points, so the points it passes through sit on top of it rather than
+        //  under it. It is a READING and not chrome — it is the same load at other frequencies — so
+        //  it takes part in the autoscale and it may carry markers, which is the whole of what makes
+        //  bandwidth readable off it.
+        if (scene.Band.Count > 0)
+        {
+            var bandProps = Style(ReadingColorIndex, LineType.Solid, width: 0.75);
+            bandProps.MarkerEnabled = false;
+            bandProps.LineOpacity   = 0.7;
+            bandProps.Custom        = false;
+
+            var bandTrace = CubeTrace("band", bandProps);
+            SetGamma(bandTrace, scene.Band);
+            Add(plot, keys, "band", bandTrace);
         }
 
         // ── the load points ──────────────────────────────────────────────────
@@ -278,6 +344,32 @@ internal static class SmithPlotBuilder
             plot.Autoscale(force: true);
 
         return keys;
+    }
+
+    /// <summary>
+    /// One branch of the constant-Q pair, as a thin dashed chrome trace.
+    /// </summary>
+    /// <remarks>
+    /// <b>The geometry is <see cref="SmithQArcs.Arc"/>'s and nothing here re-derives it</b>
+    /// (<c>R-smith9-1</c>). Dashed and grey because the arcs are a RULER laid over the work: a solid
+    /// line in a palette colour would read as one more element's trajectory, which is the one thing
+    /// they must not look like.
+    /// </remarks>
+    private static void AddQArc(Plot plot, List<SmithTraceKey> keys, string name,
+                                IReadOnlyList<Complex> arc)
+    {
+        if (arc.Count == 0) return;
+
+        var props = Style(ReadingColorIndex, LineType.Dashed, width: 0.75);
+        props.MarkerEnabled = false;
+        props.LineOpacity   = 0.55;
+        props.Custom        = false;
+
+        var trace = CubeTrace(name, props);
+        trace.IsAnnotation         = true;
+        trace.ExcludeFromAutoscale = true;
+        SetGamma(trace, arc);
+        Add(plot, keys, name, trace);
     }
 
     /// <summary>Puts a trace on the plot and records the name a marker is stored against.</summary>

@@ -1185,7 +1185,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     _overlayDragHandle = handle;
                     overlay.DragBegin(handle);
-                    overlay.DragTo(OverlayWorldAt(_dragStartScreen));
+                    overlay.DragTo(OverlayWorldAt(_dragStartScreen),
+                                   e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                     _renderDetail = PlotDetail.Full;
                     e.Pointer.Capture(this);
                     e.Handled = true;
@@ -1296,7 +1297,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             //  between a pinned drag and one that reads as broken.
             if (_overlayDragHandle is not null && Overlay is { } dragOverlay)
             {
-                dragOverlay.DragTo(OverlayWorldAt(current));
+                // THE MODIFIER RIDES THE MOVE IT APPLIES TO and is not remembered between them —
+                // see IPlotOverlay.DragTo(Complex, bool) for why that is the point rather than a
+                // shortcut.
+                dragOverlay.DragTo(OverlayWorldAt(current), e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
                 InvalidateVisual();
                 return;

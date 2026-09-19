@@ -319,4 +319,64 @@ public sealed partial class SmithChartViewModel
 
         UndoRedo.Execute(new SmithSnapshotCommand(this, before, after, _dragDescription));
     }
+
+    // ── the constant-Q drag (R-smith9-2) ─────────────────────────────────────
+
+    /// <summary>
+    /// A constant-Q arc was pressed. <b>One gesture is one undo entry</b>, exactly as a gripper drag
+    /// is: the before-state is captured here and pushed on release.
+    /// </summary>
+    /// <returns>False when the pair is off or is carrying a Q that is not one — neither of which
+    /// the overlay offers a handle for.</returns>
+    internal bool BeginQDrag()
+    {
+        if (_dragBefore is not null) EndGripperDrag(cancelled: true);
+
+        var q = _design.ConstantQ;
+        if (!q.Enabled || !(double.IsFinite(q.Q) && q.Q > 0)) return false;
+
+        // THE SAME before-state, the same in-flight flag and the same suppression of the autoscale
+        // and the plot-changed pipeline that a gripper drag uses. A second drag mechanism beside the
+        // first is a second place for "one gesture is one undo entry" to stop being true — which is
+        // why _dragElement stays −1 here and DragGripperTo is never reached.
+        _dragBefore      = SmithDesignIo.SerializeUnvalidated(_design);
+        _dragDescription = "Drag constant-Q arcs";
+        _draggingQ       = true;
+        DragPin          = null;
+        return true;
+    }
+
+    /// <summary>True while a constant-Q arc is being dragged rather than a gripper.</summary>
+    private bool _draggingQ;
+
+    /// <summary>
+    /// The pointer moved to <paramref name="gamma"/> with shift <paramref name="shift"/>. Solves for
+    /// Q, writes it and redraws — <b>and pushes nothing</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Dragging either branch moves both</b>, because they are one setting — which is why nothing
+    /// here knows which branch was grabbed. <b>Shift rounds the computed Q to the nearest quarter
+    /// BEFORE it is stored</b> (<c>R-smith9-2</c>), so a shift-drag lands on an exact quarter and a
+    /// later un-shifted drag starts from that exact quarter rather than from a rounded display of
+    /// something else.
+    /// </remarks>
+    internal void DragQTo(Complex gamma, bool shift)
+    {
+        if (!_draggingQ || _dragBefore is null) return;
+
+        var result = SmithQArcs.Solve(_design.ConstantQ.Q, gamma, shift);
+
+        _design.ConstantQ.Q = result.Q;
+        DragPin             = result.PinReason;
+        RefreshDerived();
+    }
+
+    /// <summary>The Q drag finished — <b>one undo entry</b>, or none when it changed nothing or was
+    /// cancelled. <see cref="EndGripperDrag"/>'s contract, reached by the same route.</summary>
+    internal void EndQDrag(bool cancelled)
+    {
+        if (!_draggingQ) return;
+        _draggingQ = false;
+        EndGripperDrag(cancelled);
+    }
 }

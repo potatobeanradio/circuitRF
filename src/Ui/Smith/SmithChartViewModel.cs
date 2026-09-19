@@ -481,6 +481,14 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // rather than three that happen to agree. See SmithChartViewModel.Network.cs.
         RebuildNetwork();
 
+        // A CLAMPED BAND is a STANDING CONDITION rather than an occasion (R-smith9-4), so it is
+        // re-raised on every refresh and not once: it stays true for as long as the band asks for
+        // more than the generator table can answer for, and a note that appeared once and then went
+        // away would leave the picture unexplained. It never displaces a note somebody else just
+        // raised about the edit that is landing — the strip is ONE line, and the newer sentence is
+        // the one about what just happened.
+        if (Scene.BandClampNote is { } clamped && _stripNotice is null) StripNotice = clamped;
+
         IsDesignFrequencyInvalid = _design.Generator.Rows.Count > 1
             && _design.Generator.Span is { } span
             && !(_design.Chart.DesignFrequencyHz >= span.StartHz
@@ -497,6 +505,15 @@ public sealed partial class SmithChartViewModel : ObservableObject
         OnPropertyChanged(nameof(DesignFrequencyEntry));
         OnPropertyChanged(nameof(SourcePathDisplay));
         OnPropertyChanged(nameof(HasSourcePath));
+
+        // Brief 9's two cards. They are refreshed on the same channel as everything else, which is
+        // what makes an UNDO of a Q drag move the number in the panel as well as the arcs.
+        OnPropertyChanged(nameof(ConstantQEnabled));
+        OnPropertyChanged(nameof(ConstantQEntry));
+        OnPropertyChanged(nameof(SweepEnabled));
+        OnPropertyChanged(nameof(SweepStartEntry));
+        OnPropertyChanged(nameof(SweepStopEntry));
+        OnPropertyChanged(nameof(SweepPointsEntry));
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
         foreach (var row in GeneratorRows) row.NotifyAll();
     }

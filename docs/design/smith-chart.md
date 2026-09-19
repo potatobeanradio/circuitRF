@@ -423,7 +423,11 @@ capacitive branch (x < 0):  centre (0, +1/Q),  radius √(1 + 1/Q²)
 ```
 
 Both pass exactly through Γ = ±1, which is the reason they are drawn as the arc **inside the unit disc
-only** — the renderer's existing disc clip does it, and no arc-endpoint arithmetic is needed. Q → ∞
+only**. *(Correction, 2026-09-19: an earlier revision said the renderer's disc clip does this. It does
+not — a Smith `Plot` clips its traces to the plot BOX and deliberately not to the disc, §5.4's own
+rule. The in-disc range is closed form and is emitted: on the inductive circle `|Γ|² = 1 − (2/Q)·v`,
+so the arc is inside the disc exactly where `v > 0`, which is `θ ∈ [atan(1/Q), π − atan(1/Q)]` — both
+ends landing on Γ = ±1 with no intersection to solve. `src/Design/RESOLVED.md`.)* Q → ∞
 degenerates to the unit circle itself and Q → 0 to the real axis; both are drawn correctly by the same
 formula, and neither is a special case.
 

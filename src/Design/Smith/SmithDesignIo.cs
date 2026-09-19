@@ -141,18 +141,18 @@ public static class SmithDesignIo
                 : null,
         },
         Elements  = d.Elements.Count  > 0 ? [.. d.Elements.Select(ToFile)]  : null,
-        Sweep     = d.Sweep.Enabled
-                        ? new CsmithSweep
+        Sweep     = IsDefault(d.Sweep)
+                        ? null
+                        : new CsmithSweep
                           {
-                              Enabled = true,
+                              Enabled = d.Sweep.Enabled,
                               StartHz = d.Sweep.StartHz,
                               StopHz  = d.Sweep.StopHz,
                               Points  = d.Sweep.Points,
-                          }
-                        : null,
-        ConstantQ = d.ConstantQ.Enabled
-                        ? new CsmithConstantQ { Enabled = true, Q = d.ConstantQ.Q }
-                        : null,
+                          },
+        ConstantQ = IsDefault(d.ConstantQ)
+                        ? null
+                        : new CsmithConstantQ { Enabled = d.ConstantQ.Enabled, Q = d.ConstantQ.Q },
         Overlays  = d.Overlays.Count > 0 ? [.. d.Overlays.Select(ToFile)] : null,
         Markers   = d.Markers.Count  > 0 ? [.. d.Markers.Select(ToFile)]  : null,
         View = new CsmithView
@@ -367,6 +367,24 @@ public static class SmithDesignIo
 
     // ── the serialised shape ──────────────────────────────────────────────────
 
+    /// <summary>
+    /// True when nothing about the band has been touched — <b>which is the only state that goes
+    /// unwritten</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The rule is "absent means untouched", not "absent means off".</b> Writing the block only
+    /// while the feature was ENABLED lost a disabled band's start, stop and point count — and,
+    /// because the undo stack is a serialize/deserialize round trip of this same writer, it lost them
+    /// WITHIN the session too: unchecking the box and checking it again handed back the defaults,
+    /// silently, with the user's own numbers gone and nothing said. A document nobody has touched
+    /// still writes nothing, so no existing file changes.
+    /// </remarks>
+    private static bool IsDefault(SmithSweep s)
+        => !s.Enabled && s.StartHz == 0.0 && s.StopHz == 0.0 && s.Points == 51;
+
+    /// <inheritdoc cref="IsDefault(SmithSweep)"/>
+    private static bool IsDefault(SmithConstantQ q) => !q.Enabled && q.Q == 1.0;
+
     private sealed class CsmithFile
     {
         public int                    FormatVersion { get; set; }
@@ -375,8 +393,10 @@ public static class SmithDesignIo
         public CsmithGenerator?       Generator     { get; set; }
         public List<CsmithElement>?   Elements      { get; set; }
 
-        /// <summary>Written only when the band is ON. Absent is off, which is every document
-        /// nobody has enabled it in and every one written before it existed.</summary>
+        /// <summary>Written only when the band is not at its DEFAULTS — see
+        /// <see cref="IsDefault(SmithSweep)"/> for why that is not the same as "when it is on".
+        /// Absent is off with defaults, which is every document nobody has touched it in and every
+        /// one written before it existed.</summary>
         public CsmithSweep?           Sweep         { get; set; }
 
         /// <summary>Same rule as <see cref="Sweep"/>.</summary>

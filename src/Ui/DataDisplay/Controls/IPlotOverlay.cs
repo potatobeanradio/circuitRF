@@ -6,7 +6,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls;
 
 /// <summary>
 /// Transient chrome drawn over a <see cref="PlotControl"/>'s scene, with a gesture of its own —
-/// the Smith Chart tool's grippers and (brief 9) its constant-Q arcs
+/// the Smith Chart tool's grippers, and brief 9's grab handle for its constant-Q arcs
 /// (<c>brief-smith-5-chart.md</c> <c>R-smith5-6</c>, <c>docs/design/smith-chart.md</c> §5.4).
 /// </summary>
 /// <remarks>
@@ -64,6 +64,24 @@ public interface IPlotOverlay
 
     /// <summary>The pointer moved, in the plot's own world coordinates — Γ on a Smith plot.</summary>
     void DragTo(Complex gammaWorld);
+
+    /// <summary>
+    /// The same, with the shift modifier as the pointer event that carried the move reported it —
+    /// the constant-Q arcs' quarter-step (<c>brief-smith-9-q-and-sweep.md</c> <c>R-smith9-2</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>READ FROM THE EVENT, never latched.</b> Brief 9 asks for the modifier latch to be released
+    /// on <c>LostFocus</c>, after the layout view's "marquee select stopped working" defect — a held
+    /// -key flag that was never cleared because the key-up went to whatever took focus
+    /// (<c>src/Ui/RESOLVED.md</c>). <b>There is no latch here to release</b>: the flag arrives with
+    /// the move it applies to, so it cannot outlive it, cannot be missed on the way up and cannot be
+    /// left set by a window change. That is the stronger form of the same guarantee, and it is why
+    /// this is a parameter rather than a property.
+    ///
+    /// <para>Defaulted to the unmodified call, so an overlay with no modifier of its own says
+    /// nothing and <c>PlotControl</c> has one call site rather than two.</para>
+    /// </remarks>
+    void DragTo(Complex gammaWorld, bool shift) => DragTo(gammaWorld);
 
     /// <summary>
     /// The gesture ended. <paramref name="cancelled"/> true is an Escape mid-drag: the before-state

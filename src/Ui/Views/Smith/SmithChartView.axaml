@@ -409,11 +409,84 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- The panel space brief 9 fills. Left as a NOTE rather than as empty
-                             cards: a card with nothing in it reads as a control that failed to load,
-                             and this brief must not build the sweep row or the Q row. -->
-                        <TextBlock Classes="note" Margin="2,6,2,0"
-                                   Text="The swept band and the constant-Q arcs (brief 9) take the space below."/>
+                        <!-- ── The constant-Q arcs (brief 9) ────────────────────────────────
+                             R-smith9-1/-2/-3; docs/design/smith-chart.md §4.4.
+
+                             A RULER LAID OVER THE WORK, and off by default for that reason. Each
+                             branch is a true circle — centre (0, ∓1/Q), radius √(1+1/Q²) — so the
+                             pair is emitted at uniform θ and never sampled in the z plane and
+                             mapped across, which is the mistake the VSWR locus's own note records.
+
+                             THE ARCS ARE DRAWN AS TRACES, beneath the trajectories, carrying no
+                             marker and out of the autoscale; the thing on the overlay is the
+                             HANDLE. Dragging either branch moves both, because they are one
+                             setting, and holding shift rounds the computed Q to the nearest
+                             quarter BEFORE it is stored. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Constant Q"/>
+
+                                <CheckBox MinHeight="0" FontSize="11" Content="Show arcs"
+                                          IsChecked="{Binding ViewModel.ConstantQEnabled, Mode=TwoWay}"
+                                          ToolTip.Tip="Draw the constant-Q pair. Both branches are one setting: dragging either one moves both, and holding shift rounds Q to the nearest quarter."/>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Q"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        IsEnabled="{Binding ViewModel.ConstantQEnabled}"
+                                                        Text="{Binding ViewModel.ConstantQEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="|x|/r on the arcs — a ratio, so it carries no unit. Double-click to edit, or drag an arc on the chart."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ── The swept band (brief 9) ─────────────────────────────────────
+                             R-smith9-4; docs/design/smith-chart.md §3.6.
+
+                             OPTIONAL AND OFF BY DEFAULT (owner decision). This tool's premise is
+                             that bandwidth is not the question; the band is what makes it visible
+                             when somebody wants to ask it anyway, and it costs one evaluation per
+                             point.
+
+                             IT IS CLAMPED TO THE GENERATOR TABLE'S SPAN WITH A STATED NOTE, never
+                             refused — the ONE caller allowed to clamp. A band is a viewing choice,
+                             where a design frequency is a design input: extrapolating the generator
+                             impedance past the table would be inventing data, and narrowing the
+                             view costs the user only the part of the picture that was never
+                             there. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Swept band"/>
+
+                                <CheckBox MinHeight="0" FontSize="11" Content="Draw band"
+                                          IsChecked="{Binding ViewModel.SweepEnabled, Mode=TwoWay}"
+                                          ToolTip.Tip="A thin locus through the load points across a band. Clamped to the generator table's span, with the span named in the strip — never refused."/>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Start"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
+                                                        Text="{Binding ViewModel.SweepStartEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="The band's low end. Double-click to edit."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Stop"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
+                                                        Text="{Binding ViewModel.SweepStopEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="The band's high end. Double-click to edit."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Points"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
+                                                        Text="{Binding ViewModel.SweepPointsEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="How many frequencies the band is walked at. Two is the fewest that draws one."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

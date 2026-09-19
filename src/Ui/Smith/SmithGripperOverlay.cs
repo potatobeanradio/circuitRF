@@ -18,6 +18,17 @@ namespace CircuitRF.Ui.Smith;
 public sealed record SmithGripperHandle(int NodeIndex);
 
 /// <summary>
+/// The constant-Q pair's handle — <b>a handle kind on brief 5's seam, not a second overlay</b>
+/// (<c>brief-smith-9-q-and-sweep.md</c> <c>R-smith9-3</c>).
+/// </summary>
+/// <param name="Inductive">Which branch was grabbed. <b>It changes nothing about the answer</b> —
+/// dragging either branch moves both, because they are one setting — and it is carried so the ring
+/// under the cursor is drawn on the branch the user is actually holding.</param>
+/// <param name="At">The point ON the arc nearest the cursor, in Γ. The ring is drawn here rather
+/// than at the pointer, so the handle stays on the curve it belongs to.</param>
+public sealed record SmithQHandle(bool Inductive, Complex At);
+
+/// <summary>
 /// The grippers, drawn over the chart and dragged on it (<c>brief-smith-5-chart.md</c>
 /// <c>R-smith5-6</c>, <c>R-smith5-7</c>; <c>docs/design/smith-chart.md</c> §5.4, §4.3).
 /// </summary>
@@ -28,10 +39,14 @@ public sealed record SmithGripperHandle(int NodeIndex);
 /// is drawn over would be a second, invisible author of the picture.
 ///
 /// <para><b>What it draws, and nothing else:</b> an arrowhead at each trajectory's own reported
-/// midpoint, the generator's anchor, one hollow ring per draggable node, and the load points' label
-/// boxes. The curves and the points themselves are TRACES — the Data Display draws those.</para>
+/// midpoint, the generator's anchor, one hollow ring per draggable node, the load points' label
+/// boxes, and the constant-Q pair's grab ring. The curves and the points themselves are TRACES — the
+/// Data Display draws those.</para>
 ///
-/// <para><b>The constant-Q arcs are brief 9's</b> and go on this overlay when that brief lands.</para>
+/// <para><b>The constant-Q ARCS are traces too, and deliberately</b> (<c>R-smith9-3</c>): they are
+/// drawn BENEATH the trajectories, and this overlay's hook is inside <c>PlotRenderer.Draw</c> above
+/// them. What brief 9 added here is a HANDLE KIND — <see cref="SmithQHandle"/> — and not a second
+/// overlay. See <c>src/Ui/RESOLVED.md</c>.</para>
 /// </remarks>
 public sealed class SmithGripperOverlay : IPlotOverlay
 {
@@ -72,13 +87,20 @@ public sealed class SmithGripperOverlay : IPlotOverlay
     private int _hoverNode = -1;
     private int _dragNode  = -1;
 
+    /// <summary>The Q handle under the cursor, and the one being dragged — null when neither.</summary>
+    private SmithQHandle? _hoverQ;
+    private SmithQHandle? _dragQ;
+
+    /// <summary>Inductive first, so a tie on a point both branches touch — Γ = ±1 — goes to the
+    /// upper half of the chart, which is the one the cursor is in when it is not exactly on the
+    /// real axis.</summary>
+    private static readonly bool[] TwoBranches = [true, false];
+
     // ── the seam ─────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public object? HitTest(double canvasX, double canvasY, TransformSet tf)
     {
-        if (!_vm.Design.Chart.ShowGrippers) return null;
-
         var scene = _vm.Scene;
         if (!scene.HasContent) return null;
 
@@ -86,7 +108,11 @@ public sealed class SmithGripperOverlay : IPlotOverlay
         double bestDist = double.MaxValue;
 
         // FROM 1, never from 0 — node 0 is the anchor and offers no handle (R-smith5-7).
-        for (int k = 1; k < scene.NodeGamma.Count; k++)
+        //
+        //  HIDING THE GRIPPERS HIDES THE GRIPPERS. The constant-Q pair is its own setting and keeps
+        //  its handle either way, because a visible arc nobody could grab would be a control that
+        //  had silently stopped working.
+        for (int k = 1; _vm.Design.Chart.ShowGrippers && k < scene.NodeGamma.Count; k++)
         {
             if (!Draggable(scene, k)) continue;
 
@@ -99,19 +125,94 @@ public sealed class SmithGripperOverlay : IPlotOverlay
             if (d <= HitRadius && d <= bestDist) { bestDist = d; best = k; }
         }
 
-        return best >= 0 ? new SmithGripperHandle(best) : null;
+        if (best >= 0) return new SmithGripperHandle(best);
+
+        // THE GRIPPERS WIN A TIE, which is why this runs only after they have all missed. A gripper
+        // is the work and the arcs are the ruler laid over it; an arc that could steal a joint
+        // sitting on it would make the one handle the user came for unreachable.
+        return HitTestQ(canvasX, canvasY, tf);
+    }
+
+    /// <summary>
+    /// The nearer constant-Q branch under a canvas point, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>Analytically, against the CIRCLE</b> rather than by walking the emitted samples: a hit test
+    /// runs on every pointer move over the plot, and the closest point on a circle is one normalize.
+    /// The pixel distance is then measured between the projections of the cursor's Γ and that closest
+    /// point, so the hit radius is in pixels at whatever zoom the chart is at — which is what the
+    /// grippers' own radius means too.
+    ///
+    /// <para><b>The closest point has to be on the DRAWN arc.</b> Each circle leaves the unit disc,
+    /// and the half outside it is not painted (<see cref="SmithQArcs.Arc"/>), so a grab out there
+    /// would be a grab on something invisible.</para>
+    /// </remarks>
+    private SmithQHandle? HitTestQ(double canvasX, double canvasY, TransformSet tf)
+    {
+        var q = _vm.Design.ConstantQ;
+        if (!q.Enabled || !(double.IsFinite(q.Q) && q.Q > 0)) return null;
+
+        var (wx, wy) = tf.PrimaryFromCanvas((float)canvasX, (float)canvasY);
+        var cursor   = new Complex(wx, wy);
+        if (!double.IsFinite(cursor.Real) || !double.IsFinite(cursor.Imaginary)) return null;
+
+        SmithQHandle? best     = null;
+        double        bestDist = double.MaxValue;
+
+        foreach (bool inductive in TwoBranches)
+        {
+            var circle = SmithQArcs.Circle(q.Q, inductive);
+
+            var    radial = cursor - circle.Centre;
+            double mag    = radial.Magnitude;
+            if (mag < 1e-12) continue;                       // dead centre: every point is nearest
+
+            var on = circle.Centre + radial / mag * circle.Radius;
+
+            // Outside the disc is the half of the circle nothing painted.
+            if (on.Magnitude > 1.0 + 1e-9) continue;
+
+            var    p = tf.PrimaryToCanvas(on.Real, on.Imaginary);
+            double d = Math.Sqrt((p.X - canvasX) * (p.X - canvasX)
+                               + (p.Y - canvasY) * (p.Y - canvasY));
+
+            if (d <= HitRadius && d < bestDist) { bestDist = d; best = new SmithQHandle(inductive, on); }
+        }
+
+        return best;
     }
 
     /// <inheritdoc/>
     public void DragBegin(object handle)
     {
-        if (handle is not SmithGripperHandle h) return;
-        if (_vm.BeginGripperDrag(h.NodeIndex)) _dragNode = h.NodeIndex;
+        switch (handle)
+        {
+            case SmithGripperHandle h when _vm.BeginGripperDrag(h.NodeIndex):
+                _dragNode = h.NodeIndex;
+                break;
+
+            case SmithQHandle q when _vm.BeginQDrag():
+                _dragQ = q;
+                break;
+        }
     }
 
     /// <inheritdoc/>
-    public void DragTo(Complex gammaWorld)
+    public void DragTo(Complex gammaWorld) => DragTo(gammaWorld, shift: false);
+
+    /// <inheritdoc/>
+    public void DragTo(Complex gammaWorld, bool shift)
     {
+        if (_dragQ is not null)
+        {
+            // The ring follows the ARC and not the cursor, so it is re-placed from the Q the drag
+            // just produced rather than from where the pointer is: that is the difference between a
+            // handle that slides along the curve it belongs to and one that leaves it.
+            _vm.DragQTo(gammaWorld, shift);
+            _dragQ = NearestOn(_dragQ.Inductive, gammaWorld) ?? _dragQ;
+            return;
+        }
+
         if (_dragNode < 0) return;
         _vm.DragGripperTo(gammaWorld);
     }
@@ -119,6 +220,13 @@ public sealed class SmithGripperOverlay : IPlotOverlay
     /// <inheritdoc/>
     public void DragEnd(bool cancelled)
     {
+        if (_dragQ is not null)
+        {
+            _dragQ = null;
+            _vm.EndQDrag(cancelled);
+            return;
+        }
+
         if (_dragNode < 0) return;
         _dragNode = -1;
         _vm.EndGripperDrag(cancelled);
@@ -127,10 +235,29 @@ public sealed class SmithGripperOverlay : IPlotOverlay
     /// <inheritdoc/>
     public bool Hover(object? handle)
     {
-        int node = handle is SmithGripperHandle h ? h.NodeIndex : -1;
-        if (node == _hoverNode) return false;
+        int  node    = handle is SmithGripperHandle h ? h.NodeIndex : -1;
+        var  q       = handle as SmithQHandle;
+        bool changed = node != _hoverNode || q != _hoverQ;
+
         _hoverNode = node;
-        return true;
+        _hoverQ    = q;
+        return changed;
+    }
+
+    /// <summary>The point on one branch nearest <paramref name="gamma"/>, or null when the pair is
+    /// off or that point is outside the disc — <see cref="HitTestQ"/>'s arithmetic, once.</summary>
+    private SmithQHandle? NearestOn(bool inductive, Complex gamma)
+    {
+        var settings = _vm.Design.ConstantQ;
+        if (!settings.Enabled || !(double.IsFinite(settings.Q) && settings.Q > 0)) return null;
+
+        var    circle = SmithQArcs.Circle(settings.Q, inductive);
+        var    radial = gamma - circle.Centre;
+        double mag    = radial.Magnitude;
+        if (!(mag > 1e-12)) return null;
+
+        var on = circle.Centre + radial / mag * circle.Radius;
+        return on.Magnitude <= 1.0 + 1e-9 ? new SmithQHandle(inductive, on) : null;
     }
 
     /// <summary>True when node <paramref name="k"/> belongs to an element with a parameter to
@@ -160,7 +287,45 @@ public sealed class SmithGripperOverlay : IPlotOverlay
         DrawArrowheads(canvas, tf, scene);
         if (_vm.Design.Chart.ShowLabels) DrawLoadLabels(canvas, tf, theme, scene);
         if (_vm.Design.Chart.ShowGrippers) DrawGrippers(canvas, tf, theme, scene);
+        DrawQHandle(canvas, tf, theme);
     }
+
+    /// <summary>
+    /// The constant-Q pair's grab ring, under the cursor and <b>on the arc</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The ARCS are traces and are drawn beneath the trajectories</b> (<c>R-smith9-3</c>); this is
+    /// the HANDLE, which is chrome like every other handle on this overlay and belongs over the top
+    /// with them. Nothing is drawn until the cursor is on an arc, so the pair reads as a ruler until
+    /// the moment it is something to hold.
+    /// </remarks>
+    private void DrawQHandle(SKCanvas canvas, TransformSet tf, RenderTheme theme)
+    {
+        if ((_dragQ ?? _hoverQ) is not { } handle) return;
+
+        var at = tf.PrimaryToCanvas(handle.At.Real, handle.At.Imaginary);
+
+        using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
+                                       Color = theme.BackgroundColor.WithAlpha(150) };
+        using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
+                                         StrokeWidth = 1.6f, Color = ReadingColorOpaque };
+
+        if (_dragQ is not null)
+        {
+            fill.Color = ReadingColorOpaque;
+            canvas.DrawCircle(at.X, at.Y, RingRadius, fill);
+        }
+        else
+        {
+            canvas.DrawCircle(at.X, at.Y, RingRadius - 1.4f, fill);
+        }
+
+        canvas.DrawCircle(at.X, at.Y, RingRadius, stroke);
+    }
+
+    /// <summary>The arcs' own colour — the READING grey the load points and node 0 are drawn in, so
+    /// the handle belongs to the arc it sits on rather than to a trajectory.</summary>
+    private static SKColor ReadingColorOpaque => SmithPlotBuilder.ReadingColor;
 
     /// <summary>
     /// One arrowhead per curve, at the midpoint the sampler reported.

@@ -55,6 +55,23 @@ internal sealed class SmithChartScene
     /// <summary>Γ(conj(Z_gen(f))) per generator-table row — the faint, un-selectable targets.</summary>
     public IReadOnlyList<Complex> ConjugateTargets { get; init; } = [];
 
+    /// <summary>The constant-Q arcs' two branches, inside the unit disc, or empty when the pair is
+    /// off (<c>brief-smith-9-q-and-sweep.md</c> <c>R-smith9-1</c>). <b>Chrome</b>: drawn beneath the
+    /// trajectories, carrying no marker, and out of the autoscale.</summary>
+    public IReadOnlyList<Complex> QArcInductive  { get; init; } = [];
+
+    /// <inheritdoc cref="QArcInductive"/>
+    public IReadOnlyList<Complex> QArcCapacitive { get; init; } = [];
+
+    /// <summary>The swept band's locus through the load points, or empty when the band is off
+    /// (<c>R-smith9-4</c>).</summary>
+    public IReadOnlyList<Complex> Band { get; init; } = [];
+
+    /// <summary>What the strip says when the band asked for more than the generator table can answer
+    /// for — the span it was narrowed to, in the strip's own spelling of a frequency. Null when the
+    /// band is off or fits.</summary>
+    public string? BandClampNote { get; init; }
+
     /// <summary>True when the evaluation produced something to draw.</summary>
     public bool HasContent => NodeGamma.Count > 0;
 }

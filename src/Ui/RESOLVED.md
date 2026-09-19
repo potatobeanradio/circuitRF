@@ -31225,3 +31225,42 @@ it.
 
 Gates: `RailWindowTests.ThePartsTableCarriesTheLibrarysNumbers_NotJustTheirProvenance` and
 `PdnImpedanceTests.EscapeDeselectsASelectedMarker`.
+
+## Smith Chart brief 9 — the arcs are traces, and there is no modifier latch (2026-09-19)
+
+`brief-smith-9-q-and-sweep.md`. The arithmetic and its own findings are in `src/Design/RESOLVED.md`.
+
+**"Drawn beneath the trajectories" and "rides the overlay seam" are two different statements, and
+only one of them is about drawing.** `IPlotOverlay.Draw` is hooked inside `PlotRenderer.Draw` ABOVE
+the traces and below the markers — that is the seam's own documented z-order — so an arc drawn there
+could not be beneath anything. The arcs are therefore ordinary TRACES, added first, with
+`IsAnnotation` (which is exactly "not a reading": no Add Marker entry, no double-click, no row in
+another trace's readout) and `ExcludeFromAutoscale`. What went on the overlay is the HANDLE, which is
+what `R-smith9-3`'s "adds a handle kind to it, not a second overlay" actually asks for. The
+autoscale exclusion is not decoration: the pair passes through Γ = ±1 at every Q, so a chart that
+framed it would be pinned to the whole unit disc forever and the cascade would never fill it.
+
+**There is no modifier latch to release, and that is the stronger form of what the brief asked for.**
+`R-smith9-2` says to release the shift latch on `LostFocus`, after the layout view's "marquee select
+stopped working" defect — a held-key flag never cleared because the key-up went to whatever took
+focus. A latch here would have the same failure mode, so there is none: `IPlotOverlay.DragTo` gained a
+`bool shift` overload (default-implemented, so every other overlay is untouched) and `PlotControl`
+fills it from `e.KeyModifiers` on the very event that carries the move. The flag cannot outlive the
+move it applies to, cannot be missed on the way up, and cannot be left set by a window change.
+
+**`ShowGrippers` must not gate the Q hit test.** It was the first line of `HitTest`, so hiding the
+grippers would have made a still-visible pair of arcs unreachable — a control that had silently
+stopped working. The grippers still win a tie, because a gripper is the work and the arcs are the
+ruler laid over it.
+
+**The clamp note is a STANDING CONDITION, not an occasion.** `StripNotice` is cleared by the next
+committed edit by design, so a band clamped to the generator table's span would have explained itself
+once and then left the picture unexplained. It is re-raised on every `RefreshDerived` instead — and
+never over a note somebody else just raised about the edit that is landing, because the strip is one
+line and the newer sentence is the one about what just happened. The sentence is composed in
+`SmithPlotBuilder` rather than in `SmithBand`, because it spells its frequencies with
+`MatchValueFormat` — the strip's own spelling, which is above the firewall.
+
+**A clamped band is clamped at its ENDS, not per sample.** Clamping each sample individually piles
+half the band onto one frequency and draws a locus that stops moving without saying so; clamping the
+ends narrows the view, which is what the note reports, and still produces exactly `Points` samples.
