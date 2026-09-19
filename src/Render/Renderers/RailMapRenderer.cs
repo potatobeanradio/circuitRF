@@ -64,6 +64,15 @@ public static class RailMapRenderer
     /// <summary>Label point size, device pixels.</summary>
     public const float LabelSizePx = 10f;
 
+    /// <summary>The selected part's outline, device pixels. <see cref="MinHighlightPx"/> is what keeps
+    /// an 0402 findable at whole-board zoom — which is the zoom "where is C7" is asked at.</summary>
+    public const float MinHighlightPx = 22f;
+
+    public const float HighlightStrokePx = 2f;
+    public const float HighlightInsetPx = 3f;
+    public const float HighlightCornerPx = 3f;
+    public const float HighlightPadRadiusPx = 2.5f;
+
     /// <summary>The legend's own text size, device pixels — <b>at full size.</b> See
     /// <see cref="LayOutLabels"/>: the plate is a world box and the text is in points, so on a small
     /// enough canvas the three labels do not fit at this size and are drawn smaller.</summary>
@@ -104,8 +113,13 @@ public static class RailMapRenderer
     /// <see cref="RailMapScene"/> — the scene is the pure function of the RESULT (R-rail8-13) and
     /// visibility is a property of the technology the frame is being drawn with, so folding it into the
     /// scene would make one result produce two scenes.</param>
+    /// <param name="highlight">The part selected in the parts table, or null for none. <b>A draw
+    /// argument for the same reason <paramref name="hiddenLayers"/> is</b> — a selection is not a
+    /// result, so folding it into <see cref="RailMapScene"/> would make one solve produce a new
+    /// scene on every click. See <see cref="RailPartHighlight"/>.</param>
     public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme,
-                            IReadOnlySet<LayerKey>? hiddenLayers = null)
+                            IReadOnlySet<LayerKey>? hiddenLayers = null,
+                            RailPartHighlight? highlight = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
@@ -120,6 +134,13 @@ public static class RailMapRenderer
             DrawTiles(canvas, scene, viewport, theme, hiddenLayers);
             DrawRegions(canvas, scene, viewport, theme, hiddenLayers);
             DrawMarkers(canvas, scene, viewport, theme);
+
+            // AFTER the markers and BEFORE the legend. Over the markers because the selection is the
+            // thing the user just asked to be shown and a port glyph sitting on the same pad would
+            // otherwise cover it; under the legend because the legend is opaque chrome that must stay
+            // readable (§11.7) and a mark drawn over it would be read as part of the plate.
+            DrawPartHighlight(canvas, highlight, viewport, theme);
+
             DrawLegend(canvas, scene, viewport, theme);
             DrawNote(canvas, scene, viewport, theme);
         }
@@ -271,6 +292,58 @@ public static class RailMapRenderer
             canvas.DrawText(marker.Label, x + MarkerRadiusPx + 3f, y + LabelSizePx * 0.35f,
                             SKTextAlign.Left, font, fill);
         }
+    }
+
+    // ── the selected part ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The outline and pad dots for the part selected in the parts table.
+    /// </summary>
+    /// <remarks>
+    /// <b>Drawn in its own colour rather than the layout editor's selection colour.</b> This mark sits
+    /// on top of a drop map whose entire palette is a cold-to-hot ramp; a mark whose colour falls
+    /// inside that ramp is invisible exactly where the map is interesting. See
+    /// <see cref="ColorRole.RailPartSelection"/>.
+    ///
+    /// <para>A part the board does not place produces an EMPTY outline and nothing is drawn — the
+    /// caller decides whether to offer the mark, and it learns there is none from the picture staying
+    /// as it was rather than from a box appearing at the origin.</para>
+    /// </remarks>
+    private static void DrawPartHighlight(
+        SKCanvas canvas, RailPartHighlight? highlight, LayoutViewport vp, RailMapTheme theme)
+    {
+        if (highlight is not { } part) return;
+
+        var box = part.Outline;
+        if (box.IsEmpty) return;
+
+        float x0 = (float)vp.WorldToScreenX(box.MinX), x1 = (float)vp.WorldToScreenX(box.MaxX);
+        float y0 = (float)vp.WorldToScreenY(box.MinY), y1 = (float)vp.WorldToScreenY(box.MaxY);
+        var rect = new SKRect(Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Max(y0, y1));
+
+        // A part zoomed out to nothing is still findable: the outline never shrinks below a size a
+        // user can see, because "where is C7" is asked most often from a view of the whole board.
+        float padX = Math.Max(0f, MinHighlightPx - rect.Width) / 2f;
+        float padY = Math.Max(0f, MinHighlightPx - rect.Height) / 2f;
+        rect.Inflate(padX + HighlightInsetPx, padY + HighlightInsetPx);
+
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = HighlightStrokePx, Color = theme.PartSelection,
+        };
+        canvas.DrawRoundRect(rect, HighlightCornerPx, HighlightCornerPx, stroke);
+
+        using var dot = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.PartSelection,
+        };
+        foreach (var (px, py) in part.Pads)
+            canvas.DrawCircle((float)vp.WorldToScreenX(px), (float)vp.WorldToScreenY(py),
+                              HighlightPadRadiusPx, dot);
+
+        using var font = Font(SkiaFonts.PlexSemiBold, LabelSizePx);
+        canvas.DrawText(part.Label, rect.MidX, rect.Top - 4f, SKTextAlign.Center, font, dot);
     }
 
     // ── the legend, inside the picture ────────────────────────────────────────────────────────

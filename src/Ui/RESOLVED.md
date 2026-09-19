@@ -29494,3 +29494,34 @@ differently. The fix is to build the reference the way the verb builds it, not t
 comparison.
 
 Gates: `RailWindowTests` (seven more), `WorkspaceScannerTests`, `RailCliVerbTests`.
+
+## railRF: the parts table and the board were two views of one part with no link between them (2026-09-19)
+
+The table listed thirteen capacitors beside a picture of the board and there was no way to find any
+of them on it. The Position column says where `C7` is in millimetres, and a coordinate is not
+something a person locates by eye on a 30 mm board.
+
+Selecting a row now marks that part on the artwork — an outline round its body, a dot on each pad,
+its refdes above — and **Escape clears the selection and the mark**. Three things worth knowing:
+
+- **The highlight is a DRAW argument, not part of `RailMapScene`.** R-rail8-13 makes the scene a
+  pure function of the RESULT, and a selection is not a result: folding it in would make one solve
+  produce a new scene on every click, and arrowing down a thirteen-row table would re-sample the
+  drop field thirteen times. It travels the way `hiddenLayers` already does.
+- **The geometry is resolved in the view model, from the board netlist.** Which pads belong to `C7`
+  is a question about the netlist; answering it below the firewall would be a second copy of
+  `PdnAttachments`' resolution that could come to disagree with the one every port uses. A part the
+  board does not place produces **no mark at all** — the row already says *not placed*, and a mark
+  at a made-up centroid would say something untrue.
+- **`RailPartHighlight` needed hand-written value equality.** A record compares its `Pads` list by
+  REFERENCE, and the resolution builds a fresh list each time — so two highlights of the same part
+  were never equal, and `RailLayoutOverlay`'s "did the selection change" guard repainted on every
+  notification whether or not anything had moved.
+
+The selection survives `RebuildParts` **by refdes, not by reference**: every row object is new on
+every rebuild, and a rebuild happens on a solve, on a part edit and on the placement arriving — so
+holding the old object dropped the user's selection at moments that have nothing to do with it. A
+refdes that no longer exists clears, because a deleted part is not a selected one.
+
+Escape is bubbling and defers to `e.Handled`: it is the layout canvas's own zoom-box disarm, and
+§11.6 promises that someone who has learned that canvas has learned this one.

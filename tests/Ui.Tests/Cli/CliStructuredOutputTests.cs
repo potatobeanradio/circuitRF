@@ -723,6 +723,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "rail.mask.not-found",
         "rail.mask.too-short",
         "rail.mask.unreadable",
+        "rail.netlist.unreadable",
         "rail.order.refused",
         "rail.output.touchstone-not-yet",
         "rail.output.unknown-format",

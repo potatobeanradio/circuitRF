@@ -765,8 +765,12 @@
                                  MaxHeight constrains the MEASURE and does not clip, so a list taller
                                  than it simply draws past the card and over the status strip — which
                                  nobody saw while this pane was empty (R-rail18-5). -->
+                            <!-- SELECTION IS THE LINK TO THE BOARD (owner, 2026-09-19). Picking a
+                                 row outlines that part on the artwork beside it; Escape clears both.
+                                 The row's own highlight is the ListBoxItem:selected style above. -->
                             <ListBox Grid.Row="2" Name="PartsList" Classes="rows" MaxHeight="128"
-                                     ItemsSource="{Binding Parts}">
+                                     ItemsSource="{Binding Parts}"
+                                     SelectedItem="{Binding SelectedPart, Mode=TwoWay}">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="rvm:RailPartRowViewModel">
                                         <!-- An unresolved row is rendered AS unresolved and populates

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -60,7 +61,23 @@ public sealed partial class RailRfViewModel
 
         _document.ArtworkCellRef = board.ArtworkCellRef;
 
-        Board = board;
+        // ── THE COMPANIONS ARE RECORDED ON THE DOCUMENT, NOT ONLY ON THE SESSION ────────────────
+        //
+        // The netlist and the placement are what make a REFDES resolve to copper, and until they
+        // were persisted an import that read them and was then SAVED lost them: the reopened
+        // document had no pads, so every anchor fell back to a coordinate and every mounting loop
+        // fell back to its typed value, with nothing on any report to say a computed set had been
+        // available. Recorded here for the same reason ArtworkCellRef is — the document holds a
+        // reference to the file, never a copy of what was in it.
+        _document.BoardNetlistRef = options.BoardNetlistPath;
+        _document.PlacementRef    = options.PlacementPath;
+
+        Board = board with
+        {
+            Pads         = PdnBoardPads.PadsOf(netlist),
+            NetPoints    = PdnBoardPads.NetPointsOf(netlist),
+            ReferenceNet = _document.ReferenceNet,
+        };
         Placement = placement;
         Bom = bom;
         PartLibrary = library;

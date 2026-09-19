@@ -20,6 +20,7 @@
 
 using System.Collections.Generic;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Ui.RailRf;
@@ -72,6 +73,36 @@ public sealed partial class RailRfViewModel
 
             case RailArtworkOutcome.Resolved when found is { View: { } view, Technology: { } tech }:
                 foreach (string d in found.Diagnostics) notes.Add(d);
+
+                // ── THE COMPANIONS, AND WHY THEY ARE READ HERE AND NOT AT IMPORT ─────────────
+                //
+                // These are what make a REFDES mean anything: with no pads, every source and load
+                // anchor has to be a coordinate and PdnMountingLoopExtractor can compute no
+                // mounting loop for any part on any board. Both degrade to the typed path in
+                // silence, which is why they are resolved on OPEN rather than only in the import
+                // session — an import that read a netlist and was then saved used to lose it.
+                //
+                // The netlist's units are cross-checked against the ARTWORK's extent (R-gi5-10),
+                // so it is read after the artwork and in the artwork's own resolution.
+                var netlist = RailArtwork.ResolveBoardNetlist(
+                    _document, path, view.DbuPerMicron, out string? netlistPath, out string? netlistError);
+                if (netlistError is { Length: > 0 })
+                    notes.Add($"The board netlist '{netlistPath}' did not read: {netlistError}. Every "
+                            + "port anchored by refdes is unresolved and no mounting loop can be "
+                            + "computed; typed values are unaffected.");
+                else if (netlist is not null)
+                    BoardNetlist = netlist;
+
+                var placed = RailArtwork.ResolvePlacement(
+                    _document, path, view.DbuPerMicron, out string? placedPath, out string? placedError);
+                if (placedError is { Length: > 0 })
+                    notes.Add($"The placement table '{placedPath}' did not read: {placedError}. The "
+                            + "parts table's Position column is empty.");
+                else if (placed is not null)
+                    Placement = placed;
+
+                foreach (string d in netlist?.Diagnostics ?? []) notes.Add(d);
+
                 Board = new RailBoardInputs
                 {
                     Shapes         = view.Shapes,
@@ -79,6 +110,9 @@ public sealed partial class RailRfViewModel
                     TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,
                     ArtworkCellRef = found.ClayPath,
+                    Pads           = PdnBoardPads.PadsOf(netlist),
+                    NetPoints      = PdnBoardPads.NetPointsOf(netlist),
+                    ReferenceNet   = _document.ReferenceNet,
                 };
                 break;
         }

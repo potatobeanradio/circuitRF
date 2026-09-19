@@ -19,6 +19,7 @@ using System;
 using System.IO;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Design.RailRf;
 
@@ -149,6 +150,78 @@ public static class RailArtwork
 
         path = Core.RefPath.Resolve(Path.GetDirectoryName(Path.GetFullPath(documentPath))!, r);
         try { return PartLibraryIo.LoadFromFile(path); }
+        catch (Exception ex) { error = ex.Message; return null; }
+    }
+
+    /// <summary>
+    /// Reads the board netlist <see cref="RailDocument.BoardNetlistRef"/> names, or null where it
+    /// names none. Document-relative, like every other reference a <c>.crail</c> carries.
+    /// </summary>
+    /// <remarks>
+    /// <b>It needs the artwork's DBU resolution</b>, which is the one argument the part library's
+    /// walk does not take: this format carries its own units AND its own resolution, and the two
+    /// inch resolutions in circulation differ by a factor of ten (R-gi5-10). <c>BoardNetlistFile</c>
+    /// cross-checks its reading against the artwork's extent, and it can only do that in the
+    /// artwork's own units — so resolve the artwork FIRST and pass its <c>DbuPerMicron</c>.
+    /// </remarks>
+    /// <param name="dbuPerMicron">The artwork's own resolution.</param>
+    /// <param name="path">Where the reference landed, or null where the document names none. Set even
+    /// when the read failed, because a refusal that cannot name the file it tried is not actionable.</param>
+    /// <param name="error">The reader's own message, where it named a netlist and did not read it.</param>
+    public static BoardNetlist? ResolveBoardNetlist(
+        RailDocument document, string documentPath, int dbuPerMicron,
+        out string? path, out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(documentPath);
+
+        path = null;
+        error = null;
+        if (document.BoardNetlistRef is not { Length: > 0 } r) return null;
+
+        path = Core.RefPath.Resolve(Path.GetDirectoryName(Path.GetFullPath(documentPath))!, r);
+        try
+        {
+            var read = BoardNetlistFile.ReadFile(path, dbuPerMicron);
+            // A refusal is carried on the RESULT rather than thrown, and it must not be swallowed
+            // here: a netlist that did not read leaves every refdes unresolvable, and the report
+            // that follows would otherwise look exactly like one for a board that never had a
+            // netlist at all.
+            if (read is { Refusal: { Length: > 0 } why }) { error = why; return null; }
+            return read;
+        }
+        catch (Exception ex) { error = ex.Message; return null; }
+    }
+
+    /// <summary>
+    /// Reads the placement file <see cref="RailDocument.PlacementRef"/> names, or null where it names
+    /// none. Document-relative.
+    /// </summary>
+    /// <remarks>
+    /// <b>An unstated origin is carried, not defaulted.</b> <c>PlacementFile</c> reports
+    /// <c>PlacementOriginEvidence.Unstated</c> where the file declares no origin, and the caller is
+    /// what asks — the import dialog asks a user, and a headless caller reports it. Three quarters of
+    /// a millimetre on an 0402 is the difference between landing on the part's own pad and on its
+    /// neighbour's, so nothing here picks one.
+    /// </remarks>
+    public static PlacementTable? ResolvePlacement(
+        RailDocument document, string documentPath, int dbuPerMicron,
+        out string? path, out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(documentPath);
+
+        path = null;
+        error = null;
+        if (document.PlacementRef is not { Length: > 0 } r) return null;
+
+        path = Core.RefPath.Resolve(Path.GetDirectoryName(Path.GetFullPath(documentPath))!, r);
+        try
+        {
+            var read = PlacementFile.ReadFile(path, dbuPerMicron, null);
+            if (read is { Refusal: { Length: > 0 } why }) { error = why; return null; }
+            return read;
+        }
         catch (Exception ex) { error = ex.Message; return null; }
     }
 

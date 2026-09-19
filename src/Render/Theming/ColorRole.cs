@@ -351,6 +351,15 @@ public static class ColorRole
     /// a 20 mil neck.</summary>
     public const string RailCopperHighlight = "Rail.CopperHighlight";
 
+    /// <summary>
+    /// The part the user has SELECTED in the parts table, outlined on the board.
+    ///
+    /// <para>Its own role rather than <see cref="LayoutSelection"/>'s: this outline is drawn over a
+    /// drop map whose whole palette is a cold-to-hot ramp, and the layout editor's selection colour
+    /// sits inside that ramp on one of the two variants. A selection the user cannot pick out from
+    /// the map under it is the one thing this mark exists to do.</para></summary>
+    public const string RailPartSelection = "Rail.PartSelection";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -385,5 +394,6 @@ public static class ColorRole
         RailLegendBackground, RailLegendInk,
         RailSource, RailLoad, RailViaFlag,
         RailClassTrace, RailClassSpreading, RailClassForced, RailCopperHighlight,
+        RailPartSelection,
     ];
 }

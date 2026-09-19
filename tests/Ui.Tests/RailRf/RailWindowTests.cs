@@ -952,6 +952,125 @@ public class RailWindowTests
     }
 
     /// <summary>
+    /// <b>Opening a <c>.crail</c> resolves the board netlist and the placement it names, so a REFDES
+    /// means something and a mounting loop is read off the artwork.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>What this closes was total and silent.</b> <c>RailBoardInputs.Pads</c> was assigned nowhere
+    /// in <c>src/</c>: the import read a board netlist into the view model and used it only to fill
+    /// the net pick list, and opening a document read no netlist at all. So every source and load
+    /// anchor had to be a coordinate, and <c>PdnMountingLoopExtractor</c> — the whole of brief 13's
+    /// <c>L_p + L_r − 2M + L_pad</c> — answered "the board netlist has no pad for it" for every part
+    /// on every board. Neither failed; both degraded to the typed path, which is the path a document
+    /// with no netlist takes, so nothing on any report said the netlist had been read and dropped.
+    ///
+    /// <para>Driven on the SHIPPED example for <see cref="OpeningACrailLoadsTheArtworkAndPartLibraryItNames"/>'s
+    /// reason, and asserting the BASIS rather than a number: what is under test is that the value
+    /// came off the geometry, not that this board's C1 is any particular size.</para>
+    /// </remarks>
+    [Fact]
+    public void OpeningACrailResolvesItsNetlistSoMountingLoopsAreReadOffTheArtwork()
+    {
+        string crail = Path.Combine(RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
+
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+        Assert.Empty(vm.LoadDocumentReferences());
+
+        // The netlist resolved and became pads. Two per capacitor plus the three ports.
+        Assert.NotEmpty(vm.Board!.Pads);
+        Assert.Equal("GND", vm.Board!.ReferenceNet);
+        Assert.Contains(vm.Board!.Pads, p => p.Refdes == "C1" && p.Net == "+3V3");
+        Assert.Contains(vm.Board!.Pads, p => p.Refdes == "C1" && p.Net == "GND");
+
+        // And the placement resolved, which is what the parts table's Position column reads.
+        Assert.NotNull(vm.Placement);
+        Assert.Null(vm.Placement!.Refusal);
+
+        var rail = vm.Document.Rails[0];
+        var loops = PdnMountingLoopExtractor.ComputeAll(
+            new PdnMountingLoopRequest
+            {
+                Rail         = rail,
+                Shapes       = vm.Board!.Shapes,
+                Technology   = vm.Board!.Technology,
+                DbuPerMicron = vm.Board!.DbuPerMicron,
+                Pads         = vm.Board!.Pads,
+                ReferenceNet = vm.Board!.ReferenceNet,
+            },
+            rail.Parts.Select(p => p.Refdes));
+
+        // EVERY part, not most of them: one unresolved row is a part that silently keeps a typed
+        // value, and on a board this example authored deliberately there is no excuse for one.
+        Assert.All(loops, l => Assert.Null(l.Unresolved));
+        Assert.All(loops, l => Assert.InRange(l.Henries!.Value, 0.3e-9, 5e-9));
+
+        // §4.3's lever, which is the whole reason the artwork is worth reading: C11-C13 are the same
+        // purchased part as C1-C3 and reach their vias down 0.9 mm of fan-out instead of through the
+        // land. If that does not cost them, nothing about computing this from geometry is worth doing.
+        double near = loops.First(l => l.Refdes == "C1").Henries!.Value;
+        double far  = loops.First(l => l.Refdes == "C11").Henries!.Value;
+        Assert.True(far > near * 1.5,
+                    $"C11's fan-out should cost it: C1 is {near * 1e12:0.#} pH, C11 {far * 1e12:0.#} pH.");
+
+        // And the resolver PREFERS these over a typed number only because the example states none —
+        // a computed value is a default, not a fact (§2.2). The basis is what says which is on show.
+        var models = new RailPartResolver(vm.PartLibrary!)
+            .ResolveAll(rail.Parts, rail.NominalVoltageV,
+                        loops.ToDictionary(l => l.Refdes, l => l.Henries!.Value));
+        Assert.All(models.Models,
+                   m => Assert.Equal(RailMountingBasis.ComputedFromGeometry, m.MountingBasis));
+    }
+
+    /// <summary>
+    /// <b>Picking a part in the table marks it on the board, and Escape clears both.</b>
+    /// </summary>
+    /// <remarks>
+    /// The parts table listed thirteen capacitors beside a picture of the board with no way to find
+    /// any of them on it (owner, 2026-09-19). Driven on the shipped example because the link only
+    /// exists where the board netlist places the part — on a document that names none, the right
+    /// answer is no mark at all, which the last assertion here is.
+    /// </remarks>
+    [Fact]
+    public void SelectingAPartMarksItOnTheBoardAndEscapeClearsIt()
+    {
+        string crail = Path.Combine(RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+        vm.LoadDocumentReferences();
+        vm.RebuildParts();
+
+        Assert.Null(vm.PartHighlight);                              // nothing selected is no mark
+        Assert.Null(vm.BoardOverlayLayer.PartHighlight);
+
+        vm.SelectedPart = vm.Parts.First(p => p.Refdes == "C11");
+
+        var mark = vm.PartHighlight;
+        Assert.NotNull(mark);
+        Assert.Equal("C11", mark!.Label);
+        Assert.Equal(2, mark.Pads.Count);                           // both pads, never a centroid
+        Assert.False(mark.Outline.IsEmpty);
+
+        // It reached the PICTURE, not just the view model — the overlay is what the canvas draws.
+        Assert.Equal(mark, vm.BoardOverlayLayer.PartHighlight);
+
+        // The mark is where C11 is, not where some other part is.
+        var c11 = vm.Board!.Pads.Where(p => p.Refdes == "C11").ToList();
+        Assert.All(c11, p => Assert.True(mark.Outline.Contains(p.X, p.Y)));
+
+        // A rebuild — a solve, a part edit, the placement arriving — keeps the selection by REFDES.
+        // Holding the row OBJECT would drop it, because every row here is new on every rebuild.
+        vm.RebuildParts();
+        Assert.Equal("C11", vm.SelectedPart?.Refdes);
+        Assert.NotNull(vm.BoardOverlayLayer.PartHighlight);
+
+        vm.ClearPartSelectionCommand.Execute(null);
+
+        Assert.Null(vm.SelectedPart);
+        Assert.Null(vm.PartHighlight);
+        Assert.Null(vm.BoardOverlayLayer.PartHighlight);
+    }
+
+    /// <summary>
     /// A <c>.crail</c> whose artwork has moved still OPENS, and says why the board is not there.
     /// </summary>
     /// <remarks>

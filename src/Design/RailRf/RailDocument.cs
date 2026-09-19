@@ -92,6 +92,44 @@ public sealed class RailDocument
     /// <para><b>A path here, and nothing resolves it yet</b> — brief 2 writes the reader.</para></summary>
     public string? PartLibraryRef { get; set; }
 
+    /// <summary>
+    /// The board netlist shipped beside the artwork — a net name per pad, the component reference and
+    /// pin where there is one, and the plating flag per hole (<c>BoardNetlistFile</c>).
+    ///
+    /// <para><b>This is the reference that makes a refdes mean anything.</b> Until it resolves,
+    /// <c>PdnPad</c> has no source at all: every source and load anchor has to be a COORDINATE, and
+    /// <c>PdnMountingLoopExtractor</c> can compute no mounting loop for any part, because a part's
+    /// loop is a property of where it was placed and nothing said where that is. Both degrade
+    /// silently to the typed path, which is why this lives on the document rather than only in the
+    /// import session: an import that read a netlist and was then SAVED used to lose it, and the
+    /// reopened document reported typed inductances with nothing to say a computed set had been
+    /// available.</para>
+    ///
+    /// <para>Document-relative, for <see cref="ArtworkCellRef"/>'s reason. Null where the artwork
+    /// came with no netlist, which is the ordinary assisted-Gerber case.</para></summary>
+    public string? BoardNetlistRef { get; set; }
+
+    /// <summary>
+    /// The placement file — a centroid and a side per refdes (<c>PlacementFile</c>).
+    ///
+    /// <para>What the parts table's <b>Position</b> column reads. It is separate from
+    /// <see cref="BoardNetlistRef"/> because the two answer different questions and boards ship them
+    /// separately: the netlist says which copper a pin is on, the placement says where the BODY sits
+    /// and which side it is on. A board with one and not the other is ordinary.</para>
+    ///
+    /// <para>Document-relative. Null where none was given.</para></summary>
+    public string? PlacementRef { get; set; }
+
+    /// <summary>
+    /// The net the reference return is on — <c>GND</c>, <c>AGND</c>.
+    ///
+    /// <para><b>Named rather than inferred, and the mounting loop has no second side without it.</b>
+    /// <c>PdnMountingLoopExtractor</c> tells a part's power pad from its return pad by NET and
+    /// nothing else; with no reference net every part is unresolved and says so. railRF will not
+    /// guess it from a name that looks like a ground — a board carrying both <c>GND</c> and
+    /// <c>PGND</c> would have half its parts measured against the wrong plane, silently.</para></summary>
+    public string? ReferenceNet { get; set; }
+
     /// <summary>Every rail on this board, in declaration order. <see cref="RailOrder"/> computes the
     /// SOLVE order, which is not this one.</summary>
     public List<RailSpec> Rails { get; } = [];

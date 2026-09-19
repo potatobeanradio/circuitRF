@@ -194,8 +194,34 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     private IReadOnlySet<LayerKey> _hiddenLayers = new HashSet<LayerKey>();
 
+    /// <summary>
+    /// The part selected in the parts table, marked on the board — or null for none.
+    /// </summary>
+    /// <remarks>
+    /// <b>It does NOT rebuild the scene</b>, which is the whole reason it is held here rather than
+    /// handed to <see cref="RailMapScene.Build"/>: arrowing down a thirteen-row parts table would
+    /// otherwise re-sample the drop field thirteen times, and a selection is not a result (see
+    /// <see cref="RailPartHighlight"/>). Like <see cref="Theme"/> and <see cref="HiddenLayers"/>, it
+    /// repaints and keeps the scene.
+    ///
+    /// <para>Resolved by the view model, because which pads belong to <c>C7</c> is a question about
+    /// the board netlist and this overlay has neither one nor any business reading one.</para>
+    /// </remarks>
+    public RailPartHighlight? PartHighlight
+    {
+        get => _partHighlight;
+        set
+        {
+            if (_partHighlight == value) return;       // a record: equal by value, so re-selecting the
+            _partHighlight = value;                    // same row does not repaint
+            OverlayChanged?.Invoke();
+        }
+    }
+
+    private RailPartHighlight? _partHighlight;
+
     public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme) =>
-        RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers);
+        RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight);
 
     /// <summary>
     /// The union of the map, the legend, the source and load markers and the via callouts — <b>not

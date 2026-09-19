@@ -13,9 +13,9 @@ already loaded; press **Run**.
 
 | | |
 |---|---|
-| **TOP** (1 oz, 35 µm) | the regulator's output run, and the two runs that land at the loads |
-| **GND** (½ oz, 17.5 µm) | the reference plane, with an anti-pad round every barrel |
-| **IN3** (½ oz) | declared in the stackup, carrying no rail copper — the other signals live here |
+| **TOP** (1 oz, 35 µm) | the regulator's output run, the two runs that land at the loads, and every capacitor's lands |
+| **GND** (½ oz, 17.5 µm) | the reference plane, with an anti-pad round every barrel on the rail |
+| **IN3** (½ oz) | two local `+3V3` pours — one under the load field, one at the regulator |
 | **BOT** (1 oz) | the supply's long way round the connector cut-out, 0.20 mm wide |
 
 One rail, `+3V3`. One source at the regulator's output pad: 3.3 V open circuit behind **60 mΩ and
@@ -27,66 +27,110 @@ contributes nothing to the DC solve and is still reported, and over frequency it
 impedance is judged. The DC report lists it as *observed* rather than leaving it out, which is what
 tells you the tool did not simply ignore a row you meant to fill in.
 
+**The two IN3 pours are local, and neither bridges the board.** Each hangs off the rail at one
+place and carries no through current. A single pour spanning both ends would put a second path in
+parallel with the 0.20 mm BOT run and delete the finding Q0 exists for — which is worth saying out
+loud, because on the picture the two arrangements look much the same.
+
 Thirteen capacitors: six 100 nF 0402s, two 1 µF 0603s, a 10 µF 0805, a 100 µF polymer bulk, and
-three more 0402s placed further away — `C11`–`C13`, with 2.4–2.6 nH of mounting inductance against
-`C1`–`C3`'s 0.85 nH. Three aggressors: the timekeeping crystal at 32.768 kHz, the converter at
-2.2 MHz and the radio's reference at 26 MHz.
+three more 0402s out at the edge of the field. Three aggressors — see *What the aggressors are*,
+below. **Every part is on the artwork**, and that is what the rest of this page turns on.
+
+## Where the refdes come from
+
+The `.crail` names three companion files beside the board, and they are what make a reference
+designator mean anything:
+
+| | |
+|---|---|
+| `layout/Board.clay` | the artwork — copper, barrels, anti-pads |
+| `layout/Board.ipc` | the board netlist: a net name per pad, and the refdes and pin it belongs to |
+| `layout/Board.placement.csv` | the placement: a centroid and a side per refdes |
+
+Without the netlist every port would have to be a **coordinate**, and railRF could compute no
+mounting inductance for any part — a part's mounting loop is a property of *where it was placed*,
+and nothing would have said where. With it, the ports read `U1.VDD` rather than a point in DBU, the
+parts table fills in its **Position** column, and every mounting inductance below was read off the
+artwork rather than typed.
+
+`layout/Board.gen.py` is what writes all three. They are kept in step by a generator rather than by
+hand because they have to agree: a pad in the netlist that is not under a land in the `.clay` is a
+part railRF cannot locate, and a land with no anti-pad under it is a decoupling capacitor shorting
+the rail to its reference. The generator refuses to write anything if either is true.
 
 ## Q0 — is it connected, and what does it cost
 
-**48.7 mV** at `U1` against a **52 mV** budget. Met, and only just.
+**48.4 mV** at `U1` against a **52 mV** budget. Met, and only just.
 
 ```
-22.7 mV  47%   26.5 mm of 0.209 mm BOT copper          64.9 mOhm
-21.0 mV  43%   the source's own series resistance      60.0 mOhm
- 2.0 mV   4%    4.8 mm of 0.438 mm TOP copper           5.8 mOhm
- 1.9 mV   4%    3.9 mm of 0.387 mm TOP copper           5.4 mOhm
- 0.6 mV   1%   the reference return                     1.7 mOhm
- 0.2 mV   0%   2 parallel vias, 0.3 mm at 25 µm         0.6 mOhm
+22.7 mV  45%   26.5 mm of 0.209 mm BOT copper          64.9 mOhm
+21.0 mV  42%   the source's own series resistance      60.0 mOhm
+ 1.6 mV   3%   3.9 mm of 0.387 mm TOP copper            5.4 mOhm
+ 1.3 mV   3%   9.3 mm of 0.227 mm BOT copper           22.3 mOhm
+ 1.1 mV   2%   2.6 mm of 0.45 mm TOP copper             3.1 mOhm
+ 1.0 mV   2%   2.3 mm of 0.43 mm TOP copper             2.8 mOhm
+ 0.6 mV   1%   the reference return                     1.8 mOhm
 ```
 
 Half the budget is one trace. That is the finding this example exists for: on a compact board
 with thin copper the artwork is not a rounding error on the parts, it is the largest single term
 after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout
-editor, re-run, and the drop falls to **37.6 mV** — the copper term halves and the FET becomes the
-thing worth arguing about.
+editor, re-run, and watch the copper term halve — the FET then becomes the thing worth arguing
+about.
 
 Three via transitions, none over its current limit.
 
 ## Q1 — does it meet its target
 
-The band is 100 kHz to 100 MHz, the target a flat **88 mΩ**: a 22 mV ripple allowance against a
-250 mA step. The rail **passes by 0.6 dB at its worst, at 100 MHz** — the top of the band, where
+The band is 100 kHz to 100 MHz, the target a flat **55 mΩ**: a 13.75 mV ripple allowance against a
+250 mA step. The rail **passes by 0.8 dB at its worst, at 100 MHz** — the top of the band, where
 every capacitor is its own mounting inductance and nothing else.
 
 Two anti-resonances are named rather than left to be found on the plot:
 
 | | |
 |---|---|
-| 3.04 MHz, 35 mΩ | L(C9) against C(C7–C8) |
-| 8.25 MHz, 31 mΩ | L(C7–C8) against C(C1–C13) |
+| 4.14 MHz, 17.9 mΩ | L(C9) against C(C7–C8) |
+| 10.80 MHz, 19.8 mΩ | L(C7–C8) against C(C1–C13) |
 
-and the converter's **fourth harmonic at 8.8 MHz sits 6.2 % away from the second of them**, which
-is the coincidence check earning its place: neither the peak nor the harmonic is alarming on its
-own.
+and the converter's **fifth harmonic at 11 MHz sits 1.8 % away from the second of them**, which is
+the coincidence check earning its place: neither the peak nor the harmonic is alarming on its own,
+and 1.8 % is close enough that the two are the same event.
 
 ## Q2 — which capacitors are doing anything
 
 The ranking re-solves the whole sweep once per part and reports what deleting it would cost:
 
 ```
-C10  100 uF bulk   12.1 dB   -> -11.5 dB.  It is holding the low band up on its own.
-C1   100 nF 0402    1.1 dB   -> -0.4 dB.   Removing it fails the target.
-...
-C11  100 nF 0402    0.4 dB   ->  0.2 dB.   Removing it still passes.
-C12  100 nF 0402    0.4 dB   ->  0.2 dB.
-C13  100 nF 0402    0.4 dB   ->  0.2 dB.
+C10  100 uF bulk   16.3 dB   -> -15.6 dB.  It is holding the low band up on its own.
+C1   100 nF 0402    0.9 dB   ->  -0.1 dB.  Removing it fails the target.
+C4   100 nF 0402    0.7 dB   ->   0.1 dB.  Removing it still passes, barely.
+C11  100 nF 0402    0.5 dB   ->   0.3 dB.  Removing it still passes.
 ```
 
-`C11`–`C13` are the same part as `C1`–`C3` and are worth a third as much, because they were placed
-further from the load and carry three times the mounting inductance. On this board all three can
-come off; none of `C1`–`C9` can. Delete one of each in the parts table and re-run to watch the
-worst margin move.
+**`C1`–`C3`, `C11`–`C13` and `C4`–`C6` are the same purchased part** — one 100 nF 0402 part number,
+placed nine times — and they are worth three different amounts. The whole of the difference is how
+each one reaches its vias, which railRF read off the artwork:
+
+| | how it is mounted | computed mounting loop | worth |
+|---|---|---|---|
+| `C1`–`C3`, `C7`–`C10` | a via in each land | **0.56 nH** | 0.8–0.9 dB |
+| `C4`–`C6` | 0.35 mm of fan-out | **0.71 nH** | 0.7 dB |
+| `C11`–`C13` | 0.9 mm of 0.125 mm fan-out | **1.20 nH** | 0.5 dB |
+
+Select a row in the parts table to see which one is which on the board. The number railRF prints
+for `C11` is
+
+```
+C11: 1201.5 pH — 552.1 pH power via + 16 pH return via − 2 × 1.8 pH mutual
+     + 636.9 pH pad trace, with the pair 2.9 mm apart over 1065 µm of dielectric.
+```
+
+— and the **636.9 pH of pad trace** is the entire penalty. Two 0.9 mm stubs cost more than the
+barrel they reach. That is a finding you can act on in an afternoon, and it is not visible in any
+part's datasheet.
+
+Delete a part row and re-run to watch the worst margin move.
 
 ## Q3 — did the form factor break it
 
@@ -94,6 +138,24 @@ Press **Compare…** and pick a second `.crail`. The way to make one is to copy 
 re-shape the board in the copy, and compare the two. There is deliberately no second board shipped
 here: the comparison is about *your* re-layout, and a canned pair would teach the report's format
 rather than the question.
+
+The per-part table is the half worth looking at first, now that the mounting loops come off the
+artwork: *a part that was 0.56 nH on the reference and is 1.2 nH on yours because its fan-out grew*
+is the kind of row that explains a whole band.
+
+## What the aggressors are
+
+Three rows — `Y1` at 32.768 kHz, `U2` at 2.2 MHz, `Y2` at 26 MHz — and they are **typed, not
+derived**. Each row is a name, a fundamental and a harmonic count, and every row says `Typed` on it
+for exactly that reason: railRF cannot see what switches on your board, and a frequency somebody
+pre-filled and nobody checked is the one that will be wrong.
+
+They are an input, not a decoration. They put markers on the impedance plot and they drive the
+coincidence check — which is where the 1.8 % above came from. `U2` is the regulator, and it is on
+this board and in the netlist; `Y1` and `Y2` are a timekeeping crystal and a radio reference that
+this synthetic board does not draw, because nothing about the check needs them drawn. To use them
+on your own board, replace the frequencies with your converter's switching frequency and your
+oscillators', and set the harmonic count to as far up as each one still has energy.
 
 ## Fast and Accurate — what this example is set up for
 
@@ -104,30 +166,28 @@ Run both. On this board they agree closely:
 
 | | Drop at U1 |
 |---|---|
-| Fast (the default) | 48.698 mV |
-| Accuracy | 49.392 mV |
+| Fast (the default) | 48.368 mV |
+| Accuracy | 49.025 mV |
 
 **1.4 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
 wrong in, and the reason the two are worth running once on any board you intend to trust. Most of
-the difference is the reference return: Fast prices the plane at 1.7 mΩ from 38 coarse cells,
-Accuracy at 3.6 mΩ from 330,902. The supply trace itself — the term that actually matters here —
-agrees to under 1 %.
+the difference is the reference return: Fast prices the plane at 1.8 mΩ from 38 coarse cells,
+Accuracy at 3.7 mΩ from 326,131.
 
-Those cell counts are the whole of the difference in what the two cost. Accuracy meshes the entire
-reference plane, and the mesh it builds here is **three cells across the narrowest copper on the
-rail** — the 0.20 mm BOT run — so a finer answer is available by asking for more cells across it,
-and the 400,000-cell ceiling is not what set this one.
-
-Both models report the same plane capacitance, **1.029 pF over 0.11 cm² at εr 4.3**. That is the
+Both models report the same plane capacitance, **7.975 pF over 1.87 cm² at εr 4.3**. That is the
 cheapest check on this page: one glance at it tests the permittivity, the overlap area and the
 dielectric thickness at once, and a stackup copied from the last board shows up there immediately.
 
 ## What this example does not show
 
-- **Ports are coordinates, not refdes.** Every report row here reads a point in DBU rather than
-  `U1.VDD`, because a refdes anchor resolves against a placement file and this workspace ships no
-  board import. The same is true of any `.crail` that names no placement.
+- **The mounting loop is a via pair and two pad traces, and nothing else.** It does not carry the
+  part's own body inductance or the loop area in the plane of the board. On a board whose rail is a
+  trace on the same layer as its capacitors — no power via at all — the computed figure is
+  structurally low, and typing one is the right answer there.
 - **The series FET and the ferrite are the source's R and L**, not rows of their own. In the lumped
   model the source is the whole branch feeding the rail node, and this is where a series part lives.
+- **Every observation port on the rail reads the same Z(f).** That is P1's lumped model rather than
+  a defect: there is no copper between the ports in the frequency model, so nothing in it could make
+  them differ. The run says so on its own notes.
 - **Nothing above about 180 MHz.** The top of the band is a tenth of this plane pair's first cavity
   mode; past that the plane is distributed and the lumped answer is not the right one.

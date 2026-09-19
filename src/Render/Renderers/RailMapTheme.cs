@@ -54,6 +54,9 @@ public sealed class RailMapTheme
     /// <summary>The rail's own copper on the <c>copper</c> tab, which carries no map.</summary>
     public SKColor CopperHighlight { get; init; }
 
+    /// <summary>The outline round the part selected in the parts table.</summary>
+    public SKColor PartSelection { get; init; }
+
     public static RailMapTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         ArgumentNullException.ThrowIfNull(theme);
@@ -78,6 +81,7 @@ public sealed class RailMapTheme
             ClassSpreading   = SK(ColorRole.RailClassSpreading),
             ClassForced      = SK(ColorRole.RailClassForced),
             CopperHighlight  = SK(ColorRole.RailCopperHighlight),
+            PartSelection    = SK(ColorRole.RailPartSelection),
         };
     }
 

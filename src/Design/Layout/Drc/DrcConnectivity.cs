@@ -84,12 +84,36 @@ internal static class DrcConnectivity
             if (sl.Kind == StackupKind.Conductor && sl.Name.Length > 0)
                 conductorLayers[sl.Name] = sl.DrawingLayers;
 
+        // Ordered top to bottom, which is what Stackup.Layers is (R-em-3) — so the conductors a via
+        // passes THROUGH are the ones between its two span ends in this list.
+        var conductorOrder = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Conductor && l.Name.Length > 0)
+            .Select(l => l.Name)
+            .ToList();
+
         foreach (var via in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via))
         {
             if (via.SpanFromLayer is not { Length: > 0 } from ||
                 via.SpanToLayer is not { Length: > 0 } to) continue;
-            if (!conductorLayers.TryGetValue(from, out var fromLayers) ||
-                !conductorLayers.TryGetValue(to, out var toLayers)) continue;
+            if (!conductorLayers.ContainsKey(from) || !conductorLayers.ContainsKey(to)) continue;
+
+            // ── EVERY CONDUCTOR THE BARREL PASSES, NOT ONLY ITS TWO ENDS ────────────────────────
+            //
+            // A plated barrel shorts every layer it passes through that has copper at that point,
+            // and the ANTI-PAD is how the artwork says which those are: copper right up to the
+            // barrel is a connection, a clearance round it is not. Joining only the span's two ends
+            // read a four-layer board with a power plane on an inner layer as though the plane were
+            // not on the board — the plane came back a galvanically separate island, carrying no
+            // current and contributing nothing, with the picture showing it plainly connected.
+            //
+            // It could not fail loudly, either: PdnRailRegions reports islands as ORDINARY on
+            // imported artwork ("the copper stops at every pad"), so the count went up by one and
+            // read as the thing that note is about.
+            int a = conductorOrder.IndexOf(from), b = conductorOrder.IndexOf(to);
+            var spanned = conductorOrder
+                .GetRange(Math.Min(a, b), Math.Abs(a - b) + 1)
+                .Select(name => conductorLayers[name])
+                .ToList();
 
             foreach (var viaLayer in via.DrawingLayers)
             {
@@ -97,15 +121,17 @@ internal static class DrcConnectivity
 
                 foreach (int v in viaPieces)
                 {
-                    int? below = FirstTouching(pieces, byLayer, fromLayers, pieces[v]);
-                    int? above = FirstTouching(pieces, byLayer, toLayers, pieces[v]);
+                    var touched = new List<int>();
+                    foreach (var layers in spanned)
+                        if (FirstTouching(pieces, byLayer, layers, pieces[v]) is { } hit)
+                            touched.Add(hit);
 
-                    // A via touching only one side is a real, common state mid-edit — it connects
-                    // nothing yet. It is not an error here; a rule about it is a rule's business.
-                    if (below is null || above is null) continue;
+                    // A via touching only one conductor is a real, common state mid-edit — it
+                    // connects nothing yet. It is not an error here; a rule about it is a rule's
+                    // business. Unchanged: what widened is WHICH conductors are candidates.
+                    if (touched.Count < 2) continue;
 
-                    uf.Union(v, below.Value);
-                    uf.Union(v, above.Value);
+                    foreach (int hit in touched) uf.Union(v, hit);
                 }
             }
         }

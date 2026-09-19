@@ -114,6 +114,9 @@ public static class RailDocumentIo
         ArtworkCellRef = NullIfEmpty(d.ArtworkCellRef),
         TechnologyRef  = NullIfEmpty(d.TechnologyRef),
         PartLibraryRef = NullIfEmpty(d.PartLibraryRef),
+        BoardNetlistRef = NullIfEmpty(d.BoardNetlistRef),
+        PlacementRef    = NullIfEmpty(d.PlacementRef),
+        ReferenceNet    = NullIfEmpty(d.ReferenceNet),
         Settings = new CrailSettings
         {
             CopperTemperatureCelsius      = d.Settings.CopperTemperatureCelsius,
@@ -224,6 +227,9 @@ public static class RailDocumentIo
             ArtworkCellRef = f.ArtworkCellRef,
             TechnologyRef  = f.TechnologyRef,
             PartLibraryRef = f.PartLibraryRef,
+            BoardNetlistRef = f.BoardNetlistRef,
+            PlacementRef    = f.PlacementRef,
+            ReferenceNet    = f.ReferenceNet,
             Settings = new RailSettings
             {
                 CopperTemperatureCelsius      = f.Settings?.CopperTemperatureCelsius ?? 20.0,
@@ -333,6 +339,16 @@ public static class RailDocumentIo
         public string?          ArtworkCellRef { get; set; }
         public string?          TechnologyRef  { get; set; }
         public string?          PartLibraryRef { get; set; }
+
+        /// <summary>The board netlist beside the artwork, and the placement — what makes a REFDES
+        /// resolve to copper. Absent on a document imported before these were persisted, and on
+        /// every assisted-Gerber board, which has neither.</summary>
+        public string?          BoardNetlistRef { get; set; }
+        public string?          PlacementRef    { get; set; }
+
+        /// <summary>The reference return's net. Absent is not "GND" — see RailDocument.</summary>
+        public string?          ReferenceNet    { get; set; }
+
         public CrailSettings?   Settings       { get; set; }
         public List<CrailRail>? Rails          { get; set; }
 

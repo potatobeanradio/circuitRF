@@ -3,6 +3,9 @@
   "Name": "Sensor board",
   "ArtworkCellRef": "layout/Board.clay",
   "PartLibraryRef": "../parts/decoupling.crlib",
+  "BoardNetlistRef": "layout/Board.ipc",
+  "PlacementRef": "layout/Board.placement.csv",
+  "ReferenceNet": "GND",
   "Settings": {
     "CopperTemperatureCelsius": 20,
     "ViaPlatingThicknessMicrometres": 25,
@@ -10,8 +13,8 @@
   },
   "Rails": [
     {
-      "Name": "\u002B3V3",
-      "NetName": "\u002B3V3",
+      "Name": "+3V3",
+      "NetName": "+3V3",
       "ReferenceLayer": 2,
       "ReferenceLayerDatatype": 0,
       "ReferenceExtent": "AsImported",
@@ -25,32 +28,32 @@
       },
       "ImpedanceTarget": {
         "Kind": "FlatImpedance",
-        "FlatMilliohms": 88
+        "FlatMilliohms": 55
       },
       "Sources": [
         {
           "Anchor": {
-            "PointX": 2200000,
-            "PointY": 10300000
+            "Refdes": "U2",
+            "Pin": "OUT"
           },
           "OpenCircuitVoltageV": 3.3,
           "SeriesResistanceOhms": 0.06,
-          "SeriesInductanceHenries": 1E-06
+          "SeriesInductanceHenries": 1e-06
         }
       ],
       "Loads": [
         {
           "Anchor": {
-            "PointX": 27800000,
-            "PointY": 14300000
+            "Refdes": "U1",
+            "Pin": "VDD"
           },
           "DcCurrentA": 0.35,
           "PeakCurrentA": 0.6
         },
         {
           "Anchor": {
-            "PointX": 27800000,
-            "PointY": 5000000
+            "Refdes": "U3",
+            "Pin": "VDD"
           }
         }
       ],
@@ -78,79 +81,66 @@
         {
           "Refdes": "C1",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 8.5E-10,
           "Origin": "Typed"
         },
         {
           "Refdes": "C2",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 8.5E-10,
           "Origin": "Typed"
         },
         {
           "Refdes": "C3",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 9E-10,
           "Origin": "Typed"
         },
         {
           "Refdes": "C4",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 1.3E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C5",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 1.35E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C6",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 1.4E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C7",
           "PartNumber": "CAP-0603-1U0-X5R-10V",
-          "MountingInductanceHenries": 1.1E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C8",
           "PartNumber": "CAP-0603-1U0-X5R-10V",
-          "MountingInductanceHenries": 1.15E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C9",
           "PartNumber": "CAP-0805-10U-X5R-10V",
-          "MountingInductanceHenries": 1.6E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C10",
           "PartNumber": "CAP-BULK-100U-POLY-10V",
-          "MountingInductanceHenries": 2.5E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C11",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 2.4E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C12",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 2.5E-09,
           "Origin": "Typed"
         },
         {
           "Refdes": "C13",
           "PartNumber": "CAP-0402-100N-X7R-16V",
-          "MountingInductanceHenries": 2.6E-09,
           "Origin": "Typed"
         }
       ]

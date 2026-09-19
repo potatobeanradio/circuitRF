@@ -2518,6 +2518,21 @@ internal static class CliDiagnostics
         "The part library '{path}' did not read: {why}. The report says the coverage is unknown "
       + "rather than reporting it as zero.", ("path", path), ("why", why));
 
+    /// <summary>
+    /// The board netlist a <c>.crail</c> names and that did not read.
+    /// </summary>
+    /// <remarks>
+    /// <b>A warning with teeth, because the failure it reports is otherwise invisible.</b> With no
+    /// pads, every source and load anchored by refdes resolves to nothing and every part's mounting
+    /// loop falls back to whatever was typed — which is exactly what a board that never had a
+    /// netlist does, so nothing on the report distinguishes the two.
+    /// </remarks>
+    public static Diagnostic RailBoardNetlistUnreadable(string path, string why) => Diagnostic.Create(
+        "rail.netlist.unreadable", DiagnosticSeverity.Warning,
+        "The board netlist '{path}' did not read: {why}. Every port anchored by refdes is "
+      + "unresolved and no mounting loop was computed from geometry; typed values are unaffected.",
+        ("path", path), ("why", why));
+
     // ── the overrides ────────────────────────────────────────────────────────
 
     /// <summary>

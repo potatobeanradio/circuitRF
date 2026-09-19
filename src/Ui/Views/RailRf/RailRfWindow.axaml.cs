@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using CircuitRF.Render;
@@ -50,6 +51,7 @@ public partial class RailRfWindow : Window
         WireOpenButton();
         WireBoardCanvas();
         WireLiveArtwork();
+        WireEscape();
 
         // The railRF chapter of the reference, through the launcher every other Help button in the
         // application uses — the Match Designer's own line.
@@ -71,6 +73,33 @@ public partial class RailRfWindow : Window
             vm.PropertyChanged += OnVmPropertyChanged;
         };
     }
+
+    // ── Escape: nothing is selected (owner, 2026-09-19) ──────────────────────────────
+
+    /// <summary>
+    /// Clears the parts-table selection, and with it the mark on the board.
+    /// </summary>
+    /// <remarks>
+    /// <b>Bubbling, and it defers to anything that already handled the key.</b> Escape is the layout
+    /// canvas's own disarm for the zoom box and its own cancel for a drag; this window promises that
+    /// someone who has learned that canvas has learned this one (§11.6), so taking Escape away from it
+    /// would be exactly the near-miss that rule is about. The canvas sees the key first because it has
+    /// focus, and what arrives here unhandled is an Escape nothing else wanted.
+    ///
+    /// <para><b>And never while focus is in a text field</b>, where Escape belongs to the field —
+    /// <see cref="RailKeyboardGate"/>'s own predicate, which is already the gate on every navigation
+    /// key for the same reason: railRF's left column is editable rows.</para>
+    /// </remarks>
+    private void WireEscape() => AddHandler(KeyDownEvent, (_, e) =>
+    {
+        if (e.Handled || e.Key != Key.Escape) return;
+        if (RailKeyboardGate.IsTextEntry(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
+            return;
+        if (Vm is not { SelectedPart: not null } vm) return;
+
+        vm.ClearPartSelectionCommand.Execute(null);
+        e.Handled = true;
+    }, RoutingStrategies.Bubble);
 
     // ── The board view (brief 8) ─────────────────────────────────────────────────────
 

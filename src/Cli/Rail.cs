@@ -258,14 +258,37 @@ internal static class Rail
         RunHost.Control?.BeginStage("solve");
         Progress(o.Model == PdnModelKind.Accurate ? "solve (accurate)" : "solve (fast)");
 
+        // The companions the document names — what makes a REFDES anchor resolve to copper and what
+        // PdnMountingLoopExtractor reads a part's mounting loop from. Through RailArtwork's own
+        // walks, which is what the window's open calls, so the two surfaces cannot land on
+        // different files. The netlist's units are cross-checked against the ARTWORK's extent
+        // (R-gi5-10), so it needs the artwork's own resolution and is read after it.
+        var netlist = RailArtwork.ResolveBoardNetlist(
+            doc, input.DocumentPath, board!.View.DbuPerMicron,
+            out string? netlistPath, out string? netlistError);
+        if (netlistError is { Length: > 0 })
+        {
+            Console.Error.WriteLine(
+                $"warning: the board netlist '{netlistPath}' did not read: {netlistError}");
+            JsonRun.Note(CliDiagnostics.RailBoardNetlistUnreadable(netlistPath!, netlistError));
+        }
+        foreach (string d in netlist?.Diagnostics ?? [])
+        {
+            Console.Error.WriteLine("note: " + d);
+            JsonRun.Note(CliDiagnostics.RailRunNote(d));
+        }
+
         var run = RailDcRun.Run(new RailDcRequest
         {
             Document       = doc,
-            Shapes         = board!.View.Shapes,
+            Shapes         = board.View.Shapes,
             Technology     = board.Technology,
             DbuPerMicron   = board.View.DbuPerMicron,
             LengthFormat   = board.LengthFormat,
             Model          = o.Model,
+            Pads           = PdnBoardPads.PadsOf(netlist),
+            NetPoints      = PdnBoardPads.NetPointsOf(netlist),
+            ReferenceNet   = doc.ReferenceNet,
         });
 
         foreach (string d in run.Diagnostics)

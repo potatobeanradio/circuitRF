@@ -180,6 +180,7 @@ public sealed class ColorTheme
             [ColorRole.RailClassSpreading]    = new(226, 160,  96),
             [ColorRole.RailClassForced]       = new(120,  40, 190),
             [ColorRole.RailCopperHighlight]   = new(  0, 140, 190),
+            [ColorRole.RailPartSelection]     = new(215,  40, 170),
         },
         new Dictionary<string, Rgba>
         {
@@ -292,5 +293,6 @@ public sealed class ColorTheme
             [ColorRole.RailClassSpreading]    = new(190, 128,  66),
             [ColorRole.RailClassForced]       = new(190, 140, 255),
             [ColorRole.RailCopperHighlight]   = new( 60, 200, 245),
+            [ColorRole.RailPartSelection]     = new(255, 105, 215),
         });
 }

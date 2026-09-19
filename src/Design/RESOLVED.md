@@ -8184,3 +8184,56 @@ dielectric class is four characters; the heap path never runs on well-formed inp
 
 (`src/Render/DataDisplay/Models/WspTrace.cs:304` has the same unguarded shape and predates this
 series. Reported rather than changed, since it is outside railRF's diff.)
+
+## railRF: the board netlist was read and then dropped, so no refdes ever resolved (2026-09-19)
+
+Found from the outside, on the shipped Power Rail example: the parts table listed thirteen
+capacitors and the board showed none of them, and every port on the report read a coordinate in
+DBU rather than `U1.VDD`.
+
+**`RailBoardInputs.Pads` was assigned NOWHERE in `src/`.** The import dialog read a board netlist
+into `RailRfViewModel.BoardNetlist` and used it for one thing — filling the net pick list — and
+nothing ever turned its records into `PdnPad`s. Opening a `.crail` read no netlist at all, because
+the document had no field to name one. The consequences were total and silent:
+
+- Every source and load anchor had to be a **coordinate**. `RailPortAnchor` calls the coordinate
+  form "the FALLBACK rather than the spelling", and it was the only form that could ever work.
+- `PdnMountingLoopExtractor` — the whole of brief 13's `L_p + L_r − 2M + L_pad` — answered *"the
+  board netlist has no pad for it"* for **every part on every board**, so every mounting inductance
+  railRF has ever reported was a typed one and `RailMountingBasis.ComputedFromGeometry` was a value
+  nothing in the application could produce.
+
+Neither failed. Both degraded to the typed path, which is the path a document with no netlist takes,
+so nothing on any report distinguished "there is no netlist" from "there is one and it was dropped".
+
+What closed it: `PdnBoardPads` (the projection `PdnAttachments` had always claimed — *"`BoardNetlistRecord`
+maps onto this directly"*), and three new document references — `BoardNetlistRef`, `PlacementRef`
+and `ReferenceNet` — resolved by `RailArtwork` the way `PartLibraryRef` already was, so the window
+and `circuitrf rail` land on the same files. **Persisting them is half the point**: an import that
+read a netlist and was then saved used to lose it, and the reopened document reported typed
+inductances with nothing to say a computed set had been available.
+
+**The trap in the projection.** A surface-mount land carries no drill, so `BoardNetlistRecord.HasHole`
+is false for it and `IsComponentHole` is false too. Testing `IsComponentHole` would have kept only
+the through-hole parts, which on a modern board is close to none of them — the test is the component
+reference and the pin.
+
+## A plated through hole shorts every layer it passes, and DrcConnectivity joined only its two ends (2026-09-19)
+
+`DrcConnectivity` read a via's span from the stackup (`SpanFromLayer`/`SpanToLayer`, correctly) and
+then unioned the via with the copper on **those two conductors only**. Every conductor the barrel
+passes *between* them was ignored.
+
+On a four-layer board with a power pour on an inner layer fed by through vias — the ordinary
+arrangement — the pour came back a **galvanically separate island**: not on the rail, carrying no
+current, contributing nothing to the solve, while the picture showed it plainly connected to
+everything.
+
+It could not fail loudly either. `PdnRailRegions` reports extra islands as ORDINARY on imported
+artwork ("the copper stops at every pad, so this is ordinary and not an error"), so the island count
+went up by one and read as the thing that note is about.
+
+The fix is that the **anti-pad is how artwork says which layers a barrel connects to**: copper up to
+the barrel is a connection, a clearance round it is not. So the join now considers every conductor
+between the two span ends and unions the ones the via actually touches. The "a via touching only one
+side connects nothing yet" rule is unchanged — what widened is which conductors are candidates.
