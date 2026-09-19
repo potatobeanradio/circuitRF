@@ -72,7 +72,7 @@ public static class TreeMove
         NodeKind.Cell or NodeKind.UserFolder
      or NodeKind.OtherFile or NodeKind.DataDisplayFile or NodeKind.TechFile
      or NodeKind.ColorThemeFile or NodeKind.EmSetupFile or NodeKind.WBondFile
-     or NodeKind.HarmonicaFile or NodeKind.RailFile;
+     or NodeKind.HarmonicaFile or NodeKind.RailFile or NodeKind.SmithFile;
 
     /// <summary>
     /// What a path on disk moves AS. The drop carries only an absolute path — the payload is a

@@ -370,7 +370,7 @@ public partial class ProjectTreeView : UserControl
                 && vm.Kind is NodeKind.OtherFile or NodeKind.KnownFile or NodeKind.DataDisplayFile
                            or NodeKind.TechFile or NodeKind.ColorThemeFile or NodeKind.EmSetupFile
                            or NodeKind.WBondFile or NodeKind.HarmonicaFile
-                           or NodeKind.RailFile
+                           or NodeKind.RailFile or NodeKind.SmithFile
                 && File.Exists(vm.AbsolutePath))
                 return vm;
             v = v.GetVisualParent();

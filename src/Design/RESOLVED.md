@@ -1,5 +1,73 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The `.csmith` document, and the registration points the table did not have (2026-09-19)
+
+Brief 1 of the Smith Chart series: `src/Design/Smith/` — `SmithDesign` and its element records,
+`SmithComponentMap`, `SmithDesignIo`, `SmithClipboard`, `SmithGeneratorImport` — plus the
+registration that makes `.csmith` a document type the shell and the CLI both know about. No
+arithmetic, no UI. Five findings.
+
+**1. There are EIGHT registration points, not seven, and the eighth fails a test rather than a
+user.** The overview's table lists the plist, the `.wxs`, `circuitrf-mime.xml`, `App.OpenFiles`,
+`WorkspaceViewModel`, `WorkspaceScanner` and `DocumentKinds`. The Linux `.desktop` entry's
+`MimeType=` line is a ninth place the type name appears and is not on it — and
+`WBondStandaloneTests.TheDesktopEntryAndTheMimeFileClaimExactlyTheSameTypes` is what says so. That
+test is the reason the omission cost a minute rather than a release: a MIME type declared in
+`circuitrf-mime.xml` with no matching entry in the `.desktop` file is a type the desktop knows the
+name of and has no application for, and the only symptom is a double-click that opens nothing.
+
+**2. A `DocumentKind` with no case in `check` is not a crash — it is worse than one.** The brief
+expected `check` to throw on an unhandled kind. It does not: `CheckPath`'s `default:` arm reports
+`CheckUnknownKind`, whose sentence is *"Nothing circuitRF reads is named '<path>'"*, at severity
+Error. So a perfectly well-formed `.csmith` — of a type the same change had just registered with
+three operating systems — would have made `check` exit 1 with a statement that is false. `explain`
+has the identical arm and the identical sentence. Both now have a case: `check` reads the document
+through `SmithDesignIo.LoadFromFile` and reports its refusal (no validation of its own — that verb's
+standing rule), and `explain` joins the group whose only resolution is the workspace walk. `render`
+needed nothing: its refusal already names the kind through `DocumentKinds.Name`, so adding the
+`"smith"` row there is what turned *"nothing circuitRF reads"* into *"is smith, and render draws a
+schematic, a symbol or a layout"*. `find` never enumerates documents by kind and was unaffected.
+
+**3. `src/Design` cannot see `MarkerConfig`, `FreqUnit`, `MatrixFormat`, `MarkerStyle`,
+`MarkerKind` or `DerivedParameters` — they are all in `src/Render`, which is ABOVE it.** The design
+note asks for "the Data Display Marker shape, verbatim", and the reference graph
+(`Core → Engine → Design → Render → Ui`) makes a direct use of that type impossible. Declaring the
+four enums again here would be four copies to keep in step. What `SmithMarker` does instead is hold
+each of them as the enum's own MEMBER NAME, in a string, with `MarkerConfig`'s own default — which
+is exactly the token `JsonStringEnumConverter` writes for them in a `.cdd`. So "verbatim" is true of
+the thing that matters to a format: the bytes a `.csmith` writes for a marker are the bytes a `.cdd`
+writes for the same marker, and brief 8's mapping is one `Enum.Parse` per field rather than a
+translation. `SmithOverlayRef.Derived` is a string for the same reason.
+
+**4. The placement rule is enforced generally, which is a deliberate widening of R-smith1-3.** The
+brief names one placement refusal — a shunt `S2P` — and its reason is that *a 2-port with its second
+port grounded is a different component than the one the user placed*. That reason is exactly as true
+of a `Tline` in shunt and of a `StubOpen` in series, and all three are documents `SmithCascade` will
+have no formula for. Worse, those three kinds share one `SymbolKind` (`Tline`) and are told apart by
+nothing BUT their placement, so a mis-placed one is not a document with a wrong field — it is a
+document that means something else. `SmithElement.Refusal` therefore reads
+`SmithComponentMap.AllowedPlacement`, one rule closing all three, and the S2P case is one instance
+of it.
+
+**5. `EngineReference(SymbolKind.ZPort)` is `"Z_Port"`, not `"ZPort"`.** §3.3's table spells the
+engine column `ZPort`, and `ComponentTypeRegistry`'s own display name is `"Z"`; the string that
+actually goes in a `.cnl` is `"Z_Port"`. `ToneSource` and `CurrentToneSource` differ the same way.
+This is why `SmithComponentMap` names a `SymbolKind` and a port count and stops: every engine
+reference, parameter name, default and unit is asked of `ComponentTypeRegistry` at the call site. A
+transcribed table here would have been the place that was wrong, and brief 2's oracle netlist is the
+first thing that would have found it — by failing for a reason that looks like arithmetic.
+
+**Two smaller notes.** The firewall gate was not quite free: `UserFacingTextGateTests` catches the
+five `throw new InvalidDataException("…")` literals in `SmithDesignIo` and `SmithGeneratorImport`,
+and they are allow-listed rather than converted to `Diagnostic`s — the first two are
+`RailDocumentIo`'s own two lines with `.crail` respelled, R-smith1-4 says to mirror that reader
+exactly, and a `Diagnostic` cannot be the exception the callers already catch. And
+`SmithElement.SliderRange` serialises as a sorted LIST rather than a keyed object:
+`System.Text.Json` writes an enum dictionary key as a NUMBER unless told otherwise, and a document
+saved twice with no edit between has to be the same bytes or revision control has something to show
+every time.
+
+
 ## The |Z| map far below the first mode: a flat answer that looked like a broken one (2026-09-19)
 
 Owner, running the shipped board at 10 MHz: *"I got a gradient from 2.405 kΩ to 2.405 kΩ … does

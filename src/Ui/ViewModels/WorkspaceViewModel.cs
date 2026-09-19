@@ -27,6 +27,7 @@ using Dock.Model.Core;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.RailRf;
+using CircuitRF.Design.Smith;
 using RfCore.Data;
 using RfCore.Loadpull;
 using CircuitRF.Ui.Commands;
@@ -9271,6 +9272,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// Opens a <c>.csmith</c> — the double-click route from the tree, the project-tree Open item,
+    /// and the path <c>App.OpenFiles</c> hands over when one arrives from the desktop
+    /// (brief-smith-1-document.md R-smith1-8).
+    ///
+    /// <para><b>It opens no window yet.</b> Brief 4 is what builds <c>SmithChartDocument</c>; this
+    /// exists now because the seven registration points have to be done in ONE change — a type
+    /// declared to three operating systems with no case in the dispatcher reads to a user as a
+    /// broken file, and nothing anywhere reports it. So the route is live, the document is READ, and
+    /// what it has to say is said.</para>
+    ///
+    /// <para><b>The read is not a placeholder gesture.</b> <c>SmithDesignIo.LoadFromFile</c> is what
+    /// refuses a file from a newer circuitRF and what runs <c>SmithDesign.Refusal</c>, so the two
+    /// things that can be wrong with a <c>.csmith</c> are in front of whoever opened it rather than
+    /// discovered later by a window that half-opened.</para>
+    /// </summary>
+    public void OpenSmithPath(string path)
+    {
+        string full = Path.GetFullPath(path);
+        string name = Path.GetFileName(full);
+
+        try
+        {
+            var design = SmithDesignIo.LoadFromFile(full);
+
+            // Brief 4 replaces this with the window. Until then, saying what was read is better than
+            // saying nothing: the alternative is a double-click that appears to do nothing at all,
+            // which is the exact failure this registration exists to have fixed.
+            Messages.Info(
+                $"{name}: read a Smith Chart design with {design.Elements.Count} element(s) and "
+              + $"{design.Generator.Rows.Count} generator row(s). The Smith Chart window is not "
+              + "built yet.");
+        }
+        catch (Exception ex)
+        {
+            // The house rule: report, never fail silently and never substitute.
+            Messages.Error($"Could not open {name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Tools ▸ railRF — a window bound to nothing, which the import fills (§11.4).
     /// </summary>
     /// <remarks>
@@ -9993,6 +10034,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case ".charm": OpenHarmonicaPath(abs);         return true;
             case ".wbond": OpenWBondPath(abs);             return true;
             case ".crail": OpenRailPath(abs);              return true;
+            case ".csmith": OpenSmithPath(abs);           return true;
             // RC-2: a cell's PARAMETERS are a document like any other here, and the edit routed to
             // the workspace that owns a cell (R-rc2-7) can be an edit to them. Deliberately absent
             // from App.OpenFiles' switch, which is held shut against the three operating systems'
@@ -10060,6 +10102,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // INTO is brief 7's window; until then the route reads the document and reports it.
             case NodeKind.RailFile:
                 OpenRailPath(node.AbsolutePath);
+                return;
+
+            // R-smith1-8 — a .csmith, likewise. Brief 4 is the window.
+            case NodeKind.SmithFile:
+                OpenSmithPath(node.AbsolutePath);
                 return;
 
             case NodeKind.TechFile:

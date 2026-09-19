@@ -1,0 +1,12 @@
+! Fixture for SmithGeneratorImport (brief-smith-1-document.md R-smith1-7 / gate 7).
+! SYNTHETIC. Three points, and the reference impedance is deliberately 75 ohms rather than 50, so a
+! reader that ignored the file's own stated reference would produce visibly different impedances
+! (row 1 would read 16.667 ohms instead of 25) rather than an answer that happens to agree.
+!
+!   1 GHz   S11 = -0.5 + j0.0   ->  Z =  25 + j0
+!   2 GHz   S11 =  0.2 + j0.4   ->  Z =  75 + j75
+!   3 GHz   S11 =  0.4 - j0.2   ->  Z = 150 - j75
+# GHz S RI R 75
+1  -0.5   0.0
+2   0.2   0.4
+3   0.4  -0.2

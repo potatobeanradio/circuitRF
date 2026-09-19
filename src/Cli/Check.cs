@@ -9,6 +9,7 @@ using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Smith;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Mom;
@@ -199,6 +200,7 @@ internal static class Check
             case DocumentKind.DataDisplay:
                                           Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
             case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
+            case DocumentKind.Smith:      Scoped(path, kind, f, () => CheckSmith(path, f)); break;
 
             case DocumentKind.Interchange:
                 f.Begin(path, kind);
@@ -655,6 +657,29 @@ internal static class Check
         foreach (var rail in doc.Rails)
             if (rail.ReferenceLayer is null)
                 f.Add(CliDiagnostics.CheckRailNoReferenceLayer(path, rail.Name));
+    }
+
+    /// <summary>
+    /// A Smith Chart design (brief-smith-1-document.md R-smith1-8).
+    ///
+    /// <para><b>It writes no validation of its own</b>, which is §2's standing rule for this verb:
+    /// every finding here is <c>SmithDesign.Refusal</c>'s, reached through the same
+    /// <c>SmithDesignIo.LoadFromFile</c> the window opens a document with. A rule living only in
+    /// `check` is a rule the application does not enforce.</para>
+    ///
+    /// <para><b>It is here at brief 1 rather than brief 10 because the DEFAULT arm is not
+    /// harmless.</b> A kind with no case falls to <c>CheckUnknownKind</c>, which is an ERROR reading
+    /// "nothing circuitRF reads is named this" — so `check` would have exited 1 on a perfectly good
+    /// `.csmith` of a type the same change had just registered with three operating systems.</para>
+    /// </summary>
+    private static void CheckSmith(string path, Findings f)
+    {
+        SmithDesign design;
+        try { design = SmithDesignIo.LoadFromFile(path); }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        f.Add(CliDiagnostics.CheckSmithSummary(
+            path, design.Elements.Count, design.Generator.Rows.Count, design.Chart.DesignFrequencyHz));
     }
 
     private static void CheckDataDisplay(string path, Findings f)

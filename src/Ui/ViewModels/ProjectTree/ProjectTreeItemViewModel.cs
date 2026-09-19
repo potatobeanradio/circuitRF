@@ -128,6 +128,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         // R-rail1-11 — a .crail. A power rail is what it is about, and the flash reads as one at
         // 16 px where anything more literal does not.
         (NodeKind.RailFile, _)           => MaterialIconKind.FlashOutline,
+        // R-smith1-8 — a .csmith. The chart IS the document, and a scatter of points on axes is
+        // what reads as one at 16 px.
+        (NodeKind.SmithFile, _)          => MaterialIconKind.ChartScatterPlot,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
@@ -186,6 +189,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>brief-railrf-1-document.md R-rail1-11 — a <c>.crail</c> railRF document.</summary>
     public bool IsRailFile => Kind == NodeKind.RailFile;
 
+    /// <summary>brief-smith-1-document.md R-smith1-8 — a <c>.csmith</c> Smith Chart document.</summary>
+    public bool IsSmithFile => Kind == NodeKind.SmithFile;
+
     /// <summary>True when this .ctech node is the workspace's current default technology.
     /// Resolved through the host so it reflects the live .cws state when the menu opens.</summary>
     public bool IsWorkspaceDefaultTech => _actions?.IsWorkspaceDefaultTech(this) ?? false;
@@ -213,6 +219,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                 or NodeKind.HarmonicaFile
                 or NodeKind.WBondFile
                 or NodeKind.RailFile
+                or NodeKind.SmithFile
                 or NodeKind.ColorThemeFile;
 
     /// <summary>
@@ -227,6 +234,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         NodeKind.HarmonicaFile   => "Remove harmonicaRF Document",
         NodeKind.WBondFile       => "Remove Wirebond Design",
         NodeKind.RailFile        => "Remove railRF Document",
+        NodeKind.SmithFile       => "Remove Smith Chart",
         NodeKind.ColorThemeFile  => "Remove Color Theme",
         NodeKind.ViewFile        => Path.GetExtension(AbsolutePath).ToLowerInvariant() switch
         {
@@ -255,6 +263,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsOpenableFile =>
         Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
              or NodeKind.EmSetupFile or NodeKind.WBondFile or NodeKind.RailFile
+             or NodeKind.SmithFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
         || IsOpenableKnownFile;
 
@@ -343,6 +352,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.HarmonicaFile
                                           or NodeKind.WBondFile
                                           or NodeKind.RailFile
+                                          or NodeKind.SmithFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
                                           or NodeKind.EmSetupFile
@@ -1033,6 +1043,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             // A .crail is a design document about one board; it rides the Cells toggle for the
             // .wBond's reason rather than earning a checkbox of its own.
             NodeKind.RailFile        => f.Cells,
+            // A .csmith is a design document about one matching network; it rides the Cells toggle
+            // for the .wBond's and .crail's reason rather than earning a checkbox of its own.
+            NodeKind.SmithFile       => f.Cells,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
             // An EM setup is process/analysis configuration alongside the technology it reads, so it

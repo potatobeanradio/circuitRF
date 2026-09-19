@@ -784,6 +784,7 @@ public partial class App : Application
                 case ".charm":
                 case ".wbond":
                 case ".crail":
+                case ".csmith":
                     documents.Add(path);
                     break;
             }

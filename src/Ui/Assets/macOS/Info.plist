@@ -267,6 +267,24 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.csmith</string>
+            <key>UTTypeDescription</key>
+            <string>Smith Chart Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>csmith</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -467,6 +485,23 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>crail</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Smith Chart Document</string>
+            <!-- Editor, and for railRF's reason: the Smith Chart tool is a circuitRF DOCUMENT and
+                 ships no standalone binary (smith-chart.md §5.1), so there is no second application
+                 for Launch Services to choose between. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.csmith</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>csmith</string>
             </array>
         </dict>
     </array>

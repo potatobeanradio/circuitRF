@@ -79,4 +79,10 @@
         <glob pattern="*.crail"/>
     </mime-type>
 
+    <mime-type type="application/x-circuitrf-smith">
+        <comment>Smith Chart Document</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.csmith"/>
+    </mime-type>
+
 </mime-info>

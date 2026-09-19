@@ -859,6 +859,17 @@ internal static class CliDiagnostics
         "check.rail.order", DiagnosticSeverity.Error,
         "{path}: {refusal}", ("path", path), ("refusal", refusal));
 
+    // ── Smith Chart (`.csmith`) ──────────────────────────────────────────────
+
+    /// <summary>What the design holds. <c>SmithDesignIo.LoadFromFile</c> is what REFUSES a malformed
+    /// one, so reaching this line means the document is well formed and the summary is the whole
+    /// answer.</summary>
+    public static Diagnostic CheckSmithSummary(string path, int elements, int rows, double designHz)
+        => Diagnostic.Create(
+            "check.smith.summary", DiagnosticSeverity.Info,
+            "{path}: {elements} element(s), {rows} generator row(s), design frequency {freq} Hz.",
+            ("path", path), ("elements", elements), ("rows", rows), ("freq", designHz));
+
     /// <summary>A rail with no reference layer. A WARNING rather than an error: the document is well
     /// formed and simply not yet ready to solve, and the reference plane is asked for and never
     /// inferred (railrf.md §2.2, Q-8) — so nothing here may propose one.</summary>

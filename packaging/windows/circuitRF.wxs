@@ -320,6 +320,12 @@
           </Extension>
         </ProgId>
 
+        <ProgId Id="circuitRF.Smith" Description="Smith Chart Document" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="csmith" ContentType="application/x-circuitrf-smith">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
       </Component>
     </ComponentGroup>
 

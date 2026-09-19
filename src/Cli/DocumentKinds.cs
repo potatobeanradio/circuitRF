@@ -16,6 +16,7 @@ internal enum DocumentKind
     Technology,
     EmSetup,
     Rail,
+    Smith,
     Netlist,
     AssemblyRules,
     DataDisplay,
@@ -49,6 +50,7 @@ internal static class DocumentKinds
         DocumentKind.Technology    => "technology",
         DocumentKind.EmSetup       => "em-setup",
         DocumentKind.Rail          => "rail",
+        DocumentKind.Smith         => "smith",
         DocumentKind.Netlist       => "netlist",
         DocumentKind.AssemblyRules => "assembly-rules",
         DocumentKind.DataDisplay   => "data-display",
@@ -98,6 +100,10 @@ internal static class DocumentKinds
             // and `render` classify it BY KIND rather than calling it unreadable; the `rail` verb
             // that runs one is brief 10's.
             ".crail" => DocumentKind.Rail,
+            // A Smith Chart design (brief-smith-1-document.md R-smith1-8). Classified here
+            // so `check`, `explain` and `find` name it rather than calling it unreadable; the
+            // `smith` verb that EVALUATES one is brief 10's.
+            ".csmith" => DocumentKind.Smith,
             ".cnl"   => DocumentKind.Netlist,
             ".wasm"  => DocumentKind.AssemblyRules,
             // A data display. `render` draws one (RND-4); `check`/`explain` do not read it yet, and

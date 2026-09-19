@@ -852,3 +852,14 @@ src/Design/Layout/Pdn/PdnModelKind.cs|A refused extraction names no model kind a
 # mask with fewer than two points, naming the rail and the row, so a user never reaches this; the
 # sentence exists for whoever writes the second caller.
 src/Engine/Pdn/PdnMask.cs|A piecewise mask needs at least two usable points so it spans a band.
+
+# The Smith Chart document (brief-smith-1-document.md). The first two are RailDocumentIo's own two
+# lines with `.crail` spelled `.csmith`: R-smith1-4 says to mirror that reader exactly, and a
+# Diagnostic cannot be the InvalidDataException its callers already catch — a fifth spelling of the
+# same reader is the thing that brief exists to prevent. The three import refusals are the same
+# shape and reach the user through the same route.
+src/Design/Smith/SmithDesignIo.cs|.csmith format_version {file.FormatVersion} is newer than expected 
+src/Design/Smith/SmithDesignIo.cs|Failed to deserialize .csmith file.
+src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' could not be read as Touchstone: {ex.Message}
+src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' holds no frequency points — the generator needs at 
+src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' is a {snp.Ports}-port; the generator's impedance comes 

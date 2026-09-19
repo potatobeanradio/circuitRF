@@ -57,6 +57,10 @@ public enum NodeKind
     /// targets and aggressors. <c>RailDocumentIo</c> reads it.</summary>
     RailFile,
 
+    /// <summary>A Smith Chart document (<c>.csmith</c>) — a generator impedance and an ordered
+    /// cascade of two-pin elements (smith-chart.md §7). <c>SmithDesignIo</c> reads it.</summary>
+    SmithFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

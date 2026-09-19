@@ -400,6 +400,7 @@ public static class WorkspaceScanner
             ".charm"  => NodeKind.HarmonicaFile,
             ".wbond"  => NodeKind.WBondFile,
             ".crail"  => NodeKind.RailFile,
+            ".csmith" => NodeKind.SmithFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
             ".cem"    => NodeKind.EmSetupFile,
