@@ -1,5 +1,79 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The Smith cascade evaluator, and the one sign the design note had backwards (2026-09-19)
+
+Brief 2 of the Smith Chart series: `src/Design/Smith/SmithCascade.cs` and its
+`.Trajectories.cs` partial — the whole numeric half of the tool, closed form, with no matrix, no
+solve and no iteration anywhere. Gated by `tests/Ui.Tests/Smith/SmithCascadeTests.cs` (46 tests,
+~100 ms). Seven findings.
+
+**1. The engine oracle agreed on the first run, in all 18 cases, with nothing to fix.** That is
+the headline and it is worth stating plainly, because the brief's own closing instruction assumes
+it will not: for every `SmithElementKind` in every legal `SmithPlacement`, the equivalent `.cnl` is
+built, `SParameterEngine` is run, S11 is converted back to an impedance and compared against
+`SmithCascade.Evaluate` — at **every node** of a three-element cascade, not just the last —
+and the worst relative error was inside 1e-9 everywhere. No sign, no port order, no reference
+impedance and no `tan`-for-`cot` came out of it. The gate's value is not spent by passing: it is
+what makes the next element, and brief 3's inverse, cheap to trust.
+
+**2. The design note said a shunt trajectory through the pole is traversed through Γ = 1. It is
+Γ = −1**, and the note is corrected (§4.2; it said it twice). Every constant-*conductance* circle
+passes through the SHORT, and every constant-*resistance* circle through the open. `B → ±∞` is
+`Y → ∞` is `Z → 0` is `Γ = −1`. The measurement is in the gate rather than in an argument: a 135°
+open stub's polyline contains a point within 0.05 of −1 and none near +1.
+`brief-smith-2-cascade.md` R-smith2-8 carries the same sentence and is left as authored — a brief
+is the record of what was asked.
+
+**3. A SHORTED stub's trajectory starts at the short, not at Γ_in — the one place §3.5's rule and
+its own sentence part company.** The rule is `θ(t) = t·θ_total`, and a zero-length shorted stub is
+a dead short across the node, so `t = 0` is Γ = −1 exactly rather than the impedance the walk
+arrived with. Every other kind starts at Γ_in, including the open stub (whose zero-length form
+contributes nothing) and the series line. **And the arc does not in general recover the input
+point either** — that was the first guess and the test refuted it: the curve reaches Γ_in only
+when the stub passes a quarter wave, because below that its susceptance never crosses zero. It is
+pinned by a test rather than fixed, because the rule is what the note and the brief both specify
+and the picture it draws is the honest one: this is where the node goes as the stub grows out of
+nothing. If it reads wrong on the chart, the thing to change is the rule, in one place, with the
+gate already standing.
+
+**4. The walk carries a (numerator, denominator) PAIR, not an impedance.** Z = 0 and Z = ∞ are both
+ordinary values on a Smith chart and both occur in ordinary designs — a quarter-wave open stub is
+Y → ∞, so the node behind it is a short, and the shunt element after THAT would need 1/0. Keeping
+the node as `Zp(N, D)` and dividing only at the boundary makes every one of those a finite
+expression, and Γ = (N − Z₀·D)/(N + Z₀·D) never divides by zero at all. The `tan θ` forms stay in
+`Immittance`, because that is what §3.3's table states and what a reader checks against; the walk
+and the trajectories use the equivalent `cos`/`sin` forms, which have no pole in them. Each step is
+renormalised to order 1 so a long cascade of large impedances cannot run out of exponent.
+
+**5. The oracle netlist's three non-obvious lines.** An `S1P` in **series** is an SnP with N+1 nets
+(the extra one is its floating reference) and in **shunt** one with N (the reference is ground) —
+`InstanceNetContract` states the rule and the reader tells the two apart by how many were written.
+An **open stub** is a `TLIN` whose far net is connected to nothing else; that solves, because
+`TLIN` is ground-referenced and its Y₂₂ is non-zero, so the dangling node is not a singular row. And
+the **generator is a `Z_Port` to ground with `Z[1,1]=complex(re,im)` and no spaces anywhere in the
+expression** — the instance-line parser splits on whitespace and would read the pieces as nets.
+A shunt element does not advance the net name: it hangs off the node it found, which is what makes
+"the impedance looking back toward the generator" the same node before and after.
+
+**6. A Touchstone element must use `SnpModel`'s OWN interpolation defaults or the oracle
+disagrees** — cubic spline, MAGNITUDE/PHASE, interpolated in S, through `TouchstoneCache`. Those
+are not this file's choice to make: the element and the engine have to read the same numbers out of
+the same file, and the format in particular is easy to get wrong because `SnpInterpolator`'s own
+constructor defaults to RealImag while `SnpModel` asks for MagPhase. The target frequency is
+**clamped into the file's stored range here as well**, which is exactly what `WarnClamp` — the
+engine's default, and therefore the oracle's — does with it anyway; doing it on this side too keeps
+a drag or a sweep past the end of a file from emitting one warning per sample. The fit itself is
+`TouchstoneCache`'s and this brief adds no second cache: a 201-point sweep over an S2P element adds
+no spline fits at all.
+
+**7. `tests/Firewall.Tests/UserFacingTextGateTests` is a registration point nobody lists.** Eight
+new refusal sentences below the firewall failed the firewall build, which is the right outcome and
+is not in any brief's table. They are allow-listed beside brief 1's own five, with the same
+reasoning: they are refusals raised WHILE EVALUATING and brief 4's window catches the
+`InvalidDataException` its siblings already throw, so a `Diagnostic` here would mean two catch
+paths inside one tool for one class of problem. The family converts together or not at all.
+
+
 ## The `.csmith` document, and the registration points the table did not have (2026-09-19)
 
 Brief 1 of the Smith Chart series: `src/Design/Smith/` — `SmithDesign` and its element records,

@@ -863,3 +863,19 @@ src/Design/Smith/SmithDesignIo.cs|Failed to deserialize .csmith file.
 src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' could not be read as Touchstone: {ex.Message}
 src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' holds no frequency points — the generator needs at 
 src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' is a {snp.Ports}-port; the generator's impedance comes 
+
+# Brief 2's cascade evaluator (brief-smith-2-cascade.md). Same family, same route and the same
+# deliberate choice as the five above: these are refusals the chart raises WHILE EVALUATING, and
+# brief 4's window catches the InvalidDataException its siblings already throw and posts the
+# sentence. A Diagnostic here would be a second kind of refusal inside one tool, so the window
+# would need two catch paths to show one class of problem. Each one names the thing that answers
+# it — the element, the file, the table's span — which is the property that makes a refusal
+# actionable; converting the whole family at once is the way this shrinks.
+src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind} and names no file — a file element IS its file.
+src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind} and needs a {ports}-port file; '{raw}' is a 
+src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind}, which transforms an impedance rather than adding to 
+src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', and there is no file at '{full}'. A {e.Kind} IS its 
+src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', which could not be read as Touchstone: {ex.Message}
+src/Design/Smith/SmithCascade.cs|'{e.Name}' quotes its electrical length at {SmithDesign.Fmt(fRef)} Hz — the length 
+src/Design/Smith/SmithCascade.cs|The generator table is empty — this tool starts from an impedance, so it needs at 
+src/Design/Smith/SmithCascade.cs|{SmithDesign.Fmt(fHz)} Hz is outside the generator table's span 

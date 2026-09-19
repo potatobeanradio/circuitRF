@@ -333,10 +333,12 @@ it in the one place where the cost would land inside a drag.
 Each enabled element emits a polyline in the Γ plane by sampling §3.5's parameter. Three details are worth
 stating because each one has a wrong version that looks right:
 
-- **A trajectory that passes through Γ = 1.** A stub longer than a quarter wave has `tan θ` run through a
+- **A trajectory that passes through Γ = −1.** A stub longer than a quarter wave has `tan θ` run through a
   pole, so its susceptance sweeps to +∞ and returns from −∞. On the chart that is not a discontinuity at
   all: `Y_in + jB` for B over the whole real line is exactly the **closed constant-conductance circle**,
-  traversed through the Γ = 1 point. Sampling in θ walks it correctly and continuously; sampling in B
+  traversed through the Γ = −1 point — the SHORT. (Rev 1 said Γ = 1 here, twice; that is the point every
+  constant-*resistance* circle passes through. B → ±∞ is Y → ∞ is Z → 0, and Z = 0 is Γ = −1. Corrected
+  against the built evaluator, brief 2.) Sampling in θ walks it correctly and continuously; sampling in B
   cannot. The polyline is emitted as one path, and the renderer's own clip to the unit disc handles the
   single vertex that lands on the boundary.
 - **A negative-real-part impedance is drawn, not hidden.** An active `S2P` or a Z1P with negative R puts
