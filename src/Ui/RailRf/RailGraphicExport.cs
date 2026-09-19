@@ -55,9 +55,21 @@
 // ══ AND ONE ROUTE FROM AN OVERLAY TO A PAGE, NOT TWO ══════════════════════════════════════════
 //
 // §11.7's last line: the same render path produces the picture in the `Report ▸` menu and in the
-// headless report. That is why Compose/BuildSvg/BuildPdf below are separate from
-// CopyToClipboardAsync — brief 10 calls the first three and writes them to a file; nothing about the
-// picture is decided in the clipboard method.
+// headless report. That is why BuildSvg/BuildPdf below are separate from CopyToClipboardAsync —
+// nothing about the picture is decided in the clipboard method.
+//
+// ── CORRECTION (brief 10, 2026-09-18): the HEADLESS report does not come through here ─────────
+//
+// This header used to say "brief 10 calls the first three and writes them to a file". It cannot:
+// this file is in src/Ui, it composes through LayoutClipboard, and LayoutClipboard performs
+// IClipboard traffic and returns an Avalonia Bitmap — so `src/Cli`, which may reference no UI
+// framework, cannot reach any of it.
+//
+// The one route §11.7 asks for is `RailReportPage` in CircuitRF.Render, BELOW the firewall, which
+// `circuitrf rail -o report.svg` calls and which `Report ▸` calls when that button is wired. What
+// stays here is the CLIPBOARD copy — the board as the panel draws it, plus the document's own
+// marker-guarded JSON — which is a different picture for a different purpose. src/Cli/RESOLVED.md
+// records why moving LayoutClipboard down instead was the worse of the two options.
 
 using System;
 using System.Threading.Tasks;

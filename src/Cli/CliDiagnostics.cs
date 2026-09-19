@@ -2378,4 +2378,245 @@ internal static class CliDiagnostics
         "find.cell.unreadable", DiagnosticSeverity.Info,
         "'{path}': its analyses could not be read ({why}), so none are listed for it. "
       + "`circuitrf check` says why.", ("path", path), ("why", why));
+
+    // ── `rail` (brief-railrf-10-cli-verb.md) ─────────────────────────────────
+    //
+    // Every one of these is a REFUSAL the window answers with a control rather than a sentence
+    // (R-rail7-4), and a terminal has no control to turn red — so each of them NAMES THE FLAG that
+    // supplies what is missing. R-rail10-3's table is the list, and the two entries that are
+    // deliberately absent are the load with no current and the plating thickness nobody stated:
+    // those are not refusals in the window either, and inventing one here would make the headless
+    // answer stricter than the one a user gets, which is the same defect as making it laxer.
+
+    public static Diagnostic RailPathRequired() => new(
+        "rail.args.path-required", DiagnosticSeverity.Error,
+        "rail: a path is required — a .crail, or a .clay / .csch / cell folder with one beside it.");
+
+    public static Diagnostic RailPathNotFound(string path) => Diagnostic.Create(
+        "rail.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    /// <summary>R-rail10-2: refused BY KIND, naming what was handed over. A `.cnl` is refused as a
+    /// netlist rather than as an unreadable file, because the caller very likely meant a run verb.</summary>
+    public static Diagnostic RailNotARailDocument(string path, string kind) => Diagnostic.Create(
+        "rail.path.not-a-rail", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and rail runs a railRF document. Give it the .crail, or the .clay, "
+      + ".csch or cell folder that has one beside it.", ("path", path), ("kind", kind));
+
+    /// <summary>
+    /// R-rail10-2's interesting case: there is a board and no rail declaration.
+    /// </summary>
+    /// <remarks>
+    /// <b>The verb does not author one.</b> `new`'s own rule, stated for the document that would have
+    /// to be invented here: once a document exists, the way to change it is to WRITE it, because the
+    /// format is the contract. So this names the four things a `.crail` would have to say and stops.
+    /// </remarks>
+    public static Diagnostic RailNoDocumentBeside(string path, string kind) => Diagnostic.Create(
+        "rail.document.none-beside", DiagnosticSeverity.Error,
+        "'{path}' is {kind} and there is no .crail beside it, so there is a board and no rail "
+      + "declaration. Write one — it states the rail (--rail), the reference return's layer "
+      + "(--reference), the sources (--source) and the loads (--load). rail runs a document; it "
+      + "does not author one.", ("path", path), ("kind", kind));
+
+    public static Diagnostic RailDocumentUnreadable(string path, string why) => Diagnostic.Create(
+        "rail.document.unreadable", DiagnosticSeverity.Error,
+        "'{path}' did not read: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic RailDocumentRefused(string path, string why) => Diagnostic.Create(
+        "rail.document.refused", DiagnosticSeverity.Error,
+        "'{path}' is not well formed once the overrides are applied: {why}",
+        ("path", path), ("why", why));
+
+    public static Diagnostic RailNoSuchRail(string rail, string known) => Diagnostic.Create(
+        "rail.rail.unknown", DiagnosticSeverity.Error,
+        "--rail '{rail}' names no rail of this document. It holds: {known}. Omit --rail to run them "
+      + "all, in dependency order.", ("rail", rail), ("known", known));
+
+    public static Diagnostic RailNoRails(string document) => Diagnostic.Create(
+        "rail.rail.none", DiagnosticSeverity.Error,
+        "'{document}' declares no rails, so there is nothing for an override to land on. A rail is "
+      + "a power net with a reference layer, its sources and its loads.", ("document", document));
+
+    /// <summary>R-rail10-3, row 1 — and railRF never infers one (Q-8).</summary>
+    public static Diagnostic RailNoReferenceLayer(string rail) => Diagnostic.Create(
+        "rail.reference.unstated", DiagnosticSeverity.Error,
+        "Rail '{rail}' states no reference layer, so there is nothing to return current through. "
+      + "Name the reference return's drawing layer with --reference; railRF never infers one "
+      + "(railrf.md §2.2, Q-8).", ("rail", rail));
+
+    public static Diagnostic RailUnknownLayer(string name, string known) => Diagnostic.Create(
+        "rail.reference.unknown-layer", DiagnosticSeverity.Error,
+        "--reference '{name}' is not a layer of the resolved technology. It defines: {known}. "
+      + "`circuitrf explain --layers` lists what the artwork draws on.",
+        ("name", name), ("known", known));
+
+    public static Diagnostic RailUnknownExtent(string text) => Diagnostic.Create(
+        "rail.extent.unknown", DiagnosticSeverity.Error,
+        "--extent '{text}' is not one of as-imported, filled or infinite. as-imported is the only "
+      + "one that is not optimistic.", ("text", text));
+
+    public static Diagnostic RailOrderRefused(string why) => Diagnostic.Create(
+        "rail.order.refused", DiagnosticSeverity.Error,
+        "{why}", ("why", why));
+
+    /// <summary>The run service's own sentence, kept whole — `em`'s rule (§8.4).</summary>
+    public static Diagnostic RailRefused(string why) => Diagnostic.Create(
+        "rail.run.refused", DiagnosticSeverity.Error,
+        "{why}", ("why", why));
+
+    public static Diagnostic RailRunNote(string note) => Diagnostic.Create(
+        "rail.run.note", DiagnosticSeverity.Info, "{note}", ("note", note));
+
+    public static Diagnostic RailFinding(string rail, string finding) => Diagnostic.Create(
+        "rail.run.finding", DiagnosticSeverity.Warning,
+        "[{rail}] {finding}", ("rail", rail), ("finding", finding));
+
+    public static Diagnostic RailCancelled() => new(
+        "rail.run.cancelled", DiagnosticSeverity.Error,
+        "The run was cancelled. Nothing was written — a partial table of a half-solved board is "
+      + "worse than no file.");
+
+    // ── the artwork and the stackup ──────────────────────────────────────────
+
+    public static Diagnostic RailNoArtwork(string path) => Diagnostic.Create(
+        "rail.artwork.unstated", DiagnosticSeverity.Error,
+        "'{path}' names no artwork, so there is no copper to solve. A .crail refers to a CELL in "
+      + "the workspace rather than carrying a copy of the geometry; point rail at the .clay or the "
+      + "cell folder instead, or state the reference in the document.", ("path", path));
+
+    public static Diagnostic RailArtworkNotFound(string path, string reference, string resolved)
+        => Diagnostic.Create(
+            "rail.artwork.not-found", DiagnosticSeverity.Error,
+            "'{path}' names artwork '{reference}', which resolves to '{resolved}' and is not there. "
+          + "The reference is relative to the document, so an archived workspace still resolves.",
+            ("path", path), ("reference", reference), ("resolved", resolved));
+
+    public static Diagnostic RailArtworkUnreadable(string path, string why) => Diagnostic.Create(
+        "rail.artwork.unreadable", DiagnosticSeverity.Error,
+        "The artwork '{path}' did not read: {why}", ("path", path), ("why", why));
+
+    /// <summary>
+    /// A run with no technology is refused, where <c>render</c>'s orphan `.clay` is only a NOTE.
+    /// </summary>
+    /// <remarks>
+    /// The difference is what each verb does with the answer. <c>render</c> falls back to the palette
+    /// and draws a picture that is honestly a picture of geometry; railRF prices copper against a
+    /// stackup — thicknesses and conductivities — so the same fallback would produce numbers with no
+    /// physics behind them, and they would look exactly like numbers with physics behind them.
+    /// </remarks>
+    public static Diagnostic RailNoTechnology(string path) => Diagnostic.Create(
+        "rail.technology.unresolved", DiagnosticSeverity.Error,
+        "No technology resolved for '{path}', so there are no copper thicknesses and no "
+      + "conductivities to price the drop against. Name one on the .crail, on the layout, or as the "
+      + "workspace default.", ("path", path));
+
+    public static Diagnostic RailTechnologyWarning(string why) => Diagnostic.Create(
+        "rail.technology.warning", DiagnosticSeverity.Warning, "{why}", ("why", why));
+
+    public static Diagnostic RailPartLibraryUnreadable(string path, string why) => Diagnostic.Create(
+        "rail.parts.unreadable", DiagnosticSeverity.Warning,
+        "The part library '{path}' did not read: {why}. The report says the coverage is unknown "
+      + "rather than reporting it as zero.", ("path", path), ("why", why));
+
+    // ── the overrides ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>--set</c> on a document that declares no variables.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refusal rather than a silent no-op</b>, which is §3.3's own finding applied to a flag the
+    /// brief's option table lists: a `.crail` holds stated quantities in base SI and no expression
+    /// scope, so there is nothing for an override to replace — and a run that accepted the flag and
+    /// answered a different question than the one asked is exactly what that section records the cost
+    /// of.
+    /// </remarks>
+    public static Diagnostic RailSetNotApplicable(string name) => Diagnostic.Create(
+        "rail.set.not-applicable", DiagnosticSeverity.Error,
+        "--set {name}=… : a .crail declares no variables — every quantity in it is stated in base "
+      + "SI and nothing is an expression. The flags that state these quantities are --source, "
+      + "--load, --target-drop, --target-z, --reference and --extent.", ("name", name));
+
+    public static Diagnostic RailValueMalformed(string option, string text, string example)
+        => Diagnostic.Create(
+            "rail.value.malformed", DiagnosticSeverity.Error,
+            "{option} '{text}' is not a number with a unit — {example}, for instance. A bare number "
+          + "is taken as base SI.", ("option", option), ("text", text), ("example", example));
+
+    public static Diagnostic RailRowsMalformed(string text) => Diagnostic.Create(
+        "rail.args.rows-malformed", DiagnosticSeverity.Error,
+        "rail: --rows '{text}' is not a whole number. --all prints every row.", ("text", text));
+
+    public static Diagnostic RailUnknownOutputFormat(string path, string extension) => Diagnostic.Create(
+        "rail.output.unknown-format", DiagnosticSeverity.Error,
+        "rail: '{path}' has extension '{extension}', which this verb does not write — it writes "
+      + ".csv, .npy, .mat, .txt, .svg and .pdf.", ("path", path), ("extension", extension));
+
+    public static Diagnostic RailWriteFailed(string path, string why) => Diagnostic.Create(
+        "rail.output.write-failed", DiagnosticSeverity.Error,
+        "rail: '{path}' was not written: {why}", ("path", path), ("why", why));
+
+    /// <summary>Z(f) is the FREQUENCY answer and this is the DC phase. Refused rather than written
+    /// empty: a `.sNp` of a rail is the file a caller would go on to plot, and one holding the DC
+    /// point repeated would look like a measurement.</summary>
+    public static Diagnostic RailTouchstoneNotYet(string path) => Diagnostic.Create(
+        "rail.output.touchstone-not-yet", DiagnosticSeverity.Error,
+        "rail: '{path}' asks for Z(f) at the observation ports, which is the frequency answer and "
+      + "arrives with the impedance phase. This phase answers DC — write .csv, .npy or .svg. "
+      + "--accurate changes which reading of the geometry the DC answer comes from, not which "
+      + "question is asked.", ("path", path));
+
+    public static Diagnostic RailAnchorMalformed(string option, string text) => Diagnostic.Create(
+        "rail.anchor.malformed", DiagnosticSeverity.Error,
+        "{option} '{text}' is not an anchor. Give REFDES, REFDES.PIN, or @x,y in DBU where there is "
+      + "no placement file to name a pad.", ("option", option), ("text", text));
+
+    public static Diagnostic RailSourceMalformed(string spec) => Diagnostic.Create(
+        "rail.source.malformed", DiagnosticSeverity.Error,
+        "--source '{spec}' is not REFDES.PIN=<model>. A model is a voltage and optionally a series "
+      + "R and L (3.7V,50mOhm,10nH), or a Touchstone file that measures the output impedance.",
+        ("spec", spec));
+
+    public static Diagnostic RailSourceFieldMalformed(string field, string spec) => Diagnostic.Create(
+        "rail.source.field-malformed", DiagnosticSeverity.Error,
+        "--source '{spec}': '{field}' is not a number with a unit.", ("field", field), ("spec", spec));
+
+    /// <summary>An untagged bare number could be any of three quantities, and choosing one silently
+    /// is how a series inductance becomes an open-circuit voltage.</summary>
+    public static Diagnostic RailSourceFieldUntagged(string field, string spec) => Diagnostic.Create(
+        "rail.source.field-untagged", DiagnosticSeverity.Error,
+        "--source '{spec}': '{field}' states no unit, so it could be the open-circuit voltage, the "
+      + "series resistance or the series inductance. Give the unit (3.7V, 50mOhm, 10nH) or the key "
+      + "(v=, r=, l=).", ("field", field), ("spec", spec));
+
+    public static Diagnostic RailSourceFieldUnknown(string key, string spec) => Diagnostic.Create(
+        "rail.source.field-unknown", DiagnosticSeverity.Error,
+        "--source '{spec}': '{key}=' is not a source field. They are v (open-circuit volts), "
+      + "r (series ohms), l (series henries) and file (a Touchstone).", ("key", key), ("spec", spec));
+
+    public static Diagnostic RailMaskNotFound(string path) => Diagnostic.Create(
+        "rail.mask.not-found", DiagnosticSeverity.Error,
+        "--mask '{path}' is not there.", ("path", path));
+
+    public static Diagnostic RailMaskUnreadable(string path, string why) => Diagnostic.Create(
+        "rail.mask.unreadable", DiagnosticSeverity.Error,
+        "--mask '{path}' did not read: {why}. A row is a frequency and a limit, each with its unit; "
+      + "# starts a comment.", ("path", path), ("why", why));
+
+    public static Diagnostic RailMaskTooShort(string path, int points) => Diagnostic.Create(
+        "rail.mask.too-short", DiagnosticSeverity.Error,
+        "--mask '{path}' holds {points} point(s). A piecewise mask needs at least two so it spans a "
+      + "band.", ("path", path), ("points", points.ToString()));
+
+    /// <summary>A mask that landed on no port reads on the report exactly like a mask that was
+    /// honoured, which is why it is a refusal rather than a note.</summary>
+    public static Diagnostic RailMaskNoPort(string path, string port, string known) => Diagnostic.Create(
+        "rail.mask.no-port", DiagnosticSeverity.Error,
+        "--mask '{path}' names port '{port}', which is not an observation port of the selected "
+      + "rail(s). They are: {known}. A mask is per observation port (railrf.md §2.2).",
+        ("path", path), ("port", port), ("known", known));
+
+    public static Diagnostic RailAggressorMalformed(string spec) => Diagnostic.Create(
+        "rail.aggressor.malformed", DiagnosticSeverity.Error,
+        "--aggressor '{spec}' is not NAME=<frequency>[xN] — 'converter=2.2MHz x5', for instance. "
+      + "N is how many harmonics to draw and check, and 1 is the fundamental alone.", ("spec", spec));
 }

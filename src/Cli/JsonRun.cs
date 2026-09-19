@@ -128,6 +128,12 @@ internal static class JsonRun
     /// everything the picture cannot say about itself.</summary>
     public static RenderReportJson? Render;
 
+    /// <summary>What <c>rail</c> answered, and what it answered it ON (R-rail10-5). Carried BESIDE
+    /// the cubes rather than instead of them: the DataSet holds the node voltages and this holds the
+    /// domain shape a cube cannot — which port, which breakdown row, and the provenance every export
+    /// of this run carries.</summary>
+    public static RailReportJson? Rail;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -167,6 +173,7 @@ internal static class JsonRun
         History             = null;
         Find                = null;
         Render              = null;
+        Rail                = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -377,7 +384,11 @@ internal static class JsonRun
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find);
 
-        if (Data is not { } ds) return null;
+        // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
+        // the report is the domain shape §2.4 asks for — so a refused run still answers with its
+        // report rather than with nothing at all.
+        if (Data is not { } ds)
+            return Rail is null ? null : new ResultPayload(null, null, Rail: Rail);
 
         // R-aut9-9's axis narrowing. It runs FIRST, so everything below — the shape, the loadpull
         // projection and the cubes alike — describes what the caller asked for rather than what the
@@ -426,7 +437,7 @@ internal static class JsonRun
         // either schema to say which — so a caller now always learns what the run produced and can
         // then decide what to ask for.
         return new ResultPayload(summary, groups, Shape: ResultDocumentWriter.Shape(ds),
-                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf);
+                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf, Rail: Rail);
     }
 
     /// <summary>

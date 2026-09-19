@@ -137,6 +137,10 @@ return JsonRun.Finish(JsonRun.Verb switch
     "lpp" or "loadpull_pursuit" or "pursuit"
                                 => RunLoadpull(args[1..], pursuit: true),
     "em"     => RunEm(args[1..]),
+    // The whole railRF window, with no display (brief-railrf-10-cli-verb.md). It owns no analysis:
+    // every number comes out of src/Design/RailRf and every pixel out of CircuitRF.Render, which is
+    // what lets a BOARD be gated in CI rather than only looked at (railrf.md §5).
+    "rail"   => CircuitRF.Cli.Rail.Run(args[1..]),
     "convert" => CircuitRF.Cli.LayoutConvert.Run(args[1..]),
     // R-aut3-13: `new` is ONE verb with a noun, not three — the surface has a standing cost, and
     // adding `new schematic` later is a noun rather than a fourth top-level verb.
@@ -2112,6 +2116,7 @@ static int PrintHelp()
     Console.WriteLine("  lp     <file.cnl|.csch>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
+    Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");
     Console.WriteLine("  convert <in> -o <out>  (layout interchange: any format to any other)");
@@ -2150,6 +2155,18 @@ static int PrintHelp()
     Console.WriteLine("                          Simulate writes, so a schematic's SnP reference holds.");
     Console.WriteLine("  --workspace <file.cws>  the workspace paths resolve against. Default: the");
     Console.WriteLine("                          nearest .cws above the .cem, then its own directory.");
+    Console.WriteLine();
+    Console.WriteLine("rail options:");
+    Console.WriteLine("  --rail NAME             which rail. Omitted runs them ALL, in dependency order.");
+    Console.WriteLine("  --fast (default) / --accurate   which of the two readings of the geometry");
+    Console.WriteLine("  --source REFDES.PIN=<3.7V,50mOhm,10nH | file.s1p>   repeatable");
+    Console.WriteLine("  --load REFDES.PIN[=<120mA>]     repeatable. No current = an OBSERVATION port.");
+    Console.WriteLine("  --target-drop 80mV      --target-z 2.5mOhm    --mask [PORT=]<file>");
+    Console.WriteLine("  --aggressor NAME=<2.2MHz>[xN]   repeatable");
+    Console.WriteLine("  --reference <layer>     the reference return. railRF never infers one.");
+    Console.WriteLine("  --extent as-imported|filled|infinite   (the last two are OPTIMISTIC)");
+    Console.WriteLine("  --rows N, --all         how much of the ranked breakdown to print");
+    Console.WriteLine("  -o out.{csv,npy,mat,txt,svg,pdf}   .svg/.pdf is the report page");
     Console.WriteLine();
     Console.WriteLine("convert options:");
     Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");

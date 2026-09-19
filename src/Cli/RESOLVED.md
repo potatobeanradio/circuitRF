@@ -2212,3 +2212,93 @@ names the file, and a folder that cannot be created is one problem, reported onc
 Gate: `MissingVerbsCliTests.ARunVerbCreatesTheOutputFolderItWasGiven`, over `sparam` to both
 Touchstone and `.npy` and over `hb`. The destination is **two** levels deep, so a fix that made only
 the immediate parent would still fail it.
+
+---
+
+## R-rail10 — `circuitrf rail`, and the four things that were not in the brief (2026-09-18)
+
+`brief-railrf-10-cli-verb.md`. The verb itself went in as specified — argument parsing, refusals and
+reporting over `src/Design/RailRf`, gated by byte identity against the in-process call plus a
+comment-stripped source scan. What follows is what turned out to be true while building it.
+
+### The brief's "drawn by brief 9's one function" does not compile, and the fix is a new file below the firewall
+
+§11.7's rule is *there is one route from an overlay to a page and not two*, and brief 9 wrote
+`RailGraphicExport.ContextFor` / `BuildSvg` / `BuildPdf` with a header saying **"brief 10 calls the
+first three and writes them to a file"**. It cannot: that file is in `src/Ui`, it composes through
+`LayoutClipboard`, and `LayoutClipboard` performs `IClipboard` traffic and returns an Avalonia
+`Bitmap`. `src/Cli` may not reference `src/Ui` — the invariant `tests/Firewall.Tests` enforces — so
+the brief's own instruction is unbuildable as written.
+
+Both alternatives are worse than they look:
+
+* **Move `LayoutClipboard` below the firewall.** It is ~500 lines entangled with `IClipboard`,
+  `WindowsClipboard`'s P/Invoke session and `Bitmap`, and brief 9's own header records that this path
+  *"has cost real debugging time across three platforms and none of it should be spent again"*.
+* **Draw the page in `src/Cli/Rail.cs`.** That is precisely the second route §11.7 forbids, and the
+  drift would be invisible: two compositions that agree today and stop agreeing the first time either
+  is touched, each producing a plausible page.
+
+So the composition is **`src/Render/Renderers/RailReportPage.cs`**, below the firewall where both
+callers reach it: the verb calls it now, and `Report ▸` — which brief 7 left wired to a disabled
+button — calls it when it lands. It decides the layout of a page and nothing else; every pixel of the
+picture is `LayoutRenderer.Draw` plus `RailMapRenderer`, and every line of the text is the result's
+own sentence (`RailPortDrop.Describe`, `RailRegulatorHeadroom.Describe`, the breakdown rows), because
+a page that re-worded them would make the window and the report disagree about one result.
+
+*Worth repeating from `LayoutClipboard.ExportOptions`:* the page turns **all seven** level-of-detail
+tiers off, not just `DetailPixelThreshold`. That is the one direction the mistake produces a
+plausible picture — a picture of LESS geometry than the document holds.
+
+### The placement table is never joined into the request, so a refdes anchor cannot resolve — in the window either
+
+`RailPortAnchor` documents a refdes-and-pin as *the spelling* and a coordinate as *the fallback*
+where there is no placement file. Headless there is always no placement file: a `.crail` carries
+`ArtworkCellRef`, `TechnologyRef` and `PartLibraryRef` and nothing else, so `rail` has nothing to
+fill `PdnExtractionRequest.Pads` from and `U1.VDD` resolves to nothing.
+
+**This is not a CLI gap.** `RailRfWindow.Import.cs` reads the placement table
+(`PlacementFile.ReadFile`) and hands it to `RailRfViewModel.ApplyImport`, which stores it on
+`Placement` — and `RailRfViewModel.BuildRequest` sets `Shapes`, `Technology`, `DbuPerMicron`, `Model`
+and `Mesh` and **leaves `Pads`, `NetPoints`, `SeriesElements` and `ShuntParts` empty**. So a
+refdes-anchored document is refused by the extractor (*"names U1.IN, and no pad of that reference is
+on this board"*) in the GUI exactly as on the command line.
+
+The consequence that costs something: **a rail CHAIN is unsolvable today.** `RailOrder` links two
+rails only by a refdes appearing as a load on one and a source on the other, so a chained document's
+ports are refdes-anchored by construction — which is the one shape that cannot resolve. The cycle
+REFUSAL still works, because `RailOrder.Resolve` runs before any pad is looked up, and
+`RailCliVerbTests` gates it there.
+
+Left alone rather than patched from the CLI: the join belongs where the placement table is read, and
+a `--placement` flag on this verb would be a second way to supply what the document ought to name.
+
+### `--set` is in the option table and has nothing to override
+
+Every run verb's `--set name=expr` replaces a global before elaboration. A `.crail` declares no
+globals — every quantity in it is a stated number in base SI and none is an expression — so there is
+nothing to replace. Accepted-and-dropped is the defect `cli.md` §3.3 records for the five older run
+verbs (*"the run answered a different question than the one asked"*), so it is a refusal naming the
+flags that DO state those quantities: `--source`, `--load`, `--target-drop`, `--target-z`,
+`--reference`, `--extent`.
+
+### `RenderCliVerbTests` does not compare "with no exclusion at all"
+
+The brief says so; the file says otherwise, and the file is right. `AssertSameSvg` normalises Skia's
+`cl_`/`img_`/`gr_`/`fp_` ids — the SVG device numbers its `clipPath` elements from a **process-wide**
+counter it never resets, so two renders in different processes carry different ids for the same clip —
+and `StripPdfDates` normalises the PDF creation timestamp. Both are properties of neither code path,
+both are applied only when the raw bytes actually differ, and `RailCliVerbTests` follows the same
+shape and says so. Without them the SVG gate fails at the first `clipPath` id, which is what it did
+on the first run.
+
+### Two smaller things
+
+* **One encoder, not two.** `Render.Emit`'s body moved to `src/Cli/VectorPage.cs` and both verbs call
+  it. Two copies of an encoder diverge in exactly one visible way — the `SvgFontNormalizer` repair
+  gets applied by one of them — and R-rail10-8 asks for no second export path in so many words.
+* **A technology that does not resolve is a REFUSAL here**, where `render`'s orphan `.clay` is only a
+  note (R-rnd2-1). The asymmetry is deliberate and is in `CliDiagnostics.RailNoTechnology`'s own
+  remarks: a picture on the fallback palette is honestly a picture of geometry, where copper priced
+  with no thickness and no conductivity produces numbers indistinguishable from numbers with physics
+  behind them.

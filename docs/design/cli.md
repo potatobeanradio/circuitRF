@@ -35,6 +35,7 @@ and it is gated by the same firewall test. That is what the `em` verb (§8) runs
 | `lp` | `.cnl` or `.csch` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb`; `--out-grid` writes the `.gam` |
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
+| `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `elab` | `.cnl` or `.csch` | elaboration only | the elaborated netlist, for development |
 
 **A run verb takes a SCHEMATIC as well as a netlist, and extracts it in memory** (§14). Any other
@@ -390,7 +391,7 @@ symptom and not the cause.
 | 0 | ran, and produced something usable |
 | 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
-| 130 | stopped — `em` only, and only when the run was cancelled at a work boundary (§8.4) |
+| 130 | stopped — `em`, `render` and `rail`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5). All three write NOTHING on a cancellation |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
@@ -575,6 +576,11 @@ have in a different costume: **it owns no rendering.** Every pixel comes out of 
 `CircuitRF.Render` that the application draws each frame with, so "a headless picture and the GUI's are
 the same picture" is true by construction rather than by care — which is what makes §13.6's byte
 identity a gate rather than an aspiration.
+
+`rail` follows 1, 4, 5, 6 and 7 and is outside 2 and 3: it reads a `.crail` rather than a `.cnl`, so
+there is no chain to select and no directive to override. Its §5 analogue is `render`'s and the
+authoring verbs' in one: **it owns no analysis and no rendering** (§17.1). Its §7 rule is `em`'s —
+a refusal exits 1 with the run service's own sentence, a cancellation exits 130 and writes nothing.
 
 `reference` follows 1, 4, 6 and 7 and is outside everything else, because it reads no file either
 (§12). Its §5 analogue is R-aut6-7: **it transcribes nothing.** The prose half is the authored page,
@@ -1916,3 +1922,124 @@ them.
 **It never leaves the root.** A directory symbolic link is not followed — that is the one way a
 bounded walk stops being bounded and a confined one stops being confined. On `serve` the root is
 already `PathRoot`'s.
+
+
+## 17. `rail` — the whole railRF window, with no display
+
+`brief-railrf-10-cli-verb.md`; `docs/design/railrf.md` §11.5 and §5.
+
+**Why it exists** is §5's claim for the whole railRF architecture: *a board that can only be judged by
+opening a window cannot be judged in CI.* This is the one command that reads the document, resolves the
+artwork and the stackup, runs the extraction and the solve, applies the via check and answers with an
+exit code. It is also, per R-rail10-9, the cheapest way to exercise a real reference board — a refusal
+that names its own flag is readable in a terminal in a way a red control in a dialog is not.
+
+```
+circuitrf rail board/Panel.crail
+circuitrf rail board/Panel.crail --rail +1V8 --accurate -o report.pdf
+circuitrf rail board/Panel.crail --load U1.VDD=120mA --target-drop 50mV --json
+circuitrf rail board/Panel/layout/Panel.clay          # the .crail beside it
+```
+
+### 17.1 It owns no analysis, and no rendering either
+
+`src/Cli/Rail.cs` is argument parsing, refusals and reporting, on `src/Cli/Authoring.cs`' terms. Every
+number comes out of `RailDcRun.Run` — which is what the window's Run button calls — and every pixel of
+an `.svg`/`.pdf` comes out of `RailReportPage` in `CircuitRF.Render`. The file names neither SkiaSharp
+nor any extractor, and `RailCliVerbTests.TheVerbHoldsNoAnalysisAndNoSecondExportPath` is a
+comment-stripped scan that keeps it that way.
+
+**`RailReportPage` is new and it is below the firewall on purpose.** §11.7 says *there is one route
+from an overlay to a page and not two*, and brief 9 put the clipboard composition in
+`src/Ui/RailRf/RailGraphicExport.cs` — which cannot be reached from `src/Cli`, because it goes through
+`LayoutClipboard` and that class performs `IClipboard` traffic and hands back an Avalonia `Bitmap`. So
+the page composition lives in `src/Render`, where the headless verb and the GUI's future `Report ▸`
+both reach it. Detail in `src/Cli/RESOLVED.md`.
+
+### 17.2 What it takes, and what it refuses to guess
+
+The kind is inferred through `DocumentKinds.Classify`, exactly as `check`, `render` and `netlist` infer
+it, and **any other kind is a refusal BY KIND** — a `.cnl` is refused as a netlist, not as an unreadable
+file. A `.clay` with no `.crail` beside it is the interesting case: there is a board and no rail
+declaration, so the verb refuses and names the four flags a declaration answers (`--rail`,
+`--reference`, `--source`, `--load`). **It does not author one** — `new`'s own rule: once a document
+exists, the way to change it is to WRITE it, because the format is the contract.
+
+| Option | Meaning |
+|---|---|
+| `--rail <name>` | Which rail. **Omitting it runs them all**, in `RailOrder`'s dependency order — `hb`/`lp`'s own shape for a wrapped sweep, and for the same reason: a downstream rail solved alone starts its source from a nominal instead of from the upstream answer. |
+| `--fast` (default) / `--accurate` | §2.9's two readings of the geometry. Fast is the default, as in the window. |
+| `--source REFDES.PIN=<model>` | Repeatable. The model is `3.7V,50mOhm,10nH` (any subset, in any order, each field identified by its UNIT or by a `v=`/`r=`/`l=` key) or a Touchstone file. A row for the same anchor is **replaced**, not added beside — two sources on one rail are two branches in the same mesh. |
+| `--load REFDES.PIN[=<current>]` | Repeatable. **No current is accepted** — see §17.3. |
+| `--target-drop`, `--target-z`, `--mask [PORT=]<file>` | §2.2's target forms. A mask is per observation port, so the un-anchored spelling states which ports it means; a mask that lands on no port is a refusal, because a mask nobody applied reads on the report exactly like one that was honoured. |
+| `--aggressor NAME=<freq>[xN]` | Repeatable. `x` and `×` both spell the harmonic count. |
+| `--reference <layer>`, `--extent as-imported\|filled\|infinite` | Brief 1 `R-rail1-6`. |
+| `--rows N`, `--all` | How much of the ranked breakdown the console prints. |
+| `-o out.{csv,npy,mat,txt,svg,pdf}` | The result document — §17.4. |
+
+**Anchors.** `REFDES`, `REFDES.PIN`, or `@x,y` in DBU. The coordinate form is the fallback
+`RailPortAnchor` documents — *a coordinate is accepted where there is no placement file and no board
+netlist* — and headless that is every document, because a `.crail` names no placement file and nothing
+fills `PdnExtractionRequest.Pads` in. See `src/Cli/RESOLVED.md`: that gap is not this verb's and it is
+the window's too.
+
+**Values carry units, through `Units`** — the expression engine's own table, so a spelling that works
+in a `.cnl` works here and the two cannot drift. A bare number is base SI, which is what every number
+in a `.crail` already is.
+
+### 17.3 An unstated value is a refusal; an unstated CURRENT is not
+
+R-rail10-3, and the distinction is the whole of Q-16 — it is easy to implement backwards.
+
+| Unstated | Answer |
+|---|---|
+| The reference layer | **Refusal**, naming `--reference`. railRF never infers one (Q-8), and the verb checks it before the run so the sentence can name a flag rather than a combo box. |
+| The technology | **Refusal**. Unlike `render`'s orphan `.clay`, which is a NOTE: a picture on the fallback palette is honestly a picture of geometry, where copper priced with no thickness and no conductivity produces numbers that look exactly like numbers with physics behind them. |
+| The Excellon coordinate format | **Refusal** — `convert`'s existing sentence, on the import path. |
+| The via plating thickness | **Not a refusal.** Brief 6 takes it as a setting and every flag says which basis produced its limit. |
+| A load's current | **Not a refusal.** It is an observation port, it contributes nothing to the DC solve, and the report lists it AS observed. Refusing it — or defaulting it to zero — would make *not added* and *added with no current* indistinguishable. |
+
+`--set` is the one flag in the brief's table with nothing to land on: a `.crail` declares no variables,
+every quantity in it is stated in base SI and none is an expression. It is a **refusal naming the flags
+that do state those quantities**, rather than being accepted and dropped — §3.3's own finding, one verb
+along.
+
+### 17.4 What it writes, and the provenance every export carries
+
+`.csv` is the tables (ports, sources, the ranked breakdown, the via fields and their flags, the
+regulators, the findings and the notes). `.npy`/`.mat`/`.txt` go through `DataSetExporter` over a
+`DataSet` holding each rail's own cubes in a group named after it. `.svg`/`.pdf` is the report page.
+`.sNp` is **refused**: Z(f) at the observation ports is the frequency answer and this phase answers DC,
+and a Touchstone holding the DC point repeated would look like a measurement. **There is no picture on
+stdout** — `render`'s own rule, because stdout is the result document and `--json` has to co-exist with
+the write.
+
+**R-rail10-5: every export says which model produced it.** Overview §4 rule 1 — a file read six months
+later has no status strip beside it. So every format carries the model (Fast or Accuracy), the reference
+extent, the temperature, how many parts are modelled from a file, how many have no bias curve, and
+whether any ESR resolved to a class default (which makes a derived peak height *indicative*, Q-15). The
+CSV carries it as a comment header, the `.npy` as a `provenance` group whose strings ride on a labelled
+axis (`em`'s diagnostics group is the precedent), the page as a banner under its title, and `--json` as
+`result.rail`.
+
+**Where there is no part library, the counts are not zero — they are unknown**, and the line says so. A
+`0` there would read as "checked, and all fine".
+
+### 17.5 Progress, cancellation and exit codes
+
+`RunHost`'s `RunControl`, exactly as `em` and `render` ride it. 0 on success; **1** on a refusal, with
+the run service's own sentence kept whole; **130** on a cancellation, which **writes nothing** — the
+bytes of every format are complete before anything reaches the filesystem, so that is true by
+construction rather than by a guard.
+
+### 17.6 The gate
+
+`tests/Ui.Tests/RailRf/RailCliVerbTests.cs`. The verb run as a PROCESS writes the `.svg` and the `.pdf`
+that an in-process `RailReportPage.Draw` writes for the same result, and its `--json` voltages are
+`RailDcRun.Run`'s to twelve places. **Two exclusions, both stated and neither a property of either code
+path**: Skia's SVG device numbers its `clipPath` elements from a process-wide counter it never resets,
+and a PDF carries its own creation timestamp — the same two `RenderCliVerbTests` already measured, and
+applied only when the raw bytes differ. Beside them: the source scan, the five rows of §17.3, the
+provenance read back out of three written files, the two exit codes, and the end-to-end that authors a
+workspace, checks a rail document and solves it **with no display at any step**, which is §5's claim
+for this whole architecture.

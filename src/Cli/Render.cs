@@ -1313,50 +1313,12 @@ internal static class Render
     /// gate 7 true by construction: a cancelled run leaves no output file, because the file is not
     /// opened until the picture is finished.</para>
     /// </summary>
-    private static byte[] Emit(Options o, int pxW, int pxH, Action<SKCanvas> draw)
+    private static byte[] Emit(Options o, int pxW, int pxH, Action<SKCanvas> draw) => o.Format switch
     {
-        switch (o.Format)
-        {
-            case Format.Pdf:
-            {
-                var metadata = new SKDocumentPdfMetadata { Creator = "circuitRF" };
-                using var stream = new SKDynamicMemoryWStream();
-                using (var doc = SKDocument.CreatePdf(stream, metadata))
-                {
-                    var canvas = doc.BeginPage(pxW, pxH);
-                    draw(canvas);
-                    doc.EndPage();
-                    doc.Close();
-                }
-                return stream.DetachAsData().ToArray();
-            }
-
-            case Format.Png:
-            {
-                using var bitmap = new SKBitmap(pxW, pxH, SKColorType.Rgba8888, SKAlphaType.Premul);
-                // LayoutRenderer never Clears (see its header comment) — the destination must arrive
-                // already zero-initialised, which is what makes --background transparent mean anything.
-                bitmap.Erase(SKColors.Transparent);
-                using (var canvas = new SKCanvas(bitmap)) draw(canvas);
-                using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
-                return data?.ToArray() ?? [];
-            }
-
-            default:
-            {
-                using var stream = new SKDynamicMemoryWStream();
-                using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
-                    draw(canvas);
-                // Skia writes each text run's per-glyph x/y list with a trailing separator, which
-                // Firefox reads as invalid and drops — putting every run a line above its baseline,
-                // where the clip eats it. The same repair every clipboard export applies, from the
-                // same function, which is why it had to come below the firewall with RND-2.
-                return Encoding.UTF8.GetBytes(
-                    SvgFontNormalizer.RepairPositionLists(
-                        Encoding.UTF8.GetString(stream.DetachAsData().ToArray())));
-            }
-        }
-    }
+        Format.Pdf => VectorPage.Pdf(pxW, pxH, draw),
+        Format.Png => VectorPage.Png(pxW, pxH, draw),
+        _          => VectorPage.Svg(pxW, pxH, draw),
+    };
 
     private static int Publish(
         Options o, Target t, DocumentKind kind, byte[] bytes,

@@ -148,7 +148,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<WsProbeJson>? Wsprobes = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        NdfReportJson? Ndf = null);
+        NdfReportJson? Ndf = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RailReportJson? Rail = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -318,6 +320,87 @@ namespace RfCore.Export
         int                                 Depth,
         bool                                Truncated,
         IReadOnlyList<FoundWorkspaceJson>   Workspaces);
+
+    // ── `rail`: the railRF answer, and the provenance that has to travel with it ──────────────
+
+    /// <param name="Name">The port, as the document spells it — <c>U1.VDD</c>, never a node number.</param>
+    /// <param name="VoltageV">V(power) − V(reference) here, which is what the die sees.</param>
+    /// <param name="DropV">How far below the source's open-circuit voltage, or null where no source
+    /// on the rail stated one.</param>
+    /// <param name="CurrentA">What it draws, or null.</param>
+    /// <param name="ObservationOnly">
+    /// True where the row states no current. <b>Reported rather than inferred from a null
+    /// current</b>: Q-16's distinction is the one a caller most needs and the one a defaulted zero
+    /// destroys — <i>not added</i> and <i>added with no current</i> must not look the same.
+    /// </param>
+    public sealed record RailPortJson(
+        string  Name,
+        double  VoltageV,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? DropV,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? CurrentA,
+        bool    ObservationOnly);
+
+    /// <param name="ElementCount">How many netlist elements this row aggregates — what tells a reader
+    /// which SHAPE it is: one element is a part, thousands are a meshed trace section, and the
+    /// arithmetic that produced the drop is different for each.</param>
+    public sealed record RailBreakdownJson(
+        string Label,
+        double DropV,
+        double ShareOfTotal,
+        double ResistanceOhms,
+        double CurrentA,
+        int    ElementCount);
+
+    /// <param name="WithinDropBudget">Null where the rail states no budget — <b>reported rather than
+    /// substituted for</b>, because a defaulted budget is a pass nobody asked for.</param>
+    public sealed record RailResultJson(
+        string                            Rail,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                           SourceVoltageV,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?                             WithinDropBudget,
+        IReadOnlyList<RailPortJson>       Ports,
+        IReadOnlyList<RailBreakdownJson>  Breakdown,
+        int                               ViaTransitions,
+        int                               ViaFlags,
+        IReadOnlyList<string>             Findings);
+
+    /// <summary>
+    /// What <c>rail</c> answered, and — the half that matters six months later — what it answered it
+    /// ON (brief-railrf-10-cli-verb.md R-rail10-5).
+    ///
+    /// <para><b>The provenance is on the document, not only in the exported file.</b> Overview §4
+    /// rule 1: a result read later has no status strip, and a caller that re-serialises this document
+    /// somewhere else must carry which model produced it, which reference extent was used and at what
+    /// temperature — otherwise a Fast reading and a meshed one are indistinguishable, and the Fast one
+    /// is the optimistic of the two.</para>
+    /// </summary>
+    /// <param name="Model">
+    /// <c>fast</c> or <c>accurate</c>. §2.9's first rule, and the reason it is a required field rather
+    /// than an optional one.
+    /// </param>
+    /// <param name="Indicative">
+    /// True where some part ESR resolved to a class default (Q-15), which makes any peak height
+    /// derived from it indicative rather than measured. <b>Said, because an indicative number looks
+    /// exactly as authoritative as a real one.</b>
+    /// </param>
+    /// <param name="Order">The dependency order the rails were solved in.</param>
+    /// <param name="Rails">The rails REPORTED — the ones <c>--rail</c> selected, or all of them.</param>
+    /// <param name="Solved">Every rail the run solved, which includes the upstream ones the chain
+    /// needed and the caller did not name.</param>
+    public sealed record RailReportJson(
+        string                          Document,
+        string                          Model,
+        string                          ReferenceExtent,
+        double                          TemperatureCelsius,
+        int                             PartsWithoutBiasCurve,
+        int                             PartsModelledFromFile,
+        bool                            Indicative,
+        IReadOnlyList<string>           Order,
+        IReadOnlyList<RailResultJson>   Rails,
+        IReadOnlyList<string>           Solved);
 
     /// <summary>
     /// One step of a resolution walk: what was being resolved, what it started from, what it landed
