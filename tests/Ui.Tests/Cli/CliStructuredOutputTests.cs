@@ -450,6 +450,11 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.ref.redirected",
         "check.resolver.note",
         "check.schematic.conflict",
+        // `check <path.csmith>` — what the design holds. Info rather than a finding: SmithDesignIo
+        // is what REFUSES a malformed one, so reaching this line means the document is well formed.
+        // Recorded here late: the id shipped with brief 1 of the Smith series and this list was not
+        // updated with it, which is exactly the omission this test exists to report.
+        "check.smith.summary",
         "check.tech.problem",
         "check.technology.none",
         // Touchstone file health (2026-09-06). Data rather than a design, which is why passivity,

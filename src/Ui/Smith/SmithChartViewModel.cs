@@ -26,8 +26,9 @@ namespace CircuitRF.Ui.Smith;
 ///
 /// <para><b>The chart pane is brief 5's and lives in the partial beside this file</b>
 /// (<c>SmithChartViewModel.Chart.cs</c>): the plot host, the <c>Plot</c> the evaluator fills, the
-/// gripper overlay and the drag loop. <b>The network pane is brief 6's</b> and is still a placeholder
-/// in the view.</para>
+/// gripper overlay and the drag loop. <b>The network pane is brief 6's</b> and lives in the other
+/// partial (<c>SmithChartViewModel.Network.cs</c>): the projection onto the schematic renderer, the
+/// element operations, the sliders and the mirror.</para>
 ///
 /// <para><b>One gesture is one undo entry</b>, and the mechanism is <see cref="SmithSnapshotCommand"/>:
 /// every mutation goes through <see cref="Edit"/>, which captures the whole design before and after.
@@ -121,6 +122,15 @@ public sealed partial class SmithChartViewModel : ObservableObject
     /// </remarks>
     internal void Edit(string description, Action mutate)
     {
+        // A NOTE lives until the next committed edit and no longer. It says what the tool decided
+        // about the edit before it — a line's reference frequency left behind by a retune, a name
+        // already taken, a file element nobody finished choosing a file for — and the strip's own job
+        // the rest of the time is to STATE NUMBERS. One that outlived its occasion would hide the
+        // reading indefinitely, which is the same failure as a refusal that does not clear.
+        // Cleared BEFORE the mutation, so a note raised about THIS edit (R-smith6-3's F_ref sentence,
+        // which is emitted after the edit lands) survives it.
+        StripNotice = null;
+
         string before = SmithDesignIo.SerializeUnvalidated(_design);
         mutate();
         string after = SmithDesignIo.SerializeUnvalidated(_design);
@@ -406,7 +416,15 @@ public sealed partial class SmithChartViewModel : ObservableObject
         {
             bool ok = MatchValueFormat.TryParseWithUnit(value, MatchQuantity.Frequency, "GHz",
                                                         out double f, out _) && f > 0;
-            if (ok) Edit("Edit design frequency", () => _design.Chart.DesignFrequencyHz = f);
+            if (ok)
+            {
+                Edit("Edit design frequency", () => _design.Chart.DesignFrequencyHz = f);
+
+                // A line's F_ref stays where it was placed, on purpose (R-smith2-3) — and the ONE time
+                // that is worth saying out loud is the first time a frequency edit leaves one behind
+                // (R-smith6-3). After the edit, so the note is about where the design now is.
+                NoteStrandedReferenceFrequencies();
+            }
             OnPropertyChanged();
             if (!ok) RefreshDerived();
         }
@@ -451,6 +469,11 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // instant of it. See SmithChartViewModel.Chart.cs.
         RebuildChart();
 
+        // The network strip is derived from the SAME design on the SAME channel, so the picture below
+        // the chart, the curves on it and the numbers in the strip are three views of one evaluation
+        // rather than three that happen to agree. See SmithChartViewModel.Network.cs.
+        RebuildNetwork();
+
         IsDesignFrequencyInvalid = _design.Generator.Rows.Count > 1
             && _design.Generator.Span is { } span
             && !(_design.Chart.DesignFrequencyHz >= span.StartHz
@@ -458,7 +481,10 @@ public sealed partial class SmithChartViewModel : ObservableObject
 
         OnPropertyChanged(nameof(Refusal));
         OnPropertyChanged(nameof(HasRefusal));
+        OnPropertyChanged(nameof(HasStripNotice));
+        OnPropertyChanged(nameof(ShowStatusLine));
         OnPropertyChanged(nameof(StatusLine));
+        OnPropertyChanged(nameof(MirrorNetwork));
         OnPropertyChanged(nameof(IsDesignFrequencyInvalid));
         OnPropertyChanged(nameof(ChartZ0Entry));
         OnPropertyChanged(nameof(DesignFrequencyEntry));

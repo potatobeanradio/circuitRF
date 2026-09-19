@@ -5,6 +5,7 @@
              xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
              xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
              xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:sv="using:CircuitRF.Ui.Views.Smith"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Smith.SmithChartView"
              x:DataType="sm:SmithChartDocument"
@@ -18,9 +19,11 @@
          TOOL, the network strip below it, and a strip across the foot that states numbers. The two
          splitters are draggable and their positions persist in the document's own View block.
 
-         THE CHART PANE IS BRIEF 5's and is a real PlotControl now; THE NETWORK PANE IS STILL A STUB
-         and is brief 6's. R-smith4-1's whole claim is that the shell around them is inherited rather
-         than written — there is no Window subclass anywhere in this folder, and if one ever appears,
+         THE CHART PANE IS BRIEF 5's and is a real PlotControl; THE NETWORK PANE IS BRIEF 6's and is a
+         real SchematicRenderer. Neither is a second renderer: the chart is a Data Display Plot and the
+         network is a projection onto the schematic editor's own read model, so the only thing this
+         window draws itself is its chrome. R-smith4-1's whole claim is that the shell around them is
+         inherited rather than written — there is no Window subclass anywhere in this folder, and if one ever appears,
          that requirement has been missed.
 
          THE CHROME IS BORROWED AND NOT INVENTED (R-smith4-4). Border.pane / Border.card, sentence-case
@@ -158,6 +161,34 @@
         </Style>
         <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
             <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <!-- Selection-dependent buttons dim their ICON when disabled — the schematic editor's own
+             style, and the reason it exists there: a MaterialIcon inside a disabled Button is not
+             dimmed by Fluent, so a button that cannot act reads exactly like one that can. -->
+        <Style Selector="Button.SelectionBtn:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+
+        <!-- A slider row's parameter label. It is a BUTTON because clicking it does something —
+             it makes that parameter the one the chart's gripper drags (R-smith6-5) — and it is
+             chromeless because a row of three raised buttons beside three sliders would read as the
+             control rather than as the label it is. -->
+        <Style Selector="Button.rowlabel">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="Padding"                    Value="3,1"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="MinWidth"                   Value="0"/>
+            <Setter Property="Background"                 Value="Transparent"/>
+            <Setter Property="BorderThickness"            Value="1"/>
+            <Setter Property="BorderBrush"                Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <!-- THE ACTIVE ROW IS MARKED. Without it the gripper on the chart silently changes what it
+             does, and the only way to find out which parameter it is on is to drag it. -->
+        <Style Selector="Button.rowlabel.activeparam">
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
         </Style>
 
         <!-- Compact sliders (§5.3) — no explicit Height, which would squash the thumb off-centre; a
@@ -344,11 +375,165 @@
                       DragCompleted="OnSplitterDragCompleted"/>
 
         <!-- ══ The network strip (brief 6) ══════════════════════════════════════════════════════
+             R-smith6-1/-2/-4/-5/-6; docs/design/smith-chart.md §5.5, §5.6.
+
+             ONE SCHEMATIC RENDERER, and this is not a second one. The picture is a projection of the
+             element list onto a real SchematicModel (SmithNetworkModel) drawn by SchematicRenderer —
+             the renderer the schematic editor draws every frame with. The grid, the glyphs, the label
+             roles and their colours, the connected-pin markers, the selection outline and the disabled
+             overlay are all its own.
+
+             IT IS A PROJECTION, NOT AN EDITABLE SCHEMATIC. No wire tool, no free placement, no
+             selection model beyond "which element is selected" — the topology is a list, and the only
+             drag the canvas offers moves an element along the strip, which reorders that list.
+
              Tall enough for one row of symbols plus the selected element's sliders. -->
-        <Border Grid.Row="2" Classes="pane" Name="NetworkRegion">
-            <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       TextAlignment="Center"
-                       Text="The network — the cascade drawn through the schematic renderer, its Add/Insert/Delete/reorder&#10;controls, the selected element's sliders and the mirror button. Brief 6 fills this region."/>
+        <Border Grid.Row="2" Classes="pane" Name="NetworkRegion" Padding="6">
+            <Grid RowDefinitions="Auto,*,Auto">
+
+                <!-- The toolbar. Add appends at the end (nearest the load); Insert places before the
+                     selection. BOTH MENUS ARE BUILT IN CODE from SmithChartViewModel.ElementMenu —
+                     one vocabulary, so the two cannot disagree, and so the shell's own Insert menu can
+                     be filled from the same list. -->
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,4">
+                    <TextBlock Classes="panelhdr" Text="Network" Margin="0"
+                               VerticalAlignment="Center"/>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                        <Button Name="AddElementButton" Classes="panel" Content="Add ▾"
+                                ToolTip.Tip="Add an element at the end of the cascade, nearest the load."/>
+                        <Button Name="InsertElementButton" Classes="panel" Content="Insert ▾"
+                                ToolTip.Tip="Insert an element before the selected one. With nothing selected this appends, because &quot;before nothing&quot; and &quot;at the end&quot; are the same place in a list."/>
+                        <Button Classes="panel" Content="Delete"
+                                Command="{Binding ViewModel.DeleteElementCommand}"
+                                ToolTip.Tip="Remove the selected element. The chain closes up."/>
+
+                        <!-- Reorder. The arrows are DRAWING-relative and not list-relative: a
+                             left-pointing button beside a picture moves the part left, and in a
+                             mirrored strip that is toward the load. See MoveElementLeft. -->
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Command="{Binding ViewModel.MoveElementLeftCommand}"
+                                ToolTip.Tip="Move the selected element one place to the left. You can also drag it along the strip.">
+                            <mi:MaterialIcon Kind="ChevronLeft" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Command="{Binding ViewModel.MoveElementRightCommand}"
+                                ToolTip.Tip="Move the selected element one place to the right. You can also drag it along the strip.">
+                            <mi:MaterialIcon Kind="ChevronRight" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- THE MIRROR (R-smith6-6, owner instruction). The schematic editor's own
+                             control, taken verbatim — the same glyph its toolbar and the layout
+                             editor's already carry for the same idea, so it needs no learning.
+
+                             It mirrors the DRAWING and nothing else: the topology is untouched,
+                             element 0 is still the one nearest the generator, and THE CHART DOES NOT
+                             MIRROR — the Γ plane's orientation is fixed by physics, inductive above
+                             the real axis and capacitive below, so a mirrored Smith chart is a wrong
+                             one. There is deliberately no button offering to. -->
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Command="{Binding ViewModel.ToggleMirrorCommand}"
+                                ToolTip.Tip="Mirror Network  (M) — flips the drawing so the generator is on the right and the cascade grows leftward. The circuit, the element order and the chart are unchanged.">
+                            <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
+                        </Button>
+
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Click="OnNetworkZoomToFit"
+                                ToolTip.Tip="Zoom to Fit  (F). The strip re-frames itself whenever the drawing changes size — adding, deleting or mirroring — and keeps your zoom when it does not.">
+                            <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Row="1" Classes="card" Padding="0" Margin="0,0,0,4" ClipToBounds="True">
+                    <sv:SmithNetworkCanvas Name="NetworkCanvas"
+                                           ViewModel="{Binding ViewModel}"/>
+                </Border>
+
+                <!-- ── The selected element: its name, its Enabled box and its sliders ──────────
+                     R-smith6-4's rule is one row per SETTABLE parameter — one for an L, three for an
+                     SRLC, two for a TLIN, and NONE AT ALL for an S1P or an S2P, whose value is a
+                     file. That case shows the file, its port count and its span instead, and nothing
+                     to drag. -->
+                <Border Grid.Row="2" Classes="card" Margin="0"
+                        IsVisible="{Binding ViewModel.HasSelectedElement}">
+                    <StackPanel Spacing="3">
+
+                        <Grid ColumnDefinitions="Auto,90,*,Auto">
+                            <TextBlock Classes="detailLabel" Text="Name" VerticalAlignment="Center"/>
+                            <!-- EVERY editable value is an InlineEditText (R-smith4-5), and the
+                                 instance name is one: it is what brief 7 carries into a real
+                                 schematic, and a name that collides with another element's is
+                                 refused in the strip rather than de-duplicated behind the user. -->
+                            <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                HorizontalContentAlignment="Left"
+                                                Text="{Binding ViewModel.SelectedElementNameEntry, Mode=TwoWay}"
+                                                ToolTip.Tip="Double-click to rename. Names are unique — this is what every refusal, every undo entry and every copied schematic calls the part."/>
+                            <TextBlock Grid.Column="2" Classes="detailLabel" Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding ViewModel.SelectedElementHeader}"/>
+                            <!-- A disabled element contributes nothing, draws no trajectory, and KEEPS
+                                 ITS VALUES AND ITS PLACE. One boolean, and it is the difference
+                                 between trying something and losing it. -->
+                            <CheckBox Grid.Column="3" FontSize="11" MinHeight="0" Padding="4,0,0,0"
+                                      Content="enabled"
+                                      IsChecked="{Binding ViewModel.SelectedElementEnabled, Mode=TwoWay}"
+                                      ToolTip.Tip="A disabled element contributes nothing and draws no trajectory, and keeps its values and its place in the cascade."/>
+                        </Grid>
+
+                        <!-- The file kinds: what there is to say instead of a slider. -->
+                        <TextBlock Classes="note" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                   IsVisible="{Binding ViewModel.HasFileSummary}"
+                                   Text="{Binding ViewModel.SelectedFileSummary}"
+                                   ToolTip.Tip="{Binding ViewModel.SelectedFileSummary}"/>
+
+                        <ItemsControl ItemsSource="{Binding ViewModel.SliderRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="sm:SmithSliderRowViewModel">
+                                    <Grid ColumnDefinitions="34,72,*,72,92" Margin="0,1">
+                                        <!-- THE ACTIVE ROW IS MARKED (R-smith6-5). The last-touched
+                                             slider becomes the element's ActiveParameter, which is
+                                             what brief 5's gripper drags — so the connection between
+                                             "the slider I just used" and "the handle on the chart" is
+                                             visible rather than remembered. Clicking the label makes
+                                             it active without moving anything. -->
+                                        <Button Classes="rowlabel"
+                                                Classes.activeparam="{Binding IsActive}"
+                                                Content="{Binding Label}"
+                                                Click="OnParameterLabelClick"
+                                                ToolTip.Tip="Click to make this the parameter the chart's gripper drags."/>
+
+                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                            HorizontalContentAlignment="Right"
+                                                            Text="{Binding MinEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The low end of this slider's range. Double-click to edit."/>
+
+                                        <!-- Compact, and LOGARITHMIC for R, L, C and a line's Z₀:
+                                             those span decades, and a linear slider over 1 … 100 pF
+                                             spends nine tenths of its travel above 10 pF. -->
+                                        <Slider Grid.Column="2" Classes="compact"
+                                                Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                                                Value="{Binding Position, Mode=TwoWay}"
+                                                Loaded="OnNetworkSliderLoaded"/>
+
+                                        <ctl:InlineEditText Grid.Column="3" Classes="val"
+                                                            HorizontalContentAlignment="Left"
+                                                            Text="{Binding MaxEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="The high end of this slider's range. Double-click to edit."/>
+
+                                        <!-- Typing a value outside the range RE-CENTRES the range
+                                             rather than clamping: a typed number is an instruction,
+                                             not a gesture. -->
+                                        <ctl:InlineEditText Grid.Column="4" Classes="val" Margin="6,0,0,0"
+                                                            Text="{Binding ValueEntry, Mode=TwoWay}"
+                                                            ToolTip.Tip="Double-click to type a value with its unit. A value outside the slider's range moves the range rather than being clamped into it."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
 
         <!-- The marker info-box layer (R-smith5-5's last clause).
@@ -400,10 +585,18 @@
             <Grid ColumnDefinitions="*">
                 <SelectableTextBlock Name="StatusStrip" Classes="note" VerticalAlignment="Center"
                                      Text="{Binding ViewModel.StatusLine}"
-                                     IsVisible="{Binding !ViewModel.HasRefusal}"/>
+                                     IsVisible="{Binding ViewModel.ShowStatusLine}"/>
                 <SelectableTextBlock Name="RefusalStrip" Classes="warn" VerticalAlignment="Center"
                                      Text="{Binding ViewModel.Refusal}"
                                      IsVisible="{Binding ViewModel.HasRefusal}"/>
+                <!-- A NOTE is the third state of this one line, and it REPLACES the reading for the
+                     same reason a refusal does: two rows of text read as two different problems. It
+                     says what the tool decided rather than what is wrong — a line's reference
+                     frequency left behind by a retune, a name already taken, a file element nobody
+                     finished choosing a file for — and it is cleared by the next edit. -->
+                <SelectableTextBlock Name="NoticeStrip" Classes="note" VerticalAlignment="Center"
+                                     Text="{Binding ViewModel.StripNotice}"
+                                     IsVisible="{Binding ViewModel.HasStripNotice}"/>
             </Grid>
         </Border>
     </Grid>

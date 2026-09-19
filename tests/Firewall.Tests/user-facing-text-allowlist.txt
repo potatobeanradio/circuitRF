@@ -873,6 +873,7 @@ src/Design/Smith/SmithGeneratorImport.cs|'{Path.GetFileName(path)}' is a {snp.Po
 # actionable; converting the whole family at once is the way this shrinks.
 src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind} and names no file — a file element IS its file.
 src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind} and needs a {ports}-port file; '{raw}' is a 
+src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind}, which is not a file element — only S1P and S2P read a file.
 src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind}, which transforms an impedance rather than adding to 
 src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', and there is no file at '{full}'. A {e.Kind} IS its 
 src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', which could not be read as Touchstone: {ex.Message}

@@ -1,5 +1,126 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the network strip, its sliders, and the mirror that is a rotation too (2026-09-19)
+
+brief-smith-6-network-strip.md. The bottom pane: the cascade drawn through `SchematicRenderer`,
+element add / insert / delete / reorder, the selected element's sliders, the active-parameter rule
+and the mirror button. Gate: `tests/Ui.Tests/Smith/SmithNetworkStripTests.cs`, nine tests, one per
+claim; all pass, as do the 198 Smith tests and `Firewall.Tests`.
+
+**The mirror is `MirrorX` AND the opposite rotation, and the brief's own gate is what proves it.**
+The brief and the design note both say "each projected component gets `MirrorX = true`", which is
+half of it. `SchematicGeometry.LocalToWorld` applies the mirror in the symbol's LOCAL frame, *before*
+the rotation — so on a two-terminal part standing at `R270`, whose pins are at local (0, ∓200),
+`MirrorX` negates a coordinate that is already zero: the pins do not move at all, and what does flip
+is the glyph ACROSS its own wire rather than along it. A drawing built that way has its bodies
+reflected and its ends left behind, which on an `S2P` is exactly the failure the brief invokes the
+mirror to prevent. The honest transform is `Wₓ ∘ R(θ) = R(−θ) ∘ Mₓ` — negate the rotation and set the
+flag, one line in `SmithNetworkModel.Compose`. It costs nothing on the horizontal glyphs (`R0` is its
+own opposite, so `TLIN`, `SnP` and a one-port `Z_Port` are unaffected) and it is the whole difference
+on the vertical ones. **The brief's gate already required it**: "its pin world coordinates reflected"
+is an equality that `R270 + MirrorX` fails, and deleting the rotation half turns that one test red
+while the other eight stay green — verified directly, not assumed.
+
+**The mirror axis is x = 0 because the generator sits at the origin.** Every column advances by
+±`Pitch` from the generator's own termination, so flipping the strip is exactly `x → −x` and the
+reflection of any point in the drawing is its own negation. That is what lets the gate assert
+reflected coordinates as an equality rather than "about a centre somebody computed", and it is why
+`MoveElementLeft`/`Right` and the reorder drag's slot arithmetic each need one sign and no geometry.
+
+**The projection builds a real `SchematicEditModel` and calls the editor's own `BuildRenderModel` —
+deliberately NOT `MatchSchematicModel`'s hand-assembly.** The Designer composes `SchematicComponent`
+records itself, which means a hand-written glyph extent per symbol kind; that is affordable for a
+ladder of two kinds and is not for a vocabulary of eleven, three of which have a glyph COMPUTED from
+a parameter (`SnP`'s body grows with its port count and its `RefNode`). Going through the edit model
+buys the extents, the labels, the connected-pin markers and the connection dots from the code the
+editor uses, and it hands brief 7 the `EditableComponent`s its copy needs with no second layout pass —
+so "the copy is the drawing you were looking at" is true by construction.
+
+**The one thing that had to be overridden is the DOTS, and it is the Designer's decision rather than
+a new one.** `SchematicEditModel` emits an auto-dot wherever a component pin coincides with another
+connection endpoint. On a page someone wired by hand that is right — a pin that landed on a wire end
+is worth marking. In a projection every such meeting is by construction: each series element's two
+lead tips sit on the spine's two wire ends and each shunt arm's ground sits on its own lower pin, so
+the editor's rule put **eleven dots on a five-element strip** where a reader needs two. A junction dot
+means a BRANCH, and the only branch in a cascade is where a shunt arm taps the through path — which is
+`MatchSchematicModel`'s own rule, arrived at over the owner's review of that pane, and the two panes
+should not disagree about it while sitting in one application. `SmithNetworkModel.WithJunctionDots`
+rebuilds the model with that list and nothing else changed.
+
+**Which `DisableState` a disabled element draws is not a style choice.** The brief says "draw it
+dimmed, on the schematic's own `DisableState` convention" and there are two of them. The evaluator
+skips a disabled element entirely, and skipping a SERIES element is a short through it while skipping
+a SHUNT one is an open — so a series part takes `DisableState.Short` and a shunt part
+`DisableState.Open`. Drawing both as `Open` puts an X across a series part whose two nets the cascade
+has just merged, which is a true picture of a different circuit.
+
+**Three columns get no ground glyph and each has a reason.** A series element has no reference pin at
+all; an **open stub**'s far end is open, which is the only thing that tells it apart from the shorted
+one; and a **shunt `S1P`** is a one-port whose reference is implicit, so `SnP` with `RefNode=false`
+draws a single pin and there is nothing for a ground to land on. A **series `S1P`** is the mirror of
+that case: it needs two pins to sit in a through path, so it is drawn with `RefNode=true`, which is
+the same wiring `SmithCascadeTests`' own oracle netlist uses ("a one-port file in SERIES binds N+1
+nets, the extra one being its floating reference").
+
+**A stored slider range that does not CONTAIN the value is stood down, and that is a safety rule.**
+A `RangeBase` coerces its `Value` into `[Minimum, Maximum]` the instant either bound is published, and
+the coerced number writes straight back through the two-way binding — so a range excluding the value
+would silently change the design *from a notification*, with no gesture behind it. That is the Match
+Designer's defect reached by a route nobody looks at, and a gripper drag can carry a value out of its
+slider's stored range at any time, so it is a live case. `SmithSliderRowViewModel.Range` falls back to
+the derived range while that is true; the stored one is not erased and returns when the value does.
+The same reasoning orders `NotifyAll`: **bounds before value, always.**
+
+**The range endpoints are `InlineEditText`s at the ends of the slider, not a right-click dialog.**
+The brief spells the gesture "right-click ▸ *Set range…*" and then, one bullet later, states the
+standing rule that *every* editable value in this window is an `InlineEditText` — "and *every* means
+the slider range endpoints and the instance name too". Those are the same sentence about the same two
+numbers, and the inline editor is the one that satisfies both: the ends are already drawn there, so a
+dialog would be a second place to read a number that is on screen.
+
+**Two ends, two different glyphs.** The generator is a `TermG` — it IS an impedance to ground, and a
+`Pin` there would say "this net leaves the drawing", which is the one thing it does not do. The load
+end is a `Pin`, and deliberately NOT the Designer's `TermG`: this tool has no load element and nothing
+terminates the cascade ("the load is where you read"), so an impedance drawn there would be one the
+document does not have. Brief 7's COPY adds a `TermG` at each end because a pasted fragment has to be
+runnable; the strip states the model instead.
+
+**An open stub's far end draws the unconnected-pin marker, and that is correct rather than a defect.**
+Nothing connects to it, the netlist gives it a floating net, and a schematic drawn by hand would look
+the same. Recorded because it is warning-coloured and will read as an error to anyone who has not
+thought about it.
+
+**The ⇅ buttons are drawing-relative, not list-relative.** A left-pointing button beside a picture
+moves the part left, and in a mirrored strip that is toward the LOAD. Binding the glyphs to the list's
+own direction would make the two buttons swap meanings the moment the mirror was pressed — silently,
+while their arrows went on pointing the other way. `MoveElementLeft`/`Right` resolve through the flag;
+`MoveElementTowardGenerator`/`TowardLoad` stay as the semantic pair the keyboard and brief 7 use.
+
+**Not built, and it belongs to brief 4: the shell's Insert menu.** `R-smith6-2` says the Add menu is
+"mirrored under **Insert** in the shell menu bar (brief 4 `R-smith4-9`) — one command, two surfaces",
+and brief 4 shipped without that menu: `WorkspaceWindow.axaml` has Tools ▸ Smith Chart and no Insert
+menu at all. Building one needs an observable "a Smith document is active" on `WorkspaceViewModel`
+plus a code-built `NativeMenu` rebuild (a `NativeMenuItem` is an `AvaloniaObject` with no DataContext
+and cannot bind a collection, which is why `RebuildNativeExamplesMenu` exists), i.e. shell work of
+brief 4's shape. What brief 6 did instead is make the drift impossible when it is built:
+`SmithChartViewModel.ElementMenu` is one static list, expanded from `SmithComponentMap.AllKinds`
+through `AllowedPlacement`, and both in-window flyouts are filled from it —
+so the third surface has something to bind and nothing to re-spell.
+
+**One red gate fixed on the way past, from brief 1 rather than from this one.**
+`CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet` was failing on `check.smith.summary` — an
+id `CliDiagnostics` has carried since `5d83a3d6` and that test's committed list had never been updated
+with. That is exactly the omission the test exists to report ("Add an id and this test tells you to
+record it"), so the id is recorded. Three other `Ui.Tests` failures were left alone and are on paths
+this change does not touch: `HarmonicaBackdropCacheTests.CacheOnVsOff_ArePixelIdentical_At2x…` and
+`Revision.OneHistoryPanelTests.ABoundaryClearsTheSignalAndARestoreSetsItAgain` fail deterministically
+in isolation, and `CrossWorkspaceDropTests.R_mw3_8_…` passes alone and is load-dependent.
+
+**`SmithCascade.FileSummary` was added below the firewall** rather than having the panel resolve a
+`FileRef` itself. Selecting an `S1P`/`S2P` shows its file, its port count and its span; doing that
+with a second path-resolution rule would let the panel say "no such file" while the chart drew a
+trajectory, which is two answers about one reference.
+
 ## Smith Chart — the chart, the overlay seam, and the drag that is one undo entry (2026-09-19)
 
 brief-smith-5-chart.md. The chart pane: a Data Display `Plot` in `PlotType.Smith` built from

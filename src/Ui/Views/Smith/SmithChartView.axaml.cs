@@ -1,9 +1,12 @@
 using System;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Controls.Primitives;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using CircuitRF.Design.Smith;
@@ -61,6 +64,10 @@ public partial class SmithChartView : UserControl
         _doc.ActivationFocusRequested += OnActivationFocusRequested;
         ApplySplitFractions();
         BindChartPlot(_doc.ViewModel);
+        BuildElementMenus(_doc.ViewModel);
+
+        // The picker is the view's; the refusal that follows a cancelled one is the view model's.
+        _doc.ViewModel.TouchstoneFileChooser = PickTouchstoneFile;
 
         // The request may have been made BEFORE this view existed — a document that is already the
         // active dockable at the instant its view is first realized. ConsumeActivationFocus is what
@@ -300,4 +307,145 @@ public partial class SmithChartView : UserControl
 
         ChartPlotControl.SetValue(PlotControl.PlotThemeProperty, vm.PlotHost.Theme);
     }
+
+    // ── The network strip (brief-smith-6-network-strip.md) ───────────────────
+
+    /// <summary>
+    /// Builds the Add and Insert menus from <see cref="SmithChartViewModel.ElementMenu"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>In code and not in XAML, and from ONE list</b> (<c>R-smith6-2</c>: "one command, two
+    /// surfaces"). The vocabulary is <c>SmithComponentMap.AllKinds</c>'s, expanded by
+    /// <c>SmithComponentMap.AllowedPlacement</c> into the placements each kind is legal in — so a kind
+    /// added to the map appears in both menus with nothing to keep in step, and the shell's own Insert
+    /// menu can be filled from the same list when brief 4's <c>R-smith4-9</c> surface is built.
+    ///
+    /// <para><c>WorkspaceViewModel.BuildExampleMenuItems</c> is the precedent for filling a menu from
+    /// code; what is different here is that the list is a CONSTANT, so the flyouts are built once per
+    /// view rather than rebuilt per open.</para>
+    /// </remarks>
+    private void BuildElementMenus(SmithChartViewModel vm)
+    {
+        AddElementButton.Flyout    = Menu(vm.AddElementCommand);
+        InsertElementButton.Flyout = Menu(vm.InsertElementCommand);
+
+        static MenuFlyout Menu(System.Windows.Input.ICommand command)
+        {
+            var flyout = new MenuFlyout();
+            foreach (var entry in SmithChartViewModel.ElementMenu)
+                flyout.Items.Add(new MenuItem
+                {
+                    Header           = entry.Header,
+                    Command          = command,
+                    CommandParameter = entry,
+                });
+            return flyout;
+        }
+    }
+
+    /// <summary>
+    /// The file picker an <c>S1P</c>/<c>S2P</c> opens on placement (<c>R-smith6-3</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>The picker is the view's and the decision is not.</b> The view model refuses to create a
+    /// file-less file element — a null answer here places nothing — which is what lets the whole
+    /// placement path be driven by the gate with no display.
+    ///
+    /// <para>The filter names the element's OWN port count, because an <c>.s2p</c> dropped on an S1P is
+    /// far more likely to be the wrong file than a request for the corner of its matrix — the same rule
+    /// the generator's own import follows, and the same one <c>SmithCascade</c> refuses by.</para>
+    /// </remarks>
+    private async Task<string?> PickTouchstoneFile(SmithElementKind kind)
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top) return null;
+
+        string ext = kind == SmithElementKind.S1P ? "s1p" : "s2p";
+
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = $"Choose the {ext.ToUpperInvariant()} file for this element",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType($"{ext[1]}-port Touchstone")
+                    { Patterns = [$"*.{ext}", $"*.{ext.ToUpperInvariant()}"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
+        });
+
+        if (files.Count == 0) return null;
+
+        // Relative to the document where that is possible — the `.cdd` convention, and the one that
+        // survives an archived or moved workspace. An absolute path is kept when the file lives
+        // somewhere a relative reference could not reach.
+        string full = files[0].Path.LocalPath;
+        string? dir = _doc?.ViewModel.DocumentDirectory;
+        if (dir is not { Length: > 0 }) return full;
+
+        string relative = Path.GetRelativePath(dir, full);
+        return relative.StartsWith("..", StringComparison.Ordinal) ? full : relative;
+    }
+
+    /// <summary>Zoom to Fit on the strip — the button, and the F key the canvas handles itself.</summary>
+    private void OnNetworkZoomToFit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => NetworkCanvas.ZoomToFit();
+
+    /// <summary>
+    /// A slider row's parameter label was clicked — make it the element's active parameter.
+    /// </summary>
+    /// <remarks>
+    /// A <c>Click</c> handler rather than a command binding, because reaching the view model from
+    /// inside a <c>DataTemplate</c> whose <c>DataContext</c> is the ROW needs a cast through an
+    /// ancestor's <c>DataContext</c> — three ways to spell it and two of them fail silently at runtime
+    /// with the button simply doing nothing.
+    /// </remarks>
+    private void OnParameterLabelClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_doc is null) return;
+        if ((sender as Button)?.DataContext is not SmithSliderRowViewModel row) return;
+
+        _doc.ViewModel.MakeParameterActiveCommand.Execute(row);
+    }
+
+    /// <summary>
+    /// Wires one slider's press and release so the whole drag is <b>one undo entry</b>
+    /// (<c>R-smith6-4</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>The Match Designer's own <c>OnSliderLoaded</c>, and it exists for the defect that window
+    /// shipped</b>: a two-way-bound slider writes its value on every step, so an edit pushed from the
+    /// setter is one undo entry per pixel of travel — and its coercing write-back reached the same
+    /// setter during <c>Undo</c>, which made every undo ADD an entry and cost the user their redo
+    /// stack. The setter here mutates and redraws and pushes nothing; the entry is pushed on release,
+    /// carrying the state captured on press.
+    ///
+    /// <para>Tunnel AND bubble with <c>handledEventsToo</c>, because a <c>Slider</c>'s own thumb marks
+    /// the press handled before it reaches the control. A <c>ConditionalWeakTable</c> guards against
+    /// double-wiring a slider Avalonia re-raises <c>Loaded</c> on after a virtualization pass.</para>
+    ///
+    /// <para>A capture lost without a release — the window losing focus mid-drag — must still END the
+    /// gesture, or the next edit joins a drag that started minutes ago.</para>
+    /// </remarks>
+    private void OnNetworkSliderLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Slider slider) return;
+        if (_wiredSliders.TryGetValue(slider, out _)) return;
+        _wiredSliders.Add(slider, this);
+
+        const RoutingStrategies both = RoutingStrategies.Tunnel | RoutingStrategies.Bubble;
+        slider.AddHandler(PointerPressedEvent,     OnSliderPressed,     both, handledEventsToo: true);
+        slider.AddHandler(PointerReleasedEvent,    OnSliderReleased,    both, handledEventsToo: true);
+        slider.AddHandler(PointerCaptureLostEvent, OnSliderCaptureLost, both, handledEventsToo: true);
+    }
+
+    private readonly ConditionalWeakTable<Slider, SmithChartView> _wiredSliders = new();
+
+    private void OnSliderPressed(object? sender, PointerPressedEventArgs e)
+        => _doc?.ViewModel.BeginSliderDrag();
+
+    private void OnSliderReleased(object? sender, PointerReleasedEventArgs e)
+        => _doc?.ViewModel.EndSliderDrag();
+
+    private void OnSliderCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        => _doc?.ViewModel.EndSliderDrag();
 }

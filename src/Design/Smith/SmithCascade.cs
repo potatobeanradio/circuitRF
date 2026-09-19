@@ -401,6 +401,37 @@ public static partial class SmithCascade
     }
 
     /// <summary>
+    /// What a file element's file IS — the resolved path, its port count and the span it covers.
+    /// </summary>
+    /// <remarks>
+    /// <b>For the window's own reporting only</b> (<c>R-smith6-4</c>: selecting an S1P or an S2P shows
+    /// its file reference, its port count and its frequency span, and nothing to drag). It exists here
+    /// rather than in the window so that the PATH is resolved by the one rule the evaluator resolves
+    /// it by — a panel that answered "no such file" while the chart drew a trajectory, or the other
+    /// way round, would be two answers about one reference.
+    /// </remarks>
+    /// <exception cref="InvalidDataException">The same refusals <see cref="Evaluate"/> raises: no
+    /// reference, no file at it, unreadable as Touchstone, or the wrong port count.</exception>
+    public static (string FullPath, int Ports, double MinHz, double MaxHz) FileSummary(
+        SmithElement e, string? documentDirectory = null)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+
+        if (!SmithComponentMap.UsesFile(e.Kind))
+            throw new InvalidOperationException(
+                $"'{e.Name}' is a {e.Kind}, which is not a file element — only S1P and S2P read a file.");
+
+        int ports   = SmithComponentMap.Component(e.Kind).NumPorts;
+        string full = ResolveFile(e, documentDirectory, ports, out var snp);
+
+        // An empty file reports a zero span rather than throwing out of a Min() — the caller is a
+        // panel describing what it found, and "0 … 0" is a true description of an empty table.
+        return snp.IsEmpty
+            ? (full, snp.Ports, 0.0, 0.0)
+            : (full, snp.Ports, snp.Frequencies.Min(), snp.Frequencies.Max());
+    }
+
+    /// <summary>
     /// The element's file, resolved and checked.
     ///
     /// <para><b>A reference that does not resolve is a refusal naming the element AND the file</b>,
