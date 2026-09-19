@@ -348,11 +348,18 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         {
             // A rail that already NAMES a reference is one somebody confirmed before, on a document
             // that was saved with it. Re-asking would be a click charged for a decision already made.
+            //
+            // UNLESS THE LAYER IT NAMES IS NOT ONE THIS TECHNOLOGY OFFERS — a stackup edited, or a
+            // document opened against a different one. The combo can only show a layer it has, so
+            // it falls back to the proposal; calling that CONFIRMED would leave the window showing
+            // one layer while the document held another, and Run would then solve against the one
+            // nobody could see. An unresolvable reference is an unconfirmed one, and costs the click.
             var stated = SelectedRail?.ReferenceLayer;
-            SelectedReferenceLayer = stated is { } key
-                ? ReferenceLayerOptions.FirstOrDefault(o => o.Key == key) ?? proposal
-                : proposal;
-            IsReferenceConfirmed = stated is not null;
+            var statedOption = stated is { } key
+                ? ReferenceLayerOptions.FirstOrDefault(o => o.Key == key)
+                : null;
+            SelectedReferenceLayer = statedOption ?? proposal;
+            IsReferenceConfirmed = statedOption is not null;
         }
         finally { _settingProposal = false; }
     }

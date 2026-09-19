@@ -242,6 +242,12 @@ public static class RailDcRun
 
         copy.Loads.AddRange(rail.Loads);
         copy.Aggressors.AddRange(rail.Aggressors);
+
+        // The PARTS too. Nothing this copy is handed to reads them at DC — a capacitor bridges
+        // nothing at ω = 0 and the shunt bank reaches the extraction through the REQUEST — but a
+        // copy that silently holds less than the rail it copies is the shape that loses a whole
+        // decoupling bank the first time this is reused at a frequency, with no error anywhere.
+        copy.Parts.AddRange(rail.Parts);
         return copy;
     }
 

@@ -29115,3 +29115,31 @@ strip to ask.
 button is wired" — and railRF's window holds no second document, so there is no *Compare with…*
 command and no comparison panel. `RailComparisonExport.PageOf`/`BuildSvg`/`BuildPdf` is the function
 that command will call; nothing else composes this page.
+
+---
+
+## railRF — review round 1 (briefs 7-8), 2026-09-18
+
+### A confirmed reference layer that the technology does not offer
+
+`RailRfViewModel.RebuildReferenceOptions` set `IsReferenceConfirmed` from whether the RAIL stated a
+reference layer, and the combo's selection from whether that layer was among the options — two
+different questions. A `.crail` opened against a technology that no longer draws that layer (a
+stackup edited, a document moved) therefore left the combo showing the PROPOSAL while the document
+still held the stated layer, and Run enabled over the pair. The window said one thing and the solve
+used another, which is the same failure `R-rail7-5` states for the model kind: what is on screen and
+what the numbers are made of are one value or they are nothing.
+
+Now a reference that cannot be resolved to an option is an UNCONFIRMED one. The combo falls back to
+the proposal as before, Run stays disabled, and confirming writes the layer the user can actually
+see. The document is not rewritten on the way through — a stale layer is the user's to keep or
+change, and clearing it silently would be the other half of the same defect.
+
+### `LayoutCanvas.NavigationKeysSuppressed` claimed to gate `Escape`, and does not
+
+The property's doc comment listed `Escape`'s disarm among the keys a host's predicate suppresses.
+It never did, and it should not: `Escape` is the one navigation key whose whole job is to undo a
+state the user can no longer see, so refusing it while focus sits in a field would strand the canvas
+armed with no way back that does not first cost a click. The comment now says so, rather than
+describing behaviour the code does not have — which is the shape that gets "fixed" into existence by
+the next reader.

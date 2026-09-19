@@ -7945,3 +7945,65 @@ read on its own has to say which part `C3` is. The comparison keys on the **refd
 and it must, because the two designs' part numbers may legitimately differ for one refdes (a
 second-source part is still that part). An unmatched ranking row keeps its full spelling, because
 there is no matched refdes for it to be named by.
+
+---
+
+## railRF — review round 1 (briefs 1-8), 2026-09-18
+
+Four defects found by reading briefs 1-8 against the code. None was caught by the suite, and each
+is the shape the series' own standing rules warn about: a plausible answer with nothing reporting a
+failure.
+
+### 1. `RailOrder.Resolve` threw on two rails of one name, from a method documented never to throw
+
+`RailOrderResult`'s own doc comment says "an order, or a refusal. Never both, and **never an
+exception** — the caller is a window that has to put the sentence on its status strip and a verb
+that has to print it, and neither of them wants a stack trace." Kahn's two dictionaries were built
+with `ToDictionary`, which throws `ArgumentException` on a duplicate key — while the `index`
+dictionary immediately above it had already been written with `TryAdd` precisely because duplicates
+are possible.
+
+Unreachable from a FILE (`RailDocumentIo` validates `RailDocument.Refusal()` on read and on write,
+and that check names duplicates), which is why nothing caught it. Reachable from a document being
+EDITED: the window's rail-name row is an ordinary editable field. Now a refusal, in
+`RailDocument.Refusal()`'s own words so the two surfaces say the same sentence.
+
+### 2. `RailDcRun.WithSourceLevel` built a rail copy that silently held less than the rail
+
+The chained-source copy carried `Sources`, `Loads` and `Aggressors` and dropped `Parts` — the
+decoupling bank. Harmless today by two accidents rather than by design: a capacitor bridges nothing
+at ω = 0, and the shunt bank reaches the extraction through `PdnExtractionRequest.ShuntParts` rather
+than through the spec. It is the first reuse of this copy at a frequency that would lose a whole
+bank with no error anywhere, so the copy is now complete.
+
+### 3. A grouped reference cell with spaces round its dash invented a part called `-`
+
+`RefdesCell.Parse` splits on whitespace as well as on comma and semicolon (an export that joins with
+a space is ordinary), so `C1 - C9` split into three pieces — two ends and a bare hyphen. The hyphen
+failed `TryExpandRange`, was reported in `Unexpanded`, **and was also added as a reference**. The
+result is nine parts reported unresolved plus one part the board has never had, which reads as a
+broken board rather than as a cell the reader could not spell. The spaces are now closed up before
+the split — so the range expands as written — and a piece holding no letter or digit is never a
+reference.
+
+### 4. Two `<summary>` tags on one member
+
+`PdnGraphExtractor.LargestEpsilonR` carried a leftover second summary. Merged; the second one's
+content (why this defers to `PdnMeshExtractor`'s reading rather than making its own) is the part
+worth keeping.
+
+### Reported and NOT changed
+
+- **`DelimitedTable.HadByteOrderMark` cannot be true on the file path.** `File.ReadAllText` detects
+  and strips a byte order mark before the text is seen, so the diagnostic both readers write for it
+  can only fire on the string overload. Nothing is mis-parsed either way — the mark is gone — so
+  this is a diagnostic that cannot appear, not a defect in the read.
+- **`PlacementFile.Read` labels a CALLER-STATED unit as `Artwork` evidence** ("settled against the
+  artwork's own extent"), which is not what happened. It is `BoardNetlistFile.ReadRecords`' own
+  line, copied faithfully as R-rail2-3 asks, so the wart is that reader's and the fix is a member on
+  the shared `BoardNetlistUnitsEvidence` rather than anything railRF owns. No caller passes `units`
+  today, in the window or in the verb, so nothing prints the wrong sentence yet.
+- **`PdnViaLimit.Describe` on the table branch** can say "…of plating, so there is no annulus to
+  compute one from" while naming a defaulted plating thickness in the same clause. Both halves are
+  true — the thickness is defaulted, which is exactly why there is no annulus worth computing over —
+  but the sentence reads as a contradiction.

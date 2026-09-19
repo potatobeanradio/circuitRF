@@ -186,8 +186,13 @@ public sealed class LayoutCanvas : Control
 
     /// <summary>
     /// An EXTRA condition under which this canvas's NAVIGATION keys do not fire — <c>F</c>,
-    /// <c>Z</c>, <c>Escape</c>'s disarm, Ctrl/⌘ <c>+</c>/<c>-</c>, Space's pan latch and the arrow-key
-    /// pan. Null (the default) leaves every existing behaviour of this control unchanged.
+    /// <c>Z</c>, Ctrl/⌘ <c>+</c>/<c>-</c>, Space's pan latch and the arrow-key pan. Null (the
+    /// default) leaves every existing behaviour of this control unchanged.
+    ///
+    /// <para><b><c>Escape</c> is deliberately NOT gated.</b> It disarms the magnifier and drops a
+    /// half-drawn box, which is the one navigation key whose whole job is to undo a state the user
+    /// can no longer see — refusing it while focus sits in a field would strand the canvas armed
+    /// with no way back that does not first cost a click.</para>
     ///
     /// <h3>Why a host may need to widen it (railrf.md §11.6 trap 1)</h3>
     /// <para>This canvas already suppresses those keys while a LABEL is being typed, because

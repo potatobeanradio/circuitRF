@@ -427,11 +427,12 @@ public static class PdnGraphExtractor
 
     /// <summary>The largest ε_r in the stackup — the shortest wavelength, so the LOWEST first cavity
     /// mode, so the earliest refusal. Taking a mean would put the ceiling above where the shunt
-    /// branch actually starts to matter on the worst layer pair.</summary>
-    /// <summary>The shortest wavelength on the board. <b><see cref="PdnMeshExtractor"/>'s</b> —
+    /// branch actually starts to matter on the worst layer pair.
+    ///
+    /// <para><b><see cref="PdnMeshExtractor"/>'s, and deliberately not a second reading of it</b> —
     /// the cavity-band refusal here and the mesh's own wavelength cell size are the same statement
     /// about the same stackup, and two readings of it could quietly come to disagree about where
-    /// Fast stops being honest.</summary>
+    /// Fast stops being honest.</para></summary>
     private static double LargestEpsilonR(Technology tech) => PdnMeshExtractor.LargestEpsilonR(tech);
 
     private static string Hz(double f) =>

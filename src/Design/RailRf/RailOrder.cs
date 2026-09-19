@@ -47,7 +47,18 @@ public static class RailOrder
     {
         var rails = doc.Rails.Select(r => r.Name).ToList();
         var index = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < rails.Count; i++) index.TryAdd(rails[i], i);
+
+        // Two rails of one name are a REFUSAL here and not an exception. RailDocumentIo already
+        // refuses such a document on read and on write, so this is reachable only from a document
+        // being edited in memory — and this method's own contract is that it never throws, because
+        // its callers are a window that has to put the sentence on a status strip and a verb that
+        // has to print it. Keying the Kahn dictionaries below on a duplicate name would throw
+        // instead, from inside a method documented not to.
+        for (int i = 0; i < rails.Count; i++)
+            if (!index.TryAdd(rails[i], i))
+                return new RailOrderResult([],
+                    $"Two rails are both called '{rails[i]}'. A rail's name is how --rail picks one " +
+                    "and how the solve order names one, so they are distinct.");
 
         if (Edges(doc, out var edges) is { } bad) return new RailOrderResult([], bad);
 

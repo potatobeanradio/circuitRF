@@ -56,6 +56,15 @@ public static class RefdesCell
     {
         if (cell is null || cell.Trim().Length == 0) return RefdesSet.Empty;
 
+        // "C1 - C9" is the same cell as "C1-C9" with a typist's spaces in it, and whitespace is one
+        // of the separators below — so without this the split hands the range to three pieces, two
+        // of which are ends and one of which is a bare hyphen. A bare hyphen then matches no pad and
+        // is REPORTED as a reference the board does not have, which is a worse answer than either
+        // reading of the cell. Closing the spaces up first lets the range expand as it was written.
+        cell = cell.Replace(" - ", "-").Replace(" – ", "–")
+                   .Replace(" -", "-").Replace("- ", "-")
+                   .Replace(" –", "–").Replace("– ", "–");
+
         var refdes = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var unexpanded = new List<string>();
@@ -65,6 +74,14 @@ public static class RefdesCell
         {
             string item = piece.Trim();
             if (item.Length == 0) continue;
+
+            // Punctuation on its own is never a reference. A cell that still holds a stray dash or
+            // a lone bullet after the normalisation above has a fragment nothing on the board is
+            // called, and inventing a reference out of it reports an unresolved part that was never
+            // a part — which reads as a broken board rather than as a cell this reader could not
+            // spell.
+            if (!item.Any(char.IsLetterOrDigit)) continue;
+
             pieces++;
 
             if (item.Contains('-', StringComparison.Ordinal) ||
