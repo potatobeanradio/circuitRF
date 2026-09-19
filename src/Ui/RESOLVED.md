@@ -1,5 +1,83 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the document, its window, and the binding that would never have fired (2026-09-19)
+
+brief-smith-4-document-window.md. The shell around the two panes: `SmithChartDocument`, the generator
+panel, the chrome, Tools ▸ Smith Chart and the On Launch row. The chart and network regions are
+placeholders for briefs 5 and 6.
+
+**A `RowDefinition` is not in the logical tree, so a binding on its size resolves against nothing —
+silently.** §5.2 wants the two splitter positions persisted in the document's `View` block, and the
+obvious spelling is `<RowDefinition Height="{Binding ViewModel.ChartRowHeight, Mode=TwoWay}"/>` with a
+`GridLength` pair on the view model. It compiles, including under
+`AvaloniaUseCompiledBindingsByDefault`, and it does nothing: a definition inherits no DataContext, so
+the binding never applies, the splitter moves, the document remembers nothing and no error is raised
+anywhere. **Nothing else in this application binds a definition's size**, which is the signal that
+found it. The fractions are plain `double`s on the view model now, living in `SmithView` rather than
+in a copy of it, and `SmithChartView.ApplySplitFractions` / `OnSplitterDragCompleted` apply and record
+them in code. Held by `SmithWindowTests.TheSplitterFractionsLiveInTheDocumentsViewBlock_AndAreAppliedInCode`,
+which scans the markup for the binding spelling as well as checking the round trip.
+
+Two smaller facts fell out of the same half hour. **`x:Name` on a `RowDefinition` or
+`ColumnDefinition` generates no field** — a definition is not a control and is not in the name scope —
+so the code-behind reaches them by index through a named `Grid`. And **the folder `src/Ui/Match/`
+holds namespace `CircuitRF.Ui.Matching`**, not `CircuitRF.Ui.Match`; `MatchValueFormat` and
+`MatchQuantity` are there.
+
+**`IUndoableDocument`, where `R-smith4-1` names `IEditHistoryDocument`.** The requirement is about
+REACH: the shell's Undo command is typed to `IEditHistoryDocument` because a floating Data Display
+once undid an edit in an unfocused schematic, macOS's menu bar being app-global. `IUndoableDocument`
+*is* an `IEditHistoryDocument` — the interface's own doc comment calls it "the shortcut for every
+editable document whose edit history IS an `UndoRedoStack`" — so taking it satisfies the dispatch,
+costs no code for the six members, and gives the menu item a real description (`Undo "Conjugate
+generator"`) instead of the bare verb the Data Display is stuck with. The Data Display implements the
+smaller interface only because its history is the ported `UndoRedoManager`; there was no reason to
+copy that limitation.
+
+**Every edit REPLACES the design object, and two things follow from that.** The undo entry is
+`SmithSnapshotCommand`, `EmSetupSnapshotCommand`'s shape: whole document before, whole document after,
+through `SmithDesignIo.SerializeUnvalidated`. It is the right grain here because `R-smith4-7`'s
+Conjugate must be *one* entry a single Undo unwinds completely and an import replaces the whole table
+— both are one snapshot pair with no composite to build. But `SmithDesign.Elements` and
+`SmithGenerator.Rows` are get-only collections, so a restore cannot patch in place and has to assign a
+fresh design. So:
+
+- **the generator row view models hold a reference to their row and are rebuilt after every commit**,
+  and selection is kept by FREQUENCY. By reference it would never match after a restore; by index it
+  would follow the POSITION, so editing a frequency would leave the selection on whichever row slid
+  into the old slot.
+- **a mutation that does not go through `Edit` is invisible to the history**, and anything that
+  drains and replays the stack discards it. That cost a wrong test first: the conjugate gate seeded
+  two reactances straight onto the design, then counted entries by draining and redoing, and measured
+  the conjugate of zero. Every mutation goes through `Edit`, in the tests as in the window.
+
+**A scratch `.csmith` opens on one generator row, 50 Ω at 2 GHz, with the design frequency on it.** An
+empty generator table is a `SmithDesign.Refusal`, so a blank document would open showing its own error
+message and the user's first act would be dismissing a complaint about a document they had not written
+yet. harmonicaRF's `NewHarmonica` states the same rule for the same reason.
+
+**The Tools menu's both-surfaces rule lives in `HarmonicaDocumentTests`, and it is an EXACT ordered
+list.** Adding an entry to `WorkspaceWindow.axaml` means editing that test, on both surfaces, in the
+same change — which is the gate working rather than the gate being in the way. `SmithWindowTests` adds
+its own count check (twice and no more, once per surface) beside it.
+
+**What this brief deliberately left for 5 and 6.** `R-smith4-9` lists File, Edit, View and Insert menu
+contributions. File and Edit are the shell's own and needed no code — the document's four interfaces
+are what makes them work. **View ▸ Zoom to Fit and Insert ▸ the element vocabulary were NOT added**:
+with no chart and no network strip they would be dead menu items, and §6 of the brief forbids building
+either pane here. They belong with the panes they act on. The shell already has a per-document Zoom to
+Fit dispatch (`WBondDocument.RequestZoomToFit`'s branch) for brief 5 to join.
+
+Gate: `tests/Ui.Tests/Smith/SmithWindowTests.cs` — nine tests, all passing, plus the updated
+`HarmonicaDocumentTests` menu parity. Four of the nine are source scans because `WorkspaceViewModel`
+cannot be constructed headlessly; the document, its view model, its history and its save route are all
+driven directly, which is itself part of `R-smith4-1`'s claim.
+
+*Unrelated flake seen while running the neighbours:*
+`RailWindowChromeTests.RailRfIsAStandaloneWindowInCircuitRfsOwnWindowMenu` failed once in a
+667-test filtered run and passes in isolation; nothing in this change touches `src/Ui/Views/RailRf/`
+or `CrfWindowMenu.cs`.
+
 ## railRF — the |Z| map needed a DC run to draw its own ports, and no way back to the box (2026-09-19)
 
 Three more from the owner driving the |Z| tab, all of them states the first pass created or left.

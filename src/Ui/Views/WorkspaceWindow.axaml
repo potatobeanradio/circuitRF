@@ -184,6 +184,13 @@
                              own reason — what needs one is the import's default of landing the
                              artwork in it as a cell, and railRF offers to create one there. -->
                         <NativeMenuItem Header="railRF" Command="{Binding NewRailRfCommand}"/>
+                        <!-- Smith Chart (smith-chart.md §5.8). The ONE entry here that opens a DOCKED
+                             DOCUMENT rather than a window of its own — R-smith4-1, and the reason is
+                             that this tool has neither of the reasons the other three have. No
+                             workspace is needed, so there is no gating here either. Mirrored in the
+                             in-window Tools menu below; the two surfaces are hand-maintained and must
+                             not drift. -->
+                        <NativeMenuItem Header="Smith Chart" Command="{Binding NewSmithChartCommand}"/>
                         <NativeMenuItemSeparator/>
                         <!-- Examples: the rows are filled in by RebuildNativeExamplesMenu, because
                              what is shipped is read off disk rather than listed here, and the whole
@@ -765,6 +772,13 @@
                           Command="{Binding NewRailRfCommand}"
                           ToolTip.Tip="Power-distribution analysis on a real board — the drop map, the ranked breakdown, the via check and Z(f). Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="CurrentDc" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- Smith Chart — hand-mirrored with the macOS NativeMenu above, as every other
+                     menu on these two surfaces is. -->
+                <MenuItem Header="_Smith Chart"
+                          Command="{Binding NewSmithChartCommand}"
+                          ToolTip.Tip="Match an impedance by hand on a Smith chart — a generator impedance, a cascade of elements, and a curve per element showing where it takes you. Opens as a document, with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ChartDonut" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator IsVisible="{Binding HasExamples}"/>
                 <!-- Examples — hand-mirrored with the macOS NativeMenu above. The rows come from the

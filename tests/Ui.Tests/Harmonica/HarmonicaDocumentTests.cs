@@ -74,13 +74,21 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         // at run time from what is on disk, so only the entry itself is here. "railRF" joined on
         // 2026-09-18 (brief-railrf-7-window.md, railrf.md §11.4) and needs no workspace to open, for
         // harmonicaRF's own reason — so it is ungated here exactly as the other two are.
-        Assert.Equal(["harmonicaRF", "Match Designer", "railRF", "Examples"], nativeEntries);
+        //
+        // "Smith Chart" joined on 2026-09-19 (brief-smith-4-document-window.md R-smith4-9) and is
+        // the one entry here that opens a DOCKED DOCUMENT rather than a window of its own — the
+        // Smith Chart tool has neither of the reasons the other three have (smith-chart.md §5.1).
+        // It is ungated for harmonicaRF's reason too: it needs no workspace.
+        Assert.Equal(["harmonicaRF", "Match Designer", "railRF", "Smith Chart", "Examples"],
+                     nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewRailRfCommand") == true);
+        Assert.Contains(native[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewSmithChartCommand") == true);
         Assert.DoesNotContain(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
 
@@ -94,13 +102,16 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF", "_Match Designer", "_railRF", "_Examples"], inWindowEntries);
+        Assert.Equal(["_harmonicaRF", "_Match Designer", "_railRF", "_Smith Chart", "_Examples"],
+                     inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewRailRfCommand") == true);
+        Assert.Contains(inWindow[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewSmithChartCommand") == true);
         Assert.DoesNotContain(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
     }

@@ -19,6 +19,8 @@
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
              xmlns:harm="using:CircuitRF.Ui.Harmonica"
              xmlns:harmv="using:CircuitRF.Ui.Views.Harmonica"
+             xmlns:sm="using:CircuitRF.Ui.Smith"
+             xmlns:smv="using:CircuitRF.Ui.Views.Smith"
              xmlns:wb="using:CircuitRF.Ui.WBond"
              xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
              xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
@@ -118,6 +120,12 @@
 
         <DataTemplate DataType="{x:Type wb:WBondDocument}">
             <wbv:WBondEditorView/>
+        </DataTemplate>
+
+        <!-- The Smith Chart tool is a DOCUMENT and not an application (smith-chart.md §5.1), so it
+             appears here beside the other document kinds rather than owning a window of its own. -->
+        <DataTemplate DataType="{x:Type sm:SmithChartDocument}">
+            <smv:SmithChartView/>
         </DataTemplate>
     </Application.DataTemplates>
 

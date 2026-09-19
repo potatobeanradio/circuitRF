@@ -10,6 +10,7 @@ using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.WBond;
 
@@ -122,7 +123,8 @@ public partial class WorkspaceViewModel
     /// </summary>
     internal static bool HasSaveRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
-        EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument;
+        EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
+        SmithChartDocument;
 
     /// <summary>
     /// True when this document kind can be written to a DIFFERENT file and followed there afterwards.
@@ -139,7 +141,8 @@ public partial class WorkspaceViewModel
     /// </summary>
     internal static bool HasSaveAsRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
-        EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument;
+        EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
+        SmithChartDocument;
 
     /// <summary>Unsaved work in THIS document — the same per-kind test <c>CanSaveAllDocuments</c>
     /// applies to the active one. A never-saved wBond or harmonicaRF document counts even when clean:
@@ -154,6 +157,7 @@ public partial class WorkspaceViewModel
         DataDisplayDocument d   => d.ViewModel.Window.HasUnsavedChanges(),
         WBondDocument d         => d.IsDirty || d.FilePath is null,
         HarmonicaDocument d     => d.IsDirty || d.FilePath is null,
+        SmithChartDocument d    => d.IsDirty || d.FilePath is null,
         _                       => false,
     };
 
@@ -196,6 +200,7 @@ public partial class WorkspaceViewModel
                 case DataDisplayDocument d:  await SaveDataDisplayDoc(d, window);                 break;
                 case WBondDocument d:        await SaveWBondDoc(d, window);                       break;
                 case HarmonicaDocument d:    await SaveHarmonicaDoc(d, window, saveAs: false);    break;
+                case SmithChartDocument d:   await SaveSmithChartDoc(d, window, saveAs: false);   break;
                 case TechDocument d:         d.ViewModel.SaveCommand.Execute(null);               break;
                 case EmSetupDocument d:      d.ViewModel.SaveCommand.Execute(null);               break;
             }
@@ -226,6 +231,7 @@ public partial class WorkspaceViewModel
                 case DataDisplayDocument d:  await SaveDataDisplayDoc(d, window, saveAs: true);   break;
                 case WBondDocument d:        await SaveWBondDoc(d, window, saveAs: true);         break;
                 case HarmonicaDocument d:    await SaveHarmonicaDoc(d, window, saveAs: true);     break;
+                case SmithChartDocument d:   await SaveSmithChartDoc(d, window, saveAs: true);    break;
                 case TechDocument d:         await SaveTechAs(d, window);                         break;
                 case EmSetupDocument d:      await SaveEmSetupAs(d, window);                      break;
             }
@@ -262,6 +268,22 @@ public partial class WorkspaceViewModel
     private async Task SaveHarmonicaDoc(HarmonicaDocument doc, Window owner, bool saveAs)
     {
         if (await HarmonicaDocumentSave.RunAsync(doc, owner, this, saveAs) is { } error)
+            Messages.Error(error);
+    }
+
+    /// <summary>
+    /// A Smith Chart document's own Save/Save As.
+    /// </summary>
+    /// <remarks>
+    /// The implementation is <see cref="SmithChartDocumentSave"/>'s, for the reason that type's own
+    /// remarks give: a background tab's content is created on demand, so a route that started at the
+    /// view would silently do nothing on the tab the user actually right-clicked. A refusal here is
+    /// <c>SmithDesign.Refusal</c>'s sentence, raised BEFORE anything reaches the disk — a document
+    /// that cannot be read back is a document that was never written.
+    /// </remarks>
+    private async Task SaveSmithChartDoc(SmithChartDocument doc, Window owner, bool saveAs = false)
+    {
+        if (await SmithChartDocumentSave.RunAsync(doc, owner, this, saveAs) is { } error)
             Messages.Error(error);
     }
 

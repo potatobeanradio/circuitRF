@@ -1,0 +1,354 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sm="using:CircuitRF.Ui.Smith"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Smith.SmithChartView"
+             x:DataType="sm:SmithChartDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- ══ The Smith Chart document's window ═════════════════════════════════════════════════════
+         brief-smith-4-document-window.md R-smith4-3/-4/-5/-7/-8; docs/design/smith-chart.md §5.2/§5.3.
+
+         THREE REGIONS AND A STATUS STRIP, in the proportions §5.2's sketch sets: a narrow generator
+         column on the left, the chart taking the large majority of the area because THE CHART IS THE
+         TOOL, the network strip below it, and a strip across the foot that states numbers. The two
+         splitters are draggable and their positions persist in the document's own View block.
+
+         THE CHART PANE AND THE NETWORK PANE ARE STUBS HERE. Briefs 5 and 6 fill them; this brief's
+         job is the shell around them, and R-smith4-1's whole claim is that the shell is inherited
+         rather than written — there is no Window subclass anywhere in this folder, and if one ever
+         appears, that requirement has been missed.
+
+         THE CHROME IS BORROWED AND NOT INVENTED (R-smith4-4). Border.pane / Border.card, sentence-case
+         headings, label left and value right in one right-aligned column, centred text on buttons and
+         comboboxes, compact sliders, a status strip with numbers in it. match.md §9 and railrf.md
+         §11.1-§11.2 settled all of it over roughly ten rounds of owner review; MatchDesignerWindow is
+         the reference and these styles are transcribed from it rather than re-decided.
+
+         EVERY EDITABLE VALUE IS AN InlineEditText (R-smith4-5, owner instruction, and the word is
+         every). The generator table's f, R and X cells; the chart Z0; the design frequency. Brief 6's
+         slider values and element names and brief 9's sweep and Q rows join them under the same rule.
+         There is deliberately NO bare TextBox bound two-way to a design value in this folder, and the
+         gate scans for one. Do not write a fourth inline editor here; that is the trap the rule
+         closes.
+
+         THE HOSTING IS THE IN-PLACE ONE (R-smith4-6). The generator table is the only grid of cells in
+         this window and its three columns are fixed-width by construction — a frequency and two ohm
+         values — so the box swaps in place and nothing moves. Nothing in this series needs the
+         floating Canvas overlay, which is the more delicate of the two; if it starts to look
+         necessary, the column widths are the thing to fix.
+    ═════════════════════════════════════════════════════════════════════════════════════════════ -->
+
+    <UserControl.Styles>
+        <!-- ── The panel language, transcribed from MatchDesignerWindow ──────────────────────────
+             Two tiers, and the whole point is that they are DIFFERENT: a pane is
+             SystemChromeMediumLowColor, a card inside it SystemChromeLowColor, so a group reads as a
+             thing sitting ON the panel rather than as a rectangle drawn on it. -->
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+
+        <!-- Sentence case, never shouted (owner, on the Match Designer, same round). -->
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize"          Value="10"/>
+            <Setter Property="Opacity"           Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector=":is(TextBlock).warn">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+
+        <!-- A click-to-sort-style column header stays LEFT-aligned with its column — the one standing
+             exception to "centred text", and the reason is that the text under it starts at the
+             column's own left edge, so any centring here is a misalignment the user can see. These
+             three are not sortable (the table is sorted by frequency by construction), but they are
+             column headers and they follow the column-header rule. -->
+        <Style Selector="TextBlock.gridhdr">
+            <Setter Property="FontSize"            Value="10"/>
+            <Setter Property="FontWeight"          Value="SemiBold"/>
+            <Setter Property="Opacity"             Value="0.7"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+
+        <!-- A settable value in a label-left/value-right row: the numbers form ONE right-aligned
+             column whether the row is settable or read-only. -->
+        <Style Selector="ctl|InlineEditText.val">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        </Style>
+
+        <!-- A DISABLED settable value has to LOOK disabled, and nothing else in the stack makes it:
+             an InlineEditText at rest is a bare TextBlock, and Avalonia's Fluent theme dims neither a
+             disabled TextBlock nor a disabled Panel, so a field that is switched off reads exactly
+             like one that is on and simply swallows the double-click. -->
+        <Style Selector="ctl|InlineEditText:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+
+        <!-- THE OFFENDING INPUT TURNS RED (§5.3). The strip's sentence names the span with its numbers
+             in it; this is the other half of that one mechanism, so the reader does not have to hunt
+             for which field the sentence is about. -->
+        <Style Selector="ctl|InlineEditText.bad">
+            <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+
+        <!-- Centred text on buttons (§5.3). -->
+        <Style Selector="Button.panel">
+            <Setter Property="FontSize"                    Value="11"/>
+            <Setter Property="Padding"                     Value="6,3"/>
+            <Setter Property="HorizontalContentAlignment"  Value="Center"/>
+            <Setter Property="HorizontalAlignment"         Value="Stretch"/>
+        </Style>
+        <Style Selector="Button.tiny">
+            <Setter Property="FontSize"                   Value="11"/>
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Width"                      Value="22"/>
+            <Setter Property="Height"                     Value="20"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+        </Style>
+
+        <!-- The generator table virtualizes and reads as rows rather than as a pick list — the same
+             answer TechEditorView's row lists and the Match Designer's solutions list both settled
+             on, including the class name. -->
+        <Style Selector="ListBox.rows">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Margin"                     Value="0"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <!-- Compact sliders (§5.3) — no explicit Height, which would squash the thumb off-centre; a
+             negative vertical margin that pulls the layout footprint back in. Declared here rather
+             than in brief 6 so the strip's rows are the same height whoever adds the first slider. -->
+        <Style Selector="Slider.compact">
+            <Setter Property="Margin"            Value="4,-7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- The two splits are the document's own View block, applied and written back in CODE rather
+         than bound: a RowDefinition is not in the logical tree, inherits no DataContext, and a
+         binding on its Height resolves against nothing — silently, with the splitter simply not
+         remembering anything. See SmithChartView.ApplySplitFractions.
+
+         A drag is NOT an edit: it pushes no undo entry and raises no dirty mark. -->
+    <Grid Name="RootGrid">
+        <Grid.RowDefinitions>
+            <!-- Row 0 the chart, row 2 the network strip. Named through the GRID and reached by
+                 index from the code-behind: x:Name on a definition generates no field, because a
+                 definition is not a control and is not in the name scope. -->
+            <RowDefinition Height="0.65*" MinHeight="120"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="0.35*" MinHeight="80"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ══ Top region: the generator column and the chart ═══════════════════════════════════ -->
+        <Grid Grid.Row="0" Name="TopRegion">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="0.22*" MinWidth="210"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="0.78*" MinWidth="200"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ── The generator panel (R-smith4-7) ────────────────────────────────────────────── -->
+            <Border Grid.Column="0" Classes="pane">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Classes="panelhdr" Text="Generator"/>
+
+                        <!-- The table. THREE FIXED-WIDTH COLUMNS, which is what makes R-smith4-6's
+                             in-place hosting the right one: a frequency and two ohm values, and no
+                             column here is width-shared with anything. -->
+                        <Border Classes="card">
+                            <StackPanel>
+                                <Grid ColumnDefinitions="86,*,*" Margin="0,0,0,2">
+                                    <TextBlock Grid.Column="0" Classes="gridhdr" Text="f"/>
+                                    <TextBlock Grid.Column="1" Classes="gridhdr" Text="R"/>
+                                    <TextBlock Grid.Column="2" Classes="gridhdr" Text="X"/>
+                                </Grid>
+
+                                <ListBox Classes="rows" MaxHeight="190"
+                                         ItemsSource="{Binding ViewModel.GeneratorRows}"
+                                         SelectedItem="{Binding ViewModel.SelectedRow, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="sm:SmithGeneratorRowViewModel">
+                                            <Grid ColumnDefinitions="86,*,*" Margin="0,1">
+                                                <ctl:InlineEditText Grid.Column="0" Classes="val"
+                                                                    HorizontalContentAlignment="Left"
+                                                                    Text="{Binding FrequencyEntry, Mode=TwoWay}"
+                                                                    ToolTip.Tip="Double-click to edit. Type a unit (2, 2 GHz, 1800 MHz) — the number is pre-selected and the unit is left alone. Rows are kept sorted by frequency."/>
+                                                <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                                    Text="{Binding ResistanceEntry, Mode=TwoWay}"
+                                                                    ToolTip.Tip="The generator's resistance at this frequency. Double-click to edit."/>
+                                                <ctl:InlineEditText Grid.Column="2" Classes="val" Margin="4,0,0,0"
+                                                                    Text="{Binding ReactanceEntry, Mode=TwoWay}"
+                                                                    ToolTip.Tip="The generator's reactance at this frequency — negative is the ordinary case. Double-click to edit."/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0"
+                                            HorizontalAlignment="Right">
+                                    <Button Classes="tiny" Content="+"
+                                            Command="{Binding ViewModel.AddGeneratorRowCommand}"
+                                            ToolTip.Tip="Add a row, above the top of the table so it does not collide with one that is already there."/>
+                                    <!-- The last row cannot be removed: an empty generator table is a
+                                         refusal, so a button that could produce one would only ever
+                                         break the document. -->
+                                    <Button Classes="tiny" Content="−"
+                                            Command="{Binding ViewModel.RemoveGeneratorRowCommand}"
+                                            ToolTip.Tip="Remove the selected row. The last row stays — this tool starts from an impedance, so the table is never empty."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Import / Re-import / Conjugate. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="4">
+                                <Button Classes="panel" Name="ImportS1pButton" Content="Import .s1p…"
+                                        Click="OnImportS1pClick"
+                                        ToolTip.Tip="Read a one-port Touchstone file. Its rows REPLACE the table, and the path is recorded as provenance only — the numbers are copied in, so this document stays portable if the file moves."/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <!-- Provenance, not a reference. Nothing resolves this at load, which
+                                         is why a moved file cannot stop a document opening. -->
+                                    <TextBlock Classes="note" Grid.Column="0" TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap" VerticalAlignment="Center"
+                                               Text="{Binding ViewModel.SourcePathDisplay}"
+                                               IsVisible="{Binding ViewModel.HasSourcePath}"
+                                               ToolTip.Tip="{Binding ViewModel.SourcePathDisplay}"/>
+                                    <Button Grid.Column="1" Classes="panel" Content="Re-import"
+                                            Margin="4,0,0,0"
+                                            IsVisible="{Binding ViewModel.HasSourcePath}"
+                                            Command="{Binding ViewModel.ReimportGeneratorCommand}"
+                                            ToolTip.Tip="Repeat the read from the file above."/>
+                                </Grid>
+
+                                <Button Classes="panel" Content="Conjugate"
+                                        Command="{Binding ViewModel.ConjugateCommand}"
+                                        ToolTip.Tip="Negate every row's reactance, once. One undo entry, and not a persistent flag — pressing it twice puts the table back."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Label left, value right, in one right-aligned column. -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="cardhdr" Text="Chart"/>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Z₀"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        Text="{Binding ViewModel.ChartZ0Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="One real, document-wide reference impedance. Γ is taken against it and every overlay is renormalized to it. Double-click to edit."/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Classes="detailLabel" Text="Design f"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
+                                                        Classes.bad="{Binding ViewModel.IsDesignFrequencyInvalid}"
+                                                        Text="{Binding ViewModel.DesignFrequencyEntry, Mode=TwoWay}"
+                                                        ToolTip.Tip="What the trajectories are drawn at and what the strip reports. It need not be a row of the table, but it must lie inside the table's span — the generator impedance is interpolated between rows, never extrapolated past them."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The panel space briefs 8 and 9 fill. Left as a NOTE rather than as empty
+                             cards: a card with nothing in it reads as a control that failed to load,
+                             and this brief must not build the sweep row, the Q row or the overlays
+                             list (§6). -->
+                        <TextBlock Classes="note" Margin="2,6,2,0"
+                                   Text="The swept band and the constant-Q arcs (brief 9) and the overlays list (brief 8) take the space below."/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"
+                          Background="Transparent"
+                          DragCompleted="OnSplitterDragCompleted"/>
+
+            <!-- ── The chart (brief 5) ──────────────────────────────────────────────────────────
+                 THE CHART IS THE TOOL and takes the large majority of the area; that proportion is
+                 the point of §5.2's sketch and it is set here, by the row and column defaults on the
+                 document's View block, rather than by whatever brief 5 happens to drop in. -->
+            <Border Grid.Column="2" Classes="pane" Name="ChartRegion">
+                <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextAlignment="Center"
+                           Text="The chart — one Smith chart, one curve per element, a gripper at every joint.&#10;Brief 5 fills this region."/>
+            </Border>
+        </Grid>
+
+        <GridSplitter Grid.Row="1" Height="4" ResizeDirection="Rows"
+                      HorizontalAlignment="Stretch" Background="Transparent"
+                      DragCompleted="OnSplitterDragCompleted"/>
+
+        <!-- ══ The network strip (brief 6) ══════════════════════════════════════════════════════
+             Tall enough for one row of symbols plus the selected element's sliders. -->
+        <Border Grid.Row="2" Classes="pane" Name="NetworkRegion">
+            <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       Text="The network — the cascade drawn through the schematic renderer, its Add/Insert/Delete/reorder&#10;controls, the selected element's sliders and the mirror button. Brief 6 fills this region."/>
+        </Border>
+
+        <!-- ══ The status strip (R-smith4-8) ════════════════════════════════════════════════════
+             ALWAYS ON SCREEN, and it STATES NUMBERS. Every one of them is the number the evaluator
+             produced, formatted by MatchValueFormat — never re-derived for display, because a second
+             spelling of "the load impedance" is a second answer nobody can tell apart from the first.
+
+             A refusal appears here WITH ITS NUMBERS IN IT and turns the offending input red; the two
+             are one mechanism, not a sentence plus a separate hunt. It replaces the reading rather
+             than sitting beside it: two rows of text, one of them in the warning colour, read as two
+             different problems. -->
+        <Border Grid.Row="3" Classes="pane" Margin="4,0,4,4" Padding="10,4">
+            <Grid ColumnDefinitions="*">
+                <SelectableTextBlock Name="StatusStrip" Classes="note" VerticalAlignment="Center"
+                                     Text="{Binding ViewModel.StatusLine}"
+                                     IsVisible="{Binding !ViewModel.HasRefusal}"/>
+                <SelectableTextBlock Name="RefusalStrip" Classes="warn" VerticalAlignment="Center"
+                                     Text="{Binding ViewModel.Refusal}"
+                                     IsVisible="{Binding ViewModel.HasRefusal}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

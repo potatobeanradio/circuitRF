@@ -8,7 +8,37 @@ using CircuitRF.Ui.Messages;
 
 namespace CircuitRF.Ui.Theming;
 
-public enum LaunchAction { Welcome, NewSchematic, NewWorkspace, OpenWorkspace, NewDataDisplay, NewSymbol, NewLayout, NewHarmonica }
+/// <summary>
+/// Settings ▸ General ▸ <b>On Launch Action</b> — what the shell opens with.
+///
+/// <para><b>Serialized as an ORDINAL, and the combobox that sets it is a positional
+/// <c>string[]</c> whose index is cast straight back to this enum</b>
+/// (<c>SettingsView.LoadGeneralPrefs</c>). So a member is <b>APPENDED, never inserted</b>, and that
+/// array is appended to in the SAME change — reordering either one silently changes what every
+/// already-saved <c>preferences.json</c> means, with no error anywhere and no way for the user to
+/// tell that their setting moved. <c>SmithWindowTests</c> asserts the two against each
+/// other so the next person cannot get it wrong quietly.</para>
+///
+/// <para><b>Every member is a DOCUMENT</b>, which is why railRF and wBond are absent: each of those
+/// opens a window of its own, and there is nothing for the shell to restore or to hand a launch to.
+/// <see cref="NewSmithChart"/> qualifies precisely because <c>smith-chart.md</c> §5.1 made the Smith
+/// Chart a document.</para>
+/// </summary>
+public enum LaunchAction
+{
+    Welcome,
+    NewSchematic,
+    NewWorkspace,
+    OpenWorkspace,
+    NewDataDisplay,
+    NewSymbol,
+    NewLayout,
+    NewHarmonica,
+
+    /// <summary>A new scratch <c>.csmith</c> (smith-chart.md §5.9, owner instruction). APPENDED —
+    /// see this type's own remarks.</summary>
+    NewSmithChart,
+}
 
 /// <summary>
 /// Settings ▸ On Launch ▸ <b>Window Layout</b> — the dock arrangement the shell opens with, and the

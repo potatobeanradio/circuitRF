@@ -34,6 +34,7 @@ using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using CircuitRF.Ui.Layout;
@@ -101,6 +102,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private readonly List<SymbolEditorDocument> _scratchSymbols      = [];
     private readonly List<DataDisplayDocument>  _scratchDataDisplays = [];
     private readonly List<HarmonicaDocument>    _scratchHarmonicas   = [];
+    private readonly List<SmithChartDocument>   _scratchSmithCharts  = [];
     private readonly List<LayoutDocument>       _scratchLayouts      = [];
 
     // ---- Technology cache (L0c) -----------------------------------------------
@@ -1311,6 +1313,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 _factory.RemoveWelcomeStub();
                 NewHarmonica();
                 break;
+
+            // smith-chart.md §5.9 — possible at all only BECAUSE R-smith4-1 made this a document;
+            // railRF and wBond are absent from this list for exactly the reason they are not.
+            case LaunchAction.NewSmithChart:
+                _factory.RemoveWelcomeStub();
+                NewSmithChart();
+                break;
         }
     }
 
@@ -1356,6 +1365,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case LaunchAction.NewHarmonica:
                 _factory.RemoveWelcomeStub();
                 NewHarmonica();
+                break;
+
+            // smith-chart.md §5.9 — possible at all only BECAUSE R-smith4-1 made this a document;
+            // railRF and wBond are absent from this list for exactly the reason they are not.
+            case LaunchAction.NewSmithChart:
+                _factory.RemoveWelcomeStub();
+                NewSmithChart();
                 break;
         }
     }
@@ -1448,6 +1464,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchLayouts.Clear();
             _scratchDataDisplays.Clear();
             _scratchHarmonicas.Clear();
+            _scratchSmithCharts.Clear();
             _registry.Clear();
             _layoutRegistry.Clear();
             ResetTechCache();
@@ -2358,6 +2375,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
             _scratchHarmonicas.Clear();
+        _scratchSmithCharts.Clear();
         _registry.Clear();
         _layoutRegistry.Clear();
         ResetTechCache();
@@ -3049,6 +3067,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var stillOpenScratchLayouts      = _scratchLayouts.Where(d      => !IsDockableDocked(d)).ToList();
         var stillOpenScratchDataDisplays = _scratchDataDisplays.Where(d => !IsDockableDocked(d)).ToList();
         var stillOpenScratchHarmonicas   = _scratchHarmonicas.Where(d   => !IsDockableDocked(d)).ToList();
+        var stillOpenScratchSmithCharts  = _scratchSmithCharts.Where(d  => !IsDockableDocked(d)).ToList();
 
         _openDocsByPath.Clear();
         foreach (var dockable in stillOpen)
@@ -3060,6 +3079,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 LayoutDocument lad               => lad.FilePath,
                 DataDisplayDocument dd           => dd.FilePath,
                 HarmonicaDocument had            => had.FilePath,
+                SmithChartDocument smd           => smd.FilePath,
                 TechDocument td                  => td.FilePath,
                 EmSetupDocument emd           => emd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
@@ -3074,6 +3094,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Clear();      _scratchLayouts.AddRange(stillOpenScratchLayouts);
         _scratchDataDisplays.Clear(); _scratchDataDisplays.AddRange(stillOpenScratchDataDisplays);
         _scratchHarmonicas.Clear();   _scratchHarmonicas.AddRange(stillOpenScratchHarmonicas);
+        _scratchSmithCharts.Clear();  _scratchSmithCharts.AddRange(stillOpenScratchSmithCharts);
 
         // Session registries: NOT a blanket Clear() — a surviving floated schematic/layout's own
         // push-in session must stay registered.
@@ -9292,22 +9313,89 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string full = Path.GetFullPath(path);
         string name = Path.GetFileName(full);
 
+        // A SECOND OPEN FOCUSES THE FIRST (R-smith4-1) — the single-instance rule every document
+        // type here follows. Through the one helper and not a bare SetActiveDockable: a document
+        // torn off into its own window has to be RAISED, not merely selected behind the shell.
+        if (_openDocsByPath.TryGetValue(full, out var already))
+        {
+            ActivateOpenDocument(already);
+            return;
+        }
+
         try
         {
-            var design = SmithDesignIo.LoadFromFile(full);
+            // SmithChartDocument.Open is what refuses a file from a newer circuitRF and what runs
+            // SmithDesign.Refusal, so the two things that can be wrong with a `.csmith` are in front
+            // of whoever opened it rather than discovered later by a window that half-opened.
+            var doc = SmithChartDocument.Open(full);
 
-            // Brief 4 replaces this with the window. Until then, saying what was read is better than
-            // saying nothing: the alternative is a double-click that appears to do nothing at all,
-            // which is the exact failure this registration exists to have fixed.
-            Messages.Info(
-                $"{name}: read a Smith Chart design with {design.Elements.Count} element(s) and "
-              + $"{design.Generator.Rows.Count} generator row(s). The Smith Chart window is not "
-              + "built yet.");
+            _openDocsByPath[full] = doc;
+            _factory.OpenDocument(doc);
         }
         catch (Exception ex)
         {
-            // The house rule: report, never fail silently and never substitute.
+            // The house rule: report, never fail silently and never substitute. A read refusal
+            // belongs in the Messages panel rather than as an exception out of a double-click
+            // (R-smith4-2).
             Messages.Error($"Could not open {name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Tools ▸ Smith Chart — a new scratch <c>.csmith</c> (<c>R-smith4-9</c>, smith-chart.md §5.8).
+    /// </summary>
+    /// <remarks>
+    /// <b>A docked tab, not a window of its own</b>, which is the whole of <c>R-smith4-1</c>:
+    /// harmonicaRF and wBond each open a window because each ships as a standalone binary, and
+    /// railRF because its centre panel is the layout editor's canvas. This has neither reason.
+    ///
+    /// <para><b>No workspace is needed</b>, deliberately, for harmonicaRF's own reason — the tool
+    /// starts from a generator impedance and a cascade, and none of that comes from a drawing. Save
+    /// As is what gives a scratch document a home.</para>
+    /// </remarks>
+    [RelayCommand]
+    private void NewSmithChart()
+    {
+        var doc = new SmithChartDocument(NextSmithChartTitle(), new SmithChartViewModel());
+        _scratchSmithCharts.Add(doc);
+        _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// A Smith Chart document has just been written to <paramref name="path"/>. Registers it by path
+    /// (so opening it from the tree activates the tab rather than opening a second one) and refreshes
+    /// the tree, so a <c>.csmith</c> saved into an open workspace appears WITHOUT a reload.
+    /// </summary>
+    public void NotifySmithSaved(SmithChartDocument doc, string path)
+    {
+        string full = Path.GetFullPath(path);
+
+        // A Save-As moves the document to a new key; leaving the old one would make the tree open a
+        // stale tab for a file that document no longer is.
+        foreach (var stale in _openDocsByPath.Where(kv => ReferenceEquals(kv.Value, doc))
+                                             .Select(kv => kv.Key).ToList())
+            _openDocsByPath.Remove(stale);
+
+        _scratchSmithCharts.Remove(doc);
+        _openDocsByPath[full] = doc;
+
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <summary>Lowest free "Untitled-Smith-N" across open Smith Chart documents — the same shape
+    /// <see cref="NextHarmonicaTitle"/> and <see cref="NextDataDisplayTitle"/> already use.</summary>
+    private string NextSmithChartTitle()
+    {
+        const string prefix = "Untitled-Smith-";
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchSmithCharts) used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is SmithChartDocument sd) used.Add(sd.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate)) return candidate;
         }
     }
 
@@ -15154,6 +15242,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // Smith Chart document — the same three answers as every other document type, and the same
+        // rule for a cancelled picker: SaveSmithChartDoc leaves the document dirty when the user backs
+        // out, and that must cancel the close too, or "Save" would quietly behave as "Don't Save".
+        if (dockable is SmithChartDocument smithCloseDoc && smithCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{smithCloseDoc.Title?.TrimStart('•', ' ')}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: return true;
+                case SaveChangesResult.Save:
+                    await SaveSmithChartDoc(smithCloseDoc, window);
+                    return !smithCloseDoc.IsDirty;
+                default:                         return false;
+            }
+        }
+
         // Data display document.
         if (dockable is DataDisplayDocument ddDoc && ddDoc.ViewModel.Window.HasUnsavedChanges())
         {
@@ -15204,6 +15313,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchLayouts.Remove(scratchLayout);
         if (dockable is WBondDocument scratchWBond)
             _scratchWBonds.Remove(scratchWBond);
+        if (dockable is SmithChartDocument scratchSmith)
+            _scratchSmithCharts.Remove(scratchSmith);
 
         // A .ctech editor being disposed for ANY reason (not just the confirmed-dirty-close path
         // above — e.g. a force-close, or a bug in some other path that skips the confirm hook) must
@@ -15330,6 +15441,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     return;
                 }
                 await SaveWBondDoc(activeWBond, window);
+                return;
+            }
+
+            // Active Smith Chart — same rule as the data display and the wBond above: the focused
+            // document's own Save. A scratch one has no path yet, so its first Save is the one that
+            // creates it and "clean" is not the same as "nothing to do".
+            if (ResolveActiveDocumentForCommands() is SmithChartDocument activeSmith)
+            {
+                if (!activeSmith.IsDirty && activeSmith.FilePath is not null)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveSmithChartDoc(activeSmith, window);
                 return;
             }
 
@@ -15669,6 +15794,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _scratchWBonds.Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<WBondDocument>().Any(d => d.IsDirty && Keep(d))
+            || _scratchSmithCharts.Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<SmithChartDocument>().Any(d => d.IsDirty && Keep(d))
             || HasOrphanedDirtySession()
             || HasOrphanedDirtyLayoutSession();
     }
