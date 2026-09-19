@@ -910,6 +910,212 @@ public class RailWindowTests
         return m.Success ? m.Groups[1].Value : null;
     }
 
+    // ══ Owner round, 2026-09-18 — what the window showed when nothing was loaded ════════════════
+
+    /// <summary>
+    /// <b>Opening a <c>.crail</c> loads the board and the part library it NAMES.</b>
+    /// </summary>
+    /// <remarks>
+    /// Until this it loaded neither: <c>RailRfWindow.Show</c> constructed the view model and stopped,
+    /// so the shipped Power Rail example — whose README says the window opens with the board already
+    /// loaded — came up saying "No board yet. Import one", with its artwork sitting in the cell folder
+    /// beside it. Driven on the SHIPPED example rather than on a fixture, because what is under test is
+    /// that a document somebody can actually open resolves its own references.
+    /// </remarks>
+    [Fact]
+    public void OpeningACrailLoadsTheArtworkAndPartLibraryItNames()
+    {
+        string crail = Path.Combine(RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
+
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+        Assert.False(vm.HasBoard);   // nothing is resolved by the constructor, which is still true
+
+        var notes = vm.LoadDocumentReferences();
+
+        Assert.Empty(notes);
+        Assert.True(vm.HasBoard, "The document names its artwork and it did not load.");
+        Assert.NotEmpty(vm.Board!.Shapes);
+        Assert.NotNull(vm.Board!.Technology);
+        Assert.NotNull(vm.PartLibrary);
+
+        // And the README's next word is "press Run" — which is only true if the reference the
+        // document already names is one this stackup offers, so no click is charged for a decision
+        // somebody made when they saved the file.
+        Assert.True(vm.CanRun, vm.RunBlockedReason);
+    }
+
+    /// <summary>
+    /// A <c>.crail</c> whose artwork has moved still OPENS, and says why the board is not there.
+    /// </summary>
+    /// <remarks>
+    /// The rails, the ports and the target are the document; the artwork is a reference. Refusing the
+    /// open would lose the half that is still readable, and opening silently with no board is the
+    /// defect above. So: a note, and the window's own run gate then refuses Run for its own reason.
+    /// </remarks>
+    [Fact]
+    public void AnArtworkReferenceThatDoesNotResolveIsReportedAndDoesNotStopTheOpen()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-rail-open-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var document = new RailDocument { Name = "moved", ArtworkCellRef = "layout/Gone.clay" };
+            document.Rails.Add(new RailSpec { Name = "+3V3", NetName = "+3V3" });
+
+            string path = Path.Combine(dir, "moved.crail");
+            RailDocumentIo.SaveToFile(path, document);
+
+            var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(path), path);
+            var notes = vm.LoadDocumentReferences();
+
+            Assert.False(vm.HasBoard);
+            Assert.Contains(notes, n => n.Contains("layout/Gone.clay", StringComparison.Ordinal));
+            Assert.Single(vm.Rails);   // the half that is still readable came up
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// <b>One empty state on the board panel, not two drawn over each other.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>RailMapScene.Build</c> returns a centred note of its own ("No result yet. Run the rail.")
+    /// whenever there is no result, and the panel's placeholder ("No board yet. Import one …") is
+    /// centred too — so Tools ▸ railRF drew both sentences on the same pixels. The canvas is hidden
+    /// until there is a board, which is the only state in which both can be true at once.
+    /// </remarks>
+    [Fact]
+    public void TheBoardCanvasIsHiddenUntilThereIsABoard()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+
+        var m = Regex.Match(xaml, @"<ctl:LayoutCanvas\s+Name=""BoardCanvas""[^>]*?>", RegexOptions.Singleline);
+        Assert.True(m.Success, "The board canvas is no longer declared under that name.");
+        Assert.Contains(@"IsVisible=""{Binding HasBoard}""", m.Value, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The reason Run is refused is said ONCE.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>RefreshRunGate</c> turns every gate reason into a <see cref="RailRefusal"/>, so the status
+    /// strip already carries that exact sentence — in the warning colour, with the control that
+    /// answers it turned red. The bottom bar was binding <c>RunBlockedReason</c> as well, so a window
+    /// with no board showed the same sentence twice, one row apart, in two different colours. It stays
+    /// on the Run button's tooltip, which is where it answers "why is this disabled".
+    /// </remarks>
+    [Fact]
+    public void TheRunBlockedReasonIsNotRepeatedBesideTheStatusStrip()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+
+        Assert.Equal(1, Regex.Matches(xaml, @"\{Binding RunBlockedReason\}").Count);
+        Assert.Contains(@"ToolTip.Tip=""{Binding RunBlockedReason}""", xaml, StringComparison.Ordinal);
+
+        // And the strip really does carry it, so removing the row lost nothing.
+        var vm = new RailRfViewModel();
+        Assert.False(vm.CanRun);
+        Assert.Equal(vm.RunBlockedReason, vm.Refusal?.Sentence);
+    }
+
+    /// <summary>A reference extent is offered by NAME, never as its enum member.</summary>
+    [Fact]
+    public void TheReferenceExtentComboShowsNamesRatherThanEnumMembers()
+    {
+        Assert.Equal("As imported",
+            Converters.RailReferenceExtentNameConverter.Label(RailReferenceExtent.AsImported));
+
+        // The two optimistic ones say so on their own face, which is the point of the list.
+        Assert.Contains("optimistic",
+            Converters.RailReferenceExtentNameConverter.Label(RailReferenceExtent.FilledToOutline),
+            StringComparison.Ordinal);
+
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+        Assert.Contains("RailReferenceExtentNameConverter.Instance", xaml, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The two Settings fields that are legitimately EMPTY say what empty means.
+    /// </summary>
+    /// <remarks>
+    /// An empty Mesh cell is not a missing value — the extractor computes one from the artwork and a
+    /// number here overrides it — and an empty Via plating means the stackup's own via entry is read
+    /// instead. Both read as blanks somebody forgot to fill in; a watermark is what tells them apart
+    /// from a field waiting for input.
+    /// </remarks>
+    [Fact]
+    public void TheSettingsFieldsThatAreLegitimatelyEmptySayWhatEmptyMeans()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+
+        foreach (string binding in new[] { "MeshCellEntry", "ViaPlatingEntry" })
+        {
+            var m = Regex.Match(xaml,
+                @"<ctl:InlineEditText[^>]*?\{Binding " + binding + @",[^>]*?>", RegexOptions.Singleline);
+            Assert.True(m.Success, $"{binding} is no longer bound to an InlineEditText.");
+            Assert.Contains("Watermark=", m.Value, StringComparison.Ordinal);
+        }
+
+        // And empty really is the shipped state of the mesh cell, which is what makes the watermark
+        // the ordinary thing a user sees rather than an edge case.
+        Assert.Equal("", new RailRfViewModel().MeshCellEntry);
+    }
+
+    /// <summary>Help opens the railRF chapter rather than being a dimmed button.</summary>
+    [Fact]
+    public void TheHelpButtonOpensTheRailRfChapter()
+    {
+        Assert.Contains("DocLauncher.Open(\"reference/railrf.html\")",
+            Src("src/Ui/Views/RailRf/RailRfWindow.axaml.cs"), StringComparison.Ordinal);
+
+        string page = Path.Combine(RepoRoot(), "docs", "user", "reference", "railrf.html");
+        Assert.True(File.Exists(page), "Help points at a page that is not built.");
+    }
+
+    /// <summary>
+    /// <b>Open is not a second import.</b> It resolves an existing document or layout and holds no
+    /// import of its own — the rule <c>Authoring.cs</c> states, on the window side.
+    /// </summary>
+    [Fact]
+    public void TheOpenButtonResolvesRatherThanImports()
+    {
+        string src = Src("src/Ui/Views/RailRf/RailRfWindow.Open.cs");
+
+        Assert.DoesNotContain("GerberImport", src, StringComparison.Ordinal);
+        Assert.Contains("TechnologyResolver.ResolveForDocument", src, StringComparison.Ordinal);
+        Assert.Contains("RailDocumentIo.LoadFromFile", src, StringComparison.Ordinal);
+
+        // Left of Import on the title bar, which is where the owner asked for it.
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+        Assert.InRange(xaml.IndexOf(@"Name=""OpenButton""", StringComparison.Ordinal),
+                       0, xaml.IndexOf(@"Name=""ImportButton""", StringComparison.Ordinal));
+    }
+
+    /// <summary>A label in a label/value row keeps a gap between it and the control beside it.</summary>
+    /// <remarks>
+    /// The gap is on the LABEL, not on the control: padding on a ComboBox moves its own text in from
+    /// its border and leaves the border exactly where it was, which is the edge the label was
+    /// touching. And it is a class of its own rather than a margin on <c>detailLabel</c>, because that
+    /// class also fills the parts table's seven columns.
+    /// </remarks>
+    [Fact]
+    public void ALabelBesideAControlKeepsAGapFromIt()
+    {
+        string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
+
+        Assert.Equal("0,0,8,0", SetterIn(xaml, IndexOfStyle(xaml, "TextBlock.rowlbl"), "Margin"));
+        Assert.Null(SetterIn(xaml, IndexOfStyle(xaml, "TextBlock.detailLabel"), "Margin"));
+
+        // Every combo in the window has one, since that is what the report was about.
+        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(xaml, @"<ComboBox\s+Grid\.Column=""1""", RegexOptions.None))
+        {
+            int row = xaml.LastIndexOf("<Grid ColumnDefinitions=\"Auto,*\">", m.Index, StringComparison.Ordinal);
+            Assert.True(row >= 0, "A combo in this window is no longer in a label/value row.");
+            Assert.Contains("detailLabel rowlbl", xaml[row..m.Index], StringComparison.Ordinal);
+        }
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

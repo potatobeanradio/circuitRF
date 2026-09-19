@@ -17,6 +17,7 @@ keywords: power integrity, PDN, power distribution network, decoupling, decap, I
 <li><a href="#q2">Q2 &mdash; which capacitors are actually doing anything?</a></li>
 <li><a href="#q3">Q3 &mdash; did my form factor break it?</a></li>
 <li><a href="#speeds">Fast and Accuracy: two readings of the same copper</a></li>
+<li><a href="#settings">The Settings flyout, control by control</a></li>
 <li><a href="#example">Worked example, end to end</a></li>
 <li><a href="#headless">Running it headless</a></li>
 <li><a href="#limits">What railRF will not do</a></li>
@@ -51,6 +52,19 @@ different outline &mdash; run and compared, before the second board exists.</li>
 
 The window opens from **Tools &rsaquo; railRF**, or by opening a `.crail` in the project tree. It is one
 resizable, non-modal window per document, and it can sit behind the workspace while you edit the board.
+
+Three buttons on its title bar get a board into it, and they do different things:
+
+| | |
+|---|---|
+| **Open** | Points the window at something that already exists &mdash; a `.crail` anywhere on disk, or a bare `.clay` layout from any workspace. A `.clay` brings its own technology with it: the stackup is the one that layout references, not whichever workspace happens to be open. |
+| **Import a board** | *Creates.* It runs the same Gerber/drill import **File &rsaquo; Import** runs, lands the artwork in a workspace as an ordinary cell with a layout view, mints a technology from the set's own layers, and reads the placement, BOM and netlist you point it at. |
+| **Help** | This chapter. |
+
+Opening a `.crail` resolves what the document itself names &mdash; its artwork, that artwork's stackup and
+its part library &mdash; so a document opens with its board already on screen. A reference that no longer
+resolves is **reported and does not stop the open**: the rails, the ports and the target are the
+document and are still readable, and the status strip says why the board is not there.
 
 ## What you provide {#provide}
 
@@ -204,6 +218,36 @@ passing report. Four rules make the two safe to have together:
 
 Accuracy is **never entered automatically and never left silently**: the button is the only way in.
 
+## The Settings flyout, control by control {#settings}
+
+The **cog** on the title bar holds the five advanced choices, and nothing else &mdash; the window is
+deliberately clean by default. **Every one of them is stated on the report**, which is why they are
+stored in the `.crail` rather than being per-session preferences: a number a report cannot read is a
+basis nobody can check afterwards.
+
+| | |
+|---|---|
+| **Reference extent** | What the reference conductor is taken to be. See below &mdash; **two of the three are optimistic**. |
+| **Via plating** | The plated barrel thickness a via's current limit is computed from, in µm. **Empty is not a default:** railRF reads the thickness from the stackup's own via entry where one states it, takes this where it does not, and falls back to a drill-size table as a sanity band &mdash; and every flag says which of the three produced it. Clearing the field puts that behaviour back rather than leaving the last number standing. |
+| **Via rise** | The temperature **rise**, in °C, a via's current limit is stated at. A budget, not a temperature: there is no thermal model in railRF and nothing else reads this number. 10 °C is the usual convention. |
+| **Temperature** | The one temperature every resistance in the document is computed at. Copper is **+0.39 %/K**, so this is not a detail: the same trace at 85 °C is about 25 % worse than at 20 °C. It is on the status strip on every frame and on every report for that reason. |
+| **Mesh cell** | How finely **Accuracy** meshes, as a cell size in µm. **Empty is the ordinary case** &mdash; it reads *automatic*, and the extractor computes a cell size from the artwork itself. A number here overrides that. The fast model never reads it at all; it traces instead. |
+
+### Reference extent
+
+railRF solves the rail's copper **and its return**, so what the return is taken to be changes the
+answer. The three choices are:
+
+| | |
+|---|---|
+| **As imported** | The actual copper on that layer. Honest: a reference fragmented by anti-pads, a cut-out or a routing channel shows up as one, and the return resistance it reports is the one the board has. **This is the default and it is the one to report against.** |
+| **Filled to outline (optimistic)** | That layer taken as solid within the board outline. It removes return constrictions the real board may have, so the drop it reports is **lower than the truth** by however much those constrictions cost. Useful for answering "how much of this is my plane?" &mdash; run both and read the difference. |
+| **Infinite (an upper bound)** | The layer taken as unbounded at its own height. It removes the edge effects too. This is the only way to compare two different outlines on equal terms, which is what makes it worth having; as an absolute answer it is a bound, not a result. |
+
+The status strip states the one in force on **every frame**, and so does every report and every export,
+because an optimistic reading that is not labelled as one is the thing that turns a marginal board into
+a passing report.
+
 ## Worked example, end to end {#example}
 
 **Tools &rsaquo; Examples &rsaquo; Power Rail Integrity** ships a four-layer board with one 3.3 V rail on
@@ -275,8 +319,8 @@ Stated plainly:
 
 ## What is not wired up yet {#notyet}
 
-Four things are representable in a `.crail` and do not yet reach a solve, or do not reach the window.
-They are here rather than left to be discovered:
+Three things are representable in a `.crail` and do not yet reach a solve. They are here rather than
+left to be discovered:
 
 - **A port anchored by refdes does not resolve.** The placement table is read on import and is not
   joined into the extraction, so every port has to be anchored by **coordinate**, and every report row
@@ -287,7 +331,6 @@ They are here rather than left to be discovered:
 - **A series part and a shunt part do not enter the DC solve.** A protection FET, a ferrite or a
   decoupling bank reaches the DC answer only as a source's own series R and L. Over frequency the parts
   are fully modelled from the rail's own part rows.
-- **A part library named by the document is not loaded when the window opens it.** Opening a `.crail`
-  from the project tree reads the rail, the ports and the target; the board and the part library it
-  names are picked up by the import, not by the open. `circuitrf rail` resolves both from the document,
-  so the command line answers a file the window has to be pointed at.
+
+A fourth used to be here and no longer is: a `.crail`'s artwork, its stackup and its part library now
+resolve when the **window** opens it, by the same walks `circuitrf rail` takes.

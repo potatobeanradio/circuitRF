@@ -156,6 +156,42 @@ public class WorkspaceScannerTests : IDisposable
     private static ProjectTreeNode? TryFindName(ProjectTreeNode parent, string name)
         => parent.Children.FirstOrDefault(n => n.Name == name);
 
+    // ── A cell folder's own loose files ───────────────────────────────────────
+
+    /// <summary>
+    /// A document sitting DIRECTLY in a cell folder gets a row.
+    /// </summary>
+    /// <remarks>
+    /// <b>The second half of the gap the `.cem` fix closed.</b> That one added the cell folder's
+    /// SUB-FOLDERS, so a `.cem` under <c>&lt;cell&gt;/em/</c> rendered; a file in the cell folder
+    /// itself still did not, and the shipped Power Rail example is exactly that shape — its
+    /// `.crail` is beside the `.ccell`, and the README says to open it from the tree (owner,
+    /// 2026-09-18). Same silence as before: a file the scanner never looks at cannot be missing.
+    /// </remarks>
+    [Fact]
+    public void Scan_CellFolder_LooseFile_GetsARow()
+    {
+        string cellDir = MakeCell("Sensor board");
+        File.WriteAllText(Path.Combine(cellDir, "Sensor board.crail"), "{}");
+
+        var cell = FindKind(WorkspaceScanner.Scan(_root), NodeKind.Cell);
+        var row  = TryFindName(cell, "Sensor board.crail");
+
+        Assert.NotNull(row);
+        Assert.Equal(NodeKind.RailFile, row!.Kind);
+    }
+
+    /// <summary>The `.ccell` itself is not one of them — it is what makes the folder a cell, and the
+    /// cell's own row already says so. Same rule as the workspace root's `.cws`.</summary>
+    [Fact]
+    public void Scan_CellFolder_DoesNotRenderItsOwnCcell()
+    {
+        MakeCell("AmpStage");
+
+        var cell = FindKind(WorkspaceScanner.Scan(_root), NodeKind.Cell);
+        Assert.Null(TryFindName(cell, CellFolder.CcellFileName));
+    }
+
     // ── Workspace root ────────────────────────────────────────────────────────
 
     [Fact]

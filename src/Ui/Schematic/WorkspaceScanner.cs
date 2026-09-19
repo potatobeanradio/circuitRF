@@ -308,6 +308,26 @@ public static class WorkspaceScanner
                 : BuildUserFolderNode(subDir, workspaceRoot));
         }
 
+        // <para><b>And the LOOSE FILES the cell folder holds, for exactly the same reason</b> (owner,
+        // 2026-09-18, on the shipped Power Rail example: the `.crail` was not there). The sub-folder
+        // loop above closed half of this gap and left the other half open — a `.cem` under
+        // `&lt;cell&gt;/em/` rendered, and a `.crail` sitting directly in the cell folder still did
+        // not. Same symptom, same silence: the example's own README says to open
+        // `Sensor board ▸ Sensor board.crail`, the file is on disk and opens by path, and the tree had
+        // no row for it at all.</para>
+        //
+        // <para>The `.ccell` is excluded here for the reason the workspace root excludes its `.cws`:
+        // it is the marker that makes this folder a cell, and the cell's own row already says so.</para>
+        foreach (string f in Directory.GetFiles(cellDir)
+            .OrderBy(fn => Path.GetFileName(fn) ?? fn, StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.Equals(Path.GetFileName(f), CellFolder.CcellFileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (IsHiddenTreeFile(f))
+                continue;
+            cellNode.AddChild(BuildFileNode(f, workspaceRoot));
+        }
+
         return cellNode;
     }
 

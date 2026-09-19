@@ -70,6 +70,8 @@ nothing else: neither `RailDocument.ArtworkCellRef` nor `PartLibraryRef` is reso
 dialog fills `Board` and `PartLibrary`, which is why `DocRailFixtures` hand-loads all four files.
 `circuitrf rail` resolves both from the document, so the command line answers a file the window has to
 be pointed at. Recorded in the user chapter's *what is not wired up yet* list.
+**Fixed 2026-09-18** — see *the first round from the outside* at the end of this file; the walks are
+`src/Design/RailRf/RailArtwork.cs` now and both surfaces call them.
 
 Gates: `RailWindowTests` (a document with no BOM lists its own thirteen parts; a BOM naming another
 rail's parts adds no rows, and a rail row the BOM does not name is still a row). `RailCliVerbTests`
@@ -29259,3 +29261,120 @@ state the user can no longer see, so refusing it while focus sits in a field wou
 armed with no way back that does not first cost a click. The comment now says so, rather than
 describing behaviour the code does not have — which is the shape that gets "fixed" into existence by
 the next reader.
+
+## railRF — the first round from the outside, on the shipped example (2026-09-18)
+
+Eight reports from a manual pass over the window in the running application. Six of them are one
+thing each; the first two are the same shape, and they are the interesting ones.
+
+### 1. The example's `.crail` had no row in the project tree
+
+`examples/Power Rail/` ships `Sensor board/Sensor board.crail`, on disk, openable by path, named in
+its own README as the thing to open. **The tree did not list it**, so the README's first instruction
+could not be followed.
+
+`WorkspaceScanner.BuildCellNode` renders a cell's three view sub-folders, then its other
+sub-folders — and then RETURNED. **A file sitting directly in a cell folder had no row at all.**
+This is the exact gap the `.cem` fix closed one level up: that one added the sub-folder loop, after
+the shipped Patch Antenna example's `.cem` turned out to be invisible for the same reason. The
+loose-file half was left, and nothing reported it, for the same reason nothing reported the first
+half — *a file the scanner never looks at cannot be missing*.
+
+Fixed with the loop the workspace root has always had, minus the `.ccell` (which is what makes the
+folder a cell, exactly as the root omits its `.cws`). Gate: two tests in `WorkspaceScannerTests`.
+
+### 2. …and opening it gave a window with no board in it
+
+Recorded above, in this file, as *found on the way and NOT fixed here*. It is now the thing a user
+hit: `RailRfWindow.Show` constructed the view model and stopped, so neither `ArtworkCellRef` nor
+`PartLibraryRef` was resolved by anything on the window side. **Only the import dialog ever set
+`Board`** — which is why `DocRailFixtures` hand-loads all four files — and `circuitrf rail` resolved
+both from the document. One document, two surfaces, two different answers.
+
+**The fix is not "make the window do what the verb does".** The walks moved to
+`src/Design/RailRf/RailArtwork.cs`, below the firewall, where neither surface owns them; the verb's
+`ResolveBoard` and the window's `RailRfViewModel.LoadDocumentReferences` both call it and each keeps
+its own reporting — stderr and an exit code on one side, `Messages` and the status strip on the
+other. A second copy is the divergence that is invisible until somebody compares two surfaces on one
+file, which is how this one was found.
+
+**A reference that does not resolve does not stop the open.** The rails, the ports and the target ARE
+the document and are still readable; the artwork is a reference. Refusing would lose the half that is
+fine, and opening silently with no board is the defect itself. So: a warning naming the reference, and
+the run gate then refuses `Run` for its own reason.
+
+### 3. Two empty states drawn on the same pixels
+
+`Tools ▸ railRF` opens a window with no board. The board panel's placeholder ("No board yet. Import
+one …") is centred, and `RailMapScene.Build` returns a centred note of its own ("No result yet. Run
+the rail.") whenever there is no result — **so both sentences drew on top of each other.** Neither is
+wrong; they are answers to different questions and only one of them is the question being asked. The
+canvas is hidden until there is a board, which is the only state in which both can be true at once.
+
+### 4. …and the same sentence twice at the bottom, in two colours
+
+`RefreshRunGate` ends with `Refusal = RailRefusals.Classify(why)`, so **every** run-gate reason
+already reaches the status strip — in the warning colour, with the control that answers it turned
+red. The bottom bar was *also* binding `RunBlockedReason`. One row apart, one in warning colour and
+one not, they read as two different problems. Removed from the bar; it is still the `Run` button's
+own tooltip, which is where it answers *why is this disabled*.
+
+### 5. A label touching the control beside it
+
+Every label/value row in this window is `ColumnDefinitions="Auto,*"` with a `TextBlock.detailLabel`
+in the first column, and that style carries no margin. **The gap goes on the LABEL, not on the
+control**: `Padding` on a `ComboBox` moves its own text in from its border and leaves the border
+exactly where it was — which is the edge the label was touching. And it is a class of its own
+(`TextBlock.rowlbl`) rather than a margin on `detailLabel`, because that class also fills the parts
+table's seven columns and 8 px in each would come out of the column widths.
+
+### 6. `AsImported` on the face of the window
+
+The reference-extent combo was bound straight to the enum, which is what Avalonia renders for an
+enum with no item template. `RailReferenceExtentNameConverter` is the item template's converter, on
+`PlanarCurrentModelNameConverter`'s shape and for its reason — the `SelectedItem` stays bound to the
+enum, so nothing a label says can reach the `.crail`.
+
+**Each label carries its own warning**, because two of the three values are optimistic and this list
+is read at the moment of choosing: *Filled to outline (optimistic)*, *Infinite (an upper bound)*. The
+status strip's lower-case sentence fragment ("reference filled to outline — optimistic") is a
+different job and stays where it is; the enum is the one thing both agree on.
+
+### 7. An empty Mesh cell that looked like a missing value
+
+It is not one. Empty means **automatic** — the extractor computes a cell size from the artwork, and a
+number there overrides it. `Via plating` is the same shape: empty means *the stackup's own via entry
+is read instead*, and its own tooltip already said so in capitals. Both now carry a `Watermark`,
+which is what distinguishes a field whose blank is an answer from a field waiting for input.
+
+### 8. Help was disabled, and there was no Open
+
+`Help` is one line — `DocLauncher.Open("reference/railrf.html")`, the Match Designer's own. `Open` is
+new, left of `Import a board`, and it is **not a second import**: an import CREATES (it runs
+`GerberImportEntry.Run`, makes a cell, mints a technology from the artwork's own layers); Open points
+the window at something that exists. A `.crail` goes through `RailRfWindow.Show`, so it is the same
+window with the same per-document dedup and the same resolved references. A bare `.clay` resolves its
+stackup through `TechnologyResolver.ResolveForDocument` — **the layout's own technology and its own
+ancestor workspace**, not whichever workspace happens to be open, which is the whole point of being
+able to open one from anywhere.
+
+Two things Open does that are worth naming. It closes the window it was pressed in **only** when that
+window is the empty unsaved scratch one `Tools ▸ railRF` makes — a window holding a document or an
+imported board is work, and Open is not a command that discards work. And a `.clay` with no
+technology is a **refusal**, not a degraded picture: railRF prices copper against a stackup, so a
+board with no thicknesses and no conductivities is not a dimmer answer, it is a different one.
+
+### Not fixed, and deliberately
+
+Double-clicking the example's `parts/decoupling.crlib` does nothing. It classifies as `OtherFile` and
+there is no `.crlib` editor in the application — the library is authored as a file. It now at least
+has a row wherever it lives; an editor for it is a feature, not a defect.
+
+### What the user chapter gained
+
+`docs/user/src/reference/railrf.md` had no description of the Settings flyout at all. It now has a
+section per control, with the reference extent's three values and what each one costs, and the three
+title-bar buttons are distinguished at the top. The *what is not wired up yet* list lost its fourth
+bullet, which was this round's item 2.
+
+Gates: `RailWindowTests` (eight tests, one per claim), `WorkspaceScannerTests` (two).

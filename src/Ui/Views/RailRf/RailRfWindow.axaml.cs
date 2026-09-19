@@ -46,7 +46,12 @@ public partial class RailRfWindow : Window
         FrequencyTab.Click  += (_, _) => SetResultsTab(RailResultsTab.Frequency);
 
         WireImportButton();
+        WireOpenButton();
         WireBoardCanvas();
+
+        // The railRF chapter of the reference, through the launcher every other Help button in the
+        // application uses — the Match Designer's own line.
+        HelpButton.Click += (_, _) => DocLauncher.Open("reference/railrf.html");
 
         DataContextChanged += (_, _) =>
         {
@@ -284,7 +289,12 @@ public partial class RailRfWindow : Window
     // ── Opening ───────────────────────────────────────────────────────────────
 
     /// <summary>Opens (or raises) the window for one <c>.crail</c>.</summary>
-    public static RailRfWindow Show(CircuitRF.Design.RailRf.RailDocument document, string path, Window? owner)
+    /// <param name="notes">Everything the document's own references had to say that the caller should
+    /// post — an artwork that has moved, a part library that did not read, a technology warning.
+    /// Empty on the ordinary path, and empty for a document that names no artwork at all.</param>
+    public static RailRfWindow Show(
+        CircuitRF.Design.RailRf.RailDocument document, string path, Window? owner,
+        out IReadOnlyList<string> notes)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -292,10 +302,18 @@ public partial class RailRfWindow : Window
         if (Open.TryGetValue(key, out var existing))
         {
             existing.Activate();
+            notes = [];
             return existing;
         }
 
         var vm = new RailRfViewModel(document, key);
+
+        // WHAT THE DOCUMENT NAMES IS LOADED HERE, before the window is shown — the artwork, its
+        // stackup and the part library. Opening used to construct the view model and stop, so a
+        // document whose board was on disk came up saying "import one"; see
+        // RailRfViewModel.Open.cs for the whole of it.
+        notes = vm.LoadDocumentReferences();
+
         var window = new RailRfWindow { DataContext = vm };
         Open[key] = window;
         window.Closed += (_, _) =>

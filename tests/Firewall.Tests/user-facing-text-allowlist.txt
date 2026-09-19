@@ -400,6 +400,11 @@ src/Engine/Mom/PlanarSurfaceImpedance.cs|This mesh names conductor level {i}
 src/Engine/Mom/PlanarKernel.cs|A planar solve needs at least one port. Place port labels on the conductor ends in 
 src/Engine/Mom/PlanarKernel.cs|This layout has no port {drivenPortNumber} to drive; it has 
 src/Engine/Mom/PlanarPowerBudget.cs|The solution has {basisCurrents.Count} unknowns and the mesh has 
+# The port-collision refusal (2026-09-18). Same family as the PlanarSolve clearance refusals below
+# and reported by the same route: EmRunService catches it and forwards the sentence through
+# EmDiagnostics.Forwarded("ports", ex.Message), so the message IS the diagnostic's text. It was
+# added without its allowlist line, which is what this gate exists to catch.
+src/Engine/Mom/PlanarPort.cs|Ports {resolved[i].Number} and {resolved[j].Number} resolved to the SAME 
 src/Engine/Mom/PlanarSolve.cs|A sweep needs at least one frequency.
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} returns through drawn metal, and 
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 

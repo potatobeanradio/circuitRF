@@ -9185,7 +9185,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var order = RailOrder.Resolve(doc);
             if (order.Refusal is { } refusal) Messages.Error($"{name}: {refusal}");
 
-            Views.RailRf.RailRfWindow.Show(doc, full, Views.WorkspaceLocator.WindowFor(this));
+            Views.RailRf.RailRfWindow.Show(
+                doc, full, Views.WorkspaceLocator.WindowFor(this), out var notes);
+
+            // What the document's own references had to say. Warnings rather than errors: a `.crail`
+            // whose artwork has moved still opens, with its rails and its target, and says why the
+            // board is not there — the window's own strip then refuses Run for the same reason.
+            foreach (string note in notes) Messages.Warning($"{name}: {note}");
         }
         catch (Exception ex)
         {

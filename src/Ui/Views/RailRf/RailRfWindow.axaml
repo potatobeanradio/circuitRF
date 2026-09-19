@@ -24,6 +24,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:rvm="using:CircuitRF.Ui.RailRf"
         xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:conv="using:CircuitRF.Ui.Converters"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.RailRf.RailRfWindow"
@@ -108,6 +109,15 @@
             <Setter Property="FontSize"          Value="10"/>
             <Setter Property="Opacity"           Value="0.6"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- A label in the Auto column of a label/value row, where the value is a CONTROL rather than
+             a right-aligned number. The gap is on the label rather than on the control because the
+             control is what stretches: Padding on a ComboBox moves its own text in from its border and
+             leaves the border exactly where it was, which is the edge the label was touching (owner,
+             2026-09-18). Not on `detailLabel` itself — that class also fills the parts table's seven
+             columns, and 8 px of margin in each would come out of the column widths. -->
+        <Style Selector="TextBlock.rowlbl">
+            <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
         <Style Selector="TextBlock.detailValue">
             <Setter Property="FontSize"            Value="10"/>
@@ -220,6 +230,15 @@
                  NO CLOSE BUTTON. The window's own title bar already carries one, and a second in the
                  client area is a second thing to aim at that does the same job (owner, 2026-08-20). -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <!-- OPEN, and it is not a second import. An import CREATES a cell from foreign
+                     artwork; this points the window at a document or a layout that already exists —
+                     a `.crail` anywhere on disk, or a `.clay` in any workspace, whose own `.ctech`
+                     reference is what supplies the stackup. It is left of Import because it is the
+                     cheaper of the two and the one a returning user wants. -->
+                <Button Name="OpenButton" Padding="6,3"
+                        ToolTip.Tip="Open — a .crail, or a .clay layout from any workspace. The layout's own technology reference is what supplies the stackup.">
+                    <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                </Button>
                 <Button Name="ImportButton" Padding="6,3"
                         ToolTip.Tip="Import a board — the artwork, and the placement, BOM and netlist that go with it">
                     <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
@@ -246,40 +265,52 @@
                                 <TextBlock Classes="cardhdr" Text="Settings"/>
 
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Reference extent"/>
+                                    <TextBlock Classes="detailLabel rowlbl" Text="Reference extent"/>
+                                    <!-- The item template is what keeps `AsImported` off the face of
+                                         the window. The enum is still what is bound and still what is
+                                         persisted — a display name that reached the `.crail` would be
+                                         a second spelling of a value the file format already has. -->
                                     <ComboBox Grid.Column="1" FontSize="10" MinHeight="0" Padding="6,1"
                                               HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding ReferenceExtents}"
                                               SelectedItem="{Binding ReferenceExtent, Mode=TwoWay}"
-                                              ToolTip.Tip="What the reference conductor is taken to be. Two of the three are OPTIMISTIC, and the status strip says which is in force on every frame."/>
+                                              ToolTip.Tip="What the reference conductor is taken to be. Two of the three are OPTIMISTIC, and the status strip says which is in force on every frame.">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Converter={x:Static conv:RailReferenceExtentNameConverter.Instance}}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </Grid>
 
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Via plating"/>
+                                    <TextBlock Classes="detailLabel rowlbl" Text="Via plating"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding ViaPlatingEntry, Mode=TwoWay}"
+                                                        Watermark="from the stackup"
                                                         ToolTip.Tip="The plated barrel thickness a via's current limit is computed from. EMPTY IS NOT A DEFAULT — the stackup's own via entry is read first where it states one, and every flag says which basis produced it."/>
                                 </Grid>
 
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Via rise"/>
+                                    <TextBlock Classes="detailLabel rowlbl" Text="Via rise"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding ViaTemperatureRiseEntry, Mode=TwoWay}"
                                                         ToolTip.Tip="The temperature RISE a via's current limit is stated at. A budget, not a temperature: there is no thermal model in railRF and nothing else reads this."/>
                                 </Grid>
 
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Temperature"/>
+                                    <TextBlock Classes="detailLabel rowlbl" Text="Temperature"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding TemperatureEntry, Mode=TwoWay}"
                                                         ToolTip.Tip="What every resistance in this document is computed at. railRF is not a thermal tool and does not derate — the report states this number so a reader knows which basis they have."/>
                                 </Grid>
 
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Mesh cell"/>
+                                    <TextBlock Classes="detailLabel rowlbl" Text="Mesh cell"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding MeshCellEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="How finely Accuracy meshes. Read by the accurate reading only — the fast one traces instead."/>
+                                                        Watermark="automatic"
+                                                        ToolTip.Tip="How finely Accuracy meshes, as a cell size. EMPTY IS THE ORDINARY CASE and not a missing value — the extractor computes a cell size from the artwork, and a number here overrides it. Read by the accurate reading only; the fast one traces instead."/>
                                 </Grid>
 
                                 <TextBlock Classes="note"
@@ -288,8 +319,8 @@
                         </Flyout>
                     </Button.Flyout>
                 </Button>
-                <Button Name="HelpButton" Padding="6,3" IsEnabled="False"
-                        ToolTip.Tip="Help — the railRF chapter of the circuitRF reference. Not wired yet.">
+                <Button Name="HelpButton" Padding="6,3"
+                        ToolTip.Tip="Help — the railRF chapter of the circuitRF reference">
                     <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
                 </Button>
             </StackPanel>
@@ -312,7 +343,7 @@
                             <TextBlock Classes="cardhdr" Text="Rail"/>
 
                             <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="detailLabel" Text="Rail"/>
+                                <TextBlock Classes="detailLabel rowlbl" Text="Rail"/>
                                 <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
                                      here and built in that order in the view model: a combo whose
                                      ItemsSource binding attaches after the selection was set drops it
@@ -325,7 +356,7 @@
                             </Grid>
 
                             <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="detailLabel" Text="Ref."/>
+                                <TextBlock Classes="detailLabel rowlbl" Text="Ref."/>
                                 <ComboBox Grid.Column="1" Name="ReferenceSelector" FontSize="10"
                                           MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
                                           Classes.flagged="{Binding IsReferenceLayerFlagged}"
@@ -469,24 +500,24 @@
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Target"/>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <TextBlock Classes="detailLabel" Text="Drop"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Drop"/>
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding DropBudgetEntry, Mode=TwoWay}"
                                                             ToolTip.Tip="The DC drop budget. In millivolts, because a budget of 0.08 V reads as a typo where 80 mV does not."/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <TextBlock Classes="detailLabel" Text="Z"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Z"/>
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding ImpedanceTargetEntry, Mode=TwoWay}"
                                                             ToolTip.Tip="The flat impedance target, in milliohms. A per-port mask lives on the load row instead."/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <TextBlock Classes="detailLabel" Text="Band from"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Band from"/>
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding BandStartEntry, Mode=TwoWay}"/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <TextBlock Classes="detailLabel" Text="Band to"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="Band to"/>
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding BandStopEntry, Mode=TwoWay}"/>
                                     </Grid>
@@ -578,7 +609,13 @@
                          seam wBond already uses. -->
                     <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
                         <Panel>
+                            <!-- HIDDEN UNTIL THERE IS A BOARD, because the map overlay draws a
+                                 CENTRED note of its own ("No result yet. Run the rail.") and the
+                                 placeholder below is centred too — so a window with nothing imported
+                                 drew the two sentences on top of each other (owner, 2026-09-18). One
+                                 empty state, and it is the one that says what to do next. -->
                             <ctl:LayoutCanvas Name="BoardCanvas" ClipToBounds="True"
+                                              IsVisible="{Binding HasBoard}"
                                               ViewModel="{Binding BoardLayout}">
                                 <!-- ONE ContextMenu instance, declared here and never constructed by
                                      the canvas (the L1-fix rule the layout editor's own view states:
@@ -860,7 +897,7 @@
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Plane resonances"/>
                                     <Grid ColumnDefinitions="Auto,*,Auto">
-                                        <TextBlock Classes="detailLabel" Text="At"/>
+                                        <TextBlock Classes="detailLabel rowlbl" Text="At"/>
                                         <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                             Text="{Binding PlaneFrequencyEntry, Mode=TwoWay}"
                                                             ToolTip.Tip="The frequency the cavity is read at. It sets the mesh (λ/20 there), the copper's skin-effect resistance and the dielectric's loss — so the modes and the |Z| map are both of it. Opens on the top of this rail's band."/>
@@ -921,8 +958,11 @@
              mean, in the place the user looks when the design is settled. Never entered
              automatically, and never left silently. -->
         <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="10,6">
-            <TextBlock Classes="note" Text="{Binding RunBlockedReason}" VerticalAlignment="Center"
-                       IsVisible="{Binding !CanRun}"/>
+            <!-- THE REASON RUN IS REFUSED IS NOT REPEATED HERE. RefreshRunGate turns every gate
+                 reason into a Refusal, so the strip above already carries that exact sentence and
+                 turns the control that answers it red — two rows of one sentence, one of them in the
+                 warning colour, read as two different problems (owner, 2026-09-18). It is still on
+                 the Run button's own tooltip, where it answers "why is this disabled". -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                 <Button Name="AccuracyButton" Content="Accuracy" FontSize="11" Padding="10,3"
                         Classes.flagged="{Binding IsModelKindFlagged}"

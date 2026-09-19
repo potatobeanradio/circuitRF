@@ -386,14 +386,7 @@ internal static class Rail
 
     /// <summary>The cell folder's primary layout view, or null. <c>CellFolder.ResolvePrimary</c>'s
     /// answer and no other, so the artwork this reads is the artwork <c>render</c> would draw.</summary>
-    private static string? LayoutOf(string cellDir)
-    {
-        if (!Directory.Exists(cellDir)) return null;
-        var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
-        return primary.ResolvedName is { Length: > 0 } name
-            ? Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name)
-            : null;
-    }
+    private static string? LayoutOf(string cellDir) => RailArtwork.LayoutOf(cellDir);
 
     // ── step 2: the artwork and the stackup ──────────────────────────────────
 
@@ -418,35 +411,27 @@ internal static class Rail
     /// </summary>
     private static (BoardInputs? Board, int? Refusal) ResolveBoard(Input input)
     {
-        string? clay = input.ClayHint;
+        // THE WALKS ARE NOT HERE. `RailArtwork.Resolve` owns them, and the window's own open goes
+        // through the same call — see that file's header. What stays here is this verb's reporting:
+        // which stderr lines it prints, which diagnostic code each refusal carries, and its exit.
+        var found = RailArtwork.Resolve(
+            input.Document, input.DocumentPath, input.ClayHint, new TechnologyCache());
 
-        if (clay is null)
+        string clay = found.ClayPath ?? "(no layout view)";
+
+        switch (found.Outcome)
         {
-            if (input.Document.ArtworkCellRef is not { Length: > 0 } artwork)
+            case RailArtworkOutcome.NoArtworkRef:
                 return (null, JsonRun.Fail(CliDiagnostics.RailNoArtwork(input.DocumentPath)));
-
-            clay = CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(input.DocumentPath)!, artwork);
-
-            // The reference may name a CELL folder rather than the view file inside it, which is what
-            // "a reference to a CELL in the workspace" means in RailDocument's own words.
-            if (Directory.Exists(clay)) clay = LayoutOf(clay);
-
-            if (clay is null || !File.Exists(clay))
+            case RailArtworkOutcome.NotFound:
                 return (null, JsonRun.Fail(CliDiagnostics.RailArtworkNotFound(
-                    input.DocumentPath, artwork, clay ?? "(no layout view)")));
+                    input.DocumentPath, found.Detail ?? "", clay)));
+            case RailArtworkOutcome.Unreadable:
+                return (null, JsonRun.Fail(CliDiagnostics.RailArtworkUnreadable(
+                    clay, found.Detail ?? "")));
         }
 
-        LayoutView view;
-        try { view = LayoutPersistence.LoadFromFile(clay); }
-        catch (Exception ex)
-        { return (null, JsonRun.Fail(CliDiagnostics.RailArtworkUnreadable(clay, ex.Message))); }
-
-        var cache = new TechnologyCache();
-        var (resolution, cws) = input.Document.TechnologyRef is { Length: > 0 } techRef
-            ? TechnologyResolver.ResolveForDocument(techRef, input.DocumentPath, null, cache)
-            : TechnologyResolver.ResolveForDocument(view.TechRef, clay, null, cache);
-
-        foreach (string d in resolution.Diagnostics)
+        foreach (string d in found.Diagnostics)
         {
             Console.Error.WriteLine("warning: " + d);
             JsonRun.Note(CliDiagnostics.RailTechnologyWarning(d));
@@ -454,17 +439,17 @@ internal static class Rail
 
         Console.Error.WriteLine($"[circuitRF] document:   {input.DocumentPath}");
         Console.Error.WriteLine($"[circuitRF] artwork:    {clay}");
-        Console.Error.WriteLine(cws is null
+        Console.Error.WriteLine(found.WorkspaceCwsPath is null
             ? "[circuitRF] workspace:  none above it — references resolve against the document's own directory"
-            : $"[circuitRF] workspace:  {cws}");
+            : $"[circuitRF] workspace:  {found.WorkspaceCwsPath}");
 
         // R-rail10-3's shape, one row along: railRF prices copper against a stackup, so a run with no
         // technology is not a degraded picture the way an orphan `.clay` is for `render` — it is an
         // answer with no thicknesses and no conductivities in it. Refused, naming what supplies one.
-        if (resolution.Tech is not { } tech)
+        if (found is not { Technology: { } tech, View: { } view })
             return (null, JsonRun.Fail(CliDiagnostics.RailNoTechnology(clay)));
 
-        Console.Error.WriteLine($"[circuitRF] technology: {resolution.ResolvedPath} ({resolution.Source})");
+        Console.Error.WriteLine($"[circuitRF] technology: {found.TechnologyPath} ({found.TechnologySource})");
 
         return (new BoardInputs(view, tech, clay, CellHierarchy.BaseDirOfDocument(clay)), null);
     }
@@ -908,18 +893,16 @@ internal static class Rail
             ? results[0].Netlist.Provenance.CopperTemperatureCelsius
             : doc.Settings.CopperTemperatureCelsius;
 
-        PartLibrary? library = null;
-        string? libraryPath = null;
-        // Document-relative, like every other reference a `.crail` carries.
-        if (doc.PartLibraryRef is { Length: > 0 } r)
+        // Document-relative, like every other reference a `.crail` carries — and through the one
+        // function the WINDOW's open calls, so the two surfaces cannot land on different files.
+        var library = RailArtwork.ResolvePartLibrary(
+            doc, documentPath, out string? resolvedLibraryPath, out string? libraryError);
+        string? libraryPath = library is null ? null : resolvedLibraryPath;
+        if (libraryError is { Length: > 0 })
         {
-            string path = CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(documentPath)!, r);
-            try { library = PartLibraryIo.LoadFromFile(path); libraryPath = path; }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"warning: the part library '{path}' did not read: {ex.Message}");
-                JsonRun.Note(CliDiagnostics.RailPartLibraryUnreadable(path, ex.Message));
-            }
+            Console.Error.WriteLine(
+                $"warning: the part library '{resolvedLibraryPath}' did not read: {libraryError}");
+            JsonRun.Note(CliDiagnostics.RailPartLibraryUnreadable(resolvedLibraryPath!, libraryError));
         }
 
         // R-rail11-6's two headline counts are about THE PARTS ON THIS BOARD, and the board's parts
