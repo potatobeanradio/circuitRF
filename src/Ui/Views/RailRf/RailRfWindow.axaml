@@ -99,9 +99,22 @@
              state, selection included, so a list whose "−" button acts on the selection gave no sign
              of what it was about to act on — and with nothing selected the button did nothing at all,
              which reads as a broken button (owner, 2026-09-19). The button is disabled in that state
-             now; this is the other half. -->
+             now; this is the other half.
+
+             AND THE COLOUR IS THE SECOND HALF OF THE SAME REPORT. This rule first painted the row
+             SystemChromeMediumLowColor, which rendered exactly as written and could not be seen: the
+             card underneath is SystemChromeLowColor, and under Fluent's LIGHT variant those two keys
+             resolve to the SAME colour (#FFF2F2F2) — under dark they are #171717 against #2B2B2B.
+             Measured, not inferred. CrfSelectedRowBrush is the accent at CrfDropTargetBrush's own
+             opacity, so the row's text stays legible on top of it. -->
         <Style Selector="ListBox.rows ListBoxItem:selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="Background" Value="{DynamicResource CrfSelectedRowBrush}"/>
+        </Style>
+        <!-- Hovering the selected row must not wipe the mark off it: Fluent's own ListBoxItem
+             control theme paints :selected:pointerover, and that state is more specific than the
+             rule above. -->
+        <Style Selector="ListBox.rows ListBoxItem:selected:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource CrfSelectedRowBrush}"/>
         </Style>
 
         <Style Selector="TextBlock.panelhdr">
@@ -213,6 +226,50 @@
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
         </Style>
 
+        <!-- The add/remove pair on a card header. THE GLYPHS ARE THE ANALYSIS PANEL'S — Plus and
+             Delete out of Material.Icons, the same two AnalysesListView puts on its own add and
+             remove (owner, 2026-09-19): a bare "−" beside a list does not say "delete this row",
+             and the application already had a mark that does. Declared after the bare Button style
+             for the ordering reason R-rail7-2's test states. -->
+        <Style Selector="Button.rowbtn">
+            <Setter Property="Padding"          Value="3,1"/>
+            <Setter Property="MinHeight"        Value="0"/>
+            <Setter Property="MinWidth"         Value="0"/>
+            <Setter Property="BorderThickness"  Value="0"/>
+            <Setter Property="Background"       Value="Transparent"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.rowbtn mi|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="Button.rowbtn:disabled mi|MaterialIcon">
+            <Setter Property="Opacity" Value="0.4"/>
+        </Style>
+
+        <!-- ── A TOOLBAR BUTTON THAT IS LIT WHILE ITS STATE IS IN FORCE ──────────────────────
+             LayoutEditorView's own three rules, copied here with their colours intact — the same
+             accent fill and white glyph every tool button in the layout editor wears, so a lit
+             control means one thing across the application.
+
+             THEY WERE MISSING AND ONE BUTTON WAS ALREADY ASKING FOR THEM: the board panel's
+             magnifier does `Classes.Set("ToolActive", …)` in the code-behind, and with no style of
+             that name in this window the class was set on every arm and painted nothing. So the
+             zoom box has always armed invisibly here. A class nobody styles is not a no-op, it is
+             a feature that silently does not exist. -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- A tab in either strip. A ToggleButton rather than a TabControl: both strips switch a
              property the view model owns (which OVERLAY, which results half) and neither carries
              content of its own, so a TabControl would be a content host with nothing in it. -->
@@ -254,8 +311,9 @@
                 <!-- DISABLED WITH A REASON rather than silently inert. A control that looks live and
                      does nothing is indistinguishable from one that is broken; one that is dimmed and
                      says what it is waiting for is not. -->
-                <Button Name="ReportButton" Padding="6,3" IsEnabled="False"
-                        ToolTip.Tip="Report — the drop, the breakdown, the via flags and what they were computed at. Not wired yet.">
+                <Button Name="ReportButton" Padding="6,3"
+                        IsEnabled="{Binding CanExport}"
+                        ToolTip.Tip="Report — the drop, the breakdown, the via flags and what they were computed at, as a page drawn by the same renderers the window draws with.">
                     <mi:MaterialIcon Kind="FileDocumentOutline" Width="16" Height="16"/>
                 </Button>
                 <!-- §11.2: "Clean and simple by default." The reference-plane options, the via
@@ -434,23 +492,37 @@
                                 <StackPanel Spacing="3">
                                     <Grid ColumnDefinitions="*,Auto,Auto">
                                         <TextBlock Classes="cardhdr" Text="Sources" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="+" FontSize="10" Padding="6,0"
-                                                MinHeight="0" Margin="0,0,4,2"
+                                        <Button Grid.Column="1" Classes="rowbtn" Margin="0,0,2,2"
                                                 Command="{Binding AddSourceCommand}"
-                                                ToolTip.Tip="Add a source. A rail can be fed by a cell through a connector, by a regulator's output, or by both."/>
-                                        <Button Grid.Column="2" Content="−" FontSize="10" Padding="6,0"
-                                                MinHeight="0" Margin="0,0,0,2"
+                                                ToolTip.Tip="Add a source. A rail can be fed by a cell through a connector, by a regulator's output, or by both. The new row states no anchor — double-click its first column and type the refdes and pin.">
+                                            <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                        </Button>
+                                        <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,0,2"
                                                 Command="{Binding RemoveSourceCommand}"
                                                 CommandParameter="{Binding #SourceList.SelectedItem}"
-                                                ToolTip.Tip="Remove the selected source"/>
+                                                ToolTip.Tip="Remove the selected source">
+                                            <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                        </Button>
                                     </Grid>
                                     <ListBox Name="SourceList" Classes="rows" MaxHeight="120"
                                              ItemsSource="{Binding Sources}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailSourceRowViewModel">
                                                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
-                                                    <TextBlock Classes="lbl" Text="{Binding Anchor}"
-                                                               ToolTip.Tip="{Binding ModelSummary}"/>
+                                                    <!-- THE ANCHOR IS SETTABLE (owner, 2026-09-19).
+                                                         It was a TextBlock, and nothing else in the
+                                                         window named a refdes or a pin — so "+" made
+                                                         a row reading "(no anchor)" that could never
+                                                         be given one. Same control and same contract
+                                                         as every other value on this window; the
+                                                         candidates this board offers are on its
+                                                         tooltip, from the netlist the solve will
+                                                         resolve against. -->
+                                                    <ctl:InlineEditText Classes="val" MinWidth="56"
+                                                                        HorizontalContentAlignment="Left"
+                                                                        Text="{Binding AnchorEntry, Mode=TwoWay}"
+                                                                        Watermark="refdes.pin"
+                                                                        ToolTip.Tip="{Binding AnchorTip}"/>
                                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="52"
                                                                         Text="{Binding VoltageEntry, Mode=TwoWay}"
                                                                         ToolTip.Tip="Open-circuit voltage. Empty is NOT zero — a source with no stated level is one the frequency answer can use and the DC answer reports."/>
@@ -470,22 +542,30 @@
                                 <StackPanel Spacing="3">
                                     <Grid ColumnDefinitions="*,Auto,Auto">
                                         <TextBlock Classes="cardhdr" Text="Loads" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="+" FontSize="10" Padding="6,0"
-                                                MinHeight="0" Margin="0,0,4,2"
+                                        <Button Grid.Column="1" Classes="rowbtn" Margin="0,0,2,2"
                                                 Command="{Binding AddLoadCommand}"
-                                                ToolTip.Tip="Add a load. A new row states no current, which makes it an observation port until one is typed."/>
-                                        <Button Grid.Column="2" Content="−" FontSize="10" Padding="6,0"
-                                                MinHeight="0" Margin="0,0,0,2"
+                                                ToolTip.Tip="Add a load. A new row states no current, which makes it an observation port until one is typed — and no anchor, which you give it by double-clicking its first column and typing the refdes and pin.">
+                                            <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                        </Button>
+                                        <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,0,2"
                                                 Command="{Binding RemoveLoadCommand}"
                                                 CommandParameter="{Binding #LoadList.SelectedItem}"
-                                                ToolTip.Tip="Remove the selected load"/>
+                                                ToolTip.Tip="Remove the selected load">
+                                            <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                        </Button>
                                     </Grid>
                                     <ListBox Name="LoadList" Classes="rows" MaxHeight="150"
                                              ItemsSource="{Binding Loads}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailLoadRowViewModel">
                                                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
-                                                    <TextBlock Classes="lbl" Text="{Binding Anchor}"/>
+                                                    <!-- Settable, for the reason the source row's
+                                                         own comment gives. -->
+                                                    <ctl:InlineEditText Classes="val" MinWidth="56"
+                                                                        HorizontalContentAlignment="Left"
+                                                                        Text="{Binding AnchorEntry, Mode=TwoWay}"
+                                                                        Watermark="refdes.pin"
+                                                                        ToolTip.Tip="{Binding AnchorTip}"/>
                                                     <!-- The SAME right edge whether the row states a
                                                          current or reads "observe", so the column of
                                                          numbers stays one column. -->
@@ -685,7 +765,30 @@
                                     Background="{DynamicResource SystemChromeLowColor}"
                                     BorderBrush="{DynamicResource CrfTileBorderBrush}"
                                     BorderThickness="1">
-                                <TextBlock Classes="note" Text="{Binding BoardReadout}"/>
+                                <SelectableTextBlock Classes="note" Text="{Binding BoardReadout}"/>
+                            </Border>
+                            <!-- WHERE THE POINTER IS, in the board's own display unit (owner,
+                                 2026-09-19). The layout editor puts this in its status bar and this
+                                 window had only the ruler ticks, so finding a place on the board by
+                                 mouse meant counting them. Bottom RIGHT, opposite the value readout,
+                                 because the two answer different questions about the same pointer
+                                 and one box holding both would read as one sentence.
+
+                                 The strings are LayoutEditorViewModel's own — the same property the
+                                 layout editor binds — so the two windows cannot come to spell a
+                                 coordinate differently. -->
+                            <Border IsVisible="{Binding HasBoard}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                    Margin="6" Padding="6,2" CornerRadius="4"
+                                    Background="{DynamicResource SystemChromeLowColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                                    BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Classes="note" Text="X:"/>
+                                    <TextBlock Classes="note" Text="{Binding BoardLayout.CursorXText}"/>
+                                    <TextBlock Classes="note" Text="Y:" Margin="6,0,0,0"/>
+                                    <TextBlock Classes="note" Text="{Binding BoardLayout.CursorYText}"/>
+                                </StackPanel>
                             </Border>
                             <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
                                        IsVisible="{Binding !HasBoard}"
@@ -708,14 +811,17 @@
                                         IsVisible="{Binding HasRecognisedAggressors}"
                                         Command="{Binding AcceptRecognisedAggressorsCommand}"
                                         ToolTip.Tip="Add every crystal and converter the BOM reader recognised. Each row says it came from the BOM — a pre-filled frequency nobody checked is exactly the one that will be wrong."/>
-                                <Button Grid.Column="2" Content="+" FontSize="10" Padding="6,0"
-                                        MinHeight="0" Margin="0,0,4,2"
-                                        Command="{Binding AddAggressorCommand}"/>
-                                <Button Grid.Column="3" Content="−" FontSize="10" Padding="6,0"
-                                        MinHeight="0" Margin="0,0,0,2"
+                                <Button Grid.Column="2" Classes="rowbtn" Margin="0,0,2,2"
+                                        Command="{Binding AddAggressorCommand}"
+                                        ToolTip.Tip="Add an aggressor line by hand">
+                                    <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                </Button>
+                                <Button Grid.Column="3" Classes="rowbtn" Margin="0,0,0,2"
                                         Command="{Binding RemoveAggressorCommand}"
                                         CommandParameter="{Binding #AggressorList.SelectedItem}"
-                                        ToolTip.Tip="Remove the selected aggressor"/>
+                                        ToolTip.Tip="Remove the selected aggressor">
+                                    <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                </Button>
                             </Grid>
                             <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
                                      ItemsSource="{Binding Aggressors}">
@@ -849,41 +955,38 @@
                             <Border Classes="card" IsVisible="{Binding ShowStackupCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Stackup"/>
-                                    <TextBlock Classes="note" TextWrapping="Wrap"
-                                               Text="{Binding PlaneCapacitanceLine}"/>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding PlaneCapacitanceLine}"/>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowDropCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Drop"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding PortLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding PortLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowBreakdownCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Breakdown"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding BreakdownLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding BreakdownLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowViaCheckCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Via check"/>
-                                    <TextBlock Classes="note" Text="{Binding ViaFlagSummary}"/>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding ViaFlagSummary}"/>
                                 </StackPanel>
                             </Border>
 
@@ -896,52 +999,44 @@
                             <Border Classes="card" IsVisible="{Binding ShowCoincidencesCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="On an aggressor line"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding CoincidenceLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding CoincidenceLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowMaskCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Against the target"/>
-                                    <ListBox Classes="rows" MaxHeight="120" ItemsSource="{Binding MaskLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="120" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding MaskLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowAntiResonancesCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Anti-resonances"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding AntiResonanceLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding AntiResonanceLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
                             <Border Classes="card" IsVisible="{Binding ShowRemovalCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="If this part came off"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding RemovalLines}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding RemovalLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
                                 </StackPanel>
                             </Border>
 
@@ -974,17 +1069,15 @@
                                     </Grid>
                                     <TextBlock Classes="note" Text="finding the modes…"
                                                IsVisible="{Binding IsFindingModes}"/>
-                                    <ListBox Classes="rows" MaxHeight="140" ItemsSource="{Binding ModeLines}"
-                                             IsVisible="{Binding HasModes}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="note" Text="{Binding}" TextWrapping="Wrap"/>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                    <TextBlock Classes="note" TextWrapping="Wrap"
-                                               Text="{Binding PlaneMessage}"
-                                               IsVisible="{Binding HasPlaneMessage}"/>
+                                    <ScrollViewer MaxHeight="140" IsVisible="{Binding HasModes}"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             Text="{Binding ModeLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                    </ScrollViewer>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding PlaneMessage}"
+                                                         IsVisible="{Binding HasPlaneMessage}"/>
                                 </StackPanel>
                             </Border>
 
@@ -992,8 +1085,8 @@
                                  or the notes and warnings that travel with the numbers, the
                                  INDICATIVE marking of §9 among them. -->
                             <Border Classes="card" IsVisible="{Binding ShowImpedanceMessageCard}">
-                                <TextBlock Classes="note" Text="{Binding ImpedanceMessage}"
-                                           TextWrapping="Wrap"/>
+                                <SelectableTextBlock Classes="note" Text="{Binding ImpedanceMessage}"
+                                                     TextWrapping="Wrap"/>
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
@@ -1008,10 +1101,10 @@
              a sentence plus a separate hunt. -->
         <Border Grid.Row="2" Classes="pane" Margin="4,0,4,0" Padding="10,4">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusLine}"
-                           IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center"/>
-                <TextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
-                           IsVisible="{Binding HasRefusal}" VerticalAlignment="Center"/>
+                <SelectableTextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusLine}"
+                                     IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center"/>
+                <SelectableTextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
+                                     IsVisible="{Binding HasRefusal}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Classes="note" Text="both models in hand"
                            IsVisible="{Binding HasBothModels}" VerticalAlignment="Center"
                            ToolTip.Tip="The fast curve stays on the plot beside the accurate one, so the error is measured on this design rather than promised in a document."/>
@@ -1028,17 +1121,41 @@
                  turns the control that answers it red — two rows of one sentence, one of them in the
                  warning colour, read as two different problems (owner, 2026-09-18). It is still on
                  the Run button's own tooltip, where it answers "why is this disabled". -->
+            <!-- WHAT IT IS DOING, WHERE THE BUTTON IS. The status strip's "solving…" was the only
+                 sign a run was in flight and it is at the far end of a wide window, so a press of
+                 Accuracy — which takes roughly eight times the fast reading and moves the numbers by
+                 under a millivolt on a good board — read as a dead button (owner, 2026-09-19). Both
+                 buttons also disable while a solve is in flight, so the press is visibly taken. -->
+            <TextBlock Classes="note" Text="{Binding BusyText}" VerticalAlignment="Center"
+                       IsVisible="{Binding IsSolving}" Margin="0,0,10,0"
+                       HorizontalAlignment="Right" Grid.Column="0"/>
+
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <Button Name="AccuracyButton" Content="Accuracy" FontSize="11" Padding="10,3"
+                <!-- ACCURACY IS A TOOLBAR BUTTON AND IT IS LIT WHILE ITS READING IS ON SCREEN
+                     (owner, 2026-09-19: "how do I know Accuracy is turned on? Shouldn't it be a
+                     button that highlights when activated, kind of like toolbar glyphs?").
+
+                     Square, icon-only and on Button.ToolActive's accent, which is the same lamp
+                     every tool button in the layout editor wears. A lit BUTTON rather than a
+                     ToggleButton because there is nothing to toggle off: Accuracy is a reading,
+                     not a mode, and the lamp goes out by itself the moment an edit puts the Fast
+                     answer back — which is §2.9's "never left silently" made visible.
+
+                     The bullseye is the glyph because the button is named for what its answer IS,
+                     not for the mesh that produces it; the mesh is in the tooltip, with its cost. -->
+                <Button Name="AccuracyButton" Padding="6,3"
+                        Classes.ToolActive="{Binding IsShowingAccuracy}"
                         Classes.flagged="{Binding IsModelKindFlagged}"
                         Command="{Binding AccuracyCommand}"
-                        ToolTip.Tip="Run the mesh solve. It is never entered automatically and never left silently — and the fast result stays, so the two are compared on this board."/>
+                        ToolTip.Tip="Accuracy — run the mesh solve. It lights while the numbers on screen are the accurate reading, and goes out as soon as an edit puts the fast one back. Never entered automatically and never left silently; the fast result stays, so the two are compared on this board.">
+                    <mi:MaterialIcon Kind="Bullseye" Width="16" Height="16"/>
+                </Button>
                 <Button Name="CompareButton" Content="Compare…" FontSize="11" Padding="10,3"
-                        IsEnabled="False"
-                        ToolTip.Tip="The fast reading beside the accurate one, on this design. Not wired yet."/>
+                        IsEnabled="{Binding CanExport}"
+                        ToolTip.Tip="This design against another .crail — the one that is known to work. Both sides are solved at the model kind on screen, the same rail is matched by name, and the ports and parts pair by refdes and pin."/>
                 <Button Name="ExportButton" Content="Export" FontSize="11" Padding="10,3"
-                        IsEnabled="False"
-                        ToolTip.Tip="Touchstone, .npy, CSV, or a report drawn by the same renderers. Not wired yet."/>
+                        IsEnabled="{Binding CanExport}"
+                        ToolTip.Tip="CSV, .npy, .mat, .txt, or the report page as SVG or PDF — the extension picks the format, exactly as circuitrf rail -o does, and both write the same bytes."/>
                 <Button Name="RunButton" Content="Run" FontSize="11" Padding="14,3"
                         IsDefault="True"
                         Command="{Binding RunCommand}"

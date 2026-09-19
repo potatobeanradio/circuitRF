@@ -1,5 +1,167 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF — seven defects from a manual pass over the window (2026-09-19)
+
+Owner report, in his own order. Six of the seven are the same shape: something the window SAID or
+OFFERED was not something the window did.
+
+### 1. The selected row was painted and could not be seen
+
+*"A selected aggressor is not rendered with a highlight, so the user doesn't know which one he's
+deleting"*, and then the same of the parts table: *"I click on a part in the Parts list and the
+artwork highlight updates, but the row highlighting in the Parts list is not rendered. Same bug as
+above?"* — one bug, and yes.
+
+The style added the day before painted a selected row `SystemChromeMediumLowColor` inside a
+`Border.card` painted `SystemChromeLowColor`. **Measured, not inferred** (a throwaway headless
+Avalonia app resolving both keys under both variants): under Fluent's LIGHT variant those two keys
+are the SAME colour, `#FFF2F2F2`, and under dark they are `#FF171717` against `#FF2B2B2B`. So the
+highlight rendered exactly as written and was invisible in one theme and illegible in the other.
+
+The first theory was the one this repo's own `CircuitRfResources.axaml` warns about twice — *a
+Color assigned to a Brush property may silently fail to render* — and it was **wrong**: the same
+probe showed both a direct `DynamicResource` bind and a `Style` `Setter` converting `Color` to
+`SolidColorBrush` correctly. That warning is specifically about `BorderBrush`. A `System*Color` key
+is still the wrong thing to reach for here, but for the contrast reason, not the conversion one.
+
+`CrfSelectedRowBrush` — the accent at `CrfDropTargetBrush`'s own 0.28 opacity, so the row's text
+stays legible on top of it — and a `:selected:pointerover` rule too, since Fluent's own control
+theme paints that state and it is more specific than `:selected`.
+
+The `+`/`−` buttons on all three lists are now `Material.Icons` `Plus` and `Delete`, which is what
+`AnalysesListView` puts on its own add and remove: a bare `−` beside a list does not say "delete
+this row" and the application already had a mark that does.
+
+### 2. The board had no cursor readout
+
+*"Need X: Y: position of mouse cursor live update in bottom right corner of board artwork (just
+like we already do in the layout editor)."* The board panel is bound to an ordinary
+`LayoutEditorViewModel`, which already has `CursorXText`/`CursorYText` and already formats them in
+the board's own display unit — so the whole fix is the third line in the window's existing
+`CursorWorldChanged` handler (the two rulers were already fed from it) plus a bound readout at the
+bottom RIGHT, opposite the value readout. Nothing here formats a coordinate, which is why the two
+windows cannot come to spell one differently.
+
+### 3. "Accuracy doesn't seem to do anything. Is it supposed to?"
+
+It is, and it does. Measured on the shipped Power Rail example, release build: the fast reading is
+0.9 s and puts U1.VDD 48.368 mV below the source; Accuracy is 7.8 s and says 49.025 mV, and every
+breakdown row changes from a closed-form section ("26.462 mm of 0.209 mm BOT copper, priced as one
+section") to a meshed one ("131.8 squares of BOT copper (4963 cells)"). The owner runs the DEBUG
+build, where that 7.8 s is several times longer.
+
+So the defect is not in the button, it is that a press with a slow answer and a sub-millivolt
+visible delta reads as a dead control. The only sign of life was the word "solving…" at the far end
+of a wide status strip. Now: both buttons disable while a solve is in flight (`CanStartRun`,
+deliberately NOT folded into `CanRun` — that one also gates the Fast edit loop, and making it false
+while solving would stop the numbers following the typing, which is R-rail7-5 exactly backwards),
+and a note beside them names the model being run and says what it costs.
+
+### 3a. …and how do you know Accuracy is ON?
+
+Follow-up in the same pass: *"Shouldn't it be a button that highlights when activated? Kind of like
+toolbar glyphs? Can we give it a nice icon and make the button square like a toolbar button?"*
+
+It is now a square icon button on `Button.ToolActive`'s accent — the same lamp every tool button in
+the layout editor wears — lit while `Current.Kind == Accurate`, which is the honest condition:
+Accuracy is a READING, not a mode, and the lamp goes out by itself the moment an edit puts the Fast
+answer back on screen. That is §2.9's "never left silently" as a lamp instead of a sentence at the
+far end of a wide strip. A lit `Button` and not a `ToggleButton`, because there is nothing to
+toggle off — pressing it again re-runs the mesh.
+
+**And `Button.ToolActive` had to be added to this window, which turned up a second defect.**
+`RailRfWindow.axaml.cs` has always done `BoardZoomBoxBtn.Classes.Set("ToolActive", …)`, and that
+style is declared in `LayoutEditorView.axaml`'s own `UserControl.Styles` — not application-wide. So
+the class was set on every arm of the board panel's magnifier and painted nothing: the zoom box has
+armed invisibly in this window since it was written. A class nobody styles is not a no-op, it is a
+feature that silently does not exist.
+
+### 4 and 5. Compare… and Export were disabled and said so
+
+*"Why not?"* Because every writer was private to `src/Cli/Rail.cs`. `src/Design/RESOLVED.md`
+records the move that fixed it. On this side: one save dialog whose EXTENSION picks the format,
+exactly as `circuitrf rail -o` does, over `RailExport.Csv`/`Pack` and `RailReportPage`; a Touchstone
+name is refused in the verb's own words and for its own reason. `Report ▸` opens the same dialog on
+the page format.
+
+Compare builds its reference side from **a second `RailRfViewModel` over the reference document**
+(`RailRfViewModel.Compare.cs`), because resolving and solving a `.crail` is the thing that view
+model already is and it is framework-free by construction. Both sides run at the model kind on
+screen — a fast reading of one board against a meshed reading of another measures the two
+extractors and reports the difference as a property of the boards. The answer is shown in
+`RailCompareDialog`, which composes nothing: every heading and line is
+`RailComparisonReport.Sections`', and the page is `RailComparisonExport`'s.
+
+One thing the comparison does not carry: `RailComparisonSide.Modes` wants `PdnModeSolver`'s
+`PdnMode` and the window's Find button produces `PdnPlaneMode`, a different record off a different
+solve. Left empty rather than converted, so the report's plane-mode section says nothing rather
+than saying something derived.
+
+### 6. The Sources and Loads could not be changed, and "+" made a row that could not be completed
+
+*"What are the Sources and Loads? I don't see those (U2, U1, U3) in the artwork … How does a user
+change them? I can't seem to do anything with them. And if I add one with the + button it just says
+'no anchor'… what good does that do a user?"*
+
+Three separate gaps behind one question.
+
+**They are pads**, `U2.OUT`, `U1.VDD`, `U3.VDD`, named in the example's own `.ipc` at coordinates
+the placement file confirms — and nothing in a `.clay` labels a refdes, so the port GLYPHS are the
+only thing that says where one is. Those glyphs were drawn on the drop, class and |Z| maps and
+**not on the copper tab, which is the tab the window opens on**. `RailMapScene.BuildCopper` now
+adds them, with the marker reach unioned into the bounds separately (§11.6 trap 4).
+
+**The anchor is now settable**, in the row's own first column, on the same `InlineEditText` contract
+as every other value on this window, with a watermark and a tooltip listing the pads the board
+netlist offers ON THIS RAIL — read from the same `Board.Pads` the extractor resolves against, so the
+tooltip cannot offer a pad the solve then cannot find. `RailAnchorEntry` holds the parse; clearing
+the field unanchors the row rather than being refused, because that is the state `+` creates and one
+a user has to be able to get back to.
+
+### 7. "No board netlist named any nets" — over a document whose netlist names two
+
+*"What is the deal with the Rail: +3V3 setting in the Specification area? Below it says 'No board
+netlist named any nets, so pick the rail by clicking its pour on the board'. Huh? I click on the
+board but nothing happens."*
+
+Both halves were real.
+
+`AvailableNets` was rebuilt only by `ApplyImport`. **Opening** a `.crail` set `BoardNetlist` and
+never refreshed the list, and `HasNoPickableNets` is "a board is loaded and nothing named a net" —
+so every opened document reported having no nets, including the shipped example whose `.ipc` names
+`+3V3` and `GND`. A derived list only one of two writers refreshes is a list that is wrong on the
+other path, silently, so the refresh now belongs to the write (`OnBoardNetlistChanged`).
+
+And the gesture that sentence names **had never been wired at all**: `PickRailAt` existed, was
+tested, and had no caller outside its own test. `RailLayoutOverlay.OnPointerPressed` declined every
+press. It now offers one seam, `PourPick`, armed by the view model **only while
+`HasNoPickableNets`** — the same property the sentence is bound to, so the two cannot come apart
+again — and the pick declines unless `LayoutHitTest.HitStack` says the point is on copper, because
+`PdnRailRegions` seeds its walk from the anchor and a seed on bare substrate walks nothing while
+looking exactly like a rail that has been created. The rail is named in the board's own display
+unit, not in DBU.
+
+### And every bulk result is now selectable text
+
+Separate owner instruction in the same pass: the stackup line, the drop, the breakdown, the via
+check, the aggressor coincidences, the mask verdict, the anti-resonances, the removal ranking, the
+plane modes, the plane and impedance messages, the status strip, the refusal strip and the board
+readout are all `SelectableTextBlock` now, so they can be copied out and pasted into an email.
+
+Each card is ONE selectable element over the whole card's text rather than one per line, because
+`SelectableTextBlock` selects within one element and copying a line is not what "paste it into an
+email" means. The joining is a converter (`RailLinesToTextConverter`) over the EXISTING `…Lines`
+property rather than seven new view-model properties: each of those would have had to be added to
+the ten places its source is already re-stated, and forgetting one produces a card that silently
+stops updating while looking exactly like a card with nothing new to say.
+
+**The trap, already recorded by the Match Designer and avoided here:**
+`SelectableTextBlock.OnPointerPressed` sets `Handled` and captures the pointer, so a `ListBoxItem`
+whose content is one never gets selected. The result cards' lists carry no selection and lose
+nothing; the Parts, Sources, Loads and Aggressors rows DO, and were deliberately left as plain
+`TextBlock`s — converting them would have undone finding 1 above in the same commit.
+
+
 ## "Technology X has 2 issues" sent a user hunting (2026-09-18)
 
 User report. Told in the Messages panel that his technology had two issues and to open it in the

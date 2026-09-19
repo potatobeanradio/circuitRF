@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -27,11 +29,18 @@ public sealed partial class RailLoadRowViewModel : ObservableObject
     /// </summary>
     private readonly Func<RailLengthFormat> _lengthFormat;
 
-    public RailLoadRowViewModel(RailSpec rail, RailLoad load, Func<RailLengthFormat>? lengthFormat = null)
+    /// <summary>The board's pads, for the anchor field's own tooltip — a function for
+    /// <see cref="_lengthFormat"/>'s reason.</summary>
+    private readonly Func<IReadOnlyList<PdnPad>> _pads;
+
+    public RailLoadRowViewModel(RailSpec rail, RailLoad load,
+                                Func<RailLengthFormat>? lengthFormat = null,
+                                Func<IReadOnlyList<PdnPad>>? pads = null)
     {
         _rail = rail;
         _load = load;
         _lengthFormat = lengthFormat ?? (static () => RailLengthFormat.Dbu);
+        _pads = pads ?? (static () => []);
     }
 
     private RailLoad _load;
@@ -47,7 +56,31 @@ public sealed partial class RailLoadRowViewModel : ObservableObject
     public string Anchor => _load.Anchor.Describe(_lengthFormat());
 
     /// <summary>The board's display unit changed, so the anchor column has to be re-read.</summary>
-    public void NotifyAnchorChanged() => OnPropertyChanged(nameof(Anchor));
+    public void NotifyAnchorChanged()
+    {
+        OnPropertyChanged(nameof(Anchor));
+        OnPropertyChanged(nameof(AnchorEntry));
+        OnPropertyChanged(nameof(AnchorTip));
+    }
+
+    /// <summary>
+    /// The anchor as the row's own settable first column — see <see cref="RailAnchorEntry"/> for
+    /// why it is settable at all.
+    /// </summary>
+    public string AnchorEntry
+    {
+        get => RailAnchorEntry.Text(_load.Anchor, _lengthFormat());
+        set
+        {
+            if (RailAnchorEntry.Parse(value, _lengthFormat()) is { } anchor)
+                Commit(_load with { Anchor = anchor });
+            else
+                NotifyAnchorChanged();   // rejected: snap the field back to what is stored
+        }
+    }
+
+    /// <summary>How to spell an anchor, and the ones this board offers on this rail.</summary>
+    public string AnchorTip => RailAnchorEntry.Tip(_pads(), _rail.NetName, _lengthFormat());
 
     /// <summary>
     /// The DC current, as the settable column shows it — or <see cref="ObserveText"/>.
@@ -133,6 +166,8 @@ public sealed partial class RailLoadRowViewModel : ObservableObject
             _load = next;
         }
 
+        OnPropertyChanged(nameof(Anchor));
+        OnPropertyChanged(nameof(AnchorEntry));
         OnPropertyChanged(nameof(CurrentEntry));
         OnPropertyChanged(nameof(IsObservationOnly));
         OnPropertyChanged(nameof(PeakEntry));

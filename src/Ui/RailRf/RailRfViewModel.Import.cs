@@ -81,6 +81,7 @@ public sealed partial class RailRfViewModel
         Placement = placement;
         Bom = bom;
         PartLibrary = library;
+        PartLibraryPath = library is null ? null : options.PartLibraryPath;
         BoardNetlist = netlist;
 
         // R-rail7-7: an unanswered origin is a refusal that SURVIVES the dialog closing, because it
@@ -100,9 +101,21 @@ public sealed partial class RailRfViewModel
         RefreshRunGate();
     }
 
-    /// <summary>The board netlist this document was imported with, or null.</summary>
+    /// <summary>The board netlist this document was imported with, or opened with.</summary>
+    /// <remarks>
+    /// <b>The pick list is rebuilt from here rather than by each caller</b> (owner, 2026-09-19).
+    /// It was rebuilt only by <see cref="AdoptImport"/>, so OPENING a <c>.crail</c> whose
+    /// <c>BoardNetlistRef</c> resolved perfectly well left <see cref="AvailableNets"/> empty — and
+    /// <see cref="HasNoPickableNets"/> is "a board is loaded and nothing named a net", so the
+    /// window then told the user that no board netlist had named any nets and to click the pour
+    /// instead. On the shipped Power Rail example, whose <c>.ipc</c> names <c>+3V3</c> and
+    /// <c>GND</c>. A derived list that only one of two writers refreshes is a list that is wrong on
+    /// the other path, silently, so the refresh belongs to the write.
+    /// </remarks>
     [ObservableProperty]
     private BoardNetlist? _boardNetlist;
+
+    partial void OnBoardNetlistChanged(BoardNetlist? value) => RebuildAvailableNets();
 
     // ── Step 2: picking the rail (§2.3, R-rail7-8) ─────────────────────────────────────────────
 
@@ -127,6 +140,9 @@ public sealed partial class RailRfViewModel
         SelectedNet = null;
         OnPropertyChanged(nameof(HasPickableNets));
         OnPropertyChanged(nameof(HasNoPickableNets));
+
+        // The gesture follows the sentence — see SyncPourPick's own note.
+        SyncPourPick();
     }
 
     /// <summary>The net highlighted in the pick list, or null.</summary>

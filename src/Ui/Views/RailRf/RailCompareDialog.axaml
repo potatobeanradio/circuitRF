@@ -1,0 +1,114 @@
+<!-- The A/B comparison's answer (§2.5, brief 16; owner, 2026-09-19: "Compare… and Export are
+     disabled and say they are not wired yet. Why not?").
+
+     ── IT SHOWS THE REPORT, IT DOES NOT COMPOSE IT ─────────────────────────────────────────────
+     Every heading and every line on this window comes out of `RailComparisonReport.Sections` in
+     src/Design — the same list the PAGE draws, which is R-rail16-6's whole point: a panel showing
+     the comparison has to read the same list the page does, or the two come to disagree about what
+     the comparison found while both look right.
+
+     ── THE THREE SENTENCES ARE AT THE TOP ──────────────────────────────────────────────────────
+     §2.5's answer is three sentences, not a table — the table is the supporting evidence and it is
+     underneath. `RailComparisonReport.Findings` is those sentences and they are the report's own
+     wording, never re-said here.
+
+     R-rail7-2 reaches this window too: centred text on every push button. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:rvm="using:CircuitRF.Ui.RailRf"
+        xmlns:conv="using:CircuitRF.Ui.Converters"
+        x:Class="CircuitRF.Ui.Views.RailRf.RailCompareDialog"
+        Title="railRF — Compare"
+        Width="760" Height="620"
+        MinWidth="560" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector=":is(TextBlock).finding">
+            <Setter Property="FontSize"     Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector=":is(TextBlock).hdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,8,0,2"/>
+        </Style>
+        <Style Selector=":is(TextBlock).warn">
+            <Setter Property="FontSize"     Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10,8"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16,12">
+
+        <SelectableTextBlock Grid.Row="0" x:Name="BannerText" Classes="note" Margin="0,0,0,8"/>
+
+        <!-- THE REFUSAL, where there is one. A comparison that could not be made says so in the
+             report's own sentence and the rest of the window stays empty rather than showing an
+             empty table that reads as "no differences". -->
+        <SelectableTextBlock Grid.Row="1" x:Name="RefusalText" Classes="warn" IsVisible="False"
+                             Margin="0,0,0,8"/>
+
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="10">
+
+                <Border Classes="card" x:Name="FindingsCard">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="hdr" Text="The answer" Margin="0,0,0,2"/>
+                        <ItemsControl x:Name="FindingsList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <SelectableTextBlock Classes="finding" Text="{Binding}" Margin="0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <ItemsControl x:Name="SectionsList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="rvm:RailCompareSectionView">
+                            <Border Classes="card" Margin="0,0,0,6">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="hdr" Text="{Binding Heading}" Margin="0,0,0,2"/>
+                                    <!-- ONE selectable block per section, not one per line:
+                                         a reader copying a comparison into an email wants the
+                                         section, and SelectableTextBlock selects within one
+                                         element (owner, 2026-09-19). -->
+                                    <SelectableTextBlock Classes="note"
+                                                         Text="{Binding Lines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <!-- The page is RailReportPage's, through RailComparisonExport — §11.7's one route
+                 from a comparison to a page, which is the same one `circuitrf rail -o` draws. -->
+            <Button x:Name="SaveButton" Content="Save page…" Padding="14,4"/>
+            <Button x:Name="CloseButton" Content="Close" Padding="14,4" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -48,6 +48,8 @@ public partial class RailRfWindow : Window
         FrequencyTab.Click  += (_, _) => SetResultsTab(RailResultsTab.Frequency);
 
         WireImportButton();
+        WireExportButtons();
+        WireCompareButton();
         WireOpenButton();
         WireBoardCanvas();
         WireLiveArtwork();
@@ -149,10 +151,17 @@ public partial class RailRfWindow : Window
         // the readout says what is under the pointer and the ruler says WHERE that is.
         BoardCanvas.ViewportChanged    += (_, _) => SyncBoardRulers();
         BoardCanvas.LayoutUpdated      += (_, _) => SyncBoardRulers();
+        // The third call is the X:/Y: readout at the foot of the picture (owner, 2026-09-19) — the
+        // layout editor has one and someone looking for a place on the board in this window was
+        // reading the ruler ticks instead. It is the SAME view model property the layout editor
+        // binds (`LayoutEditorViewModel.CursorXText`), so the two windows spell a coordinate
+        // identically and in the board's own display unit, rather than this window growing a second
+        // formatter that would drift from it.
         BoardCanvas.CursorWorldChanged += (_, world) =>
         {
             BoardHRuler.SetCursorWorld(world?.X);
             BoardVRuler.SetCursorWorld(world?.Y);
+            Vm?.BoardLayout?.SetCursorWorld(world?.X, world?.Y);
         };
 
         ActualThemeVariantChanged += (_, _) => ApplyMapTheme();

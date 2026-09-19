@@ -71,6 +71,77 @@ public readonly record struct RailLengthFormat(LayoutUnit Unit, int DbuPerMicron
         Length((long)System.Math.Round(metres * 1e9 * DbuPerMicron / 1000.0,
                                        System.MidpointRounding.AwayFromZero));
 
+    /// <summary>
+    /// A point typed the way <see cref="Point"/> prints one — <c>(26.5, 9.875) mm</c>,
+    /// <c>26.5, 9.875</c>, <c>26.5 mm, 9.875 mm</c> — or null where it does not read.
+    /// </summary>
+    /// <remarks>
+    /// <b>The inverse of <see cref="Point"/>, and it has to be</b>: a coordinate anchor is now typed
+    /// into the window on the row that prints it (owner, 2026-09-19), so what a row SHOWS has to be
+    /// what a row ACCEPTS. Each half goes through <see cref="LayoutUnits.TryParse"/> with this
+    /// format's own unit as the fallback, so a bare pair is read in the unit the row printed and a
+    /// suffixed one is read as written — the same rule every dimension field in the application
+    /// follows. <see cref="IsRawDbu"/> reads integers, because that is what it prints.
+    /// </remarks>
+    public (long X, long Y)? ParsePoint(string? text)
+    {
+        if (text is not { Length: > 0 }) return null;
+
+        string body = text.Trim();
+        if (body.StartsWith('(')) body = body[1..];
+
+        // THE UNIT SITS OUTSIDE THE BRACKET, because Point prints it once for the pair: "(26.5,
+        // 9.875) mm". Splitting on the comma alone leaves it stuck to the SECOND number, which is
+        // how the round trip came back null the first time this was written. It is lifted off here
+        // and given to whichever half does not carry one of its own.
+        string outerUnit = "";
+        int close = body.IndexOf(')');
+        if (close >= 0)
+        {
+            outerUnit = body[(close + 1)..].Trim();
+            body = body[..close];
+        }
+
+        int comma = body.IndexOf(',');
+        if (comma < 0) return null;
+
+        string left = WithUnit(body[..comma].Trim(), outerUnit);
+        string right = WithUnit(body[(comma + 1)..].Trim(), outerUnit);
+        if (left.Length == 0 || right.Length == 0) return null;
+
+        if (IsRawDbu)
+        {
+            return TryDbu(left, out long rx) && TryDbu(right, out long ry) ? (rx, ry) : null;
+        }
+
+        return LayoutUnits.TryParse(left, Unit, DbuPerMicron, out long x)
+            && LayoutUnits.TryParse(right, Unit, DbuPerMicron, out long y)
+            ? (x, y)
+            : null;
+
+        // A half that already names its own unit keeps it — "26.5mm, 300um" is a legal thing to
+        // type and the two halves need not agree. Only a bare number takes the outer one.
+        static string WithUnit(string half, string unit) =>
+            half.Length == 0 || unit.Length == 0 || HasSuffix(half) ? half : half + " " + unit;
+
+        static bool HasSuffix(string half)
+        {
+            foreach (char c in half) if (char.IsLetter(c) || c == 'µ' || c == 'μ') return true;
+            return false;
+        }
+
+        static bool TryDbu(string half, out long value)
+        {
+            // The fallback prints "(x, y) DBU", so the word is the outer unit and lands on both
+            // halves through WithUnit. It is not part of either integer.
+            string t = half.Trim();
+            if (t.EndsWith("DBU", System.StringComparison.OrdinalIgnoreCase)) t = t[..^3].TrimEnd();
+
+            return long.TryParse(t, System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out value);
+        }
+    }
+
     /// <summary>Metres from a number typed in this format's own unit, or null where it does not read.</summary>
     public double? ParseMetres(string? text)
     {

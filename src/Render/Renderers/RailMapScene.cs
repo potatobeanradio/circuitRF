@@ -273,7 +273,7 @@ public sealed class RailMapScene
 
         return kind switch
         {
-            RailMapKind.Copper => BuildCopper(result),
+            RailMapKind.Copper => BuildCopper(result, dbuPerMicron),
             RailMapKind.Class  => BuildClass(result, dbuPerMicron),
             _                  => BuildDrop(result, dbuPerMicron),
         };
@@ -281,7 +281,7 @@ public sealed class RailMapScene
 
     // ── copper: the rail's own islands, and nothing else ───────────────────────────────────────
 
-    private static RailMapScene BuildCopper(RailDcResult result)
+    private static RailMapScene BuildCopper(RailDcResult result, int dbuPerMicron)
     {
         if (result.Regions is not { } set || set.Power.Count == 0)
             return Empty(RailMapKind.Copper,
@@ -307,7 +307,22 @@ public sealed class RailMapScene
         {
             Kind    = RailMapKind.Copper,
             Regions = regions,
-            Bounds  = bounds,
+
+            // ── THE PORTS ARE ON THE COPPER TAB TOO (owner, 2026-09-19) ──────────────────────
+            //
+            // They were on the drop, class and |Z| maps and not on this one, which is the tab the
+            // window opens on — so a reader looking at the shipped Power Rail example asked where
+            // U1, U2 and U3 were, having been given a Sources and Loads list naming three parts
+            // that appeared nowhere in the picture beside it. Nothing in the artwork labels a
+            // refdes (a `.clay` carries geometry, not a component), so these glyphs ARE the only
+            // thing that says where a port is; withholding them on the one tab that shows the bare
+            // copper is withholding them where the question is asked.
+            //
+            // Same list, same function, same bounds rule as the other three — §11.6 trap 4: the
+            // marker reach is unioned separately, because a glyph outside the copper's own bbox is
+            // exactly what Zoom to Fit cuts off.
+            Markers = MarkersOf(result),
+            Bounds  = bounds.Union(MarkerBounds(result, dbuPerMicron)),
         };
     }
 

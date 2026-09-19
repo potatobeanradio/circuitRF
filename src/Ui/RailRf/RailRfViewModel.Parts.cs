@@ -32,6 +32,17 @@ public sealed partial class RailRfViewModel
     partial void OnPartLibraryChanged(PartLibrary? value) => RebuildParts();
 
     /// <summary>
+    /// The <c>.crlib</c> the library was read from, or null where none resolved.
+    /// </summary>
+    /// <remarks>
+    /// Carried only so <see cref="RailProvenance"/> can say which library a coverage count is
+    /// about — the same line <c>circuitrf rail</c> prints in its own banner. Nothing reads the file
+    /// from here.
+    /// </remarks>
+    [ObservableProperty]
+    private string? _partLibraryPath;
+
+    /// <summary>
     /// §9's headline number: how many parts are modelled from a FILE rather than from a library row.
     /// </summary>
     /// <remarks>

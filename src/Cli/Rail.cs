@@ -883,59 +883,18 @@ internal static class Rail
 
     // ── R-rail10-5: the provenance every export carries ──────────────────────
 
-    /// <summary>
-    /// What a reader six months later has to know and has no status strip to read it from.
-    /// </summary>
-    /// <remarks>
-    /// <b>Computed once and handed to every writer</b> — the console, the CSV header, the `.npy`
-    /// group, the report page and <c>--json</c> — because five writers each assembling their own
-    /// would be five chances for one of them to omit the line that matters. Overview §4 rule 1.
-    /// </remarks>
-    private sealed record RailProvenance(
-        string Model,
-        string Extent,
-        double TemperatureCelsius,
-        int PartsWithoutBiasCurve,
-        int PartsModelledFromFile,
-        bool Indicative,
-        string? PartLibraryPath,
-        int PartsReferenced,
-        string ArtworkPath,
-        string TechnologyPath)
-    {
-        public IReadOnlyList<string> Lines =>
-        [
-            $"model: {Model} · reference {Extent} · {TemperatureCelsius:0.#} °C",
-            PartLibraryPath is null
-                ? "no part library resolved: no part is modelled from a file and no bias-curve "
-                + "coverage is known"
-                // Nothing to count is not a count of nothing. A rail that declares no part rows has
-                // no decoupling bank IN THE DOCUMENT, and printing "0 part(s) modelled from a file"
-                // there reads as a checked board that came back clean.
-                : PartsReferenced == 0
-                ? "no part is declared on the rail(s) reported here, so nothing was asked of the "
-                + "part library: no bias-curve coverage is known"
-                : $"{PartsModelledFromFile} of {PartsReferenced} part number(s) modelled from a file, "
-                + $"{PartsWithoutBiasCurve} with no bias curve"
-                + (Indicative
-                    ? " — some ESRs are class defaults, so any peak height derived from them is INDICATIVE"
-                    : ""),
-            $"artwork: {ArtworkPath}",
-            $"stackup: {TechnologyPath}",
-        ];
-    }
+    // ── R-rail10-5's provenance record MOVED to src/Design (RailExport.cs, 2026-09-19) ──────
+    //
+    // The window's Export button writes the same CSV and the same `.npy` as this verb, and
+    // `src/Ui` cannot reference `src/Cli` — so the record, its `Lines`, the CSV writer, the
+    // DataSet pack and the report sections all live below the firewall now and BOTH surfaces call
+    // them. What stays here is this file's own job: turning arguments and resolutions into the
+    // inputs those functions take, and saying what could not be read.
 
     private static RailProvenance Provenance(
         RailDocument doc, Options o, BoardInputs? board, string documentPath,
         IReadOnlyList<RailSpec> rails, IReadOnlyList<RailDcResult> results)
     {
-        string extent = rails.Select(r => ExtentText(r.ReferenceExtent)).Distinct(StringComparer.Ordinal).ToList() is
-            { Count: 1 } one ? one[0] : "mixed across the rails reported here";
-
-        double temperature = results.Count > 0
-            ? results[0].Netlist.Provenance.CopperTemperatureCelsius
-            : doc.Settings.CopperTemperatureCelsius;
-
         // Document-relative, like every other reference a `.crail` carries — and through the one
         // function the WINDOW's open calls, so the two surfaces cannot land on different files.
         var library = RailArtwork.ResolvePartLibrary(
@@ -948,48 +907,19 @@ internal static class Rail
             JsonRun.Note(CliDiagnostics.RailPartLibraryUnreadable(resolvedLibraryPath!, libraryError));
         }
 
-        // R-rail11-6's two headline counts are about THE PARTS ON THIS BOARD, and the board's parts
-        // are the rails' own rows — `RailSpec.Parts`, each carrying the internal part number the
-        // model attaches to. Asking `PartLibrary.Coverage` about the LIBRARY's own rows instead
-        // answers a different question with the same-looking number: a shared library of 500 rows in
-        // front of a twelve-part rail prints "412 with no bias curve" and the count reads as a
-        // statement about the board. The window computes it over the BOM's part numbers
-        // (`RailRfViewModel.RebuildParts`), and a verb whose provenance disagrees with the window's
-        // status strip about the same document is exactly the divergence R-rail10-8 exists against.
-        //
-        // A rail with no part rows at all has a coverage of NOTHING rather than a coverage of zero,
-        // which RailProvenance.Lines says out loud — the same rule that governs having no library.
-        var referenced = rails
-            .SelectMany(r => r.Parts)
-            .Select(p => p.PartNumber)
-            .Where(pn => !string.IsNullOrWhiteSpace(pn))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var coverage = library is not null && referenced.Count > 0 ? library.Coverage(referenced) : null;
-
-        int fromFile = library is null ? 0
-            : referenced.Count(pn => library.ResolveModel(pn).Source == PartModelSource.AttachedFile);
-
-        return new RailProvenance(
-            o.Model == PdnModelKind.Accurate ? "Accuracy (meshed)" : "Fast",
-            extent,
-            temperature,
-            coverage?.WithoutBiasCurve.Count ?? 0,
-            fromFile,
-            coverage is { Indicative.Count: > 0 },
-            libraryPath,
-            referenced.Count,
+        // The COUNTS and the extent are RailProvenance.Of's, not this file's: R-rail11-6's two
+        // headline numbers are about the parts on this board and the window has to report the same
+        // two, so the arithmetic lives where both can reach it. Only the two PATHS are this verb's,
+        // because only this verb resolved them.
+        return RailProvenance.Of(
+            o.Model, doc, rails, results, library, libraryPath,
             board?.ClayPath ?? "(none)",
             board is null ? "(none)" : board.Technology.Name);
     }
 
-    private static string ExtentText(RailReferenceExtent extent) => extent switch
-    {
-        RailReferenceExtent.AsImported      => "as imported",
-        RailReferenceExtent.FilledToOutline => "filled to outline — optimistic",
-        _                                   => "infinite — an upper bound",
-    };
+    /// <summary>Said once, in <see cref="RailProvenance.ExtentText"/>, because the window prints
+    /// the same three strings on its own status strip.</summary>
+    private static string ExtentText(RailReferenceExtent extent) => RailProvenance.ExtentText(extent);
 
     // ── step 4: the console report (§3.1 — stdout is the result) ─────────────
 
@@ -1126,68 +1056,10 @@ internal static class Rail
         if (dir is { Length: > 0 }) Directory.CreateDirectory(dir);
     }
 
-    /// <summary>
-    /// §11.5's CSV: the ranked breakdown, the via flags, the parts and the ports.
-    /// </summary>
-    /// <remarks>
-    /// <b>The provenance is a comment header</b> (R-rail10-5) — the CSV's own spelling of what the
-    /// `.npy` carries as a group and the page carries in its banner.
-    ///
-    /// <para><b>The anti-resonance table is named and empty.</b> §11.5 lists it and it is a frequency
-    /// answer; saying so costs one line and is the difference between "this board has none" and "this
-    /// phase does not compute them", which a reader of a CSV cannot otherwise tell apart.</para>
-    /// </remarks>
+    /// <summary>§11.5's CSV — <see cref="RailExport.Csv"/>, which the window's Export writes
+    /// too.</summary>
     private static string Csv(RailDocument doc, IReadOnlyList<RailDcResult> results, RailProvenance provenance)
-    {
-        var sb = new StringBuilder();
-        sb.Append("# circuitRF railRF — DC\n");
-        sb.Append($"# document,{Q(doc.Name)}\n");
-        foreach (string line in provenance.Lines) sb.Append($"# {line}\n");
-
-        sb.Append("\nsection,rail,label,value,unit,detail\n");
-
-        foreach (var r in results)
-        {
-            foreach (var p in r.Ports)
-            {
-                sb.Append($"port,{Q(r.RailName)},{Q(p.Name)},{F(p.VoltageV)},V,{Q(p.Describe())}\n");
-                if (p.CurrentA is { } i)
-                    sb.Append($"port-current,{Q(r.RailName)},{Q(p.Name)},{F(i)},A,\n");
-            }
-
-            foreach (var s in r.Sources)
-                sb.Append($"source,{Q(r.RailName)},{Q(s.Name)},{F(s.CurrentA)},A,{F(s.ShareOfTotal)} share\n");
-
-            foreach (var row in r.Breakdown)
-                sb.Append($"breakdown,{Q(r.RailName)},{Q(row.Label)},{F(row.DropV)},V," +
-                          $"{F(row.ResistanceOhms)} Ohm / {F(row.CurrentA)} A / {row.ElementCount} element(s)\n");
-
-            foreach (var t in r.ViaCheck.Transitions)
-                sb.Append(
-                    $"via,{Q(r.RailName)},{Q($"{t.FromLayer} to {t.ToLayer}")}," +
-                    $"{F(t.Worst?.CurrentA ?? 0)},A," +
-                    $"{t.Count} barrel(s) / {F(t.TotalCurrentA)} A total / peaking {F(t.PeakingFactor)}\n");
-
-            foreach (var flag in r.ViaCheck.Flags)
-                sb.Append($"via-flag,{Q(r.RailName)},{Q(flag.Describe())},,,\n");
-
-            foreach (string n in r.ViaCheck.Notes)
-                sb.Append($"via-note,{Q(r.RailName)},,,,{Q(n)}\n");
-
-            foreach (var reg in r.Regulators)
-                sb.Append($"regulator,{Q(r.RailName)},{Q(reg.Refdes)},{F(reg.InputVoltageV)},V,{Q(reg.Describe())}\n");
-
-            foreach (string f in r.Findings) sb.Append($"finding,{Q(r.RailName)},,,,{Q(f)}\n");
-            foreach (string n in r.Notes)    sb.Append($"note,{Q(r.RailName)},,,,{Q(n)}\n");
-        }
-
-        sb.Append("# anti-resonances: none are reported here. They are a FREQUENCY answer and this "
-                + "is the DC phase — an empty table here does not mean this board has none.\n");
-        return sb.ToString();
-
-        static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
-        static string Q(string? s) => s is null ? "" : "\"" + s.Replace("\"", "\"\"") + "\"";
-    }
+        => RailExport.Csv(doc, results, provenance);
 
     /// <summary>
     /// The report, drawn by <see cref="RailReportPage"/> — the one route from a rail result to a
@@ -1244,76 +1116,24 @@ internal static class Rail
         return 0;
     }
 
-    /// <summary>The report page's text blocks. Every line is the RESULT's own sentence — see
-    /// <see cref="RailReportPage"/>'s header for why none of them is re-worded here.</summary>
+    /// <summary>
+    /// The report page's text blocks, mapped onto the type the page draws.
+    /// </summary>
+    /// <remarks>
+    /// The WORDING is <see cref="RailExport.Sections"/>'s, in <c>src/Design</c>, because the
+    /// window's own Export writes the same page and cannot reach this file. The mapping exists for
+    /// the reason <c>RailComparisonExport</c>'s header already records: <c>src/Design</c> sits
+    /// below <c>CircuitRF.Render</c> and cannot name <see cref="RailReportSection"/>.
+    /// </remarks>
     private static IReadOnlyList<RailReportSection> Sections(IReadOnlyList<RailDcResult> results, Options o)
-    {
-        var sections = new List<RailReportSection>();
-
-        foreach (var r in results)
-        {
-            sections.Add(new RailReportSection(
-                $"Rail '{r.RailName}' — ports", [.. r.Ports.Select(p => p.Describe())]));
-
-            int shown = o.All ? r.Breakdown.Count : Math.Min(o.Rows, r.Breakdown.Count);
-            sections.Add(new RailReportSection(
-                $"Rail '{r.RailName}' — where the drop is",
-                [.. r.Breakdown.Take(shown).Select(
-                     row => $"{row.DropV * 1e3:0.###} mV ({row.ShareOfTotal:P0}) · {row.Label}")]));
-
-            if (r.ViaCheck.Transitions.Count > 0)
-                sections.Add(new RailReportSection(
-                    $"Rail '{r.RailName}' — vias",
-                    r.ViaCheck.Flags.Count == 0
-                        ? [$"{r.ViaCheck.Transitions.Count} transition(s), none over its limit"]
-                        : [.. r.ViaCheck.Flags.Select(f => f.Describe())]));
-
-            if (r.Findings.Count > 0)
-                sections.Add(new RailReportSection($"Rail '{r.RailName}' — findings", r.Findings));
-        }
-
-        return sections;
-    }
+        => [.. RailExport.Sections(results, o.Rows, o.All).Select(x => new RailReportSection(x.Heading, x.Lines))];
 
     // ── the DataSet, and the provenance group it carries (R-rail10-5) ────────
 
-    /// <summary>The group an <c>.npy</c> or a <c>.mat</c> carries the provenance in — <c>em</c>'s
-    /// diagnostics group is the precedent, and the name is said once here.</summary>
-    private const string ProvenanceGroup = "provenance";
-
-    /// <summary>
-    /// Every rail's own <see cref="DataSet"/>, grouped by rail name, plus the provenance.
-    /// </summary>
-    /// <remarks>
-    /// <b>Nothing invents a result type</b> — each rail's cubes are the ones
-    /// <c>DcResultPacker</c> already packed, moved into a group named after the rail so two rails of
-    /// one board do not collide. The provenance rides as a labelled AXIS rather than as prose,
-    /// because that is the only string a `.npy` carries and a reader that can find the numbers can
-    /// find the labels beside them.
-    /// </remarks>
+    /// <summary>Every rail's own <see cref="DataSet"/> — <see cref="RailExport.Pack"/>, which the
+    /// window's Export writes too.</summary>
     private static DataSet Pack(IReadOnlyList<RailDcResult> results, RailProvenance provenance)
-    {
-        var merged = new DataSet();
-
-        foreach (var r in results)
-            foreach (string group in r.Data.Groups)
-                foreach (var (name, cube) in r.Data.CubesIn(group))
-                    merged.AddToGroup(
-                        group.Length == 0 ? r.RailName : $"{r.RailName}.{group}", name, cube);
-
-        var lines = provenance.Lines;
-        var axis = new Axis("provenance", [.. Enumerable.Range(0, lines.Count).Select(i => (double)i)],
-                            "index", [.. lines]);
-        merged.AddToGroup(ProvenanceGroup, "Lines", new DataCube([axis], new double[lines.Count]));
-        merged.AddToGroup(ProvenanceGroup, "TemperatureC", DataCube.Scalar(provenance.TemperatureCelsius));
-        merged.AddToGroup(ProvenanceGroup, "PartsWithoutBiasCurve",
-                          DataCube.Scalar(provenance.PartsWithoutBiasCurve));
-        merged.AddToGroup(ProvenanceGroup, "PartsModelledFromFile",
-                          DataCube.Scalar(provenance.PartsModelledFromFile));
-        merged.AddToGroup(ProvenanceGroup, "Indicative", DataCube.Scalar(provenance.Indicative ? 1.0 : 0.0));
-
-        return merged;
-    }
+        => RailExport.Pack(results, provenance);
 
     private static RailReportJson RailJson(
         RailDocument doc, RailDcRunResult run, IReadOnlyList<RailDcResult> results,

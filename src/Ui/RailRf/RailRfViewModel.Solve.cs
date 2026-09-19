@@ -63,6 +63,7 @@ public sealed partial class RailRfViewModel
     {
         OnPropertyChanged(nameof(HasBoard));
         OnPropertyChanged(nameof(HasNoPickableNets));
+        SyncPourPick();
         OnPropertyChanged(nameof(TechnologyPath));
         OnPropertyChanged(nameof(HasTechnologyFile));
         OnPropertyChanged(nameof(EditTechnologyTip));
@@ -115,6 +116,7 @@ public sealed partial class RailRfViewModel
     {
         OnPropertyChanged(nameof(StatusLine));
         OnPropertyChanged(nameof(ResultsModelKind));
+        OnPropertyChanged(nameof(IsShowingAccuracy));
         OnPropertyChanged(nameof(ModelKindText));
         OnPropertyChanged(nameof(ElapsedText));
         OnPropertyChanged(nameof(SelectedRailResult));
@@ -122,6 +124,9 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(Ports));
         OnPropertyChanged(nameof(ViaFlagSummary));
         OnPropertyChanged(nameof(HasBothModels));
+        OnPropertyChanged(nameof(CanExport));
+        OnPropertyChanged(nameof(ExportBlockedReason));
+        OnPropertyChanged(nameof(ExportResults));
         OnPropertyChanged(nameof(PortLines));
         OnPropertyChanged(nameof(BreakdownLines));
         OnPropertyChanged(nameof(PlaneCapacitanceLine));
@@ -151,6 +156,24 @@ public sealed partial class RailRfViewModel
 
     /// <summary>The model kind of the numbers on screen, or null where there are none.</summary>
     public PdnModelKind? ResultsModelKind => Current?.Kind;
+
+    /// <summary>
+    /// True while the numbers on screen ARE the mesh reading — what lights the Accuracy button.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is §2.9 made visible, and it is the whole answer to "how do I know Accuracy is
+    /// turned on?"</b> (owner, 2026-09-19). Accuracy is not a mode with an on and an off — it is a
+    /// reading, and the honest question is which reading the window is showing. So the button is
+    /// lit exactly while <see cref="Current"/> carries the accurate one, and it goes out by itself
+    /// the moment an edit puts the Fast answer back on screen (<see cref="QueueResolve"/> runs on
+    /// every committed row edit). That is "never left silently" spelled as a lamp rather than as a
+    /// sentence at the far end of the status strip.
+    ///
+    /// <para>Which is also why it is a lit BUTTON and not a ToggleButton: there is nothing to
+    /// toggle off. Pressing it again re-runs the mesh; going back to Fast is what Run does, or
+    /// what the next keystroke does on its own.</para>
+    /// </remarks>
+    public bool IsShowingAccuracy => Current?.Kind == PdnModelKind.Accurate;
 
     /// <summary>What the status strip calls it — the SAME value, read off the same field.</summary>
     public string ModelKindText => Current is { } c ? Name(c.Kind) : "no result yet";
@@ -274,6 +297,7 @@ public sealed partial class RailRfViewModel
 
         RunBlockedReason = why ?? "";
         CanRun = why is null;
+        OnPropertyChanged(nameof(CanStartRun));
         RunCommand.NotifyCanExecuteChanged();
         AccuracyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRunPlane));
@@ -352,6 +376,53 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private bool _isSolving;
 
+    /// <summary>Which model the solve in flight is running. Meaningless while
+    /// <see cref="IsSolving"/> is false.</summary>
+    private PdnModelKind _solvingKind = PdnModelKind.Fast;
+
+    partial void OnIsSolvingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanStartRun));
+        OnPropertyChanged(nameof(BusyText));
+        OnPropertyChanged(nameof(StatusLine));
+        RunCommand.NotifyCanExecuteChanged();
+        AccuracyCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// What the bottom bar says while a solve is in flight, or empty.
+    /// </summary>
+    /// <remarks>
+    /// <b>Because "Accuracy does not seem to do anything" was the report</b> (owner, 2026-09-19),
+    /// and it does: on the shipped Power Rail example the mesh reading moves U1's drop from
+    /// 48.368 mV to 49.025 mV and replaces every closed-form breakdown row with a meshed one. What
+    /// it also does is take about eight times as long as the fast one in a release build and rather
+    /// longer in a debug one, during which the only sign of life was the word "solving…" at the end
+    /// of a status strip nobody was looking at — so a press with a slow answer and a small visible
+    /// delta reads as a dead button.
+    ///
+    /// <para>So the wait is stated where the button is, and it names the MODEL: the whole point of
+    /// §2.9 is that entering Accuracy is deliberate, and a busy note that did not say which reading
+    /// is being computed would be the same button press with a spinner on it.</para>
+    /// </remarks>
+    public string BusyText =>
+        !IsSolving ? ""
+        : _solvingKind == PdnModelKind.Accurate
+            ? "running Accuracy — the mesh solve. Tens of seconds on a real board."
+            : "solving…";
+
+    /// <summary>
+    /// True when a run can be STARTED — the gate, and nothing already in flight.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately not folded into <see cref="CanRun"/>.</b> That property gates the Fast edit
+    /// loop as well (<see cref="QueueResolve"/>), and the edit loop's whole contract is that a
+    /// re-solve in flight when another edit arrives is CANCELLED and replaced — so making it false
+    /// while solving would stop the numbers following the typing, which is R-rail7-5 exactly
+    /// backwards. What it gates is the two BUTTONS.
+    /// </remarks>
+    public bool CanStartRun => CanRun && !IsSolving;
+
     /// <summary>
     /// Re-extracts and re-solves in <b>Fast</b>, off the UI thread.
     /// </summary>
@@ -375,7 +446,7 @@ public sealed partial class RailRfViewModel
     }
 
     /// <summary>Run, in Fast — the bottom bar's own button, for a user who wants to be sure.</summary>
-    [RelayCommand(CanExecute = nameof(CanRun))]
+    [RelayCommand(CanExecute = nameof(CanStartRun))]
     private void Run()
     {
         if (Board is { } board) Start(board, PdnModelKind.Fast);
@@ -390,7 +461,7 @@ public sealed partial class RailRfViewModel
     /// <see cref="ByModel"/>, which is what lets brief 12 draw the fast curve beside the accurate one
     /// and measure the error on this design rather than promise it in a document.
     /// </remarks>
-    [RelayCommand(CanExecute = nameof(CanRun))]
+    [RelayCommand(CanExecute = nameof(CanStartRun))]
     private void Accuracy()
     {
         if (Board is { } board) Start(board, PdnModelKind.Accurate);
@@ -405,6 +476,7 @@ public sealed partial class RailRfViewModel
         _cts = cts;
         _inFlight = control;
         SolvesStarted++;
+        _solvingKind = kind;
         IsSolving = true;
 
         var request = BuildRequest(board, kind);
@@ -530,7 +602,7 @@ public sealed partial class RailRfViewModel
             if (PartsWithoutBiasCurve > 0)
                 parts.Add($"{PartsWithoutBiasCurve} part(s) with no bias curve");
 
-            if (IsSolving) parts.Add("solving…");
+            if (IsSolving) parts.Add(BusyText);
 
             return string.Join(" · ", parts);
         }

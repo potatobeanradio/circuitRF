@@ -1,5 +1,45 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF's exporters moved here so the WINDOW could have an Export button (2026-09-19)
+
+Owner report: *Compare… and Export are disabled in the UI with a tooltip saying they are not wired
+yet — why not?* The honest answer was that the CSV writer, the `DataSet` pack, the report-page
+sections and R-rail10-5's provenance record were all **private to `src/Cli/Rail.cs`**, and `src/Ui`
+may not reference `src/Cli`. Wiring the button meant either moving them below the firewall or
+writing a second set.
+
+`src/Design/RailRf/RailExport.cs` is the first of those, and the reasoning is the mirror image of
+the rule `src/Cli/Authoring.cs` already states for the headless verbs: *an operation that lives only
+in a view model is not a capability, and a verb that re-implements one diverges from it silently.*
+A second CSV writer would agree with the first today and drift the first time either was touched,
+and the drift would be invisible because both produce a plausible file — which is exactly the
+failure R-rail10-8 ("no second export path") exists to forbid.
+
+What moved: `RailProvenance` (the record, its `Lines`, `ModelText`, `ExtentText`, and a new `Of`
+factory that also carries R-rail11-6's two headline COUNTS, so the window's status strip and the
+verb's banner cannot disagree about one document), `RailExport.Csv`, `RailExport.Pack` and
+`RailExport.Sections`. `Rail.cs` keeps only what is genuinely its own — argument parsing, path
+resolution, the console report, `--json` and the writes — and each of its former methods is now a
+one-line delegation, which is what makes the two surfaces comparable byte for byte.
+
+What did NOT move: the PAGE. `RailReportPage` is in `CircuitRF.Render`, above this project, so the
+sections' wording is here as `RailReportText` and the drawing is there — the same split
+`RailComparisonReport.Sections` already makes, and for the reason `src/Render`'s own `.csproj`
+gives: it draws, it does not decide what a finding says. Both callers map `RailReportText` onto
+`RailReportSection`; two records of two fields is the price of the firewall and it is the right
+price.
+
+### The trap in `RailLengthFormat.ParsePoint`: the unit sits OUTSIDE the bracket
+
+Added in the same pass, because a source or load anchor is now TYPED into the row that prints it
+(see `src/Ui/RESOLVED.md`). `Point` prints the unit ONCE for the pair — `(26.5, 9.875) mm` — so a
+parser that splits on the comma hands `9.875) mm` to `LayoutUnits.TryParse`, which refuses it, and
+the round trip comes back null while the refdes form works perfectly. Written that way first and
+caught by the round-trip assertion rather than by reading. The unit is now lifted off the closing
+bracket and given to whichever half does not carry one of its own, so `26.5mm, 300um` is also legal
+and the two halves need not agree.
+
+
 ## The EM run asked the kernel's verdict before it asked whether there were any ports (2026-09-18)
 
 User report. An experienced designer opened an imported two-layer board, pressed Simulate with **no

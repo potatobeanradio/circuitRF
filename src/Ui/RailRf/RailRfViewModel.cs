@@ -185,8 +185,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
         if (SelectedRail is { } rail)
         {
-            foreach (var s in rail.Sources) Sources.Add(Track(new RailSourceRowViewModel(rail, s, BoardLengthFormat)));
-            foreach (var l in rail.Loads) Loads.Add(Track(new RailLoadRowViewModel(rail, l, BoardLengthFormat)));
+            foreach (var s in rail.Sources) Sources.Add(Track(new RailSourceRowViewModel(rail, s, BoardLengthFormat, BoardPads)));
+            foreach (var l in rail.Loads) Loads.Add(Track(new RailLoadRowViewModel(rail, l, BoardLengthFormat, BoardPads)));
             for (int i = 0; i < rail.Aggressors.Count; i++)
                 Aggressors.Add(Track(new RailAggressorRowViewModel(rail, rail.Aggressors[i], i)));
         }

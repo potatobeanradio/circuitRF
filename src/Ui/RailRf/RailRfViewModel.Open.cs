@@ -123,7 +123,10 @@ public sealed partial class RailRfViewModel
             notes.Add($"The part library '{libraryPath}' did not read: {libraryError}. Parts are "
                     + "reported from the rail's own rows, with no models attached.");
         else if (library is not null)
+        {
             PartLibrary = library;
+            PartLibraryPath = libraryPath;
+        }
 
         return notes;
     }

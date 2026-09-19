@@ -238,10 +238,38 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     // ── pointer: every gesture is DECLINED, and a move reads a value out ───────────────────────
 
-    /// <summary>Declines. railRF has no press gesture of its own; a region is forced from the context
-    /// menu, which is a route that cannot swallow a marquee or a pan.</summary>
-    public bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount) =>
-        false;
+    /// <summary>
+    /// The pour pick, and NOTHING else — every other press is declined.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why there is a press here at all now.</b> §2.3 step 2's second route is "pick the rail by
+    /// clicking its pour on the board", and the window SAYS SO in the specification column whenever
+    /// nothing named a net. It was never wired: the sentence was on screen, the click did nothing,
+    /// and a user reasonably read the whole card as broken (owner, 2026-09-19). A sentence telling
+    /// someone to perform a gesture that does not exist is worse than no sentence.
+    ///
+    /// <para><b>It is armed by the window, not by this overlay</b> — <see cref="PourPick"/> is null
+    /// except in exactly the state that sentence describes. A press that is not that state, or that
+    /// carries a modifier, or is a double-click, is DECLINED, because anything consumed here never
+    /// reaches the canvas's own marquee, pan and hit test, and §11.6's whole rule is that those keep
+    /// working. The pick itself also declines when the point is not on copper: a rail anchored at a
+    /// coordinate with nothing under it is a rail whose connectivity walk seeds from nowhere.</para>
+    /// </remarks>
+    public bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount)
+    {
+        if (PourPick is null || clickCount != 1 || modifiers != KeyModifiers.None) return false;
+        return PourPick(worldX, worldY, tolDbu);
+    }
+
+    /// <summary>
+    /// What a left-click on the copper does, or null when clicking the pour means nothing here.
+    /// </summary>
+    /// <remarks>
+    /// Set by the view model, and only while <c>HasNoPickableNets</c> — the exact condition the
+    /// "pick the rail by clicking its pour" sentence is shown under. Returns true when it made a
+    /// rail, which is what consumes the press.
+    /// </remarks>
+    public Func<long, long, long, bool>? PourPick { get; set; }
 
     /// <summary>
     /// Reads the value under the cursor and declines the gesture.

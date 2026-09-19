@@ -78,6 +78,20 @@
              silently fail to render. -->
         <SolidColorBrush x:Key="CrfDropTargetBrush" Color="{DynamicResource SystemAccentColor}" Opacity="0.3"/>
 
+        <!-- The SELECTED row of a flattened list (railRF, and anything else that borrows its
+             ListBox.rows idiom). Measured, not guessed: those panes paint a selected row
+             SystemChromeMediumLowColor inside a card painted SystemChromeLowColor, and under the
+             Fluent LIGHT variant those two keys are the SAME colour (#FFF2F2F2) — so the highlight
+             rendered perfectly and was invisible, and under dark it was #171717 against #2B2B2B,
+             which is a difference nobody reads as a selection. Reported twice on one window: the
+             selected aggressor the "remove" button was about to act on, and the parts row that lit
+             the board beside it (owner, 2026-09-19).
+
+             The accent, at the opacity CrfDropTargetBrush already uses and for its reason: the row's
+             own text sits on top of this and has to stay legible. A Brush, not a System*Color key,
+             for the reason CrfTileBorderBrush above records. -->
+        <SolidColorBrush x:Key="CrfSelectedRowBrush" Color="{DynamicResource SystemAccentColor}" Opacity="0.28"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

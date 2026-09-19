@@ -13,6 +13,7 @@
 // document does.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
@@ -56,6 +57,18 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     public Func<RailLengthFormat> BoardLengthFormat =>
         () => Board?.LengthFormat ?? RailLengthFormat.Dbu;
+
+    /// <summary>
+    /// The board netlist's pads, for the anchor field's tooltip on every source and load row.
+    /// </summary>
+    /// <remarks>
+    /// A FUNCTION, like <see cref="BoardLengthFormat"/> and for the same reason: a row outlives the
+    /// board being adopted under it (the live-artwork swap, and the open that resolves the netlist
+    /// after the rows are built), and a row holding the pad list it was constructed with would go on
+    /// offering the pads of a board that is no longer loaded.
+    /// </remarks>
+    public Func<IReadOnlyList<PdnPad>> BoardPads =>
+        () => Board?.Pads ?? [];
 
     /// <summary>The unit the last refresh printed in — see <see cref="RefreshIfUnitChanged"/>.</summary>
     private RailLengthFormat _lastLengthFormat = RailLengthFormat.Dbu;
@@ -142,6 +155,50 @@ public sealed partial class RailRfViewModel
 
             QueueResolve();
         };
+
+        // §2.3 step 2's SECOND route, which the window has always advertised and never wired
+        // (owner, 2026-09-19): with no netlist to name a net, the rail is picked by clicking its
+        // pour. Armed only in that state — see SyncPourPick — so a click on a board that HAS a
+        // pick list goes on reaching the canvas's own marquee and pan untouched.
+        SyncPourPick();
+    }
+
+    /// <summary>
+    /// Arms or disarms the pour pick to match the sentence the specification column is showing.
+    /// </summary>
+    /// <remarks>
+    /// <b>One condition, read in one place.</b> The note that says "pick the rail by clicking its
+    /// pour on the board" is bound to <c>HasNoPickableNets</c>; this gate is the same property, so
+    /// the sentence and the gesture cannot come apart — which is exactly how they came apart in the
+    /// first place.
+    /// </remarks>
+    private void SyncPourPick() =>
+        BoardOverlayLayer.PourPick = HasNoPickableNets ? TryPickPourAt : null;
+
+    /// <summary>
+    /// Makes a rail out of the copper under a click, or declines.
+    /// </summary>
+    /// <remarks>
+    /// <b>The point has to be ON something</b>, and the test is <see cref="LayoutHitTest.HitStack"/>
+    /// — the layout editor's own, at the canvas's own tolerance, so what counts as a hit here is what
+    /// counts as a hit in the window someone learned the gesture in. Clicking bare substrate makes
+    /// no rail: <c>PdnRailRegions</c> seeds its connectivity walk from the anchor point, and a seed
+    /// on no copper walks nothing while looking exactly like a rail that has been created.
+    ///
+    /// <para>The rail is NAMED after the place in the board's own display unit, not in DBU. A rail
+    /// called <c>rail at (26500000, 9875000)</c> is a name nobody can check against a board, and it
+    /// is the one string the rail selector, every refusal about the solve order and the report all
+    /// use (<see cref="RailLengthFormat"/>'s own rule).</para>
+    /// </remarks>
+    private bool TryPickPourAt(long xDbu, long yDbu, long tolDbu)
+    {
+        if (!HasNoPickableNets || BoardLayout is not { } canvas) return false;
+
+        var hits = LayoutHitTest.HitStack(canvas.Model, canvas.Technology, xDbu, yDbu, tolDbu);
+        if (hits.Count == 0) return false;
+
+        PickRailAt(xDbu, yDbu, $"rail at {BoardLengthFormat().Point(xDbu, yDbu)}");
+        return true;
     }
 
     /// <summary>

@@ -1628,6 +1628,86 @@ public class RailWindowTests
         Assert.Equal(1, raised);
     }
 
+    // ══ The window's own reports, 2026-09-19 ═════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>Opening a <c>.crail</c> fills the pick list, and the "no netlist named any nets" note is
+    /// therefore NOT shown.</b>
+    /// </summary>
+    /// <remarks>
+    /// The reported shape, on the shipped Power Rail example: the specification column said "No
+    /// board netlist named any nets, so pick the rail by clicking its pour on the board" over a
+    /// document whose <c>.ipc</c> names <c>+3V3</c> and <c>GND</c> — and clicking the pour did
+    /// nothing either, because that route had never been wired. <see cref="AvailableNets"/> was
+    /// rebuilt only by the IMPORT path, so every opened document reported having no nets.
+    ///
+    /// <para>The example is the fixture deliberately: it is the document the report is about, it
+    /// ships, and a synthetic netlist would not have caught this (the defect is in which code path
+    /// resolves the file, not in the file).</para>
+    /// </remarks>
+    [Fact]
+    public void OpeningADocumentWhoseNetlistNamesNets_FillsThePickList()
+    {
+        string path = Path.Combine(
+            RepoRoot(), "examples", "Power Rail", "Sensor board", "Sensor board.crail");
+        Assert.True(File.Exists(path), $"The shipped example moved: {path}");
+
+        var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(path), path);
+        vm.LoadDocumentReferences();
+
+        Assert.Contains("+3V3", vm.AvailableNets);
+        Assert.Contains("GND", vm.AvailableNets);
+        Assert.True(vm.HasPickableNets);
+
+        // The other half, and it is the half the user actually saw.
+        Assert.False(vm.HasNoPickableNets);
+
+        // AND THE GESTURE FOLLOWS THE SENTENCE. The pour pick is armed only in the state that note
+        // describes, so the two cannot come apart again — which is how they came apart: the note
+        // was shown on every opened document and the click it names was never wired at all.
+        Assert.Null(vm.BoardOverlayLayer.PourPick);
+    }
+
+    /// <summary>
+    /// <b>An anchor is typed on the row that prints it, in both of its forms.</b>
+    /// </summary>
+    /// <remarks>
+    /// The reported shape: "+" made a source row reading <c>(no anchor)</c> and there was no
+    /// control anywhere in the window that named a refdes or a pin, so the row could never be
+    /// given one. What is asserted here is the round trip — a coordinate anchor has to come back
+    /// out of the field it was printed into, IN THE BOARD'S UNIT, or a user who opens the editor
+    /// and presses Return has silently moved the port.
+    /// </remarks>
+    [Fact]
+    public void AnAnchorIsTypedOnTheRow_InBothOfItsForms()
+    {
+        var format = new RailLengthFormat(LayoutUnit.Mm, 1000);
+
+        var pad = RailAnchorEntry.Parse("U1.VDD", format);
+        Assert.Equal("U1", pad!.Refdes);
+        Assert.Equal("VDD", pad.Pin);
+        Assert.Null(pad.Point);
+
+        // A part with one pin needs no pin, which is RailPortAnchor's own rule.
+        Assert.Equal("BT1", RailAnchorEntry.Parse("BT1", format)!.Refdes);
+
+        // THE ROUND TRIP. What Describe printed is what Parse reads back, to the DBU.
+        var point = new RailPortAnchor { Point = (26_500_000, 9_875_000) };
+        string printed = RailAnchorEntry.Text(point, format);
+        Assert.Equal("(26.5, 9.875) mm", printed);
+        Assert.Equal((26_500_000L, 9_875_000L), RailAnchorEntry.Parse(printed, format)!.Point);
+
+        // Clearing unanchors rather than being refused — the row then flags, which is the state
+        // the "+" button creates and one a user has to be able to get back to.
+        var cleared = RailAnchorEntry.Parse("", format);
+        Assert.NotNull(cleared);
+        Assert.False(cleared!.IsPad);
+        Assert.Null(cleared.Point);
+
+        // And nonsense is REJECTED rather than stored as a refdes with a comma in it.
+        Assert.Null(RailAnchorEntry.Parse("26.5, over there", format));
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

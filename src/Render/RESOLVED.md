@@ -1,5 +1,21 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The port markers were missing from the one tab the window opens on (2026-09-19)
+
+Owner report on the shipped Power Rail example: *"I don't see those (U2, U1, U3) in the artwork …
+why do they appear listed on the railRF window?"*
+
+`RailMapScene` drew the source, load, observation and flagged-via glyphs on the DROP, CLASS and |Z|
+maps and not on `BuildCopper`'s — which is the tab the window opens on and the one showing the bare
+artwork. Nothing in a `.clay` labels a refdes (it carries geometry, not components), so those
+glyphs ARE the only thing that says where a port is; withholding them on the tab that shows the
+copper is withholding them exactly where the question gets asked.
+
+Same `MarkersOf`, and the same bounds rule as the other three: the marker reach is unioned into
+`Bounds` SEPARATELY from the map's, which is §11.6 trap 4 — a glyph outside the copper's own bbox
+is precisely what Zoom to Fit cuts off.
+
+
 ## railRF brief 18 — the class map's paint order, and a box in DBU with text in points (2026-09-18)
 
 `brief-railrf-18-six-defects.md`, R-rail18-3 and R-rail18-4. Both were found by capturing brief 17's
