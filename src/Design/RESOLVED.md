@@ -7345,3 +7345,128 @@ is about **0.15 of one square**, well under a cell. So the fixture that gates "e
 under 1 %" is deliberately fine and deliberately small (a 4 mm run rather than a 12 mm one), while the
 asymmetric fixture that measures a 1.57× and a 1.91× peaking runs at 0.2 mm — the noise the first one
 has to chase is two orders below the effect the second one measures.
+
+---
+
+## railRF brief 11 — the parts over frequency, and the five findings the arithmetic turned up (2026-09-18)
+
+`brief-railrf-11-part-models.md`. Four types compute what brief 2 made representable —
+`RailEsrDefaults` (dissipation factor per dielectric class, and the same figure serving the board),
+`RailDerating` (Q-12's bias correction), `RailPartModel` (the resolved element) and
+`RailPartResolver` (row → model, file wins, plus the headline counts). Plus `RailSourceModel`, which
+the brief's own table does not list but `R-rail11-9` requires — see §2 below.
+
+### 1. The indicative flag needed a mechanism to cross the `DataSet` boundary, and circuitRF already had one
+
+`R-rail11-4` names the failure exactly: *a flag computed here and dropped at the `DataSet` boundary
+reaches none of* §9's *five places.* Only the first of the five — the part row — can read a
+`RailPartModel`; the plot, the anti-resonance table, the mask-margin readout and **the provenance of
+every export** read the result.
+
+The mechanism is the `__`-prefixed metadata cube the node-picker work already established: such a
+cube is sweep-invariant (`DataSet` passes it through rather than stacking it), is skipped by the
+Data Display's signal list, and **is persisted through `.npy`** — which is the only reason an export
+can carry the marking at all. `RailPartModelSet.Annotate` writes four of them on one labelled `part`
+axis: the ESR basis code, the marked capacitance, the capacitance used, and which of the three that
+was. **The two negative ESR codes are distinct on purpose** — a part nobody could resolve and a part
+resolved with no ESR basis are different failures.
+
+Carrying the marking as a `DataSet` *note* was not available: `DataSet` has no free-form provenance
+field, and adding one for this would be a second place provenance lives.
+
+### 2. `R-rail11-9` has no file in the brief's own table, and it is not a part
+
+The source's R-L model, its cell-life sweep and the *optimistic near the loop crossover* statement
+are a deliverable with their own test, and the brief's deliverables table lists four files, none of
+which is about a source. It is in `RailSourceModel.cs` rather than folded into `RailPartModel` —
+the two share `RailMeasuredPart` and nothing else, and a source is not a part.
+
+**The converter statement cannot be derived from the source row and the model must not grow a flag
+for it.** §2.2: what makes a source a regulator is that *the same refdes also appears as a
+`RailLoad` on another rail* — a fact about the rail SET, which `RailOrder` already computes. So
+`OptimisticLine(bool isConverter)` takes the answer from its caller. A `IsConverter` property on
+`RailSource` would be a second, typeable spelling of something the document already states
+structurally, and the two would disagree.
+
+### 3. An R-L does not approximate a regulator's peak badly — it does not contain it
+
+Worth writing down because it is why the sentence is load-bearing rather than a caveat. A series R-L
+is **monotonic**: |Z| rises with f and never peaks. A real regulator's output impedance peaks at its
+loop crossover, typically in the tens of kilohertz, and that peak is often the largest single
+contribution to the rail's impedance in exactly the band the bulk capacitors are there to cover. The
+resulting curve is not visibly wrong — it is smooth, plausible and missing a feature.
+
+### 4. A file-backed part is NOT derated, and the row's C is not a fallback for it
+
+Two decisions in `RailPartResolver.FromFile` that look like omissions:
+
+- **Q-12's bias curve is not applied on top of a measured capacitance.** The file states the part at
+  whatever bias the vendor measured it at and nothing in it says what that bias was, so applying the
+  curve would derate an already-derated number. The model reports
+  `RailCapacitanceBasis.Measured`, and `RailPartModelSet.WithoutBiasCurve` therefore does **not**
+  count file-backed parts — they are not missing a correction, they do not take one.
+- **A file that cannot be READ makes the part unresolved, never a silent fall back to the row.** The
+  file overrides the row (Q-11), so an unreadable attachment and an attachment that was never made
+  must not produce the same answer.
+
+One consequence to know about: **a `.sNp` extension is what makes an attachment measured**, per
+`PartLibrary.IsTouchstone`. A SPICE subcircuit attachment reports `PartModelSource.AttachedFile` and
+takes the ROW's numbers for the parts table, because this brief builds no component model and the
+subcircuit is placed as an ordinary circuitRF one.
+
+### 5. Two arithmetic points that are easy to get subtly wrong
+
+- **The measured and the library-row paths use ONE inductance derivation.** Where a vendor file
+  contains the resonance, `RailMeasuredPart.InductanceHenries` is `1/((2πf₀)²C)` over the measured C
+  and the measured f₀ — R-rail2-8's own formula — rather than L_eff read off the inductive branch.
+  Two derivations would disagree on the same part and nothing would report it. L_eff is the fallback
+  only where the sweep contains no crossing at all.
+- **`RailPartModel.SelfResonanceHz` is NOT the row's stated f₀, and it should not be.** It is
+  computed from the C and L the model actually carries, so it includes the mounting loop and Q-12's
+  correction — **derating RAISES a part's resonance by √(marked/derated)**, which is a real effect a
+  reader should see rather than one hidden by re-printing the table's number. The row's figure stays
+  on `StatedSelfResonanceHz`. Q-9's own four numbers are the check: 470 µF with 5 nH → 104 kHz,
+  1 µF → 5.3 MHz, 100 nF with 1 nH → 16 MHz.
+
+### 6. Two model additions this needed, both small and both load-bearing
+
+- **`RailSpec.Parts`** (`RailPart`: refdes, part number, typed mounting inductance, BOM-or-typed
+  origin), with `.crail` IO. `R-rail11-8` says P1 fills the mounting loop *from the document* and the
+  document had nowhere to put it. **It is not a second bill of materials**: what it carries that a
+  BOM cannot is the per-instance mounting loop, which is a property of where a part was PLACED. A
+  rail with no artwork and no BOM — P1's lumped case — carries typed rows, and `Origin` is what tells
+  the two apart, exactly as `RailAggressor` already does.
+- **`RailSpec.NominalVoltageV`** — the highest open-circuit voltage any source states, which is what
+  derating is applied at before a DC answer exists. The DC answer supersedes it: a part at the far
+  end of a rail sits below the source by the drop brief 5 computes.
+
+Both are additive and write nothing on a document that has no parts, so existing `.crail` bytes are
+unchanged.
+
+### 7. What the class table is wrong about, on purpose
+
+Q-15 makes the per-class dissipation factor **the basis rather than a stopgap**, so the two things
+wrong with it are permanent conditions and are written into `RailEsrDefaults`' own header:
+
+1. **A quoted DF is a MAXIMUM.** A real part is usually better, often by two or three times — so a
+   peak height computed from one is pessimistic more often than optimistic, and *"usually
+   pessimistic"* is not a number anyone can put a margin against.
+2. **DF is frequency-dependent and these figures are quoted at one frequency.** `ESR = DF/(2πfC)`
+   therefore falls as 1/f, while a real part's ESR flattens near its own resonance where the
+   electrode resistance takes over from the dielectric loss.
+
+Neither is repairable from what a part library holds, which is why §2.2 RECOMMENDS the part's own
+Touchstone file rather than merely offering it.
+
+**The board half has a trap of its own:** `StackupLayer.TanD` is a plain `double` that opens at 0, so
+**a lossless dielectric and an unstated one are the same bytes.** `BoardLossTangent` treats 0 as
+unstated, because the alternative gives every stackup that never mentioned tan δ an infinitely sharp
+cavity — the optimistic direction — while treating a genuinely lossless laminate as unstated costs
+nothing, since no real one is.
+
+### Gate
+
+`tests/Ui.Tests/RailRf/RailPartModelTests.cs`, 9 tests, one per claim. The Touchstone fixture is a
+series R-L-C in the shunt-through fixture built in memory from its closed form
+(`S21 = 2Z/(2Z + Z0)`), so the file path is tested against a KNOWN answer with no disk — not against
+a second copy of our own reading of it. All 179 `RailRf` tests pass, `Firewall.Tests` 12/12.

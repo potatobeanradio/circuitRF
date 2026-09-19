@@ -109,6 +109,34 @@ public sealed class RailSpec
     /// <summary>What on this board excites this rail (§2.2's last paragraph).</summary>
     public List<RailAggressor> Aggressors { get; } = [];
 
+    /// <summary>
+    /// Every part on this rail — the decoupling bank and the bulk (§2.2, "The parts").
+    ///
+    /// <para><b>Not a second bill of materials.</b> What it carries that a BOM cannot is the
+    /// per-instance mounting loop (<see cref="RailPart.MountingInductanceHenries"/>), which is a
+    /// property of where the part was PLACED rather than of what was bought — typed in P1, computed
+    /// from the via geometry in P2a, and overridable either way. Rows pre-filled from a BOM say so
+    /// (<see cref="RailPart.Origin"/>).</para>
+    ///
+    /// <para>Nothing here models anything: <see cref="RailPartResolver"/> turns these rows plus the
+    /// part library into <see cref="RailPartModel"/>s.</para></summary>
+    public List<RailPart> Parts { get; } = [];
+
+    /// <summary>
+    /// The voltage this rail nominally sits at, in VOLTS — the highest open-circuit voltage any
+    /// source on it states, or null where none does.
+    ///
+    /// <para><b>What Q-12's derating is applied at where no DC answer exists yet</b>, and the same
+    /// quantity <see cref="RailDcResult.SourceVoltageV"/> reports after a solve. The DC answer
+    /// supersedes it: a part at the far end of a rail sits below the source by exactly the drop the
+    /// DC solve computes, and derating reads the bias curve at the voltage the part actually
+    /// sees.</para></summary>
+    public double? NominalVoltageV =>
+        Sources.Select(s => s.OpenCircuitVoltageV)
+               .Where(v => v is not null)
+               .DefaultIfEmpty(null)
+               .Max();
+
     /// <summary>Every observation port on this rail — every load, since a load with a current is
     /// observed as well as drawn from. The DC report lists an observed port AS observed; this is the
     /// set it lists.</summary>
@@ -144,6 +172,15 @@ public sealed class RailSpec
 
         foreach (var a in Aggressors)
             if (a.Refusal(rail) is { } ag) return ag;
+
+        var seenParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in Parts)
+        {
+            if (p.Refusal(rail) is { } pr) return pr;
+            if (!seenParts.Add(p.Refdes))
+                return $"{rail} lists part '{p.Refdes}' twice. A refdes is one part on the board, " +
+                       "and two rows for it would be two mounting loops for one pad.";
+        }
 
         return null;
     }

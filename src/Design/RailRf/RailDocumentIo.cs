@@ -154,6 +154,7 @@ public static class RailDocumentIo
         Sources                = r.Sources.Count    > 0 ? [.. r.Sources.Select(ToFile)]    : null,
         Loads                  = r.Loads.Count      > 0 ? [.. r.Loads.Select(ToFile)]      : null,
         Aggressors             = r.Aggressors.Count > 0 ? [.. r.Aggressors.Select(ToFile)] : null,
+        Parts                  = r.Parts.Count      > 0 ? [.. r.Parts.Select(ToFile)]      : null,
     };
 
     private static CrailSource ToFile(RailSource s) => new()
@@ -189,6 +190,14 @@ public static class RailDocumentIo
         FrequencyHz = a.FrequencyHz,
         Harmonics   = a.Harmonics,
         Origin      = a.Origin,
+    };
+
+    private static CrailPart ToFile(RailPart p) => new()
+    {
+        Refdes                    = p.Refdes,
+        PartNumber                = NullIfEmpty(p.PartNumber),
+        MountingInductanceHenries = p.MountingInductanceHenries,
+        Origin                    = p.Origin,
     };
 
     private static CrailTarget? ToFile(RailTarget? t) => t is null ? null : new CrailTarget
@@ -254,6 +263,7 @@ public static class RailDocumentIo
         foreach (var s in r.Sources    ?? []) spec.Sources.Add(FromFile(s));
         foreach (var l in r.Loads      ?? []) spec.Loads.Add(FromFile(l));
         foreach (var a in r.Aggressors ?? []) spec.Aggressors.Add(FromFile(a));
+        foreach (var p in r.Parts      ?? []) spec.Parts.Add(FromFile(p));
         return spec;
     }
 
@@ -287,6 +297,14 @@ public static class RailDocumentIo
 
     private static RailAggressor FromFile(CrailAggressor a) =>
         new(a.Name ?? "", a.FrequencyHz ?? 0, a.Harmonics ?? 1) { Origin = a.Origin };
+
+    private static RailPart FromFile(CrailPart p) => new()
+    {
+        Refdes                    = p.Refdes ?? "",
+        PartNumber                = p.PartNumber ?? "",
+        MountingInductanceHenries = p.MountingInductanceHenries,
+        Origin                    = p.Origin,
+    };
 
     private static RailTarget? FromFile(CrailTarget? t) => t is null ? null : new RailTarget
     {
@@ -357,6 +375,7 @@ public static class RailDocumentIo
         public List<CrailSource>?     Sources                { get; set; }
         public List<CrailLoad>?       Loads                  { get; set; }
         public List<CrailAggressor>?  Aggressors             { get; set; }
+        public List<CrailPart>?       Parts                  { get; set; }
     }
 
     private sealed class CrailAnchor
@@ -392,6 +411,16 @@ public static class RailDocumentIo
         public double?              FrequencyHz { get; set; }
         public int?                 Harmonics   { get; set; }
         public RailAggressorOrigin  Origin      { get; set; } = RailAggressorOrigin.Typed;
+    }
+
+    /// <summary>One part on the rail. <see cref="CrailPart.MountingInductanceHenries"/> is the only
+    /// electrical number here, and it is the one a BOM cannot carry — see <see cref="RailPart"/>.</summary>
+    private sealed class CrailPart
+    {
+        public string?         Refdes                    { get; set; }
+        public string?         PartNumber                { get; set; }
+        public double?         MountingInductanceHenries { get; set; }
+        public RailPartOrigin  Origin                    { get; set; } = RailPartOrigin.Typed;
     }
 
     /// <summary>One target of any of the four kinds. <see cref="Kind"/> says which, and exactly the
