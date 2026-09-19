@@ -123,9 +123,17 @@ public sealed class PdnGraphSettings
     /// a pad is a node whatever the skeleton thinks.</summary>
     public double SpurPruneWidths { get; set; } = 1.5;
 
-    /// <summary>The frequency the answer is wanted at, in HERTZ. Zero — DC — is this brief's whole
-    /// scope; anything above <see cref="PdnGraphExtractor.ShuntBandTopHz"/> is REFUSED rather than
-    /// answered (R-rail4-4).</summary>
+    /// <summary>
+    /// The frequency the answer is wanted at, in HERTZ, for a caller that has only the graph
+    /// settings to hand. Anything above <see cref="PdnGraphExtractor.ShuntBandTopHz"/> is REFUSED
+    /// rather than answered (R-rail4-4).
+    ///
+    /// <para><b><see cref="PdnExtractionRequest.FrequencyHz"/> is the spelling both readings share
+    /// and it wins where it is set</b> (R-rail13-7). Brief 13 gave the mesh a frequency and the two
+    /// readings have to be asked for the same one: a fast curve and an accurate curve of the same
+    /// board taken at two different frequencies would be compared against each other on the same
+    /// plot, and §2.9 rule 4 is that comparison.</para>
+    /// </summary>
     public double FrequencyHz { get; set; }
 
     /// <summary>The ceiling on raster pixels per piece. A piece above it is rasterised coarser and
@@ -233,6 +241,14 @@ public static class PdnGraphExtractor
             return PdnExtraction.Refused(extentRefusal, regions);
 
         // ── R-rail4-4: the frequency where the shunt branch stops being negligible ─────────────
+        //
+        // ONE SPELLING FOR BOTH READINGS (R-rail13-7). PdnExtractionRequest.FrequencyHz is what the
+        // mesh takes and it wins here where it is set; PdnGraphSettings' own is what a caller with
+        // only the graph settings to hand can still use. §2.9 rule 4 compares the two curves on the
+        // user's own board, and two readings answering at two different frequencies would be
+        // compared against each other with nothing to say so.
+        double frequencyHz = request.FrequencyHz > 0 ? request.FrequencyHz : settings.FrequencyHz;
+
         var referenceBounds = Bbox.Empty;
         foreach (var (_, paths) in referenceCopper)
             referenceBounds = referenceBounds.Union(DrcRegions.BoundsOf(paths));
@@ -244,10 +260,10 @@ public static class PdnGraphExtractor
         double epsr = LargestEpsilonR(tech);
         double topHz = ShuntBandTopHz(spanM, epsr);
 
-        if (settings.FrequencyHz > topHz)
+        if (frequencyHz > topHz)
             return PdnExtraction.Refused(
                 $"The fast model cannot answer above {Hz(topHz)} on this stackup, and " +
-                $"{Hz(settings.FrequencyHz)} was asked for. That ceiling is a tenth of this plane " +
+                $"{Hz(frequencyHz)} was asked for. That ceiling is a tenth of this plane " +
                 $"pair's first cavity resonance, {Hz(topHz * CavityMarginFactor)} over its " +
                 $"{spanM * 1e3:0.#} mm span in εr {epsr:0.##}: the fast reading prices copper and " +
                 "has no shunt branch at all, and leaving a distributed shunt out costs 3.4 % at a " +
@@ -315,7 +331,8 @@ public static class PdnGraphExtractor
 
         // ── the graph ──────────────────────────────────────────────────────────────────────────
         var nodes = new PdnGraphNodes(request.DbuPerMicron);
-        var build = new GraphBuild(request, nodes, byLayer, classification, attachmentPoints, notes, diagnostics);
+        var build = new GraphBuild(
+            request, frequencyHz, nodes, byLayer, classification, attachmentPoints, notes, diagnostics);
 
         if (build.Build() is { } buildRefusal)
             return PdnExtraction.Refused(buildRefusal, regions) with { Classification = classification };
@@ -345,7 +362,7 @@ public static class PdnGraphExtractor
             Model = "Fast (graph)",
             RailName = rail.Name,
             ReferenceExtent = rail.ReferenceExtent,
-            FrequencyHz = settings.FrequencyHz,
+            FrequencyHz = frequencyHz,
             CellSizeMetres = build.CoarsestPourPitchDbu / dbuPerMetre,
             CellSizeBasis =
                 $"the fast reading: {traces} region(s) priced as trace sections at " +
@@ -928,6 +945,7 @@ internal sealed class PdnTraceRaster
 /// </summary>
 internal sealed class GraphBuild(
     PdnExtractionRequest request,
+    double frequencyHz,
     PdnGraphNodes nodes,
     IReadOnlyDictionary<LayerKey, PdnConductor> conductors,
     List<PdnClassification> classification,
@@ -945,12 +963,62 @@ internal sealed class GraphBuild(
 
     private readonly record struct Element(
         string Path, int A, int B, double Ohms, string Description,
-        PdnCellRef From, PdnCellRef To, PdnOriginKind Kind, double LengthM, double WidthM);
+        PdnCellRef From, PdnCellRef To, PdnOriginKind Kind, double LengthM, double WidthM,
+        double InductanceH);
 
     /// <summary>How many raster steps a section's own length is resolved into, at worst. Thirty-two,
     /// which is where the half-step the two ends of a chain give away stops mattering against the
     /// 1 % the closed-form gate asks for.</summary>
     private const int MinimumStepsAlongASection = 32;
+
+    // ── R-rail13-7: §2.9's "and, above DC, one loop inductance" ───────────────────────────────
+    //
+    // §4.6: "Nothing new, and deliberately so … It produces the same kind of netlist as §4.1, so
+    // the solver, the result model, the tables, the plots and the exports are identical and only
+    // the extractor differs. THAT IS THE REASON THE FAST PATH IS SAFE TO HAVE AT ALL."
+    //
+    // A section inductance is a much cruder approximation than a section resistance — that is the
+    // point at which the fast model could quietly become dishonest — so it is priced by the SAME
+    // law the mesh uses, µ₀·h per square, halved because the reference conductor carries the other
+    // half (PdnMeshExtractor.StampMesh says why). A section of ℓ/W squares over a plane at h is
+    // µ₀·h·ℓ/W of loop, which is the parallel-plate reading of a trace and is exactly what the mesh
+    // converges to on the same copper. The agreement gate is that, rather than a coincidence.
+
+    private readonly Dictionary<LayerKey, double> _separation = [];
+    private double _dominantSeparation;
+    private double _halfLoop;
+
+    /// <summary>§4.1's <c>h</c> per conductor, read once — the same walk
+    /// <see cref="PdnMeshExtractor"/> makes, through the same file, so the two readings cannot come
+    /// to disagree about how far apart this board's planes are.</summary>
+    private void ResolveSeparations()
+    {
+        var z = PdnStackupGeometry.Conductors(request.Technology, request.DbuPerMicron);
+        var reference = PdnStackupGeometry.ConductorOf(z, request.Rail.ReferenceLayer ?? default);
+
+        foreach (var c in classification)
+        {
+            if (c.IsReference || _separation.ContainsKey(c.Region.Layer)) continue;
+            double h = PdnStackupGeometry.SeparationMetres(
+                PdnStackupGeometry.ConductorOf(z, c.Region.Layer), reference);
+            _separation[c.Region.Layer] = h;
+            if (h > 0 && (_dominantSeparation == 0 || h < _dominantSeparation))
+                _dominantSeparation = h;
+        }
+    }
+
+    /// <summary>Half of §4.1's per-square loop inductance for the conductor this region is on, or
+    /// zero at DC — where §4.1's inductance vanishes and every element is a plain resistance.</summary>
+    private double HalfLoopPerSquareOf(PdnClassification c)
+    {
+        if (!(frequencyHz > 0)) return 0.0;
+
+        double h = c.IsReference
+            ? _dominantSeparation
+            : _separation.TryGetValue(c.Region.Layer, out double v) ? v : _dominantSeparation;
+
+        return PdnInductance.SquareInductanceHenries(h) / 2.0;
+    }
 
     public long FinestRasterPitchDbu { get; private set; } = long.MaxValue;
     public long CoarsestPourPitchDbu { get; private set; }
@@ -961,13 +1029,21 @@ internal sealed class GraphBuild(
         double dbuPerMetre = request.DbuPerMicron * 1e6;
         int piece = 0;
 
+        ResolveSeparations();
+
         foreach (var c in classification.ToList())
         {
             int index = classification.IndexOf(c);
             if (!conductors.TryGetValue(c.Region.Layer, out var conductor)) { piece++; continue; }
 
-            double sigmaT = conductor.ConductivitySm * conductor.ThicknessMetres;
+            // R-rail13-2: below two skin depths this IS σ·T, so the fast model's whole R matrix is
+            // the DC one over most of this band — the same property, from the same one expression,
+            // as the mesh's.
+            double sigmaT = PdnInductance.SheetSiemensPerSquare(
+                frequencyHz, conductor.ThicknessMetres, conductor.ConductivitySm);
             if (!(sigmaT > 0)) { piece++; continue; }
+
+            _halfLoop = HalfLoopPerSquareOf(c);
 
             if (c.Class == PdnCopperClass.Trace)
                 classification[index] = Trace(c, piece, conductor, sigmaT, dbuPerMetre);
@@ -1008,7 +1084,8 @@ internal sealed class GraphBuild(
     {
         foreach (var e in _copper)
             asm.StageCopper(e.Path, e.A, e.B, e.Ohms, e.Description, e.From, e.To,
-                            e.Kind, e.LengthM, e.WidthM);
+                            e.Kind, e.LengthM, e.WidthM,
+                            e.InductanceH > 0 ? e.InductanceH : null);
     }
 
     // ── R-rail4-5: Fast REFUSES a pour-dominated path rather than answering it ──────────────────
@@ -1303,7 +1380,11 @@ internal sealed class GraphBuild(
                 $"{lengthM * 1e3:0.###} mm of {widthM * 1e3:0.###} mm {conductor.StackupName} copper, " +
                 $"priced as one section ({lengthM / Math.Max(widthM, 1e-12):0.#} squares)",
                 nodes.CellOfNode(a)!.Value, nodes.CellOfNode(b)!.Value,
-                PdnOriginKind.TraceSection, lengthM, widthM));
+                PdnOriginKind.TraceSection, lengthM, widthM,
+                // The section's OWN square count — SectionResistance integrates W along the run
+                // rather than sampling it, and using its number here is what keeps a tapered
+                // section's L and its R the same reading of the same copper.
+                _halfLoop * measured[k].Squares));
 
             _traceEdgeA.Add(a);
             _traceEdgeB.Add(b);
@@ -1503,13 +1584,15 @@ internal sealed class GraphBuild(
             double r = d * d / (2 * sigmaT * a0) + d * d / (2 * sigmaT * a1);
             double width = (a0 / d + a1 / d) / 2.0;
 
+            double squares = d * d / (2 * a0) + d * d / (2 * a1);
+
             _copper.Add(new Element(
                 $"pour.{side}.{c.Region.Layer.Layer}_{c.Region.Layer.Datatype}.p{piece}.{i}.{j}.{axis}",
                 a, bb, r,
                 $"{d * 1e3:0.###} mm of {width * 1e3:0.###} mm {conductor.StackupName} copper, " +
                 "one cell of a coarse mesh over spreading copper",
                 nodes.CellOfNode(a)!.Value, nodes.CellOfNode(bb)!.Value,
-                PdnOriginKind.MeshEdge, d, width));
+                PdnOriginKind.MeshEdge, d, width, _halfLoop * squares));
         }
 
         for (int j = 0; j < ny; j++)

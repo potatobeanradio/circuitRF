@@ -154,10 +154,46 @@ public sealed partial class RailRfViewModel
         return new PdnSweepRequest
         {
             Rail    = rail,
-            Parts   = resolver.ResolveAll(rail.Parts, rail.NominalVoltageV),
+            Parts   = resolver.ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail)),
             Sources = sources,
             Model   = kind,
         };
+    }
+
+    /// <summary>
+    /// Brief 13's mounting loop, per part, from the board's own via geometry — or null where there
+    /// is no board to read it from.
+    /// </summary>
+    /// <remarks>
+    /// <b>§6 makes P1 artwork-OPTIONAL and §2.2 says a computed value is a DEFAULT, not a fact.</b>
+    /// So this fills in only the rows nobody typed — <c>RailPartResolver</c> is what applies that
+    /// precedence, and <c>RailMountingBasis</c> is what tells a reader on the parts table which they
+    /// are looking at. A part whose via geometry could not be read is simply absent from this map
+    /// and keeps whatever P1 gave it, because a part that cannot be located is not a part with a
+    /// zero mounting loop.
+    /// </remarks>
+    private Dictionary<string, double>? ComputedMounting(RailSpec rail)
+    {
+        if (Board is not { } board) return null;
+
+        var request = new PdnMountingLoopRequest
+        {
+            Rail = rail,
+            Shapes = board.Shapes,
+            Technology = board.Technology,
+            DbuPerMicron = board.DbuPerMicron,
+            Pads = board.Pads,
+            ReferenceNet = board.ReferenceNet,
+        };
+
+        var map = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var loop in PdnMountingLoopExtractor.ComputeAll(
+                     request, rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0)))
+            if (loop.Henries is { } henries && henries > 0)
+                map[loop.Refdes] = henries;
+
+        return map.Count > 0 ? map : null;
     }
 
     /// <summary>A document-relative reference, against the <c>.crail</c>'s own folder.</summary>

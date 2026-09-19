@@ -215,7 +215,37 @@ public sealed class RailPartResolver
     /// <param name="railVoltageV">The bias Q-12's derating is applied at, or null where none is
     /// known.</param>
     public RailPartModel Resolve(RailPart part, double? railVoltageV) =>
-        Resolve(part.PartNumber, railVoltageV, part.MountingInductanceHenries, part.Refdes);
+        Resolve(part, railVoltageV, null);
+
+    /// <summary>
+    /// The same row, with brief 13's mounting loop available where the document typed none.
+    ///
+    /// <para><b>A typed value wins, and that is §2.2's own rule</b> — <i>"You can override it"</i>,
+    /// so a computed value is a DEFAULT and not a fact. The basis is what a reader sees on the parts
+    /// table: a computed number silently replacing a typed one would be the same defect as a
+    /// defaulted plating thickness reported as a stated one, which §4.2 already refuses to have.</para>
+    /// </summary>
+    /// <param name="part">The document's own row.</param>
+    /// <param name="railVoltageV">The bias Q-12's derating is applied at, or null.</param>
+    /// <param name="computedMountingHenries">Refdes → the loop
+    /// <c>PdnMountingLoopExtractor</c> read off the via geometry. Null, empty or missing a refdes
+    /// leaves that part exactly as P1 had it.</param>
+    public RailPartModel Resolve(
+        RailPart part, double? railVoltageV,
+        IReadOnlyDictionary<string, double>? computedMountingHenries)
+    {
+        if (part.MountingInductanceHenries is { } typed)
+            return Resolve(part.PartNumber, railVoltageV, typed, part.Refdes,
+                           RailMountingBasis.Typed);
+
+        if (computedMountingHenries is not null &&
+            part.Refdes is { Length: > 0 } refdes &&
+            computedMountingHenries.TryGetValue(refdes, out double computed))
+            return Resolve(part.PartNumber, railVoltageV, computed, part.Refdes,
+                           RailMountingBasis.ComputedFromGeometry);
+
+        return Resolve(part.PartNumber, railVoltageV, null, part.Refdes);
+    }
 
     /// <summary>R-rail11-1, by part number.</summary>
     /// <param name="partNumber">The library key.</param>
@@ -224,18 +254,19 @@ public sealed class RailPartResolver
     /// <param name="refdes">The instance this is of, where it is of one.</param>
     public RailPartModel Resolve(
         string partNumber, double? railVoltageV,
-        double? mountingInductanceHenries = null, string? refdes = null)
+        double? mountingInductanceHenries = null, string? refdes = null,
+        RailMountingBasis mountingBasis = RailMountingBasis.Typed)
     {
         var resolution = _library.ResolveModel(partNumber);
 
         if (resolution.Row is not { } row)
-            return Unresolved(partNumber, refdes, mountingInductanceHenries,
+            return Unresolved(partNumber, refdes, mountingInductanceHenries, mountingBasis,
                 $"'{partNumber}' is not in the part library, so railRF has no C, no f₀ and no " +
                 "dielectric class for it. Nothing about it is defaulted.");
 
         return resolution.Source == PartModelSource.AttachedFile
-            ? FromFile(row, resolution, railVoltageV, mountingInductanceHenries, refdes)
-            : FromRow(row, railVoltageV, mountingInductanceHenries, refdes);
+            ? FromFile(row, resolution, railVoltageV, mountingInductanceHenries, refdes, mountingBasis)
+            : FromRow(row, railVoltageV, mountingInductanceHenries, refdes, mountingBasis);
     }
 
     /// <summary>
@@ -243,9 +274,17 @@ public sealed class RailPartResolver
     /// the individual models are what the parts table's rows read.
     /// </summary>
     public RailPartModelSet ResolveAll(IEnumerable<RailPart> parts, double? railVoltageV) =>
+        ResolveAll(parts, railVoltageV, null);
+
+    /// <summary>The same, with brief 13's computed mounting loops available. See
+    /// <see cref="Resolve(RailPart, double?, IReadOnlyDictionary{string, double})"/> for the
+    /// precedence, which is §2.2's.</summary>
+    public RailPartModelSet ResolveAll(
+        IEnumerable<RailPart> parts, double? railVoltageV,
+        IReadOnlyDictionary<string, double>? computedMountingHenries) =>
         new()
         {
-            Models       = [.. parts.Select(p => Resolve(p, railVoltageV))],
+            Models       = [.. parts.Select(p => Resolve(p, railVoltageV, computedMountingHenries))],
             RailVoltageV = railVoltageV,
         };
 
@@ -261,7 +300,8 @@ public sealed class RailPartResolver
     // ── the library-row path ──────────────────────────────────────────────────────────────────
 
     private static RailPartModel FromRow(
-        PartLibraryRow row, double? railVoltageV, double? mountingH, string? refdes)
+        PartLibraryRow row, double? railVoltageV, double? mountingH, string? refdes,
+        RailMountingBasis mountingBasis)
     {
         var capacitance = RailDerating.Apply(row, railVoltageV);
         var warnings = new List<string>();
@@ -315,7 +355,7 @@ public sealed class RailPartResolver
             InductanceHenries         = inductance,
             InductanceBasis           = inductanceBasis,
             MountingInductanceHenries = mountingH,
-            MountingBasis             = mountingH is not null ? RailMountingBasis.Typed : null,
+            MountingBasis             = mountingH is not null ? mountingBasis : null,
             EsrBasis                  = esrBasis,
             DissipationFactor         = df,
             DielectricClass           = dielectric,
@@ -328,7 +368,8 @@ public sealed class RailPartResolver
 
     private RailPartModel FromFile(
         PartLibraryRow row, PartModelResolution resolution,
-        double? railVoltageV, double? mountingH, string? refdes)
+        double? railVoltageV, double? mountingH, string? refdes,
+        RailMountingBasis mountingBasis)
     {
         string path = resolution.FilePath ?? row.ModelRef ?? "";
 
@@ -338,14 +379,14 @@ public sealed class RailPartResolver
         // the numbers a parts table shows — with the model source still reported as the file.
         if (!PartLibrary.IsTouchstone(path))
         {
-            var subcircuit = FromRow(row, railVoltageV, mountingH, refdes);
+            var subcircuit = FromRow(row, railVoltageV, mountingH, refdes, mountingBasis);
             return CopyWithSource(subcircuit, PartModelSource.AttachedFile);
         }
 
         var measured = ReadMeasured(path, out string? readFailure);
 
         if (measured is null)
-            return Unresolved(row.PartNumber, refdes, mountingH,
+            return Unresolved(row.PartNumber, refdes, mountingH, mountingBasis,
                 $"Part '{row.PartNumber}' attaches the file '{System.IO.Path.GetFileName(path)}', " +
                 "which could not be read" + (readFailure is { } m ? $" ({m})" : "") + ". The file " +
                 "OVERRIDES the row, so railRF did not silently fall back to the row's own C and f₀ " +
@@ -384,7 +425,7 @@ public sealed class RailPartResolver
             InductanceBasis           = measured.InductanceHenries is not null
                                           ? RailInductanceBasis.Measured : null,
             MountingInductanceHenries = mountingH,
-            MountingBasis             = mountingH is not null ? RailMountingBasis.Typed : null,
+            MountingBasis             = mountingH is not null ? mountingBasis : null,
             EsrBasis                  = EsrProvenance.Measured,
             StatedEsrOhms             = row.EsrOhms,
             Measured                  = measured,
@@ -437,7 +478,8 @@ public sealed class RailPartResolver
     }
 
     private static RailPartModel Unresolved(
-        string partNumber, string? refdes, double? mountingH, string reason) =>
+        string partNumber, string? refdes, double? mountingH,
+        RailMountingBasis mountingBasis, string reason) =>
         new()
         {
             PartNumber                = partNumber,
@@ -448,7 +490,7 @@ public sealed class RailPartResolver
                                             double.NaN, null, double.NaN,
                                             RailCapacitanceBasis.Marked, null, null),
             MountingInductanceHenries = mountingH,
-            MountingBasis             = mountingH is not null ? RailMountingBasis.Typed : null,
+            MountingBasis             = mountingH is not null ? mountingBasis : null,
             Warnings                  = [reason],
         };
 

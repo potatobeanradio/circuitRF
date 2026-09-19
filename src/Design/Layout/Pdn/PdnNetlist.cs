@@ -90,6 +90,11 @@ public readonly record struct PdnCellRef(
 /// <param name="Refdes">The part it belongs to, for an attachment; null for copper.</param>
 /// <param name="ResistanceOhms">Its DC resistance, where it has one — the number the ranked
 /// breakdown sorts on.</param>
+/// <param name="InductanceHenries">Its series inductance, where it has one — §4.1's
+/// <c>L = µ₀·h</c> per square on a mesh edge, and the same law over a section's own square count on
+/// a trace (R-rail13-1, R-rail13-7). <b>Null at DC, and that is not the same as zero</b>: at ω = 0
+/// §4.1's inductance vanishes and the element IS a resistor, so a null here says the extraction was
+/// at DC while a zero would say the copper has no inductance.</param>
 /// <param name="LengthMetres">The run this element represents, for the breakdown's own sentence.</param>
 /// <param name="WidthMetres">The conductor width it represents, same reason.</param>
 /// <param name="Barrel">The plated barrel this element IS, on a <see cref="PdnOriginKind.Via"/> and
@@ -107,7 +112,8 @@ public sealed record PdnElementOrigin(
     double? ResistanceOhms,
     double? LengthMetres = null,
     double? WidthMetres = null,
-    PdnViaBarrel? Barrel = null);
+    PdnViaBarrel? Barrel = null,
+    double? InductanceHenries = null);
 
 /// <summary>
 /// One observation port of the extraction, and the anchor a user actually typed.
@@ -166,10 +172,36 @@ public sealed record PdnProvenance
     /// reader who does not know which was used cannot tell (R-rail3-5).</summary>
     public required RailReferenceExtent ReferenceExtent { get; init; }
 
-    /// <summary>The frequency this extraction is at. Exactly zero in this brief — briefs 13 and 14
-    /// add L and the shunt branch, and DC is the FIRST POINT OF THE SWEEP rather than a mode bolted
-    /// on (§2.8).</summary>
+    /// <summary>The frequency this extraction is at. Zero is DC, which is the FIRST POINT OF THE
+    /// SWEEP rather than a mode bolted on (§2.8): at ω = 0 §4.1's inductance vanishes and every
+    /// copper element is a plain resistor. Above it each carries <c>R + jωL</c> (R-rail13-1).
+    /// The shunt branch is brief 14 and is absent at every frequency here.</summary>
     public double FrequencyHz { get; init; }
+
+    /// <summary>
+    /// §4.1's <c>h</c> — the dielectric separation between the rail's plane and its reference, in
+    /// METRES, which is what set every cell edge's <c>L = µ₀·h</c>. Zero where the stackup could
+    /// not give one, in which case the extraction carries no inductance and says so in a note.
+    ///
+    /// <para><b>On the provenance because it is the number §4.3 says the form factor moves.</b> A
+    /// four-layer pair at 100 µm and a two-layer board at 1.5 mm differ by fifteen times here and by
+    /// fifteen times in every inductance derived from it, and a reader comparing two extractions
+    /// needs to see which stackup each was of.</para>
+    /// </summary>
+    public double PlaneSeparationMetres { get; init; }
+
+    /// <summary>
+    /// R-rail13-2, as a STATED CONDITION rather than an implicit assumption: the lowest frequency at
+    /// which any conductor in this extraction reaches two skin depths, in hertz, or
+    /// <see cref="double.PositiveInfinity"/> where none does.
+    ///
+    /// <para>Below it the R matrix does not depend on frequency at all and only L and the solve
+    /// change per point — 57 MHz at 0.5 oz, 14 MHz at 1 oz, 3.6 MHz at 2 oz, so on the thin inner
+    /// copper these boards use ONE R MATRIX SERVES AN UNUSUALLY WIDE BAND (§2.8). Reported so that
+    /// the point at which R starts varying is visible, because a caller reusing a factorisation
+    /// across a sweep has to know where the reuse stops being valid.</para>
+    /// </summary>
+    public double SkinCrossoverHz { get; init; } = double.PositiveInfinity;
 
     /// <summary>The mesh pitch, in METRES, before local refinement.</summary>
     public required double CellSizeMetres { get; init; }

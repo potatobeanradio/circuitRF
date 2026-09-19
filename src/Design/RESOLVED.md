@@ -7568,3 +7568,136 @@ gate anything. Same two-tier shape as Q-18's reader gates.
   Shadowing by ESL is a statement about the band above resonance; what swamps a part where the
   margin is, is CAPACITANCE. Both rows are asserted in the gate, the wrong-premise one included, so
   a later change that quietly made it read 0.0 dB would fail.
+
+---
+
+## railRF brief 13 — the distributed low band, and the six things the inductance turned up (2026-09-18)
+
+`docs/sonnet-briefs/brief-railrf-13-distributed.md`, P2a. The mesh and the fast graph gain L, the
+mounting loop is computed from the real via geometry, and `PdnInductance` is where every one of
+those expressions now lives.
+
+### 1. §4.1's inductance is the LOOP's, and it has to be HALVED per conductor
+
+The design note writes the plane pair's per-square resistance with its factor of two visible —
+`R = 2·Rs`, both planes — and its per-square inductance without one, `L = µ₀·h`. **Both are the
+loop's.** `PdnMeshExtractor` pays the resistance's two by construction, by meshing BOTH conductors
+so a loop traverses `Rs` on the way out and `Rs` on the way back (its own file header is about
+exactly that). The inductance has to be split the same way, or `µ₀·h` copied onto each edge puts
+`2·µ₀·h` round the loop and **doubles every plane-pair inductance in the tool**.
+
+The asymmetry in how §4.1 writes the two is what makes this easy to get wrong, and nothing would
+report it: every curve would simply sit at the wrong frequency by √2. `StampMesh` therefore stages
+`µ₀·h/2` per conductor edge, and `PdnDistributedTests` measures it **round the loop** — the same way
+`PdnMeshExtractorTests` already measures the resistance.
+
+### 2. `SeriesRlcModel` cannot carry a mesh edge, and `InductorModel` can
+
+The brief's scope says "no new elements — `SeriesRlcModel` carries an edge's R and L together, which
+is what it is for." It is the wrong one of the two: **SRLC requires a `C`, and `C = 0` is an OPEN at
+every frequency**, so a mesh built on it would be a mesh of open circuits with nothing to say so.
+`InductorModel`'s `C=` is optional; with `R=` and no `C=` it stamps exactly `R + jωL` on one branch,
+which is what §4.1 asks for. No new element exists either way.
+
+**At ω = 0 the element is a plain `ResistorModel`, and that is not an optimisation.** §2.8: set ω = 0
+and the inductance vanishes and what is left is real, symmetric and positive-definite. An inductor
+with `L = 0` would be the same physics and a different matrix — one Group-2 branch current per cell
+edge, which on a mesh of a hundred thousand edges is a hundred thousand extra unknowns for an answer
+already known to be the resistive one.
+
+### 3. §4.1's `Rs = √(πfµ/σ)` and §2.8's three crossovers disagree by a factor of four, and the fix is where the ½ goes
+
+Read `Rs = √(πfµ/σ)` as ONE PLANE's sheet resistance and it is `ρ/δ`, which crosses the DC value
+`ρ/T` at `δ = T` — **3.6 MHz on 1 oz copper, not the 14 MHz §2.8 tabulates**. At §2.8's own 14 MHz
+the skin expression is already twice the DC one, so a piecewise rule built literally on the note's
+two sentences puts a **factor-of-two STEP in R in the middle of the 1 MHz–100 MHz band this phase
+exists to make quantitative**, and nothing reports it.
+
+Read `√(πfµ/σ)` as the LOOP's skin resistance — `2·Rs`, the two planes, exactly the factor §4.1 is
+about — and every number in the note is consistent at once. `Rs = ½·√(πfµ/σ) = ρ/(2δ)` is a
+conductor carrying current on BOTH faces, which is what "two skin depths" means, and it meets `ρ/T`
+**exactly** at `T = 2δ`: 57 MHz at 0.5 oz, 14 MHz at 1 oz, 3.6 MHz at 2 oz. Continuous, no step, and
+§2.8's three numbers arrived at rather than asserted.
+
+So `PdnInductance.SheetResistanceOhmsPerSquare` is `max(ρ/T, ½√(πfµ/σ))` and its header says why.
+**A reader who "corrects" it back to `√(πfµ/σ)` per plane restores the step and halves every
+crossover frequency in the tool.** The three crossovers and the continuity across each of them are
+both asserted.
+
+### 4. The extraction's netlist could not be swept, because its ports had a dot in their names
+
+§3 of the design note is that the deliverable is a netlist every downstream consumer already sweeps.
+It was not: `PdnAssembly` spelled a port `port.1`, and **`SParameterEngine` treats a `Port` whose
+instance path contains a `.` as a BURIED port inside a sub-cell and skips it** (the Layer 2 scoping
+rule). An extraction therefore reached the engine with no ports at all and was refused with a
+sentence about placing Terms in a testbench — which is not what went wrong, and which nobody would
+have connected to a name. It is `port1` now, which is what `PdnSweep`'s own lumped assembly already
+spelled it.
+
+### 5. A port made of point cells has a LOGARITHMICALLY DIVERGENT spreading term
+
+R-rail13-4 asks for brief 3's refinement gate re-run with L in place: halving Δ under a port moves
+the port inductance by less than the stated tolerance. **It does not settle, and it cannot.** A port
+attaches at its pads' own cells, so it is a set of POINTS, and spreading into a point in two
+dimensions grows as `ln(1/Δ)` without bound. The measured ladder climbs 82.9 → 86.8 → 89.5 →
+92.5 pH — 4.7 %, 3.1 %, 3.4 % — by roughly a constant per halving rather than settling.
+
+It passes brief 3's 10 % tolerance only because the port and the feed are each a FIELD of pads,
+which divides the term by their count. **A single-pad port on the same board moves 10 % per halving,
+which is that tolerance exactly** — so brief 3's gate is one halving's worth of divergence rather
+than evidence of convergence, and it has been precautionary in a way its own comment does not say.
+
+What would make it genuinely converge is a port that ties every cell its pads COVER rather than the
+one cell each pad's centre lands in — §4.3's "its own pin-field cells" read as an AREA. `PdnPad`
+carries no pad size, so that is a change to brief 2's readers and not to this one. **Recorded rather
+than tuned away.**
+
+**And the fixture trap that goes with it:** the divergence is dominated by whichever terminal has the
+FEWEST pads. The first version of this gate used a single-point source, and its ladder climbed 10 %
+per halving with the antipad field making no measurable difference at all — the number under test was
+the SOURCE's spreading, not the port's. Widening the feed to a 5 × 5 field is what made the gate
+measure the thing it names.
+
+### 6. The fast model's section inductance is the mesh's own law, which is what makes the agreement structural
+
+§2.9 gives the fast reading "one loop inductance" per trace section, and §4.6's whole claim is that
+it is "not a second simulator, it is a second reading of the geometry". A section of `ℓ/W` squares
+over a plane at `h` is `µ₀·h·ℓ/W` of loop — the same per-square law, through the same
+`PdnInductance`, halved the same way — so Fast and Accurate agree on |Z| across 1 MHz–100 MHz for a
+structural reason rather than a numerical coincidence. Measured inside 5 % at 1, 10 and 100 MHz on
+brief 4's own stepped-trace fixture.
+
+Two supporting facts: the section's square count comes from `SectionResistance`'s own integration
+along the run, so a tapered section's L and its R are one reading of one piece of copper; and
+`PdnExtractionRequest.FrequencyHz` is now the one spelling both readings take, with
+`PdnGraphSettings.FrequencyHz` left as the graph-only fallback. §2.9 rule 4 compares the two curves
+on the user's own board, and two readings answering at two different frequencies would be compared
+against each other with nothing to say so.
+
+### The mounting loop, and the one thing it clamps
+
+`L_loop = L_p + L_r − 2·M_pr + L_pad`, over Grover's partial self-inductance of a round conductor and
+the exact Neumann mutual of two parallel filaments. On the four-layer fixture it reads 330 pH at
+0.5 mm of via separation and 494 pH at 4 mm — §2.2's 0.3–1.5 nH band, and §2.5's "0.4 nH on the
+reference and 1.1 nH on yours" shape.
+
+**The partial forms are each valid for a conductor far longer than it is wide**, and a pair closer
+together than a barrel radius drives `L_p + L_r − 2M` negative — not a small error but a negative
+inductance in a netlist, a branch that would deliver energy. `PdnInductance.LoopHenries` clamps at
+zero and `PdnMountingLoopExtractor` says on the row that the clamp fired, because a silently clamped
+zero is a part with a perfect mounting loop.
+
+A computed value never beats a typed one (§2.2: "you can override it"), and `RailMountingBasis` is
+what says which a reader is looking at. The railRF window now fills in only the rows nobody typed.
+
+### Gate
+
+`tests/Ui.Tests/RailRf/PdnDistributedTests.cs` — 7 test methods, 12 cases, 1 s. One per claim.
+
+### What this phase does NOT do, and it is worth being explicit
+
+**`PdnSweep` is still the lumped one-node rail**, so the window's Z(f) curve does not yet carry the
+mesh's R-L: the distributed netlist exists and solves, and nothing routes it into the frequency run.
+That is deliberate — brief 13's own deliverable list is three additions to the extractors, and the
+shunt branch that a distributed sweep would want is brief 14 — but §2.8's sentence about every
+observation port on a rail reading the same curve is still what the window prints.

@@ -79,7 +79,7 @@ internal sealed record PdnStaged(
     PdnOriginKind Kind, string Description,
     PdnCellRef? From, PdnCellRef? To, string? Refdes,
     double? ResistanceOhms, double? LengthMetres = null, double? WidthMetres = null,
-    PdnViaBarrel? Barrel = null);
+    PdnViaBarrel? Barrel = null, double? InductanceHenries = null);
 
 internal sealed class PdnAssembly
 {
@@ -163,14 +163,36 @@ internal sealed class PdnAssembly
         string path, int a, int b, double ohms,
         string description, PdnCellRef? from, PdnCellRef? to,
         PdnOriginKind kind = PdnOriginKind.MeshEdge,
-        double? lengthMetres = null, double? widthMetres = null)
+        double? lengthMetres = null, double? widthMetres = null,
+        double? inductanceHenries = null)
     {
         if (!(ohms > 0) || double.IsInfinity(ohms) || a == b) return;
 
+        // ── R-rail13-1: ω = 0 is a RESISTOR, and that is not an optimisation ───────────────────
+        //
+        // §2.8: "Set ω = 0 and the inductance and the shunt branch both vanish, and what is left is
+        // a purely resistive mesh: real, symmetric, positive-definite and fast." So at DC the
+        // element IS a resistor — one node-pair stamp, no branch unknown, and a system the DC
+        // engine solves as an SPD one. An inductor with L = 0 would be the same PHYSICS and a
+        // different MATRIX: every cell edge would add a Group-2 branch current, which on a mesh of
+        // a hundred thousand edges is a hundred thousand extra unknowns for an answer already
+        // known to be the resistive one.
+        //
+        // Above DC it is InductorModel with its optional R=, which stamps exactly R + jωL on one
+        // branch. NO NEW ELEMENT EXISTS (overview §1f). The brief names SeriesRlcModel for this and
+        // it is the wrong one of the two: SRLC REQUIRES a C, and C = 0 is an OPEN at every
+        // frequency — a mesh of open circuits, silently. InductorModel's C= is optional and absent
+        // here, which is the R + jωL §4.1 asks for.
+        bool ac = inductanceHenries is { } l && l > 0;
+
+        var parameters = new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) };
+        if (ac) parameters["L"] = new Value(inductanceHenries!.Value);
+
         _staged.Add(new PdnStaged(
-            "R", path, [a, b],
-            new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(ohms) },
-            new ResistorModel(), kind, description, from, to, null, ohms, lengthMetres, widthMetres));
+            ac ? "L" : "R", path, [a, b], parameters,
+            ac ? new InductorModel() : new ResistorModel(),
+            kind, description, from, to, null, ohms, lengthMetres, widthMetres,
+            null, inductanceHenries));
     }
 
     // ── §4.2 ───────────────────────────────────────────────────────────────────────────────
@@ -565,8 +587,17 @@ internal sealed class PdnAssembly
                     $"{name} drawing {amps * 1e3:0.###} mA",
                     CellOf(np), CellOf(nr), load.Anchor.Refdes, null));
 
+            // ── THE NAME HAS NO DOT IN IT, AND THAT IS NOT A STYLE CHOICE ─────────────────────
+            //
+            // SParameterEngine treats a Port whose instance path contains a '.' as a BURIED port
+            // inside a sub-cell and skips it — the Layer 2 scoping rule. An extraction spelling this
+            // "port.1" therefore reaches the engine with NO PORTS AT ALL and is refused with a
+            // sentence about placing Terms in a testbench, which is not what went wrong. §3 of the
+            // design note is that the deliverable is a netlist every downstream consumer already
+            // sweeps; a port the sweep cannot see makes that false. PdnSweep's own lumped assembly
+            // already spells it "port1" for the same reason, and the two now agree.
             _staged.Add(new PdnStaged(
-                "Port", $"port.{k + 1}", [np, nr],
+                "Port", $"port{k + 1}", [np, nr],
                 new Dictionary<string, Value>(StringComparer.Ordinal) { ["Num"] = new Value(k + 1) },
                 new PortModel(), PdnOriginKind.Port,
                 load.DcCurrentA is null
@@ -679,7 +710,7 @@ internal sealed class PdnAssembly
 
             _origins.Add(new PdnElementOrigin(
                 componentIndex, s.Kind, s.Description, s.From, s.To, s.Refdes,
-                s.ResistanceOhms, s.LengthMetres, s.WidthMetres, s.Barrel));
+                s.ResistanceOhms, s.LengthMetres, s.WidthMetres, s.Barrel, s.InductanceHenries));
         }
 
         if (dropped > 0)

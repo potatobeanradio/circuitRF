@@ -1,12 +1,15 @@
-// The ACCURATE reading: a mesh of unit cells over the real copper, at DC
-// (docs/sonnet-briefs/brief-railrf-3-mesh-extractor.md R-rail3-6 … R-rail3-8, railrf.md §4.1).
+// The ACCURATE reading: a mesh of unit cells over the real copper, at DC and above it
+// (docs/sonnet-briefs/brief-railrf-3-mesh-extractor.md R-rail3-6 … R-rail3-8 and
+//  brief-railrf-13-distributed.md R-rail13-1 … R-rail13-4, railrf.md §4.1).
 //
-// ── AT DC ONLY, AND DC IS THE FIRST POINT OF THE SWEEP ─────────────────────────────────────────
+// ── DC IS THE FIRST POINT OF THE SWEEP, NOT A MODE ─────────────────────────────────────────────
 //
 // Set ω = 0 and §4.1's inductance and shunt branch both vanish; what is left is a purely resistive
-// mesh — real, symmetric, positive-definite and fast. Brief 13 adds L, brief 14 adds the shunt.
-// §2.8 is explicit that this is not a mode bolted on: ONE EXTRACTOR, ONE MESH, ONE SOLVER is what
-// stops a DC answer and an AC answer drifting apart.
+// mesh — real, symmetric, positive-definite and fast. Above ω = 0 each cell edge carries R + jωL
+// with L = µ₀·h per square (R-rail13-1); the shunt branch is still brief 14's and is absent at
+// every frequency here. §2.8 is explicit that this is not a mode bolted on: ONE EXTRACTOR, ONE
+// MESH, ONE SOLVER is what stops a DC answer and an AC answer drifting apart — which is why
+// PdnExtractionRequest.FrequencyHz is a number on the request rather than a second entry point.
 //
 // ── THE FACTOR OF TWO, WHICH IS THE TERM EVERYONE SIMPLIFIES OUT ───────────────────────────────
 //
@@ -145,6 +148,22 @@ public sealed class PdnExtractionRequest
 
     /// <summary>The document's own settings — the copper temperature and the via plating.</summary>
     public RailSettings Settings { get; init; } = new();
+
+    /// <summary>
+    /// The frequency this extraction is FOR, in hertz. <b>Zero is DC and is the first point of the
+    /// sweep</b> (§2.8), not a mode: at ω = 0 §4.1's inductance vanishes, every copper element is a
+    /// plain resistor and the system is real, symmetric and positive-definite.
+    ///
+    /// <para>Above zero each cell edge carries <c>R + jωL</c> with <c>L = µ₀·h</c> per square
+    /// (R-rail13-1) and <c>R</c> taken at this frequency's own sheet resistance — which is the SAME
+    /// number as the DC one below <see cref="PdnProvenance.SkinCrossoverHz"/>, and that is the
+    /// performance property R-rail13-2 exists to make visible.</para>
+    ///
+    /// <para><b>There is still no shunt branch at any frequency here.</b> §4.1's <c>C</c> and
+    /// <c>G</c> to the reference plane are brief 14; this band is a distributed R-L network with the
+    /// lumped parts hung on it, exactly as §2.8 says.</para>
+    /// </summary>
+    public double FrequencyHz { get; init; }
 
     /// <summary>How finely, and where. Read by <see cref="PdnMeshExtractor"/>; the fast reading
     /// takes only <see cref="PdnMeshSettings.IncludeIsolatedRegions"/> from it, which is a question
@@ -323,9 +342,13 @@ public static class PdnMeshExtractor
                 "not overlap. This is a coordinate-system disagreement rather than a design problem.",
                 regions);
 
+        // ── §4.1's h, and R-rail13-2's stated condition ────────────────────────────────────────
+        var separation = PlaneSeparation(request, mesh, referenceLayer, notes, out double h);
+        double crossover = SkinCrossover(mesh, request.FrequencyHz, notes);
+
         // ── the netlist ────────────────────────────────────────────────────────────────────────
         var asm = new PdnAssembly(request, mesh, celsius, notes, diagnostics);
-        StampMesh(mesh, asm, request.DbuPerMicron);
+        StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
         if (asm.Build() is { } refusal) return PdnExtraction.Refused(refusal, regions);
 
         var provenance = new PdnProvenance
@@ -334,7 +357,9 @@ public static class PdnMeshExtractor
             Model = "Accurate (mesh)",
             RailName = rail.Name,
             ReferenceExtent = rail.ReferenceExtent,
-            FrequencyHz = 0.0,
+            FrequencyHz = request.FrequencyHz,
+            PlaneSeparationMetres = h,
+            SkinCrossoverHz = crossover,
             CellSizeMetres = baseDeltaDbu / dbuPerMetre,
             CellSizeBasis = cellBasis,
             PortRefinementRatio = refineBands.Count > 0 ? Math.Max(1, request.Mesh.PortRefinementRatio) : 1,
@@ -1005,14 +1030,120 @@ public static class PdnMeshExtractor
     /// makes §4.6's "not a second simulator, a second reading of the geometry" true rather than
     /// asserted.</para>
     /// </summary>
-    private static void StampMesh(MeshBuilder mesh, PdnAssembly asm, int dbuPerMicron)
+    /// <summary>
+    /// §4.1's <c>h</c> for every meshed conductor, and the one the provenance reports.
+    ///
+    /// <para><b>Per conductor, because a rail on the outer layer and a rail on an inner one are
+    /// different distances from the same reference.</b> The REFERENCE's own edges take the nearest
+    /// rail conductor's <c>h</c>: it is the pair the return current actually crosses, and a
+    /// reference that took a far layer's separation would carry an inductance no field pays for.</para>
+    ///
+    /// <para>Zero where the stackup cannot give one — a rail whose reference is not a conductor of
+    /// the stackup, or a pair with no dielectric between them. <b>Stated as a note rather than
+    /// defaulted</b>: an assumed <c>h</c> would put a plausible inductance on every edge of the
+    /// board and nothing would say where it came from.</para>
+    /// </summary>
+    private static Func<MeshLayer, double> PlaneSeparation(
+        PdnExtractionRequest request, MeshBuilder mesh, LayerKey referenceLayer,
+        List<string> notes, out double dominantMetres)
+    {
+        var conductors = PdnStackupGeometry.Conductors(request.Technology, request.DbuPerMicron);
+        var reference = PdnStackupGeometry.ConductorOf(conductors, referenceLayer);
+
+        var byLayer = new Dictionary<LayerKey, double>();
+        double nearest = 0;
+
+        foreach (var ml in mesh.Layers)
+        {
+            if (ml.IsReference) continue;
+            double h = PdnStackupGeometry.SeparationMetres(
+                PdnStackupGeometry.ConductorOf(conductors, ml.Layer), reference);
+            byLayer[ml.Layer] = h;
+            if (h > 0 && (nearest == 0 || h < nearest)) nearest = h;
+        }
+
+        dominantMetres = nearest;
+        double dominant = nearest;
+
+        if (request.FrequencyHz > 0 && !(nearest > 0))
+            notes.Add(
+                "The stackup gives no dielectric separation between this rail's copper and its " +
+                "reference, so no cell edge carries an inductance and this extraction is the " +
+                "resistive mesh at a non-zero frequency. State the dielectric thicknesses in the " +
+                "stackup — L = µ₀·h is the whole of §4.1's low band.");
+        else if (request.FrequencyHz > 0 &&
+                 byLayer.Values.Any(v => v > 0 && Math.Abs(v - nearest) > 1e-12))
+            notes.Add(
+                $"This rail's copper sits on conductors at different distances from its reference, " +
+                $"from {byLayer.Values.Where(v => v > 0).Min() * 1e6:0.#} µm to " +
+                $"{byLayer.Values.Max() * 1e6:0.#} µm. Each carries its own L = µ₀·h and the " +
+                $"reference carries the nearest pair's, which is {nearest * 1e6:0.#} µm.");
+
+        return ml => ml.IsReference
+            ? dominant
+            : byLayer.TryGetValue(ml.Layer, out double v) ? v : dominant;
+    }
+
+    /// <summary>
+    /// R-rail13-2's stated condition: the lowest frequency at which any meshed conductor reaches
+    /// two skin depths.
+    ///
+    /// <para>Below it the R matrix does not depend on frequency at all, which is a genuine
+    /// performance property and the reason it is REPORTED rather than merely obeyed — a caller
+    /// reusing one factorisation across a sweep has to know where the reuse stops being valid, and
+    /// on the thin inner copper these boards use that is a long way up.</para>
+    /// </summary>
+    private static double SkinCrossover(MeshBuilder mesh, double frequencyHz, List<string> notes)
+    {
+        double lowest = double.PositiveInfinity;
+        string which = "";
+
+        foreach (var ml in mesh.Layers)
+        {
+            double f = PdnInductance.SkinCrossoverHz(
+                ml.Conductor.ThicknessMetres, ml.Conductor.ConductivitySm);
+            if (f < lowest) { lowest = f; which = ml.Conductor.StackupName; }
+        }
+
+        if (double.IsFinite(lowest) && frequencyHz > lowest)
+            notes.Add(
+                $"At {frequencyHz / 1e6:0.###} MHz the copper on '{which}' is thicker than two skin " +
+                $"depths ({lowest / 1e6:0.###} MHz), so its sheet resistance is ρ/(2δ) rather than " +
+                "ρ/T and this extraction's R matrix is NOT the DC one. Below that crossover it is, " +
+                "and only L and the solve change per point.");
+
+        return lowest;
+    }
+
+    private static void StampMesh(
+        MeshBuilder mesh, PdnAssembly asm, int dbuPerMicron,
+        double frequencyHz, Func<MeshLayer, double> separationOf)
     {
         var grid = mesh.Grid;
 
         foreach (var ml in mesh.Layers)
         {
-            double sigmaT = ml.Conductor.ConductivitySm * ml.Conductor.ThicknessMetres;
+            // R-rail13-2. Below two skin depths this IS σ·T, so a 1 oz board's whole R matrix is
+            // the DC one anywhere under 14 MHz and only L and the solve change per point.
+            double sigmaT = PdnInductance.SheetSiemensPerSquare(
+                frequencyHz, ml.Conductor.ThicknessMetres, ml.Conductor.ConductivitySm);
             if (!(sigmaT > 0)) continue;
+
+            // ── R-rail13-1, AND THE SAME FACTOR OF TWO THIS FILE'S HEADER IS ABOUT ─────────────
+            //
+            // §4.1 states the plane pair's per-square loop inductance as L = µ₀·h, exactly as it
+            // states the loop's resistance as R = 2·Rs. This extractor pays that 2 BY MESHING BOTH
+            // CONDUCTORS — each edge carries one plane's Rs and the loop traverses two of them.
+            //
+            // THE INDUCTANCE HAS TO BE SPLIT THE SAME WAY, AND IT IS THE ASYMMETRY THAT MAKES THIS
+            // EASY TO GET WRONG: §4.1 writes the resistance with its 2 visible and the inductance
+            // without one, so µ₀·h copied onto each edge puts 2·µ₀·h round the loop and doubles
+            // every plane-pair inductance in the tool. Half on each conductor is what makes the
+            // loop µ₀·h — measured round the loop, which is how PdnDistributedTests gates it and
+            // how PdnMeshExtractorTests already gates the resistance.
+            double half = frequencyHz > 0
+                ? PdnInductance.SquareInductanceHenries(separationOf(ml)) / 2.0
+                : 0.0;
 
             double dbuPerMetre = dbuPerMicron * 1e6;
             string side = ml.IsReference ? "reference" : "rail";
@@ -1027,12 +1158,12 @@ public static class PdnMeshExtractor
                     if (i + 1 < grid.Nx && ml.Node[k + 1] >= 0)
                         AddEdge(mesh, asm, ml, i, j, i + 1, j, a, ml.Node[k + 1],
                                 grid.Dx(i), grid.Dx(i + 1), ml.Area[k], ml.Area[k + 1],
-                                sigmaT, dbuPerMetre, side, "x");
+                                sigmaT, half, dbuPerMetre, side, "x");
 
                     if (j + 1 < grid.Ny && ml.Node[k + grid.Nx] >= 0)
                         AddEdge(mesh, asm, ml, i, j, i, j + 1, a, ml.Node[k + grid.Nx],
                                 grid.Dy(j), grid.Dy(j + 1), ml.Area[k], ml.Area[k + grid.Nx],
-                                sigmaT, dbuPerMetre, side, "y");
+                                sigmaT, half, dbuPerMetre, side, "y");
                 }
         }
     }
@@ -1041,7 +1172,7 @@ public static class PdnMeshExtractor
         MeshBuilder mesh, PdnAssembly asm,
         MeshLayer ml, int i0, int j0, int i1, int j1, int a, int b,
         long d0Dbu, long d1Dbu, double area0Dbu, double area1Dbu,
-        double sigmaT, double dbuPerMetre, string side, string axis)
+        double sigmaT, double halfLoopPerSquareH, double dbuPerMetre, string side, string axis)
     {
         // Half a cell of copper each, in series. dx²/(2·σ·T·A) is the half-cell resistance for a
         // cell of length dx carrying an average width A/dx — the ordinary finite-volume form, and
@@ -1054,10 +1185,24 @@ public static class PdnMeshExtractor
         double length = (d0 + d1) / 2.0;
         double width = (a0 / d0 + a1 / d1) / 2.0;
 
+        // ── §4.1's aspect rule, arrived at rather than applied ────────────────────────────────
+        //
+        // "For non-square cells L and R scale by the aspect ratio (along/across)." The bracket
+        // below IS that ratio — it is the edge's SQUARE COUNT, the same number the resistance is
+        // Rs times, so L and R scale together by construction and cannot come to disagree about
+        // what a non-square cell is. A uniform grid of side Δ gives exactly 1 and a 2:1 cell gives
+        // exactly 2.
+        //
+        // And it comes from the cell AREAS for the reason this file's header gives for the
+        // resistance: a conductor's width is not a multiple of Δ, so rounding it to one is wrong by
+        // whichever way the grid lines happened to fall.
+        double squares = d0 * d0 / (2 * a0) + d1 * d1 / (2 * a1);
+        double l = halfLoopPerSquareH > 0 ? halfLoopPerSquareH * squares : 0.0;
+
         asm.StageCopper(
             $"mesh.{side}.{ml.Layer.Layer}_{ml.Layer.Datatype}.{i0}.{j0}.{axis}", a, b, r,
             $"{length * 1e3:0.###} mm of {width * 1e3:0.###} mm {ml.Conductor.StackupName} copper",
             mesh.CellRef(ml, i0, j0), mesh.CellRef(ml, i1, j1),
-            PdnOriginKind.MeshEdge, length, width);
+            PdnOriginKind.MeshEdge, length, width, l > 0 ? l : null);
     }
 }
