@@ -316,6 +316,54 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         public Func<IEnumerable<Marker>>? SelectedMarkersProvider { get; set; }
 
         // ============================================================
+        //  The overlay seam (brief-smith-5-chart.md R-smith5-6)
+        // ============================================================
+
+        /// <summary>
+        /// Transient chrome with a gesture of its own, drawn above the traces and below the markers
+        /// — the Smith Chart tool's grippers, and brief 9's constant-Q arcs.
+        /// </summary>
+        /// <remarks>
+        /// <b>Additive, and null is the whole of the old behaviour.</b> With no overlay set this
+        /// control draws what it always drew and every press reaches the handler it always reached:
+        /// the hit test below is the only new branch on the pointer path and it is guarded on this
+        /// property being non-null AND answering with a handle. See <see cref="IPlotOverlay"/> for
+        /// the four rules the seam carries.
+        /// </remarks>
+        public IPlotOverlay? Overlay { get; set; }
+
+        /// <summary>The handle an overlay drag is in flight on, or null. Null is also what makes
+        /// Escape and the release path no-ops when no overlay gesture is running.</summary>
+        private object? _overlayDragHandle;
+
+        /// <summary>What the pointer is hovering, so a move that does not change it raises no
+        /// redraw — a hover test runs on every pointer move over the plot.</summary>
+        private object? _overlayHoverHandle;
+
+        /// <summary>
+        /// The world point under a canvas position, on the PRIMARY axis — Γ on a Smith plot.
+        /// </summary>
+        /// <remarks>
+        /// Built from the live plot and this control's own bounds on every call rather than cached:
+        /// the transform depends on the window, and the window moves under a pan and a zoom.
+        /// </remarks>
+        private System.Numerics.Complex OverlayWorldAt(Point pos)
+        {
+            var tf = PlotRenderer.BuildTransforms(_plot!, (Bounds.Width, Bounds.Height));
+            var (wx, wy) = tf.PrimaryFromCanvas((float)pos.X, (float)pos.Y);
+            return new System.Numerics.Complex(wx, wy);
+        }
+
+        /// <summary>The overlay's answer for a canvas position, or null when there is no overlay,
+        /// no plot, or nothing of the overlay's under the cursor.</summary>
+        private object? OverlayHitTest(Point pos)
+        {
+            if (Overlay is not { } ov || _plot is null) return null;
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            return ov.HitTest(pos.X, pos.Y, tf);
+        }
+
+        // ============================================================
         //  Direct Property: Library
         // ============================================================
 
@@ -390,6 +438,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// </summary>
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            // ---- Escape abandons an overlay drag (R-smith5-8) ----
+            //
+            //  The before-value is restored and NOTHING is pushed, so an abandoned gesture leaves no
+            //  trace on the undo stack at all.
+            if (e.Key == Key.Escape && _overlayDragHandle is not null)
+            {
+                _overlayDragHandle = null;
+                Overlay?.DragEnd(cancelled: true);
+                e.Handled = true;
+                InvalidateVisual();
+                return;
+            }
+
             if (_plot is not null && _plot.PlotType.IsRect() &&
                 e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
             {
@@ -851,7 +912,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 zoom,
                 readout,
                 aliasFor,
-                alwaysShowSource));
+                alwaysShowSource,
+                // The overlay is captured like every other field on the draw op — a SNAPSHOT of what
+                // this frame needs. It is the object itself rather than a bound delegate because the
+                // theme it draws with is the draw op's own, and building the delegate there keeps the
+                // two from ever disagreeing.
+                Overlay));
         }
 
         // ============================================================
@@ -871,6 +937,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly VswrReadout?      _vswrReadout;
             private readonly Func<Trace, string?>? _aliasFor;
             private readonly bool _alwaysShowSource;
+            private readonly IPlotOverlay? _overlay;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -883,7 +950,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 float            zoomLevel       = 1f,
                 VswrReadout?     vswrReadout     = null,
                 Func<Trace, string?>? aliasFor   = null,
-                bool alwaysShowSource = false)
+                bool alwaysShowSource = false,
+                IPlotOverlay? overlay = null)
             {
                 _bounds          = bounds;
                 _plot            = plot;
@@ -896,6 +964,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _vswrReadout     = vswrReadout;
                 _aliasFor        = aliasFor;
                 _alwaysShowSource = alwaysShowSource;
+                _overlay         = overlay;
             }
 
             public bool Equals(ICustomDrawOperation? other) => false;
@@ -931,7 +1000,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 PlotRenderer.Draw(canvas, canvasSize, _plot, _detail, _theme, _showFilePrefix,
                     selectedMarkers: _selectedMarkers, selectionColor: _selectionColor,
                     zoomLevel: _zoomLevel, vswrReadout: _vswrReadout, aliasFor: _aliasFor,
-                    alwaysShowSource: _alwaysShowSource);
+                    alwaysShowSource: _alwaysShowSource,
+                    // R-smith5-6: the canvas and the transform are ARGUMENTS of this frame, never
+                    // remembered — ContourRenderer once drew every contour on every Smith plot to
+                    // the first target it had been handed.
+                    overlay: _overlay is { } ov ? (c, tf) => ov.Draw(c, tf, _theme) : null);
                 canvas.Restore();
             }
 
@@ -1102,6 +1175,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (props.IsLeftButtonPressed)
             {
+                // ---- The overlay, FIRST (R-smith5-6) ----
+                //
+                //  Before the VSWR locus and before the marker glyph, because a gripper UNDER a
+                //  marker is otherwise unreachable and the marker is the thing the user can move out
+                //  of the way. A null answer falls straight through and everything below runs exactly
+                //  as it did before this seam existed.
+                if (Overlay is { } overlay && OverlayHitTest(_dragStartScreen) is { } handle)
+                {
+                    _overlayDragHandle = handle;
+                    overlay.DragBegin(handle);
+                    overlay.DragTo(OverlayWorldAt(_dragStartScreen));
+                    _renderDetail = PlotDetail.Full;
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    InvalidateVisual();
+                    return;
+                }
+
                 // VSWR locus grab — checked BEFORE the glyph so a tight locus (e.g. VSWR 1.05) sitting
                 // inside the marker's hit radius is still draggable; the marker would otherwise always win.
                 var vswrHit = HitTestVswrLocus(e.GetPosition(this));
@@ -1197,6 +1288,35 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_plot is null) return;
 
             var current = e.GetPosition(this);
+
+            // ---- The overlay's own drag (R-smith5-6) ----
+            //
+            //  It owns the pointer for the whole gesture: the value pins at a boundary but the
+            //  HANDLE keeps tracking the cursor, which is R-smith3-4's rule and the difference
+            //  between a pinned drag and one that reads as broken.
+            if (_overlayDragHandle is not null && Overlay is { } dragOverlay)
+            {
+                dragOverlay.DragTo(OverlayWorldAt(current));
+                e.Handled = true;
+                InvalidateVisual();
+                return;
+            }
+
+            // ---- Hover, so a gripper brightens under the cursor (§5.4) ----
+            //
+            //  Only while nothing else is in flight, and only when the answer CHANGED — this runs on
+            //  every pointer move over the plot, and an unconditional redraw here would repaint the
+            //  whole scene for a mouse crossing it.
+            if (Overlay is { } hoverOverlay && !_isDragging && !_isDraggingSecondary
+                && _draggingMarker is null && _draggingVswrMarker is null)
+            {
+                var hovered = OverlayHitTest(current);
+                if (!ReferenceEquals(hovered, _overlayHoverHandle))
+                {
+                    _overlayHoverHandle = hovered;
+                    if (hoverOverlay.Hover(hovered)) InvalidateVisual();
+                }
+            }
 
             // ---- ANT-10: the rotate drag ----
             if (_surfaceRotating && _plot.PlotType == PlotType.Surface3D)
@@ -1369,6 +1489,20 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            // ---- The overlay's drag ends (R-smith5-8) ----
+            //
+            //  ON RELEASE is where the undo entry is pushed, by the overlay, carrying the value it
+            //  captured on press. This method only says the gesture finished.
+            if (_overlayDragHandle is not null)
+            {
+                _overlayDragHandle = null;
+                Overlay?.DragEnd(cancelled: false);
+                e.Pointer.Capture(null);
+                e.Handled = true;
+                InvalidateVisual();
+                return;
+            }
+
             // ---- ANT-10: the rotate drag ends, and the FULL grid comes back ----
             if (_surfaceRotating)
             {

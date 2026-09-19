@@ -593,11 +593,31 @@ namespace CircuitRF.Render.DataDisplay
             double level, double spacingWorld, int ringIndex,
             SKFont font, SKPaint labelPaint, SKPaint bgPaint, SKPaint bgStroke,
             float padX, float padY)
+            => DrawIsoLineLabel(canvas, pts, project, FormatLevel(level), spacingWorld, ringIndex,
+                                font, labelPaint, bgPaint, bgStroke, padX, padY);
+
+        /// <summary>
+        /// The same label, with the caller's own TEXT instead of a formatted level.
+        /// </summary>
+        /// <remarks>
+        /// <b>The box is the point of this overload, not the string.</b> The Smith Chart tool labels
+        /// each per-frequency load point, and what it needs is the padded, world-unit-placed,
+        /// staggered box the loadpull iso-lines already draw — but its label is a FREQUENCY, which
+        /// <see cref="FormatLevel"/> has no way to spell. Drawing a second box beside this one is
+        /// how the two surfaces drift apart in appearance, which is exactly what the reuse exists to
+        /// prevent, so the level overload above now delegates here and there is still one box.
+        /// </remarks>
+        internal static void DrawIsoLineLabel(
+            SKCanvas canvas,
+            IReadOnlyList<(double X, double Y)> pts,
+            Func<double, double, SKPoint> project,
+            string labelText, double spacingWorld, int ringIndex,
+            SKFont font, SKPaint labelPaint, SKPaint bgPaint, SKPaint bgStroke,
+            float padX, float padY)
         {
             var anchors = ComputeLabelAnchors(pts, spacingWorld, ringIndex);
             if (anchors.Count == 0) return;
 
-            string labelText = FormatLevel(level);
             float  tw        = font.MeasureText(labelText);
             var    metrics   = font.Metrics;
             float  capHeight = metrics.Descent - metrics.Ascent;   // ascent is negative

@@ -1,10 +1,14 @@
 using System;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Controls.Primitives;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using CircuitRF.Design.Smith;
+using CircuitRF.Ui.DataDisplay.Controls;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.ViewModels;
 
@@ -21,8 +25,9 @@ namespace CircuitRF.Ui.Views.Smith;
 /// Layout and restore-on-reopen are all the shell's, inherited and not re-implemented. A
 /// <c>Window</c> appearing here would mean that requirement had been missed.
 ///
-/// <para>What is left for the code-behind is the two things a view model must not do: take keyboard
-/// focus when the tab is activated, and open a file picker. The import's READ is
+/// <para>What is left for the code-behind is what a view model must not do: take keyboard focus when
+/// the tab is activated, open a file picker, and hand the chart's <c>PlotControl</c> its host, its
+/// container and its overlay (<c>R-smith5-5</c>, <c>BindChartPlot</c>). The import's READ is
 /// <see cref="SmithGeneratorImport"/>'s, below the firewall, reached through
 /// <see cref="SmithChartViewModel.ImportGeneratorFrom"/> — which takes a resolved path, so the whole
 /// import is drivable by the gate with no display.</para>
@@ -35,6 +40,15 @@ public partial class SmithChartView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+
+        // A theme change is a different event from a theme VARIANT change, and this view paints its
+        // chart from the variant — see SyncPlotTheme.
+        ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
+
+        // LayoutUpdated rather than SizeChanged: the chart pane can MOVE without resizing — a
+        // splitter drag on the generator column does exactly that — and a marker info box that
+        // stayed behind would be pointing at nothing.
+        LayoutUpdated += (_, _) => SyncPlotContainer();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -46,6 +60,7 @@ public partial class SmithChartView : UserControl
 
         _doc.ActivationFocusRequested += OnActivationFocusRequested;
         ApplySplitFractions();
+        BindChartPlot(_doc.ViewModel);
 
         // The request may have been made BEFORE this view existed — a document that is already the
         // active dockable at the instant its view is first realized. ConsumeActivationFocus is what
@@ -59,10 +74,11 @@ public partial class SmithChartView : UserControl
     /// Takes the keyboard for this document.
     /// </summary>
     /// <remarks>
-    /// The control focused is this one rather than a pane, because neither pane exists yet — briefs 5
-    /// and 6 own them, and each will want the focus for its own shortcuts. Focusing the document
-    /// root now is what makes the shell's own accelerators work on a freshly-activated tab without a
-    /// preliminary click, which is the whole point of <c>IActivatableDocument</c>.
+    /// The control focused is this one rather than the chart, because the network pane is brief 6's
+    /// and will want the focus for its own shortcuts — and because the chart takes the keyboard on
+    /// its own first click either way. Focusing the document root is what makes the shell's own
+    /// accelerators work on a freshly-activated tab without a preliminary click, which is the whole
+    /// point of <c>IActivatableDocument</c>.
     /// </remarks>
     private void FocusSelf() => Focus(NavigationMethod.Tab);
 
@@ -153,5 +169,135 @@ public partial class SmithChartView : UserControl
 
         string? error = _doc.ViewModel.ImportGeneratorFrom(files[0].Path.LocalPath);
         _doc.ViewModel.ImportFailed = error;
+    }
+
+    // ── the chart (brief-smith-5-chart.md R-smith5-5) ────────────────────────
+
+    private SmithChartViewModel? _boundChartVm;
+
+    /// <summary>
+    /// Gives the chart's <c>PlotControl</c> its host, its overlay and its container.
+    /// </summary>
+    /// <remarks>
+    /// <b>The Match Designer's own <c>Bind</c>, and the same omission it was written for — twice.</b>
+    /// A <c>PlotControl</c> asks its HOST for the next marker index, the info-box view model, the
+    /// container and the selected markers, and a host that is null answers "nothing" to all four —
+    /// silently. That was reported against the Match Designer on 2026-08-20 and against railRF on
+    /// 2026-09-19, both times as "a double click adds no marker", both times the same cause.
+    ///
+    /// <para><b><c>ContainerProvider</c> is the one that bites LAST.</b>
+    /// <c>PlotExporter.CopyPlotToClipboardAsync</c> opens with <c>if (container is null) return;</c>,
+    /// so a plot hosted without a container produces NO clipboard content, raises nothing, and looks
+    /// exactly like a successful copy. Brief 7 writes the copy; the WIRING belongs with the hosting
+    /// and is here, and brief 7's gate is written to fail if it is missing.</para>
+    ///
+    /// <para><c>HandleDoubleTapAt</c> is documented as "called by the HOST on DoubleTapped" — it is
+    /// not wired by the control — so the subscription below is the whole of that feature: a
+    /// double-click near a trace adds a marker there, one on empty chart opens Plot Properties.</para>
+    ///
+    /// <para>Bound once per view model. The container is the one <see cref="SmithChartViewModel"/>
+    /// built, never a second one: two containers over one plot would number markers
+    /// independently.</para>
+    /// </remarks>
+    private void BindChartPlot(SmithChartViewModel vm)
+    {
+        if (ReferenceEquals(_boundChartVm, vm)) return;
+        _boundChartVm = vm;
+
+        var plot      = ChartPlotControl;
+        var container = vm.ChartContainer;
+
+        plot.NextMarkerIndexProvider     = container.GetNextMarkerIndex;
+        plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+        plot.ContainerProvider           = () => container;
+        plot.SelectedMarkersProvider     = container.GetSelectedMarkers;
+        plot.StepSelectedMarkersHandler  = container.StepSelectedMarkers;
+
+        // THE OVERLAY — the grippers (R-smith5-6). Everything about the gesture is the overlay's;
+        // the control only asks it first and falls through when it answers null, which is what keeps
+        // pan, zoom and marker drag exactly as they were.
+        plot.Overlay = vm.ChartOverlay;
+
+        plot.DoubleTapped += (_, args) =>
+        {
+            plot.HandleDoubleTapAt(args.GetPosition(plot));
+            args.Handled = true;
+        };
+
+        // A pan or a zoom is what makes the chart's window the USER's; from then on the document
+        // carries it and the chart stops re-fitting under every edit. It is not an edit: no undo
+        // entry, no dirty mark — the splitters' own rule.
+        plot.PlotChanged += (_, _) => { vm.CaptureChartWindow(); container.OnPlotChanged(this, EventArgs.Empty); };
+        plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+        plot.MarkerAdded += container.OnMarkerAdded;
+        container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
+
+        SyncPlotTheme();
+        SyncPlotContainer();
+    }
+
+    /// <summary>
+    /// Keeps the chart container's rectangle equal to the <c>PlotControl</c>'s, in the info-box
+    /// layer's coordinates, and reports the canvas size to the view model.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two things, because both are the same measurement.</b> The rectangle is what
+    /// <c>DataDisplayViewModel.PlaceInfoBoxInLogicalCoords</c> puts a new marker's box against —
+    /// without it every box lands at the top left of the document rather than beside its marker. The
+    /// canvas size is what the adaptive trajectory sampler measures its chord error in, so a curve is
+    /// as smooth as the size it is actually drawn at deserves.
+    ///
+    /// <para><c>LayoutUpdated</c> fires on every pass, so a rectangle that has not moved is returned
+    /// on rather than re-published: <c>NotifyViewProperties</c> walks every info box.</para>
+    /// </remarks>
+    private void SyncPlotContainer()
+    {
+        if (_boundChartVm is not { } vm) return;
+
+        var plot  = ChartPlotControl;
+        var layer = MarkerInfoBoxLayer;
+        if (plot.Bounds.Width < 1 || plot.Bounds.Height < 1) return;
+        if (plot.TranslatePoint(default, layer) is not { } origin) return;
+
+        vm.ChartCanvasSize = (plot.Bounds.Width, plot.Bounds.Height);
+
+        var container = vm.ChartContainer;
+        if (Math.Abs(container.Left   - origin.X)           < 0.5
+         && Math.Abs(container.Top    - origin.Y)           < 0.5
+         && Math.Abs(container.Width  - plot.Bounds.Width)  < 0.5
+         && Math.Abs(container.Height - plot.Bounds.Height) < 0.5)
+            return;
+
+        container.Left   = origin.X;
+        container.Top    = origin.Y;
+        container.Width  = plot.Bounds.Width;
+        container.Height = plot.Bounds.Height;
+        container.NotifyViewProperties();
+    }
+
+    /// <summary>
+    /// Puts the chart, its markers and their info boxes into the application's own light or dark
+    /// palette.
+    /// </summary>
+    /// <remarks>
+    /// <b>Both halves, because they reach different things</b> (railRF's own finding).
+    /// <c>DataDisplayViewModel.Theme</c> repaints every marker info box;
+    /// <c>PlotControl.PlotTheme</c> is what the control draws the grid, the arcs, the labels, the
+    /// markers and the OVERLAY with. Setting only the first leaves the chart in the light palette and
+    /// setting only the second leaves the info boxes in it.
+    ///
+    /// <para><b>No palette of its own</b> (§6 of the brief). harmonicaRF has a phosphor-green theme
+    /// because it is a standalone instrument; this is a document, and a document that ignores the
+    /// user's theme is a document that looks broken in dark mode.</para>
+    /// </remarks>
+    private void SyncPlotTheme()
+    {
+        if (_boundChartVm is not { } vm) return;
+
+        vm.PlotHost.Theme = ActualThemeVariant == ThemeVariant.Dark
+            ? RenderTheme.Dark
+            : RenderTheme.Light;
+
+        ChartPlotControl.SetValue(PlotControl.PlotThemeProperty, vm.PlotHost.Theme);
     }
 }

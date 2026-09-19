@@ -1,5 +1,114 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the chart, the overlay seam, and the drag that is one undo entry (2026-09-19)
+
+brief-smith-5-chart.md. The chart pane: a Data Display `Plot` in `PlotType.Smith` built from
+`SmithCascade`, hosted in a `PlotControl` **with its container**, plus a new overlay seam on that
+control carrying the grippers, the arrowheads and the load-point labels. Gate:
+`tests/Ui.Tests/Smith/SmithChartTests.cs`, eight tests, one per claim; all pass, as do the 189 Smith
+tests, the 2,170 Data Display / plot / contour / marker tests, and `Firewall.Tests`.
+
+**The overlay had to go INSIDE `PlotRenderer.Draw`, not after it, and the reason is the z-order.**
+The seam's obvious home is `PlotControl.Render` — capture the overlay on the draw operation, call it
+after `PlotRenderer.Draw` returns. That is one line and it is wrong: `PlotRenderer` draws the traces,
+then restores the viewport clip, then draws every marker, the VSWR loci and the drag readout. An
+overlay called after it is therefore above the MARKERS, and §5.4's rule — *above the trajectories and
+below the markers*, which is harmonicaRF's own — cannot be met from outside. So `PlotRenderer.Draw`
+takes a trailing optional `Action<SKCanvas, TransformSet>?` and invokes it immediately after the trace
+loop, still inside the clip the traces were drawn in; a handle at the edge of the chart is then cut
+off exactly as a marker there is. **It is an `Action` rather than the interface** because nothing
+below the firewall may name a control's seam, and what arrives there is already bound to the canvas
+and the transform of that frame — which is `IPlotOverlay`'s own first rule (*the canvas is an
+argument, never an assumption*) seen from the other side.
+
+**There is no `PlotTransform`; the type is `TransformSet` and it already has the inverse.** The brief
+sketches the seam with a `PlotTransform` parameter and no such type exists anywhere in this
+repository. `PlotRenderer.BuildTransforms(plot, canvasSize)` returns a `TransformSet` carrying
+`PrimaryToCanvas` **and `PrimaryFromCanvas`**, written as exact inverses of each other in one place
+precisely because marker placement and hit-testing both depend on the round trip. The seam takes that
+type, the control builds one per call from the live plot and its own bounds, and nothing caches one —
+a transform depends on the window and the window moves under a pan.
+
+**`Trace` has no constructor that does not take an `SNP`, and every synthetic trace here is built on a
+one-point placeholder.** The trajectories are Γ polylines with no file behind them; the cube-bound
+path is what carries them (`CubeName` set, then `SetCubeData`), and on a complex plot a complex cube's
+points ARE `(Re Γ, Im Γ)` with no transform applied. `RailRfViewModel.CubeTrace` and
+`PlotInspectorViewModel` do exactly the same thing. Two details that bite: the X array is never read
+on a Smith plot but must still be the same LENGTH as the values, because `CubeSampleCount` is the
+minimum of the two and a short X array silently truncates the curve; and `Trace.Points` is
+`Vector2`, so a gate comparing a plotted point against the evaluator's `Complex` must compare in
+SINGLE precision — nine decimal places fails on the narrowing alone, which is what the first run of
+two of the eight tests reported.
+
+**`IsAnnotation` already means "un-selectable", so the conjugate targets needed no new flag.** The
+brief asks for a *faint, un-selectable glyph*. `Trace.IsAnnotation` is drawn like any other trace and
+excluded from everything a marker does — the Add Marker submenu, a double-click near it, a row in
+another trace's multi-marker readout. `ExcludeFromAutoscale` is the separate flag and is the one
+`R-smith5-4` wants, because a wildly mismatched generator's target would otherwise set the window and
+squash the cascade into a corner of it. The two are deliberately separate in the Data Display and both
+are needed here, which is the first use that wanted the pair.
+
+**`ContourRenderer.DrawIsoLineLabel` formats a NUMBER, and a load point's label is a frequency.**
+`R-smith5-3` says to call the loadpull iso-lines' own label — the padded, world-unit-spaced, staggered
+box — rather than drawing one. It took a `double level` and spelled it through a private
+`FormatLevel`, which has no way to write "2.2 GHz". The level overload now delegates to a `string`
+one; there is still exactly one box-drawing implementation, which is the whole point of the reuse.
+**The placer walks a POLYLINE**, so each load point is handed a short stub running radially outward
+from the centre of the chart and `ComputeLabelAnchors`' own "a spacing wider than the path returns
+exactly one anchor" rule places the box on it. **The stub's length grows with the index**, and that is
+not decoration: a generator table is a few frequencies a few percent apart, so its load points sit
+almost on top of each other while their labels are fifty pixels wide, and the per-ring stagger — which
+spaces labels along ONE polyline — is far too small a fraction of one stub to separate them. Verified
+by rendering to an `SKSurface` and looking at the picture, which is also how the arrowheads and the
+three gripper states were checked.
+
+**The drag captures the INPUT impedance once, at the press.** Node k−1 of the walk is upstream of the
+element node k drags and cannot move while that drag runs, so reading it back out of the scene on
+every pointer move buys nothing and costs the one failure mode that matters: a value that pinned
+somewhere the evaluator refuses empties the scene, and a drag that then had no `zIn` would simply stop
+responding halfway through with nothing said. The element index and the active parameter are captured
+with it.
+
+**The active parameter falls back to `SmithComponentMap.DefaultParameter`, and that is not a second
+rule.** `SmithElement.ActiveParameter` defaults to `SmithParameter.None`, which brief 6's sliders set;
+until then `None` means *nobody has chosen yet* rather than *this element has no parameter*, and a
+gripper that refused to drag an element the user had not clicked first would read as broken. §3.3's
+own table is the fallback.
+
+**One drag is one undo entry, and the mechanism is that the pointer path never touches `Edit`.** Every
+move goes through `RefreshDerived`, which recomputes the strip and refills the plot and pushes
+nothing; the single `UndoRedo.Execute` is on release, carrying the before-snapshot taken on press. An
+Escape restores that snapshot and pushes nothing at all, and a press-and-release that moved nothing
+pushes nothing either — a click is not an edit. This is the Match Designer's slider write-back defect
+stated as a shape rather than as a warning, and `OneDragIsOneUndoEntry` COUNTS, by draining the stack,
+because "an entry exists" is exactly the assertion that defect would have passed.
+
+**The autoscale is suppressed for the duration of a drag and runs again on release.** A window that
+re-fitted on every pointer move would slide the chart out from under the hand holding it and the
+gripper would stop being where the cursor is — the same complaint a pinned drag that stopped tracking
+produces. In the ordinary case there is no visible step at release either, because
+`AutoscaleEnforceUnityMinimum` makes the fitted window the unit disc for any design that stays inside
+it; the step only appears for a design that leaves the disc, which is a design whose framing genuinely
+changed. A pan or a zoom writes `Chart.Window`, which `SmithChartSettings.Window` defines as "not
+fit", so from then on the chart keeps the user's framing — and that write is **not an edit**: no undo
+entry, no dirty mark, on the splitters' own rule.
+
+**`SmithInverse.Apply` is new, beside `Current`, and brief 3's test now uses it.** There was a reader
+and no writer, and `SmithInverseTests` carried eight hand-written lines of the same switch with a
+comment saying the real one was brief 5's job. The write side has the same hazard the read side's own
+remarks name — an electrical length reaching `Z0Ohm` produces a perfectly plausible curve — and rather
+more consequence, so the two switches sit together where they can be read against each other. It
+enforces nothing: physicality is `Solve`'s, at the pin, where the limit can be named.
+
+**The four providers and the info-box layer are wired in this brief although the copy is brief 7's.**
+`PlotExporter.CopyPlotToClipboardAsync` opens with `if (container is null) return;`, so a `PlotControl`
+hosted without a `PlotContainerViewModel` produces no clipboard content, raises nothing, and looks
+exactly like a successful copy. The Match Designer shipped a round missing that wiring in 2026-08 and
+railRF shipped the same round in 2026-09, both reported as "a double-click adds no marker". The layer
+the marker info boxes are drawn in is here from the start for the same reason — railRF shipped markers
+before a panel existed to host their boxes — and it spans the whole document rather than the chart
+pane, because a box is draggable and one pinned inside the pane could not be moved off its own curve.
+
 ## Smith Chart — the document, its window, and the binding that would never have fired (2026-09-19)
 
 brief-smith-4-document-window.md. The shell around the two panes: `SmithChartDocument`, the generator

@@ -1,0 +1,321 @@
+using System;
+using System.Numerics;
+using CircuitRF.Design.Smith;
+using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
+
+namespace CircuitRF.Ui.Smith;
+
+/// <summary>
+/// The chart pane: the <c>Plot</c> the evaluator fills, its host, the gripper overlay and the drag
+/// loop (<c>brief-smith-5-chart.md</c>; <c>docs/design/smith-chart.md</c> §5.4, §4.3).
+/// </summary>
+public sealed partial class SmithChartViewModel
+{
+    // ── the host ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The plot host — one <see cref="DataDisplayViewModel"/> with exactly one container in it, laid
+    /// out by this document rather than by a canvas.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bare <c>PlotControl</c> is not enough, and two windows have already paid for finding
+    /// that out</b> (the Match Designer in 2026-08, railRF in 2026-09). A <c>PlotControl</c> asks its
+    /// HOST for the next marker index, the info-box view model, the selected markers and the
+    /// container to export, and a host that is null answers "nothing" to all four — <i>silently</i>.
+    /// The one that bites last is the container:
+    /// <c>PlotExporter.CopyPlotToClipboardAsync</c> opens with <c>if (container is null) return;</c>,
+    /// so a plot hosted without one produces NO clipboard content, raises nothing, and looks exactly
+    /// like a successful copy (<c>R-smith5-5</c>). Brief 7's copy is written against this being here.
+    ///
+    /// <para><b>It is not a Data Display document.</b> Nothing is persisted through it, no data-source
+    /// library is loaded into it, and the plot cannot be added to or deleted.</para>
+    /// </remarks>
+    public DataDisplayViewModel PlotHost { get; } =
+        new(new DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
+
+    /// <summary>The container holding <see cref="ChartPlot"/> — what the marker info boxes are
+    /// placed in and what brief 7's copy exports.</summary>
+    public PlotContainerViewModel ChartContainer { get; private set; } = null!;
+
+    /// <summary>The one Smith plot. <b>The same instance for the life of the document</b>: it is
+    /// REFILLED on every edit rather than replaced, so a binding on it never goes stale and the
+    /// user's own pan, zoom and markers survive a rebuild.</summary>
+    public Plot ChartPlot => ChartContainer.PlotVM.Plot;
+
+    /// <summary>The grippers, as a <see cref="CircuitRF.Ui.DataDisplay.Controls.IPlotOverlay"/>.</summary>
+    public SmithGripperOverlay ChartOverlay { get; private set; } = null!;
+
+    /// <summary>The last evaluation — what the traces were filled from and what the overlay
+    /// draws.</summary>
+    internal SmithChartScene Scene { get; private set; } = SmithChartScene.Empty;
+
+    /// <summary>
+    /// The chart canvas's size in pixels, which the adaptive trajectory sampler measures its chord
+    /// error in. The view reports the real one; until it does, the Data Display's own square-plot
+    /// default box stands in.
+    /// </summary>
+    /// <remarks>
+    /// <b>A tolerance means nothing without knowing what unit it is in.</b> The sampler is
+    /// deliberately not defaulted below the firewall for that reason, and a curve is as smooth as
+    /// the ZOOM deserves and no smoother — so a headless caller gets a nominal box rather than an
+    /// arbitrary point count.
+    /// </remarks>
+    public (double W, double H) ChartCanvasSize
+    {
+        get => _chartCanvasSize;
+        set
+        {
+            if (!(value.W > 0) || !(value.H > 0)) return;
+            if (Math.Abs(value.W - _chartCanvasSize.W) < 1.0
+             && Math.Abs(value.H - _chartCanvasSize.H) < 1.0) return;
+            _chartCanvasSize = value;
+            RebuildChart();
+        }
+    }
+    private (double W, double H) _chartCanvasSize =
+        (SmithPlotBuilder.NominalCanvas, SmithPlotBuilder.NominalCanvas);
+
+    private void BuildChartHost()
+    {
+        ChartContainer = PlotHost.AddPlot(PlotType.Smith, FreqUnit.GHz,
+                                          left: 0, top: 0,
+                                          width:  DataDisplayViewModel.DefaultSquareSize,
+                                          height: DataDisplayViewModel.DefaultSquareSize);
+
+        // PANNING IS UNLOCKED, which is the opposite of railRF's choice and for the opposite reason.
+        // A new Plot locks axis panning so that a drag on a Data Display CANVAS moves and selects the
+        // plot instead — there is no canvas here, the chart fills its own pane, and R-smith5-6's own
+        // rule is that a press on empty chart still pans.
+        ChartPlot.Axes.LockedPanning = false;
+
+        // The trace set is this document's: every trace is rebuilt from the design on each edit, so
+        // one added in the Plot Inspector would be gone by the next keystroke and one removed would
+        // be back. railRF's own reasoning, and its own flag.
+        ChartPlot.IsFixedReadout = true;
+
+        PlotHost.SelectOnly((PlotContainerViewModel?)null);
+
+        ChartOverlay = new SmithGripperOverlay(this);
+    }
+
+    /// <summary>
+    /// Re-evaluates the design and refills the plot. Called after every committed edit, every undo,
+    /// every snapshot restore and every pointer move of a gripper drag.
+    /// </summary>
+    /// <remarks>
+    /// <b>One evaluation feeds both halves</b> — the traces and the overlay read the same
+    /// <see cref="SmithChartScene"/>. Evaluating twice is how a handle ends up off the curve it
+    /// belongs to during a drag.
+    ///
+    /// <para><b>The full plot-changed pipeline runs only when a drag is NOT in flight.</b> It
+    /// rebuilds the label strips and the marker info boxes, which is right after an edit and wasted
+    /// twenty times a second under a pointer; a redraw request is what a drag needs and all it
+    /// needs.</para>
+    /// </remarks>
+    internal void RebuildChart()
+    {
+        if (ChartContainer is null) return;   // still constructing
+
+        bool dragging = _dragBefore is not null;
+
+        Scene = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
+        SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging);
+        _lastWindow = ChartPlot.Axes.Window;
+
+        if (!dragging) ChartContainer.OnPlotChanged(this, EventArgs.Empty);
+        ChartContainer.RequestPlotRedraw();
+    }
+
+    /// <summary>The window the last frame was drawn in — what the adaptive sampler's canvas map is
+    /// built from, so a zoomed-in curve is sampled for the zoom it is actually drawn at.</summary>
+    private PlotRect? _lastWindow;
+
+    /// <summary>
+    /// Records the chart's window into the document after a pan or a zoom.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not an edit</b>, on the splitters' own terms (<c>R-smith4-3</c>): it writes into the
+    /// document's own settings so the chart reopens where it was left, but it pushes NO undo entry
+    /// and raises no dirty mark. Prompting to save because someone scrolled is how a close prompt
+    /// stops meaning anything; the position rides along on the next real save.
+    ///
+    /// <para>A stored window is what <see cref="SmithChartSettings.Window"/> calls "not fit", so
+    /// from here on the chart keeps the user's framing rather than re-fitting under every edit.</para>
+    /// </remarks>
+    public void CaptureChartWindow()
+    {
+        var w = ChartPlot.Axes.Window;
+        if (!(w.Width > 0) || !(w.Height > 0)) return;
+
+        _design.Chart.Window = new SmithWindow
+        {
+            MinX = w.Left, MaxX = w.Left + w.Width,
+            MinY = Math.Min(w.Top, w.Top + w.Height),
+            MaxY = Math.Max(w.Top, w.Top + w.Height),
+        };
+        _lastWindow = w;
+    }
+
+    // ── the gripper drag (R-smith5-7, R-smith5-8) ────────────────────────────
+
+    /// <summary>
+    /// The whole design as it stood when the drag began — the before-value of the gesture's ONE undo
+    /// entry. Non-null exactly while a drag is in flight, which is also what suppresses the
+    /// autoscale and the full plot-changed pipeline.
+    /// </summary>
+    private string? _dragBefore;
+
+    private int            _dragNode      = -1;
+    private int            _dragElement   = -1;
+    private SmithParameter _dragParameter = SmithParameter.None;
+    private Complex        _dragZIn;
+    private string         _dragDescription = "";
+
+    /// <summary>True while a gripper is being dragged.</summary>
+    public bool IsDraggingGripper => _dragBefore is not null;
+
+    /// <summary>
+    /// What a pinned drag is saying — the parameter and the limit it stopped at, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>The sentence is <see cref="SmithInverse"/>'s, surfaced rather than re-written.</b> A drag
+    /// that asked for a negative inductance pins at zero and says so; the handle KEEPS TRACKING the
+    /// cursor while it does (<c>R-smith3-4</c>), because a handle that stops moving reads as a
+    /// broken drag rather than as a limit.
+    /// </remarks>
+    public string? DragPin
+    {
+        get => _dragPin;
+        private set
+        {
+            if (_dragPin == value) return;
+            _dragPin = value;
+            OnPropertyChanged();
+        }
+    }
+    private string? _dragPin;
+
+    /// <summary>
+    /// The parameter a gripper on this element drags.
+    /// </summary>
+    /// <remarks>
+    /// The element's own <see cref="SmithElement.ActiveParameter"/> — the one whose slider was last
+    /// touched — falling back to §3.3's default for the kind. <b>The fallback is the table's own
+    /// answer and not a second one</b>: brief 6's sliders are what set the field, and until an
+    /// element has been selected once it carries <see cref="SmithParameter.None"/>, which is not
+    /// "this element has no parameter" but "nobody has chosen yet".
+    /// </remarks>
+    internal static SmithParameter ActiveParameterOf(SmithElement element)
+        => element.ActiveParameter != SmithParameter.None
+               ? element.ActiveParameter
+               : SmithComponentMap.DefaultParameter(element.Kind);
+
+    /// <summary>
+    /// A gripper was pressed. <b>The before-value is captured HERE</b> and the undo entry is pushed
+    /// on release (<c>R-smith5-8</c>).
+    /// </summary>
+    /// <returns>False when this node cannot be dragged — node 0, an out-of-range index, or a file
+    /// element, none of which the overlay offers a handle for in the first place.</returns>
+    internal bool BeginGripperDrag(int nodeIndex)
+    {
+        if (_dragBefore is not null) EndGripperDrag(cancelled: true);
+
+        if (nodeIndex <= 0 || nodeIndex >= Scene.Nodes.Count) return false;
+
+        int elementIndex = Scene.Nodes[nodeIndex].ElementIndex;
+        if (elementIndex < 0 || elementIndex >= _design.Elements.Count) return false;
+
+        var element = _design.Elements[elementIndex];
+        if (SmithComponentMap.UsesFile(element.Kind)) return false;
+
+        var p = ActiveParameterOf(element);
+        if (p == SmithParameter.None) return false;
+
+        _dragNode      = nodeIndex;
+        _dragElement   = elementIndex;
+        _dragParameter = p;
+
+        // THE INPUT IMPEDANCE IS CAPTURED ONCE, at the press. It is node k−1 of the walk, which is
+        // UPSTREAM of the element being dragged and therefore cannot move while this drag runs —
+        // and reading it back out of a scene that a pinned value may have emptied is how a drag
+        // stops responding halfway through.
+        _dragZIn = Scene.Nodes[nodeIndex - 1].Z;
+
+        _dragBefore      = SmithDesignIo.SerializeUnvalidated(_design);
+        _dragDescription = $"Drag {(string.IsNullOrWhiteSpace(element.Name) ? element.Kind.ToString() : element.Name)} {p}";
+        DragPin          = null;
+        return true;
+    }
+
+    /// <summary>
+    /// The pointer moved to <paramref name="gamma"/>. Solves the inverse, writes the value and
+    /// redraws — <b>and pushes nothing</b>.
+    /// </summary>
+    internal void DragGripperTo(Complex gamma)
+    {
+        if (_dragBefore is null || _dragElement < 0) return;
+
+        InverseResult result;
+        try
+        {
+            result = SmithInverse.Solve(_design, _dragElement, _dragParameter, _dragZIn, gamma,
+                                        _design.Chart.DesignFrequencyHz, _design.Chart.Z0Ohm);
+        }
+        catch (Exception)
+        {
+            // Solve throws only for a gripper that should never have existed — a file element, or a
+            // parameter the kind does not expose. BeginGripperDrag refuses both, so reaching here is
+            // a programming error rather than something the user did; the drag simply does nothing
+            // rather than taking the window down under the pointer.
+            return;
+        }
+
+        SmithInverse.Apply(_design.Elements[_dragElement], _dragParameter, result.Value);
+        DragPin = result.PinReason;
+        RefreshDerived();
+    }
+
+    /// <summary>
+    /// The drag finished. <b>ONE undo entry, pushed here, carrying the value captured on
+    /// press</b> — or, when <paramref name="cancelled"/>, the before-state restored and nothing
+    /// pushed at all (<c>R-smith5-8</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>This is a requirement, not a style preference.</b> The Match Designer shipped a defect
+    /// where a two-way-bound slider's coercing write-back reached an unguarded setter DURING
+    /// <c>Undo</c>, so every undo ADDED an entry, redo was wiped, and eight edits took fourteen
+    /// undos to unwind (<c>src/Ui/Match/RESOLVED.md</c>). The rule that comes out of it — a control's
+    /// write-back is not an edit — is why every pointer move above goes to
+    /// <see cref="RefreshDerived"/> and never to <see cref="Edit"/>, and why the only push in the
+    /// whole gesture is the one below.
+    ///
+    /// <para><b>A drag that changed nothing pushes nothing either</b>: a press and release on a
+    /// gripper is a click, and a stack full of no-ops is the same defect by a slower route.</para>
+    /// </remarks>
+    internal void EndGripperDrag(bool cancelled)
+    {
+        if (_dragBefore is not { } before) return;
+
+        _dragBefore    = null;
+        _dragNode      = -1;
+        _dragElement   = -1;
+        _dragParameter = SmithParameter.None;
+        DragPin        = null;
+
+        if (cancelled)
+        {
+            ApplySnapshot(before);
+            return;
+        }
+
+        string after = SmithDesignIo.SerializeUnvalidated(_design);
+        if (string.Equals(before, after, StringComparison.Ordinal))
+        {
+            RefreshDerived();
+            return;
+        }
+
+        UndoRedo.Execute(new SmithSnapshotCommand(this, before, after, _dragDescription));
+    }
+}

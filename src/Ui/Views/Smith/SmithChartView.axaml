@@ -2,6 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sm="using:CircuitRF.Ui.Smith"
              xmlns:ctl="using:CircuitRF.Ui.Controls"
+             xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+             xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Smith.SmithChartView"
              x:DataType="sm:SmithChartDocument"
@@ -15,10 +18,10 @@
          TOOL, the network strip below it, and a strip across the foot that states numbers. The two
          splitters are draggable and their positions persist in the document's own View block.
 
-         THE CHART PANE AND THE NETWORK PANE ARE STUBS HERE. Briefs 5 and 6 fill them; this brief's
-         job is the shell around them, and R-smith4-1's whole claim is that the shell is inherited
-         rather than written — there is no Window subclass anywhere in this folder, and if one ever
-         appears, that requirement has been missed.
+         THE CHART PANE IS BRIEF 5's and is a real PlotControl now; THE NETWORK PANE IS STILL A STUB
+         and is brief 6's. R-smith4-1's whole claim is that the shell around them is inherited rather
+         than written — there is no Window subclass anywhere in this folder, and if one ever appears,
+         that requirement has been missed.
 
          THE CHROME IS BORROWED AND NOT INVENTED (R-smith4-4). Border.pane / Border.card, sentence-case
          headings, label left and value right in one right-aligned column, centred text on buttons and
@@ -312,10 +315,27 @@
                  THE CHART IS THE TOOL and takes the large majority of the area; that proportion is
                  the point of §5.2's sketch and it is set here, by the row and column defaults on the
                  document's View block, rather than by whatever brief 5 happens to drop in. -->
-            <Border Grid.Column="2" Classes="pane" Name="ChartRegion">
-                <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           TextAlignment="Center"
-                           Text="The chart — one Smith chart, one curve per element, a gripper at every joint.&#10;Brief 5 fills this region."/>
+            <Border Grid.Column="2" Classes="pane" Name="ChartRegion" Padding="4">
+                <!-- ONE SMITH RENDERER, and this is not a second one (R-smith5-1). The grid, the
+                     arcs, the zoom-aware numbering, pan, zoom, marker add/drag/hit-test, the
+                     inspector, the context menu, the axis limits and Copy Plot are all this
+                     control's own. What the tool adds is the OVERLAY — the grippers, the arrowheads
+                     and the load-point labels — and the overlay draws above the trajectories and
+                     below the markers, inside PlotRenderer's own draw.
+
+                     CanDeletePlot is False and Plot.IsFixedReadout hides the Add and the per-card
+                     trash: every trace here is rebuilt from the design on each edit, so a trace
+                     added in the inspector would be gone by the next keystroke and one removed would
+                     be back. What the panel CAN change — a colour, a line — is carried across.
+
+                     THE FOUR PROVIDERS AND THE OVERLAY ARE WIRED IN CODE, in BindChartPlot: a
+                     PlotControl asks its HOST for the marker index, the info-box view model, the
+                     selected markers and the CONTAINER, and a host that is null answers "nothing"
+                     to all four, silently. See the code-behind's own note. -->
+                <ddc:PlotControl Name="ChartPlotControl"
+                                 Plot="{Binding ViewModel.ChartPlot}"
+                                 Library="{Binding ViewModel.PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="True"/>
             </Border>
         </Grid>
 
@@ -330,6 +350,42 @@
                        TextAlignment="Center"
                        Text="The network — the cascade drawn through the schematic renderer, its Add/Insert/Delete/reorder&#10;controls, the selected element's sliders and the mirror button. Brief 6 fills this region."/>
         </Border>
+
+        <!-- The marker info-box layer (R-smith5-5's last clause).
+
+             MARKERS EXISTED BEFORE A PANEL COULD HOST THEIR BOXES once already — railRF shipped that
+             round — so this window hosts them from the start. A box is DRAGGABLE and belongs to the
+             display rather than to the plot it was made from, so the layer spans the WHOLE document
+             and not the chart pane: a box pinned inside the pane could not be moved off its own
+             curve. Placed last so it renders above everything, ROWSPAN across all four rows.
+
+             Background="{x:Null}" on both the ItemsControl and its Canvas: a null background is not
+             hit-testable, so every click falls through to the chart underneath, while each
+             MarkerInfoBoxView sets Background="Transparent" and is hit-testable itself.
+
+             SmithChartView.SyncPlotContainer keeps the container's Left/Top/Width/Height equal to the
+             PlotControl's rectangle IN THIS LAYER'S COORDINATES, which is the space ViewLeft/ViewTop
+             are in. -->
+        <ItemsControl Name="MarkerInfoBoxLayer" Grid.Row="0" Grid.RowSpan="4"
+                      ItemsSource="{Binding ViewModel.PlotHost.MarkerInfoBoxes}"
+                      Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="{x:Null}"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                    <ddvw:MarkerInfoBoxView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
         <!-- ══ The status strip (R-smith4-8) ════════════════════════════════════════════════════
              ALWAYS ON SCREEN, and it STATES NUMBERS. Every one of them is the number the evaluator

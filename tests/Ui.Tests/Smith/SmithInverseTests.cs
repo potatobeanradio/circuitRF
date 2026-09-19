@@ -419,23 +419,17 @@ public sealed class SmithInverseTests
         return e;
     }
 
-    /// <summary>Committing the answer — brief 5's job in the product, and eight lines here so that
-    /// this brief keeps its promise not to write to the design.</summary>
+    /// <summary>
+    /// Committing the answer.
+    /// </summary>
+    /// <remarks>
+    /// <b>The product's own writer</b>, which brief 5 added beside <see cref="SmithInverse.Current"/>
+    /// for the reason that method's own remarks give: a second copy of the switch is a second place
+    /// for <see cref="SmithParameter.ElectricalLength"/> to reach the wrong field. It was eight
+    /// hand-written lines here while brief 3 was the only caller and this brief had promised not to
+    /// write to the design; it is the shipped one now, so what this file exercises is what the drag
+    /// loop actually does.
+    /// </remarks>
     private static void Set(SmithElement e, SmithParameter p, double value)
-    {
-        var v = e.Values;
-        switch (p)
-        {
-            case SmithParameter.R:                v.ROhm                = value; break;
-            case SmithParameter.L:                v.LHenry              = value; break;
-            case SmithParameter.C:                v.CFarad              = value; break;
-            case SmithParameter.Z0:               v.Z0Ohm               = value; break;
-            case SmithParameter.ElectricalLength: v.ElectricalLengthDeg = value; break;
-            case SmithParameter.ImpedanceReal:
-                v.ImpedanceOhm = new Complex(value, v.ImpedanceOhm.Imaginary); break;
-            case SmithParameter.ImpedanceImag:
-                v.ImpedanceOhm = new Complex(v.ImpedanceOhm.Real, value); break;
-            default: throw new ArgumentOutOfRangeException(nameof(p), p, null);
-        }
-    }
+        => SmithInverse.Apply(e, p, value);
 }

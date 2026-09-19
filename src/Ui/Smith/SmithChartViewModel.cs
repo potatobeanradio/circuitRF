@@ -24,9 +24,10 @@ namespace CircuitRF.Ui.Smith;
 /// quantity for display — that is <c>R-smith4-8</c>, and the reason is that a second spelling of
 /// "the load impedance" is a second answer nobody can tell apart from the first.
 ///
-/// <para><b>The chart pane and the network pane are briefs 5 and 6.</b> This holds the document, the
-/// generator and the status strip; the two large regions of §5.2 are placeholders in the view, and the
-/// seams they will need (the design, the design frequency, the evaluator's nodes) are all here already.</para>
+/// <para><b>The chart pane is brief 5's and lives in the partial beside this file</b>
+/// (<c>SmithChartViewModel.Chart.cs</c>): the plot host, the <c>Plot</c> the evaluator fills, the
+/// gripper overlay and the drag loop. <b>The network pane is brief 6's</b> and is still a placeholder
+/// in the view.</para>
 ///
 /// <para><b>One gesture is one undo entry</b>, and the mechanism is <see cref="SmithSnapshotCommand"/>:
 /// every mutation goes through <see cref="Edit"/>, which captures the whole design before and after.
@@ -40,6 +41,11 @@ public sealed partial class SmithChartViewModel : ObservableObject
     public SmithChartViewModel(SmithDesign? design = null)
     {
         _design = design ?? NewScratchDesign();
+
+        // BEFORE RefreshDerived, which rebuilds the chart: the host has to exist by then, and a
+        // field initializer cannot build it because AddPlot is a call on another initialized field.
+        BuildChartHost();
+
         RebuildRows();
         RefreshDerived();
 
@@ -439,6 +445,12 @@ public sealed partial class SmithChartViewModel : ObservableObject
         Refusal    = ComputeRefusal();
         StatusLine = ComputeStatusLine();
 
+        // The chart is derived from the design exactly as the status strip is, from the same
+        // evaluation, and is refreshed on the same channel — including on every pointer move of a
+        // gripper drag, which is what makes the strip's numbers and the picture agree at every
+        // instant of it. See SmithChartViewModel.Chart.cs.
+        RebuildChart();
+
         IsDesignFrequencyInvalid = _design.Generator.Rows.Count > 1
             && _design.Generator.Span is { } span
             && !(_design.Chart.DesignFrequencyHz >= span.StartHz
@@ -459,6 +471,13 @@ public sealed partial class SmithChartViewModel : ObservableObject
     private string? ComputeRefusal()
     {
         if (ImportFailed is { Length: > 0 } imported) return imported;
+
+        // A PIN is a live drag saying it has reached a limit, with the parameter and the limit in
+        // the sentence (R-smith3-4). It sits in the refusal half rather than beside it because two
+        // rows of text, one in the warning colour, read as two different problems — §5.3's own rule,
+        // and the same reason an import failure replaces the reading rather than joining it.
+        if (DragPin is { Length: > 0 } pinned) return pinned;
+
         return _design.Refusal();
     }
 

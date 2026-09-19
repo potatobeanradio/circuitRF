@@ -188,6 +188,45 @@ public static class SmithInverse
         };
     }
 
+    /// <summary>
+    /// Writes one parameter's value back onto the element — the exact mirror of
+    /// <see cref="Current"/>, in its own base SI unit (DEGREES for
+    /// <see cref="SmithParameter.ElectricalLength"/>).
+    /// </summary>
+    /// <remarks>
+    /// <b>It lives beside the reader for the reader's own stated reason.</b> <see cref="Current"/> is
+    /// public so that brief 5's press and brief 6's sliders do not each write the switch out again,
+    /// because a second copy is a second place for <see cref="SmithParameter.ElectricalLength"/> to
+    /// be read out of the wrong field. The WRITE side carries exactly the same hazard and rather
+    /// more consequence — a length written into <see cref="SmithElementValues.Z0Ohm"/> produces a
+    /// perfectly plausible curve — so the two switches sit together where they can be read against
+    /// each other.
+    ///
+    /// <para><b>It enforces nothing.</b> Physicality is <see cref="Solve"/>'s, at the pin, where the
+    /// limit can be NAMED; a setter that silently clamped would turn a reported pin into an
+    /// unreported one.</para>
+    /// </remarks>
+    public static void Apply(SmithElement element, SmithParameter p, double value)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        var v = element.Values;
+
+        switch (p)
+        {
+            case SmithParameter.R:                v.ROhm                = value; break;
+            case SmithParameter.L:                v.LHenry              = value; break;
+            case SmithParameter.C:                v.CFarad              = value; break;
+            case SmithParameter.Z0:               v.Z0Ohm               = value; break;
+            case SmithParameter.ElectricalLength: v.ElectricalLengthDeg = value; break;
+            case SmithParameter.ImpedanceReal:
+                v.ImpedanceOhm = new Complex(value, v.ImpedanceOhm.Imaginary); break;
+            case SmithParameter.ImpedanceImag:
+                v.ImpedanceOhm = new Complex(v.ImpedanceOhm.Real, value); break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(p), p, "Not a settable parameter.");
+        }
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  The lumped kinds — R, L, C, SRLC, PRLC, Z1P
     // ═════════════════════════════════════════════════════════════════════════

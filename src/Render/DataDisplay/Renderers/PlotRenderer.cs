@@ -263,7 +263,8 @@ namespace CircuitRF.Render.DataDisplay
             float                zoomLevel        = 1f,
             VswrReadout?         vswrReadout      = null,
             Func<Trace, string?>? aliasFor        = null,
-            bool?                 alwaysShowSource = null)
+            bool?                 alwaysShowSource = null,
+            Action<SKCanvas, TransformSet>? overlay = null)
         {
             // ANT-10: the 3D pattern surface has no world window, so it leaves BEFORE
             // BuildTransforms — the same seam, and for the same reason, as the Table above it
@@ -388,6 +389,19 @@ namespace CircuitRF.Render.DataDisplay
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                     stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
             }
+
+            // ---- The overlay seam (brief-smith-5-chart.md R-smith5-6) ----
+            //
+            //  HERE, and not after this method returns, because the z-order is the requirement: an
+            //  overlay draws ABOVE the trajectories and BELOW the markers (harmonicaRF's own rule,
+            //  docs/design/smith-chart.md §5.4), and the markers are drawn further down. It is also
+            //  inside the viewport clip the traces were drawn in, so a handle at the edge of the
+            //  chart is cut off exactly as a marker there is.
+            //
+            //  It is an Action rather than an interface because nothing below the firewall may name
+            //  a control's seam: what arrives here is already bound to the canvas and the transform
+            //  of THIS frame, which is IPlotOverlay's first rule seen from the other side.
+            overlay?.Invoke(canvas, tf);
 
             if (plot.PlotType == PlotType.Rect)
                 foreach (var trace in plot.Traces)
