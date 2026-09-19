@@ -25,6 +25,11 @@ public enum RailQuantity
     /// <summary>Henries.</summary>
     Inductance,
 
+    /// <summary>Farads. <b>Read-only here</b> — no railRF row is typed in farads; the parts table
+    /// prints a capacitance the part library states, and it prints it through the one ladder every
+    /// other quantity in this window uses rather than a private formatter of its own.</summary>
+    Capacitance,
+
     /// <summary>Hertz.</summary>
     Frequency,
 }
@@ -51,6 +56,7 @@ public static class RailValueFormat
     private static readonly string[] CurrentLadder    = ["nA", "µA", "mA", "A"];
     private static readonly string[] ResistanceLadder = ["mΩ", "Ω", "kΩ", "MΩ"];
     private static readonly string[] InductanceLadder = ["fH", "pH", "nH", "µH", "mH", "H"];
+    private static readonly string[] CapacitanceLadder = ["fF", "pF", "nF", "µF", "mF", "F"];
     private static readonly string[] FrequencyLadder  = ["Hz", "kHz", "MHz", "GHz"];
 
     /// <summary>The ladder for one dimension.</summary>
@@ -60,6 +66,7 @@ public static class RailValueFormat
         RailQuantity.Current     => CurrentLadder,
         RailQuantity.Resistance  => ResistanceLadder,
         RailQuantity.Inductance  => InductanceLadder,
+        RailQuantity.Capacitance => CapacitanceLadder,
         _                        => FrequencyLadder,
     };
 
@@ -104,6 +111,7 @@ public static class RailValueFormat
         RailQuantity.Current     => "A",
         RailQuantity.Resistance  => "Ω",
         RailQuantity.Inductance  => "H",
+        RailQuantity.Capacitance => "F",
         _                        => "Hz",
     };
 

@@ -30600,3 +30600,75 @@ would: the exit it guards rides on `NotifyWindowCountChanged`, which only fires 
 `WorkspaceWindow` closes.
 
 Gate: `tests/Ui.Tests/RailRf/RailWindowQuitAndMenuTests.cs`.
+
+### The parts table listed provenances where a reader wanted numbers
+
+Owner report, 2026-09-19: the ESR column on the *Sensor board* example reads *stated* — why not list
+the milliohms the `.crlib` actually carries? And what else in that file should be on the table?
+
+One cause behind all of it. `RailPartRowViewModel` was handed the `PartModelResolution` the part
+LIBRARY returns, which answers *which of the three bases produced an ESR* and cannot answer *what it
+is* — the library's `EsrOhms` is one of three inputs to the figure, not the figure. The element that
+carries the figure is `RailPartModel`, which `RailPartResolver` produces and whose own summary
+already says *"the individual models are what the parts table's rows read"* (R-rail11-6). Nothing had
+ever wired it: the table read the row, `BuildSweepRequest` read the model, and the two halves of one
+window were looking at different objects. Three consequences, all silent:
+
+- **ESR named a basis instead of a value** beside a library stating 32 mΩ.
+- **The derated column read *unresolved* for every part of every document**, although the shipped
+  library carries a five-point bias curve on three of its four rows. It was an `init`-only property
+  nothing ever set, with a comment explaining that this was correct because derating happens in the
+  solve — true of where the arithmetic lives, and not a reason the answer cannot be shown.
+- **Three numbers a PDN reader works from were nowhere on the table**: the ohms, the MOUNTED
+  self-resonance, and the package inductance. Only the mounting loop was shown, which is one term of
+  a sum whose other term the reader could not see.
+
+`RebuildParts` now makes the same `RailPartResolver.ResolveAll` call `BuildSweepRequest` makes, with
+the same rail voltage and the same computed mounting loops, so the table and the curve beside it
+cannot come to disagree about one part. It resolves once for the table rather than per row: a part
+with an attached Touchstone file is READ during resolution, and resolving per row would read one file
+once per instance of the part. No new cost class — that call already runs on the UI thread at
+edit frequency, and `RebuildParts` is less frequent than a solve.
+
+**Two columns were folded rather than five added, and that is a constraint of the pane and not a
+preference.** The parts table sits in the BOARD column, which is 1199 − 300 − 340 ≈ 560 px at the
+shipped window size and ~440 at `MinWidth`; the eight existing columns already spend 516 of it, so
+the part-number star column is squeezed to almost nothing before anything is added. So:
+
+- *marked* and *derated* are one cell with an arrow — `100 nF → 74 nF`, and **no arrow where no curve
+  derated it**, because `100 nF → 100 nF` would claim a curve had been applied.
+- the package and mounting inductances are the two terms of one sum — `0.633 + 0.85 nH`, printed in
+  the TOTAL's unit so they add up on the face of the row. Not collapsed to the total: §2.2 calls the
+  mounting loop *"the thing your form factor change actually altered"*, so the split is the part a
+  reader is tuning, and the sum is what sets the resonance.
+
+**Q-15's marking did not move into a tooltip.** An ESR that is a dissipation-factor default for the
+part's dielectric class is drawn ITALIC (`TextBlock.indicative`) — not dimmed, because dimming
+already means *unresolved* on this table and the two are opposites: a class default is Q-15's NORMAL
+case. The word and the sentence behind it are on the cell's tooltip, which is where there is room for
+it; every other column gained one too, carrying the description, footprint, dielectric class, voltage
+rating and bias-curve length the `.crlib` holds and the table has no width for.
+
+**The ESR is quoted at the part's own MOUNTED resonance**, which is `RailPartModel.EsrOhms`' own
+rule and not a choice made here: a class-default ESR is `DF/(2π·f·C)` and therefore has no single
+value, so the frequency it is quoted at has to be the one where it matters. The same applies to f₀ —
+it is the mounted figure, not the library row's, because the row's is the unmounted part at its
+marked capacitance and derating RAISES the resonance by √(marked/derated).
+
+### Escape did not deselect a marker on the results plot
+
+Owner report, same day, and the same shape as the two before it. The window's Escape handler gated on
+`HasRowSelection`, which asks the four ROW lists; a marker is not a row on one of them, so the
+handler returned before it ever ran and the keystroke was inert — indistinguishable, from outside,
+from a key that is not wired.
+
+A marker's selection is `MarkerInfoBoxViewModel.IsSelected` — the glyph and its info box are one
+selectable thing — so `DataDisplayViewModel.DeselectAll` is what clears it, the same method the Data
+Display's own Escape `KeyBinding` is wired to. `HasSelection` is rows OR marker, `ClearSelection`
+clears both; `ClearRowSelection` stays as it was for the document-replaced path, which rebuilds the
+plot and its markers anyway. Deselecting also drops the plot CONTAINER's selection, which is inert
+here: railRF lays its one container out itself, draws no selection chrome for it and cannot delete
+it.
+
+Gates: `RailWindowTests.ThePartsTableCarriesTheLibrarysNumbers_NotJustTheirProvenance` and
+`PdnImpedanceTests.EscapeDeselectsASelectedMarker`.

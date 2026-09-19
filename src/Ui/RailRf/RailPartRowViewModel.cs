@@ -18,9 +18,18 @@ namespace CircuitRF.Ui.RailRf;
 /// <list type="bullet">
 /// <item><see cref="ModelSourceText"/> — library row / attached file, and WHICH WON (R-rail2-11).</item>
 /// <item><see cref="DeratedText"/> beside <see cref="MarkedText"/>, and which was used (Q-12).</item>
-/// <item><see cref="EsrText"/> — measured / stated / class default, with a class default marked
-///   <b>indicative</b> (Q-15).</item>
+/// <item><see cref="EsrBasisText"/> — measured / stated / class default, with a class default marked
+///   <b>indicative</b> (Q-15) — beside <see cref="EsrText"/>, which is the OHMS.</item>
 /// </list>
+///
+/// <para><b>The electrical columns are the SOLVE's own numbers, not the library row's</b>
+/// (R-rail11-6: <i>"the individual models are what the parts table's rows read"</i>). The row is
+/// handed the <see cref="RailPartModel"/> <c>RailPartResolver</c> produced, so the capacitance is
+/// the one after Q-12's bias correction, the ESR is evaluated at the part's own mounted resonance,
+/// and the inductance is the one that sets that resonance. Until 2026-09-19 this row read the
+/// LIBRARY ROW instead and could therefore only name a provenance — the ESR column said
+/// <i>stated</i> beside a library that states 32 mΩ, and the derated column said <i>unresolved</i>
+/// for every part in a document with bias curves (owner, 2026-09-19).</para>
 ///
 /// <para><b>Read-only, deliberately.</b> A part's model is the part library's (a model is entered once
 /// and used twenty-two times, which is why it is a file of its own); a row that could be edited here
@@ -40,18 +49,23 @@ public sealed class RailPartRowViewModel
     /// <param name="mountingInductanceHenries">The mounting loop — the document's own where it
     /// states one, or the computed one — or null where neither exists.</param>
     /// <param name="position">Where the placement put it, already formatted, or null.</param>
+    /// <param name="resolved">What <c>RailPartResolver</c> worked this part out to be — the element
+    /// the sweep carries, with every number's provenance beside it (R-rail11-6). Null where the row
+    /// was built with no library at all.</param>
     public RailPartRowViewModel(
         RailPart part,
         BomRow? bom,
         PartModelResolution? model,
         double? mountingInductanceHenries,
-        string? position)
+        string? position,
+        RailPartModel? resolved = null)
     {
         ArgumentNullException.ThrowIfNull(part);
 
         _part = part;
         _bom = bom;
         _model = model;
+        _resolved = resolved;
         Refdes = part.Refdes;
         MountingInductanceHenries = mountingInductanceHenries;
         Position = position;
@@ -60,6 +74,11 @@ public sealed class RailPartRowViewModel
     private readonly RailPart _part;
     private readonly BomRow? _bom;
     private readonly PartModelResolution? _model;
+    private readonly RailPartModel? _resolved;
+
+    /// <summary>The resolved model, or null where it did not resolve — so every numeric column below
+    /// is <see cref="UnresolvedText"/> in one place rather than thirteen.</summary>
+    private RailPartModel? Model => _resolved is { IsResolved: true } m ? m : null;
 
     /// <summary>The reference.</summary>
     public string Refdes { get; }
@@ -86,19 +105,75 @@ public sealed class RailPartRowViewModel
         ? "pre-filled from the bill of materials"
         : "typed on the rail";
 
-    /// <summary>The marked value, as the BOM states it, or <see cref="UnresolvedText"/>.</summary>
-    public string MarkedText => _bom?.Value is { Length: > 0 } v ? v : UnresolvedText;
+    /// <summary>
+    /// The marked value — <b>as the BOM states it, and the library's own marked capacitance where
+    /// the BOM states none</b>.
+    /// </summary>
+    /// <remarks>
+    /// The BOM's spelling wins because it is the board's own statement of what is fitted, and it is
+    /// the column R-rail18-5a gives the BOM. The fallback is what makes this column useful in the
+    /// P1 case §6 makes ordinary: the <c>Power Rail</c> example has no BOM at all, so every one of
+    /// its thirteen rows read <i>unresolved</i> beside a library that states 100 nF.
+    /// </remarks>
+    public string MarkedText =>
+        _bom?.Value is { Length: > 0 } v ? v
+        : Model?.Capacitance.MarkedFarads is { } marked && double.IsFinite(marked)
+            ? Farads(marked)
+        : UnresolvedText;
 
     /// <summary>
     /// The derated value, where a bias curve produced one — <b>beside the marked one, never instead
     /// of it</b> (Q-12). Where no curve exists this reads <see cref="UnresolvedText"/>, and the count
     /// of such parts is a headline number on the status strip.
     /// </summary>
-    public string DeratedText { get; init; } = UnresolvedText;
+    /// <remarks>
+    /// <b>The solve's own number</b> (R-rail11-6). This was a settable <c>init</c> property nothing
+    /// ever set, so the column read <i>unresolved</i> for every part of every document — including
+    /// the shipped example, whose four library rows each carry a five-point bias curve.
+    /// </remarks>
+    public string DeratedText =>
+        Model?.Capacitance.DeratedFarads is { } derated ? Farads(derated) : UnresolvedText;
 
     /// <summary>Which of the two <see cref="MarkedText"/>/<see cref="DeratedText"/> the solve used.
     /// Stated, because a table showing both and saying neither is worse than showing one.</summary>
-    public string ValueUsedText { get; init; } = "marked";
+    public string ValueUsedText => Model?.Capacitance.Basis switch
+    {
+        RailCapacitanceBasis.Derated  => "derated",
+        RailCapacitanceBasis.Measured => "measured",
+        _                             => "marked",
+    };
+
+    /// <summary>
+    /// The capacitance column: <b>marked and derated in ONE cell, with an arrow between them</b> —
+    /// "100 nF → 74 nF".
+    /// </summary>
+    /// <remarks>
+    /// <b>Both, which is Q-12's requirement</b> (<i>beside the marked one, never instead of it</i>)
+    /// — in one cell because the parts pane is the board column and there is not room for two
+    /// number columns plus the two this change adds. Where no bias curve exists the arrow and the
+    /// second number are absent, which is the honest rendering of "nothing derated this": a table
+    /// that printed <c>100 nF → 100 nF</c> would say a curve had been applied.
+    /// </remarks>
+    public string CapacitanceText
+    {
+        get
+        {
+            if (Model is not { } m) return MarkedText;
+            if (m.Capacitance.Basis == RailCapacitanceBasis.Measured) return Farads(m.Capacitance.UsedFarads);
+
+            string marked = MarkedText;
+            return m.Capacitance.DeratedFarads is { } derated
+                ? $"{marked} → {Farads(derated)}"
+                : marked;
+        }
+    }
+
+    /// <summary>Q-12's triple, spelled out — what the row's capacitance column means, on its own
+    /// tooltip. <c>RailDeratedCapacitance.Describe</c> owns the sentence.</summary>
+    public string CapacitanceTooltip =>
+        Model?.Capacitance.Describe()
+        ?? "No capacitance resolved for this part, so nothing here is derated and nothing is "
+         + "defaulted.";
 
     /// <summary>
     /// Library row / attached file, and which won.
@@ -113,6 +188,25 @@ public sealed class RailPartRowViewModel
     };
 
     /// <summary>
+    /// <b>The ESR in OHMS</b>, at this part's own mounted resonance.
+    /// </summary>
+    /// <remarks>
+    /// <b>The number, because the basis alone is not an answer</b> (owner, 2026-09-19: the column
+    /// said <i>stated</i> beside a library row stating 32 mΩ). The basis is not lost: it is on
+    /// <see cref="EsrTooltip"/>, and an <see cref="IsEsrIndicative">indicative</see> one is drawn
+    /// italic, which is Q-15's marking with no column spent on it.
+    ///
+    /// <para><b>At the resonance, and that is <c>RailPartModel.EsrOhms</c>' own rule</b>: a
+    /// class-default ESR is <c>DF/(2π·f·C)</c> and therefore has no single value, so the frequency
+    /// it is quoted at has to be the one where it matters — where it sets the depth of the minimum
+    /// and the height of the anti-resonance the part takes part in.</para>
+    /// </remarks>
+    public string EsrText =>
+        Model?.EsrOhms is { } r && double.IsFinite(r)
+            ? RailValueFormat.FormatWithUnit(r, RailQuantity.Resistance, 3)
+            : UnresolvedText;
+
+    /// <summary>
     /// Measured / stated / class default — with a class default marked <b>indicative</b>.
     /// </summary>
     /// <remarks>
@@ -120,23 +214,193 @@ public sealed class RailPartRowViewModel
     /// because a mask margin in dB computed from an indicative peak looks exactly as authoritative as
     /// one computed from a measurement.
     /// </remarks>
-    public string EsrText => _model?.EsrBasis switch
+    public string EsrBasisText => (Model?.EsrBasis ?? _model?.EsrBasis) switch
     {
         EsrProvenance.Measured     => "measured",
         EsrProvenance.Stated       => "stated",
-        EsrProvenance.ClassDefault => "class default — indicative",
+        EsrProvenance.ClassDefault => "class default — " + RailEsrDefaults.Marking,
         _                          => UnresolvedText,
     };
 
-    /// <summary>True where the ESR is a class default, so the row can be marked in the table.</summary>
-    public bool IsEsrIndicative => _model?.EsrBasis == EsrProvenance.ClassDefault;
+    /// <summary>The sentence behind those two columns — where the number came from, and at what
+    /// frequency it was evaluated.</summary>
+    public string EsrTooltip => Model switch
+    {
+        null => "No ESR: this part did not resolve, so nothing here is defaulted.",
+        { EsrBasis: EsrProvenance.Measured, Measured: { } file } =>
+            $"Re Z read from {System.IO.Path.GetFileName(file.FilePath)} at this part's own "
+            + "resonance. The only route to a real ESR.",
+        { EsrBasis: EsrProvenance.Stated } m =>
+            $"The part library states {RailValueFormat.FormatWithUnit(m.StatedEsrOhms ?? 0, RailQuantity.Resistance, 3)}, "
+            + "at every frequency — that is all the row says.",
+        { EsrBasis: EsrProvenance.ClassDefault } m =>
+            $"No ESR is stated and no file is attached, so railRF used the {m.DissipationFactor:0.###} "
+            + $"dissipation factor for a {m.DielectricClass} dielectric: ESR = DF/(2π·f·C), "
+            + "evaluated at this part's own resonance. A quoted dissipation factor is a MAXIMUM for a "
+            + "class of part, so every peak height and every mask margin computed from it is "
+            + RailEsrDefaults.Marking + ". A part's own Touchstone file is the only route to a real ESR.",
+        _ => "No ESR: no attached file, no stated value and no recognised dielectric class. Nothing "
+           + "here is defaulted — this part contributes no loss.",
+    };
 
-    /// <summary>The computed mounting inductance, base SI, or null.</summary>
+    /// <summary>True where the ESR is a class default, so the row can be marked in the table.</summary>
+    public bool IsEsrIndicative => (Model?.EsrBasis ?? _model?.EsrBasis) == EsrProvenance.ClassDefault;
+
+    /// <summary>
+    /// The part's OWN series inductance — the package, not the mounting loop.
+    /// </summary>
+    /// <remarks>
+    /// <b>The other half of the branch.</b> The table showed only the mounting loop, and a reader
+    /// looking at <c>L mount</c> alone cannot tell what sets the resonance: it is the SUM, and on a
+    /// bulk part the package is the larger term. Derived from C and f₀ by R-rail2-8's arithmetic,
+    /// which is exact rather than a fit.
+    /// </remarks>
+    public string PartInductanceText =>
+        RailValueFormat.FormatWithUnit(Model?.InductanceHenries, RailQuantity.Inductance, UnresolvedText, 3);
+
+    /// <summary>Where that inductance came from, and what the row's two L columns add up to.</summary>
+    public string PartInductanceTooltip => Model switch
+    {
+        null => "No inductance: this part did not resolve.",
+        { InductanceHenries: null } => "The library row carries neither a self-resonant frequency to "
+            + "derive an inductance from nor a stated one, so railRF has none for this part.",
+        { } m =>
+            (m.InductanceBasis switch
+            {
+                RailInductanceBasis.DerivedFromResonance =>
+                    "L = 1/((2·π·f₀)²·C) from the row's own capacitance and self-resonant frequency.",
+                RailInductanceBasis.Measured => "Read from the part's own file.",
+                _ => "Stated on the library row — the row carries no self-resonant frequency to "
+                   + "derive one from.",
+            })
+            + (m.TotalInductanceHenries is { } total
+                ? $" The branch carries {RailValueFormat.FormatWithUnit(total, RailQuantity.Inductance, 3)} "
+                  + "in all, package plus mounting loop, and that is the L that sets the resonance."
+                : ""),
+    };
+
+    /// <summary>The sentence behind the L column — where each term came from, and what they add
+    /// up to.</summary>
+    public string InductanceTooltip => $"{PartInductanceTooltip} {MountingInductanceTooltip}";
+
+    /// <summary>
+    /// Where this part stops being a capacitor — <c>1/(2π·√(L_total·C))</c> over the numbers this
+    /// row actually carries.
+    /// </summary>
+    /// <remarks>
+    /// <b>The MOUNTED resonance, not the library row's f₀</b>, and <c>RailPartModel</c>'s own note
+    /// says why: the row's figure is the unmounted part at its marked capacitance, while this one
+    /// includes the mounting loop and Q-12's bias correction, both of which move it — derating
+    /// RAISES it by √(marked/derated). <see cref="SelfResonanceTooltip"/> prints the row's own
+    /// figure beside it when the two differ.
+    /// </remarks>
+    public string SelfResonanceText =>
+        RailValueFormat.FormatWithUnit(Model?.SelfResonanceHz, RailQuantity.Frequency, UnresolvedText, 3);
+
+    /// <summary>The stated f₀ beside the mounted one, because the difference is the point.</summary>
+    public string SelfResonanceTooltip => Model switch
+    {
+        null => "No resonance: this part did not resolve.",
+        { SelfResonanceHz: null } => "railRF has no capacitance, no inductance, or neither, so there "
+            + "is no resonance to compute.",
+        { } m =>
+            "Where this part stops being a capacitor: 1/(2π·√(L·C)) over the capacitance and the "
+            + "inductance this row carries — the MOUNTED part, so the mounting loop and the bias "
+            + "derating are both in it."
+            + (m.StatedSelfResonanceHz is { } stated
+                ? $" The library row states {RailValueFormat.FormatWithUnit(stated, RailQuantity.Frequency, 3)} "
+                  + "for the part on its own."
+                : ""),
+    };
+
+    /// <summary>The whole row as one sentence, with every provenance said out loud — the row's own
+    /// tooltip. <c>RailPartModel.Describe</c> owns it; nothing here writes a second version.</summary>
+    public string RowTooltip => _resolved?.Describe() ?? OriginText;
+
+    /// <summary>What the library row says about this part that is not electrical — description,
+    /// footprint, dielectric class and voltage rating, for the part-number column's tooltip.</summary>
+    public string PartNumberTooltip
+    {
+        get
+        {
+            if ((Model?.Row ?? _model?.Row) is not { } row)
+                return PartNumber == UnresolvedText
+                    ? "No part number: neither this rail's row nor the bill of materials names one."
+                    : $"'{PartNumber}' is not in the part library, so railRF has no C, no f₀ and no "
+                    + "dielectric class for it. Nothing about it is defaulted.";
+
+            var parts = new System.Collections.Generic.List<string>(4);
+            if (row.Description is { Length: > 0 } d) parts.Add(d);
+            if (row.Footprint is { Length: > 0 } f) parts.Add($"footprint {f}");
+            if (row.DielectricClass is { Length: > 0 } c) parts.Add(c);
+            if (row.VoltageRatingV is { } v)
+                parts.Add($"rated {RailValueFormat.FormatWithUnit(v, RailQuantity.Voltage, 3)}");
+            parts.Add(row.BiasCurve.Count > 0
+                ? $"{row.BiasCurve.Count}-point bias curve"
+                : "no bias curve");
+
+            return string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>
+    /// The inductance column: <b>the package and the mounting loop as two terms of one sum</b> —
+    /// "0.5 + 0.85 nH".
+    /// </summary>
+    /// <remarks>
+    /// <b>The sum is what sets the resonance, and the split is what a reader changes.</b> §2.2 on
+    /// the mounting loop: <i>"it is the thing your form factor change actually altered"</i>, so
+    /// collapsing the two into one total would hide the term being tuned — and showing the mounting
+    /// loop alone, which is what this column did, leaves a reader unable to tell what the branch
+    /// actually carries. Both terms are printed in the TOTAL's own unit, so they add up on the face
+    /// of the row rather than needing two rungs reconciled.
+    /// </remarks>
+    public string InductanceText
+    {
+        get
+        {
+            if (Model is not { } m) return MountingInductanceText;
+
+            double? part = m.InductanceHenries, mount = m.MountingInductanceHenries;
+            if (m.TotalInductanceHenries is not { } total) return UnresolvedText;
+
+            string unit = RailValueFormat.AutoUnitFor(total, RailQuantity.Inductance);
+            double scale = RailValueFormat.Scale(unit);
+            string Term(double h) => RailValueFormat.Significant(h / scale, 3);
+
+            return part is { } p && mount is { } t ? $"{Term(p)} + {Term(t)} {unit}"
+                 : $"{Term(total)} {unit}";
+        }
+    }
+
+    /// <summary>The capacitance ladder, through the one formatter this window uses.</summary>
+    private static string Farads(double farads) =>
+        double.IsFinite(farads)
+            ? RailValueFormat.FormatWithUnit(farads, RailQuantity.Capacitance, 3)
+            : UnresolvedText;
+
+    /// <summary>The mounting inductance this row carries, base SI, or null.</summary>
     public double? MountingInductanceHenries { get; }
 
     /// <summary>The same, as the column reads it.</summary>
     public string MountingInductanceText =>
-        RailValueFormat.FormatWithUnit(MountingInductanceHenries, RailQuantity.Inductance, UnresolvedText);
+        RailValueFormat.FormatWithUnit(MountingInductanceHenries, RailQuantity.Inductance, UnresolvedText, 3);
+
+    /// <summary>Typed on the rail, or computed from the via geometry — §2.2's own precedence,
+    /// because a computed number silently replacing a typed one is the same defect as a defaulted
+    /// plating thickness reported as a stated one. Printed after
+    /// <see cref="PartInductanceTooltip"/> on the one L column's tooltip.</summary>
+    public string MountingInductanceTooltip => _resolved?.MountingBasis switch
+    {
+        RailMountingBasis.Typed => "The loop from the pad through its via to the plane pair and back, "
+            + "as this rail's own row types it. Typically 0.3–1.5 nH, and it dominates above roughly "
+            + "50 MHz.",
+        RailMountingBasis.ComputedFromGeometry => "Computed from this part's actual via positions and "
+            + "the plane separation. Nothing typed one, so railRF worked it out — type one on the "
+            + "rail to override it.",
+        _ => "Nothing states a mounting loop for this part and there is no artwork to compute one "
+           + "from, so the branch carries the package inductance alone.",
+    };
 
     /// <summary>Where the placement put it, or null where it did not land.</summary>
     public string? Position { get; }

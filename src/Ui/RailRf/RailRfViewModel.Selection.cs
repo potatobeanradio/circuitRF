@@ -16,6 +16,15 @@
 // window where the keystroke works on one list and silently does nothing on the next is worse than
 // one where it does not exist — the user has no way to tell which case they are in.
 //
+// AND IT CLEARS A SELECTED MARKER, which is the fifth thing this window can have selected (owner,
+// 2026-09-19). A marker is selected by clicking its glyph or its info box, and until then the only
+// way back was to click empty plot area — the gesture that already deselects it, by selecting the
+// container instead. Escape did nothing there, for exactly the reason above: HasRowSelection asked
+// the four LISTS and a marker is not on one, so the handler returned before it ever ran. The
+// selection lives on MarkerInfoBoxViewModel.IsSelected — the glyph and its box are one selectable
+// thing — so DataDisplayViewModel.DeselectAll is what clears it, the same method the Data Display's
+// own Escape KeyBinding is wired to. Not a second selection model; the Data Display's own.
+//
 // ── A SOURCE AND A LOAD ARE PLACES ON THE BOARD, SO THEY ARE MARKED LIKE ONE ──────────────────
 //
 // A part row marked its pads and its body box; a source or load row marked nothing, although a
@@ -81,10 +90,21 @@ public sealed partial class RailRfViewModel
     partial void OnSelectedLoadChanged(RailLoadRowViewModel? value)             => TakeSelection(value);
     partial void OnSelectedAggressorChanged(RailAggressorRowViewModel? value)   => TakeSelection(value);
 
-    /// <summary>True while any of the four lists has a row selected — what Escape reads.</summary>
+    /// <summary>True while any of the four lists has a row selected.</summary>
     public bool HasRowSelection =>
         SelectedPart is not null || SelectedSource is not null
      || SelectedLoad is not null || SelectedAggressor is not null;
+
+    /// <summary>True while a marker on the results plot is selected — its glyph, or its info box,
+    /// which are one selectable thing.</summary>
+    public bool HasMarkerSelection => PlotHost.HasSelectedInfoBoxes;
+
+    /// <summary>True while this window has ANYTHING selected — <b>what Escape reads</b>.</summary>
+    /// <remarks>
+    /// Rows and markers together, because the keystroke is one gesture. Gating it on the rows alone
+    /// is what made Escape silently inert on a selected marker (owner, 2026-09-19).
+    /// </remarks>
+    public bool HasSelection => HasRowSelection || HasMarkerSelection;
 
     /// <summary>
     /// Makes <paramref name="kept"/> the window's one selection and clears the rest.
@@ -109,10 +129,31 @@ public sealed partial class RailRfViewModel
         PublishSelection();
     }
 
-    /// <summary>Clears every list's selection — what <b>Escape</b> is wired to.</summary>
+    /// <summary>
+    /// Clears every list's selection AND any selected marker — what <b>Escape</b> is wired to.
+    /// </summary>
     /// <remarks>
     /// A command rather than a setter call in the code-behind, so the keystroke and any menu row that
     /// ever wants it reach the same one thing, and so a test can drive it with no application host.
+    /// </remarks>
+    [RelayCommand]
+    private void ClearSelection()
+    {
+        ClearRowSelection();
+
+        // The Data Display's own — see this file's header. It also drops the plot CONTAINER's
+        // selection, which is inert here: this window lays the one container out itself and draws no
+        // selection chrome for it, and the container is not deletable.
+        PlotHost.DeselectAll();
+        OnPropertyChanged(nameof(HasMarkerSelection));
+        OnPropertyChanged(nameof(HasSelection));
+    }
+
+    /// <summary>Clears every list's selection, leaving any selected marker alone.</summary>
+    /// <remarks>
+    /// Kept separate from <see cref="ClearSelectionCommand"/> because the document-replaced path
+    /// calls it: a new document rebuilds the plot and its markers from scratch, and reaching into
+    /// the plot host's selection there would be answering a question nobody asked.
     /// </remarks>
     [RelayCommand]
     private void ClearRowSelection()
@@ -141,6 +182,7 @@ public sealed partial class RailRfViewModel
     private void PublishSelection()
     {
         OnPropertyChanged(nameof(HasRowSelection));
+        OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(PartHighlight));
         BoardOverlayLayer.PartHighlight = PartHighlight;
     }

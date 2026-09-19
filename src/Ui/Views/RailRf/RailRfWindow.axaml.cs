@@ -214,12 +214,18 @@ public partial class RailRfWindow : Window
     // ── Escape: nothing is selected (owner, 2026-09-19) ──────────────────────────────
 
     /// <summary>
-    /// Clears whichever of the four lists has a row selected, and with it the mark on the board.
+    /// Clears whichever of the four lists has a row selected — and any selected marker on the
+    /// results plot — and with it the mark on the board.
     /// </summary>
     /// <remarks>
     /// <b>All four, not just the parts table</b> (owner, 2026-09-19). The keystroke worked on one
     /// list and did nothing on the next three, which is the one shape a user cannot diagnose: there
     /// is no way to tell a key that is not wired from a key that found nothing to clear.
+    ///
+    /// <para><b>And the results plot's marker, which is a fifth selectable thing</b> (owner,
+    /// 2026-09-19) — the same shape again: the gate below asked <c>HasRowSelection</c>, a marker is
+    /// not on one of the four lists, so the handler returned and Escape was inert on it. See
+    /// <c>RailRfViewModel.Selection</c>'s own header.</para>
     /// </remarks>
     /// <remarks>
     /// <b>Bubbling, and it defers to anything that already handled the key.</b> Escape is the layout
@@ -237,9 +243,9 @@ public partial class RailRfWindow : Window
         if (e.Handled || e.Key != Key.Escape) return;
         if (RailKeyboardGate.IsTextEntry(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
             return;
-        if (Vm is not { HasRowSelection: true } vm) return;
+        if (Vm is not { HasSelection: true } vm) return;
 
-        vm.ClearRowSelectionCommand.Execute(null);
+        vm.ClearSelectionCommand.Execute(null);
         e.Handled = true;
     }, RoutingStrategies.Bubble);
 

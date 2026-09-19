@@ -692,6 +692,46 @@ public class PdnImpedanceTests(ITestOutputHelper output)
                         xaml, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <b>Escape deselects a selected marker</b> (owner, 2026-09-19: the keystroke does not deselect
+    /// a selected marker in the Results plot).
+    /// </summary>
+    /// <remarks>
+    /// The same shape as the Delete report above and the same shape as the one that made Escape work
+    /// on the parts table and on none of the other three lists: the window's handler gated on
+    /// <c>HasRowSelection</c>, a marker is not a row on one of those four lists, so the handler
+    /// returned before it ever ran. There is no way for a user to tell a key that is not wired from
+    /// a key that found nothing to clear.
+    /// </remarks>
+    [Fact]
+    public void EscapeDeselectsASelectedMarker()
+    {
+        var vm = Window();
+        vm.RunCommand.Execute(null);
+
+        var trace = vm.ImpedancePlot.Traces.First(t => t.CubeName == "Z");
+        trace.Markers.Add(new Marker(trace, trace.Points[trace.Points.Count / 2].X, isMulti: false,
+                                     isDelta: false, index: 1, FreqUnit.MHz));
+        vm.ImpedanceContainer.OnPlotChanged(vm, EventArgs.Empty);
+
+        var box = Assert.Single(vm.PlotHost.MarkerInfoBoxes);
+        box.IsSelected = true;
+
+        // What the window's Escape handler reads. It asked the four ROW lists, so with no row
+        // selected it was false here and the keystroke did nothing at all.
+        Assert.False(vm.HasRowSelection);
+        Assert.True(vm.HasSelection);
+
+        vm.ClearSelectionCommand.Execute(null);
+
+        Assert.False(box.IsSelected);
+        Assert.False(vm.HasSelection);
+
+        // Deselected, NOT deleted — Escape and Delete are different keys and the reading survives.
+        Assert.Single(trace.Markers);
+        Assert.Single(vm.PlotHost.MarkerInfoBoxes);
+    }
+
     // ── Markers persist in the `.crail` (owner, 2026-09-19) ──────────────────
 
     /// <summary>

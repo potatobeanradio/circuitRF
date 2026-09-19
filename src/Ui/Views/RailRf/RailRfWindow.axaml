@@ -298,6 +298,16 @@
             <Setter Property="Opacity" Value="0.55"/>
         </Style>
 
+        <!-- An INDICATIVE number: one computed from a dissipation-factor default for the part's
+             dielectric class rather than from a measurement or a stated value. Q-15 calls that
+             marking load-bearing rather than temporary, and the reason is that a mask margin in dB
+             computed from an indicative peak looks exactly as authoritative as a real one. Italic
+             rather than dimmed: dimming is what an UNRESOLVED row already means here, and these two
+             states are not the same — a class default is Q-15's NORMAL case, not a degraded one. -->
+        <Style Selector="TextBlock.indicative">
+            <Setter Property="FontStyle" Value="Italic"/>
+        </Style>
+
         <!-- A settable value in a label-left/value-right row: same size and edge as detailValue, so
              the settable rows and the read-only ones line up as one column of numbers. -->
         <Style Selector="ctl|InlineEditText.val">
@@ -1310,15 +1320,35 @@
                             <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
                                  This is R-rail7-2's one exception and it is an owner decision: any
                                  centring here is a misalignment the user can see. -->
+                            <!-- ── THE NUMBERS, NOT THE WORDS FOR THEM (owner, 2026-09-19) ────
+                                 The ESR column read "stated" beside a part library that states
+                                 32 mΩ, which is a provenance where a reader wanted a value. It is
+                                 the ohms now — RailPartModel.EsrOhms, at the part's own mounted
+                                 resonance, which is where ESR sets the depth of the minimum and the
+                                 height of the anti-resonance. Q-15's marking did not go anywhere:
+                                 an indicative one is ITALIC and every cell's tooltip names its
+                                 basis in full.
+
+                                 f₀ and the package inductance are new beside it, and they are the
+                                 two library numbers a PDN reader actually works from: where the
+                                 part stops being a capacitor, and the term that puts it there.
+
+                                 THE COLUMN COUNT DID NOT GROW, because this pane is the BOARD
+                                 column and it is ~560 px at the shipped window size. Marked and
+                                 derated are one cell with an arrow between them ("100 nF → 74 nF",
+                                 and no arrow where no curve derated it), and the package and
+                                 mounting inductances are the two terms of one sum ("0.5 + 0.85 nH")
+                                 — both of which say MORE per pixel than the two-column form did,
+                                 and neither of which hides a number. -->
                             <Grid Grid.Row="1" Name="PartsHeader"
-                                  ColumnDefinitions="60,*,70,70,90,70,60,96">
+                                  ColumnDefinitions="52,*,96,62,64,92,78,86">
                                 <Button Classes="gridhdr" Content="refdes"/>
                                 <Button Grid.Column="1" Classes="gridhdr" Content="part number"/>
-                                <Button Grid.Column="2" Classes="gridhdr" Content="marked"/>
-                                <Button Grid.Column="3" Classes="gridhdr" Content="derated"/>
-                                <Button Grid.Column="4" Classes="gridhdr" Content="model source"/>
-                                <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
-                                <Button Grid.Column="6" Classes="gridhdr" Content="L mount"/>
+                                <Button Grid.Column="2" Classes="gridhdr" Content="C"/>
+                                <Button Grid.Column="3" Classes="gridhdr" Content="ESR"/>
+                                <Button Grid.Column="4" Classes="gridhdr" Content="f₀"/>
+                                <Button Grid.Column="5" Classes="gridhdr" Content="L pkg + mount"/>
+                                <Button Grid.Column="6" Classes="gridhdr" Content="model source"/>
                                 <!-- WHERE IT IS, or that nothing says. Without this column the table
                                      was a list of parts with no visible relationship to the artwork
                                      beside it, and a reader looking for C1 on the board had nothing
@@ -1342,8 +1372,9 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="60,*,70,70,90,70,60,96" Margin="0,1"
-                                              Classes.unresolved="{Binding IsUnresolved}">
+                                        <Grid ColumnDefinitions="52,*,96,62,64,92,78,86" Margin="0,1"
+                                              Classes.unresolved="{Binding IsUnresolved}"
+                                              ToolTip.Tip="{Binding RowTooltip}">
                                             <!-- WHERE THE ROW CAME FROM, on the row's own face
                                                  (R-rail18-5a) — typed on the rail, or pre-filled
                                                  from the bill of materials. A pre-filled number
@@ -1352,17 +1383,31 @@
                                                        HorizontalAlignment="Left"
                                                        ToolTip.Tip="{Binding OriginText}"/>
                                             <TextBlock Grid.Column="1" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding PartNumber}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding PartNumber}"
+                                                       ToolTip.Tip="{Binding PartNumberTooltip}"/>
                                             <TextBlock Grid.Column="2" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding MarkedText}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding CapacitanceText}"
+                                                       ToolTip.Tip="{Binding CapacitanceTooltip}"/>
+                                            <!-- ITALIC where the ESR is a dissipation-factor default
+                                                 for the part's dielectric class. Q-15's marking is
+                                                 load-bearing rather than decorative: a mask margin
+                                                 in dB computed from an indicative peak looks exactly
+                                                 as authoritative as one computed from a measurement,
+                                                 and the number in this cell is what sizes that peak.
+                                                 The tooltip says it in words; the slant is what a
+                                                 reader sees without hovering. -->
                                             <TextBlock Grid.Column="3" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding DeratedText}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding EsrText}"
+                                                       Classes.indicative="{Binding IsEsrIndicative}"
+                                                       ToolTip.Tip="{Binding EsrTooltip}"/>
                                             <TextBlock Grid.Column="4" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding SelfResonanceText}"
+                                                       ToolTip.Tip="{Binding SelfResonanceTooltip}"/>
                                             <TextBlock Grid.Column="5" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding EsrText}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding InductanceText}"
+                                                       ToolTip.Tip="{Binding InductanceTooltip}"/>
                                             <TextBlock Grid.Column="6" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding MountingInductanceText}"/>
+                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
                                             <TextBlock Grid.Column="7" Classes="detailLabel"
                                                        HorizontalAlignment="Left" Text="{Binding PositionText}"
                                                        ToolTip.Tip="{Binding PositionTooltip}"/>

@@ -593,6 +593,73 @@ public class RailWindowTests
         Assert.Contains("1 part(s) with no bias curve", vm.StatusLine, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <b>The electrical columns carry the library's NUMBERS, not a word for where they came from</b>
+    /// (owner, 2026-09-19: the ESR column says "stated" — why not list the mΩ from the file?).
+    /// </summary>
+    /// <remarks>
+    /// One test over the whole column set, because they have one cause: the row read the library
+    /// ROW — which can only answer "is there an ESR" — instead of the <c>RailPartModel</c>
+    /// <c>RailPartResolver</c> produces, which R-rail11-6 already says is what the parts table's
+    /// rows read. So the ESR column named a provenance, the derated column read <i>unresolved</i>
+    /// for every part of every document although the shipped library carries bias curves, and the
+    /// three numbers a PDN reader actually works from — the ohms, the mounted resonance and the
+    /// package inductance — were nowhere on the table at all.
+    ///
+    /// <para>The arithmetic is checked rather than just the presence of a number: 100 nF with the
+    /// row's 20 MHz gives 633 pH of package inductance, which with the rail's 0.85 nH of mounting
+    /// puts the MOUNTED resonance at 13.3 MHz — below the row's own 20 MHz, which is the whole
+    /// reason <c>RailPartModel</c> refuses to re-print the row's figure.</para>
+    /// </remarks>
+    [Fact]
+    public void ThePartsTableCarriesTheLibrarysNumbers_NotJustTheirProvenance()
+    {
+        var doc = OneRail();
+        var rail = doc.Rails[0];
+        rail.Parts.Clear();
+        rail.Parts.Add(new RailPart
+        {
+            Refdes = "C1", PartNumber = "CAP-100N-0402", MountingInductanceHenries = 0.85e-9,
+        });
+
+        var library = LibraryKnowing("CAP-100N-0402");
+        library.Rows[0].EsrOhms = 0.032;                       // 32 mΩ, as the shipped library states
+
+        var vm = Window(doc);
+        vm.PartLibrary = library;
+
+        var c1 = Assert.Single(vm.Parts);
+
+        // The ESR is the OHMS, and the basis is still said — in the tooltip, where the table has room
+        // for the sentence Q-15 requires rather than one word.
+        Assert.Equal("32 mΩ", c1.EsrText);
+        Assert.Equal("stated", c1.EsrBasisText);
+        Assert.False(c1.IsEsrIndicative);
+
+        // L = 1/((2π·20 MHz)²·100 nF) = 633 pH, and the branch carries it plus the 0.85 nH mounting
+        // loop — the two terms of one sum, in the total's own unit.
+        Assert.Equal("0.633 + 0.85 nH", c1.InductanceText);
+
+        // 1/(2π·√(1.483 nH · 100 nF)) = 13.1 MHz. NOT the row's stated 20 MHz: that is the part on
+        // its own, and this one is mounted.
+        Assert.Equal("13.1 MHz", c1.SelfResonanceText);
+
+        // No bias curve on this row, so nothing derated it and the cell says so by carrying no
+        // arrow — a "100 nF → 100 nF" would claim a curve had been applied.
+        Assert.Equal("100 nF", c1.CapacitanceText);
+        Assert.Equal(RailPartRowViewModel.UnresolvedText, c1.DeratedText);
+
+        // With a curve, both numbers are on the row: 100 nF marked, 74 nF at the rail's own voltage.
+        library.Rows[0].BiasCurve.Add(new PartBiasPoint(0.0, 100e-9));
+        library.Rows[0].BiasCurve.Add(new PartBiasPoint(rail.NominalVoltageV ?? 3.3, 74e-9));
+        vm.RebuildParts();
+
+        c1 = Assert.Single(vm.Parts);
+        Assert.Equal("100 nF → 74 nF", c1.CapacitanceText);
+        Assert.Equal("74 nF", c1.DeratedText);
+        Assert.Equal("derated", c1.ValueUsedText);
+    }
+
     // ══ R-rail18-5 — the table is of the RAIL, not of the BOM ═══════════════════════════════════
 
     /// <summary>

@@ -91,9 +91,15 @@ public sealed partial class RailRfViewModel
     /// disagreed in both directions at once — the verb was moved onto <c>RailSpec.Parts</c> in review
     /// round 2 and the window was left on the BOM.</para>
     ///
-    /// <para><b>The derated value reads <i>unresolved</i> here by construction, and that is correct
-    /// rather than pending</b>: derating from a bias curve is brief 11's and it happens in the solve.
-    /// A plausible number here would be the defaulted one §9 exists to prevent.</para>
+    /// <para><b>Every electrical column is <c>RailPartResolver</c>'s own answer</b> — R-rail11-6:
+    /// <i>"the individual models are what the parts table's rows read"</i>. It is the SAME call
+    /// <see cref="BuildSweepRequest"/> makes, with the same rail voltage and the same computed
+    /// mounting loops, so the table and the curve beside it cannot come to disagree about one part.
+    /// Until 2026-09-19 this row read the library ROW instead, which is why the ESR column could
+    /// only name a provenance (<i>stated</i>, beside a library stating 32 mΩ) and why the derated
+    /// column read <i>unresolved</i> for every part of every document (owner, 2026-09-19). Resolving
+    /// here is not a second opinion and it defaults nothing: a part the resolver cannot model comes
+    /// back carrying <c>UnresolvedReason</c>, and the row prints §9's word for it.</para>
     /// </remarks>
     public void RebuildParts()
     {
@@ -134,6 +140,16 @@ public sealed partial class RailRfViewModel
             ? p.Rows.ToDictionary(r => r.Refdes, r => r, StringComparer.OrdinalIgnoreCase)
             : [];
 
+        // The solve's own resolution, by refdes. Built once for the whole table rather than per row:
+        // a part with an attached Touchstone file is READ here, and resolving each row separately
+        // would read the same file once per instance of the part.
+        var resolved = new RailPartResolver(PartLibrary ?? new PartLibrary())
+            .ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail))
+            .Models
+            .Where(m => m.Refdes is { Length: > 0 })
+            .GroupBy(m => m.Refdes!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         foreach (var part in rail.Parts)
         {
             if (string.IsNullOrWhiteSpace(part.Refdes)) continue;
@@ -153,8 +169,12 @@ public sealed partial class RailRfViewModel
                   + (placement.Mirror ? " · bottom" : "")
                 : null;
 
+            resolved.TryGetValue(part.Refdes, out var element);
+
             var built = new RailPartRowViewModel(
-                part, row, model, part.MountingInductanceHenries, position);
+                part, row, model,
+                element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
+                position, element);
             Parts.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
