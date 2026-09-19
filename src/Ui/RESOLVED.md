@@ -29082,3 +29082,36 @@ sign would show.
 Gates: `tests/Ui.Tests/RailRf/RailZMapTests.cs` (six tests, ~2 s) — the mode frequency against the
 sweep's own |Z| peak on the same board, the per-port readings, the overlay's three rules, brief 9's
 copy gate, determinism, and the DC refusal.
+
+## railRF brief 16 — the A/B report is a different SET OF SECTIONS, not a different page (2026-09-18)
+
+`src/Ui/RailRf/RailComparisonExport.cs`. R-rail16-6 says the comparison's report is drawn by brief
+9's one render function, and §11.7 says why: *there is one route from an overlay to a page and not
+two.* That route is `RailReportPage` in `CircuitRF.Render`, which `circuitrf rail -o report.svg`
+already draws its page with — same title, same provenance banner, same picture of the board, same
+two-column text block, same seven level-of-detail tiers turned off. The A/B report differs in its
+SECTIONS and in nothing else.
+
+So this file is a mapping and a page size. It holds no `SKPaint`, no `DrawText` and no second
+composition, and the gate is a source scan for exactly those — because two compositions agree today
+and drift the first time either is touched, with the drift invisible because both produce a
+plausible page.
+
+**Why the mapping exists at all.** `RailComparisonSection` (src/Design) and `RailReportSection`
+(CircuitRF.Render) are the same shape and are two types because `src/Design` sits BELOW
+`CircuitRF.Render` and cannot name the second one. The alternative — putting the comparison's
+wording in `CircuitRF.Render` so it could build `RailReportSection` directly — would move a page's
+worth of domain sentences into the drawing project, which is the boundary that project's own
+`.csproj` states: it draws, it does not decide what a finding says.
+
+**The picture is the JUDGED design's board, not the reference's and not both.** §2.5's question is
+"the reference passes; does yours?", so the board a reader is looking at while they read the
+findings is the one they are about to change. Which design is which is the first line of the banner,
+because every signed number on the page — every Δ|Z|, every millivolt, every "worse" — is signed
+relative to that choice, and R-rail10-5's rule is that a file read six months later has no status
+strip to ask.
+
+**Not yet wired to a menu.** `Report ▸` is still unbuilt — brief 9's own header says "when that
+button is wired" — and railRF's window holds no second document, so there is no *Compare with…*
+command and no comparison panel. `RailComparisonExport.PageOf`/`BuildSvg`/`BuildPdf` is the function
+that command will call; nothing else composes this page.

@@ -7870,3 +7870,78 @@ It is present on a **DC** run, where nothing was stamped from it — at ω = 0 t
 and the stackup is exactly as worth checking. `PdnProvenance.ShuntBranchPresent` is therefore a
 different question from "is the capacitance non-zero", and a reader comparing two curves needs to be
 able to tell a run that modelled the cavity from one that only measured its stackup.
+
+## railRF brief 16 — the A/B comparison, and the five things the pairing turned up (2026-09-18)
+
+`RailComparison`, `RailComparisonReport` (both `src/Design/RailRf/`) and `PdnDelta`
+(`src/Engine/Pdn/`) — §2.5's workflow, the one Q3 names as the reason the whole tool exists. Gate:
+`tests/Ui.Tests/RailRf/RailComparisonTests.cs` (13 tests, ~0.4 s).
+
+### 1. Rule 4 is enforced by the SIGNATURE, not by a comment
+
+§2.5 forbids pairing "by proximity or by guessing". `RailComparison.Match` takes two
+`RailDocument`s and nothing else — no artwork, no technology, no placement — so there is no
+coordinate in scope to pair by, and an edit that wanted to pair by proximity would have to widen the
+parameter list to do it. The behavioural test (two ports 0.2 mm apart stay unmatched) is the weaker
+half; the source scan that finds no `LayoutView`, no `Math.Sqrt` and no `Math.Abs` in that file is
+the half that cannot be satisfied by accident.
+
+The one coordinate the file reads is `RailPortAnchor.Point`, compared for **exact equality and never
+for nearness**. That is not a loophole: after a re-layout, two ports at exactly the same DBU are the
+same port that did not move, and two ports 0.2 mm apart are unmatched however close they get.
+
+### 2. Rule 3 needs an ambiguity rule, and §2.5 already states it
+
+"Models by part number, where a refdes did not match" reads as a simple fallback until a board has
+three unmatched 100 nF 0402s on one side and two on the other. That is not a pairing, it is the
+question §2.5 says railRF asks — so the fallback fires only where **exactly one** unmatched row on
+each side carries that part number, and every other case becomes an unmatched row naming the count.
+A pairing rule with no ambiguity rule would have produced its most confident wrong answer on
+precisely the redesign this feature is for.
+
+### 3. Two sweeps on different grids are refused, not interpolated — and this is not pedantry
+
+R-rail14-4's resonance search **adds points where that board's own peaks are**, so two boards swept
+from one band come back on two different axes as a matter of course — and the two axes differ
+precisely at the frequencies the comparison is about. Interpolating one onto the other would invent
+the target curve's value exactly where the target curve is changing fastest, and the invented number
+would then be reported as a several-decibel excursion with a frequency beside it. `PdnDelta.Compute`
+refuses, naming the first point that differs; the caller's remedy is to sweep both sides on one
+explicit grid, which is what `RailComparisonTests` does throughout.
+
+The delta is a **ratio in dB** and not a difference in ohms for the same class of reason: a PDN
+curve crosses three or four decades across its band, so a difference in ohms is almost entirely a
+picture of where the curve is big, and a doubling at the bottom — the one that breaks a flat
+milliohm mask — would be invisible beside it.
+
+### 4. An excursion band is closed by the SIGN, and a resonance that MOVED is two findings
+
+Contiguous runs past the threshold are grouped and reported by their own peak, but a run ends when
+the sign changes. A resonance that moved produces a positive excursion on one side of it and a
+negative one on the other: the judged design is worse here and better there, which is two facts. A
+band merged across the zero crossing would be reported with its peak in the middle — the one
+frequency in the whole range where nothing happened.
+
+### 5. A 0.0 dB removal row cannot be constructed out of parallelism, and that changed the fixtures
+
+`PdnRemovalRanking.DisplayResolutionDb` is 0.05 dB, which is an impedance ratio of 1.006. Removing
+one of N equal parts in parallel moves the answer by about `8.7/N` dB, so **no bank of a plausible
+size is redundant by parallelism** — reaching 0.05 dB that way needs N ≈ 174. The real 0.0 dB row is
+a part that is OUT OF BAND where the judging happens, which is exactly what §2.6 means by "shadowed
+by lower-inductance neighbours". The gate for R-rail16-5's second finding therefore judges over the
+bulk's own decade (10 kHz–100 kHz), where a 100 nF ceramic is three orders of magnitude above the
+bulk beside it and moves the worst margin by nothing at all, while the bulk still earns everything.
+
+This is also why the *first* finding's gate hands the report two **written-down** rankings rather
+than solving for them: §7's instruction is that the correct answer is constructed rather than solved
+for, R-rail16-5 is a claim about how the report READS two rankings, and the physics of a 0.0 dB row
+is brief 12's gate rather than this one's.
+
+### 6. The removal ranking names a part as the RESOLVER names it, which the comparison has to know
+
+`PdnSweep` passes `RailPartModel.Name` — `C3 (PN-100N-0402)` — into the ranking, because a ranking
+read on its own has to say which part `C3` is. The comparison keys on the **refdes**, per §2.5's rule
+2, so it looks *from* the refdes the match already holds rather than parsing the row's name apart —
+and it must, because the two designs' part numbers may legitimately differ for one refdes (a
+second-source part is still that part). An unmatched ranking row keeps its full spelling, because
+there is no matched refdes for it to be named by.
