@@ -141,8 +141,32 @@ public sealed class RailPartRowViewModel
     /// <summary>Where the placement put it, or null where it did not land.</summary>
     public string? Position { get; }
 
-    /// <summary>The same, as the column reads it.</summary>
-    public string PositionText => Position is { Length: > 0 } p ? p : UnresolvedText;
+    /// <summary>
+    /// The same, as the column reads it — <b>"not placed", never "unresolved"</b>.
+    /// </summary>
+    /// <remarks>
+    /// The two are different states and only one of them is a problem (owner, 2026-09-19, who asked
+    /// the reasonable question: the Parts table lists C1…C13 and the board shows no capacitor
+    /// anywhere). <i>Unresolved</i> means railRF could not model this part. <i>Not placed</i> means
+    /// nothing has said where it is — no placement file names its refdes — so it is a shunt branch on
+    /// the rail with its own stated mounting inductance, which is a perfectly ordinary way to ask this
+    /// question and is what the shipped example does. Printing the alarm word for the ordinary case is
+    /// what made a user go looking for a defect that was not there.
+    /// </remarks>
+    public string PositionText => Position is { Length: > 0 } p ? p : NotPlacedText;
+
+    /// <summary>What an unplaced part's location column says.</summary>
+    public const string NotPlacedText = "not placed";
+
+    /// <summary>The sentence behind that column, for the row's own tooltip.</summary>
+    public string PositionTooltip =>
+        Position is { Length: > 0 }
+            ? "Where the placement file puts this part. The board panel's own coordinates read in the "
+            + "same unit."
+            : "Nothing says where this part is: no placement file names this refdes, so railRF has no "
+            + "coordinate for it and draws nothing for it on the board. It is still in the answer — a "
+            + "shunt branch on this rail, with the mounting inductance this row states. Load a "
+            + "placement to tie it to the artwork.";
 
     /// <summary>
     /// True when this row could not be resolved at all — no part number, or no library row for it.

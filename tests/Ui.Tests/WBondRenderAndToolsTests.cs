@@ -1313,7 +1313,10 @@ public class WBondRenderAndToolsTests
         int press = canvas.IndexOf("_canvasOverlay?.OnPointerPressed(", StringComparison.Ordinal);
         Assert.True(press >= 0);
         Assert.Contains("e.Pointer.Capture(this);",
-                        canvas[press..canvas.IndexOf("_viewModel.OnPointerPressed(", press, StringComparison.Ordinal)],
+                        // EditTarget?, not _viewModel: the read-only gate the 2026-09-19 board-panel
+                        // commit put every mutating call site behind. The span being scanned is the
+                        // same one — overlay press through to the layout's own press.
+                        canvas[press..canvas.IndexOf("EditTarget?.OnPointerPressed(", press, StringComparison.Ordinal)],
                         StringComparison.Ordinal);
 
         // The release is UNCONDITIONAL — a press consumed as a plain click captures too, and a

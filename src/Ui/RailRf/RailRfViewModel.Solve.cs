@@ -63,6 +63,9 @@ public sealed partial class RailRfViewModel
     {
         OnPropertyChanged(nameof(HasBoard));
         OnPropertyChanged(nameof(HasNoPickableNets));
+        OnPropertyChanged(nameof(TechnologyPath));
+        OnPropertyChanged(nameof(HasTechnologyFile));
+        OnPropertyChanged(nameof(EditTechnologyTip));
         ClearResults();
         RebuildBoardLayout();
         RebuildReferenceOptions();
@@ -172,7 +175,8 @@ public sealed partial class RailRfViewModel
     /// means the window and the headless report print the same sentence, which is the point of
     /// <c>Describe</c> existing on the record at all.
     /// </remarks>
-    public IReadOnlyList<string> PortLines => [.. Ports.Select(p => p.Describe())];
+    public IReadOnlyList<string> PortLines =>
+        [.. Ports.Select(p => p.Describe(BoardLengthFormat()))];
 
     /// <summary>
     /// Every breakdown row as the docked list reads it — label, drop, share, and how many netlist

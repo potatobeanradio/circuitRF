@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using CircuitRF.Render;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.Views.Match;
 
@@ -66,6 +67,7 @@ public partial class RailRfWindow : Window
 
             SyncTabs();
             BindBoardOverlay(vm);
+            BindBoardRulerUnits();
             vm.PropertyChanged += OnVmPropertyChanged;
         };
     }
@@ -110,6 +112,19 @@ public partial class RailRfWindow : Window
         // ANCHOR control to reach the top level, and the window is the only thing here that is one.
         // Everything ABOUT the picture is RailGraphicExport's; this is dispatch.
         BoardCanvas.ClipboardCopyRequested += (_, _) => CopyBoard();
+
+        // ── The margin rulers (owner, 2026-09-19) ───────────────────────────────────────────
+        //
+        // LayoutEditorView's own three calls, on the same control: it holds no state, so mirroring
+        // the canvas IS the whole of driving it. The cursor line is part of it and not an extra —
+        // the readout says what is under the pointer and the ruler says WHERE that is.
+        BoardCanvas.ViewportChanged    += (_, _) => SyncBoardRulers();
+        BoardCanvas.LayoutUpdated      += (_, _) => SyncBoardRulers();
+        BoardCanvas.CursorWorldChanged += (_, world) =>
+        {
+            BoardHRuler.SetCursorWorld(world?.X);
+            BoardVRuler.SetCursorWorld(world?.Y);
+        };
 
         ActualThemeVariantChanged += (_, _) => ApplyMapTheme();
         AttachedToVisualTree += (_, _) =>
@@ -243,6 +258,30 @@ public partial class RailRfWindow : Window
         BoardCanvas.Focus();
     }
 
+    /// <summary>
+    /// Opens the <c>.ctech</c> this board is priced against, in the workspace's own technology editor.
+    /// </summary>
+    /// <remarks>
+    /// <b>The workspace's own command, not a second editor</b> — the same
+    /// <c>OpenTechnologyDocument</c> the layout editor's "Edit…" row calls, so the file opens as the
+    /// one document the application already has for it, with its own dirty state and its own save.
+    /// railRF is an unowned window and the workspace is behind it, so the workspace window is brought
+    /// forward too: opening a document in a window nobody can see is indistinguishable from nothing
+    /// happening.
+    ///
+    /// <para>Nothing here writes the technology, and railRF does not have to be told when it changes —
+    /// <c>AdoptLiveArtwork</c> takes the re-resolved instance on the next activation, which is the
+    /// moment the user comes back from the edit.</para>
+    /// </remarks>
+    private void OnBoardEditTechnology(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.TechnologyPath is not { Length: > 0 } tech) return;
+        if (WorkspaceLocator.Any() is not { } workspace) return;
+
+        workspace.OpenTechnologyDocument(tech);
+        WorkspaceLocator.WindowFor(workspace)?.Activate();
+    }
+
     /// <summary>The view model, or null before one is bound.</summary>
     private RailRfViewModel? Vm => DataContext as RailRfViewModel;
 
@@ -251,6 +290,57 @@ public partial class RailRfWindow : Window
         if (e.PropertyName is nameof(RailRfViewModel.SelectedBoardOverlay)
                            or nameof(RailRfViewModel.SelectedResultsTab))
             SyncTabs();
+
+        // A new board is a new LayoutEditorViewModel — and with it a new resolution and a new unit
+        // for the rulers to label in.
+        else if (e.PropertyName is nameof(RailRfViewModel.BoardLayout))
+            BindBoardRulerUnits();
+    }
+
+    // ── The margin rulers ────────────────────────────────────────────────────────────
+
+    private void SyncBoardRulers()
+    {
+        BoardHRuler.SetViewport(BoardCanvas.CurrentPanX, BoardCanvas.CurrentPanY, BoardCanvas.CurrentZoom,
+                                BoardCanvas.Bounds.Width, BoardCanvas.Bounds.Height);
+        BoardVRuler.SetViewport(BoardCanvas.CurrentPanX, BoardCanvas.CurrentPanY, BoardCanvas.CurrentZoom,
+                                BoardCanvas.Bounds.Width, BoardCanvas.Bounds.Height);
+    }
+
+    private LayoutEditorViewModel? _rulerUnitsFrom;
+
+    /// <summary>
+    /// Labels both rulers in the board's own unit, and keeps them there.
+    /// </summary>
+    /// <remarks>
+    /// <b>Subscribed, not read once</b> — <c>LayoutEditorView</c>'s own shape, for a reason this
+    /// window feels harder: the unit can change in the OTHER window, on the model both are bound to,
+    /// and the view model this one holds is told about it by <c>RefreshIfUnitChanged</c>. A ruler
+    /// labelled in millimetres beside rows labelled in micrometres is worse than either.
+    /// </remarks>
+    private void BindBoardRulerUnits()
+    {
+        if (_rulerUnitsFrom is not null)
+            _rulerUnitsFrom.PropertyChanged -= OnBoardLayoutPropertyChanged;
+
+        _rulerUnitsFrom = Vm?.BoardLayout;
+        if (_rulerUnitsFrom is null) return;
+
+        _rulerUnitsFrom.PropertyChanged += OnBoardLayoutPropertyChanged;
+        ApplyBoardRulerUnits(_rulerUnitsFrom);
+        SyncBoardRulers();
+    }
+
+    private void OnBoardLayoutPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is LayoutEditorViewModel vm && e.PropertyName is nameof(LayoutEditorViewModel.DisplayUnit))
+            ApplyBoardRulerUnits(vm);
+    }
+
+    private void ApplyBoardRulerUnits(LayoutEditorViewModel vm)
+    {
+        BoardHRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
+        BoardVRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
     }
 
     private void SetOverlay(RailBoardOverlay overlay)

@@ -39,13 +39,25 @@ public sealed record RailPortDrop(
     /// <summary>True where this row states no current: observed, and nothing else.</summary>
     public bool IsObservationOnly => CurrentA is null;
 
-    /// <summary>The row as a report prints it, with the observation case SAID.</summary>
-    public string Describe() =>
-        IsObservationOnly
-            ? $"{Name}: {VoltageV:0.####} V — observed (it states no current and draws none)"
-            : $"{Name}: {VoltageV:0.####} V" +
+    /// <summary>
+    /// The row as a report prints it, with the observation case SAID.
+    /// </summary>
+    /// <param name="format">
+    /// The units to spell this port's own anchor in, or null to keep <see cref="Name"/> — the anchor
+    /// described in whatever units the RUN was asked for. The window passes the board's CURRENT units,
+    /// because changing a display unit changes no number in this result and it should not take a
+    /// re-solve to see the coordinate re-spelled (owner, 2026-09-19).
+    /// </param>
+    public string Describe(RailLengthFormat? format = null)
+    {
+        string name = format is { } f ? Anchor.Describe(f) : Name;
+
+        return IsObservationOnly
+            ? $"{name}: {VoltageV:0.####} V — observed (it states no current and draws none)"
+            : $"{name}: {VoltageV:0.####} V" +
               (DropV is { } d ? $", {d * 1e3:0.###} mV below the source" : "") +
               $", drawing {CurrentA!.Value * 1e3:0.###} mA";
+    }
 }
 
 /// <summary>

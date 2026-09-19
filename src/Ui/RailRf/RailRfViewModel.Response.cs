@@ -158,6 +158,14 @@ public sealed partial class RailRfViewModel
             Sources = sources,
             Model   = kind,
 
+            // The BOARD's units, exactly as BuildRequest passes them to the DC run (owner,
+            // 2026-09-19). Without it every port this sweep names — the mask verdict's rows, the
+            // plot's own trace labels, the coincidence table — took PdnSweepRequest's default and
+            // printed a coordinate anchor as a bare DBU integer, which is the one spelling the whole
+            // of RailLengthFormat exists to stop. The DC side passed it and the frequency side did
+            // not, so the two halves of one window disagreed about the same port.
+            LengthFormat = BoardLengthFormat(),
+
             // ── R-rail14-4: ON, because §4.4 says it is not optional ───────────────────────────
             //
             // "Plane resonances are narrow and a log grid steps straight over one." The anti-
@@ -222,7 +230,9 @@ public sealed partial class RailRfViewModel
 
     /// <summary>The mask verdict per observation port — the pass or the violations, with margins.</summary>
     public IReadOnlyList<string> MaskLines =>
-        Sweep is { } s ? [.. s.Ports.Select(p => $"{p.Name}: {p.MaskReport.Describe()}")] : [];
+        Sweep is { } s
+            ? [.. s.Ports.Select(p => $"{p.NameIn(BoardLengthFormat())}: {p.MaskReport.Describe()}")]
+            : [];
 
     /// <summary>
     /// §2.4's short list — every anti-resonance within a stated fraction of an aggressor line, worst

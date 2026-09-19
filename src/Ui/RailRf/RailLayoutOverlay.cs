@@ -171,8 +171,31 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
     // ── draw ──────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The drawing layers the technology says are not visible — <b>supplied by the host</b>, so the
+    /// map comes off a layer at the same moment the copper under it does (owner, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// Held rather than derived: this overlay has no technology and is not given one, for the reason
+    /// this file's header states — it draws what the result produced and decides nothing. What layer
+    /// visibility IS is a property of the frame's technology, which is the canvas's own input.
+    /// </remarks>
+    public IReadOnlySet<LayerKey> HiddenLayers
+    {
+        get => _hiddenLayers;
+        set
+        {
+            var next = value ?? (IReadOnlySet<LayerKey>)new HashSet<LayerKey>();
+            if (_hiddenLayers.SetEquals(next)) return;
+            _hiddenLayers = next;
+            OverlayChanged?.Invoke();       // visibility only: the SCENE is unchanged, so it is kept
+        }
+    }
+
+    private IReadOnlySet<LayerKey> _hiddenLayers = new HashSet<LayerKey>();
+
     public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme) =>
-        RailMapRenderer.Draw(canvas, Scene, viewport, _theme);
+        RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers);
 
     /// <summary>
     /// The union of the map, the legend, the source and load markers and the via callouts — <b>not

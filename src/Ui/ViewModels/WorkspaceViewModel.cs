@@ -1172,7 +1172,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
             doc.ViewModel.ApplyTechResolution(resolution);
         }
+
+        TechnologyReResolved?.Invoke(changedPath);
     }
+
+    /// <summary>
+    /// A <c>.ctech</c> has been re-read and every open layout document re-resolved against it.
+    /// </summary>
+    /// <remarks>
+    /// <b>For the windows that are not documents</b> — railRF's board panel is one (owner,
+    /// 2026-09-19: a layer's <c>Vis</c> turned off updated the layout editor instantly and left the
+    /// railRF board drawing it). The loop above reaches everything in the dock; an unowned tool window
+    /// holding its own resolution has no way to hear about this at all, and asking it to re-check when
+    /// it is next activated is not the same thing as it following the edit.
+    ///
+    /// <para>The argument is the changed path, so a listener can ignore an edit to a technology it is
+    /// not using. It is raised AFTER the documents have been refreshed, so a listener that then asks
+    /// this workspace to resolve gets the new answer.</para>
+    /// </remarks>
+    public event Action<string>? TechnologyReResolved;
+
+    /// <summary>
+    /// The technology a <c>.clay</c> resolves to <b>through this workspace's own cache</b> — which is
+    /// where an unsaved live <c>.ctech</c> edit lives, so this is the reading the open documents have
+    /// rather than what is on disk.
+    /// </summary>
+    public Technology? ResolveTechnologyForLayout(string clayPath, string? techRef) =>
+        ResolveTechFor(techRef, clayPath).Tech;
 
     /// <summary>Re-resolves every open layout document, regardless of which path it previously
     /// resolved against. Used by SetAsWorkspaceDefault, where the default itself changed —
@@ -1185,6 +1211,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
             doc.ViewModel.ApplyTechResolution(resolution);
         }
+
+        // The default itself moved, so no one path names what changed — an empty string says
+        // "whatever you are using, ask again".
+        TechnologyReResolved?.Invoke("");
     }
 
     // ---- Helpers -------------------------------------------------------------
@@ -10843,6 +10873,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     internal LayoutView? LiveLayoutModel(string absClayPath) =>
         _layoutRegistry.TryGet(Path.GetFullPath(absClayPath), out var vm) && vm is not null
             ? vm.Model
+            : null;
+
+    /// <summary>
+    /// The technology the live session for that <c>.clay</c> is currently resolved against, or null
+    /// where no session is open on it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The session's instance, deliberately — not a fresh resolution</b> (owner, 2026-09-19: a
+    /// layer's <c>Vis</c> turned off in the <c>.ctech</c> stayed drawn on railRF's board). That
+    /// instance is what <see cref="OnTechnologyChanged"/> replaces when the cache invalidates a
+    /// <c>.ctech</c>, so a window that adopts it follows a live technology edit by the mechanism that
+    /// already exists rather than by re-reading the file on its own account — and two windows drawing
+    /// one board cannot end up on two readings of one stackup.
+    /// </remarks>
+    internal Technology? LiveLayoutTechnology(string absClayPath) =>
+        _layoutRegistry.TryGet(Path.GetFullPath(absClayPath), out var vm) && vm is not null
+            ? vm.Technology
             : null;
 
     /// <summary>Layout counterpart of <see cref="DiscardSessionIfUnreferenced"/>.</summary>

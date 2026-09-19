@@ -95,6 +95,14 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding"    Value="0"/>
         </Style>
+        <!-- THE SELECTED ROW IS VISIBLE. The rule above painted every row transparent in every
+             state, selection included, so a list whose "−" button acts on the selection gave no sign
+             of what it was about to act on — and with nothing selected the button did nothing at all,
+             which reads as a broken button (owner, 2026-09-19). The button is disabled in that state
+             now; this is the other half. -->
+        <Style Selector="ListBox.rows ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumLowColor}"/>
+        </Style>
 
         <Style Selector="TextBlock.panelhdr">
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -582,6 +590,18 @@
                                     ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3">
                                 <mi:MaterialIcon Kind="Magnify" Width="14" Height="14"/>
                             </Button>
+                            <!-- The stackup this board is priced against, in its own editor (owner,
+                                 2026-09-19). It is beside the zoom buttons because the question that
+                                 sends a user there is usually about the PICTURE — a layer that should
+                                 not be drawn — and the answer is a Vis box in that file. Hidden rather
+                                 than disabled where the board resolved no `.ctech` path: there is no
+                                 file to open, and a dead button invites a click that says nothing. -->
+                            <Button Name="BoardEditTechBtn" Click="OnBoardEditTechnology"
+                                    IsVisible="{Binding HasTechnologyFile}"
+                                    ToolTip.Tip="{Binding EditTechnologyTip}" Padding="6,3"
+                                    Margin="6,0,0,0">
+                                <mi:MaterialIcon Kind="LayersTriple" Width="14" Height="14"/>
+                            </Button>
                         </StackPanel>
                         <!-- The tab strip switches the OVERLAY and NEVER the geometry (§11.3). The
                              artwork underneath is the same on all four; brief 8 draws each map. -->
@@ -608,6 +628,30 @@
                          gesture and every pixel of overlay is brief 8's, through the CanvasOverlay
                          seam wBond already uses. -->
                     <Border Grid.Row="1" Classes="card" Margin="0" ClipToBounds="True">
+                        <!-- THE LAYOUT EDITOR'S OWN RULERS, the same control (owner, 2026-09-19).
+                             Every coordinate this window prints — a source, a load, a part's
+                             placement, the readout under the cursor — is a place on this artwork, and
+                             without a scale in the margin there was nothing on the picture to find it
+                             against. LayoutRulerControl is driven entirely from code-behind and holds
+                             no state of its own, so hosting it here is the same three calls the layout
+                             editor makes and cannot drift from it.
+
+                             Hidden with the canvas: the empty state's sentence is centred, and a
+                             ruler frame around "no board yet" is chrome for a picture that is not
+                             there. -->
+                        <DockPanel>
+                            <DockPanel Name="BoardRulerRow" DockPanel.Dock="Top" Height="22"
+                                       IsVisible="{Binding HasBoard}">
+                                <Border DockPanel.Dock="Left" Width="26"
+                                        Background="{DynamicResource SystemChromeMediumLowColor}"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                        BorderThickness="0,0,1,1"/>
+                                <ctl:LayoutRulerControl Name="BoardHRuler" Orientation="Horizontal"
+                                                        ClipToBounds="True"/>
+                            </DockPanel>
+                            <ctl:LayoutRulerControl Name="BoardVRuler" DockPanel.Dock="Left" Width="26"
+                                                    Orientation="Vertical" ClipToBounds="True"
+                                                    IsVisible="{Binding HasBoard}"/>
                         <Panel>
                             <!-- HIDDEN UNTIL THERE IS A BOARD, because the map overlay draws a
                                  CENTRED note of its own ("No result yet. Run the rail.") and the
@@ -647,6 +691,7 @@
                                        IsVisible="{Binding !HasBoard}"
                                        Text="No board yet. Import one — the artwork lands in the open workspace as an ordinary cell with a layout view."/>
                         </Panel>
+                        </DockPanel>
                     </Border>
 
                     <!-- ── Aggressors: an INPUT, not a decoration (§2.2) ────────
@@ -669,7 +714,8 @@
                                 <Button Grid.Column="3" Content="−" FontSize="10" Padding="6,0"
                                         MinHeight="0" Margin="0,0,0,2"
                                         Command="{Binding RemoveAggressorCommand}"
-                                        CommandParameter="{Binding #AggressorList.SelectedItem}"/>
+                                        CommandParameter="{Binding #AggressorList.SelectedItem}"
+                                        ToolTip.Tip="Remove the selected aggressor"/>
                             </Grid>
                             <ListBox Name="AggressorList" Classes="rows" MaxHeight="70"
                                      ItemsSource="{Binding Aggressors}">
@@ -700,7 +746,7 @@
                                  This is R-rail7-2's one exception and it is an owner decision: any
                                  centring here is a misalignment the user can see. -->
                             <Grid Grid.Row="1" Name="PartsHeader"
-                                  ColumnDefinitions="60,*,70,70,90,70,60">
+                                  ColumnDefinitions="60,*,70,70,90,70,60,96">
                                 <Button Classes="gridhdr" Content="refdes"/>
                                 <Button Grid.Column="1" Classes="gridhdr" Content="part number"/>
                                 <Button Grid.Column="2" Classes="gridhdr" Content="marked"/>
@@ -708,6 +754,12 @@
                                 <Button Grid.Column="4" Classes="gridhdr" Content="model source"/>
                                 <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
                                 <Button Grid.Column="6" Classes="gridhdr" Content="L mount"/>
+                                <!-- WHERE IT IS, or that nothing says. Without this column the table
+                                     was a list of parts with no visible relationship to the artwork
+                                     beside it, and a reader looking for C1 on the board had nothing
+                                     to tell them that railRF does not know where C1 is either
+                                     (owner, 2026-09-19). -->
+                                <Button Grid.Column="7" Classes="gridhdr" Content="where"/>
                             </Grid>
                             <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
                                  MaxHeight constrains the MEASURE and does not clip, so a list taller
@@ -721,7 +773,7 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="60,*,70,70,90,70,60" Margin="0,1"
+                                        <Grid ColumnDefinitions="60,*,70,70,90,70,60,96" Margin="0,1"
                                               Classes.unresolved="{Binding IsUnresolved}">
                                             <!-- WHERE THE ROW CAME FROM, on the row's own face
                                                  (R-rail18-5a) — typed on the rail, or pre-filled
@@ -742,6 +794,9 @@
                                                        HorizontalAlignment="Left" Text="{Binding EsrText}"/>
                                             <TextBlock Grid.Column="6" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding MountingInductanceText}"/>
+                                            <TextBlock Grid.Column="7" Classes="detailLabel"
+                                                       HorizontalAlignment="Left" Text="{Binding PositionText}"
+                                                       ToolTip.Tip="{Binding PositionTooltip}"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>

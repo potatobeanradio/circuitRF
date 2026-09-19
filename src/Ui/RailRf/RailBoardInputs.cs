@@ -44,6 +44,17 @@ public sealed record RailBoardInputs
     /// <summary>The stackup.</summary>
     public required Technology Technology { get; init; }
 
+    /// <summary>
+    /// The <c>.ctech</c> the stackup was read from, absolute, or null where the resolution produced no
+    /// path (an in-memory technology — the import path's own).
+    /// </summary>
+    /// <remarks>
+    /// Carried so the window can OPEN it (owner, 2026-09-19: the layer whose <c>Vis</c> needs turning
+    /// off is in that file, and hunting for it in the project tree is a detour out of the window the
+    /// question was asked in). Nothing here reads the file; this is the address.
+    /// </remarks>
+    public string? TechPath { get; init; }
+
     /// <summary>The artwork's DBU resolution.</summary>
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 

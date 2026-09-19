@@ -905,7 +905,34 @@ public sealed class LayoutPin
 public sealed class LayoutView
 {
     public int DbuPerMicron { get; set; } = LayoutUnits.DefaultDbuPerMicron;
-    public LayoutUnit DisplayUnit { get; set; } = LayoutUnit.Um;
+
+    /// <summary>
+    /// How this document's lengths are SPELLED. Storage is DBU either way; this is the reading.
+    /// </summary>
+    /// <remarks>
+    /// <b>It raises <see cref="DisplayUnitChanged"/> and deliberately NOT <see cref="Changed"/></b>.
+    /// The two are different kinds of event: <c>Changed</c> says the GEOMETRY moved, and the spatial
+    /// index, the path caches and the undo stack all hang off it — a unit is a document preference and
+    /// belongs to none of them. But it is still shared state on a shared model, and a second window on
+    /// this same view (railRF's board panel is one) has no other way to learn that the unit it is
+    /// printing in is no longer the document's.
+    /// </remarks>
+    public LayoutUnit DisplayUnit
+    {
+        get => _displayUnit;
+        set
+        {
+            if (_displayUnit == value) return;
+            _displayUnit = value;
+            DisplayUnitChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private LayoutUnit _displayUnit = LayoutUnit.Um;
+
+    /// <summary>Raised when <see cref="DisplayUnit"/> changes — and only then. See its own note for
+    /// why this is not <see cref="Changed"/>.</summary>
+    public event EventHandler? DisplayUnitChanged;
     public long SnapDbu { get; set; }
     public AngleMode AngleMode { get; set; } = AngleMode.AnyAngle;
 

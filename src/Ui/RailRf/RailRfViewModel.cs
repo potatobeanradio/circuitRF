@@ -187,7 +187,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         {
             foreach (var s in rail.Sources) Sources.Add(Track(new RailSourceRowViewModel(rail, s, BoardLengthFormat)));
             foreach (var l in rail.Loads) Loads.Add(Track(new RailLoadRowViewModel(rail, l, BoardLengthFormat)));
-            foreach (var a in rail.Aggressors) Aggressors.Add(Track(new RailAggressorRowViewModel(rail, a)));
+            for (int i = 0; i < rail.Aggressors.Count; i++)
+                Aggressors.Add(Track(new RailAggressorRowViewModel(rail, rail.Aggressors[i], i)));
         }
 
         RebuildReferenceOptions();
@@ -230,7 +231,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         QueueResolve();
     }
 
-    [RelayCommand]
+    /// <inheritdoc cref="CanRemoveAggressor"/>
+    private static bool CanRemoveSource(RailSourceRowViewModel? row) => row is not null;
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSource))]
     private void RemoveSource(RailSourceRowViewModel? row)
     {
         if (SelectedRail is not { } rail || row is null) return;
@@ -250,7 +254,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         QueueResolve();
     }
 
-    [RelayCommand]
+    /// <inheritdoc cref="CanRemoveAggressor"/>
+    private static bool CanRemoveLoad(RailLoadRowViewModel? row) => row is not null;
+
+    [RelayCommand(CanExecute = nameof(CanRemoveLoad))]
     private void RemoveLoad(RailLoadRowViewModel? row)
     {
         if (SelectedRail is not { } rail || row is null) return;
@@ -267,13 +274,37 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         RebuildForSelectedRail();
     }
 
-    [RelayCommand]
+    /// <summary>
+    /// Removes the selected aggressor — <b>by position</b>.
+    /// </summary>
+    /// <remarks>
+    /// <c>List.Remove</c> of a RECORD removes the first EQUAL one, so with two unedited rows (the add
+    /// button makes identical ones) it took the wrong row away, and the row the user had selected
+    /// stayed exactly where it was — which is the reported "the − button does not do anything"
+    /// (owner, 2026-09-19). <see cref="RailAggressorRowViewModel.Index"/> carries the whole of the
+    /// fix; see its own note.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanRemoveAggressor))]
     private void RemoveAggressor(RailAggressorRowViewModel? row)
     {
         if (SelectedRail is not { } rail || row is null) return;
-        rail.Aggressors.Remove(row.Aggressor);
+
+        int i = row.ResolveIndex();
+        if (i < 0) return;
+
+        rail.Aggressors.RemoveAt(i);
         RebuildForSelectedRail();
     }
+
+    /// <summary>
+    /// False with nothing selected, which GREYS the button.
+    /// </summary>
+    /// <remarks>
+    /// The three remove buttons take the list's <c>SelectedItem</c> as their parameter, and with no
+    /// selection that is null and the command did nothing at all — indistinguishable from a broken
+    /// button, and these rows do not paint an obvious selection. Disabled says which of the two it is.
+    /// </remarks>
+    private static bool CanRemoveAggressor(RailAggressorRowViewModel? row) => row is not null;
 
     // ── The reference layer: PROPOSED, never assumed (§2.2, Q-8, R-rail7-8) ────────────────────
 

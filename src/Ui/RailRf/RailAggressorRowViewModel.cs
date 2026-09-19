@@ -20,11 +20,38 @@ public sealed partial class RailAggressorRowViewModel : ObservableObject
 {
     private readonly RailSpec _rail;
 
-    public RailAggressorRowViewModel(RailSpec rail, RailAggressor aggressor)
+    /// <summary>
+    /// Where this row sits in <see cref="RailSpec.Aggressors"/> — <b>the row's identity</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A position, not a value, and the difference is a reported bug</b> (owner, 2026-09-19: "−"
+    /// appeared to do nothing). <see cref="RailAggressor"/> is a RECORD, so two rows added with the
+    /// button and not yet edited are EQUAL — and a lookup by value then answers 0 for both. Every edit
+    /// on the second row landed on the first, and removing the second removed the first, which from
+    /// the outside is a button that does nothing or the wrong thing depending on which row you were
+    /// looking at. The sources and loads beside it are classes and never had this: they are found by
+    /// reference.
+    ///
+    /// <para>Valid because the rows are rebuilt from the list on every mutation, and checked anyway
+    /// before it is used — an index that no longer names this record falls back to the old search
+    /// rather than writing to whatever is now at that position.</para>
+    /// </remarks>
+    public int Index { get; }
+
+    public RailAggressorRowViewModel(RailSpec rail, RailAggressor aggressor, int index)
     {
         _rail = rail;
         _aggressor = aggressor;
+        Index = index;
     }
+
+    /// <summary>
+    /// Where this row's record actually is, or -1. <see cref="Index"/> where that still names it.
+    /// </summary>
+    internal int ResolveIndex() =>
+        Index >= 0 && Index < _rail.Aggressors.Count && _rail.Aggressors[Index] == _aggressor
+            ? Index
+            : _rail.Aggressors.IndexOf(_aggressor);
 
     private RailAggressor _aggressor;
 
@@ -76,7 +103,7 @@ public sealed partial class RailAggressorRowViewModel : ObservableObject
 
     private void Commit(RailAggressor next)
     {
-        int i = _rail.Aggressors.IndexOf(_aggressor);
+        int i = ResolveIndex();
         if (i < 0) return;
 
         // A REJECTED edit still notifies, and that is not belt-and-braces. An InlineEditText at rest

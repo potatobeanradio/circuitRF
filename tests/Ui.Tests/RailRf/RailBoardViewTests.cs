@@ -129,6 +129,42 @@ public sealed class RailBoardViewTests
                   + "so the shrink was not the fix for anything.");
     }
 
+    /// <summary>
+    /// An empty tab's own sentence <b>wraps to the panel</b> instead of running off both edges.
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19, pressing |Z| before a plane run: the note is twenty words and it was drawn
+    /// as ONE centred line, so what was readable was the middle of it — and the half a reader needs,
+    /// the instruction at the end, was one of the halves that went.
+    ///
+    /// <para>The second assertion is what gives the first its teeth: at full size on one line this
+    /// sentence really is wider than the panel, so the wrap is the fix for something.</para>
+    /// </remarks>
+    [Fact]
+    public void ALongNoteWrapsToThePanelRatherThanRunningOffBothEdges()
+    {
+        // The |Z| tab with no plane answer — the note the owner hit, taken from the scene itself
+        // rather than retyped, so this cannot pass against a sentence nothing shows.
+        string note = RailMapScene.Build(ResultOf(out _), RailMapKind.Impedance, Dbu).Note!;
+        Assert.Contains("separate run", note, StringComparison.Ordinal);
+
+        const float W = 420, H = 300;
+        var layout = RailMapRenderer.LayOutNote(note, W, H);
+
+        using var full = new SKFont(SkiaFonts.PlexRegular, RailMapRenderer.NoteSizePx);
+        Assert.True(full.MeasureText(note) > W,
+                    "this note already fitted on one line, so this test is not exercising the wrap.");
+
+        Assert.True(layout.Lines.Count > 1, "the note was not wrapped.");
+        Assert.True(layout.Box.Width <= W - 2 * RailMapRenderer.NoteMarginPx,
+                    $"a line is {layout.Box.Width:0} px wide in a {W:0} px panel.");
+        Assert.True(layout.Box.Top >= 0 && layout.Box.Bottom <= H, "the block runs off the panel.");
+
+        // Nothing is dropped and nothing is invented: the lines ARE the sentence.
+        Assert.Equal(string.Join(" ", note.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)),
+                     string.Join(" ", layout.Lines));
+    }
+
     /// <summary>The three label boxes as they were laid out before R-rail18-4 — full size, left,
     /// centre and right. Built from the SAME measurement the renderer uses (a layout over a plate
     /// wide enough that nothing scales), so this is the old behaviour rather than a second guess at
@@ -809,6 +845,41 @@ public sealed class RailBoardViewTests
             overlay.Kind = kind;
             Assert.Equal(RenderOverlay(overlay, SKColors.White), RenderOverlay(overlay, SKColors.White));
         }
+    }
+
+    /// <summary>
+    /// A drawing layer the technology is not drawing <b>comes off the map too</b>.
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: a layer turned off in the <c>.ctech</c> stayed on railRF's board. Adopting the
+    /// re-resolved technology takes its COPPER off, and this is the other half — the shading was laid
+    /// over that copper, so a map left behind would be a drop field floating on a board with nothing
+    /// under it.
+    ///
+    /// <para>Driven as a differential render rather than by counting tiles: what is claimed is about
+    /// the picture, and a scene filtered in the right place still has every tile in it (visibility is a
+    /// property of the frame's technology, not of the result).</para>
+    /// </remarks>
+    [Fact]
+    public void ALayerTheTechnologyHidesIsNotPaintedOnTheMap()
+    {
+        var overlay = WithResult(out _);
+        overlay.Kind = RailMapKind.Drop;
+
+        var layers = overlay.Scene.Tiles.Select(t => t.Layer).Distinct().ToList();
+        Assert.NotEmpty(layers);
+
+        var all = RenderOverlay(overlay, SKColors.White);
+
+        overlay.HiddenLayers = new HashSet<LayerKey>(layers);
+        var none = RenderOverlay(overlay, SKColors.White);
+        Assert.NotEqual(all, none);
+
+        // Hiding every layer the map paints on leaves the tiles out entirely — what is left is the
+        // legend and the markers, which belong to no drawing layer and are not visibility's to hide.
+        overlay.Result = null;
+        overlay.HiddenLayers = new HashSet<LayerKey>();
+        Assert.NotEqual(none, RenderOverlay(overlay, SKColors.White));
     }
 
     // ══ R-rail8-11 — the classification is a REQUIREMENT, and it is correctable ══════════════

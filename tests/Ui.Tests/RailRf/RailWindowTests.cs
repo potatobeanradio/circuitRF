@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
+using CircuitRF.Engine.Pdn;
 using CircuitRF.Ui.RailRf;
 using Xunit;
 
@@ -939,6 +940,11 @@ public class RailWindowTests
         Assert.NotNull(vm.Board!.Technology);
         Assert.NotNull(vm.PartLibrary);
 
+        // And the `.ctech` it resolved is CARRIED, not just its contents — the board panel offers to
+        // OPEN it (owner, 2026-09-19), and the path is resolved in three places that can each forget.
+        Assert.True(vm.HasTechnologyFile, "the board resolved a technology but not the file it came from.");
+        Assert.EndsWith(".ctech", vm.TechnologyPath!, StringComparison.OrdinalIgnoreCase);
+
         // And the README's next word is "press Run" — which is only true if the reference the
         // document already names is one this stackup offers, so no click is charged for a decision
         // somebody made when they saved the file.
@@ -1328,6 +1334,179 @@ public class RailWindowTests
 
         Assert.Equal(1, restated);
         Assert.Equal("(26500, 9875) µm", row.Anchor);
+    }
+
+    /// <summary>
+    /// Removing an aggressor takes away <b>the row that was selected</b>, with duplicates present.
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-19: "+" adds one and "−" does not take it away. <c>RailAggressor</c> is a record
+    /// and the add button makes identical ones, so <c>List.Remove</c> took the FIRST equal row —
+    /// leaving the selected row on screen, untouched, which is a button that does nothing as far as
+    /// anyone watching it is concerned. Two unedited rows is the whole fixture; one row could never
+    /// have shown it.
+    /// </remarks>
+    [Fact]
+    public void RemovingAnAggressorTakesTheSelectedRow_EvenWhenTheRowsAreIdentical()
+    {
+        var vm = Window(OneRail());
+
+        vm.AddAggressorCommand.Execute(null);
+        vm.AddAggressorCommand.Execute(null);
+        Assert.Equal(2, vm.Aggressors.Count);
+
+        // Tell them apart by what the DOCUMENT holds, after editing the second one only.
+        vm.Aggressors[1].Name = "second";
+        Assert.Equal("new",    vm.SelectedRail!.Aggressors[0].Name);
+        Assert.Equal("second", vm.SelectedRail!.Aggressors[1].Name);
+
+        vm.RemoveAggressorCommand.Execute(vm.Aggressors[1]);
+
+        var left = Assert.Single(vm.SelectedRail!.Aggressors);
+        Assert.Equal("new", left.Name);
+
+        // And with nothing selected the button is DISABLED rather than silently inert.
+        Assert.False(vm.RemoveAggressorCommand.CanExecute(null));
+        Assert.True(vm.RemoveAggressorCommand.CanExecute(vm.Aggressors[0]));
+    }
+
+    /// <summary>
+    /// Adopting a re-resolved technology <b>keeps the canvas</b> and drops the numbers.
+    /// </summary>
+    /// <remarks>
+    /// The owner turned a layer's <c>Vis</c> off in the <c>.ctech</c> and railRF went on drawing it:
+    /// this window held the instance it resolved when the board was opened and nothing replaced it.
+    /// The two halves asserted here are the ones that are easy to get wrong in opposite directions —
+    /// the drawing has to follow, and the VIEWPORT must not be thrown away doing it (assigning
+    /// <c>Board</c> would rebuild the <c>LayoutEditorViewModel</c> and with it the pan and zoom the
+    /// user is looking at).
+    /// </remarks>
+    [Fact]
+    public void AdoptingAReResolvedTechnologyKeepsTheCanvasAndDropsTheNumbers()
+    {
+        var vm = Ready(out _);
+        vm.RunCommand.Execute(null);
+        Assert.NotEmpty(vm.ByModel);
+
+        var canvas = vm.BoardLayout;
+        Assert.NotNull(canvas);
+
+        var replacement = new Technology();
+        vm.AdoptTechnology(replacement);
+
+        Assert.Same(canvas, vm.BoardLayout);                 // the viewport survived
+        Assert.Same(replacement, canvas!.Technology);        // and the drawing follows
+        Assert.Same(replacement, vm.Board!.Technology);      // as does the next run's stackup
+        Assert.Empty(vm.ByModel);                            // measured against the old one
+    }
+
+    /// <summary>
+    /// Turning a layer's visibility off <b>keeps the numbers</b> — and takes the layer off the map.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the rule above, and the half the owner's actual workflow needs: a <c>Vis</c>
+    /// box is a question about the PICTURE, so invalidating a solved rail for it would make every
+    /// toggle cost a re-run. What decides it is the STACKUP — thicknesses, conductivities, dielectrics
+    /// and the drawing layers each entry claims — and visibility is not in it.
+    /// </remarks>
+    [Fact]
+    public void HidingALayerKeepsTheResultAndTakesTheLayerOffTheMap()
+    {
+        var vm = Ready(out _);
+        vm.RunCommand.Execute(null);
+        Assert.NotEmpty(vm.ByModel);
+
+        var hidden = TechWithGround();
+        hidden.Layers[0].Visible = false;
+
+        vm.AdoptTechnology(hidden);
+
+        Assert.NotEmpty(vm.ByModel);                         // nothing about the copper changed
+        Assert.Contains(new LayerKey(1, 0), vm.BoardOverlayLayer.HiddenLayers);
+        Assert.DoesNotContain(new LayerKey(2, 0), vm.BoardOverlayLayer.HiddenLayers);
+    }
+
+    /// <summary>
+    /// The FREQUENCY answer names its ports in the board's units too — <b>"Against the target" was
+    /// the one readout still printing DBU</b> (owner, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// The DC request passed the board's <c>LengthFormat</c> and the sweep request did not, so it took
+    /// <c>PdnSweepRequest</c>'s own default and every port the sweep named — the mask verdict's rows,
+    /// the plot's trace labels — printed a coordinate anchor as a bare database integer. Two halves of
+    /// one window disagreeing about one port.
+    /// </remarks>
+    [Fact]
+    public void TheFrequencyRequestCarriesTheBoardsUnits()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var document = new RailDocument();
+        var rail = new RailSpec { Name = "+3V3", NetName = "+3V3" };
+        rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) } });
+        document.Rails.Add(rail);
+
+        var vm = new RailRfViewModel(document, null)
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+
+        var request = vm.BuildSweepRequest(PdnModelKind.Fast);
+        Assert.NotNull(request);
+        Assert.Equal(LayoutUnit.Mm, request!.LengthFormat.Unit);
+
+        // And a finished row re-states in whatever unit the board is in NOW, because a display unit
+        // changes no number in a result — it changes how one is spelled.
+        var port = new PdnPortImpedance(
+            0, rail.Loads[0].Anchor.Describe(request.LengthFormat), rail.Loads[0].Anchor,
+            [], null, PdnMask.Judge(null, [], [], false), [], []);
+
+        Assert.Equal("(26.5, 9.875) mm", port.Name);
+        Assert.Equal("(26500, 9875) µm", port.NameIn(new RailLengthFormat(LayoutUnit.Um, 1000)));
+    }
+
+    /// <summary>
+    /// A display-unit change re-states the window <b>while it is on screen</b>, with no activation.
+    /// </summary>
+    /// <remarks>
+    /// The unit deliberately stays off <c>LayoutView.Changed</c> — it is a preference, not geometry —
+    /// but it is shared state on a shared model, and railRF's board panel is a second window drawing
+    /// it. <c>DisplayUnitChanged</c> is that notification, and this drives the pair the way the window
+    /// wires them: the model raises, the view model re-states (owner, 2026-09-19).
+    /// </remarks>
+    [Fact]
+    public void ADisplayUnitChangeRestatesTheWindowWithoutWaitingForAnActivation()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
+        var document = new RailDocument();
+        var rail = new RailSpec { Name = "+3V3", NetName = "+3V3" };
+        rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) } });
+        document.Rails.Add(rail);
+
+        var vm = new RailRfViewModel(document, null)
+        {
+            Board = new RailBoardInputs
+            {
+                Shapes = view.Shapes, Technology = new Technology(), View = view,
+            },
+        };
+
+        // What RailRfWindow.WatchArtwork subscribes.
+        int raised = 0;
+        view.DisplayUnitChanged += (_, _) => { raised++; vm.RefreshIfUnitChanged(); };
+
+        var row = Assert.Single(vm.Loads);
+        Assert.Equal("(26.5, 9.875) mm", row.Anchor);
+
+        view.DisplayUnit = LayoutUnit.Um;
+        Assert.Equal(1, raised);
+        Assert.Equal("(26500, 9875) µm", row.Anchor);
+
+        // Setting it to what it already is is not a change, so nothing is re-stated for it.
+        view.DisplayUnit = LayoutUnit.Um;
+        Assert.Equal(1, raised);
     }
 
     private static string RepoRoot()

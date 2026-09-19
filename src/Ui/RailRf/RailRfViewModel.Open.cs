@@ -76,6 +76,7 @@ public sealed partial class RailRfViewModel
                 {
                     Shapes         = view.Shapes,
                     Technology     = tech,
+                    TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,
                     ArtworkCellRef = found.ClayPath,
                 };

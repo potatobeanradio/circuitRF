@@ -295,7 +295,10 @@ public class WBondRound5Tests
 
         Assert.Contains("_viewModel?.SetOverlaySnapMarker(_canvasOverlay?.SnapMarker)", code, StringComparison.Ordinal);
         Assert.Contains("if (_canvasOverlay.ConsumedPressWasEmptySpace)", code, StringComparison.Ordinal);
-        Assert.Contains("_viewModel.DeselectAllCommand.Execute(null)", code, StringComparison.Ordinal);
+        // EditTarget, not _viewModel: railRF's board canvas is read-only and every mutating call site
+        // goes through that one gate (2026-09-19 commit "the board panel is a VIEW of the .clay").
+        // The CLAIM is unchanged — an overlay press on empty space clears the layout's selection.
+        Assert.Contains("EditTarget?.DeselectAllCommand.Execute(null)", code, StringComparison.Ordinal);
     }
 
     private static string Read(params string[] parts)

@@ -64,17 +64,28 @@ public sealed partial class RailRfViewModel
     /// Re-states every unit-formatted string when the board's display unit has changed under us.
     /// </summary>
     /// <remarks>
-    /// <b>Changing a layout's display unit raises no <c>Changed</c> event, on purpose</b> — it is a
-    /// document PREFERENCE, not geometry, and the layout editor deliberately keeps it off the undo
-    /// stack and out of the change notification the spatial index listens to. So there is nothing to
-    /// subscribe to, and the window asks on ACTIVATION instead, which is the moment a user who just
-    /// changed the unit in the other window comes back to look at this one.
+    /// <b>Changing a layout's display unit stays off <c>Changed</c>, on purpose</b> — it is a document
+    /// PREFERENCE, not geometry, and it belongs on neither the undo stack nor the notification the
+    /// spatial index listens to. It raises <c>LayoutView.DisplayUnitChanged</c> instead, which is what
+    /// this window subscribes to, so the change lands while the user is looking at it rather than at
+    /// the next activation (owner, 2026-09-19 — two windows side by side is the ordinary case, and
+    /// "activate railRF to see the unit you just picked" is not a thing anyone would guess).
+    /// Activation still asks, for the window that was not watching this model yet.
+    ///
+    /// <para><b>Nothing is recomputed.</b> A unit is how a number is spelled, not what it is — so every
+    /// result stands, and what happens here is that each string is asked for again.</para>
     /// </remarks>
     public void RefreshIfUnitChanged()
     {
         var now = BoardLengthFormat();
         if (now == _lastLengthFormat) return;
         _lastLengthFormat = now;
+
+        // The board canvas holds its OWN LayoutEditorViewModel over the shared model (see
+        // RailRfWindow.LiveArtwork), and that view model captured the unit when it was built. Without
+        // this, the panel's own rulers and cursor readout go on reading in the old unit while every
+        // row beside them reads in the new one.
+        if (BoardLayout is { } canvas && !now.IsRawDbu) canvas.DisplayUnit = now.Unit;
 
         foreach (var row in Sources) row.NotifyAnchorChanged();
         foreach (var row in Loads)   row.NotifyAnchorChanged();
@@ -83,7 +94,30 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(MeshCellEntry));
         OnPropertyChanged(nameof(PortLines));
         OnPropertyChanged(nameof(BreakdownLines));
+
+        // The frequency half names the same ports — "Against the target" is a port and a verdict, and
+        // the port is a coordinate wherever the rail anchors one. Leaving this out is what would make
+        // "the units did not update" still true on the Frequency tab after the DC side was fixed.
+        //
+        // The anti-resonance, coincidence and removal rows are NOT here and it is not an omission:
+        // every field in them is a frequency, an impedance or a part refdes, so there is no length in
+        // any of them to re-state. The plane MODE rows carry a port name that this cannot re-state —
+        // it is the netlist's, spelled when the plane was extracted — and they follow the next Find.
+        OnPropertyChanged(nameof(MaskLines));
     }
+
+    /// <summary>The <c>.ctech</c> this board's stackup was read from, or null.</summary>
+    public string? TechnologyPath => Board?.TechPath;
+
+    /// <summary>True where there is a technology FILE to open — the button's own visibility.</summary>
+    public bool HasTechnologyFile => TechnologyPath is { Length: > 0 };
+
+    /// <summary>The button's tooltip, naming the file it opens.</summary>
+    public string EditTechnologyTip =>
+        TechnologyPath is { Length: > 0 } p
+            ? $"Open {System.IO.Path.GetFileName(p)} — the stackup this board is priced against, and "
+            + "where a layer's visibility is set."
+            : "This board resolved no .ctech file.";
 
     /// <summary>What the cursor is over on the board, or null. Published by the overlay; shown on
     /// the strip.</summary>
@@ -141,13 +175,18 @@ public sealed partial class RailRfViewModel
             view = new LayoutView
             {
                 DbuPerMicron = board.DbuPerMicron,
-                DisplayUnit  = LayoutUnit.Um,
+
+                // The TECHNOLOGY's unit, not a constant. This path has no document to take one from,
+                // and µm on a board whose stackup is stated in mils is a picture whose rulers disagree
+                // with every other reading of the same artwork.
+                DisplayUnit  = board.Technology.DefaultDisplayUnit,
             };
             foreach (var shape in board.Shapes) view.Shapes.Add(shape);
         }
 
         BoardLayout = new LayoutEditorViewModel(view) { Technology = board.Technology };
         BoardOverlayLayer.DbuPerMicron = board.DbuPerMicron;
+        SyncHiddenLayers();
     }
 
     /// <summary>
@@ -178,6 +217,88 @@ public sealed partial class RailRfViewModel
         RefreshRunGate();
         OnPropertyChanged(nameof(StatusLine));
     }
+
+    /// <summary>
+    /// The artwork's technology has been re-resolved elsewhere — adopt it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why this exists</b> (owner, 2026-09-19): a layer switched to <c>Vis</c> off in the
+    /// <c>.ctech</c> went on being drawn on railRF's board. The layout editor follows a live
+    /// technology edit because the workspace pushes the re-resolved instance into every open layout
+    /// document; this window held the instance it resolved once, when it opened the board, and nothing
+    /// ever replaced it. The drawing is only half of it — the stackup is what the copper is PRICED
+    /// against, so a window holding the old one would also solve against it.
+    ///
+    /// <para><b>The results go, for <see cref="NotifyArtworkChanged"/>'s reason.</b> Every number here
+    /// was computed against the stackup that has just been re-read, and railRF cannot tell a
+    /// visibility toggle from a copper thickness from the outside — so it says the numbers are of the
+    /// old one rather than leaving them sitting beside a board they may no longer describe. Re-running
+    /// is one keystroke.</para>
+    ///
+    /// <para><b>The BOARD is written to its backing field on purpose</b>, exactly as
+    /// <see cref="NotifyArtworkChanged"/> explains: assigning the property would rebuild the
+    /// <c>LayoutEditorViewModel</c> and take the viewport away from a user who is looking at it.</para>
+    /// </remarks>
+    public void AdoptTechnology(Technology technology)
+    {
+        ArgumentNullException.ThrowIfNull(technology);
+        if (Board is not { } board || ReferenceEquals(board.Technology, technology)) return;
+
+        bool physicsMoved = StackupSignature(board.Technology) != StackupSignature(technology);
+
+        // The generator forbids touching its field (MVVMTK0034) and that rule is right nearly
+        // everywhere; here the whole point is to change the value WITHOUT the notification, because
+        // the notification is what rebuilds the canvas. Suppressed at the one line rather than argued
+        // around with a second board property nothing else would use.
+#pragma warning disable MVVMTK0034
+        _board = board with { Technology = technology };
+#pragma warning restore MVVMTK0034
+
+        // The canvas reads its technology from this view model every frame and repaints on any of its
+        // property changes, so this one assignment is both halves: the new layer table and the frame
+        // that draws with it.
+        if (BoardLayout is { } canvas) canvas.Technology = technology;
+        SyncHiddenLayers();
+
+        if (!physicsMoved) return;
+
+        ClearResults();
+        SyncBoardOverlayResult();
+        RefreshRunGate();
+        OnPropertyChanged(nameof(StatusLine));
+    }
+
+    /// <summary>
+    /// Tells the overlay which drawing layers the technology is not drawing.
+    /// </summary>
+    /// <remarks>
+    /// The maps are laid OVER the artwork, so a layer the renderer skips has to take its shading with
+    /// it — otherwise turning a layer off in the <c>.ctech</c> removes the copper and leaves the drop
+    /// map of it floating on the board (owner, 2026-09-19).
+    /// </remarks>
+    private void SyncHiddenLayers() =>
+        BoardOverlayLayer.HiddenLayers = Board?.Technology is { } tech
+            ? new HashSet<LayerKey>(tech.Layers.Where(l => !l.Visible).Select(l => l.Key))
+            : new HashSet<LayerKey>();
+
+    /// <summary>
+    /// The part of a technology the SOLVE reads — its stackup, as text.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why there is a signature at all.</b> Adopting a re-resolved technology has to invalidate the
+    /// numbers when the stackup moved and must NOT when it did not: a user turning a drawing layer's
+    /// visibility off is asking a question about the PICTURE, and losing the answer they just ran for
+    /// it would make the toggle cost a re-solve (owner, 2026-09-19 — that toggle is the workflow this
+    /// whole adoption exists for). Thicknesses, conductivities, dielectrics and the drawing layers each
+    /// stackup entry claims all live under <see cref="Technology.Stackup"/>; visibility, colour and
+    /// fill pattern live on the drawing-layer table beside it and are not here.
+    ///
+    /// <para><b>Serialised rather than compared field by field</b>, deliberately: a stackup field added
+    /// later is in the comparison the day it is added, where a hand-written list of properties would
+    /// silently keep saying "unchanged" about it.</para>
+    /// </remarks>
+    private static string StackupSignature(Technology technology) =>
+        System.Text.Json.JsonSerializer.Serialize(technology.Stackup);
 
     /// <summary>Which map the overlay draws, from which tab the strip is on.</summary>
     /// <remarks>

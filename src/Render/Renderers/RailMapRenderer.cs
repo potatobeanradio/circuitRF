@@ -43,6 +43,16 @@ namespace CircuitRF.Render;
 public readonly record struct RailMapLabelLayout(
     float TextSizePx, SKRect Cold, SKRect Caption, SKRect Hot);
 
+/// <summary>
+/// An empty tab's own sentence, wrapped — <see cref="RailMapRenderer.LayOutNote"/> decides it, this
+/// carries the decision.
+/// </summary>
+/// <param name="TextSizePx">The size the lines are drawn at, device pixels. At or below
+/// <see cref="RailMapRenderer.NoteSizePx"/> — a note never enlarges itself.</param>
+/// <param name="Lines">The note's lines, in order. Empty where there is no room for any.</param>
+/// <param name="Box">The block they occupy, device pixels.</param>
+public sealed record RailMapNoteLayout(float TextSizePx, IReadOnlyList<string> Lines, SKRect Box);
+
 /// <summary>Paints a <see cref="RailMapScene"/>. Draws; decides nothing.</summary>
 public static class RailMapRenderer
 {
@@ -60,6 +70,18 @@ public static class RailMapRenderer
     public const float LegendSizePx = 11f;
 
 
+    /// <summary>What an empty tab's sentence is drawn at, device pixels, before it is wrapped.</summary>
+    public const float NoteSizePx = LegendSizePx + 1;
+
+    /// <summary>How small that sentence may be shrunk before it simply wraps to more lines.</summary>
+    public const float NoteFloorPx = 7f;
+
+    /// <summary>What the note keeps clear of the panel's four edges, device pixels.</summary>
+    public const float NoteMarginPx = 12f;
+
+    /// <summary>Baseline-to-baseline, as a multiple of the text size.</summary>
+    public const float NoteLineSpacingPx = 1.35f;
+
     /// <summary>How many bands the legend's ramp is drawn in. Enough to read as continuous, few
     /// enough that two renders of the same scene are trivially identical.</summary>
     public const int LegendBands = 48;
@@ -75,18 +97,28 @@ public static class RailMapRenderer
     /// <param name="scene">What to draw.</param>
     /// <param name="viewport">World → screen.</param>
     /// <param name="theme">railRF's own colours, projected from the active theme.</param>
-    public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme)
+    /// <param name="hiddenLayers">Drawing layers the technology says are not visible, or null for
+    /// none. <b>A map over artwork that is not drawn is a map of nothing a reader can see</b>: turning
+    /// a layer off in the <c>.ctech</c> takes its copper off the picture, and the shading that was laid
+    /// over that copper has to go with it (owner, 2026-09-19). Applied at the DRAW, never in
+    /// <see cref="RailMapScene"/> — the scene is the pure function of the RESULT (R-rail8-13) and
+    /// visibility is a property of the technology the frame is being drawn with, so folding it into the
+    /// scene would make one result produce two scenes.</param>
+    public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme,
+                            IReadOnlySet<LayerKey>? hiddenLayers = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(theme);
 
+        if (hiddenLayers is { Count: 0 }) hiddenLayers = null;
+
         canvas.Save();
         canvas.ClipRect(new SKRect(0, 0, (float)viewport.Width, (float)viewport.Height));
         try
         {
-            DrawTiles(canvas, scene, viewport, theme);
-            DrawRegions(canvas, scene, viewport, theme);
+            DrawTiles(canvas, scene, viewport, theme, hiddenLayers);
+            DrawRegions(canvas, scene, viewport, theme, hiddenLayers);
             DrawMarkers(canvas, scene, viewport, theme);
             DrawLegend(canvas, scene, viewport, theme);
             DrawNote(canvas, scene, viewport, theme);
@@ -96,7 +128,8 @@ public static class RailMapRenderer
 
     // ── the drop map ───────────────────────────────────────────────────────────────────────────
 
-    private static void DrawTiles(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme)
+    private static void DrawTiles(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme,
+                                  IReadOnlySet<LayerKey>? hiddenLayers)
     {
         if (scene.Tiles.Count == 0) return;
 
@@ -105,6 +138,8 @@ public static class RailMapRenderer
         // trace would otherwise paint copper that is not there.
         foreach (var group in GroupByLayer(scene))
         {
+            if (hiddenLayers?.Contains(group.Key) == true) continue;
+
             canvas.Save();
             try
             {
@@ -155,7 +190,8 @@ public static class RailMapRenderer
 
     // ── the class tab, and the copper tab's islands ────────────────────────────────────────────
 
-    private static void DrawRegions(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme)
+    private static void DrawRegions(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme,
+                                    IReadOnlySet<LayerKey>? hiddenLayers)
     {
         if (scene.Regions.Count == 0) return;
 
@@ -169,6 +205,8 @@ public static class RailMapRenderer
 
         foreach (var region in scene.Regions)
         {
+            if (hiddenLayers?.Contains(region.Layer) == true) continue;
+
             using var path = ToPath(region.Copper, vp);
 
             if (outlineOnly)
@@ -384,14 +422,108 @@ public static class RailMapRenderer
             new SKRect(right - wHot * scale, baseline - ascent, right, baseline));
     }
 
+    /// <summary>
+    /// Where an empty tab's sentence lands — <b>wrapped to the panel it is in, and never one line</b>.
+    /// </summary>
+    /// <remarks>
+    /// The note is a SENTENCE and not a label: the |Z| tab's runs to twenty words, because what it
+    /// has to say is which OTHER run produces that picture. Drawn as a single centred line it was cut
+    /// off at both panel edges, and the half a reader needs — the instruction at the end — was the
+    /// half that went. So it wraps, and the block is centred as a block.
+    ///
+    /// <para>Shrinking comes SECOND and only where wrapping alone cannot fit it: unlike the legend's
+    /// plate (<see cref="LayOutLabels"/>, whose box is world geometry and cannot be widened), a note
+    /// has the whole panel and more lines are free. The floor exists because text below about 7 px is
+    /// not readable on any of the three targets this renderer draws — at that point the honest
+    /// picture is a note that overflows a pane nobody could read it in anyway, not a smaller one.</para>
+    /// </remarks>
+    /// <param name="note">The sentence. Split on whitespace, so an embedded newline is a word break.</param>
+    /// <param name="width">The viewport's width, device pixels.</param>
+    /// <param name="height">Its height.</param>
+    public static RailMapNoteLayout LayOutNote(string note, double width, double height)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+
+        float available = (float)width - 2 * NoteMarginPx;
+        float room = (float)height - 2 * NoteMarginPx;
+
+        string[] words = note.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0 || available <= 0 || room <= 0)
+            return new RailMapNoteLayout(NoteSizePx, [], SKRect.Empty);
+
+        float size = NoteSizePx;
+        List<string> lines;
+        float widest;
+        while (true)
+        {
+            using var font = Font(SkiaFonts.PlexRegular, size);
+            lines = Wrap(words, font, available, out widest);
+
+            if ((widest <= available && lines.Count * size * NoteLineSpacingPx <= room)
+                || size <= NoteFloorPx)
+                break;
+
+            // A fixed ladder rather than a computed ratio: two renders of one scene have to be byte
+            // identical (R-rail8-13's own gate), and the ratio would depend on which of the two
+            // constraints bound.
+            size = Math.Max(NoteFloorPx, size - 0.5f);
+        }
+
+        float lineHeight = size * NoteLineSpacingPx;
+        float block = lines.Count * lineHeight;
+        float centre = (float)width / 2f;
+        float top = (float)height / 2f - block / 2f;
+
+        return new RailMapNoteLayout(
+            size, lines, new SKRect(centre - widest / 2f, top, centre + widest / 2f, top + block));
+    }
+
+    /// <summary>Greedy word wrap at <paramref name="font"/>'s own measurement — no second guess at a
+    /// string's width, which is what let the legend's labels disagree with themselves.</summary>
+    private static List<string> Wrap(string[] words, SKFont font, float available, out float widest)
+    {
+        var lines = new List<string>();
+        widest = 0f;
+        string line = "";
+
+        foreach (string word in words)
+        {
+            string candidate = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && font.MeasureText(candidate) > available)
+            {
+                lines.Add(line);
+                widest = Math.Max(widest, font.MeasureText(line));
+                line = word;
+            }
+            else line = candidate;
+        }
+
+        if (line.Length > 0)
+        {
+            lines.Add(line);
+            widest = Math.Max(widest, font.MeasureText(line));
+        }
+
+        return lines;
+    }
+
     private static void DrawNote(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme)
     {
         if (scene.Note is not { Length: > 0 } note) return;
         if (scene.Tiles.Count > 0 || scene.Regions.Count > 0) return;
 
-        using var font = Font(SkiaFonts.PlexRegular, LegendSizePx + 1);
+        var layout = LayOutNote(note, vp.Width, vp.Height);
+        if (layout.Lines.Count == 0) return;
+
+        using var font = Font(SkiaFonts.PlexRegular, layout.TextSizePx);
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendInk };
-        canvas.DrawText(note, (float)(vp.Width / 2), (float)(vp.Height / 2), SKTextAlign.Center, font, ink);
+
+        float centre = (float)(vp.Width / 2);
+        float lineHeight = layout.TextSizePx * NoteLineSpacingPx;
+
+        for (int i = 0; i < layout.Lines.Count; i++)
+            canvas.DrawText(layout.Lines[i], centre, layout.Box.Top + i * lineHeight + layout.TextSizePx,
+                            SKTextAlign.Center, font, ink);
     }
 
     /// <summary>

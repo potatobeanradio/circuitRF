@@ -140,6 +140,7 @@ public partial class RailRfWindow
         {
             Shapes         = view.Shapes,
             Technology     = tech,
+            TechPath       = resolution.ResolvedPath,
             DbuPerMicron   = view.DbuPerMicron,
             ArtworkCellRef = clay,
         };

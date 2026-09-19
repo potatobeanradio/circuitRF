@@ -464,7 +464,8 @@ public sealed class RailMapScene
         if (plane is null)
             return Empty(RailMapKind.Impedance,
                 "No |Z| map yet. It is the plane pair's own answer and it is a separate run — " +
-                "find the plane resonances, at the frequency you want the map at.");
+                "the Plane resonances card, on the Frequency results tab: type the frequency you " +
+                "want the map at and press Find.");
 
         if (plane.Refusal is { } refusal)
             return Empty(RailMapKind.Impedance, refusal);

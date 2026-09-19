@@ -175,6 +175,7 @@ public partial class RailRfWindow
         {
             Shapes         = view.Shapes,
             Technology     = tech,
+            TechPath       = result.TechPath,
             DbuPerMicron   = view.DbuPerMicron,
             ArtworkCellRef = options.LandInWorkspace ? clay : null,
         };

@@ -130,11 +130,26 @@ public sealed class PdnSweepRequest
 public sealed record PdnPortImpedance(
     int Index,
     string Name,
+    RailPortAnchor Anchor,
     double[] MagnitudeOhms,
     PdnMask? Mask,
     PdnMaskReport MaskReport,
     IReadOnlyList<PdnAntiResonancePeak> Peaks,
-    IReadOnlyList<PdnCoincidenceRow> Coincidences);
+    IReadOnlyList<PdnCoincidenceRow> Coincidences)
+{
+    /// <summary>
+    /// This port's name in <paramref name="format"/>'s units — <see cref="Name"/> where none is given.
+    /// </summary>
+    /// <remarks>
+    /// <b>For the window, which outlives the run.</b> <see cref="Name"/> is this same anchor described
+    /// in the units the sweep was asked for, and a user who changes the board's display unit afterwards
+    /// has not changed any number in this result — only how it is spelled. So the ANCHOR travels with
+    /// the row and the spelling is asked for again, through the one <c>Describe</c> the run itself used
+    /// rather than a second one that could come to disagree with it.
+    /// </remarks>
+    public string NameIn(RailLengthFormat? format) =>
+        format is { } f ? Anchor.Describe(f) : Name;
+}
 
 /// <summary>
 /// Everything one frequency run produced. <see cref="Refusal"/> non-null means NOTHING was swept —
@@ -319,7 +334,8 @@ public static class PdnSweep
                     mask?.LimitAt(freqs[i]), indicative));
 
             portRows.Add(new PdnPortImpedance(
-                k, rail.Loads[k].Anchor.Describe(request.LengthFormat), curve, mask, report, peaks,
+                k, rail.Loads[k].Anchor.Describe(request.LengthFormat), rail.Loads[k].Anchor,
+                curve, mask, report, peaks,
                 PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction)));
         }
 

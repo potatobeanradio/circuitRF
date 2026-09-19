@@ -31,6 +31,7 @@
 using System;
 using CircuitRF.Design.Layout;
 using CircuitRF.Ui.RailRf;
+using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views.RailRf;
 
@@ -41,16 +42,23 @@ public partial class RailRfWindow
 
     private void WireLiveArtwork()
     {
+        Opened += (_, _) => WatchWorkspaceTechnology();
+
         Activated += (_, _) =>
         {
+            WatchWorkspaceTechnology();
             AdoptLiveArtwork();
 
-            // …and the board's DISPLAY UNIT, which can have changed in the layout editor while this
-            // window was behind it. It raises no change event of its own — see
-            // RailRfViewModel.RefreshIfUnitChanged for why, and why activation is the right moment.
+            // …and the board's DISPLAY UNIT. OnArtworkUnitChanged covers the unit moving while this
+            // window is watching; this covers the window that was not watching yet — one opened
+            // before the `.clay`, or one whose model has just been swapped by the adoption above.
             Vm?.RefreshIfUnitChanged();
         };
-        Closed += (_, _) => WatchArtwork(null);
+        Closed += (_, _) =>
+        {
+            WatchArtwork(null);
+            WatchWorkspace(null);
+        };
     }
 
     /// <summary>
@@ -61,18 +69,89 @@ public partial class RailRfWindow
     {
         if (Vm is not { Board: { } board } vm) { WatchArtwork(null); return; }
 
-        if (board.ArtworkCellRef is { Length: > 0 } clay
-            && WorkspaceLocator.Any()?.LiveLayoutModel(clay) is { } live
-            && !ReferenceEquals(board.View, live))
+        if (board.ArtworkCellRef is { Length: > 0 } clay)
         {
-            // A DIFFERENT object, so the picture has to be rebuilt around it — viewport included,
-            // since this is a one-off swap onto the real document rather than an edit to what is
-            // already shown. Shapes comes along because that is what the extraction reads.
-            vm.Board = board with { View = live, Shapes = live.Shapes };
+            var workspace = WorkspaceLocator.Any();
+
+            if (workspace?.LiveLayoutModel(clay) is { } live && !ReferenceEquals(board.View, live))
+            {
+                // A DIFFERENT object, so the picture has to be rebuilt around it — viewport included,
+                // since this is a one-off swap onto the real document rather than an edit to what is
+                // already shown. Shapes comes along because that is what the extraction reads.
+                vm.Board = board with { View = live, Shapes = live.Shapes };
+            }
+
+            AdoptLiveTechnology();
         }
 
         WatchArtwork(vm.Board?.View);
     }
+
+    /// <summary>
+    /// Takes the technology the WORKSPACE is currently resolving this board's artwork to.
+    /// </summary>
+    /// <remarks>
+    /// <b>The workspace's own resolution, not a re-read of the file</b>: a live <c>.ctech</c> edit is
+    /// not on disk yet — the technology editor pushes its working copy into the workspace's cache and
+    /// that is what every open layout document is drawing with. A window that went to the file would
+    /// draw a different technology from the one beside it, which is worse than not following at all.
+    ///
+    /// <para>The open session's instance is preferred where there is one, so this window and the
+    /// layout editor hold the SAME object and repeated asking is a no-op rather than a churn of equal
+    /// copies.</para>
+    /// </remarks>
+    private void AdoptLiveTechnology()
+    {
+        if (Vm is not { Board: { } board } vm) return;
+        if (board.ArtworkCellRef is not { Length: > 0 } clay) return;
+        if (WorkspaceLocator.Any() is not { } workspace) return;
+
+        // The fallback is used only where this window holds the `.clay`'s own model, because the
+        // resolution needs that file's TechRef: resolving with a null one would walk up to the
+        // WORKSPACE DEFAULT, which is a different technology than the board names and would be adopted
+        // without anything saying so. Where neither is available, what is already held stands.
+        var tech = workspace.LiveLayoutTechnology(clay)
+                ?? (board.View is { } view ? workspace.ResolveTechnologyForLayout(clay, view.TechRef) : null);
+
+        if (tech is not null) vm.AdoptTechnology(tech);
+    }
+
+    private WorkspaceViewModel? _watchedWorkspace;
+
+    /// <summary>
+    /// Subscribes to the workspace's technology seam, so a <c>.ctech</c> edit lands HERE while this
+    /// window is on screen rather than at whatever later moment it happens to be activated.
+    /// </summary>
+    /// <remarks>
+    /// Re-asked on activation as well as at open, for <c>AdoptLiveArtwork</c>'s own reason: a railRF
+    /// window can outlive one workspace window and come back to another, and there is no "a workspace
+    /// appeared" signal to invent, maintain and tear down.
+    /// </remarks>
+    private void WatchWorkspaceTechnology() => WatchWorkspace(WorkspaceLocator.Any());
+
+    private void WatchWorkspace(WorkspaceViewModel? workspace)
+    {
+        if (ReferenceEquals(_watchedWorkspace, workspace)) return;
+
+        if (_watchedWorkspace is not null)
+            _watchedWorkspace.TechnologyReResolved -= OnWorkspaceTechnologyReResolved;
+
+        _watchedWorkspace = workspace;
+
+        if (_watchedWorkspace is not null)
+            _watchedWorkspace.TechnologyReResolved += OnWorkspaceTechnologyReResolved;
+    }
+
+    /// <summary>A technology was re-read somewhere in the workspace — take it if it is ours.</summary>
+    /// <remarks>
+    /// The path is not matched here: this window knows which technology it is using only through the
+    /// same resolution <see cref="AdoptLiveTechnology"/> performs, and that call is a dictionary lookup
+    /// which returns the instance already held when nothing about this board changed —
+    /// <c>AdoptTechnology</c> then returns immediately. Matching the path first would mean keeping a
+    /// second copy of the resolution rule here, which is the copy that goes stale.
+    /// </remarks>
+    private void OnWorkspaceTechnologyReResolved(string changedPath) =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(AdoptLiveTechnology);
 
     /// <summary>
     /// Subscribes to one model's <c>Changed</c> and drops the previous subscription.
@@ -87,9 +166,19 @@ public partial class RailRfWindow
     {
         if (ReferenceEquals(_watchedArtwork, view)) return;
 
-        if (_watchedArtwork is not null) _watchedArtwork.Changed -= OnArtworkChanged;
+        if (_watchedArtwork is not null)
+        {
+            _watchedArtwork.Changed -= OnArtworkChanged;
+            _watchedArtwork.DisplayUnitChanged -= OnArtworkUnitChanged;
+        }
+
         _watchedArtwork = view;
-        if (_watchedArtwork is not null) _watchedArtwork.Changed += OnArtworkChanged;
+
+        if (_watchedArtwork is not null)
+        {
+            _watchedArtwork.Changed += OnArtworkChanged;
+            _watchedArtwork.DisplayUnitChanged += OnArtworkUnitChanged;
+        }
     }
 
     /// <summary>
@@ -106,4 +195,21 @@ public partial class RailRfWindow
     /// </remarks>
     private void OnArtworkChanged(object? sender, LayoutChangeInfo e) =>
         Avalonia.Threading.Dispatcher.UIThread.Post(() => Vm?.NotifyArtworkChanged());
+
+    /// <summary>
+    /// The board's display unit changed in the other window — <b>while this one is on screen</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The activation refresh below is not enough, and the owner's report is why</b> (2026-09-19):
+    /// two windows side by side, the unit picker moved in the layout editor, and railRF goes on
+    /// printing the unit the board used to be in until something happens to activate it. Nothing
+    /// re-states it because a unit raised no notification of any kind — which was defensible while it
+    /// was private to one document window and is not once a second window draws the same model.
+    ///
+    /// <para>Nothing is recomputed: a unit is how a number is SPELLED and not what it is, so every
+    /// result stands and only the strings are re-stated. That is the difference between this and
+    /// <see cref="OnArtworkChanged"/>, which throws the numbers away because the copper moved.</para>
+    /// </remarks>
+    private void OnArtworkUnitChanged(object? sender, EventArgs e) =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Vm?.RefreshIfUnitChanged());
 }
