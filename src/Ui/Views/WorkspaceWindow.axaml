@@ -154,8 +154,6 @@
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Reload Generated Artwork"       Command="{Binding ReloadPCellGeneratorsCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -722,12 +720,6 @@
                           InputGesture="Ctrl+Shift+K"
                           ToolTip.Tip="Check the active layout against its technology's minimum-width and minimum-spacing rules. Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <Separator/>
-                <MenuItem Header="_Reload Generated Artwork"
-                          Command="{Binding ReloadPCellGeneratorsCommand}"
-                          ToolTip.Tip="Re-reads this workspace's PCell generator scripts and rebuilds the cells they draw. Requires an open workspace.">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

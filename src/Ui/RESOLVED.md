@@ -31466,3 +31466,69 @@ chart's load-point labels, for the status strip, and now for the verb's report; 
 `CircuitRF.Ui.Matching` are the Designer and stayed. Files here reach it through one line in
 `GlobalUsings.cs` — the same mechanism the DRC engine's move used — so no `using` in this project
 changed.
+
+---
+
+## Three port figures drew three internal marks under captions promising two edge ports (2026-09-19)
+
+Reported against the MoM chapter: `ports-internal-gap`, `ports-internal` and `ports-gap-mesh-width`
+each say "edge ports at both ends and an internal … port in the middle", and each drew the internal
+mark on **all three** ports. The contrast between the two marks is the entire content of those
+figures, so all three were pictures of nothing.
+
+The cause is one line, repeated three times in `DocLayoutFixtures`:
+
+```csharp
+foreach (var l in view.Shapes.OfType<LabelShape>())
+    if (l.IsPort) l.PortKind = PlanarPortKind.InternalDeltaGap;
+```
+
+`SeriesGapLine()` builds the shared artwork with ports 1 and 2 on the end faces and port 3 at the
+centre, and the loop then re-typed every one of them. It is now `MarkCentrePort(view, kind)`, which
+matches on the label text and touches port 3 only; ports 1 and 2 keep `PlanarPortKind.Edge`, the
+enum's default and the thing the fixture never had to state.
+
+**What made it survive.** The three fixtures pre-date the port type moving from the `.cem` onto the
+label — before that the EM Setup editor published the anchors and the renderer was told which ones
+were internal, so a fixture could only mark the ports it named. When the type moved to the label the
+three call sites were converted mechanically to "set it on the port labels", and the figures' own
+comment — *the figure states it the way a user does* — reads as correct at the point the defect is.
+Nothing in the pipeline compares a caption against the picture it sits under, so a figure that
+disagrees with its own text regenerates cleanly forever.
+
+**Regeneration was six files, not the usual scatter.** `dotnet run --project tools/DocGen -- --out
+docs/user` touched the three figures × two themes plus `mom-engine.html`, which inlines them. Two
+other figures (`em-setup-loaded`, `antenna-patch-em-setup`) also came back changed; a second run
+classified them — `antenna-patch-em-setup` came back clean and `em-setup-loaded` changed *again*,
+to a third value of the same rotation matrix — so both are the known nondeterministic family and
+were reverted rather than committed.
+
+## Design ▸ Reload Generated Artwork: the menu item is gone, the command is not (2026-09-19)
+
+Removed at the owner's request from both menus in `WorkspaceWindow.axaml` — the managed one and the
+macOS `NativeMenu`. **Nothing else changed.** The owner's follow-up was explicit: keep the
+infrastructure for re-reading a generator script edited while its workspace is open, because it is
+wanted for user-developed kits. So `ReloadPCellGenerators`, `CanReloadPCellGenerators`, the
+`[RelayCommand]` attribute and both `NotifyCanExecuteChanged()` calls all stay exactly as they were,
+and the diff against this change is two menu blocks plus documentation.
+
+**Why the command is kept with no surface binding it.** A `[RelayCommand]` nothing binds looks like
+dead plumbing and invites deletion, which is the failure this note exists to prevent. What it guards
+is not four lines of wiring but the method's own content — **four caches go stale after a script
+edit and all four have to go**: the running interpreter (it loaded the old code), the manifest scan
+(the kit may declare different files now), the per-kit CONTENT HASH (cached once per session — leave
+it and the edit resolves to the cell the previous version wrote, so the edit appears to do nothing),
+and the generator delegates the registry handed out. That list was learned, not designed, and a
+future surface should bind `ReloadPCellGeneratorsCommand` rather than rediscover it.
+
+It stays live in the meantime: a kit import and a workspace open both call it directly when a cell
+library is declared after the resolver already scanned, guarded by `_pcellDeclarationsAdded`. The
+method also keeps its exact signature — `KitLayoutGeneratorRefreshTests` finds it by brace-matching
+from `private void ReloadPCellGenerators()` and would report a rename as a missing method rather than
+as a failure.
+
+**What a user can do today.** With no surface bound, the only in-application trigger is
+`KitLayoutGenerators.SetRefresher`'s hook, which answers a lookup against a map the background pass
+has not filled yet and returns immediately once it has — it is not a rescan. A script author's loop
+is therefore edit the `.py`, reopen the workspace, which is what `docs/design/pcell-parameter-handles.md`
+§2.3 now says; it named the menu item before.

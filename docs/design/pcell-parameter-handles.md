@@ -238,7 +238,7 @@ produce identical geometry, and a feature that read differently in the two would
 **In the same `@generator` function, on the same `Result`, in the same file.** There is no separate
 handle-declaration file, no second DSL, no registration step. A cell author who can already write a
 generator can write a handle by adding one list argument, and the authoring loop is unchanged: edit
-the `.py`, **Design ▸ Reload Generated Artwork**, drag.
+the `.py`, reopen the workspace, drag.
 
 That is deliberate and it is the reason the declaration was kept to what it is. A mechanism that
 needed its own file, or its own metadata format alongside the kit, would be one more thing to keep

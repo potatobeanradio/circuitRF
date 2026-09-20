@@ -808,11 +808,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
 
+    /// <summary>
+    /// <see cref="ReloadPCellGeneratorsCommand"/>'s gate: there is a resolver, so there is something
+    /// to re-read. Kept with the command, and for the same reason.
+    /// </summary>
     private bool CanReloadPCellGenerators() => _pcellResolver is not null;
 
     /// <summary>
-    /// B7's authoring loop: edit a generator script, press this, see the artwork change — without
+    /// Re-reads this workspace's generator scripts and rebuilds the artwork they draw, without
     /// closing the workspace.
+    ///
+    /// <para><b>It has no user-facing surface right now, and the command is kept anyway.</b> The
+    /// Design menu item that drove it was removed on 2026-09-19 (owner), but the CAPABILITY is
+    /// wanted for user-developed kits: re-reading a script edited while its workspace is open is the
+    /// authoring loop, and re-deriving this method from its four stale caches is not a thing anyone
+    /// should have to do twice. Binding <c>ReloadPCellGeneratorsCommand</c> to a menu item, a button
+    /// or a palette action is all a future surface needs. Two callers keep it live in the meantime —
+    /// a kit import, and a workspace open where the cell library was declared after the resolver had
+    /// already scanned.</para>
     ///
     /// <para><b>Four things are stale after a script edit, and all four have to go.</b> The running
     /// interpreter (it loaded the old code), the manifest scan (the kit may declare different files
