@@ -48,6 +48,13 @@ public partial class RailRfWindow : ICrfMenuWindow
         // is the board toolbar's own handler, not a second framing of the board.
         vm.ZoomToFitHook = () => { BoardCanvas.ZoomToFit(); BoardCanvas.Focus(); };
 
+        // R-rail19-3a. A breakdown row names copper and the locator has to BRING IT ON SCREEN, not
+        // merely light it: at fit zoom a 0.2 mm run on a 30 x 20 mm board is three pixels. The
+        // camera move is the canvas's own ZoomToRegion — the same one the layout editor's
+        // click-to-zoom uses, which already pads a hairline region up to a usable magnification
+        // rather than clamping against MaxZoom.
+        vm.ShowOnBoardHook = region => BoardCanvas.ZoomToRegion(region);
+
         vm.OpenDocumentHook = () => _ = OpenDocumentAsync();
         vm.ImportBoardHook  = () => _ = ImportBoardAsync();
         vm.ExportHook       = ext => _ = ExportAsync(ext);

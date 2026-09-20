@@ -119,10 +119,16 @@ public static class RailMapRenderer
     /// argument for the same reason <paramref name="hiddenLayers"/> is</b> — a selection is not a
     /// result, so folding it into <see cref="RailMapScene"/> would make one solve produce a new
     /// scene on every click. See <see cref="RailPartHighlight"/>.</param>
+    /// <param name="batchTiles">Whether to batch the drop map's tiles into one triangle list — see
+    /// <c>RailLayoutOverlay.Draw</c>'s own note for the frame-rate measurement that decided it.</param>
+    /// <param name="netPreview">The net highlighted in the pick list and not yet made a rail, or null
+    /// for none. A draw argument for <paramref name="highlight"/>'s reason, and drawn in its own role
+    /// so it cannot be mistaken for a committed rail (R-rail19-2b).</param>
     public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme,
                             IReadOnlySet<LayerKey>? hiddenLayers = null,
                             RailPartHighlight? highlight = null,
-                            bool batchTiles = false)
+                            bool batchTiles = false,
+                            RailNetPreview? netPreview = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
@@ -142,6 +148,9 @@ public static class RailMapRenderer
             // thing the user just asked to be shown and a port glyph sitting on the same pad would
             // otherwise cover it; under the legend because the legend is opaque chrome that must stay
             // readable (§11.7) and a mark drawn over it would be read as part of the plate.
+            // UNDER the part highlight, because a part the user picked is a more specific answer
+            // than the net a list row is merely resting on, and the two can cover the same pad.
+            DrawNetPreview(canvas, netPreview, viewport, theme);
             DrawPartHighlight(canvas, highlight, viewport, theme);
 
             DrawLegend(canvas, scene, viewport, theme);
@@ -532,6 +541,51 @@ public static class RailMapRenderer
     /// caller decides whether to offer the mark, and it learns there is none from the picture staying
     /// as it was rather than from a box appearing at the origin.</para>
     /// </remarks>
+    /// <summary>
+    /// The pick list's current net, outlined on the board — R-rail19-2's preview.
+    /// </summary>
+    /// <remarks>
+    /// <b>Dashed, and in its own colour.</b> The copper tab draws a COMMITTED rail's islands as a
+    /// solid 1.5 px stroke in <see cref="RailMapTheme.CopperHighlight"/>; this is the same geometry
+    /// for a net nobody has committed, so it has to read differently at a glance or it says the
+    /// opposite of what it means (R-rail19-2b).
+    ///
+    /// <para>A net the artwork gives no copper draws NOTHING — the caller learns there is none from
+    /// the picture staying as it was, which is <see cref="DrawPartHighlight"/>'s own rule.</para>
+    /// </remarks>
+    private static void DrawNetPreview(
+        SKCanvas canvas, RailNetPreview? preview, LayoutViewport vp, RailMapTheme theme)
+    {
+        if (preview is not { IsEmpty: false } net) return;
+
+        using var dash = SKPathEffect.CreateDash([PreviewDashPx, PreviewDashPx], 0);
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = PreviewStrokePx, Color = theme.NetPreview, PathEffect = dash,
+        };
+
+        foreach (var (_, paths) in net.Copper)
+        {
+            if (paths.Count == 0) continue;
+            using var path = ToPath(paths, vp);
+            canvas.DrawPath(path, stroke);
+        }
+
+        using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.NetPreview };
+        using var font = Font(SkiaFonts.PlexSemiBold, LabelSizePx);
+        float x = (float)vp.WorldToScreenX((net.Bounds.MinX + net.Bounds.MaxX) / 2);
+        float y = (float)vp.WorldToScreenY(net.Bounds.MaxY);
+        canvas.DrawText(net.Label, x, y - 4f, SKTextAlign.Center, font, ink);
+    }
+
+    /// <summary>The preview outline's stroke, device pixels — heavier than the copper tab's 1.5 px
+    /// solid one, because it is drawn over a map rather than over bare copper.</summary>
+    public const float PreviewStrokePx = 2f;
+
+    /// <summary>Its dash period, device pixels.</summary>
+    public const float PreviewDashPx = 4f;
+
     private static void DrawPartHighlight(
         SKCanvas canvas, RailPartHighlight? highlight, LayoutViewport vp, RailMapTheme theme)
     {

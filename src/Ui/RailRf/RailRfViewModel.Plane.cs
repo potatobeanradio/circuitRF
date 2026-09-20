@@ -229,7 +229,7 @@ public sealed partial class RailRfViewModel
     /// </summary>
     /// <remarks>
     /// Projected to strings here rather than bound through <c>PdnPlaneMode.Describe()</c> in the
-    /// AXAML, for the reason <c>PortLines</c> and <c>BreakdownLines</c> already give: a compiled
+    /// AXAML, for the reason <c>PortLines</c> and <c>BreakdownRows</c> already give: a compiled
     /// binding cannot call a method, and doing it here is what makes the window and a headless
     /// report print the same sentence.
     /// </remarks>

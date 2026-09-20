@@ -32361,3 +32361,99 @@ scoped style in a view whose content is captured this way has the same exposure.
 The Color Theme tab's own Light/Dark radios still open on the variant being rendered and are not
 re-synced when the appearance is changed while the dialog is open: editing the dark palette while
 looking at the light one is a thing someone does on purpose.
+
+---
+
+## railRF — a rail could be added and never removed (brief 19, 2026-09-20)
+
+Three defects from one first-time designer's pass. The first is the worst thing the window could do.
+
+### 1. One mis-click disabled Run, Compare and Export permanently
+
+`PickRail` adds a rail to the document and **nothing anywhere removed one** — no command, no menu
+row, no context menu, no keystroke. The pick list offers every net the board netlist names, so the
+return net is in it and one click made it a rail. A rail added that way states no reference layer,
+and the run gate's `UnreferencedRail` branch then refused Run, Accuracy, the plane solve, Compare
+and Export for the life of the document.
+
+**The gate was correct and stays exactly as it was.** The rail set really is solved together and an
+unreferenced rail really does block the run. What was missing was the other door, and a window that
+can enter a state it cannot leave is not a window with a bug in one control.
+
+- **`RemoveRailCommand`**, beside the rail selector, wearing the Sources and Loads lists' own remove
+  button. Its sources, loads, target and aggressors go with it because they are fields of the
+  `RailSpec` and nothing else references them.
+- **The refusal names both exits now** — *"confirm its reference, or remove it with the button
+  beside the selector"*. The first remedy was the only one named and it is the wrong one for the
+  user this sentence is usually shown to: a rail added by mistake is one they want gone.
+
+### 2. The reference return is MEASURED from the copper, never matched by a name
+
+The obvious fix — drop `GND` from the pick list — is a guess about a string the user owns, and so is
+matching the LAYER's name. Two things make the second worse than it looks: the pick list holds NETS
+and layer names live in the technology, which are unrelated objects that merely share a string on
+our own example; and the four-layer technology we ship calls its planes **"Inner 1"** and
+**"Inner 2"**, which no ground-name rule catches. The `.ctech` layer table declares nothing that
+would help either (`Purpose` reads `"drawing"` on every shipped layer).
+
+`PdnRailRegions.ReferenceNetOn` measures it instead, off the copper on the CONFIRMED reference
+layer. **The discriminator is galvanic ambiguity, and the naive version of this does not work:**
+
+> A pad is a coordinate with no layer on it, and a reference plane is usually under all of them —
+> which `PdnRailRegions.Walk`'s own seeding note already records from the other side. A plain
+> containment count on the shipped example reads **13** points for the return and **6** for the
+> rail: the right answer by a margin that means nothing, and a margin that inverts on a board with
+> one big rail pour.
+
+So a point is counted only where every piece of copper covering it belongs to ONE galvanically
+joined net. A return pad with a via down to the plane looks exactly like that, because the via joins
+its land and the plane into a single piece; a rail pad merely sitting over the plane covers two
+pieces that are not joined, so it is skipped rather than credited to either. On the shipped example
+that reads **10 unambiguous points on the reference layer for the return and 0 for the rail**.
+
+**The row is MARKED, not removed, and only after the reference is confirmed.** Before the
+confirmation railRF does not know, and acting as though it did is the same guess. Picking it is
+refused with a sentence and a remedy; a user who cannot find `GND` in a list of every net and is
+told nothing is in exactly the position the dead Run button put him in.
+
+*An explicit reference-plane role in the `.ctech` would make this declared rather than inferred, and
+would let railRF propose the reference layer with a better reason than it has. It is a change to the
+technology model and every reader, writer and editor of it, and it is not what a stuck Run button
+needs.*
+
+### 3. Selecting a net showed nothing, and a breakdown row pointed nowhere
+
+`OnSelectedNetChanged` notified the pick command and the button caption. The board did not move and
+nothing lit up, so the only way to find out what a net IS was to commit it as a rail and look at the
+result — backwards, because the pick is the moment a user needs to check they picked the right
+thing.
+
+The preview goes through **`PdnRailRegions.Walk`, not a second walk**: a picture that could disagree
+with the solve about what the rail IS is the one thing a preview must never be. It is drawn dashed
+in a colour role of its own (`Rail.NetPreview`), because a preview that looks identical to a
+committed rail makes a user think they already pressed the button. Two caches keep it off the
+critical path — the flattened copper and the per-net walk, both dropped when the board, the artwork
+or the TECHNOLOGY moves (the stackup is what says which layers a via joins, so a walk against the
+old one is not merely stale).
+
+**The selection is cleared with them**, and that is deliberate rather than tidiness: a row left
+highlighted over a board that has stopped outlining it says the pick did nothing.
+
+The breakdown got the same treatment from the other end. `PdnBreakdownRow.GroupKey` was written for
+this and says so in its own summary; what was missing was a row to select and a map from the key to
+a place. `RailDcRun` now builds `RailDcResult.BreakdownLocations` **beside the keys**, because the
+key spellings (`copper|…`, `vias|…`, `section|…`) are private to that aggregation and a caller that
+re-derived them would hold a second copy that goes on compiling and stops matching the first time a
+key gains a field.
+
+- Selecting a row marks its group and **brings it on screen** through the canvas's own
+  `ZoomToRegion` — at fit zoom a 0.2 mm run on a 30 x 20 mm board is three pixels, and a highlight
+  the user cannot find has answered nothing.
+- A row that is not copper (a source's series resistance, a part's ESR, an observation port) has NO
+  entry rather than an empty one, clears the mark and says what it is. Leaving the previous row's
+  copper lit would be a locator pointing at the wrong thing, which is worse than none.
+- The breakdown list is the **fifth** member of `RailRfViewModel.Selection.cs`' one selection. It
+  marks the board and so does the parts table, and the board can only mark one thing.
+
+Gates: `tests/Ui.Tests/RailRf/RailRemovalTests.cs`, `PickNetHighlightTests.cs`,
+`BreakdownLocatorTests.cs`.

@@ -210,6 +210,8 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // onto the rail being moved to. See RailRfViewModel.Markers.cs.
         ForgetRestoredMarkers();
         RebuildForSelectedRail();
+        RemoveRailCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanRemoveRail));
     }
 
     /// <summary>The selected rail, or null where the document holds none.</summary>
@@ -438,6 +440,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
         rail.ReferenceLayer = option.Key;
         IsReferenceConfirmed = true;
+
+        // R-rail19-1d: ONLY now is there anything to measure. Before the confirmation railRF does
+        // not know which net the return is, and marking a row as though it did is the guess
+        // R-rail19-1c refuses.
+        RefreshNetMarks();
         RefreshRunGate();
         QueueResolve();
     }
@@ -475,6 +482,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             IsReferenceConfirmed = statedOption is not null;
         }
         finally { _settingProposal = false; }
+
+        // A document that arrived with its reference already stated confirms nothing and still has
+        // a return to mark — see ConfirmReference's own note for the other half.
+        RefreshNetMarks();
     }
 
     private static IEnumerable<RailLayerOption> ConductorOptions(Technology tech)

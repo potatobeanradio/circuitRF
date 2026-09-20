@@ -61,6 +61,9 @@ public sealed partial class RailRfViewModel
 
     partial void OnBoardChanged(RailBoardInputs? value)
     {
+        // Every measurement taken off the OLD copper — the flatten, the per-net walks, the measured
+        // reference return — is now about a board that is not loaded (R-rail19-2c).
+        InvalidateNetWalks();
         OnPropertyChanged(nameof(HasBoard));
         AnnounceImpedanceMap();
         OnPropertyChanged(nameof(HasNoPickableNets));
@@ -132,7 +135,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ExportBlockedReason));
         OnPropertyChanged(nameof(ExportResults));
         OnPropertyChanged(nameof(PortLines));
-        OnPropertyChanged(nameof(BreakdownLines));
+        OnPropertyChanged(nameof(BreakdownRows));
         OnPropertyChanged(nameof(PlaneCapacitanceLine));
         OnPropertyChanged(nameof(PlaneCapacitanceShort));
         OnPropertyChanged(nameof(HasPlaneCapacitance));
@@ -217,15 +220,22 @@ public sealed partial class RailRfViewModel
     /// The element count is on the row rather than in a tooltip because it is what tells a reader
     /// which SHAPE the row is: one element is a part, thousands are a meshed trace section, and the
     /// arithmetic that produced the drop is different for each (R-rail5-4).
+    ///
+    /// <para><b>Rows rather than strings since R-rail19-3</b>, because a row that cannot be selected
+    /// cannot be located: the list is the answer §2.4 exists to produce and there was no way to find
+    /// out where on the board the copper it names actually is. The text is the same text.</para>
     /// </remarks>
-    public IReadOnlyList<string> BreakdownLines =>
+    public IReadOnlyList<RailBreakdownRowViewModel> BreakdownRows =>
     [
-        .. Breakdown.Select(b =>
-            $"{b.Label}: {b.DropV * 1e3:0.###} mV ({b.ShareOfTotal:P0})"
-          + $" · {RailValueFormat.FormatWithUnit(b.ResistanceOhms, RailQuantity.Resistance)}"
-          + $" · {RailValueFormat.FormatWithUnit(b.CurrentA, RailQuantity.Current)}"
-          + (b.ElementCount > 1 ? $" · {b.ElementCount} elements" : "")),
+        .. Breakdown.Select(b => new RailBreakdownRowViewModel(b, BreakdownText(b))),
     ];
+
+    /// <summary>The one formatter — see <see cref="BreakdownRows"/>.</summary>
+    private static string BreakdownText(PdnBreakdownRow b) =>
+        $"{b.Label}: {b.DropV * 1e3:0.###} mV ({b.ShareOfTotal:P0})"
+      + $" · {RailValueFormat.FormatWithUnit(b.ResistanceOhms, RailQuantity.Resistance)}"
+      + $" · {RailValueFormat.FormatWithUnit(b.CurrentA, RailQuantity.Current)}"
+      + (b.ElementCount > 1 ? $" · {b.ElementCount} elements" : "");
 
     /// <summary>
     /// <b>R-rail14-3 / §9 — the extracted plane capacitance, and it is deliberately in TWO places.</b>
@@ -334,9 +344,14 @@ public sealed partial class RailRfViewModel
                 ? "Confirm the reference layer first. railRF proposes one and never assumes it (Q-8), "
                 + "and a pre-selected combo tabbed past is not a confirmation."
             : UnreferencedRail() is { } unreferenced
+                // R-rail19-1b: BOTH doors. The first remedy was the only one named, and it is the
+                // wrong one for the user this sentence is usually shown to — a rail added by
+                // mistake is one they want GONE, not one they want to give a reference to. A
+                // refusal that names one of two exits traps whoever wanted the other.
                 ? $"Rail '{unreferenced}' states no reference layer, so there is nothing to return "
                 + "current through. The rail set is solved together, so this one blocks the run as "
-                + "well — pick it in the rail selector above and confirm its reference."
+                + "well — pick it in the rail selector above and confirm its reference, or remove "
+                + "it with the button beside the selector."
             : PendingImportRefusal is { } import
                 ? import.Sentence
             : _document.Refusal();

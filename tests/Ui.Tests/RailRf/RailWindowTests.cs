@@ -1914,8 +1914,8 @@ public class RailWindowTests
         var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(path), path);
         vm.LoadDocumentReferences();
 
-        Assert.Contains("+3V3", vm.AvailableNets);
-        Assert.Contains("GND", vm.AvailableNets);
+        Assert.Contains(vm.AvailableNets, r => r.Name == "+3V3");
+        Assert.Contains(vm.AvailableNets, r => r.Name == "GND");
         Assert.True(vm.HasPickableNets);
 
         // The other half, and it is the half the user actually saw.
@@ -1948,17 +1948,24 @@ public class RailWindowTests
 
         Assert.False(vm.PickSelectedNetCommand.CanExecute(null));
 
-        // A net this document does NOT already carry: the button offers to make it one.
-        Assert.DoesNotContain("GND", vm.Rails);
-        vm.SelectedNet = "GND";
+        // A net this document ALREADY carries: the button says it will show it, not add a second.
+        vm.SelectNet("+3V3");
         Assert.True(vm.PickSelectedNetCommand.CanExecute(null));
+        Assert.Equal("Show this rail", vm.PickRailButtonText);
+
+        vm.PickSelectedNetCommand.Execute(null);
+        Assert.Equal("+3V3", vm.SelectedRailName);
+        Assert.Single(vm.Rails);
+
+        // Take the rail away (R-rail19-1a) and the same row offers to make it one again. The other
+        // net on this board is the reference return, which R-rail19-1d refuses on purpose — see
+        // RailRemovalTests — so the "Make it a rail" face is reached this way rather than on GND.
+        vm.RemoveRailCommand.Execute(null);
+        Assert.Empty(vm.Rails);
         Assert.Equal("Make it a rail", vm.PickRailButtonText);
 
         vm.PickSelectedNetCommand.Execute(null);
-        Assert.Contains("GND", vm.Rails);
-        Assert.Equal("GND", vm.SelectedRailName);
-
-        // And now the same press would only SELECT it, which the face says before it is pressed.
+        Assert.Contains("+3V3", vm.Rails);
         Assert.Equal("Show this rail", vm.PickRailButtonText);
     }
 

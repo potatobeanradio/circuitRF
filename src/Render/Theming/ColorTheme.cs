@@ -181,6 +181,7 @@ public sealed class ColorTheme
             [ColorRole.RailClassForced]       = new(120,  40, 190),
             [ColorRole.RailCopperHighlight]   = new(  0, 140, 190),
             [ColorRole.RailPartSelection]     = new(215,  40, 170),
+            [ColorRole.RailNetPreview]        = new( 20, 170, 110),
         },
         new Dictionary<string, Rgba>
         {
@@ -294,5 +295,6 @@ public sealed class ColorTheme
             [ColorRole.RailClassForced]       = new(190, 140, 255),
             [ColorRole.RailCopperHighlight]   = new( 60, 200, 245),
             [ColorRole.RailPartSelection]     = new(255, 105, 215),
+            [ColorRole.RailNetPreview]        = new( 90, 230, 160),
         });
 }

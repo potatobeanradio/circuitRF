@@ -164,6 +164,90 @@ public static class PdnRailRegions
         return new PdnRailRegionSet(power, reference, report, diagnostics);
     }
 
+    /// <summary>
+    /// Which net the copper on <paramref name="referenceLayer"/> belongs to, MEASURED from the
+    /// artwork — or null where the measurement does not resolve to exactly one net.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a name rule, and that is the whole point</b>
+    /// (<c>brief-railrf-19-unreachable-states.md</c> R-rail19-1c). Matching a NET called <c>GND</c>,
+    /// <c>VSS</c> or <c>0V</c> is a guess about a string the user owns — a board may have several
+    /// returns, or a rail genuinely named <c>GND</c> that is the subject. Matching the LAYER's name
+    /// is the same guess in different clothes and is worse: layer names live in the technology and
+    /// the pick list holds NETS, the two are unrelated objects, and the four-layer technology this
+    /// application ships calls its planes <c>Inner 1</c> and <c>Inner 2</c>, which no ground-name
+    /// rule catches. The <c>.ctech</c> layer table declares no role either.
+    ///
+    /// <para><b>A NET POINT OVER A PLANE IS NOT A NET POINT ON IT.</b> A pad is a coordinate with no
+    /// layer on it, and a reference plane is usually under all of them — <see cref="Walk"/>'s own
+    /// seeding note records the same fact from the other side. So a naive containment count on the
+    /// shipped example reads 13 points for the return and 6 for the rail: the right answer by a
+    /// margin that means nothing.</para>
+    ///
+    /// <para><b>The discriminator is GALVANIC AMBIGUITY, and it is exact.</b> A point is counted only
+    /// where every piece of copper covering it belongs to ONE galvanically-joined net — which is what
+    /// a pad with a via down to the plane looks like, because the via joins its land and the plane
+    /// into a single piece. A rail pad merely sitting over the plane covers two pieces that are not
+    /// joined, so it is ambiguous and is skipped rather than counted for either. On the shipped
+    /// example that reads 10 unambiguous points on the reference layer for the return and <b>0</b>
+    /// for the rail.</para>
+    ///
+    /// <para>Null on a tie, on no evidence at all, and on artwork whose reference layer carries no
+    /// copper. A caller that cannot be told which net the return is must not act as though it
+    /// had been.</para>
+    /// </remarks>
+    /// <param name="layerRegions">Per-layer unioned copper, DBU — <see cref="Walk"/>'s own input.</param>
+    /// <param name="tech">Supplies the stackup that says which layers a via joins.</param>
+    /// <param name="netPoints">What the board netlist knows.</param>
+    /// <param name="referenceLayer">The CONFIRMED reference layer. Before it is confirmed there is
+    /// nothing to measure against and this must not be called — railRF does not know yet, and
+    /// acting as though it did is the guess this method exists to avoid.</param>
+    public static string? ReferenceNetOn(
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech,
+        IReadOnlyList<PdnNetPoint> netPoints,
+        LayerKey referenceLayer)
+    {
+        ArgumentNullException.ThrowIfNull(layerRegions);
+        ArgumentNullException.ThrowIfNull(netPoints);
+
+        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        if (pieces.Count == 0) return null;
+
+        var votes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var under = new HashSet<int>();
+
+        foreach (var point in netPoints)
+        {
+            under.Clear();
+            bool onReference = false;
+
+            foreach (var piece in pieces)
+            {
+                if (!piece.Bounds.Contains(point.X, point.Y)) continue;
+                if (!Contains(piece.Paths, point.X, point.Y)) continue;
+                under.Add(piece.Net);
+                if (piece.Layer == referenceLayer) onReference = true;
+            }
+
+            if (under.Count != 1 || !onReference) continue;
+
+            votes.TryGetValue(point.Net, out int n);
+            votes[point.Net] = n + 1;
+        }
+
+        string? best = null;
+        int bestVotes = 0, tied = 0;
+
+        foreach (var (net, n) in votes)
+        {
+            if (n > bestVotes) { best = net; bestVotes = n; tied = 1; }
+            else if (n == bestVotes) tied++;
+        }
+
+        return bestVotes > 0 && tied == 1 ? best : null;
+    }
+
     private static string Describe(string what, IReadOnlyList<PdnRegion> islands) =>
         islands.Count switch
         {

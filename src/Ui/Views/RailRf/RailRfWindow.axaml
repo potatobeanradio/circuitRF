@@ -735,7 +735,14 @@
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Rail"/>
 
-                            <Grid ColumnDefinitions="Auto,*">
+                            <!-- THE REMOVE BUTTON IS THE OTHER DOOR (R-rail19-1a). A rail could be
+                                 added and never removed: one mis-click on GND made a rail with no
+                                 reference layer, which correctly blocks the whole rail set's solve,
+                                 and there was no command, no menu row and no keystroke that took it
+                                 back — so Run, Compare and Export were dead for the life of the
+                                 document. Same shape as the Sources and Loads lists' own remove
+                                 button, beside the control that made the thing. -->
+                            <Grid ColumnDefinitions="Auto,*,Auto">
                                 <TextBlock Classes="detailLabel rowlbl" Text="Rail"/>
                                 <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
                                      here and built in that order in the view model: a combo whose
@@ -746,6 +753,12 @@
                                           ItemsSource="{Binding Rails}"
                                           SelectedItem="{Binding SelectedRailName, Mode=TwoWay}"
                                           ToolTip.Tip="Which rail this window is showing. One rail is analysed at a time; the set is solved in dependency order."/>
+                                <Button Grid.Column="2" Name="RemoveRailButton" Classes="rowbtn"
+                                        Margin="2,0,0,0"
+                                        Command="{Binding RemoveRailCommand}"
+                                        ToolTip.Tip="Remove this rail, with its sources, loads, targets and aggressors. A rail added by mistake states no reference layer, and the rail set is solved together — so it blocks every run until it is given one or taken away.">
+                                    <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                </Button>
                             </Grid>
 
                             <Grid ColumnDefinitions="Auto,*">
@@ -791,12 +804,27 @@
                             <Border Classes="card" IsVisible="{Binding HasPickableNets}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Pick the rail"/>
+                                    <!-- THE REFERENCE RETURN IS MARKED AND NOT REMOVED (R-rail19-1d).
+                                         Which net it is was MEASURED from the copper on the confirmed
+                                         reference layer, never matched by name — a board may have
+                                         several returns, and the four-layer technology we ship calls
+                                         its planes "Inner 1" and "Inner 2". The row stays and stays
+                                         selectable: a user who cannot find GND in a list of every net
+                                         and is told nothing is in exactly the position the dead Run
+                                         button put him in. -->
                                     <ListBox Name="NetList" Classes="rows" MaxHeight="110"
                                              ItemsSource="{Binding AvailableNets}"
                                              SelectedItem="{Binding SelectedNet, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <TextBlock Classes="lbl" Text="{Binding}"/>
+                                            <DataTemplate x:DataType="rvm:RailNetRowViewModel">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <TextBlock Classes="lbl" Text="{Binding Name}"/>
+                                                    <TextBlock Grid.Column="1" Classes="note" Margin="6,0,0,0"
+                                                               HorizontalAlignment="Right"
+                                                               Text="{Binding Mark}"
+                                                               IsVisible="{Binding IsReferenceReturn}"
+                                                               ToolTip.Tip="This is where every rail on this board returns its current, measured from the copper on the confirmed reference layer. It is what the rails are measured against, so it cannot also be one of them."/>
+                                                </Grid>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -1567,14 +1595,29 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- ── The ranked breakdown, and it is SELECTABLE (R-rail19-3) ───
+                                 "22.7 mV, 45 %, 26.5 mm of 0.209 mm BOT copper" is the answer §2.4
+                                 exists to produce, and there was no way to find out where on the
+                                 board that copper is. Selecting a row marks its group and brings it
+                                 on screen — brings it ON SCREEN, because a 0.2 mm run on a 30 mm
+                                 board at fit zoom is three pixels and a highlight nobody can find
+                                 has answered nothing. A row that is not copper says so instead. -->
                             <Border Classes="card" IsVisible="{Binding ShowBreakdownCard}">
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Breakdown"/>
-                                    <ScrollViewer MaxHeight="140" HorizontalScrollBarVisibility="Disabled"
-                                                  VerticalScrollBarVisibility="Auto">
-                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
-                                                             Text="{Binding BreakdownLines, Converter={x:Static conv:RailLinesToTextConverter.Instance}}"/>
-                                    </ScrollViewer>
+                                    <ListBox Name="BreakdownList" Classes="rows" MaxHeight="140"
+                                             ItemsSource="{Binding BreakdownRows}"
+                                             SelectedItem="{Binding SelectedBreakdownRow, Mode=TwoWay}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailBreakdownRowViewModel">
+                                                <TextBlock Classes="note" TextWrapping="Wrap"
+                                                           Text="{Binding Text}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Classes="note" TextWrapping="Wrap"
+                                               Text="{Binding BreakdownLocatorNote}"
+                                               IsVisible="{Binding BreakdownLocatorNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 </StackPanel>
                             </Border>
 

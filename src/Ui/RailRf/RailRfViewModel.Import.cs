@@ -129,17 +129,19 @@ public sealed partial class RailRfViewModel
     /// <c>PdnRailRegions</c> walks and brief 8 highlights, so a user sees straight away whether it is
     /// one region or three islands joined by a 20 mil neck.
     /// </remarks>
-    public ObservableCollection<string> AvailableNets { get; } = [];
+    public ObservableCollection<RailNetRowViewModel> AvailableNets { get; } = [];
 
     private void RebuildAvailableNets()
     {
         AvailableNets.Clear();
         if (BoardNetlist is { Refusal: null } n)
-            foreach (string net in n.Nets.OrderBy(x => x, StringComparer.Ordinal)) AvailableNets.Add(net);
+            foreach (string net in n.Nets.OrderBy(x => x, StringComparer.Ordinal))
+                AvailableNets.Add(new RailNetRowViewModel(net));
 
         SelectedNet = null;
         OnPropertyChanged(nameof(HasPickableNets));
         OnPropertyChanged(nameof(HasNoPickableNets));
+        RefreshNetMarks();
 
         // The gesture follows the sentence — see SyncPourPick's own note.
         SyncPourPick();
@@ -147,12 +149,33 @@ public sealed partial class RailRfViewModel
 
     /// <summary>The net highlighted in the pick list, or null.</summary>
     [ObservableProperty]
-    private string? _selectedNet;
+    private RailNetRowViewModel? _selectedNet;
 
-    partial void OnSelectedNetChanged(string? value)
+    /// <summary>What that row is called, or null — every caller wants the name and not the row.</summary>
+    public string? SelectedNetName => SelectedNet?.Name;
+
+    /// <summary>Highlights the row for <paramref name="net"/>, by name. The window binds the ROW;
+    /// a caller that has a name says it this way rather than hunting the list itself.</summary>
+    public void SelectNet(string? net) =>
+        SelectedNet = net is { Length: > 0 }
+            ? AvailableNets.FirstOrDefault(r => string.Equals(r.Name, net, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+    partial void OnSelectedNetChanged(RailNetRowViewModel? value)
     {
         PickSelectedNetCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(SelectedNetName));
         OnPropertyChanged(nameof(PickRailButtonText));
+
+        // R-rail19-2a: the pick is the moment a user needs to check they picked the right thing, and
+        // on a board carrying +3V3, +3V3_A and VDD_IO the name is not enough. The board answers now
+        // rather than after the rail has been committed and looked at.
+        ShowNetPreview(value?.Name);
+
+        // And the strip re-derives, so the reference-return refusal below does not outlive the row
+        // it is about — a sentence naming 'GND' over a highlighted '+3V3' is a sentence nobody can
+        // act on. Re-derived rather than cleared, which is the rule the run gate's own note states.
+        RefreshRunGate();
     }
 
     /// <summary>True while there is a list to pick from — a board file or a board netlist named the
@@ -170,7 +193,7 @@ public sealed partial class RailRfViewModel
     /// (owner, 2026-09-19). A control that is live and silent is indistinguishable from a control
     /// that is broken, and the gate is one line — the list above it is the argument.
     /// </remarks>
-    public bool CanPickSelectedNet => SelectedNet is { Length: > 0 };
+    public bool CanPickSelectedNet => SelectedNet is not null;
 
     /// <summary>
     /// What the pick button says, which depends on whether the highlighted net is ALREADY a rail.
@@ -183,7 +206,7 @@ public sealed partial class RailRfViewModel
     /// says which of the two it will do before it is pressed.
     /// </remarks>
     public string PickRailButtonText =>
-        SelectedNet is { Length: > 0 } net && _document.Rail(net) is not null
+        SelectedNetName is { Length: > 0 } net && _document.Rail(net) is not null
             ? "Show this rail"
             : "Make it a rail";
 
@@ -191,11 +214,23 @@ public sealed partial class RailRfViewModel
     [RelayCommand(CanExecute = nameof(CanPickSelectedNet))]
     private void PickSelectedNet()
     {
-        if (SelectedNet is { Length: > 0 } net)
+        if (SelectedNet is not { Name.Length: > 0 } row) return;
+
+        // R-rail19-1d: the reference return is MARKED and still selectable, and picking it is
+        // refused HERE rather than by leaving the row out of the list. A user who cannot find GND
+        // and is told nothing is in exactly the position the dead Run button put him in; a row that
+        // says why is an answer, a missing row is a second mystery.
+        if (row.IsReferenceReturn && SelectedRail?.ReferenceLayer is { } layer)
         {
-            PickRail(net);
-            OnPropertyChanged(nameof(PickRailButtonText));
+            string name = ReferenceLayerOptions.FirstOrDefault(o => o.Key == layer)?.Name
+                       ?? $"{layer.Layer}/{layer.Datatype}";
+            Refusal = new RailRefusal(
+                ReferenceReturnRefusal(row.Name, name), RailRefusalControl.ReferenceLayer);
+            return;
         }
+
+        PickRail(row.Name);
+        OnPropertyChanged(nameof(PickRailButtonText));
     }
 
     /// <summary>
@@ -221,6 +256,46 @@ public sealed partial class RailRfViewModel
         RebuildRegulatorOffers();
         return rail;
     }
+
+    /// <summary>
+    /// Removes a rail, and everything that is only its — <b>the door out of R-rail19-1.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>One mis-click used to disable Run, Compare and Export permanently.</b>
+    /// <see cref="PickRail"/> adds a rail and nothing anywhere removed one: no command, no menu row,
+    /// no context menu, no keystroke. A rail added by mistake states no reference layer, and
+    /// <c>UnreferencedRail</c> — which is correct, because the rail set is solved together — then
+    /// refused every run on the document forever, naming a remedy (confirm its reference) that the
+    /// user does not want and that would leave a meaningless rail in the file. A window that can
+    /// enter a state it cannot leave is not a window with a bug in one control; it is a window that
+    /// can lose a session's work, and a first-time designer hit it within minutes of opening the
+    /// shipped example.
+    ///
+    /// <para><b>Its sources, loads, targets, aggressors and parts go with it</b>, and there is
+    /// nothing to write for that: they are fields of the <c>RailSpec</c> and nothing else in the
+    /// document references them. What DOES need saying is that the rail is dropped from the document
+    /// rather than emptied — a rail with no sources is still a rail the solve order has to place.</para>
+    ///
+    /// <para>The selector moves to whatever is left, which may be nothing: a document with no rails
+    /// is an ordinary state and the run gate already has its own sentence for it.</para>
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanRemoveRail))]
+    private void RemoveRail()
+    {
+        if (SelectedRail is not { } rail) return;
+
+        _document.Rails.Remove(rail);
+
+        // RebuildRails re-selects the first rail and moves the whole window with it, which is what
+        // the selector's own contract says happens when it changes.
+        RebuildRails();
+        RebuildRegulatorOffers();
+        RefreshNetMarks();
+        OnPropertyChanged(nameof(PickRailButtonText));
+    }
+
+    /// <summary>True while there is a rail to remove.</summary>
+    public bool CanRemoveRail => SelectedRail is not null;
 
     /// <summary>
     /// The pour-clicking route: a rail with no net name, anchored by a coordinate on the copper.

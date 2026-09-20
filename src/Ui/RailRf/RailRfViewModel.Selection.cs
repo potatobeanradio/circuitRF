@@ -1,14 +1,17 @@
 // What is selected in this window, and the mark it puts on the board
 // (owner, 2026-09-19).
 //
-// ── ONE SELECTION, ACROSS FOUR TABLES ─────────────────────────────────────────────────────────
+// ── ONE SELECTION, ACROSS FIVE TABLES ─────────────────────────────────────────────────────────
 //
 // The specification column is four lists — Sources, Loads, Aggressors — and the parts table below
 // them, and each was an ordinary ListBox owning its own SelectedItem. So a row could be highlighted
 // in the parts table AND in the sources list at once, which reads as two selections and is not one:
 // nothing in this window acts on a pair, the remove buttons act on their own list's row, and the
 // board can only mark one thing. This file is the single place that answers "what is selected", and
-// setting any one of the four clears the other three.
+// setting any one of them clears the rest.
+//
+// THE RANKED BREAKDOWN IS THE FIFTH, since R-rail19-3, and it joined this rather than keeping its
+// own for exactly the reason above: it marks the board, and so does the parts table.
 //
 // ── ESCAPE CLEARS WHICHEVER IT IS ─────────────────────────────────────────────────────────────
 //
@@ -49,8 +52,8 @@ namespace CircuitRF.Ui.RailRf;
 public sealed partial class RailRfViewModel
 {
     /// <summary>
-    /// True while one selection is being moved to another list, so the clearing of the other three
-    /// does not recurse and does not publish three intermediate highlights.
+    /// True while one selection is being moved to another list, so the clearing of the others does
+    /// not recurse and does not publish an intermediate highlight per list.
     /// </summary>
     private bool _movingSelection;
 
@@ -85,15 +88,37 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private RailAggressorRowViewModel? _selectedAggressor;
 
+    /// <summary>
+    /// The row picked in the ranked breakdown, or null — <b>R-rail19-3's locator.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>It joins the one selection rather than owning a second.</b> A breakdown row and a part
+    /// row both mark the board and the board can only mark one thing, so a list that kept its own
+    /// selection would leave two marks up and no way to tell which answered which question.
+    ///
+    /// <para><b>And it moves the camera</b> (R-rail19-3a), which the part table's mark deliberately
+    /// does not: a part has a minimum on-screen size in the renderer because "where is C7" is asked
+    /// from a view of the whole board, but a 0.2 mm run of copper on a 30 x 20 mm board at fit zoom
+    /// is three pixels and a highlight the user cannot find has answered nothing.</para>
+    /// </remarks>
+    [ObservableProperty]
+    private RailBreakdownRowViewModel? _selectedBreakdownRow;
+
     partial void OnSelectedPartChanged(RailPartRowViewModel? value)             => TakeSelection(value);
     partial void OnSelectedSourceChanged(RailSourceRowViewModel? value)         => TakeSelection(value);
     partial void OnSelectedLoadChanged(RailLoadRowViewModel? value)             => TakeSelection(value);
     partial void OnSelectedAggressorChanged(RailAggressorRowViewModel? value)   => TakeSelection(value);
+    partial void OnSelectedBreakdownRowChanged(RailBreakdownRowViewModel? value)
+    {
+        TakeSelection(value);
+        if (value is not null && !_movingSelection) ShowBreakdownRowOnBoard(value);
+    }
 
-    /// <summary>True while any of the four lists has a row selected.</summary>
+    /// <summary>True while any of the five lists has a row selected.</summary>
     public bool HasRowSelection =>
         SelectedPart is not null || SelectedSource is not null
-     || SelectedLoad is not null || SelectedAggressor is not null;
+     || SelectedLoad is not null || SelectedAggressor is not null
+     || SelectedBreakdownRow is not null;
 
     /// <summary>True while a marker on the results plot is selected — its glyph, or its info box,
     /// which are one selectable thing.</summary>
@@ -122,6 +147,7 @@ public sealed partial class RailRfViewModel
                 if (!ReferenceEquals(kept, SelectedSource))     SelectedSource     = null;
                 if (!ReferenceEquals(kept, SelectedLoad))       SelectedLoad       = null;
                 if (!ReferenceEquals(kept, SelectedAggressor))  SelectedAggressor  = null;
+                if (!ReferenceEquals(kept, SelectedBreakdownRow)) SelectedBreakdownRow = null;
             }
             finally { _movingSelection = false; }
         }
@@ -161,13 +187,15 @@ public sealed partial class RailRfViewModel
         _movingSelection = true;
         try
         {
-            SelectedPart      = null;
-            SelectedSource    = null;
-            SelectedLoad      = null;
-            SelectedAggressor = null;
+            SelectedPart         = null;
+            SelectedSource       = null;
+            SelectedLoad         = null;
+            SelectedAggressor    = null;
+            SelectedBreakdownRow = null;
         }
         finally { _movingSelection = false; }
 
+        BreakdownLocatorNote = "";
         PublishSelection();
     }
 
@@ -184,7 +212,54 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasRowSelection));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(PartHighlight));
+        OnPropertyChanged(nameof(BreakdownLocation));
         BoardOverlayLayer.PartHighlight = PartHighlight;
+    }
+
+    // ── R-rail19-3: the breakdown's locator ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// What the selected breakdown row IS, where it is not copper — or empty.
+    /// </summary>
+    /// <remarks>
+    /// <b>R-rail19-3b, and it is not a nicety.</b> Some rows are a source's own series resistance,
+    /// a part's ESR or an observation port: none of them is copper and none has anywhere on the
+    /// board to point at. Leaving the previous row's copper lit would be a locator pointing at the
+    /// WRONG thing, which is worse than no locator — so the highlight is cleared and this says why.
+    /// </remarks>
+    [ObservableProperty]
+    private string _breakdownLocatorNote = "";
+
+    /// <summary>
+    /// Where the board should look, in DBU — <b>set by the window to the canvas's own
+    /// <c>ZoomToRegion</c></b>, which is the same camera move the layout editor makes when Update
+    /// Layout places an instance off screen.
+    /// </summary>
+    /// <remarks>
+    /// A hook rather than a canvas reference, for the reason every other seam on this view model is
+    /// one: this file is framework-free and a test drives the locator with no application host.
+    /// </remarks>
+    public Action<Bbox>? ShowOnBoardHook { get; set; }
+
+    /// <summary>Where the selected breakdown row's copper is, or null.</summary>
+    public RailBreakdownLocation? BreakdownLocation =>
+        SelectedBreakdownRow is { GroupKey.Length: > 0 } row &&
+        SelectedRailResult?.BreakdownLocations.TryGetValue(row.GroupKey, out var found) == true
+            ? found
+            : null;
+
+    private void ShowBreakdownRowOnBoard(RailBreakdownRowViewModel row)
+    {
+        if (BreakdownLocation is { Bounds.IsEmpty: false } place)
+        {
+            BreakdownLocatorNote = "";
+            ShowOnBoardHook?.Invoke(place.Bounds);
+            return;
+        }
+
+        BreakdownLocatorNote =
+            $"{row.Row.Label} is not copper — it is a part, a source's own series resistance or an "
+          + "observation port, so there is nothing on the board to point at.";
     }
 
     /// <summary>
@@ -210,6 +285,14 @@ public sealed partial class RailRfViewModel
             // A part row is an anchor naming the whole component — every pad of it, which is what
             // PdnAttachments.Resolve returns for a refdes with no pin. One code path, so the mark on
             // a part and the mark on a port are the same mark.
+            // A breakdown row is COPPER, not an anchor: it has no pads, and its box is the extent
+            // of every cell its group's elements touch (R-rail19-3). Handed the same mark type, so
+            // the board draws one kind of selection however it was asked for.
+            if (SelectedBreakdownRow is { } breakdown)
+                return BreakdownLocation is { Bounds.IsEmpty: false } place
+                    ? new RailPartHighlight(breakdown.Row.Label, [], place.Bounds)
+                    : null;
+
             return SelectedPart is { } part
                      ? Mark(new RailPortAnchor { Refdes = part.Refdes }, part.Refdes, board)
                  : SelectedSource is { } source

@@ -369,7 +369,7 @@ public static class RailDcRun
         }
 
         var sources = SourceShares(rail, pdn, solution, request.LengthFormat);
-        var breakdown = Breakdown(request, pdn, solution);
+        var breakdown = Breakdown(request, pdn, solution, out var breakdownLocations);
 
         // §2.4's via check. It reads the currents this solve already produced — brief 3 stamped each
         // barrel as its own element and nothing about a group is special-cased anywhere — so the
@@ -433,6 +433,9 @@ public static class RailDcRun
             Data           = DcResultPacker.Pack(solution.AsDcResult(), nl),
             NodeVoltages   = voltages,
             Breakdown      = breakdown,
+            // R-rail19-3: where each of those rows IS. Built beside the keys rather than re-derived
+            // by the window — see RailBreakdownLocation's own note.
+            BreakdownLocations = breakdownLocations,
             // Carried through from the extraction rather than re-derived: the window draws the
             // classification the numbers were priced against, and the copper the solve walked.
             Regions        = extraction.Regions,
@@ -523,7 +526,8 @@ public static class RailDcRun
     /// squares are what §2.8's whole correction is counted in.</para>
     /// </summary>
     private static IReadOnlyList<PdnBreakdownRow> Breakdown(
-        RailDcRequest request, PdnNetlist pdn, LinearDcSolution solution)
+        RailDcRequest request, PdnNetlist pdn, LinearDcSolution solution,
+        out IReadOnlyDictionary<string, RailBreakdownLocation> locations)
     {
         var components = pdn.Netlist.Components;
         var conductors = new Dictionary<LayerKey, (string Name, double SheetOhms)>();
@@ -576,6 +580,19 @@ public static class RailDcRun
         var elements = new List<PdnBreakdownElement>(pdn.Origins.Count);
         var groups = new Dictionary<string, (LayerKey? Layer, bool IsReference, PdnOriginKind Kind)>(StringComparer.Ordinal);
 
+        // R-rail19-3: the group's own copper, accumulated HERE because this is where the keys are
+        // minted. Deduplicated by coordinate — a mesh group's elements name their two end cells each,
+        // so every interior cell is named twice and a via group's pair is named once per barrel.
+        var places = new Dictionary<string, (Bbox Bounds, HashSet<(long X, long Y)> Cells)>(StringComparer.Ordinal);
+
+        void Place(string key, PdnCellRef? cell)
+        {
+            if (cell is not { } c) return;
+            if (!places.TryGetValue(key, out var p)) p = (Bbox.Empty, []);
+            p.Cells.Add((c.CentreX, c.CentreY));
+            places[key] = (p.Bounds.Union(new Bbox(c.CentreX, c.CentreY, c.CentreX, c.CentreY)), p.Cells);
+        }
+
         foreach (var o in pdn.Origins)
         {
             if (o.ResistanceOhms is not { } ohms) continue;      // a port, an injection, a capacitor
@@ -625,7 +642,25 @@ public static class RailDcRun
             }
 
             elements.Add(new PdnBreakdownElement(key, label, c.Nodes[0], c.Nodes[1], ohms, current));
+
+            // Only the copper kinds. A part, a source resistance and a port have no place on the
+            // board of their own, and R-rail19-3b's whole requirement is that the locator SAYS so
+            // rather than leaving the previous row's copper lit.
+            if (o.Kind is PdnOriginKind.MeshEdge or PdnOriginKind.TraceSection or PdnOriginKind.Via)
+            {
+                Place(key, o.From);
+                Place(key, o.To);
+            }
         }
+
+        locations = places.ToDictionary(
+            kv => kv.Key,
+            // Sorted, for §7's determinism gate: a hash set's order is an implementation detail and
+            // this list reaches an export.
+            kv => new RailBreakdownLocation(
+                kv.Key, kv.Value.Bounds,
+                [.. kv.Value.Cells.OrderBy(c => c.X).ThenBy(c => c.Y)]),
+            StringComparer.Ordinal);
 
         var rows = PdnBreakdown.Rank(elements);
         var named = new List<PdnBreakdownRow>(rows.Count);

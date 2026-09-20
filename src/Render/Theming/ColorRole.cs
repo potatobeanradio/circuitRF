@@ -360,6 +360,14 @@ public static class ColorRole
     /// the map under it is the one thing this mark exists to do.</para></summary>
     public const string RailPartSelection = "Rail.PartSelection";
 
+    /// <summary>
+    /// The net HIGHLIGHTED IN THE PICK LIST but not yet made a rail — the preview of R-rail19-2.
+    ///
+    /// <para>Its own role rather than <see cref="RailCopperHighlight"/>'s, and the distinction is the
+    /// requirement: a preview that looks identical to a committed rail's copper is a preview that
+    /// makes a user think they already pressed the button (R-rail19-2b).</para></summary>
+    public const string RailNetPreview = "Rail.NetPreview";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -394,6 +402,6 @@ public static class ColorRole
         RailLegendBackground, RailLegendInk,
         RailSource, RailLoad, RailViaFlag,
         RailClassTrace, RailClassSpreading, RailClassForced, RailCopperHighlight,
-        RailPartSelection,
+        RailPartSelection, RailNetPreview,
     ];
 }

@@ -282,6 +282,29 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     private RailPartHighlight? _partHighlight;
 
     /// <summary>
+    /// The net highlighted in the pick list and not yet made a rail, or null — R-rail19-2's preview.
+    /// </summary>
+    /// <remarks>
+    /// <b>Pushed, like <see cref="PartHighlight"/>, and it does NOT rebuild the scene.</b> Arrowing
+    /// down a list of two hundred nets would otherwise re-sample the drop field two hundred times,
+    /// and a pick-list selection is not a result (R-rail8-13). The WALK behind it is not paid for
+    /// twice either — that cache is the view model's, keyed by net name, because the walk is a
+    /// question about the board netlist and this overlay has no business reading one.
+    /// </remarks>
+    public RailNetPreview? NetPreview
+    {
+        get => _netPreview;
+        set
+        {
+            if (ReferenceEquals(_netPreview, value)) return;
+            _netPreview = value;
+            OverlayChanged?.Invoke();
+        }
+    }
+
+    private RailNetPreview? _netPreview;
+
+    /// <summary>
     /// Paints the map for the WINDOW, which is the one caller that asks for the blitted form.
     /// </summary>
     /// <remarks>
@@ -295,7 +318,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// </remarks>
     public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme) =>
         RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight,
-                             batchTiles: true);
+                             batchTiles: true, netPreview: _netPreview);
 
     /// <summary>
     /// The union of the map, the legend, the source and load markers and the via callouts — <b>not

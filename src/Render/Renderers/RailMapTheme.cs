@@ -57,6 +57,11 @@ public sealed class RailMapTheme
     /// <summary>The outline round the part selected in the parts table.</summary>
     public SKColor PartSelection { get; init; }
 
+    /// <summary>The net highlighted in the pick list and not yet made a rail — R-rail19-2's preview.
+    /// Its own colour, because a preview that looks like a committed rail is one a user reads as
+    /// already pressed.</summary>
+    public SKColor NetPreview { get; init; }
+
     public static RailMapTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         ArgumentNullException.ThrowIfNull(theme);
@@ -82,6 +87,7 @@ public sealed class RailMapTheme
             ClassForced      = SK(ColorRole.RailClassForced),
             CopperHighlight  = SK(ColorRole.RailCopperHighlight),
             PartSelection    = SK(ColorRole.RailPartSelection),
+            NetPreview       = SK(ColorRole.RailNetPreview),
         };
     }
 

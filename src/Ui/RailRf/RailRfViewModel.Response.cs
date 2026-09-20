@@ -302,7 +302,7 @@ public sealed partial class RailRfViewModel
     //  Projected to strings HERE rather than bound through each record's own Describe() in the
     //  AXAML: Describe is a METHOD and a compiled binding cannot call one. Doing it here also means
     //  the window and a headless report print the same sentence, which is why Describe exists on
-    //  the record at all — the same rule PortLines and BreakdownLines already follow.
+    //  the record at all — the same rule PortLines and BreakdownRows already follow.
 
     /// <summary>The mask verdict per observation port — the pass or the violations, with margins.</summary>
     public IReadOnlyList<string> MaskLines =>

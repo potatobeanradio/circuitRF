@@ -112,6 +112,30 @@ public sealed record RailRegulatorHeadroom(
 }
 
 /// <summary>
+/// Where one breakdown row's group actually IS on the board — <b>the answer
+/// <see cref="PdnBreakdownRow.GroupKey"/> has always promised and nothing produced</b>
+/// (<c>brief-railrf-19-unreachable-states.md</c> R-rail19-3).
+/// </summary>
+/// <remarks>
+/// <b>Built where the group keys are, and nowhere else.</b> The keys are minted inside
+/// <c>RailDcRun</c>'s own aggregation — <c>copper|…</c>, <c>vias|…</c>, <c>section|…</c>, a part's
+/// kind and refdes — and a caller that re-derived them in order to map a row back to copper would be
+/// holding a second copy of a private spelling, which would go on compiling and silently stop
+/// matching the first time a key gained a field.
+///
+/// <para><b>A row with no place is ABSENT rather than empty.</b> A source's own series resistance,
+/// a part's ESR and an observation port are not copper and have nowhere on the board to point at;
+/// a caller learns that from finding no entry, and says so, rather than from a zero-size box
+/// appearing at the origin (R-rail19-3b).</para>
+/// </remarks>
+/// <param name="GroupKey">The row's own <see cref="PdnBreakdownRow.GroupKey"/>.</param>
+/// <param name="Bounds">The extent of every cell the group's elements touch, DBU.</param>
+/// <param name="Cells">Those cell centres, deduplicated — what a locator marks and what a test
+/// checks the bounds against.</param>
+public sealed record RailBreakdownLocation(
+    string GroupKey, Bbox Bounds, IReadOnlyList<(long X, long Y)> Cells);
+
+/// <summary>
 /// One rail's DC answer: the field, the ranked breakdown, the ports, the sources and the provenance.
 /// </summary>
 public sealed class RailDcResult
@@ -137,6 +161,14 @@ public sealed class RailDcResult
 
     /// <summary>§2.4's ranked table, aggregated by origin (R-rail5-3, R-rail5-4).</summary>
     public required IReadOnlyList<PdnBreakdownRow> Breakdown { get; init; }
+
+    /// <summary>
+    /// Where each breakdown row's copper is, keyed by <see cref="PdnBreakdownRow.GroupKey"/> — the
+    /// locator of R-rail19-3. Rows that are not copper have no entry; see
+    /// <see cref="RailBreakdownLocation"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, RailBreakdownLocation> BreakdownLocations { get; init; } =
+        new Dictionary<string, RailBreakdownLocation>(StringComparer.Ordinal);
 
     /// <summary>
     /// The galvanic region walk this rail's copper produced — the islands, per drawing layer.

@@ -106,7 +106,7 @@ public sealed partial class RailRfViewModel
         RebuildParts();
         OnPropertyChanged(nameof(MeshCellEntry));
         OnPropertyChanged(nameof(PortLines));
-        OnPropertyChanged(nameof(BreakdownLines));
+        OnPropertyChanged(nameof(BreakdownRows));
 
         // The frequency half names the same ports — "Against the target" is a port and a verdict, and
         // the port is a coordinate wherever the rail anchors one. Leaving this out is what would make
@@ -348,6 +348,7 @@ public sealed partial class RailRfViewModel
         // document's own list, the same object the edit mutated in place, so what the extraction
         // reads is already current.
         ClearResults();
+        InvalidateNetWalks();       // the copper moved, so every walk taken off it is of a board that is gone
         SyncBoardOverlayResult();
         RefreshRunGate();
         OnPropertyChanged(nameof(StatusLine));
@@ -394,6 +395,10 @@ public sealed partial class RailRfViewModel
         // that draws with it.
         if (BoardLayout is { } canvas) canvas.Technology = technology;
         SyncHiddenLayers();
+
+        // The stackup is what says which layers a via joins, so every galvanic walk is of the old
+        // technology's connectivity — including the measured reference return.
+        InvalidateNetWalks();
 
         if (!physicsMoved) return;
 
