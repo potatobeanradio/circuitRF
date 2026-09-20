@@ -460,14 +460,16 @@ public enum SymbolKind
     /// arms, and each arm carries its own passband stack with its name beside it.</summary>
     Duplexer,
 
-    // ── The RLC pair ───────────────────────────────────────────────────────────────
-    // Two kinds, not one with a series/parallel selector: the two DRAW differently, and the
-    // topology is the whole of what tells them apart. A selector would leave the schematic showing
-    // a series branch while the netlist carried a parallel one.
+    // ── The RLC family ─────────────────────────────────────────────────────────────
+    // A kind per COMBINATION, not one kind with a series/parallel selector: series and parallel
+    // DRAW differently, and the topology is the whole of what tells them apart. A selector would
+    // leave the schematic showing a series branch while the netlist carried a parallel one. The
+    // same argument makes the two-element parts their own kinds rather than an SRLC with a value
+    // left blank — a blank is invisible, a glyph is not.
     //
-    // Both are 2-pin at (0,−200)/(0,+200) — the SAME pin positions as R, L and C — so a designer can
-    // swap a plain R, L or C for one of these without touching a single wire. That is a contract,
-    // not a coincidence; SrlcPrlcPinCompatibilityTests holds it shut.
+    // Every one of them is 2-pin at (0,−200)/(0,+200) — the SAME pin positions as R, L and C — so a
+    // designer can swap any of them for any other without touching a single wire. That is a
+    // contract, not a coincidence; SrlcPrlcPinCompatibilityTests holds it shut.
 
     /// <summary>Series RLC branch (engine "SRLC"). R, L and C in series on one branch — the shape a
     /// real ceramic capacitor takes, with the vendor's ESR and ESL entered as <c>R</c> and <c>L</c>.
@@ -480,6 +482,43 @@ public enum SymbolKind
     /// ideal inductor's admittance diverges at DC and because that branch is what a
     /// <see cref="Mutual"/> couples to.</summary>
     Prlc,
+
+    // ── The six two-element members of the same family (owner, 2026-09-20) ────────────
+    // SRL/SRC/SLC and PRL/PRC/PLC: the RLC pair with one element left out. They exist because the
+    // two-element parts are what a real bill of materials is made of — a lossy coil is an R and an
+    // L, a leaky capacitor an R and a C, a trap an L and a C — and entering one as an SRLC with a
+    // third value nobody meant is a number on the schematic that has to be read and dismissed.
+    //
+    // Their pins are R/L/C's, exactly as Srlc's and Prlc's are, and for the same reason: any of the
+    // nine is a drop-in for any other. RlcFamilyTests holds that shut.
+
+    /// <summary>Series R + L (engine "SRL"). A lossy inductor as one part: the coil's series
+    /// resistance is the <c>R</c>. No capacitance, so it is R at DC rather than an open. Its
+    /// inductance lives on a Group-2 branch current, so a <see cref="Mutual"/> can couple to it.</summary>
+    Srl,
+
+    /// <summary>Series R + C (engine "SRC"). A lossy capacitor, or a series RC damper. A DC open,
+    /// like any series capacitance. It carries no inductor branch, so a <see cref="Mutual"/>
+    /// naming one is refused.</summary>
+    Src,
+
+    /// <summary>Series L + C (engine "SLC"). The lossless series trap — zero impedance at
+    /// 1/(2π√(LC)), an open at DC. Couplable by a <see cref="Mutual"/>.</summary>
+    Slc,
+
+    /// <summary>Parallel R ∥ L (engine "PRL"). The shunt form of a lossy coil. The R stamps as an
+    /// admittance and the L takes its own Group-2 branch, which is what a <see cref="Mutual"/>
+    /// couples to.</summary>
+    Prl,
+
+    /// <summary>Parallel R ∥ C (engine "PRC"). A leaky capacitor, or a shunt RC across a port. Two
+    /// admittances and NO branch at all — the one member of the family that adds no unknown, and so
+    /// the one a <see cref="Mutual"/> cannot name.</summary>
+    Prc,
+
+    /// <summary>Parallel L ∥ C (engine "PLC"). The lossless tank — infinite impedance at
+    /// 1/(2π√(LC)), a short at DC. Couplable by a <see cref="Mutual"/>.</summary>
+    Plc,
 
     /// <summary>
     /// A SPICE model placed as a component (no engine component of its own — the extractor

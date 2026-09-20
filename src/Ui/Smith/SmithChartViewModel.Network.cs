@@ -25,6 +25,27 @@ public sealed record SmithElementMenuEntry(
     SmithElementKind Kind, SmithPlacement Placement, string Header);
 
 /// <summary>
+/// One row of the Add / Insert menus as the VIEW lays them out: either a single element to place,
+/// or a submenu holding several.
+/// </summary>
+/// <remarks>
+/// <b>The grouping is here and not in the view</b>, for the reason
+/// <see cref="SmithChartViewModel.ElementMenu"/> exists at all: two surfaces build these menus and a
+/// shape decided in one of them is a shape the other does not have.
+///
+/// <para><see cref="SmithChartViewModel.ElementMenu"/> is unchanged and still flat. It is the
+/// VOCABULARY — what may be placed — and every command, test and future surface reads it; this is a
+/// PRESENTATION of the same rows and holds none that the flat list does not.</para>
+/// </remarks>
+/// <param name="Title">The submenu's own label, or null when <paramref name="Entries"/> is a single
+/// row sitting at the top level.</param>
+/// <param name="GlyphKind">The kind whose symbol illustrates the row — its own, or the family's
+/// archetype for a submenu.</param>
+/// <param name="Entries">What the row places, or what the submenu holds.</param>
+public sealed record SmithElementMenuGroup(
+    string? Title, SmithElementKind GlyphKind, IReadOnlyList<SmithElementMenuEntry> Entries);
+
+/// <summary>
 /// The network strip: the projection, selection, the element operations, the sliders and the mirror
 /// (<c>brief-smith-6-network-strip.md</c>; <c>docs/design/smith-chart.md</c> §5.5, §5.6).
 /// </summary>
@@ -260,6 +281,58 @@ public sealed partial class SmithChartViewModel
             => $"{(placement == SmithPlacement.Series ? "Series" : "Shunt")} {DisplayName(kind)}";
     }
 
+    /// <summary>The label of the one submenu — the eight-member RLC family (owner, 2026-09-20).</summary>
+    public const string RlcGroupTitle = "RLC";
+
+    /// <summary>
+    /// <see cref="ElementMenu"/> as the menus draw it: the RLC family under ONE submenu, everything
+    /// else at the top level, all of it in the flat list's own order.
+    /// </summary>
+    /// <remarks>
+    /// <b>The family went behind a submenu because the flat menu outgrew the window</b> (owner,
+    /// 2026-09-20). Each row is a 39 px glyph and the vocabulary is 17 kinds in up to two placements
+    /// each, so a flat flyout is 30 rows — about 1,350 px against a window 741 px tall. It already
+    /// scrolled at 18; adding the six two-element RLC members is what made the scroll the normal way
+    /// to reach the bottom half of the list rather than an edge case.
+    ///
+    /// <para><b>The eight that moved are the ones a reader picks BETWEEN</b>, which is what makes
+    /// this a grouping rather than a hiding place: SRLC, SRL, SRC, SLC and their four parallel duals
+    /// are one part with a different subset of R, L and C in it, and choosing among them is a
+    /// second question after "I want a lumped combination". The three SINGLE parts stay at the top
+    /// level, because reaching for an L is not that question.</para>
+    ///
+    /// <para>The submenu sits where the first of its members sat in the flat order, so nothing else
+    /// moves relative to anything it was already beside.</para>
+    /// </remarks>
+    public static IReadOnlyList<SmithElementMenuGroup> ElementMenuGroups { get; } = BuildElementMenuGroups();
+
+    private static IReadOnlyList<SmithElementMenuGroup> BuildElementMenuGroups()
+    {
+        var groups = new List<SmithElementMenuGroup>();
+        var family = new List<SmithElementMenuEntry>();
+        int at     = -1;
+
+        foreach (var entry in ElementMenu)
+        {
+            // The family is asked, not listed — SmithComponentMap already knows which kinds are one
+            // part holding two or three of R, L and C, and a list here would be the ninth member's
+            // chance to be left out of the group and appear alone among the lines.
+            if (SmithComponentMap.RlcElementsOf(entry.Kind) is not null)
+            {
+                if (at < 0) at = groups.Count;
+                family.Add(entry);
+                continue;
+            }
+
+            groups.Add(new SmithElementMenuGroup(null, entry.Kind, [entry]));
+        }
+
+        if (family.Count > 0)
+            groups.Insert(at, new SmithElementMenuGroup(RlcGroupTitle, SmithElementKind.Srlc, family));
+
+        return groups;
+    }
+
     /// <summary>
     /// What this tool calls one element kind.
     /// </summary>
@@ -277,6 +350,12 @@ public sealed partial class SmithChartViewModel
         SmithElementKind.C           => "C",
         SmithElementKind.Srlc        => "SRLC",
         SmithElementKind.Prlc        => "PRLC",
+        SmithElementKind.Srl         => "SRL",
+        SmithElementKind.Src         => "SRC",
+        SmithElementKind.Slc         => "SLC",
+        SmithElementKind.Prl         => "PRL",
+        SmithElementKind.Prc         => "PRC",
+        SmithElementKind.Plc         => "PLC",
         SmithElementKind.Z1P         => "Z1P",
         SmithElementKind.S1P         => "S1P",
         SmithElementKind.S2P         => "S2P",

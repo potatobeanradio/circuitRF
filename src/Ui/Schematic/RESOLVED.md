@@ -2,6 +2,43 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## The RLC family: nine parts, one pin contract, two sub-glyph sizes (2026-09-20)
+
+Owner: add `SRL`, `PRL`, `SRC`, `PRC`, `SLC` and `PLC` beside `SRLC` and `PRLC`.
+
+**The pin contract is the same one SRLC and PRLC were built against, and it now covers nine
+kinds** — every member's pins are R/L/C's own `(0, ∓200)`, so any of the nine drops in for any
+other with no wire moved. `RlcPaletteWiringTests` was already written as a loop over an array and
+took the six new kinds as six more rows; the load-bearing assertions (pins read LIVE from R, L and
+C rather than copied; nothing drawn crosses y = ±200; the leads reach both pins exactly) needed no
+change at all. That is what a test written against the claim rather than against the instances
+buys.
+
+**Two sub-glyph sizes across the family, and the reason is room, not taste.** With one element
+fewer than SRLC there is space to draw the borrowed R, L and C larger, so the two-element SERIES
+members do NOT reuse SRLC's compressed versions — but they reuse each other's. Series: R at 4 zigs
+amp ±28 body 120, L at 3 coils r = 25, C at 100 wide; the pair is centred on the lead with a
+40-unit gap and the leads take what is left. Parallel: PRLC's own sub-glyphs exactly, at branches
+x = ∓70 instead of −80/0/+80.
+
+**The parallel pair puts the WIDE element on the left, and that is arithmetic.** An R and a C reach
+±30 either side of their branch; an inductor's coils bulge only to +20, with its polarity dot at
++35. So branches at ∓70 give −100 … +100 with a wide element on the left and −70 … +100 —
+visibly off-centre against its own wire — the other way round. `PLC` therefore draws C then L,
+which costs nothing: parallel is commutative and the type label says which part it is.
+
+**`DefaultParameters` carries EXACTLY the elements present**, which is the whole reason to place an
+`SRL` rather than an `SRLC` with a third number nobody meant. `ElementsOf` in the test derives the
+expected rows from the engine reference (`"PLC"[1..]` → L, C) rather than tabulating them, so a
+member whose reference and parameter set disagree fails rather than being copied.
+
+**One palette-ordering test froze a list that the family outgrew.**
+`PaletteFilterOrderingTests.AllItemsPinnedOrder_BeadAndSrlc_TradePlaces` asserted that PRLC is *the
+one* tail row between Bead and SRLC. Six more Lumped rows sort into that gap. It now asserts that
+the between-run is UNCHANGED by the swap — and against the UNPINNED TAIL, not against `AllItems`:
+the curated head hoists R, L, C, Mutual and NonlinearC out of that run, so rows between Bead and
+SRLC in `AllItems` are not between them in the pinned order.
+
 ## An unsaved schematic's relative references resolved into the recovery folder (2026-09-04)
 
 **Symptom:** a placed SPICE model reported that its file was not found, naming a path inside the

@@ -91,6 +91,79 @@ Pin positions and [Mutual](#mutual) coupling work exactly as they do for the SRL
 
 {{table: components/Prlc}}
 
+### Series RL (SRL) {#srl}
+
+{{symbol: srl}}
+
+A resistance and an inductance **in series**, as one part: `R + jωL`. A real inductor, whose winding
+resistance is the `R` — and, unlike the [SRLC](#srlc) you would otherwise place for the same job,
+with no third value on the schematic that nobody meant.
+
+There is no series capacitance, so this branch does **not** open at DC: at ω = 0 it is simply `R`,
+which is what the physical part measures. Its inductance can be coupled with a [Mutual](#mutual).
+
+{{table: components/Srl}}
+
+### Series RC (SRC) {#src}
+
+{{symbol: src}}
+
+A resistance and a capacitance **in series**: `R + 1/(jωC)`. A real capacitor entered with its ESR,
+or a series RC damper across a resonance. At DC the capacitance makes the branch an open circuit.
+
+It carries no inductor, so a [Mutual](#mutual) naming one is refused rather than coupled — the
+refusal says so and names the part.
+
+{{table: components/Src}}
+
+### Series LC (SLC) {#slc}
+
+{{symbol: slc}}
+
+An inductance and a capacitance **in series**: `jωL + 1/(jωC)`. The lossless series trap — its
+impedance falls to zero at `1/(2π√(LC))`, which in a shunt arm is a notch. Below the resonance it
+behaves as a capacitor and above it as an inductor; at DC it is an open circuit.
+
+Its inductance can be coupled with a [Mutual](#mutual).
+
+{{table: components/Slc}}
+
+### Parallel RL (PRL) {#prl}
+
+{{symbol: prl}}
+
+A resistance and an inductance **in parallel**: an admittance of `1/R + 1/(jωL)`. The shunt form of
+a lossy coil, and the usual way a damped choke is entered. At DC the ideal inductor shorts it out.
+
+Its inductance can be coupled with a [Mutual](#mutual).
+
+{{table: components/Prl}}
+
+### Parallel RC (PRC) {#prc}
+
+{{symbol: prc}}
+
+A resistance and a capacitance **in parallel**: an admittance of `1/R + jωC`. A leaky capacitor, or
+the shunt RC an equivalent circuit puts across a port. At DC the capacitor is an open and the part
+is `R`.
+
+This is the one member of the RLC family that adds no branch current to the matrix — and therefore
+the one a [Mutual](#mutual) cannot name.
+
+{{table: components/Prc}}
+
+### Parallel LC (PLC) {#plc}
+
+{{symbol: plc}}
+
+An inductance and a capacitance **in parallel**: an admittance of `jωC + 1/(jωL)`. The lossless
+tank — its impedance goes to infinity at `1/(2π√(LC))`. For a tank with a finite peak impedance, use
+a [PRLC](#prlc) and let `R` set the peak. At DC the ideal inductor shorts it out.
+
+Its inductance can be coupled with a [Mutual](#mutual).
+
+{{table: components/Plc}}
+
 ### Ferrite Bead (Bead) {#bead}
 
 {{symbol: bead}}
@@ -151,8 +224,10 @@ Couples two existing inductors — named by instance — with a mutual inductanc
 transformers and coupled resonators. It has no pins of its own; `Inductor1` and `Inductor2` are the
 instance names of the two coupled inductors and `M` is the mutual inductance between them.
 
-Either name may be an [L](#inductor), an [SRLC](#srlc) or a [PRLC](#prlc) — all three carry an
-inductor the coupling can act on, and all three spell its value `L`. Naming anything else is
+Either name may be any part that carries an inductor: an [L](#inductor), an [SRLC](#srlc), a
+[PRLC](#prlc), an [SRL](#srl), an [SLC](#slc), a [PRL](#prl) or a [PLC](#plc) — every one of them
+holds its inductor current on a branch the coupling can act on, and every one spells its value `L`.
+Naming anything else — an [SRC](#src) or a [PRC](#prc) included, since neither has an inductor — is
 reported as an error when the design is elaborated.
 
 {{table: components/Mutual}}

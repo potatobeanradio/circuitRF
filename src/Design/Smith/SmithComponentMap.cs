@@ -13,6 +13,7 @@
 // ZPort is "Z_Port", not "ZPort", and a hand-copied table here would have been the place that was
 // wrong.
 
+using CircuitRF.Core.Devices;
 using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Smith;
@@ -41,6 +42,12 @@ public static class SmithComponentMap
         SmithElementKind.C           => new(SymbolKind.Capacitor, 0),
         SmithElementKind.Srlc        => new(SymbolKind.Srlc,      0),
         SmithElementKind.Prlc        => new(SymbolKind.Prlc,      0),
+        SmithElementKind.Srl         => new(SymbolKind.Srl,       0),
+        SmithElementKind.Src         => new(SymbolKind.Src,       0),
+        SmithElementKind.Slc         => new(SymbolKind.Slc,       0),
+        SmithElementKind.Prl         => new(SymbolKind.Prl,       0),
+        SmithElementKind.Prc         => new(SymbolKind.Prc,       0),
+        SmithElementKind.Plc         => new(SymbolKind.Plc,       0),
         SmithElementKind.Z1P         => new(SymbolKind.ZPort,     1),
         SmithElementKind.S1P         => new(SymbolKind.Snp,       1),
         SmithElementKind.S2P         => new(SymbolKind.Snp,       2),
@@ -75,20 +82,72 @@ public static class SmithComponentMap
     /// the element's row, never a slider and never a gripper's parameter: a line whose F_ref moved
     /// under a drag would be a different physical line at every sample (§3.3).</para>
     /// </summary>
-    public static IReadOnlyList<SmithParameter> Parameters(SmithElementKind kind) => kind switch
+    public static IReadOnlyList<SmithParameter> Parameters(SmithElementKind kind)
     {
-        SmithElementKind.R    => [SmithParameter.R],
-        SmithElementKind.L    => [SmithParameter.L],
-        SmithElementKind.C    => [SmithParameter.C],
-        SmithElementKind.Srlc => [SmithParameter.R, SmithParameter.L, SmithParameter.C],
-        SmithElementKind.Prlc => [SmithParameter.R, SmithParameter.L, SmithParameter.C],
-        SmithElementKind.Z1P  => [SmithParameter.ImpedanceReal, SmithParameter.ImpedanceImag],
-        SmithElementKind.S1P  => [],
-        SmithElementKind.S2P  => [],
-        SmithElementKind.Tline or SmithElementKind.StubOpen or SmithElementKind.StubShorted
-                              => [SmithParameter.Z0, SmithParameter.ElectricalLength],
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a Smith element kind."),
+        // The eight RLC-family kinds answer from their ELEMENT SET, not one arm each — four rows
+        // shared by eight kinds, so there is nothing per-kind to forget and no way for a member's
+        // parameters and its immittance to come to disagree.
+        if (RlcElementsOf(kind) is { } rlc) return _rlcParameters[rlc];
+
+        return kind switch
+        {
+            SmithElementKind.R    => [SmithParameter.R],
+            SmithElementKind.L    => [SmithParameter.L],
+            SmithElementKind.C    => [SmithParameter.C],
+            SmithElementKind.Z1P  => [SmithParameter.ImpedanceReal, SmithParameter.ImpedanceImag],
+            SmithElementKind.S1P  => [],
+            SmithElementKind.S2P  => [],
+            SmithElementKind.Tline or SmithElementKind.StubOpen or SmithElementKind.StubShorted
+                                  => [SmithParameter.Z0, SmithParameter.ElectricalLength],
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a Smith element kind."),
+        };
+    }
+
+    /// <summary>
+    /// Which of R, L and C an RLC-family kind carries, in the ENGINE's own vocabulary — or null
+    /// for a kind that is not one of the eight.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is <see cref="RlcElements"/> and not a set of this file's own</b>, because the eight
+    /// Smith kinds and the eight engine components are the same eight parts: <c>SmithElementKind.Prl</c>
+    /// binds <c>SymbolKind.Prl</c> binds engine <c>PRL</c>, whose model IS
+    /// <c>ParallelRlcBranchModel(RlcElements.Rl)</c>. A second enum here would be a second place for
+    /// "a PRL has no capacitor" to be written down, and the symptom of that drift is a trajectory
+    /// that looks plausible.
+    ///
+    /// <para><see cref="SmithCascade"/>'s immittance, <see cref="SmithInverse"/>'s projection and
+    /// <see cref="Parameters"/> all read this, which is why the eight kinds need one formula between
+    /// them rather than eight.</para>
+    /// </remarks>
+    public static RlcElements? RlcElementsOf(SmithElementKind kind) => kind switch
+    {
+        SmithElementKind.Srlc or SmithElementKind.Prlc => RlcElements.Rlc,
+        SmithElementKind.Srl  or SmithElementKind.Prl  => RlcElements.Rl,
+        SmithElementKind.Src  or SmithElementKind.Prc  => RlcElements.Rc,
+        SmithElementKind.Slc  or SmithElementKind.Plc  => RlcElements.Lc,
+        _                                              => null,
     };
+
+    /// <summary>True for the four kinds backed by a SERIES RLC branch — their immittance is an
+    /// IMPEDANCE and their parameters are linear in it.</summary>
+    public static bool IsSeriesRlc(SmithElementKind kind)
+        => kind is SmithElementKind.Srlc or SmithElementKind.Srl
+                or SmithElementKind.Src  or SmithElementKind.Slc;
+
+    /// <summary>True for the four backed by a PARALLEL one — an ADMITTANCE, and the duals.</summary>
+    public static bool IsParallelRlc(SmithElementKind kind)
+        => kind is SmithElementKind.Prlc or SmithElementKind.Prl
+                or SmithElementKind.Prc  or SmithElementKind.Plc;
+
+    /// <summary>Sliders per element set, in R-L-C order. Four rows for eight kinds.</summary>
+    private static readonly Dictionary<RlcElements, IReadOnlyList<SmithParameter>> _rlcParameters =
+        new()
+        {
+            [RlcElements.Rlc] = [SmithParameter.R, SmithParameter.L, SmithParameter.C],
+            [RlcElements.Rl]  = [SmithParameter.R, SmithParameter.L],
+            [RlcElements.Rc]  = [SmithParameter.R, SmithParameter.C],
+            [RlcElements.Lc]  = [SmithParameter.L, SmithParameter.C],
+        };
 
     /// <summary>
     /// The parameter a new element's gripper drags, from §3.3's own column.
@@ -97,20 +156,33 @@ public static class SmithComponentMap
     /// is what moves the point around the chart — dragging the loss of a lossy part is a move along
     /// the trajectory nobody reaches for first.</para>
     /// </summary>
-    public static SmithParameter DefaultParameter(SmithElementKind kind) => kind switch
+    public static SmithParameter DefaultParameter(SmithElementKind kind)
     {
-        SmithElementKind.R    => SmithParameter.R,
-        SmithElementKind.L    => SmithParameter.L,
-        SmithElementKind.C    => SmithParameter.C,
-        SmithElementKind.Srlc => SmithParameter.L,
-        SmithElementKind.Prlc => SmithParameter.C,
-        SmithElementKind.Z1P  => SmithParameter.ImpedanceImag,
-        SmithElementKind.S1P  => SmithParameter.None,
-        SmithElementKind.S2P  => SmithParameter.None,
-        SmithElementKind.Tline or SmithElementKind.StubOpen or SmithElementKind.StubShorted
-                              => SmithParameter.ElectricalLength,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a Smith element kind."),
-    };
+        // The family's rule, applied rather than tabulated eight times: a SERIES member drags its
+        // L and a PARALLEL member its C — and whichever of the two it actually HAS, which is the
+        // only thing the two-element members add. An SRC has no inductor to drag and a PRL has no
+        // capacitor, so each falls to its own other reactance; neither ever falls to R.
+        if (RlcElementsOf(kind) is { } rlc)
+        {
+            bool hasL = rlc.HasFlag(RlcElements.L), hasC = rlc.HasFlag(RlcElements.C);
+            return IsSeriesRlc(kind)
+                       ? (hasL ? SmithParameter.L : SmithParameter.C)
+                       : (hasC ? SmithParameter.C : SmithParameter.L);
+        }
+
+        return kind switch
+        {
+            SmithElementKind.R    => SmithParameter.R,
+            SmithElementKind.L    => SmithParameter.L,
+            SmithElementKind.C    => SmithParameter.C,
+            SmithElementKind.Z1P  => SmithParameter.ImpedanceImag,
+            SmithElementKind.S1P  => SmithParameter.None,
+            SmithElementKind.S2P  => SmithParameter.None,
+            SmithElementKind.Tline or SmithElementKind.StubOpen or SmithElementKind.StubShorted
+                                  => SmithParameter.ElectricalLength,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a Smith element kind."),
+        };
+    }
 
     /// <summary>
     /// The parameter a gripper on <paramref name="element"/> drags.
@@ -154,6 +226,12 @@ public static class SmithComponentMap
         SmithElementKind.C,
         SmithElementKind.Srlc,
         SmithElementKind.Prlc,
+        SmithElementKind.Srl,
+        SmithElementKind.Src,
+        SmithElementKind.Slc,
+        SmithElementKind.Prl,
+        SmithElementKind.Prc,
+        SmithElementKind.Plc,
         SmithElementKind.Z1P,
         SmithElementKind.S1P,
         SmithElementKind.S2P,

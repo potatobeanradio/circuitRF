@@ -994,7 +994,9 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     public void TheSpecificationColumn_IsNarrower_AndItsWidestRowStillFits()
     {
         string xaml = Xaml();
-        var cols = Regex.Match(xaml, @"ColumnDefinitions=""(\d+),\*,380""");
+        // Two Auto gripper columns joined the grid in 2026-09-20's round; the claim here is about
+        // the first column's width and what has to fit inside it, which is unchanged.
+        var cols = Regex.Match(xaml, @"ColumnDefinitions=""(\d+),Auto,\*,Auto,380""");
         Assert.True(cols.Success, "the three-pane grid no longer declares a fixed first column");
 
         double column = double.Parse(cols.Groups[1].Value, CultureInfo.InvariantCulture);

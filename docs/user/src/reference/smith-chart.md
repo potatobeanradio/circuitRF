@@ -157,6 +157,8 @@ what makes the copied network ([below](#clipboard)) a circuit that really simula
 | **R**, **L**, **C** | series or shunt | The three single-parameter parts. |
 | **SRLC** | series or shunt | R, L and C in series in one part &mdash; a real capacitor with its ESR and ESL, rather than three components wired together. |
 | **PRLC** | series or shunt | R, L and C in parallel &mdash; a tank. |
+| **SRL**, **SRC**, **SLC** | series or shunt | The same series branch with one element left out: a lossy inductor, a lossy capacitor (or an RC damper), and a lossless series trap. Reach for one of these rather than an SRLC whenever the third value is not a number you meant &mdash; it is one fewer slider and one fewer thing to read. |
+| **PRL**, **PRC**, **PLC** | series or shunt | Their parallel duals: a damped choke, a leaky capacitor or shunt RC, and a lossless tank. |
 | **Z1P** | series or shunt | A complex impedance, **constant over frequency**. The frequency independence is the point of it. |
 | **S1P** | series or shunt | A one-port Touchstone file &mdash; a measured part. |
 | **S2P** | **series only** | A two-port Touchstone file. A 2-port with its second port grounded is a different component than the one you placed, and a shunt one-port is what S1P and Z1P are for. |
@@ -175,7 +177,8 @@ you have added are left exactly as they were: those are what you are matching <i
 </div>
 
 Selecting an element shows its **sliders** underneath &mdash; one for an L, three for an SRLC, two for
-a line, and none at all for S1P or S2P, whose value is a file. Each row is a label, a slider and a
+an SRL or a line, and none at all for S1P or S2P, whose value is a file. A part has a slider for each
+value it actually carries and no others. Each row is a label, a slider and a
 value you can type. The slider is logarithmic over a decade either side of the current value for R, L,
 C and Z<sub>0</sub>, and linear for an electrical length and for the parts of a Z1P; **typing a value
 outside the range re-centres the range rather than clamping the value**. Dragging is live: every step
@@ -265,9 +268,10 @@ hollow ring in the curve's own colour, brightening under the pointer and filling
   and nothing terminates the cascade, so the far end is simply where you read.
 
 A drag changes **one** parameter &mdash; the element's **active parameter**, which is the one whose
-slider you last touched, and which starts at a sensible default per type (L for an SRLC, C for a PRLC,
-the electrical length for a line). The active row is marked in the slider panel, so the connection
-between *the slider I just used* and *the handle on the chart* is visible rather than remembered. Click
+slider you last touched, and which starts at a sensible default per type: **the reactance**, never the
+loss &mdash; L for a series part, C for a parallel one, and whichever of the two it has when it carries
+only one &mdash; and the electrical length for a line. The active row is marked in the slider panel, so
+the connection between *the slider I just used* and *the handle on the chart* is visible rather than remembered. Click
 a slider's label to make it the active one without moving anything.
 
 Only the part of your drag the parameter can actually reach is used. That is not an approximation

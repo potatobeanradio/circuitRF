@@ -218,6 +218,9 @@ public class LibraryCatalogTests
         {
             SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
             SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
+            // The six two-element members of the same family (owner, 2026-09-20).
+            SymbolKind.Srl, SymbolKind.Src, SymbolKind.Slc,
+            SymbolKind.Prl, SymbolKind.Prc, SymbolKind.Plc,
             // The ferrite bead is a LINEAR impedance, so it belongs here and not with the devices —
             // which is where a user looking for one goes.
             SymbolKind.Bead,
@@ -307,14 +310,17 @@ public class LibraryCatalogTests
     [Fact]
     public void SingleCategoryItems_UnchangedByExtraCategoryFeature()
     {
-        // Lumped returns exactly R/L/C/NLC/Mutual/SRLC/PRLC/Bead — no extra-category bleed from
-        // other components.
+        // Lumped returns exactly R/L/C/NLC/Mutual/the nine-part RLC family/Bead — no extra-category
+        // bleed from other components.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind).ToHashSet();
         Assert.Equal(
             new HashSet<SymbolKind>
             {
                 SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
-                SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc, SymbolKind.Bead,
+                SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
+                SymbolKind.Srl, SymbolKind.Src, SymbolKind.Slc,
+                SymbolKind.Prl, SymbolKind.Prc, SymbolKind.Plc,
+                SymbolKind.Bead,
             },
             kinds);
     }

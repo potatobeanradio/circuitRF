@@ -387,14 +387,42 @@ public sealed class MatchRound1Tests
 
     // ── The specification pane ────────────────────────────────────────────────
 
-    /// <summary>Termination 1's resistor is on the LEFT branch of a parallel pictogram, 2's on the right.</summary>
+    /// <summary>
+    /// Each termination's pictogram names the LIBRARY PART that termination is, and both ends name
+    /// the same part for the same arrangement (owner, 2026-09-20).
+    /// </summary>
+    /// <remarks>
+    /// <b>This replaces a mirroring claim.</b> Termination 1's resistor used to take the left
+    /// branch of a parallel pictogram and termination 2's the right, so the two cards read as
+    /// mirror images (owner, 2026-08-19). The pictogram is now the library's own glyph, and a
+    /// mirrored library glyph is not the library glyph — it would flip the inductor's coils and
+    /// move its polarity dot. So both ends draw the part as the schematic would.
+    /// </remarks>
     [Trait("Category", "Benchmark")]
     [Fact]
-    public void ThePictogram_PutsTermination1sResistorOnTheLeft()
+    public void ThePictogram_NamesTheLibraryPartTheTerminationIs()
     {
         var (_, _, d) = Open();
-        Assert.True(d.Term1.ResistorOnLeft);
-        Assert.False(d.Term2.ResistorOnLeft);
+
+        foreach (var term in new[] { d.Term1, d.Term2 })
+        {
+            term.KindChoice = "L";
+            term.TopologyChoice = "Series";
+            Assert.Equal(SymbolKind.Srl, term.Pictogram.Symbol);
+
+            term.TopologyChoice = "Parallel";
+            Assert.Equal(SymbolKind.Prl, term.Pictogram.Symbol);
+
+            term.KindChoice = "C";
+            Assert.Equal(SymbolKind.Prc, term.Pictogram.Symbol);
+
+            term.TopologyChoice = "Series";
+            Assert.Equal(SymbolKind.Src, term.Pictogram.Symbol);
+
+            // Nothing to absorb — the resistor alone, which is the R on every other page.
+            term.KindChoice = "–";
+            Assert.Equal(SymbolKind.Resistor, term.Pictogram.Symbol);
+        }
     }
 
     /// <summary>The inline editor's entry string carries the unit, and a typed unit is honoured.</summary>

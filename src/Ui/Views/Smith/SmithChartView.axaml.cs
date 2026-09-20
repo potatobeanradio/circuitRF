@@ -472,7 +472,7 @@ public partial class SmithChartView : UserControl
     // ── The network strip (brief-smith-6-network-strip.md) ───────────────────
 
     /// <summary>
-    /// Builds the Add and Insert menus from <see cref="SmithChartViewModel.ElementMenu"/>.
+    /// Builds the Add and Insert menus from <see cref="SmithChartViewModel.ElementMenuGroups"/>.
     /// </summary>
     /// <remarks>
     /// <b>In code and not in XAML, and from ONE list</b> (<c>R-smith6-2</c>: "one command, two
@@ -484,6 +484,11 @@ public partial class SmithChartView : UserControl
     /// <para><c>WorkspaceViewModel.BuildExampleMenuItems</c> is the precedent for filling a menu from
     /// code; what is different here is that the list is a CONSTANT, so the flyouts are built once per
     /// view rather than rebuilt per open.</para>
+    ///
+    /// <para><b>The one SUBMENU is the view model's shape, not this file's</b> (owner, 2026-09-20).
+    /// A group carrying a <c>Title</c> becomes a <c>MenuItem</c> with children and a group without
+    /// one becomes the row it always was — so the decision about what is grouped lives beside the
+    /// vocabulary, where a second surface building these menus reads the same answer.</para>
     /// </remarks>
     private void BuildElementMenus(SmithChartViewModel vm)
     {
@@ -493,14 +498,39 @@ public partial class SmithChartView : UserControl
         static MenuFlyout Menu(System.Windows.Input.ICommand command)
         {
             var flyout = new MenuFlyout();
-            foreach (var entry in SmithChartViewModel.ElementMenu)
-                flyout.Items.Add(new MenuItem
+            foreach (var group in SmithChartViewModel.ElementMenuGroups)
+                flyout.Items.Add(Row(group, command));
+            return flyout;
+        }
+
+        static MenuItem Row(SmithElementMenuGroup group, System.Windows.Input.ICommand command)
+        {
+            if (group.Title is null)
+                return new MenuItem
+                {
+                    Header           = ElementRow(group.Entries[0]),
+                    Command          = command,
+                    CommandParameter = group.Entries[0],
+                };
+
+            // A SUBMENU carries no command of its own — a parent MenuItem that both opens children
+            // and invokes something is a control whose click does two things, and one of them by
+            // accident. Its glyph is the family's archetype, so the row still reads as a picture in
+            // the same column as every other row rather than as a bare word among drawings.
+            var parent = new MenuItem
+            {
+                Header = LabelledGlyph(group.GlyphKind, SmithPlacement.Series, group.Title),
+            };
+
+            foreach (var entry in group.Entries)
+                parent.Items.Add(new MenuItem
                 {
                     Header           = ElementRow(entry),
                     Command          = command,
                     CommandParameter = entry,
                 });
-            return flyout;
+
+            return parent;
         }
     }
 
@@ -522,16 +552,21 @@ public partial class SmithChartView : UserControl
     /// glyphs are a fixed width and line up as a column of their own.</para>
     /// </remarks>
     private static Control ElementRow(SmithElementMenuEntry entry)
+        => LabelledGlyph(entry.Kind, entry.Placement, entry.Header);
+
+    /// <summary>A glyph and a caption in one row — what both an element row and the RLC submenu's
+    /// own parent row are, so the two line up in the same column.</summary>
+    private static Control LabelledGlyph(SmithElementKind kind, SmithPlacement placement, string text)
     {
         var row = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             Spacing     = 10,
         };
-        row.Children.Add(ElementGlyph(entry));
+        row.Children.Add(ElementGlyph(kind, placement));
         row.Children.Add(new TextBlock
         {
-            Text              = entry.Header,
+            Text              = text,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         });
         return row;
@@ -550,14 +585,14 @@ public partial class SmithChartView : UserControl
     /// lumped glyphs are drawn upright natively and the rest horizontally, which is why "series" is
     /// not simply "R0".
     /// </remarks>
-    private static Control ElementGlyph(SmithElementMenuEntry entry)
+    private static Control ElementGlyph(SmithElementKind kind, SmithPlacement placement)
     {
-        var binding = SmithComponentMap.Component(entry.Kind);
+        var binding = SmithComponentMap.Component(kind);
         return new PaletteGlyphControl
         {
             Kind      = binding.SymbolKind,
             PortCount = binding.NumPorts,
-            Rotation  = SmithNetworkModel.RotationFor(entry.Kind, entry.Placement),
+            Rotation  = SmithNetworkModel.RotationFor(kind, placement),
             // THREE QUARTERS OF 64x52 (owner instruction, 2026-09-19). A menu row's job here is
             // to be recognised at a glance — an R from an L from a shunt C — which is why 22x18 was
             // abandoned; 64x52 overshot, so the glyph is scaled back by 0.75 rather than back to the

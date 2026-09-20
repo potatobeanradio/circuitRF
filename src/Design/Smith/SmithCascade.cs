@@ -20,6 +20,7 @@
 // and what a reader checks against — but nothing in the walk or the trajectories divides by one.
 
 using System.Numerics;
+using CircuitRF.Core.Devices;
 using NumFlat;
 using RfCore;
 
@@ -278,28 +279,58 @@ public static partial class SmithCascade
             case SmithElementKind.C:
                 return new SmithImmittance(new Complex(0.0, w * v.CFarad), IsAdmittance: true);
 
+            // ── The RLC family: eight kinds, two formulas (owner, 2026-09-20) ────────────
+            //
+            // SRLC/SRL/SRC/SLC are Z = R + jωL + 1/(jωC) and PRLC/PRL/PRC/PLC are its dual,
+            // Y = 1/R + 1/(jωL) + jωC — in each case OVER THE ELEMENTS THE KIND CARRIES, which
+            // SmithComponentMap.RlcElementsOf answers from the same enum the engine model reads.
+            // Six more arms here would be six more places for a sign to be typed.
             case SmithElementKind.Srlc:
-                // Z = R + jωL + 1/(jωC) = R + j(ωL − 1/(ωC))
-                //
+            case SmithElementKind.Srl:
+            case SmithElementKind.Src:
+            case SmithElementKind.Slc:
+            {
+                var  rlc  = SmithComponentMap.RlcElementsOf(e.Kind)!.Value;
+                bool hasC = rlc.HasFlag(RlcElements.C);
+
                 // C = 0 is the OPEN, whose impedance has no finite value — so it is stated as the
                 // admittance it does have, which is zero, and Add() carries it. Writing the
                 // impedance instead gives Complex(R, −∞), and the first multiply after that is a
                 // NaN in every node downstream. Zero is a legal C (a document refuses a NEGATIVE
                 // one), so this is a value the user can type rather than a hypothetical.
-                return v.CFarad > 0
-                    ? new SmithImmittance(
-                          new Complex(v.ROhm, w * v.LHenry - 1.0 / (w * v.CFarad)), IsAdmittance: false)
-                    : new SmithImmittance(Complex.Zero, IsAdmittance: true);
+                //
+                // A member with NO capacitor never reaches it: an SRL is R + jωL at every ω,
+                // including zero, and asking whether its absent C is zero is the question that
+                // makes 1/(ω·∞) a NaN in the engine model beside this one.
+                if (hasC && !(v.CFarad > 0))
+                    return new SmithImmittance(Complex.Zero, IsAdmittance: true);
+
+                double r = rlc.HasFlag(RlcElements.R) ? v.ROhm : 0.0;
+                double x = (rlc.HasFlag(RlcElements.L) ? w * v.LHenry : 0.0)
+                         - (hasC ? 1.0 / (w * v.CFarad) : 0.0);
+                return new SmithImmittance(new Complex(r, x), IsAdmittance: false);
+            }
 
             case SmithElementKind.Prlc:
-                // Y = 1/R + 1/(jωL) + jωC = 1/R + j(ωC − 1/(ωL))
-                //
-                // The dual of the SRLC's own case, twice over: R = 0 and L = 0 are both the SHORT,
-                // whose admittance has no finite value and whose impedance is zero.
-                return v.ROhm > 0 && v.LHenry > 0
-                    ? new SmithImmittance(
-                          new Complex(1.0 / v.ROhm, w * v.CFarad - 1.0 / (w * v.LHenry)), IsAdmittance: true)
-                    : new SmithImmittance(Complex.Zero, IsAdmittance: false);
+            case SmithElementKind.Prl:
+            case SmithElementKind.Prc:
+            case SmithElementKind.Plc:
+            {
+                var  rlc  = SmithComponentMap.RlcElementsOf(e.Kind)!.Value;
+                bool hasR = rlc.HasFlag(RlcElements.R);
+                bool hasL = rlc.HasFlag(RlcElements.L);
+
+                // The dual of the series case, twice over: R = 0 and L = 0 are both the SHORT,
+                // whose admittance has no finite value and whose impedance is zero. Only a member
+                // that HAS the element can be shorted by it — a PLC has no R to be zero.
+                if ((hasR && !(v.ROhm > 0)) || (hasL && !(v.LHenry > 0)))
+                    return new SmithImmittance(Complex.Zero, IsAdmittance: false);
+
+                double g = hasR ? 1.0 / v.ROhm : 0.0;
+                double b = (rlc.HasFlag(RlcElements.C) ? w * v.CFarad : 0.0)
+                         - (hasL ? 1.0 / (w * v.LHenry) : 0.0);
+                return new SmithImmittance(new Complex(g, b), IsAdmittance: true);
+            }
 
             case SmithElementKind.Z1P:
                 // A complex constant over frequency — that is the point of it.

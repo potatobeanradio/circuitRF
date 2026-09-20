@@ -1222,7 +1222,8 @@ public static class SParameterEngine
             ZPortModel       zp => PortBranch(zp.PortBranchIndices, port),
             _ => throw new InvalidOperationException(
                 $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +
-                $"which is not a referenceable device class (Vdc, VCVS, V_1Tone/V_nTone, IProbe, WSProbe, L, SRLC, PRLC, SnP, Z_Port).")
+                $"which is not a referenceable device class (Vdc, VCVS, V_1Tone/V_nTone, IProbe, WSProbe, " +
+                $"L, SRLC, PRLC, SRL, SLC, PRL, PLC, SnP, Z_Port).")
         };
         if (br < 0)
             throw new InvalidOperationException(

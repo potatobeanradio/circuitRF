@@ -49,6 +49,31 @@ public enum SmithElementKind
     /// <summary>Parallel R-L-C in one part (engine <c>PRLC</c>) — a tank.</summary>
     Prlc,
 
+    // ── The six two-element members of the same family (owner, 2026-09-20) ───────────
+    // Added to circuitRF's own library in the same round, and therefore admissible here by this
+    // enum's own rule: each is a component ComponentTypeRegistry already declares, so nothing new
+    // needs a factory registration or a golden-reference test. They are the parts a real bill of
+    // materials is made of — a lossy coil, a leaky capacitor, a trap — and entering one as an SRLC
+    // with a third value nobody meant puts a number on the chart that has to be read and dismissed.
+
+    /// <summary>Series R + L (engine <c>SRL</c>) — a lossy inductor as one part.</summary>
+    Srl,
+
+    /// <summary>Series R + C (engine <c>SRC</c>) — a lossy capacitor, or a series RC damper.</summary>
+    Src,
+
+    /// <summary>Series L + C (engine <c>SLC</c>) — the lossless series trap.</summary>
+    Slc,
+
+    /// <summary>Parallel R ∥ L (engine <c>PRL</c>) — the shunt form of a lossy coil.</summary>
+    Prl,
+
+    /// <summary>Parallel R ∥ C (engine <c>PRC</c>) — a leaky capacitor, or a shunt RC.</summary>
+    Prc,
+
+    /// <summary>Parallel L ∥ C (engine <c>PLC</c>) — the lossless tank.</summary>
+    Plc,
+
     /// <summary>A complex impedance, constant over frequency (engine <c>Z_Port</c>, one port). The
     /// frequency independence is the point of it.</summary>
     Z1P,

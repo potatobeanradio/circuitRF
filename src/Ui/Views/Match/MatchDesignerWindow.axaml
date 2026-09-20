@@ -150,10 +150,20 @@
                                ToolTip.Tip="A refusal names this termination — see the status strip"/>
                 </Grid>
 
+                <!-- THE PICTOGRAM IS A LIBRARY PART NOW (owner, 2026-09-20): an R, an SRL, an SRC,
+                     a PRL or a PRC, drawn by BuiltInSymbols rather than composed here out of two
+                     standalone glyphs and some connecting lines. See MatchPictogramControl.
+
+                     58 x 78, up from 44 x 70, and the stack beside it gives back 2 px of its
+                     margin. The old control fitted a 900 x 1200 world of its own into 44 px of
+                     WIDTH, so the picture inside it drew about 20 px tall — a fifth of the box it
+                     sat in. Fitting the symbol's own 400-unit box instead fills the height, which
+                     is most of why the part now reads as a part; the extra 8 px of box is what
+                     keeps the widest glyph (a PRC, 200 units across) from touching its own edge.
+                     The card grows 8 px for it and the Solutions list below absorbs that. -->
                 <Grid ColumnDefinitions="Auto,*">
-                    <mv:MatchPictogramControl Width="44" Height="70" VerticalAlignment="Center"
+                    <mv:MatchPictogramControl Width="58" Height="78" VerticalAlignment="Center"
                                               Pictogram="{Binding Pictogram}"
-                                              ResistorOnLeft="{Binding ResistorOnLeft}"
                                               Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
                                               ToolTip.Tip="{Binding Pictogram.Description}"/>
 
@@ -161,7 +171,7 @@
                          2026-08-19: "see how the Array Inductance panel looks… get inspired by it").
                          A column of these is readable at a glance, which a mixed row of radio
                          buttons, boxes and combos never was. -->
-                    <StackPanel Grid.Column="1" Spacing="3" Margin="6,0,0,0">
+                    <StackPanel Grid.Column="1" Spacing="3" Margin="4,0,0,0">
                         <!-- No "Topology" label (owner, 2026-08-20: "remove the Topology text
                              object (2 instance) and move the Parallel/Series UI selector to the
                              left in place of Topology"). The selector's own face already reads
@@ -370,6 +380,25 @@
             <Setter Property="Background" Value="Transparent"/>
         </Style>
 
+        <!-- ── Button.ToolActive — the lit-lamp appearance the four panel buttons wear ────────
+             LayoutEditorView's own three rules, copied here with their colours intact, exactly as
+             railRF copied them: the same accent fill and white glyph every tool button in the
+             application wears, so a lit control means one thing everywhere. A class nobody styles
+             is not a no-op — it is a feature that silently does not exist. -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+            </Setter>
+        </Style>
+
         <Style Selector="TextBlock.panelhdr">
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin"     Value="0,0,0,6"/>
@@ -484,6 +513,63 @@
                  and there is nothing left for a toggle to open; a button that hid the specification
                  pane's own lower half would be a different control answering a question nobody asked. -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <!-- ── THE FOUR PANEL LAMPS (owner, 2026-09-20) ────────────────────────────────
+                     railRF's own strip, adopted here because the two windows are the same shape:
+                     an input column, a working column that splits in two, and a results column.
+                     Four toggles, one per panel, so a reader can give one of them the whole window
+                     for a moment.
+
+                     ORDERED AS THE WINDOW IS — specification on the left, the network and the
+                     transforms rack under it in the middle, the response on the right — and the
+                     glyphs say the same thing a second time: Material's own page-layout family
+                     draws the sidebar, the body and the footer of a page, which is exactly the
+                     shape each button turns off.
+
+                     LIT MEANS ON SCREEN, on Button.ToolActive's accent. Plain Buttons bound to
+                     Classes.ToolActive rather than ToggleButtons: a ToggleButton toggles ITSELF on
+                     click, so its visual state and the view model's would be two copies of one
+                     fact. Here the view model owns it and the class follows it.
+
+                     AT LEAST ONE IS ALWAYS SHOWING, and the last lit button is DISABLED rather
+                     than inert — the Command's own CanExecute dims it, so there is no IsEnabled
+                     here to keep in step.
+
+                     THESE REPLACE THE TWO DIAGONAL-ARROW EXPANDERS that used to sit in the network
+                     and response pane headers (owner, 2026-09-20: now redundant). Each of those
+                     gave one right-hand pane the other's column; turning the response lamp off is
+                     the same state and says so more plainly, and three states they could not reach
+                     — releasing the specification column, releasing the transforms rack on its own,
+                     and showing any two panels — come with it. -->
+                <Button Name="SpecificationPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowSpecification}"
+                        Command="{Binding ToggleSpecificationCommand}"
+                        ToolTip.Tip="Specification — show or hide the left column. Hidden, the network, the transforms and the response take the width it releases. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/>
+                </Button>
+                <Button Name="NetworkPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowNetwork}"
+                        Command="{Binding ToggleNetworkCommand}"
+                        ToolTip.Tip="Impedance Matching Network — show or hide the schematic and its value grid. Hidden, the transforms rack takes the whole centre column. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutBody" Width="16" Height="16"/>
+                </Button>
+                <Button Name="TransformsPaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowTransforms}"
+                        Command="{Binding ToggleTransformsCommand}"
+                        ToolTip.Tip="Transforms — show or hide the transform rack. Hidden, the network expands down into its space. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutFooter" Width="16" Height="16"/>
+                </Button>
+                <Button Name="ResponsePaneButton" Padding="6,3"
+                        Classes.ToolActive="{Binding ShowResponse}"
+                        Command="{Binding ToggleResponseCommand}"
+                        ToolTip.Tip="Response — show or hide the right column. Hidden, the network and the transforms take the width it releases. At least one panel is always showing, so the last one cannot be hidden.">
+                    <mi:MaterialIcon Kind="PageLayoutSidebarRight" Width="16" Height="16"/>
+                </Button>
+
+                <!-- The layout editor's own toolbar rule: these four change what is SHOWN,
+                     everything to their right acts on the design or the application. -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <!-- ── Undo and Redo (owner, 2026-08-28) ──────────────────────────
                      Left of Settings, in the same glyph language as the rest of the strip. The
                      COMMANDS are not new and neither is the behaviour: MatchDesignerViewModel's
@@ -548,19 +634,24 @@
              What that round bought is not given back: the reactance's two rows are still one row,
              its kind selector is still a single character, and the termination cards are unchanged —
              they simply have 70 px of slack now, which is where a solution card's own text goes. -->
-        <!-- Either of the two right-hand panes can be given the other's width (owner, 2026-08-20:
-             "add a button in front of Impedance Matching Network… when clicked, the Schematic and
-             Transforms panels expand to the right to occupy more space and the Response panel is no
-             longer visible… do the same thing with the Response panel").
+        <!-- ANY OF THE FOUR PANELS CAN BE PUT AWAY, and the two gaps between the columns are
+             DRAGGABLE (owner, 2026-09-20). Both are railRF's arrangement, adopted wholesale.
 
-             Hiding a pane is NOT enough on its own — a collapsed IsVisible leaves its 380 px column
-             standing and the window shows a hole — so the column WIDTH moves with it. The widths are
-             set from code-behind (SyncPaneLayout), not bound here: a ColumnDefinition is not in the
-             logical tree, so it inherits no DataContext and a {Binding} on one silently resolves to
-             nothing. The specification column is untouched in both states: it is the input side, and
-             an expansion that hid it would make the window unusable in exactly the moment the user is
-             reading detail off the other two. -->
-        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="285,*,380">
+             Hiding a pane is NOT enough on its own — a collapsed IsVisible leaves its 285 or 380 px
+             column standing and the window shows a hole — so the column WIDTH moves with it. The
+             widths are set from code-behind (SyncPanes), not bound here: a ColumnDefinition is not
+             in the logical tree, so it inherits no DataContext and a {Binding} on one silently
+             resolves to nothing.
+
+             THE GRIPPERS ARE INVISIBLE — the Smith Chart's and wBond's own arrangement before
+             railRF's: an Auto column holding nothing but a 4 px transparent GridSplitter. There is
+             no line to draw because the panes already have edges; what the strip adds is a cursor
+             and a grab. SyncPanes owns their visibility too, because a gripper beside a hidden pane
+             would trade space with a column that is zero wide and simply stick.
+
+             THE COLUMN INDICES MOVED and that is the whole cost of it: the centre column is 2 and
+             the response 4. -->
+        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="285,Auto,*,Auto,380">
 
             <!-- Specification -->
             <!-- THREE CARDS LEFT (owner, 2026-08-28): the two terminations, the band, and the ripple.
@@ -577,7 +668,7 @@
                  changed underneath the user, which is still true and still worth saying when there is
                  no longer a control to say it beside. The ORDER's note went entirely; see the note
                  beside QAdjustNote for why. -->
-            <Border Grid.Column="0" Classes="pane">
+            <Border Grid.Column="0" Classes="pane" IsVisible="{Binding ShowSpecification}">
                 <Grid Name="SpecificationPane" RowDefinitions="Auto,Auto,*">
                     <TextBlock Classes="panelhdr" Text="Specification"/>
 
@@ -1033,30 +1124,31 @@
                 </Grid>
             </Border>
 
+            <GridSplitter Grid.Column="1" Name="SpecificationSplitter" Width="4"
+                          ResizeDirection="Columns" Background="Transparent"
+                          DragCompleted="OnPaneSplitterDragCompleted"/>
+
             <!-- Network + Transforms -->
-            <Grid Grid.Column="1" RowDefinitions="*,Auto" IsVisible="{Binding !ResponseExpanded}">
-                <Border Classes="pane">
+            <!-- THE NETWORK AND THE TRANSFORMS RACK SHARE THIS COLUMN, which is why hiding one of
+                 them widens nothing and hiding BOTH is what collapses the column. The gap between
+                 them is draggable too — SyncPanes owns the arithmetic, and OnPaneSplitterDragCompleted
+                 puts the network's row back to star after a drag for the same reason it does the
+                 centre column. -->
+            <Grid Grid.Column="2" Name="CentreGrid" RowDefinitions="*,Auto,Auto"
+                  IsVisible="{Binding ShowNetworkColumn}">
+                <Border Name="NetworkPane" Classes="pane" IsVisible="{Binding ShowNetwork}">
                     <!-- The schematic on top, the component listing UNDER it (owner, 2026-08-19:
                          "move the grid listing of components so that it appears in a scrollview under
                          the schematic; remove the schematic/grid radio UI selector"). They are two
                          views of one network, and a selector that showed one at a time made the user
                          choose between the picture and the numbers. -->
                     <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
-                        <!-- The pane header carries its name and ONE control: the expander that
-                             gives this pane the response pane's width (owner, 2026-08-20). The
-                             glyph IS the state — down-and-right while there is room to take, up-and-
-                             left once it has been taken. The "scroll to zoom…" line the header used
-                             to carry is still gone (owner, same round). -->
-                        <Grid ColumnDefinitions="Auto,*">
-                            <ToggleButton Name="NetworkExpandButton" Padding="3,1" Margin="0,0,6,4"
-                                          MinWidth="0" MinHeight="0" VerticalAlignment="Center"
-                                          IsChecked="{Binding NetworkExpanded, Mode=TwoWay}"
-                                          ToolTip.Tip="{Binding NetworkExpandTooltip}">
-                                <mi:MaterialIcon Kind="{Binding NetworkExpandIcon}" Width="14" Height="14"/>
-                            </ToggleButton>
-                            <TextBlock Grid.Column="1" Classes="panelhdr"
-                                       Text="Impedance Matching Network"/>
-                        </Grid>
+                        <!-- The pane header carries its name and nothing else. The diagonal-arrow
+                             expander that used to sit in front of it is gone (owner, 2026-09-20):
+                             the toolbar's four panel lamps say everything it said and three things
+                             it could not — see the strip's own note up there. The "scroll to zoom…"
+                             line the header used to carry is still gone too (owner, 2026-08-20). -->
+                        <TextBlock Classes="panelhdr" Text="Impedance Matching Network"/>
 
                         <!-- A REAL circuitRF schematic, drawn by the editor's own renderer. See
                              MatchSchematicCanvas — nothing here is editable. -->
@@ -1153,7 +1245,12 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1" Classes="pane" MinHeight="150">
+                <GridSplitter Grid.Row="1" Name="TransformsSplitter" Height="4"
+                              ResizeDirection="Rows" Background="Transparent"
+                              DragCompleted="OnPaneSplitterDragCompleted"/>
+
+                <Border Grid.Row="2" Name="TransformsPane" Classes="pane" MinHeight="150"
+                        IsVisible="{Binding ShowTransforms}">
                     <Grid RowDefinitions="Auto,*,Auto">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Transforms"/>
@@ -1265,8 +1362,12 @@
                  color of the Response group UI needs to be the same as the background color of the
                  Data display"). CrfDataDisplayCanvasBrush is the same application-scope key
                  PlotCanvasView paints with — see Styles/CircuitRfResources.axaml. -->
-            <Border Grid.Column="2" Classes="pane"
-                    IsVisible="{Binding !NetworkExpanded}"
+            <GridSplitter Grid.Column="3" Name="ResponseSplitter" Width="4"
+                          ResizeDirection="Columns" Background="Transparent"
+                          DragCompleted="OnPaneSplitterDragCompleted"/>
+
+            <Border Grid.Column="4" Name="ResponsePane" Classes="pane"
+                    IsVisible="{Binding ShowResponse}"
                     Background="{DynamicResource CrfDataDisplayCanvasBrush}">
               <!-- The two plots are laid out at a FIXED aspect ratio, so their height follows the
                    pane's width rather than the pane's height — which means a short window can run out
@@ -1274,19 +1375,10 @@
                    not a golden-ratio plot. -->
               <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-                    <!-- The Response pane's own expander, mirrored: down-and-LEFT at rest, because
-                         the space it takes is the network pane's and that is where it comes from
-                         (owner, 2026-08-20), and up-and-right once it has it. The two toggles are
-                         mutually exclusive — see MatchDesignerViewModel.NetworkExpanded. -->
-                    <Grid ColumnDefinitions="Auto,*">
-                        <ToggleButton Name="ResponseExpandButton" Padding="3,1" Margin="0,0,6,4"
-                                      MinWidth="0" MinHeight="0" VerticalAlignment="Center"
-                                      IsChecked="{Binding ResponseExpanded, Mode=TwoWay}"
-                                      ToolTip.Tip="{Binding ResponseExpandTooltip}">
-                            <mi:MaterialIcon Kind="{Binding ResponseExpandIcon}" Width="14" Height="14"/>
-                        </ToggleButton>
-                        <TextBlock Grid.Column="1" Classes="panelhdr" Text="Response"/>
-                    </Grid>
+                    <!-- The Response pane's own expander is gone with the network pane's (owner,
+                         2026-09-20) — the toolbar lamp for this column is the same control, and
+                         turning it off is the state the network pane's expander used to reach. -->
+                    <TextBlock Classes="panelhdr" Text="Response"/>
                     <!-- Golden aspect ratio on both rect plots (owner, 2026-08-19). AspectRatioPanel
                          LAYS the plot out at 1.618:1 — a Viewbox would scale the axis text and the
                          stroke weights along with the frame, which is a different thing entirely. -->

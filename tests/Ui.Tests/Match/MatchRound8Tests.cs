@@ -183,11 +183,16 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// <b>The specification column is wider</b> (owner: "widen the Specification panel slightly") —
     /// and still narrower than the 300 it started at, which is what "slightly" has to mean.
     /// </summary>
+    /// <remarks>
+    /// The grid gained two <c>Auto</c> gripper columns between the panes in 2026-09-20's round, so
+    /// the pattern allows for them; the claim here is about the FIRST column's width and is
+    /// unchanged.
+    /// </remarks>
     [Fact]
-    public void TheSpecificationColumn_IsWiderThanItWas_AndTheGridHasThreeColumns()
+    public void TheSpecificationColumn_IsWiderThanItWas_AndTheGridHasThreePanes()
     {
-        var cols = Regex.Match(Xaml(), @"ColumnDefinitions=""(\d+),\*,380""");
-        Assert.True(cols.Success, "the pane grid no longer declares three columns with a fixed first");
+        var cols = Regex.Match(Xaml(), @"ColumnDefinitions=""(\d+),Auto,\*,Auto,380""");
+        Assert.True(cols.Success, "the pane grid no longer declares three panes with a fixed first");
 
         double column = double.Parse(cols.Groups[1].Value, CultureInfo.InvariantCulture);
         output.WriteLine($"specification column {column}");

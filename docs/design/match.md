@@ -879,10 +879,12 @@ through candidate solutions and watch the ladder and the response change live.
 
 ### 9.2 The specification pane
 
-Termination groups keep the reference implementation's small **RC pictogram** — it is the fastest way to
-show series-vs-parallel — extended to draw an inductor when Kind = L. Every numeric field is a
-circuitRF value+unit pair using the existing parameter-editor field conventions, so unit handling,
-validation and formatting come for free.
+Termination groups keep the reference implementation's small **pictogram** — it is the fastest way to
+show series-vs-parallel. Since 2026-09-20 it is not a drawing of its own: every arrangement a
+termination can take is a part circuitRF already ships, so the pictogram names a `SymbolKind` — `R`,
+`SRL`, `SRC`, `PRL` or `PRC` — and `BuiltInSymbols` draws it. The R here is the R on the page, and a
+redraw of the library moves it. Every numeric field is a circuitRF value+unit pair using the existing
+parameter-editor field conventions, so unit handling, validation and formatting come for free.
 
 The **Order** picker offers only the parities §4.2 permits, and changing a topology adjusts the order
 rather than presenting an impossible one — with a one-line note saying it did, because a control that

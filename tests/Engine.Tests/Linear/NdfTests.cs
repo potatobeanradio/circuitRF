@@ -902,6 +902,14 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["InductorModel"]         = Activity.Passive,
         ["SeriesRlcModel"]        = Activity.Passive,
         ["ParallelRlcModel"]      = Activity.Passive,
+        // The six two-element members of the same family (2026-09-20). Passive for the same reason
+        // the three-element pair is: the stamp is the passive stamp.
+        ["SeriesRlModel"]         = Activity.Passive,
+        ["SeriesRcModel"]         = Activity.Passive,
+        ["SeriesLcModel"]         = Activity.Passive,
+        ["ParallelRlModel"]       = Activity.Passive,
+        ["ParallelRcModel"]       = Activity.Passive,
+        ["ParallelLcModel"]       = Activity.Passive,
         ["BeadModel"]             = Activity.Passive,
         ["MutualInductanceModel"] = Activity.Passive,
         ["TLineModel"]            = Activity.Passive,

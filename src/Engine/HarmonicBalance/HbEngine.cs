@@ -2653,7 +2653,7 @@ public sealed class HbEngine
     private static int GetControlBranchIndexHb(
         string sddName, int n, int port, ElaboratedComponent target)
     {
-        const string Allowed = "Vdc, V_1Tone/V_nTone, IProbe, WSProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
+        const string Allowed = "Vdc, V_1Tone/V_nTone, IProbe, WSProbe, L (Inductor), SRLC, PRLC, SRL, SLC, PRL, PLC, SnP, Z_Port";
         return target.Model switch
         {
             VdcModel        vdc  => ValidateSinglePortBranchHb(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),

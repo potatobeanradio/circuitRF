@@ -8,7 +8,8 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Palette wiring for the two RLC parts, SRLC and PRLC.
+/// Palette wiring for the RLC family — SRLC and PRLC, and the six two-element members added
+/// beside them (SRL, SRC, SLC, PRL, PRC, PLC; owner, 2026-09-20).
 ///
 /// <para><b>The load-bearing test is R2, the pin contract.</b> The stated reason these parts are
 /// drawn small enough to share R/L/C's 400-unit span is that a designer can replace a plain R, L or
@@ -23,11 +24,40 @@ namespace CircuitRF.Ui.Tests;
 ///   R3 — each tile places its own engine component, and that component exists in the factory.
 ///   R4 — every registry parameter name reaches the model: perturb it, the stamp must move.
 ///   R5 — a freshly placed part is a working part: the shipped defaults stamp.
-///   R6 — both carry an inductor branch, which is what lets a Mutual reference them.
+///   R6 — the seven members that carry an inductor expose the branch a Mutual references, and the
+///        two that do not (SRC, PRC) deliberately do not.
+///
+/// <para><b>Every one of them is one row of the same arrays.</b> The family is nine parts over two
+/// pieces of arithmetic, so a test that named SRLC and PRLC and left the other seven to a later
+/// round would be the shape of the defect it is meant to catch.</para>
 /// </summary>
 public class RlcPaletteWiringTests
 {
-    private static readonly SymbolKind[] Rlc = [SymbolKind.Srlc, SymbolKind.Prlc];
+    /// <summary>Every member of the family, in the order the palette lists them.</summary>
+    private static readonly SymbolKind[] Rlc =
+    [
+        SymbolKind.Srlc, SymbolKind.Prlc,
+        SymbolKind.Srl,  SymbolKind.Src,  SymbolKind.Slc,
+        SymbolKind.Prl,  SymbolKind.Prc,  SymbolKind.Plc,
+    ];
+
+    /// <summary>The seven that carry an inductor, and can therefore be one end of a Mutual.</summary>
+    private static readonly SymbolKind[] Inductive =
+    [
+        SymbolKind.Srlc, SymbolKind.Prlc, SymbolKind.Srl, SymbolKind.Slc,
+        SymbolKind.Prl,  SymbolKind.Plc,
+    ];
+
+    /// <summary>
+    /// The parameter names a member carries, read off its own engine reference: "SRL" holds an R
+    /// and an L, "PLC" an L and a C. Derived rather than tabulated, so a new member needs no row
+    /// here and a member whose reference and parameter set disagree is caught rather than copied.
+    /// </summary>
+    private static string[] ElementsOf(SymbolKind kind)
+    {
+        string r = ComponentTypeRegistry.EngineReference(kind);
+        return new[] { "R", "L", "C" }.Where(e => r[1..].Contains(e)).ToArray();
+    }
 
     // ── R1 ────────────────────────────────────────────────────────────────────
 
@@ -42,11 +72,16 @@ public class RlcPaletteWiringTests
             Assert.Contains(kind, LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind));
         }
 
-        // Typing the code into the palette's search box has to land on the part.
-        Assert.True(ComponentTypeRegistry.TryParseCode("SRLC", out var k1, out _));
-        Assert.Equal(SymbolKind.Srlc, k1);
-        Assert.True(ComponentTypeRegistry.TryParseCode("prlc", out var k2, out _));
-        Assert.Equal(SymbolKind.Prlc, k2);
+        // Typing the code into the palette's search box has to land on the part — and case does
+        // not matter, which is what the lower-cased round below says.
+        foreach (var kind in Rlc)
+        {
+            string code = ComponentTypeRegistry.EngineReference(kind);
+            Assert.True(ComponentTypeRegistry.TryParseCode(code, out var k1, out _), code);
+            Assert.Equal(kind, k1);
+            Assert.True(ComponentTypeRegistry.TryParseCode(code.ToLowerInvariant(), out var k2, out _), code);
+            Assert.Equal(kind, k2);
+        }
     }
 
     // ── R2: the swap contract ─────────────────────────────────────────────────
@@ -114,13 +149,22 @@ public class RlcPaletteWiringTests
     [Fact]
     public void R3_EachTilePlacesItsOwnEngineComponentAndTheFactoryKnowsIt()
     {
-        Assert.Equal("SRLC", ComponentTypeRegistry.EngineReference(SymbolKind.Srlc));
-        Assert.Equal("PRLC", ComponentTypeRegistry.EngineReference(SymbolKind.Prlc));
+        // The reference IS the kind's own name, which is what makes ElementsOf derivable.
+        Assert.Equal(
+            ["SRLC", "PRLC", "SRL", "SRC", "SLC", "PRL", "PRC", "PLC"],
+            Rlc.Select(ComponentTypeRegistry.EngineReference).ToArray());
 
-        Assert.True(ComponentModelFactory.IsPrimitive("SRLC"));
-        Assert.True(ComponentModelFactory.IsPrimitive("PRLC"));
-        Assert.IsType<SeriesRlcModel>(ComponentModelFactory.TryCreate("SRLC"));
-        Assert.IsType<ParallelRlcModel>(ComponentModelFactory.TryCreate("PRLC"));
+        foreach (var kind in Rlc)
+        {
+            string code = ComponentTypeRegistry.EngineReference(kind);
+            Assert.True(ComponentModelFactory.IsPrimitive(code), $"the factory does not know '{code}'");
+
+            // Series members stamp one branch, parallel members stamp admittances — a tile wired to
+            // the wrong half of the family would still place and still solve, as something else.
+            var model = ComponentModelFactory.TryCreate(code);
+            if (code[0] == 'S') Assert.IsAssignableFrom<SeriesRlcBranchModel>(model);
+            else                Assert.IsAssignableFrom<ParallelRlcBranchModel>(model);
+        }
     }
 
     // ── R4: every offered parameter reaches the model ─────────────────────────
@@ -128,15 +172,26 @@ public class RlcPaletteWiringTests
     [Theory]
     [InlineData(SymbolKind.Srlc)]
     [InlineData(SymbolKind.Prlc)]
+    [InlineData(SymbolKind.Srl)]
+    [InlineData(SymbolKind.Src)]
+    [InlineData(SymbolKind.Slc)]
+    [InlineData(SymbolKind.Prl)]
+    [InlineData(SymbolKind.Prc)]
+    [InlineData(SymbolKind.Plc)]
     public void R4_EveryRegistryParameterNameReachesTheStamp(SymbolKind kind)
     {
         var names = ComponentTypeRegistry.DefaultParameters(kind, 2).Select(p => p.Name).ToList();
-        Assert.Equal(["R", "L", "C"], names);
 
-        var baseline = new Dictionary<string, Value>
+        // EXACTLY the elements the part has — the whole reason to place an SRL rather than an SRLC
+        // with a value nobody meant. An extra row here is a number on the schematic that does
+        // nothing, and a missing one is a value the user cannot reach.
+        Assert.Equal(ElementsOf(kind), names);
+
+        var seed = new Dictionary<string, double>
         {
-            ["R"] = new Value(3.0), ["L"] = new Value(4e-9), ["C"] = new Value(5e-12),
+            ["R"] = 3.0, ["L"] = 4e-9, ["C"] = 5e-12,
         };
+        var baseline = names.ToDictionary(n => n, n => new Value(seed[n]));
         var reference = Fingerprint(kind, baseline);
 
         foreach (var name in names)
@@ -172,31 +227,49 @@ public class RlcPaletteWiringTests
         }
     }
 
-    /// <summary>R = 1 Ω, L = 1 nH, C = 1 pF — the values the parts ship with.</summary>
+    /// <summary>R = 1 Ω, L = 1 nH, C = 1 pF — the values every member of the family ships with,
+    /// so a swap between any two of them reads the same.</summary>
     [Fact]
     public void R5b_ShippedDefaultsAreOneOhmOneNanohenryOnePicofarad()
     {
+        var expected = new Dictionary<string, (string Expr, string Unit)>
+        {
+            ["R"] = ("1", "Ω"), ["L"] = ("1", "nH"), ["C"] = ("1", "pF"),
+        };
+
         foreach (var kind in Rlc)
         {
             var d = ComponentTypeRegistry.DefaultParameters(kind, 2).ToDictionary(p => p.Name);
-            Assert.Equal(("1", "Ω"),  (d["R"].Expression, d["R"].Unit));
-            Assert.Equal(("1", "nH"), (d["L"].Expression, d["L"].Unit));
-            Assert.Equal(("1", "pF"), (d["C"].Expression, d["C"].Unit));
-            // All three show on the schematic: the R and the L are the reason to place one of
-            // these instead of a plain C, so hiding either would defeat the part.
+            foreach (var name in ElementsOf(kind))
+                Assert.Equal(expected[name], (d[name].Expression, d[name].Unit));
+
+            // Every value shows on the schematic: the point of these parts is that the numbers are
+            // on the page, so hiding one would defeat the part.
             Assert.All(d.Values, p => Assert.True(p.ShowOnSchematic, $"{kind}.{p.Name} is hidden"));
         }
     }
 
     // ── R6: a Mutual can reference either ─────────────────────────────────────
 
+    /// <remarks>
+    /// <b>The negative half is the load-bearing one.</b> An SRC or a PRC that implemented
+    /// <see cref="IInductiveBranch"/> would let a Mutual name it and stamp −jωM onto a diagonal
+    /// that is not an inductance — a PRC does not even allocate a branch — and both give a number
+    /// that solves. The refusal only happens because the interface is absent.
+    /// </remarks>
     [Fact]
-    public void R6_BothCarryAnInductorBranchAMutualCanCoupleTo()
+    public void R6_OnlyTheMembersThatCarryAnInductorExposeABranchAMutualCanCoupleTo()
     {
-        Assert.IsAssignableFrom<IInductiveBranch>(ComponentModelFactory.TryCreate("SRLC"));
-        Assert.IsAssignableFrom<IInductiveBranch>(ComponentModelFactory.TryCreate("PRLC"));
-        // The kind the pair was modelled on, so the three stay one family.
+        // The kind the family was modelled on, so they all stay one family.
         Assert.IsAssignableFrom<IInductiveBranch>(ComponentModelFactory.TryCreate("L"));
+
+        foreach (var kind in Inductive)
+            Assert.IsAssignableFrom<IInductiveBranch>(
+                ComponentModelFactory.TryCreate(ComponentTypeRegistry.EngineReference(kind)));
+
+        foreach (var kind in new[] { SymbolKind.Src, SymbolKind.Prc })
+            Assert.IsNotAssignableFrom<IInductiveBranch>(
+                ComponentModelFactory.TryCreate(ComponentTypeRegistry.EngineReference(kind)));
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

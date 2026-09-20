@@ -181,6 +181,12 @@ that agrees with nothing.
 | C | series, shunt | `Capacitor` / `C` | C | 1 | C |
 | SRLC | series, shunt | `Srlc` / `SRLC` | R, L, C | 3 | L |
 | PRLC | series, shunt | `Prlc` / `PRLC` | R, L, C | 3 | C |
+| SRL | series, shunt | `Srl` / `SRL` | R, L | 2 | L |
+| SRC | series, shunt | `Src` / `SRC` | R, C | 2 | C |
+| SLC | series, shunt | `Slc` / `SLC` | L, C | 2 | L |
+| PRL | series, shunt | `Prl` / `PRL` | R, L | 2 | L |
+| PRC | series, shunt | `Prc` / `PRC` | R, C | 2 | C |
+| PLC | series, shunt | `Plc` / `PLC` | L, C | 2 | C |
 | Z1P | series, shunt | `ZPort` (`NumPorts=1`) / `ZPort` | Z (complex, constant over f) | 2 (Re, Im) | Im |
 | S1P | series, shunt | `Snp` (`NumPorts=1`) / `SnP` | file reference | — | — |
 | S2P | series only | `Snp` (`NumPorts=2`) / `SnP` | file reference | — | — |
@@ -196,6 +202,10 @@ L      Z = jωL                      Y = 1/(jωL)
 C      Z = 1/(jωC)                  Y = jωC
 SRLC   Z = R + jωL + 1/(jωC)
 PRLC   Y = 1/R + 1/(jωL) + jωC
+SRL/SRC/SLC   the SRLC formula over the elements the kind carries — an absent one contributes
+              nothing to Z (R = 0, L = 0, and no 1/(jωC) term at all)
+PRL/PRC/PLC   the PRLC formula over the same, its dual — an absent element contributes nothing
+              to Y (G = 0, C = 0, and no 1/(jωL) term)
 Z1P    Z = Z                        (a complex constant; no frequency dependence — that is the point of it)
 S1P    Z = Z_file·(1+S₁₁)/(1−S₁₁)    S₁₁ interpolated to ω, referenced to the file's own Z
 S2P    the Z-parameter form above, S interpolated to ω then converted

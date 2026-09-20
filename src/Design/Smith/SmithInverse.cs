@@ -48,6 +48,7 @@
 // number; brief 5 owns the gesture, the undo entry and the decision to commit it.
 
 using System.Numerics;
+using CircuitRF.Core.Devices;
 
 namespace CircuitRF.Design.Smith;
 
@@ -246,12 +247,17 @@ public static class SmithInverse
             return Hold(e, p, current,
                 "the drag and the impedance arriving here do not differ by a finite immittance");
 
-        // Which plane the projection happens in — see this file's header.
+        // Which plane the projection happens in — see this file's header. The RLC FAMILY projects
+        // in its OWN form whichever way it is placed: Z for the four series members, Y for the four
+        // parallel ones. That is the same rule SRLC and PRLC have always followed and it extends to
+        // the two-element members unchanged, because what makes it right is the topology and not
+        // how many elements the part happens to carry.
         bool wantAdmittance = e.Kind switch
         {
-            SmithElementKind.Prlc                        => true,
-            SmithElementKind.Srlc or SmithElementKind.Z1P => false,
-            _                                            => shunt,
+            _ when SmithComponentMap.IsParallelRlc(e.Kind) => true,
+            _ when SmithComponentMap.IsSeriesRlc(e.Kind)   => false,
+            SmithElementKind.Z1P                           => false,
+            _                                              => shunt,
         };
 
         Complex a = wantAdmittance == shunt ? additive : Complex.One / additive;
@@ -260,7 +266,11 @@ public static class SmithInverse
                 "the drag asks this element for an immittance with no finite "
               + (wantAdmittance ? "admittance" : "impedance"));
 
-        var v = e.Values;
+        // The eight RLC-family kinds, in one pair of formulas — see SolveRlcFamily. They leave
+        // this switch with only the single-element kinds and Z1P, which is why every arm below
+        // reads `a` and none of them reads the element's own values.
+        if (SmithComponentMap.RlcElementsOf(e.Kind) is { } rlc)
+            return SolveRlcFamily(e, p, a, w, rlc, SmithComponentMap.IsParallelRlc(e.Kind), current);
 
         return (e.Kind, p) switch
         {
@@ -285,21 +295,6 @@ public static class SmithInverse
                 ? Linear(e, p, a.Imaginary / w, current)
                 : Reciprocal(e, p, -w * a.Imaginary, current),
 
-            // ── SRLC, in Z: Z_e = R + j(ωL − 1/(ωC)) ─────────────────────────
-            (SmithElementKind.Srlc, SmithParameter.R) => Linear(e, p, a.Real, current),
-            (SmithElementKind.Srlc, SmithParameter.L) =>
-                Linear(e, p, (a.Imaginary + 1.0 / (w * v.CFarad)) / w, current),
-            // X → ωL as C → ∞, so a demand at or past ωL has no finite capacitance behind it.
-            (SmithElementKind.Srlc, SmithParameter.C) =>
-                Reciprocal(e, p, w * (w * v.LHenry - a.Imaginary), current),
-
-            // ── PRLC, in Y: Y_e = 1/R + j(ωC − 1/(ωL)) — the duals of the three above ─
-            (SmithElementKind.Prlc, SmithParameter.R) => Reciprocal(e, p, a.Real, current),
-            (SmithElementKind.Prlc, SmithParameter.C) =>
-                Linear(e, p, (a.Imaginary + 1.0 / (w * v.LHenry)) / w, current),
-            (SmithElementKind.Prlc, SmithParameter.L) =>
-                Reciprocal(e, p, w * (w * v.CFarad - a.Imaginary), current),
-
             // ── Z1P, in Z, and NEITHER part is bounded ───────────────────────
             // A negative real part is an active one-port, which §4.2 draws rather than hides: it
             // leaves the unit circle, and clamping it would be a lie about a stability result.
@@ -310,6 +305,68 @@ public static class SmithInverse
                 $"'{e.Name}' is a {e.Kind} and {p} has no inverse written for it."),
         };
     }
+
+    /// <summary>
+    /// The RLC family's inverse — SRLC, SRL, SRC, SLC and their four parallel duals.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two formulas for eight kinds, and an absent element contributes a zero term.</b> A series
+    /// member states Z_e = R + j(ωL − 1/(ωC)); a parallel one states Y_e = 1/R + j(ωC − 1/(ωL)).
+    /// Each parameter's inverse reads the OTHER reactance out of the element's current values, and
+    /// where the part does not carry that reactance the term it would have contributed is simply
+    /// zero. So an SLC's L solves against 1/(ωC) exactly as an SRLC's does, and an SRL's solves
+    /// against nothing — which is the plain series-L answer, reached without a second arm saying so.
+    ///
+    /// <para><b>Linear where the parameter enters linearly, reciprocal where it enters as 1/x</b>,
+    /// which is this file's header's pinning rule and is what decides whether an overshoot lands on
+    /// zero or holds at the current value. In Z that makes R and L linear and C reciprocal; in Y it
+    /// is exactly reversed, C linear and R and L reciprocal.</para>
+    ///
+    /// <para><b>An absent element's term is zero rather than infinite</b>, and the difference is
+    /// visible only at the corners: a present C of zero gives 1/(ωC) = +∞ and pins, which is the
+    /// answer an SRLC has always given, while an SRL — which has no C at all — must not go near
+    /// that arithmetic. The same distinction is what makes 1/(0·∞) a NaN in the engine model, and
+    /// it is written the same way here on purpose.</para>
+    /// </remarks>
+    private static InverseResult SolveRlcFamily(
+        SmithElement e, SmithParameter p, Complex a, double w,
+        RlcElements elements, bool parallel, double current)
+    {
+        var v = e.Values;
+
+        if (!parallel)
+        {
+            // Z_e = R + j(ωL − 1/(ωC)), over the elements present.
+            double xc = elements.HasFlag(RlcElements.C) ? 1.0 / (w * v.CFarad) : 0.0;
+            double xl = elements.HasFlag(RlcElements.L) ? w * v.LHenry         : 0.0;
+
+            return p switch
+            {
+                SmithParameter.R => Linear(e, p, a.Real, current),
+                SmithParameter.L => Linear(e, p, (a.Imaginary + xc) / w, current),
+                // X → ωL as C → ∞, so a demand at or past ωL has no finite capacitance behind it.
+                SmithParameter.C => Reciprocal(e, p, w * (xl - a.Imaginary), current),
+                _ => throw NoInverse(e, p),
+            };
+        }
+
+        // Y_e = 1/R + j(ωC − 1/(ωL)) — the duals.
+        double bl = elements.HasFlag(RlcElements.L) ? 1.0 / (w * v.LHenry) : 0.0;
+        double bc = elements.HasFlag(RlcElements.C) ? w * v.CFarad         : 0.0;
+
+        return p switch
+        {
+            SmithParameter.R => Reciprocal(e, p, a.Real, current),
+            SmithParameter.C => Linear(e, p, (a.Imaginary + bl) / w, current),
+            SmithParameter.L => Reciprocal(e, p, w * (bc - a.Imaginary), current),
+            _ => throw NoInverse(e, p),
+        };
+    }
+
+    /// <summary>The message both family arms fall to — unreachable through <see cref="Solve"/>,
+    /// which already refuses a parameter the kind does not expose.</summary>
+    private static InvalidOperationException NoInverse(SmithElement e, SmithParameter p)
+        => new($"'{e.Name}' is a {e.Kind} and {p} has no inverse written for it.");
 
     // ═════════════════════════════════════════════════════════════════════════
     //  The three line kinds — TLIN, and the same line as an open or a shorted stub

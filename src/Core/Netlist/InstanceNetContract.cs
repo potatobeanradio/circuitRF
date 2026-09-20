@@ -40,7 +40,11 @@ public static class InstanceNetContract
     public static int? Expected(ComponentModel model) => model switch
     {
         // ── Two-terminal linear parts. PortCount is the net count for these, and only these. ──
-        ResistorModel or CapacitorModel or InductorModel or SeriesRlcModel or ParallelRlcModel
+        // The whole RLC family answers through its two BASE types, not member by member — six more
+        // names here would be six chances to forget one, and a forgotten one is a part whose net
+        // count nothing states.
+        ResistorModel or CapacitorModel or InductorModel
+            or SeriesRlcBranchModel or ParallelRlcBranchModel
             or BeadModel or ShortModel or SemiCapacitorModel or MatchModel                    => 2,
 
         // Port and Term take a signal net and a reference net. The schematic draws one pin and the

@@ -11,7 +11,6 @@ using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Material.Icons;
 
 namespace CircuitRF.Ui.Matching;
 
@@ -223,60 +222,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// <summary>Display and search settings (§9.9). Not part of the design.</summary>
     public MatchDesignerSettings Settings { get; }
 
-    // ── Pane expansion (owner, 2026-08-20) ────────────────────────────────────
-
-    /// <summary>
-    /// True while the network + transforms column has been given the response pane's width.
-    /// </summary>
-    /// <remarks>
-    /// The two expanders are <b>mutually exclusive</b> rather than independent, and they have to be:
-    /// each one takes the OTHER pane's column, so both on at once is a state with no width left to
-    /// describe. Setting either turns the other off here, once, instead of in the two toggles that
-    /// bind to them.
-    /// </remarks>
-    [ObservableProperty] private bool _networkExpanded;
-
-    /// <inheritdoc cref="NetworkExpanded"/>
-    [ObservableProperty] private bool _responseExpanded;
-
-    partial void OnNetworkExpandedChanged(bool value)
-    {
-        if (value) ResponseExpanded = false;
-        OnPropertyChanged(nameof(NetworkExpandIcon));
-        OnPropertyChanged(nameof(NetworkExpandTooltip));
-    }
-
-    partial void OnResponseExpandedChanged(bool value)
-    {
-        if (value) NetworkExpanded = false;
-        OnPropertyChanged(nameof(ResponseExpandIcon));
-        OnPropertyChanged(nameof(ResponseExpandTooltip));
-    }
-
-    /// <summary>
-    /// The network expander's glyph — <b>the arrow points where the pane is about to go</b>
-    /// (owner, 2026-08-20: "the button icon shows state").
-    /// </summary>
-    /// <remarks>
-    /// Typed rather than a string the binding would have to parse into the enum: a misspelt glyph
-    /// name is then a build error instead of a blank square nobody notices until the screenshot.
-    /// </remarks>
-    public MaterialIconKind NetworkExpandIcon =>
-        NetworkExpanded ? MaterialIconKind.ArrowTopLeft : MaterialIconKind.ArrowBottomRight;
-
-    /// <inheritdoc cref="NetworkExpandIcon"/>
-    public MaterialIconKind ResponseExpandIcon =>
-        ResponseExpanded ? MaterialIconKind.ArrowTopRight : MaterialIconKind.ArrowBottomLeft;
-
-    /// <summary>What the network expander offers, in the state it is in.</summary>
-    public string NetworkExpandTooltip => NetworkExpanded
-        ? "Give the response pane its width back"
-        : "Expand the schematic and transforms over the response pane";
-
-    /// <inheritdoc cref="NetworkExpandTooltip"/>
-    public string ResponseExpandTooltip => ResponseExpanded
-        ? "Give the schematic and transforms their width back"
-        : "Expand the response over the schematic and transforms";
+    // Pane VISIBILITY — the four panel lamps — lives in MatchDesignerViewModel.Panes.cs. The two
+    // mutually-exclusive "expand over the other pane" toggles that used to be here went with them
+    // (owner, 2026-09-20); see that file for what replaced them and why.
 
     /// <summary>The result of the last rebuild — the source of every number on screen.</summary>
     public MatchRebuildResult? Rebuild => _rebuild;

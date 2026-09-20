@@ -549,6 +549,16 @@ what makes the copied network (<a href="#clipboard">below</a>) a circuit that re
 <td>R, L and C in parallel — a tank.</td>
 </tr>
 <tr>
+<td><strong>SRL</strong>, <strong>SRC</strong>, <strong>SLC</strong></td>
+<td>series or shunt</td>
+<td>The same series branch with one element left out: a lossy inductor, a lossy capacitor (or an RC damper), and a lossless series trap. Reach for one of these rather than an SRLC whenever the third value is not a number you meant — it is one fewer slider and one fewer thing to read.</td>
+</tr>
+<tr>
+<td><strong>PRL</strong>, <strong>PRC</strong>, <strong>PLC</strong></td>
+<td>series or shunt</td>
+<td>Their parallel duals: a damped choke, a leaky capacitor or shunt RC, and a lossless tank.</td>
+</tr>
+<tr>
 <td><strong>Z1P</strong></td>
 <td>series or shunt</td>
 <td>A complex impedance, <strong>constant over frequency</strong>. The frequency independence is the point of it.</td>
@@ -586,7 +596,8 @@ has two selections and one key.</p>
 you have added are left exactly as they were: those are what you are matching <i>to</i>.</p>
 </div>
 <p>Selecting an element shows its <strong>sliders</strong> underneath — one for an L, three for an SRLC, two for
-a line, and none at all for S1P or S2P, whose value is a file. Each row is a label, a slider and a
+an SRL or a line, and none at all for S1P or S2P, whose value is a file. A part has a slider for each
+value it actually carries and no others. Each row is a label, a slider and a
 value you can type. The slider is logarithmic over a decade either side of the current value for R, L,
 C and Z<sub>0</sub>, and linear for an electrical length and for the parts of a Z1P; <strong>typing a value
 outside the range re-centres the range rather than clamping the value</strong>. Dragging is live: every step
@@ -962,9 +973,10 @@ follows, live. Dragging a mid-cascade part and watching the load point move is w
 and nothing terminates the cascade, so the far end is simply where you read.</li>
 </ul>
 <p>A drag changes <strong>one</strong> parameter — the element's <strong>active parameter</strong>, which is the one whose
-slider you last touched, and which starts at a sensible default per type (L for an SRLC, C for a PRLC,
-the electrical length for a line). The active row is marked in the slider panel, so the connection
-between <em>the slider I just used</em> and <em>the handle on the chart</em> is visible rather than remembered. Click
+slider you last touched, and which starts at a sensible default per type: <strong>the reactance</strong>, never the
+loss — L for a series part, C for a parallel one, and whichever of the two it has when it carries
+only one — and the electrical length for a line. The active row is marked in the slider panel, so
+the connection between <em>the slider I just used</em> and <em>the handle on the chart</em> is visible rather than remembered. Click
 a slider's label to make it the active one without moving anything.</p>
 <p>Only the part of your drag the parameter can actually reach is used. That is not an approximation
 — it is what <em>drag along the arc</em> means, and it is why the gripper follows the curve rather than

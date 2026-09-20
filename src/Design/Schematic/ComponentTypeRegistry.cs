@@ -185,6 +185,29 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["PRLC", "Parallel RLC", "RLC", "parallel", "tank", "resonator"],
             IsCommon: true),
+        // The six two-element members (owner, 2026-09-20). Each carries only the values it has, so
+        // the reason to place one instead of an SRLC is exactly that there is no third number to
+        // read and dismiss. NOT IsCommon: the palette's curated head is already 28 rows and these
+        // belong beside SRLC/PRLC in the Lumped tail, which is where a reader who wants one looks.
+        // Their search terms carry what a user actually types — "lossy inductor", "trap", "tank".
+        [SymbolKind.Srl]           = new("SRL",   "SRL",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["SRL", "Series RL", "RL", "series", "lossy inductor", "ESR", "coil", "inductor"]),
+        [SymbolKind.Src]           = new("SRC",   "SRC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["SRC", "Series RC", "RC", "series", "lossy capacitor", "ESR", "damper", "snubber", "capacitor"]),
+        [SymbolKind.Slc]           = new("SLC",   "SLC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["SLC", "Series LC", "LC", "series", "trap", "notch", "resonator"]),
+        [SymbolKind.Prl]           = new("PRL",   "PRL",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["PRL", "Parallel RL", "RL", "parallel", "lossy inductor", "choke", "damped"]),
+        [SymbolKind.Prc]           = new("PRC",   "PRC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["PRC", "Parallel RC", "RC", "parallel", "leaky capacitor", "shunt", "damped"]),
+        [SymbolKind.Plc]           = new("PLC",   "PLC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["PLC", "Parallel LC", "LC", "parallel", "tank", "resonator"]),
         [SymbolKind.Vdc]           = new("Vdc",   "V",
             Category: ComponentCategory.Sources,
             SearchTerms: ["Vdc", "DC", "bias", "supply", "voltage", "V"],
@@ -805,7 +828,8 @@ public static class ComponentTypeRegistry
     public static string TerminalNote(SymbolKind kind) => kind switch
     {
         // ── Symmetric, and saying so is the point ────────────────────────────
-        SymbolKind.Resistor or SymbolKind.Capacitor or SymbolKind.Bead =>
+        SymbolKind.Resistor or SymbolKind.Capacitor or SymbolKind.Bead
+                              or SymbolKind.Src or SymbolKind.Prc =>
             "The two terminals are interchangeable — swapping them gives the same circuit.",
 
         SymbolKind.Tline or SymbolKind.Mlin =>
@@ -823,7 +847,9 @@ public static class ComponentTypeRegistry
         // The dot convention, which is a property of the pair rather than of either inductor. It is
         // stated on all three because all three implement IInductiveBranch and any of them may be
         // either end of a Mutual (owner, 2026-09-05).
-        SymbolKind.Inductor or SymbolKind.Srlc or SymbolKind.Prlc =>
+        SymbolKind.Inductor or SymbolKind.Srlc or SymbolKind.Prlc
+                            or SymbolKind.Srl  or SymbolKind.Slc
+                            or SymbolKind.Prl  or SymbolKind.Plc =>
             "Interchangeable on its own — but NOT once coupled. A Mutual (M) couples the two "
           + "elements' branch currents, and each branch current runs from that element's own "
           + "terminal 1 to its terminal 2, so swapping one of them reverses the sign of the "
@@ -896,6 +922,12 @@ public static class ComponentTypeRegistry
         SymbolKind.Capacitor     => "C",
         SymbolKind.Srlc          => "SRLC",
         SymbolKind.Prlc          => "PRLC",
+        SymbolKind.Srl           => "SRL",
+        SymbolKind.Src           => "SRC",
+        SymbolKind.Slc           => "SLC",
+        SymbolKind.Prl           => "PRL",
+        SymbolKind.Prc           => "PRC",
+        SymbolKind.Plc           => "PLC",
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
@@ -1426,6 +1458,18 @@ public static class ComponentTypeRegistry
             case SymbolKind.Srlc:
             case SymbolKind.Prlc:      return [new("R",   "1", "Ω",   true, UnitDimension.Resistance),
                                                new("L",   "1", "nH",  true, UnitDimension.Inductance),
+                                               new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
+            // The two-element members carry EXACTLY the values they have — the whole reason to
+            // place one rather than an SRLC with a number nobody meant. Same defaults and same
+            // units as the three-element pair, so a swap between them reads the same.
+            case SymbolKind.Srl:
+            case SymbolKind.Prl:       return [new("R",   "1", "Ω",   true, UnitDimension.Resistance),
+                                               new("L",   "1", "nH",  true, UnitDimension.Inductance)];
+            case SymbolKind.Src:
+            case SymbolKind.Prc:       return [new("R",   "1", "Ω",   true, UnitDimension.Resistance),
+                                               new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
+            case SymbolKind.Slc:
+            case SymbolKind.Plc:       return [new("L",   "1", "nH",  true, UnitDimension.Inductance),
                                                new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
             case SymbolKind.Vdc:       return [new("Vdc", "0", "V",   true, UnitDimension.Voltage)];
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
@@ -2578,6 +2622,12 @@ public static class ComponentTypeRegistry
             case "C":      kind = SymbolKind.Capacitor;     return true;
             case "SRLC":   kind = SymbolKind.Srlc;          return true;
             case "PRLC":   kind = SymbolKind.Prlc;          return true;
+            case "SRL":    kind = SymbolKind.Srl;           return true;
+            case "SRC":    kind = SymbolKind.Src;           return true;
+            case "SLC":    kind = SymbolKind.Slc;           return true;
+            case "PRL":    kind = SymbolKind.Prl;           return true;
+            case "PRC":    kind = SymbolKind.Prc;           return true;
+            case "PLC":    kind = SymbolKind.Plc;           return true;
             case "V":
             case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;

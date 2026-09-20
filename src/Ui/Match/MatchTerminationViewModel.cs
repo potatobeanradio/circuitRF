@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Collections.ObjectModel;
 using CircuitRF.Core.Matching;
 using CircuitRF.Engine.Matching;
+using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -648,13 +649,6 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     /// <summary>What the little R-and-reactance drawing shows. The view draws it; this decides it.</summary>
     public MatchPictogram Pictogram => new(Kind, Topology);
 
-    /// <summary>
-    /// Which branch of a PARALLEL pictogram the resistor takes: left for termination 1, right for
-    /// termination 2 (owner, 2026-08-19), so the two ends read as mirror images of each other rather
-    /// than as two copies of the same drawing.
-    /// </summary>
-    public bool ResistorOnLeft => End == 1;
-
     /// <summary>Raises every derived property after the owning design changed underneath.</summary>
     internal void Refresh()
     {
@@ -702,13 +696,38 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
 /// <param name="Topology">Series or parallel.</param>
 public readonly record struct MatchPictogram(ReactanceKind Kind, TerminationTopology Topology)
 {
+    /// <summary>
+    /// <b>The library part this termination IS</b> — and the whole of what the pictogram draws
+    /// (owner, 2026-09-20).
+    /// </summary>
+    /// <remarks>
+    /// Every one of the five arrangements a termination can take is a component circuitRF already
+    /// ships: an R, an <c>SRL</c>, an <c>SRC</c>, a <c>PRL</c> or a <c>PRC</c>. Until the
+    /// two-element parts existed the pictogram had to COMPOSE its picture out of two standalone
+    /// glyphs and its own connecting lines, which is why it never quite read as circuitRF artwork;
+    /// now it names a <see cref="SymbolKind"/> and the drawing is the library's.
+    ///
+    /// <para>That also puts the R/L/C proportions, the polarity dot and the parallel rails under
+    /// <c>BuiltInSymbols</c>' own geometry rather than under a second copy here — so a redraw of
+    /// the library moves this picture with it, which is exactly what "matches the rest of
+    /// circuitRF" has to mean to stay true.</para>
+    /// </remarks>
+    public SymbolKind Symbol => Kind switch
+    {
+        ReactanceKind.None                                          => SymbolKind.Resistor,
+        ReactanceKind.L when Topology == TerminationTopology.Series => SymbolKind.Srl,
+        ReactanceKind.C when Topology == TerminationTopology.Series => SymbolKind.Src,
+        ReactanceKind.L                                             => SymbolKind.Prl,
+        _                                                           => SymbolKind.Prc,
+    };
+
     /// <summary>A one-line description, which is also the pictogram's tooltip.</summary>
     public string Description => Kind switch
     {
         ReactanceKind.None => "R alone — purely resistive, nothing to absorb",
-        ReactanceKind.C when Topology == TerminationTopology.Series   => "R in series with C",
-        ReactanceKind.C                                               => "R in parallel with C",
-        ReactanceKind.L when Topology == TerminationTopology.Series   => "R in series with L",
-        _                                                             => "R in parallel with L",
+        ReactanceKind.C when Topology == TerminationTopology.Series   => "R in series with C — an SRC",
+        ReactanceKind.C                                               => "R in parallel with C — a PRC",
+        ReactanceKind.L when Topology == TerminationTopology.Series   => "R in series with L — an SRL",
+        _                                                             => "R in parallel with L — a PRL",
     };
 }

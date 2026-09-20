@@ -58,6 +58,12 @@ public static class BuiltInSymbols
     private static readonly Symbol _capacitor    = BuildCapacitor();
     private static readonly Symbol _srlc         = BuildSrlc();
     private static readonly Symbol _prlc         = BuildPrlc();
+    private static readonly Symbol _srl          = BuildSrl();
+    private static readonly Symbol _src          = BuildSrc();
+    private static readonly Symbol _slc          = BuildSlc();
+    private static readonly Symbol _prl          = BuildPrl();
+    private static readonly Symbol _prc          = BuildPrc();
+    private static readonly Symbol _plc          = BuildPlc();
     private static readonly Symbol _vdcSrc       = BuildVdc();
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
@@ -186,6 +192,12 @@ public static class BuiltInSymbols
             case SymbolKind.Capacitor:  return _capacitor;
             case SymbolKind.Srlc:       return _srlc;
             case SymbolKind.Prlc:       return _prlc;
+            case SymbolKind.Srl:        return _srl;
+            case SymbolKind.Src:        return _src;
+            case SymbolKind.Slc:        return _slc;
+            case SymbolKind.Prl:        return _prl;
+            case SymbolKind.Prc:        return _prc;
+            case SymbolKind.Plc:        return _plc;
             case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Mutual:     return _mutual;
             case SymbolKind.Tline:      return _tline;
@@ -481,6 +493,136 @@ public static class BuiltInSymbols
         QC( 50,   22,  80,    2, 110,   22),                  // curved bottom plate (apex y=12)
         L(  80,   12,  80,  150),
     ], SymbolKind.Prlc);
+
+    // ══ THE TWO-ELEMENT MEMBERS OF THE SAME FAMILY (owner, 2026-09-20) ═══════════════════════
+    //
+    // SRL, SRC, SLC and PRL, PRC, PLC. Pins at (0,-200)/(0,+200) like every other member, so any of
+    // the nine drops in for any other with no wire moved.
+    //
+    // THREE SUB-GLYPHS, DRAWN AT ONE SIZE EACH, AND NOWHERE ELSE. With one element fewer than SRLC
+    // there is room to draw the borrowed R, L and C larger, so these do NOT reuse SRLC's compressed
+    // versions — but they reuse each OTHER's, which is what makes the six read as one family:
+    //
+    //   series   R : 4 zigs, amp +/-28, body 120 (15 ramp, 30 spacing)
+    //   series   L : 3 coils, r = 25,   body 150
+    //   series   C : plates 100 wide,   body 34  (flat plate, curve apex 23 below it)
+    //   parallel R : PRLC's own,        body 120
+    //   parallel L : PRLC's own, r = 20, body 120
+    //   parallel C : PRLC's own, plates 60 wide
+    //
+    // The series pair is CENTRED on the lead with a 40-unit gap between the two bodies, and the
+    // leads take whatever is left — which is why a C-carrying one has long leads and an SRL does
+    // not. That is the standalone capacitor's own proportion (its body is 34 units of a 400-unit
+    // symbol), not an oversight.
+    //
+    // THE PARALLEL PAIR PUTS THE WIDE ELEMENT ON THE LEFT, and that is arithmetic rather than
+    // taste. The R and the C reach +/-30 either side of their branch; the inductor's coils bulge
+    // only to +20 with the polarity dot at +35. Branches at x = -/+70 therefore give -100 .. +100
+    // when a wide element is on the left and a narrow one on the right, and -70 .. +100 - visibly
+    // off-centre against its own wire - the other way round. So PLC draws C then L, which costs
+    // nothing: parallel is commutative and the type label says which part it is.
+
+    // ── SRL — R over L, in series ────────────────────────────────────────────
+    private static Symbol BuildSrl() => Sym([
+        L(   0, -200,   0, -155),                             // top lead
+        PLine(0, -155,  28, -140, -28, -110,  28,  -80,
+                       -28,  -50,   0,  -35),                 // R  (body -155..-35)
+        L(   0,  -35,   0,    5),                             // R -> L gap
+        A(   0,   30,  25, -90, 180),                         // coil 1
+        A(   0,   80,  25, -90, 180),                         // coil 2
+        A(   0,  130,  25, -90, 180),                         // coil 3
+        Circ(40,   10,   6, filled: true),                    // polarity dot (L's own convention)
+        L(   0,  155,   0,  200),                             // bottom lead
+    ], SymbolKind.Srl);
+
+    // ── SRC — R over C, in series ────────────────────────────────────────────
+    private static Symbol BuildSrc() => Sym([
+        L(   0, -200,   0,  -97),                             // top lead
+        PLine(0,  -97,  28,  -82, -28,  -52,  28,  -22,
+                       -28,    8,   0,   23),                 // R  (body -97..23)
+        L(   0,   23,   0,   63),                             // R -> C gap
+        L( -50,   63,  50,   63),                             // flat top plate
+        QC(-50,   97,   0,   75,  50,   97),                  // curved bottom plate (apex y=86)
+        L(   0,   86,   0,  200),                             // bottom lead (from curve apex)
+    ], SymbolKind.Src);
+
+    // ── SLC — L over C, in series ────────────────────────────────────────────
+    private static Symbol BuildSlc() => Sym([
+        L(   0, -200,   0, -112),                             // top lead
+        A(   0,  -87,  25, -90, 180),                         // coil 1
+        A(   0,  -37,  25, -90, 180),                         // coil 2
+        A(   0,   13,  25, -90, 180),                         // coil 3
+        Circ(40, -107,   6, filled: true),                    // polarity dot
+        L(   0,   38,   0,   78),                             // L -> C gap
+        L( -50,   78,  50,   78),                             // flat top plate
+        QC(-50,  112,   0,   90,  50,  112),                  // curved bottom plate (apex y=101)
+        L(   0,  101,   0,  200),                             // bottom lead
+    ], SymbolKind.Slc);
+
+    // ── PRL — R and L side by side, between two rails ────────────────────────
+    private static Symbol BuildPrl() => Sym([
+        L(   0, -200,   0, -160),                             // top lead
+        L( -70, -160,  70, -160),                             // top rail
+        L( -70,  160,  70,  160),                             // bottom rail
+        L(   0,  160,   0,  200),                             // bottom lead
+
+        // R — left branch (the wide one; see the family note above)
+        L( -70, -160, -70,  -60),
+        PLine(-70, -60, -40, -45, -100, -15, -40,  15,
+                       -100,  45, -70,  60),                  // 4 zigs, amp +/-30
+        L( -70,   60, -70,  160),
+
+        // L — right branch
+        L(  70, -160,  70,  -60),
+        A(  70,  -40,  20, -90, 180),                         // coil 1
+        A(  70,    0,  20, -90, 180),                         // coil 2
+        A(  70,   40,  20, -90, 180),                         // coil 3
+        Circ(100, -55,   5, filled: true),                    // polarity dot
+        L(  70,   60,  70,  160),
+    ], SymbolKind.Prl);
+
+    // ── PRC — R and C side by side, between two rails ────────────────────────
+    private static Symbol BuildPrc() => Sym([
+        L(   0, -200,   0, -160),
+        L( -70, -160,  70, -160),
+        L( -70,  160,  70,  160),
+        L(   0,  160,   0,  200),
+
+        // R — left branch
+        L( -70, -160, -70,  -60),
+        PLine(-70, -60, -40, -45, -100, -15, -40,  15,
+                       -100,  45, -70,  60),
+        L( -70,   60, -70,  160),
+
+        // C — right branch
+        L(  70, -160,  70,  -12),
+        L(  40,  -12, 100,  -12),                             // flat top plate
+        QC( 40,   22,  70,    2, 100,   22),                  // curved bottom plate (apex y=12)
+        L(  70,   12,  70,  160),
+    ], SymbolKind.Prc);
+
+    // ── PLC — C and L side by side, between two rails ────────────────────────
+    // C on the LEFT and L on the right, for the centring reason in the family note.
+    private static Symbol BuildPlc() => Sym([
+        L(   0, -200,   0, -160),
+        L( -70, -160,  70, -160),
+        L( -70,  160,  70,  160),
+        L(   0,  160,   0,  200),
+
+        // C — left branch
+        L( -70, -160, -70,  -12),
+        L(-100,  -12, -40,  -12),                             // flat top plate
+        QC(-100,  22, -70,    2, -40,   22),                  // curved bottom plate (apex y=12)
+        L( -70,   12, -70,  160),
+
+        // L — right branch
+        L(  70, -160,  70,  -60),
+        A(  70,  -40,  20, -90, 180),
+        A(  70,    0,  20, -90, 180),
+        A(  70,   40,  20, -90, 180),
+        Circ(100, -55,   5, filled: true),                    // polarity dot
+        L(  70,   60,  70,  160),
+    ], SymbolKind.Plc);
 
     // ── NonlinearC — capacitor glyph + three diagonal "nonlinear" slashes ──────
     // Identical plates/leads to the linear capacitor; three parallel diagonal strokes

@@ -15,13 +15,14 @@ namespace CircuitRF.Core.Devices;
 ///
 /// Resolve() must be called (by the Elaborator post-flatten) before any stamping.
 ///
-/// <para><b>Either end may be an L, an SRLC or a PRLC</b> — anything implementing
-/// <see cref="IInductiveBranch"/>, whose contract is that the branch it reports carries the
-/// element's inductor current with a −jωL diagonal. That is what makes the −jωM off-diagonal the
-/// correct stamp in all three cases: an SRLC's own R and C sit on the same diagonal and a PRLC's sit
-/// in the admittance block, and neither is what this touches. Both read their inductance from the
-/// same <c>L</c> parameter a plain inductor does, so the k ≥ 1 check below needs no special
-/// case.</para>
+/// <para><b>Either end may be an L, an SRLC, a PRLC, an SRL, an SLC, a PRL or a PLC</b> — anything
+/// implementing <see cref="IInductiveBranch"/>, whose contract is that the branch it reports
+/// carries the element's inductor current with a −jωL diagonal. That is what makes the −jωM
+/// off-diagonal the correct stamp in every case: a series member's own R and C sit on that same
+/// diagonal and a parallel member's sit in the admittance block, and neither is what this touches.
+/// They all read their inductance from the same <c>L</c> parameter a plain inductor does, so the
+/// k ≥ 1 check below needs no special case. An SRC or a PRC has no inductor at all and is refused
+/// by <see cref="AsInductive"/>.</para>
 /// </summary>
 public sealed class MutualInductanceModel : ComponentModel
 {
@@ -89,7 +90,8 @@ public sealed class MutualInductanceModel : ComponentModel
         => target.Model as IInductiveBranch
            ?? throw new InvalidOperationException(
                $"Mutual '{selfEc.InstancePath}': '{path}' is a '{target.ComponentType}', which carries" +
-               " no inductor branch to couple to. A Mutual can reference an L, an SRLC or a PRLC.");
+               " no inductor branch to couple to. A Mutual can reference an L, an SRLC, a PRLC, an" +
+               " SRL, an SLC, a PRL or a PLC.");
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

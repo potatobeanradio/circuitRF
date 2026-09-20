@@ -424,10 +424,29 @@ public static class SmithPasteRecognizer
 
             case SmithElementKind.Srlc:
             case SmithElementKind.Prlc:
-                if (Real(c, "R")  is not { } sr) return null;
-                if (Real(c, "L")  is not { } sl) return null;
-                if (Real(c, "C") is not { } sc) return null;
-                e.Values.ROhm = sr; e.Values.LHenry = sl; e.Values.CFarad = sc;
+            case SmithElementKind.Srl:
+            case SmithElementKind.Src:
+            case SmithElementKind.Slc:
+            case SmithElementKind.Prl:
+            case SmithElementKind.Prc:
+            case SmithElementKind.Plc:
+                // EXACTLY the parameters the kind carries. Reading all three would refuse every
+                // two-element member outright — an SRL's netlist line has no C, so Real(c, "C")
+                // is null and the paste would report a part it had just recognised as unreadable.
+                foreach (var sp in SmithComponentMap.Parameters(kind))
+                {
+                    if (Real(c, sp switch { SmithParameter.R => "R",
+                                            SmithParameter.L => "L",
+                                            _                => "C" }) is not { } value)
+                        return null;
+
+                    switch (sp)
+                    {
+                        case SmithParameter.R: e.Values.ROhm   = value; break;
+                        case SmithParameter.L: e.Values.LHenry = value; break;
+                        default:               e.Values.CFarad = value; break;
+                    }
+                }
                 break;
 
             case SmithElementKind.Z1P:
@@ -473,6 +492,12 @@ public static class SmithPasteRecognizer
         SymbolKind.Capacitor => SmithElementKind.C,
         SymbolKind.Srlc      => SmithElementKind.Srlc,
         SymbolKind.Prlc      => SmithElementKind.Prlc,
+        SymbolKind.Srl       => SmithElementKind.Srl,
+        SymbolKind.Src       => SmithElementKind.Src,
+        SymbolKind.Slc       => SmithElementKind.Slc,
+        SymbolKind.Prl       => SmithElementKind.Prl,
+        SymbolKind.Prc       => SmithElementKind.Prc,
+        SymbolKind.Plc       => SmithElementKind.Plc,
         SymbolKind.ZPort     => SmithElementKind.Z1P,
         SymbolKind.Snp       => IntParam(p.Wired.Comp, "NumPorts") == 1
                                     ? SmithElementKind.S1P : SmithElementKind.S2P,

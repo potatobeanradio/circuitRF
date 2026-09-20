@@ -1,5 +1,72 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Match Designer: the termination pictogram is a library part, and four lamps replaced two arrows (2026-09-20)
+
+Owner, three asks in one round: use the new two-element RLC glyphs for Termination 1 and 2 because
+the old drawing "doesn't match the feel and aesthetic for the rest of circuitRF"; adopt railRF's
+invisible grippers; adopt railRF's panel-toggle buttons, and remove the diagonal-glyph buttons that
+become redundant.
+
+**The pictogram composed its own artwork, and that is why it never looked like circuitRF.** Until
+`SRL`/`SRC`/`PRL`/`PRC` existed there was no single glyph for "R in series with C", so
+`MatchPictogramControl` drew the standalone R and the standalone C out of `BuiltInSymbols` and
+joined them with lines of its OWN — its own gap between the two bodies, its own idea of how a
+parallel pair hangs between two rails, its own 900 × 1200 world. A second, slightly-different copy
+of the library's artwork. `MatchPictogram.Symbol` now names a `SymbolKind` and the library draws
+it, so a redraw of the library moves this picture with it.
+
+**It was also drawing at a FIFTH of its own box.** The old control fitted a fixed 900 × 1200 world
+into a 44 × 70 control, and `Math.Min(44/900, 70/1200)` is width-limited at 0.049 — so a symbol
+400 units tall came out **20 px**, in a box 70 px high. Fitting the SYMBOL'S OWN bounding box
+instead fills the height, and that alone is most of why the part now reads as a part. The box went
+to 58 × 78 as well, but the fit is the change.
+
+**Mirroring is gone, deliberately reversing an earlier owner decision.** Termination 1's resistor
+used to take the left branch of a parallel pictogram and termination 2's the right, so the two
+cards read as mirror images (owner, 2026-08-19). A mirrored library glyph is not the library glyph
+— it would flip the inductor's coils and move its polarity dot — so both cards now draw the part as
+the schematic would. The two cards are already told apart by their headings and their values.
+
+**Four independent lamps say strictly more than two mutually-exclusive expanders.**
+`NetworkExpanded`/`ResponseExpanded` were a pair where each gave one right-hand pane the other's
+column, so both on at once was a state with no width to describe. Turning the Response lamp off is
+the same state, and three the arrows could not reach come with it: release the specification
+column, release the transforms rack on its own, show any two panels. The arrows are removed
+outright, asserted as an ABSENCE — an orphan `NetworkExpanded` nothing binds to still compiles, and
+a leftover ToggleButton still draws.
+
+**Panel visibility is SESSION state here, and railRF's is DOCUMENT state, and the difference is not
+an inconsistency.** railRF keeps its four flags in the `.crail` because the question is about a
+BOARD. A Match design is a base64 payload on one component parameter inside somebody's schematic;
+putting view state there would mark an unrelated schematic dirty every time a panel was collapsed.
+The two retired expanders were session state for the same reason.
+
+**Three things about the geometry that only the code-behind can own**, all lifted from railRF's
+`SyncPanes` with its reasoning intact: a `ColumnDefinition` is not in the logical tree so a
+`{Binding}` on its `Width` silently resolves to nothing; a `MinWidth` in the AXAML would be a floor
+on the `GridLength(0)` that HIDES a panel too, so the floor goes on with the panel and comes off
+with it; and a gripper beside a hidden pane would trade space with a zero-wide column and simply
+stick, so its visibility is computed there as well. The three floors are 200 + 320 + 280 = 800
+against the window's own `MinWidth` of 1000 — floors that cannot all be honoured are worse than
+none.
+
+**A drag is remembered by READING the live width back before overwriting it**, which needs no drag
+handler: a `GridSplitter` writes a concrete `GridLength` into the definition it resizes, so
+`SyncPanes` picks it up on the next toggle. What the drag handler IS for is restoring the centre
+column to star — a `GridSplitter` rewrites both definitions it sits between, and a star one coming
+back as a pixel width is invisible at the moment it happens and obvious later, when the window
+stops giving a resize to the schematic.
+
+**Two AXAML traps worth knowing.** `Button.ToolActive` is declared PER WINDOW in this application,
+not application-wide — railRF hit exactly this and found a button that had been arming invisibly
+for months — so the three rules were copied in here as well. And a `private const double Margin` on
+an Avalonia `Control` is CS0108 against `Layoutable.Margin`; it is `GlyphPadding` now.
+
+**Pre-existing and not ours:** `MatchRound4Tests.DeletePlotAndPlotProperties_…` and
+`MatchRound8Tests.DeletePlot_IsDisabledOnTheResponsePlots_…` both source-scan
+`DataDisplay/Controls/PlotControl.cs` for `menu.Opening +=`, which commit `3b142079` removed. They
+fail at HEAD with a clean tree.
+
 ## A scrollbar inside a scrollbar: the outer one owned the strip all along (2026-09-20)
 
 Owner report: in railRF, a long Results ▸ Breakdown in a short window makes two scrollbars and the

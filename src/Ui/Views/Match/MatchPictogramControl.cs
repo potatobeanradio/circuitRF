@@ -1,29 +1,43 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using CircuitRF.Core.Matching;
 using CircuitRF.Ui.Matching;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Match;
 
 /// <summary>
-/// The specification pane's termination pictogram (match.md §9.2): an R with its reactive element in
-/// the chosen arrangement — R in series with C, R in parallel with L, and so on. <c>None</c> draws
-/// the resistor alone.
+/// The specification pane's termination pictogram (match.md §9.2) — <b>one library part, drawn by
+/// its own glyph</b>: an R, an SRL, an SRC, a PRL or a PRC, whichever the termination is.
 /// </summary>
 /// <remarks>
 /// It is the fastest way to show series-versus-parallel, which is the one thing about a termination
-/// that a pair of radio buttons states and does not show. The glyphs are circuitRF's own
-/// (<see cref="BuiltInSymbols"/>), so the R here is the R on the page.
+/// that a pair of radio buttons states and does not show.
 ///
-/// <para><b>Drawn VERTICALLY — rotated 90° from the original</b> (owner, 2026-08-19). A termination
-/// hangs between a node and ground, which is what a vertical drawing shows and a horizontal one does
-/// not; the built-in glyphs are vertical to begin with, so this orientation is also the one that
-/// needs no rotation of its own. <see cref="ResistorOnLeft"/> then puts termination 1's R on the LEFT
-/// branch of a parallel pair and termination 2's on the RIGHT, so the two pictograms mirror each
-/// other the way the two ends of the network do.</para>
+/// <para><b>It draws ONE symbol now, and composes nothing</b> (owner, 2026-09-20: the old drawing
+/// did not match the feel of the rest of circuitRF). Until the two-element RLC parts existed there
+/// was no single glyph for "R in series with C", so this control drew the standalone R and the
+/// standalone C and joined them with lines of its own — a second, slightly-different copy of the
+/// library's own artwork, with its own spacings and its own idea of how a parallel pair is hung
+/// between two rails. <see cref="MatchPictogram.Symbol"/> now names the part and
+/// <see cref="BuiltInSymbols"/> draws it, so the R here is the R on the page and stays that way
+/// through any future redraw.</para>
+///
+/// <para><b>Nothing is mirrored any more.</b> Termination 1's resistor used to take the LEFT branch
+/// of a parallel pair and termination 2's the right, so the two cards read as mirror images
+/// (owner, 2026-08-19). A mirrored library glyph is not the library glyph — it would flip the
+/// inductor's coils and move its polarity dot — so both cards now show the part as the schematic
+/// would draw it. The two cards are already told apart by their headings, their values and their
+/// position in the pane.</para>
+///
+/// <para><b>The world is the symbol's own bounding box</b>, fitted to the control, rather than a
+/// fixed one this file declares. Each of the five glyphs is 400 units tall (they all reach both
+/// pins, which is the family's pin contract) and between 60 and 210 wide, so fitting the box keeps
+/// the vertical scale identical across all five — the picture changes shape between arrangements
+/// without changing size, which is what makes the two cards comparable at a glance.</para>
 /// </remarks>
 public sealed class MatchPictogramControl : Control
 {
@@ -35,17 +49,8 @@ public sealed class MatchPictogramControl : Control
     public static readonly StyledProperty<IBrush?> StrokeProperty =
         AvaloniaProperty.Register<MatchPictogramControl, IBrush?>(nameof(Stroke));
 
-    /// <summary>
-    /// Which branch of a PARALLEL pair the resistor takes — true = left (termination 1), false =
-    /// right (termination 2). Ignored by the series and resistor-only arrangements, which have only
-    /// one branch to draw.
-    /// </summary>
-    public static readonly StyledProperty<bool> ResistorOnLeftProperty =
-        AvaloniaProperty.Register<MatchPictogramControl, bool>(nameof(ResistorOnLeft), true);
-
     static MatchPictogramControl() =>
-        AffectsRender<MatchPictogramControl>(
-            PictogramProperty, StrokeProperty, ResistorOnLeftProperty);
+        AffectsRender<MatchPictogramControl>(PictogramProperty, StrokeProperty);
 
     /// <inheritdoc cref="PictogramProperty"/>
     public MatchPictogram Pictogram
@@ -61,17 +66,15 @@ public sealed class MatchPictogramControl : Control
         set => SetValue(StrokeProperty, value);
     }
 
-    /// <inheritdoc cref="ResistorOnLeftProperty"/>
-    public bool ResistorOnLeft
-    {
-        get => GetValue(ResistorOnLeftProperty);
-        set => SetValue(ResistorOnLeftProperty, value);
-    }
-
-    // The drawing's own world, in the same 100-units-per-grid-square the symbols use. Portrait, since
-    // the arrangement is now vertical.
-    private const double WorldW = 900.0;
-    private const double WorldH = 1200.0;
+    /// <summary>
+    /// Breathing room around the glyph, in the symbol's own units (100 = one grid square).
+    /// </summary>
+    /// <remarks>
+    /// On the narrow glyphs — the bare R is 60 units wide against 400 tall — the fit is decided by
+    /// the HEIGHT, so this is what stops the top and bottom pins sitting hard against the control's
+    /// edge. It is stated in world units rather than pixels so it scales with the drawing.
+    /// </remarks>
+    private const double GlyphPadding = 24.0;
 
     /// <inheritdoc/>
     public override void Render(DrawingContext ctx)
@@ -79,63 +82,33 @@ public sealed class MatchPictogramControl : Control
         var b = Bounds;
         if (b.Width <= 2 || b.Height <= 2) return;
 
-        double scale = Math.Min(b.Width / WorldW, b.Height / WorldH);
+        var symbol = BuiltInSymbols.Primitives(Pictogram.Symbol);
+        var (minX, minY, maxX, maxY) = Extent(symbol.Primitives);
+        double worldW = (maxX - minX) + 2 * GlyphPadding;
+        double worldH = (maxY - minY) + 2 * GlyphPadding;
+        if (worldW <= 0 || worldH <= 0) return;
+
+        double scale = Math.Min(b.Width / worldW, b.Height / worldH);
+        double cx = (minX + maxX) / 2.0, cy = (minY + maxY) / 2.0;
         double ox = b.Width / 2.0, oy = b.Height / 2.0;
-        Point P(double x, double y) => new(ox + x * scale, oy + y * scale);
+        Point P(double x, double y) => new(ox + (x - cx) * scale, oy + (y - cy) * scale);
 
         var brush = Stroke ?? Brushes.Gray;
-        var pen = new Pen(brush, Math.Max(1.0, 16 * scale));
 
-        var p = Pictogram;
-        var reactive = p.Kind == ReactanceKind.L ? SymbolKind.Inductor : SymbolKind.Capacitor;
+        // Thin on purpose. The canvas's own weight would read as a blot at this size: these glyphs
+        // draw about a fifth of schematic scale, and 16 world units of stroke would come out at
+        // three pixels across a picture 40 wide.
+        var pen = new Pen(brush, Math.Max(1.0, 8 * scale));
 
-        if (p.Kind == ReactanceKind.None)
-        {
-            Glyph(ctx, pen, brush, SymbolKind.Resistor, 0, 0, P);
-            ctx.DrawLine(pen, P(0, -560), P(0, -200));
-            ctx.DrawLine(pen, P(0, 200), P(0, 560));
-            return;
-        }
-
-        if (p.Topology == TerminationTopology.Series)
-        {
-            Glyph(ctx, pen, brush, SymbolKind.Resistor, 0, -280, P);
-            Glyph(ctx, pen, brush, reactive, 0, 280, P);
-            ctx.DrawLine(pen, P(0, -560), P(0, -480));
-            ctx.DrawLine(pen, P(0, -80), P(0, 80));
-            ctx.DrawLine(pen, P(0, 480), P(0, 560));
-            return;
-        }
-
-        // Parallel: two vertical branches between one pair of nodes. The resistor takes the side this
-        // end is drawn on, so termination 1 and termination 2 read as mirror images.
-        double rx = ResistorOnLeft ? -220 : 220;
-        double xx = -rx;
-        Glyph(ctx, pen, brush, SymbolKind.Resistor, rx, 0, P);
-        Glyph(ctx, pen, brush, reactive, xx, 0, P);
-
-        foreach (double x in new[] { rx, xx })
-        {
-            ctx.DrawLine(pen, P(x, -380), P(x, -200));
-            ctx.DrawLine(pen, P(x, 200), P(x, 380));
-        }
-        ctx.DrawLine(pen, P(rx, -380), P(xx, -380));
-        ctx.DrawLine(pen, P(rx, 380), P(xx, 380));
-        ctx.DrawLine(pen, P(0, -560), P(0, -380));
-        ctx.DrawLine(pen, P(0, 380), P(0, 560));
+        Draw(ctx, pen, brush, symbol.Primitives, P);
     }
 
-    /// <summary>
-    /// Draws one built-in glyph in its own natural (vertical) orientation, centred at (cx, cy).
-    /// </summary>
-    private static void Glyph(
-        DrawingContext ctx, IPen pen, IBrush brush, SymbolKind kind,
-        double cx, double cy, Func<double, double, Point> P)
+    /// <summary>Draws a symbol's primitive list through the supplied world→screen map.</summary>
+    private static void Draw(
+        DrawingContext ctx, IPen pen, IBrush brush,
+        IEnumerable<SymbolPrimitive> primitives, Func<double, double, Point> T)
     {
-        var symbol = BuiltInSymbols.Primitives(kind);
-        Point T(double lx, double ly) => P(cx + lx, cy + ly);
-
-        foreach (var prim in symbol.Primitives)
+        foreach (var prim in primitives)
         {
             switch (prim)
             {
@@ -183,5 +156,40 @@ public sealed class MatchPictogramControl : Control
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The box the primitives occupy. Curves are bounded by their control points — an
+    /// over-estimate, which is the safe direction for a fit.
+    /// </summary>
+    internal static (double MinX, double MinY, double MaxX, double MaxY) Extent(
+        IReadOnlyList<SymbolPrimitive> primitives)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue;
+
+        void Take(double x, double y)
+        {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        foreach (var p in primitives)
+        {
+            switch (p)
+            {
+                case LinePrimitive l:      Take(l.X1, l.Y1); Take(l.X2, l.Y2); break;
+                case PolylinePrimitive pl: foreach (var pt in pl.Points) Take(pt[0], pt[1]); break;
+                case ArcPrimitive a:       Take(a.Cx - a.R, a.Cy - a.R); Take(a.Cx + a.R, a.Cy + a.R); break;
+                case CirclePrimitive c:    Take(c.Cx - c.R, c.Cy - c.R); Take(c.Cx + c.R, c.Cy + c.R); break;
+                case QuadCurvePrimitive q:
+                    Take(q.P0X, q.P0Y); Take(q.CtrlX, q.CtrlY); Take(q.P2X, q.P2Y);
+                    break;
+            }
+        }
+
+        return minX > maxX ? (0, 0, 0, 0) : (minX, minY, maxX, maxY);
     }
 }

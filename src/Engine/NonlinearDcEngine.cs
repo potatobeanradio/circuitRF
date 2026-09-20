@@ -732,7 +732,7 @@ public sealed class NonlinearDcEngine
 
     private static int GetControlBranchIndex(string sddName, int n, int port, ElaboratedComponent target)
     {
-        const string AllowedKinds = "Vdc, VCVS, V_1Tone/V_nTone, IProbe, WSProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
+        const string AllowedKinds = "Vdc, VCVS, V_1Tone/V_nTone, IProbe, WSProbe, L (Inductor), SRLC, PRLC, SRL, SLC, PRL, PLC, SnP, Z_Port";
         return target.Model switch
         {
             VdcModel        vdc  => ValidateSinglePortBranch(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),

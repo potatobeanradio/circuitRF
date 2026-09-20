@@ -26,11 +26,21 @@ public static class ComponentModelFactory
             { "C",     () => new CapacitorModel()    },
             { "L",     () => new InductorModel()     },
             { "SRLC",  () => new SeriesRlcModel()   },
+            // The six two-element members of the same family (owner, 2026-09-20). Each is the RLC
+            // stamp with one element left out, not a fifth and sixth piece of arithmetic — see
+            // RlcElements. The three SERIES ones share SeriesRlcBranchModel; the three PARALLEL ones
+            // share ParallelRlcBranchModel, beside PRLC below.
+            { "SRL",   () => new SeriesRlModel()     },
+            { "SRC",   () => new SeriesRcModel()     },
+            { "SLC",   () => new SeriesLcModel()     },
             // The ferrite bead reads its parameters off the ElaboratedComponent at stamp time, like
             // R/L/C do, so it needs no constructor arguments and belongs in this registry rather
             // than among the parameterised types.
             { "Bead",  () => new BeadModel()        },
             { "PRLC",  () => new ParallelRlcModel() },
+            { "PRL",   () => new ParallelRlModel()   },
+            { "PRC",   () => new ParallelRcModel()   },
+            { "PLC",   () => new ParallelLcModel()   },
             { "Vdc",   () => new VdcModel() },
             { "Port",  () => new PortModel()          },
             { "Term",  () => new TermModel()          },

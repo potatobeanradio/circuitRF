@@ -1,5 +1,75 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The Smith Chart's RLC vocabulary: eight kinds, two formulas, one element set (2026-09-20)
+
+Owner: put the six new two-element RLC parts in the Smith Chart's element list too. The Chart's
+`SmithElementKind` is a deliberately CLOSED list — every member has to map one-to-one onto a
+component `ComponentTypeRegistry` already declares — so the six were admissible the moment the
+library gained them, and nothing here needed a factory registration or a golden-reference test of
+its own.
+
+**The element set is `CircuitRF.Core.Devices.RlcElements`, not a second enum.**
+`SmithComponentMap.RlcElementsOf` answers which of R, L and C a kind carries, and it answers with
+the SAME flags the engine model reads: `SmithElementKind.Prl` binds `SymbolKind.Prl` binds engine
+`PRL`, whose model is `ParallelRlcBranchModel(RlcElements.Rl)`. `src/Design` already references
+`src/Core`, so there is one place "a PRL has no capacitor" is written down. The symptom of that
+drift would have been a trajectory that looks plausible.
+
+**Three consumers, and each of them lost seven arms rather than gaining six.**
+`SmithCascade.Immittance` is now two cases — the series branch's `Z = R + jωL + 1/(jωC)` and the
+parallel one's dual — each summed over the elements present; `SmithInverse.SolveRlcFamily` is the
+same shape, with each parameter's inverse reading the OTHER reactance's term out of the current
+values and getting zero where the part has no such element; `SmithComponentMap.Parameters` reads
+four rows keyed by the element set for all eight kinds.
+
+**An absent element contributes a ZERO term, never an infinite one, and the two are only
+distinguishable at the corners.** A PRESENT C of zero gives 1/(ωC) = +∞ and pins, which is the
+answer SRLC has always given and is correct. An SRL has no C at all and must not go near that
+arithmetic — the same distinction that made `0 · ∞` a NaN in the engine model (see
+`src/Core/RESOLVED.md`), written the same way here on purpose.
+
+**The default gripper parameter is a rule now, not a table.** §3.3 said "L for an SRLC, C for a
+PRLC" — the REACTANCE rather than the loss, because dragging a part's loss is a move nobody
+reaches for first. The two-element members only add "and whichever of the two it has": an SRC has
+no inductor, a PRL no capacitor, and neither ever falls back to R.
+
+**Everything keyed off `SmithComponentMap.AllKinds` came along for free, and that is the payoff of
+the way those tests were written.** `SmithCascadeTests.TheClosedFormAgreesWithTheEngine_…` builds a
+real `.cnl` and compares the closed form against the engine at every node — the six new kinds in
+both placements passed at under 1e-9 relative with no new assertion, which is also an independent
+check on the engine models added the same day. `SmithInverseTests.NothingReturnsNaN_…` swept them
+likewise. Only the per-kind VALUE fixtures (`Dut`, `Base`) had to gain rows.
+
+**One hand-written fixture claimed to cover a table and did not have to.**
+`SmithClipboardTests.EveryKind()` is the copy-out/paste-back round trip and is written out element
+by element; it silently stopped being "every kind" the moment the vocabulary grew. It now has a
+companion test asserting it covers `AllKinds`, which is the cheap way to stop that recurring — and
+the round trip is where it matters most, because the network strip WRITES a per-parameter list and
+`SmithPasteRecognizer` READS one, so a part emitting a `C` it does not have would come back as a
+refusal or as a value nobody typed.
+
+**The Add/Insert flyout is grouped, because a flat one had outgrown the window** (owner,
+2026-09-20). 17 kinds in up to two placements each is 30 rows at a 39 px glyph apiece — about
+1,350 px against a window 741 px tall. It already scrolled at 18; the six new members are what made
+scrolling the normal way to reach the bottom half. The eight RLC members now sit under one `RLC`
+submenu and the top level is 15 rows.
+
+- **`ElementMenu` is unchanged and still flat.** It is the VOCABULARY — what may be placed — and
+  every command, test and future surface reads it. `ElementMenuGroups` is a PRESENTATION of the
+  same rows, holding none the flat list does not; the gate asserts set equality in both directions
+  AND order, because a row that fell out of the layout is a part that can no longer be placed from
+  either menu with nothing said anywhere.
+- **The grouping lives on the view model, not in `SmithChartView.axaml.cs`.** Two surfaces build
+  these menus from one list (R-smith6-2), and a shape decided in one of them is a shape the other
+  does not have.
+- **The eight that moved are the ones a reader picks BETWEEN**, which is what makes it a grouping
+  rather than a hiding place: they are one part with a different subset of R, L and C in it, and
+  choosing among them is a second question after "I want a lumped combination". R, L and C stay at
+  the top level, because reaching for an L is not that question. Membership is
+  `SmithComponentMap.RlcElementsOf`, so a ninth member joins the group on its own.
+- **The submenu's parent row carries no command.** A `MenuItem` that both opens children and
+  invokes something is a control whose click does two things, one of them by accident.
+
 ## User-installed technologies: the middle rung the resolution chain never had (2026-09-20)
 
 `TechnologyCatalog` + `TechnologySummary` in `src/Design/Layout`, and the Settings ▸ Technology tab

@@ -111,6 +111,22 @@ public sealed class SmithClipboardTests
             Name = "X1", Values = { ROhm = 0.4, LHenry = 0.9e-9, CFarad = 4.7e-12 } });
         d.Elements.Add(new SmithElement { Kind = SmithElementKind.Prlc, Placement = SmithPlacement.Series,
             Name = "X2", Values = { ROhm = 800.0, LHenry = 2.2e-9, CFarad = 2.7e-12 } });
+        // The six two-element members (owner, 2026-09-20). They are the rows that matter most in
+        // this fixture, because the strip WRITES and the recognizer READS a per-parameter list on
+        // each side: a part that emitted a C it does not have, or that demanded one on the way
+        // back, would come through this trip as a refusal or as a value nobody typed.
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Srl, Placement = SmithPlacement.Series,
+            Name = "X3", Values = { ROhm = 0.6, LHenry = 1.8e-9 } });
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Src, Placement = SmithPlacement.Shunt,
+            Name = "X4", Values = { ROhm = 0.9, CFarad = 3.3e-12 } });
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Slc, Placement = SmithPlacement.Series,
+            Name = "X5", Values = { LHenry = 2.4e-9, CFarad = 1.1e-12 } });
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Prl, Placement = SmithPlacement.Shunt,
+            Name = "X6", Values = { ROhm = 650.0, LHenry = 4.7e-9 } });
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Prc, Placement = SmithPlacement.Series,
+            Name = "X7", Values = { ROhm = 1200.0, CFarad = 0.6e-12 } });
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.Plc, Placement = SmithPlacement.Shunt,
+            Name = "X8", Values = { LHenry = 3.1e-9, CFarad = 2.0e-12 } });
         d.Elements.Add(new SmithElement { Kind = SmithElementKind.Z1P, Placement = SmithPlacement.Shunt,
             Name = "Z1", Values = { ImpedanceOhm = new Complex(18.0, -42.0) } });
         d.Elements.Add(new SmithElement { Kind = SmithElementKind.S1P, Placement = SmithPlacement.Shunt,
@@ -214,6 +230,23 @@ public sealed class SmithClipboardTests
     /// <b>Copy a network, paste it back, and the element list is identical in type, placement,
     /// order and value.</b>
     /// </summary>
+    /// <summary>
+    /// <see cref="EveryKind"/> really is every kind — a hand-written fixture that claims to cover a
+    /// table must be checked against it, or the next kind added is the one the round trip stops
+    /// exercising, silently (which is exactly what happened when the two-element RLC members
+    /// arrived).
+    /// </summary>
+    [Fact]
+    public void EveryKindFixture_CoversTheWholeVocabulary()
+    {
+        var covered = EveryKind().Elements.Select(e => e.Kind).ToHashSet();
+        var missing = SmithComponentMap.AllKinds.Where(k => !covered.Contains(k)).ToList();
+
+        Assert.True(missing.Count == 0,
+            "these kinds are in SmithComponentMap.AllKinds and not in the round-trip fixture: "
+          + string.Join(", ", missing));
+    }
+
     [Fact]
     public void ANetworkSurvivesTheRoundTrip()
     {

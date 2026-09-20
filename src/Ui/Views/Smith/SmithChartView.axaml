@@ -721,9 +721,10 @@
             <Grid RowDefinitions="Auto,*,Auto">
 
                 <!-- The toolbar. Add appends at the end (nearest the load); Insert places before the
-                     selection. BOTH MENUS ARE BUILT IN CODE from SmithChartViewModel.ElementMenu —
-                     one vocabulary, so the two cannot disagree, and so the shell's own Insert menu can
-                     be filled from the same list. -->
+                     selection. BOTH MENUS ARE BUILT IN CODE from SmithChartViewModel.ElementMenuGroups
+                     — one vocabulary in one layout, so the two cannot disagree, and so the shell's own
+                     Insert menu can be filled from the same list. The eight-member RLC family sits
+                     under one submenu there (owner, 2026-09-20); everything else is a row. -->
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,4">
                     <TextBlock Classes="panelhdr" Text="Network" Margin="0"
                                VerticalAlignment="Center"/>

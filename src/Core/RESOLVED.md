@@ -5,6 +5,36 @@ Going forward, a completed brief's detail lands here instead — one `##` sectio
 only for findings that are still true, still surprising, and would cost someone real time to
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The RLC family grew from two parts to nine, and `C = ∞` is a NaN (2026-09-20)
+
+Owner: add `SRL`, `PRL`, `SRC`, `PRC`, `SLC` and `PLC` beside the existing `SRLC` and `PRLC`.
+
+**One piece of arithmetic each, with elements left out — not eight pieces that agree.**
+`SeriesRlcBranchModel` and `ParallelRlcBranchModel` carry an `RlcElements` flag set and the
+concrete models are one line apiece. The SRLC stamp IS the SRL stamp with `L ∈ elements` and `C`
+not. A second copy of a branch constraint is exactly the thing that drifts.
+
+**`C = ∞` is the wrong way to spell "no series capacitor", and it fails only at DC.** An absent
+series element contributes nothing to Z, which for a capacitance means C → ∞, and
+`1.0 / (omega * double.PositiveInfinity)` is 0 at every ω the eye checks. At **ω = 0** it is
+`1/(0 · ∞)` = `1/NaN` = **NaN**, so an SRL's branch diagonal came back `(−R, NaN)`, the
+factorization found no pivot, and the refusal said *"Singular MNA matrix … likely cause: a KVL
+Short loop"* — pointing at the topology, which was fine. The capacitive term is now **dropped**
+rather than valued. The DC row of `TwoElementRlcTests` is what caught it; the AC rows all passed.
+
+**Only the members that carry an L implement `IInductiveBranch`, and that is load-bearing.**
+`SeriesRcModel` and `ParallelRcModel` deliberately do not. A `Mutual` resolves its ends through
+`target.Model as IInductiveBranch`, so implementing it on a part with no inductor would stamp
+−jωM onto a diagonal that is not an inductance — and a `ParallelRcModel` allocates no branch at
+all, so the index would be −1. Worse, `MutualInductanceModel.Resolve` then reads
+`ec.Parameters["L"]`, which those two do not have: a `KeyNotFoundException` in place of the
+sentence that names the part. Absent interface → `AsInductive` refuses first, by name.
+
+**One completeness test had to be widened and would have been silent otherwise.**
+`InstanceNetContract.Expected` matched `SeriesRlcModel or ParallelRlcModel` by TYPE; it now matches
+the two BASES, so the six new members answer without six more names to forget.
+`NetlistContractTests` is what failed — a registered primitive whose net count nothing states.
+
 ## `sqrt` over a swept cube, and the coupling factor that needed it (2026-09-15)
 
 Owner, on the shipped `CoupledInductors` example: `k_implied = mag(SP1.S(2,1))` is not a coupling

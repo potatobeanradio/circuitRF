@@ -1209,7 +1209,7 @@ branch at all.
 
 | Model(s) | Activity | Passivation |
 |---|---|---|
-| `C`, `L`, `SRLC`, `PRLC`, `Bead`, `Mutual`, `TLIN`, the microstrips, `Short`, `IProbe`, `WSProbe`, `Port`, `Term`, `wBond`, `Match` | Passive | as-is — the ordinary stamp already IS the passive stamp |
+| `C`, `L`, `SRLC`, `PRLC`, `SRL`, `SRC`, `SLC`, `PRL`, `PRC`, `PLC`, `Bead`, `Mutual`, `TLIN`, the microstrips, `Short`, `IProbe`, `WSProbe`, `Port`, `Term`, `wBond`, `Match` | Passive | as-is — the ordinary stamp already IS the passive stamp |
 | `Vdc`, `V_1Tone`/`V_nTone`, `I_1Tone`/`I_nTone`, `P1Tone`, `PnTone`, `Tuner` | Passive | sources are off in this assembly already; `P1Tone` and `Tuner` stamp their impedances |
 | `Atten`, `Switch`, `Circulator`, `Coupler`, `Balun`, `Filter`, `Duplexer` | Passive | as-is. **The circulator is non-reciprocal and passive** — Platzker zeroes dependent sources, not non-reciprocity, and a `σ_max` of 1 can no more hold a right-half-plane pole than a length of line can |
 | `Diode`, `NonlinearC`, `SemiC` | Passive | a two-terminal nonlinearity linearises to a positive conductance or capacitance at any bias |

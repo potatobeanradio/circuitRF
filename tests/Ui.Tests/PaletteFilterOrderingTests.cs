@@ -82,7 +82,15 @@ public class PaletteFilterOrderingTests
     public void AllItemsPinnedOrder_BeadAndSrlc_TradePlaces()
     {
         var order = LibraryCatalog.AllItemsPinnedOrder().Select(i => i.Kind).ToList();
-        var plain = LibraryCatalog.AllItems.Select(i => i.Kind).ToList();
+
+        // The unpinned TAIL, in AllItems' own order — the run the swap acts on. Comparing against
+        // the whole of AllItems would be the wrong baseline: the curated head hoists R, L, C,
+        // Mutual and NonlinearC out of this run, so rows that sit between Bead and SRLC there are
+        // not between them here.
+        var plain = LibraryCatalog.AllItems
+            .Where(i => !order.Take(27).Contains(i.Kind))
+            .Select(i => i.Kind)
+            .ToList();
 
         int beadWas = plain.IndexOf(SymbolKind.Bead), srlcWas = plain.IndexOf(SymbolKind.Srlc);
         int beadNow = order.IndexOf(SymbolKind.Bead), srlcNow = order.IndexOf(SymbolKind.Srlc);
@@ -91,11 +99,15 @@ public class PaletteFilterOrderingTests
         Assert.True(beadWas < srlcWas, "AllItems' own order should still put Bead ahead of SRLC.");
         Assert.True(srlcNow < beadNow, "SRLC should now sit where Bead used to.");
 
-        // PRLC is the one tail row between them, and it stays put — a swap, not a re-sort of the
-        // run. (The whole tail is compared against AllItems' own order by the sibling test above;
-        // this one only has to say that PRLC did not travel with the pair.)
-        Assert.True(beadWas < plain.IndexOf(SymbolKind.Prlc) && plain.IndexOf(SymbolKind.Prlc) < srlcWas);
-        Assert.Equal([SymbolKind.Prlc], order.GetRange(srlcNow + 1, beadNow - srlcNow - 1));
+        // The tail rows BETWEEN them stay put, in their own order — a swap, not a re-sort of the
+        // run. Stated as "the between-run is unchanged" rather than as a literal list, because the
+        // RLC family grew from two members to nine in 2026-09-20's round and a frozen list would
+        // have to be re-typed every time the Lumped category gains a row. (The whole tail is
+        // compared against AllItems' own order by the sibling test above; this one only has to say
+        // that nothing travelled with the pair.)
+        var between = plain.GetRange(beadWas + 1, srlcWas - beadWas - 1);
+        Assert.NotEmpty(between);
+        Assert.Equal(between, order.GetRange(srlcNow + 1, beadNow - srlcNow - 1));
     }
 
     /// <summary>Owner request, 2026-09-07: Vdc moves down to sit directly after VProbe.</summary>

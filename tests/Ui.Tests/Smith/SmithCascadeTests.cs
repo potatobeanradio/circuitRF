@@ -569,8 +569,16 @@ public sealed class SmithCascadeTests : IDisposable
                 SmithElementKind.R    => $"R={N(v.ROhm)}",
                 SmithElementKind.L    => $"L={N(v.LHenry)}",
                 SmithElementKind.C    => $"C={N(v.CFarad)}",
-                SmithElementKind.Srlc or SmithElementKind.Prlc
-                                      => $"R={N(v.ROhm)} L={N(v.LHenry)} C={N(v.CFarad)}",
+                // The RLC family writes EXACTLY the parameters its kind declares — an SRL's line
+                // has no C, and ComponentTypeRegistry would refuse one.
+                _ when SmithComponentMap.RlcElementsOf(e.Kind) is not null
+                                      => string.Join(' ', SmithComponentMap.Parameters(e.Kind)
+                                             .Select(sp => sp switch
+                                             {
+                                                 SmithParameter.R => $"R={N(v.ROhm)}",
+                                                 SmithParameter.L => $"L={N(v.LHenry)}",
+                                                 _                => $"C={N(v.CFarad)}",
+                                             })),
                 SmithElementKind.Z1P  => $"Z[1,1]=complex({N(v.ImpedanceOhm.Real)},{N(v.ImpedanceOhm.Imaginary)})",
                 SmithElementKind.S1P or SmithElementKind.S2P
                                       => $"NumPorts={binding.NumPorts} File=\"{FullPath(e.FileRef!)}\"",
@@ -621,6 +629,21 @@ public sealed class SmithCascadeTests : IDisposable
                                  { v.ROhm = 0.4; v.LHenry = 0.8e-9; v.CFarad = 4.7e-12; }),
         SmithElementKind.Prlc => Element(kind, placement, v =>
                                  { v.ROhm = 800.0; v.LHenry = 2.5e-9; v.CFarad = 1.5e-12; }),
+        // The six two-element members. Each carries only its own values, at the same ordinary
+        // magnitudes as the three-element pair above — the point of the gate is the CONVENTION,
+        // and a value the engine treats as a special case would test that instead.
+        SmithElementKind.Srl  => Element(kind, placement, v =>
+                                 { v.ROhm = 0.4;   v.LHenry = 0.8e-9; }),
+        SmithElementKind.Src  => Element(kind, placement, v =>
+                                 { v.ROhm = 0.4;   v.CFarad = 4.7e-12; }),
+        SmithElementKind.Slc  => Element(kind, placement, v =>
+                                 { v.LHenry = 0.8e-9; v.CFarad = 4.7e-12; }),
+        SmithElementKind.Prl  => Element(kind, placement, v =>
+                                 { v.ROhm = 800.0; v.LHenry = 2.5e-9; }),
+        SmithElementKind.Prc  => Element(kind, placement, v =>
+                                 { v.ROhm = 800.0; v.CFarad = 1.5e-12; }),
+        SmithElementKind.Plc  => Element(kind, placement, v =>
+                                 { v.LHenry = 2.5e-9; v.CFarad = 1.5e-12; }),
         SmithElementKind.Z1P  => Element(kind, placement, v => v.ImpedanceOhm = new Complex(18.0, -27.0)),
         SmithElementKind.S1P  => Element(kind, placement, _ => { }, file: OnePortFile()),
         SmithElementKind.S2P  => Element(kind, placement, _ => { }, file: TwoPortFile()),

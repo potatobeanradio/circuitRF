@@ -65,6 +65,20 @@ public sealed class SmithInverseTests
         Row(SmithElementKind.Prlc, Sh, SmithParameter.C, 1.5e-12, 2.4e-12);
         Row(SmithElementKind.Prlc, Se, SmithParameter.C, 1.5e-12, 2.4e-12);   // and its dual
 
+        // The six two-element members (owner, 2026-09-20), ONE ROW EACH on the parameter whose
+        // inverse the family's shared formula reaches through the OTHER reactance's term — an
+        // SLC's L against 1/(ωC), a PLC's C against 1/(ωL) — plus the two members where that term
+        // is absent entirely (SRL's L, PRC's C), which is the case a per-kind arm would have got
+        // right by accident and the shared one has to get right on purpose. Every kind, placement
+        // and parameter is already swept for finiteness by test 5 and against the engine by
+        // SmithCascadeTests; what these rows add is that the value ROUND TRIPS.
+        Row(SmithElementKind.Srl, Se, SmithParameter.L, 0.8e-9,  1.5e-9);
+        Row(SmithElementKind.Src, Se, SmithParameter.C, 4.7e-12, 2.2e-12);
+        Row(SmithElementKind.Slc, Se, SmithParameter.L, 0.8e-9,  1.5e-9);
+        Row(SmithElementKind.Prl, Sh, SmithParameter.L, 2.5e-9,  1.1e-9);
+        Row(SmithElementKind.Prc, Sh, SmithParameter.C, 1.5e-12, 2.4e-12);
+        Row(SmithElementKind.Plc, Sh, SmithParameter.C, 1.5e-12, 2.4e-12);
+
         Row(SmithElementKind.Z1P, Se, SmithParameter.ImpedanceReal,  18.0, 25.0);
         Row(SmithElementKind.Z1P, Se, SmithParameter.ImpedanceImag, -27.0, 12.0);
         Row(SmithElementKind.Z1P, Sh, SmithParameter.ImpedanceImag, -27.0, 12.0);
@@ -404,6 +418,15 @@ public sealed class SmithInverseTests
             case SmithElementKind.C:    v.CFarad = 1.2e-12; break;
             case SmithElementKind.Srlc: v.ROhm = 0.4;   v.LHenry = 0.8e-9; v.CFarad = 4.7e-12; break;
             case SmithElementKind.Prlc: v.ROhm = 800.0; v.LHenry = 2.5e-9; v.CFarad = 1.5e-12; break;
+
+            // The six two-element members, at the three-element pair's own magnitudes so the
+            // family's formulas are compared on like values.
+            case SmithElementKind.Srl:  v.ROhm = 0.4;   v.LHenry = 0.8e-9;  break;
+            case SmithElementKind.Src:  v.ROhm = 0.4;   v.CFarad = 4.7e-12; break;
+            case SmithElementKind.Slc:  v.LHenry = 0.8e-9; v.CFarad = 4.7e-12; break;
+            case SmithElementKind.Prl:  v.ROhm = 800.0; v.LHenry = 2.5e-9;  break;
+            case SmithElementKind.Prc:  v.ROhm = 800.0; v.CFarad = 1.5e-12; break;
+            case SmithElementKind.Plc:  v.LHenry = 2.5e-9; v.CFarad = 1.5e-12; break;
             case SmithElementKind.Z1P:  v.ImpedanceOhm = new Complex(18.0, -27.0); break;
 
             case SmithElementKind.Tline:

@@ -472,78 +472,135 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         Assert.Contains("ToolTip.Tip=\"{Binding RippleTooltip}\"", xaml, StringComparison.Ordinal);
     }
 
-    // ══ 6. The two pane expanders ════════════════════════════════════════════
+    // ══ 6. The four panel lamps (owner, 2026-09-20) ══════════════════════════
 
     /// <summary>
-    /// <b>The two expanders are mutually exclusive, and each glyph shows its own state</b> (owner:
-    /// "the button icon shows state… when expanded, the button changes to an icon pointing up and to
-    /// the left").
+    /// <b>The four panels are independent, and the last one showing cannot be hidden</b> — which
+    /// is what replaced the two mutually-exclusive diagonal-arrow expanders.
     /// </summary>
     /// <remarks>
-    /// Mutual exclusion is not a nicety: each toggle takes the OTHER pane's column, so both on at once
-    /// is a state with no width left to describe.
+    /// The floor is the load-bearing half. Four hidden panels is a window with a title bar, a
+    /// toolbar and nothing between them — a state reachable in four clicks and escapable only by
+    /// recognising four dark buttons as the way out. It is asserted through the COMMAND as well as
+    /// through the setter, because the button dims off <c>CanExecute</c> and a setter guard alone
+    /// would leave a live-looking button that does nothing.
     /// </remarks>
     [Fact]
-    public void TheTwoPaneExpanders_AreMutuallyExclusive_AndTheirGlyphsShowState()
+    public void TheFourPanelLamps_AreIndependent_AndTheLastOneCannotBeHidden()
     {
         var (_, _, d) = Open();
 
-        Assert.False(d.NetworkExpanded);
-        Assert.False(d.ResponseExpanded);
-        Assert.Equal(Material.Icons.MaterialIconKind.ArrowBottomRight, d.NetworkExpandIcon);
-        Assert.Equal(Material.Icons.MaterialIconKind.ArrowBottomLeft, d.ResponseExpandIcon);
+        Assert.True(d.ShowSpecification);
+        Assert.True(d.ShowNetwork);
+        Assert.True(d.ShowTransforms);
+        Assert.True(d.ShowResponse);
+        Assert.True(d.ShowNetworkColumn);
 
-        d.NetworkExpanded = true;
-        Assert.False(d.ResponseExpanded);
-        Assert.Equal(Material.Icons.MaterialIconKind.ArrowTopLeft, d.NetworkExpandIcon);
+        // Independent, unlike the expanders they replace: two panels off at once is an ordinary
+        // state, and it is the one the old "expand over the other pane" toggle used to reach.
+        d.ShowResponse = false;
+        d.ShowTransforms = false;
+        Assert.True(d.ShowSpecification);
+        Assert.True(d.ShowNetwork);
 
-        d.ResponseExpanded = true;
-        Assert.False(d.NetworkExpanded);
-        Assert.Equal(Material.Icons.MaterialIconKind.ArrowTopRight, d.ResponseExpandIcon);
-        Assert.Equal(Material.Icons.MaterialIconKind.ArrowBottomRight, d.NetworkExpandIcon);
+        // The centre column follows its two halves rather than being set beside them.
+        d.ShowNetwork = false;
+        Assert.False(d.ShowNetworkColumn);
+        d.ShowNetwork = true;
+        Assert.True(d.ShowNetworkColumn);
 
-        d.ResponseExpanded = false;
-        Assert.False(d.NetworkExpanded);
-        Assert.False(d.ResponseExpanded);
+        // Down to one, and the last one holds — at the setter …
+        d.ShowSpecification = false;
+        Assert.True(d.ShowNetwork);
+        d.ShowNetwork = false;
+        Assert.True(d.ShowNetwork);
+
+        // … and at the button, which is what dims it.
+        Assert.False(d.ToggleNetworkCommand.CanExecute(null));
+        Assert.True(d.ToggleResponseCommand.CanExecute(null));
     }
 
     /// <summary>
-    /// <b>An expanded pane takes the other's COLUMN, not just its visibility</b>.
+    /// <b>A hidden panel gives up its COLUMN, not just its visibility, and the gaps are
+    /// draggable</b>.
     /// </summary>
     /// <remarks>
-    /// Hiding a pane alone leaves its 380 px column standing and the window shows a hole where the
-    /// response used to be. The width is moved from code-behind rather than bound, because a
-    /// <c>ColumnDefinition</c> is not in the logical tree — no DataContext reaches it and a
-    /// <c>{Binding}</c> on its <c>Width</c> silently resolves to nothing, with no error to notice.
+    /// Hiding a pane alone leaves its 285 or 380 px column standing and the window shows a hole.
+    /// The width is moved from code-behind rather than bound, because a <c>ColumnDefinition</c> is
+    /// not in the logical tree — no DataContext reaches it and a <c>{Binding}</c> on its
+    /// <c>Width</c> silently resolves to nothing, with no error to notice.
     /// </remarks>
     [Fact]
-    public void AnExpandedPane_MovesTheColumnWidth_FromCodeNotFromABinding()
+    public void AHiddenPanel_GivesUpItsColumn_FromCodeNotFromABinding()
     {
         string xaml = Xaml();
         Assert.DoesNotContain("Width=\"{Binding NetworkColumnWidth}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Name=\"PaneGrid\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding !ResponseExpanded}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding !NetworkExpanded}\"", xaml, StringComparison.Ordinal);
+
+        // Five columns: the three panes with a gripper column between each neighbouring pair.
+        Assert.Contains("ColumnDefinitions=\"285,Auto,*,Auto,380\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowSpecification}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowNetworkColumn}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowNetwork}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowTransforms}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowResponse}\"", xaml, StringComparison.Ordinal);
+
+        // Three grippers — two between the columns, one between the network and the transforms
+        // rack — all INVISIBLE and all reporting to the one drag handler. Transparent is the whole
+        // design: the panes already have edges, so what the strip adds is a cursor and a grab.
+        Assert.Equal(3, Regex.Matches(xaml, "<GridSplitter").Count);
+        Assert.Equal(3, Regex.Matches(xaml, @"DragCompleted=""OnPaneSplitterDragCompleted""").Count);
+        Assert.Equal(3, Regex.Matches(xaml, @"<GridSplitter[^>]*Background=""Transparent""",
+                                      RegexOptions.Singleline).Count);
 
         string code = Code();
-        var sync = Body(code, "private void SyncPaneLayout()");
+        var sync = Body(code, "private void SyncPanes()");
         output.WriteLine(sync);
-        Assert.Contains("ColumnDefinitions[1].Width", sync, StringComparison.Ordinal);
-        Assert.Contains("ColumnDefinitions[2].Width", sync, StringComparison.Ordinal);
-        Assert.Contains("NetworkExpanded", sync, StringComparison.Ordinal);
-        Assert.Contains("ResponseExpanded", sync, StringComparison.Ordinal);
+        Assert.Contains("ColumnDefinitions[0]", sync, StringComparison.Ordinal);
+        Assert.Contains("ColumnDefinitions[2]", sync, StringComparison.Ordinal);
+        Assert.Contains("ColumnDefinitions[4]", sync, StringComparison.Ordinal);
+        foreach (string flag in new[] { "ShowSpecification", "ShowNetwork", "ShowTransforms", "ShowResponse" })
+            Assert.Contains(flag, sync, StringComparison.Ordinal);
 
-        // …and it is actually called when either flag moves.
+        // …and it is actually called when any of the four moves.
         var changed = Body(code, "private void OnVmPropertyChanged(");
-        Assert.Contains("SyncPaneLayout()", changed, StringComparison.Ordinal);
-        Assert.Contains("NetworkExpanded", changed, StringComparison.Ordinal);
-        Assert.Contains("ResponseExpanded", changed, StringComparison.Ordinal);
+        Assert.Contains("SyncPanes()", changed, StringComparison.Ordinal);
+        foreach (string flag in new[] { "ShowSpecification", "ShowNetwork", "ShowTransforms", "ShowResponse" })
+            Assert.Contains(flag, changed, StringComparison.Ordinal);
 
-        // The resting width the code restores is the SAME number the AXAML declares.
-        // 285 since 2026-08-28 (the Solutions list moved into the specification pane), and three
-        // columns rather than four (the drawer that was the fourth is what moved).
-        Assert.Contains("ColumnDefinitions=\"285,*,380\"", xaml, StringComparison.Ordinal);
+        // The resting widths the code restores are the SAME numbers the AXAML declares.
+        Assert.Contains("SpecificationColumnWidth = 285", code, StringComparison.Ordinal);
         Assert.Contains("ResponseColumnWidth = 380", code, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The two diagonal-arrow expanders are gone</b> (owner, 2026-09-20: redundant beside the
+    /// four lamps), and nothing is left of them in the window or the view model.
+    /// </summary>
+    /// <remarks>
+    /// Asserted as an ABSENCE because a leftover would not fail anything else: an orphan
+    /// <c>NetworkExpanded</c> property nothing binds to still compiles, and a leftover ToggleButton
+    /// still draws — a second control offering a state the lamps already own.
+    /// </remarks>
+    [Fact]
+    public void TheDiagonalArrowExpanders_AreGoneFromTheWindowAndTheViewModel()
+    {
+        string xaml = Xaml(), code = Code();
+
+        foreach (string gone in new[] { "NetworkExpanded", "ResponseExpanded", "NetworkExpandIcon",
+                                        "ResponseExpandIcon", "NetworkExpandButton", "ResponseExpandButton" })
+        {
+            Assert.DoesNotContain(gone, xaml, StringComparison.Ordinal);
+            Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
+        }
+
+        Assert.Null(typeof(MatchDesignerViewModel).GetProperty("NetworkExpanded"));
+        Assert.Null(typeof(MatchDesignerViewModel).GetProperty("ResponseExpanded"));
+
+        // What stands in their place, on the toolbar, one per panel.
+        foreach (string button in new[] { "SpecificationPaneButton", "NetworkPaneButton",
+                                          "TransformsPaneButton", "ResponsePaneButton" })
+            Assert.Contains($"Name=\"{button}\"", xaml, StringComparison.Ordinal);
     }
 
     // ══ 7. Zoom to Fit ═══════════════════════════════════════════════════════

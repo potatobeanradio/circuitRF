@@ -311,6 +311,43 @@ public sealed class SmithNetworkStripTests
                      vm.Network.Edit.Components.Single(c => c.InstanceName == "L1").X, 9);
     }
 
+    /// <summary>
+    /// <b>The grouped menu holds every row the flat vocabulary does, once</b>, and the one submenu
+    /// is exactly the RLC family (owner, 2026-09-20).
+    /// </summary>
+    /// <remarks>
+    /// The grouping is a PRESENTATION of <see cref="SmithChartViewModel.ElementMenu"/> and must add
+    /// and lose nothing — a row that fell out of the layout is a part that can no longer be placed
+    /// from either menu, with nothing said anywhere. Asserted as a set equality in both directions
+    /// rather than as a count, and the ORDER is asserted too, because the submenu is inserted where
+    /// its first member sat and an off-by-one there would reshuffle the lines below it.
+    /// </remarks>
+    [Fact]
+    public void TheGroupedMenu_IsTheFlatVocabularyWithTheRlcFamilyUnderOneSubmenu()
+    {
+        var groups = SmithChartViewModel.ElementMenuGroups;
+
+        Assert.Equal(SmithChartViewModel.ElementMenu,
+                     groups.SelectMany(g => g.Entries).ToList());
+
+        var submenus = groups.Where(g => g.Title is not null).ToList();
+        var only     = Assert.Single(submenus);
+        Assert.Equal(SmithChartViewModel.RlcGroupTitle, only.Title);
+
+        // Exactly the eight two-and-three-element RLC parts, in both their placements — read from
+        // SmithComponentMap rather than listed, so a ninth member joins the group on its own.
+        Assert.All(only.Entries, e => Assert.NotNull(SmithComponentMap.RlcElementsOf(e.Kind)));
+        Assert.All(groups.Where(g => g.Title is null),
+                   g => Assert.Null(SmithComponentMap.RlcElementsOf(g.Entries[0].Kind)));
+
+        // Every top-level row is still one element, so nothing but the family was folded away.
+        Assert.All(groups.Where(g => g.Title is null), g => Assert.Single(g.Entries));
+
+        // And the menu is now short enough to read: 15 top-level rows against the 30 a flat list
+        // would have, in a window 741 px tall whose rows are 39 px glyphs.
+        Assert.True(groups.Count <= 16, $"the top level is {groups.Count} rows");
+    }
+
     private static SmithElementMenuEntry Entry(SmithElementKind kind, SmithPlacement placement)
         => SmithChartViewModel.ElementMenu.Single(r => r.Kind == kind && r.Placement == placement);
 

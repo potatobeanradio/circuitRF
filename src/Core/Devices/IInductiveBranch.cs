@@ -4,12 +4,13 @@ namespace CircuitRF.Core.Devices;
 /// A linear model that carries its inductance on a Group-2 branch-current unknown, and can
 /// therefore be one end of a <see cref="MutualInductanceModel"/>.
 ///
-/// <para>The interface exists because three models now do this — <see cref="InductorModel"/>,
-/// <see cref="SeriesRlcModel"/> and <see cref="ParallelRlcModel"/> — and the half-dozen places that
-/// need the branch index (mutual coupling, inductance regularization, branch labelling, the SDD's
-/// control-current reference) must reach all three. Every one of those sites used to pattern-match
-/// <c>InductorModel</c> by type, and a pattern match is exactly the wrong shape here: adding a
-/// fourth inductive model would leave each site silently correct-looking and quietly skipping it.
+/// <para>The interface exists because most of the lumped library now does this —
+/// <see cref="InductorModel"/> and every member of the series and parallel RLC families that
+/// carries an L (<see cref="SeriesRlcBranchModel"/>, <see cref="ParallelRlcBranchModel"/>) — and
+/// the half-dozen places that need the branch index (mutual coupling, inductance regularization,
+/// branch labelling, the SDD's control-current reference) must reach every one of them. Every one of those sites used to pattern-match
+/// <c>InductorModel</c> by type, and a pattern match is exactly the wrong shape here: adding
+/// another inductive model would leave each site silently correct-looking and quietly skipping it.
 /// Regularization skipping a branch is not an error message, it is a singular matrix somewhere
 /// else.</para>
 ///

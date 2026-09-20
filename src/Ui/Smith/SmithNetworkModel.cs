@@ -294,10 +294,16 @@ public static class SmithNetworkModel
                : (IsVerticalGlyph(kind) ? SymbolRotation.R270 : SymbolRotation.R0);
 
     /// <summary>True for the kinds whose built-in glyph runs top to bottom with its pins at
-    /// (0, ∓200) — R, L, C, SRLC and PRLC.</summary>
+    /// (0, ∓200) — R, L, C and the whole eight-member RLC family.</summary>
+    /// <remarks>
+    /// <b>The family is asked, not listed.</b> Every member's pins are R/L/C's own — that is the
+    /// contract the library's own tests hold shut — so "does this kind carry an R, an L or a C"
+    /// and "is its glyph vertical" are the same question, and asking it once means a member added
+    /// to <see cref="SmithComponentMap"/> is drawn the right way up with nothing to keep in step.
+    /// </remarks>
     private static bool IsVerticalGlyph(SmithElementKind kind)
         => kind is SmithElementKind.R or SmithElementKind.L or SmithElementKind.C
-                or SmithElementKind.Srlc or SmithElementKind.Prlc;
+        || SmithComponentMap.RlcElementsOf(kind) is not null;
 
     /// <summary>
     /// Which of an element's pins a <c>Ground</c> sits on, or null when the column has no grounded pin
@@ -401,12 +407,28 @@ public static class SmithNetworkModel
 
             case SmithElementKind.Srlc:
             case SmithElementKind.Prlc:
-                return
-                [
-                    Value("R", v.ROhm,   MatchQuantity.Resistance,  UnitDimension.Resistance),
-                    Value("L", v.LHenry, MatchQuantity.Inductance,  UnitDimension.Inductance),
-                    Value("C", v.CFarad, MatchQuantity.Capacitance, UnitDimension.Capacitance),
-                ];
+            case SmithElementKind.Srl:
+            case SmithElementKind.Src:
+            case SmithElementKind.Slc:
+            case SmithElementKind.Prl:
+            case SmithElementKind.Prc:
+            case SmithElementKind.Plc:
+            {
+                // EXACTLY the values the part carries, which is the whole reason to place an SRL
+                // rather than an SRLC with a third number nobody meant — and it has to be exactly
+                // those, because brief 7 copies these rows out as a netlist line and ComponentTypeRegistry
+                // declares no C on an SRL. The order is R, L, C, from the one table that says which
+                // of them this kind has.
+                var rows = new List<EditableParameter>(3);
+                foreach (var sp in SmithComponentMap.Parameters(e.Kind))
+                    rows.Add(sp switch
+                    {
+                        SmithParameter.R => Value("R", v.ROhm,   MatchQuantity.Resistance,  UnitDimension.Resistance),
+                        SmithParameter.L => Value("L", v.LHenry, MatchQuantity.Inductance,  UnitDimension.Inductance),
+                        _                => Value("C", v.CFarad, MatchQuantity.Capacitance, UnitDimension.Capacitance),
+                    });
+                return rows;
+            }
 
             case SmithElementKind.Z1P:
                 // The engine's own spelling of a complex constant, so what is drawn is what a netlist

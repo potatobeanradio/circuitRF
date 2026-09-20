@@ -174,6 +174,16 @@ Four regions, left to right and top to bottom:
 - **Transforms** — the linked Norton slider rack, and below everything the **status strip**: Q1, Q2,
   worst in-band return loss, insertion loss, ripple, and the achieved-versus-required Π N².
 
+**Each of the four can be put away, and the gaps between them can be dragged.** The toolbar's first
+four buttons are one lamp per panel, in the order the window lays them out — Specification, Network,
+Transforms, Response. A lit button means the panel is on screen; turning one off gives its space to
+the panels that are left, so any one of them can have most of the window for a moment. At least one
+is always showing, so the last lit button is greyed rather than silently doing nothing.
+
+Between each pair of panels is an invisible gripper: put the pointer on the gap, and the cursor
+changes and the boundary drags. A width you set survives hiding the panel and showing it again, and
+the centre column stays the one that grows when the window is resized.
+
 <div class="callout note">
 <span class="label">There is no "nearest standard value" column, deliberately</span>
 <p>What counts as a realizable value is your call and depends on the flow: in an MMIC flow a capacitor
@@ -189,8 +199,11 @@ affected termination turns red.
 ## The specification pane {#spec}
 
 Each termination is **a resistance in series or in parallel with one reactive element** — C, L, or none.
-The little RC pictogram shows which topology you have picked at a glance. Every numeric field is an
-ordinary circuitRF value-and-unit pair, so [unit entry](units.html) works exactly as it does elsewhere.
+The little pictogram beside it shows which, at a glance: it is the library part that termination *is*,
+drawn by the same glyph a schematic would use — an [R](components.html#resistor), an
+[SRL](components.html#srl), an [SRC](components.html#src), a [PRL](components.html#prl) or a
+[PRC](components.html#prc). Every numeric field is an ordinary circuitRF value-and-unit pair, so
+[unit entry](units.html) works exactly as it does elsewhere.
 
 | Control | What it does |
 |---|---|

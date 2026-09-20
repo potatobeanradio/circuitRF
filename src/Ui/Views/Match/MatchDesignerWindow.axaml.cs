@@ -654,12 +654,12 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         WireButton("NetworkZoomFitButton",
                    (_, _) => this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?.ZoomToFit());
 
-        // The two pane expanders move COLUMN WIDTHS, which no binding can reach — see SyncPaneLayout.
+        // The four panel lamps move COLUMN WIDTHS, which no binding can reach — see SyncPanes.
         // The view-model is captured rather than re-read on Closed: DataContext can already be gone
         // by then, and an unsubscribe that quietly does nothing is a leak with no symptom.
         vm.PropertyChanged += OnVmPropertyChanged;
         Closed += (_, _) => vm.PropertyChanged -= OnVmPropertyChanged;
-        SyncPaneLayout();
+        SyncPanes();
 
         // The Specification scroller's cap is the pane's height less the Solutions floor, so it is
         // re-taken whenever the pane is resized — a window resize, and the pane-expander columns
@@ -687,17 +687,67 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         if (this.FindControl<Button>(name) is { } b) b.Click += handler;
     }
 
-    // ── Pane expansion (owner, 2026-08-20) ────────────────────────────────────
+    // ── The four panel lamps and the three grippers (owner, 2026-09-20) ──────
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MatchDesignerViewModel.NetworkExpanded)
-                           or nameof(MatchDesignerViewModel.ResponseExpanded))
-            SyncPaneLayout();
+        // The BORDERS gate themselves off the same properties in the AXAML; what cannot be bound is
+        // the geometry a collapsed panel leaves behind — a fixed column is still 285 px wide when
+        // the thing inside it is invisible.
+        if (e.PropertyName is nameof(MatchDesignerViewModel.ShowSpecification)
+                           or nameof(MatchDesignerViewModel.ShowNetwork)
+                           or nameof(MatchDesignerViewModel.ShowTransforms)
+                           or nameof(MatchDesignerViewModel.ShowResponse))
+            SyncPanes();
     }
 
+    /// <summary>The widths the AXAML declares, read once so they are stated once.</summary>
+    /// <remarks>
+    /// <b>These are also where a drag of the grippers is remembered.</b> A <c>GridSplitter</c>
+    /// writes a concrete <see cref="GridLength"/> straight into the definition it resizes, so
+    /// <see cref="SyncPanes"/> reads the live width back into these fields before it overwrites
+    /// one — which is what makes a panel that is hidden and shown again come back the width the
+    /// user left it, rather than the 285 and 380 the AXAML gave it. It is railRF's idiom, which is
+    /// wBond's before it, and it needs no drag handler of its own.
+    /// </remarks>
+    private GridLength _specificationColumn = new(SpecificationColumnWidth);
+    private GridLength _responseColumn      = new(ResponseColumnWidth);
+
+    /// <summary>The transforms rack's height, likewise remembered across a hide and a show.</summary>
+    /// <remarks>
+    /// <c>Auto</c> until the user drags it, because the rack sizes to its own content and a fixed
+    /// resting height would either clip a full rack or leave an empty one holding blank space. A drag
+    /// replaces it with a pixel height and that is what comes back.
+    /// </remarks>
+    private GridLength _transformsRow = GridLength.Auto;
+
     /// <summary>
-    /// Gives one of the two right-hand panes the other's column, or puts both back.
+    /// How narrow a gripper may take each column.
+    /// </summary>
+    /// <remarks>
+    /// <b>Applied in <see cref="SyncPanes"/> and not in the AXAML</b>, because a floor on a
+    /// definition is a floor on EVERY value it is given — including the <c>GridLength(0)</c> that
+    /// hides a panel, which a static <c>MinWidth</c> would silently turn back into 200 px. So the
+    /// floor goes on with the panel and comes off with it.
+    ///
+    /// <para>Without one, a gripper dragged to the edge leaves a panel a few pixels wide and its
+    /// own button cannot recover it — the width read back above is the few pixels, so toggling the
+    /// panel off and on restores exactly the state that is unusable.</para>
+    ///
+    /// <para>The three add up to 200 + 320 + 280 = 800 against this window's own
+    /// <c>MinWidth</c> of 1000, so they can all be honoured at every size the window takes. Floors
+    /// that cannot all be met are worse than none: the grid hands each column its minimum anyway
+    /// and the surplus goes off the right edge.</para>
+    /// </remarks>
+    private const double SpecificationMinWidth = 200;
+    private const double CentreMinWidth        = 320;
+    private const double ResponseMinWidth      = 280;
+
+    /// <summary>The transforms rack's floor, matching the AXAML's own <c>MinHeight</c>.</summary>
+    private const double TransformsMinHeight = 150;
+
+    /// <summary>
+    /// Gives the space a hidden panel released to the panels that are still on screen.
     /// </summary>
     /// <remarks>
     /// <b>From code, not from a <c>{Binding}</c> on the <c>ColumnDefinition</c>.</b> A
@@ -705,24 +755,127 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     /// DataContext reaches it and a binding on its <c>Width</c> silently resolves to nothing — the
     /// column would simply keep whatever the AXAML gave it, with no error to notice.
     ///
-    /// <para>Hiding the pane is not enough on its own and is done as well, in the AXAML: a collapsed
-    /// pane with its column still standing leaves a 380 px hole where the response used to be. The
-    /// two together are what "expand over it" means.</para>
+    /// <para>The specification column is fixed-or-gone and never star: it holds entry fields and a
+    /// list, and it gains nothing from extra width. The response column is fixed BESIDE the centre
+    /// column and star WITHOUT it, which is the one case where a panel grows sideways rather than
+    /// just taller — and it is the state the retired "expand the response over the network"
+    /// toggle used to reach.</para>
+    ///
+    /// <para>The centre column's two rows are the same statement vertically: the network holds the
+    /// star row and the transforms rack sits under it at its own height, and with the network gone
+    /// the rack takes the star row — a rack pinned at its content height in an otherwise empty
+    /// column is not what "give transforms the space" means.</para>
+    ///
+    /// <para><b>It also owns the three grippers</b>, and this is the only place that can: a
+    /// panel's size is now either the AXAML's, the user's last drag or zero, and those three are
+    /// decided together.</para>
     /// </remarks>
-    private void SyncPaneLayout()
+    private void SyncPanes()
     {
         if (Vm is null || this.FindControl<Grid>("PaneGrid") is not { } grid) return;
-        if (grid.ColumnDefinitions.Count < 3) return;
+        if (grid.ColumnDefinitions.Count < 5) return;
 
-        var star = new GridLength(1, GridUnitType.Star);
-        var zero = new GridLength(0, GridUnitType.Pixel);
+        bool specification = Vm.ShowSpecification;
+        bool network       = Vm.ShowNetwork;
+        bool transforms    = Vm.ShowTransforms;
+        bool response      = Vm.ShowResponse;
+        bool centre        = network || transforms;
 
-        grid.ColumnDefinitions[1].Width = Vm.ResponseExpanded ? zero : star;
-        grid.ColumnDefinitions[2].Width =
-            Vm.NetworkExpanded  ? zero
-            : Vm.ResponseExpanded ? star
-            : new GridLength(ResponseColumnWidth, GridUnitType.Pixel);
+        var specificationColumn = grid.ColumnDefinitions[0];
+        var centreColumn        = grid.ColumnDefinitions[2];
+        var responseColumn      = grid.ColumnDefinitions[4];
+
+        // Where the grippers were left, before anything below overwrites it. A star width is the
+        // response column standing in for a hidden centre column and is nobody's drag, so it is not
+        // a width to come back to.
+        if (!specificationColumn.Width.IsStar && specificationColumn.Width.Value > 0)
+            _specificationColumn = specificationColumn.Width;
+        if (!responseColumn.Width.IsStar && responseColumn.Width.Value > 0)
+            _responseColumn = responseColumn.Width;
+
+        specificationColumn.Width = specification ? _specificationColumn : new GridLength(0);
+        centreColumn.Width = centre ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        responseColumn.Width =
+            !response ? new GridLength(0)
+            : centre  ? _responseColumn
+                      : new GridLength(1, GridUnitType.Star);
+
+        specificationColumn.MinWidth = specification ? SpecificationMinWidth : 0;
+        centreColumn.MinWidth        = centre         ? CentreMinWidth       : 0;
+        responseColumn.MinWidth      = response       ? ResponseMinWidth     : 0;
+
+        // A gripper is shown only where there are two panels for it to trade space between. With
+        // the centre column collapsed the response column is star and takes what the specification
+        // does not use, which is the same answer a drag would have given.
+        if (this.FindControl<GridSplitter>("SpecificationSplitter") is { } sSplit)
+            sSplit.IsVisible = specification && centre;
+        if (this.FindControl<GridSplitter>("ResponseSplitter") is { } rSplit)
+            rSplit.IsVisible = centre && response;
+
+        if (this.FindControl<Grid>("CentreGrid") is { } centreGrid && centreGrid.RowDefinitions.Count >= 3)
+        {
+            var transformsRow = centreGrid.RowDefinitions[2];
+            if (!transformsRow.Height.IsStar && !transformsRow.Height.IsAuto && transformsRow.Height.Value > 0)
+                _transformsRow = transformsRow.Height;
+
+            centreGrid.RowDefinitions[0].Height =
+                network ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            transformsRow.Height =
+                !transforms ? new GridLength(0)
+                : network   ? _transformsRow
+                            : new GridLength(1, GridUnitType.Star);
+            transformsRow.MinHeight = transforms ? TransformsMinHeight : 0;
+        }
+
+        if (this.FindControl<GridSplitter>("TransformsSplitter") is { } tSplit)
+            tSplit.IsVisible = network && transforms;
     }
+
+    /// <summary>
+    /// A gripper was released — restate the one rule a drag can rewrite.
+    /// </summary>
+    /// <remarks>
+    /// <b>The centre column is this window's slack and must stay star.</b> A <c>GridSplitter</c>
+    /// rewrites BOTH definitions it sits between, and a star one coming back as a pixel width would
+    /// be invisible at the moment it happened and obvious later: the window would stop giving a
+    /// resize to the schematic, and every extra pixel of a widened window would go to the gap
+    /// instead. The network's row is the same rule vertically. Restoring star here costs nothing
+    /// when the drag already left it alone.
+    ///
+    /// <para>The layout is unchanged by this — the outer columns are pinned at the widths they were
+    /// just dragged to, which is what they already measured — so nothing jumps on release.
+    /// <see cref="SyncPanes"/> reads those widths back the next time a panel is toggled.</para>
+    /// </remarks>
+    private void OnPaneSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        if (this.FindControl<Grid>("PaneGrid") is { } grid && grid.ColumnDefinitions.Count >= 5)
+        {
+            var specification = grid.ColumnDefinitions[0];
+            var centre        = grid.ColumnDefinitions[2];
+            var response      = grid.ColumnDefinitions[4];
+
+            if (!centre.Width.IsStar)
+            {
+                if (!specification.Width.IsStar) specification.Width = new GridLength(specification.ActualWidth);
+                if (!response.Width.IsStar)      response.Width      = new GridLength(response.ActualWidth);
+                centre.Width = new GridLength(1, GridUnitType.Star);
+            }
+        }
+
+        if (this.FindControl<Grid>("CentreGrid") is { } centreGrid && centreGrid.RowDefinitions.Count >= 3)
+        {
+            var network    = centreGrid.RowDefinitions[0];
+            var transforms = centreGrid.RowDefinitions[2];
+            if (!network.Height.IsStar)
+            {
+                if (!transforms.Height.IsStar) transforms.Height = new GridLength(transforms.ActualHeight);
+                network.Height = new GridLength(1, GridUnitType.Star);
+            }
+        }
+    }
+
+    /// <summary>The specification pane's resting width. Matches the AXAML's own literal.</summary>
+    private const double SpecificationColumnWidth = 285;
 
     /// <summary>The response pane's resting width. Matches the AXAML's own literal.</summary>
     private const double ResponseColumnWidth = 380;
