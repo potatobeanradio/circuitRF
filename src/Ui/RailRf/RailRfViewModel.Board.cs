@@ -321,6 +321,11 @@ public sealed partial class RailRfViewModel
 
         BoardLayout = new LayoutEditorViewModel(view) { Technology = board.Technology };
         BoardOverlayLayer.DbuPerMicron = board.DbuPerMicron;
+
+        // The rows FIRST, because they are built from the technology, and the narrowing second,
+        // because it is built from the rows' own hidden set.
+        RebuildBoardLayers();
+        SyncCanvasTechnology();
         SyncHiddenLayers();
     }
 
@@ -371,6 +376,15 @@ public sealed partial class RailRfViewModel
     /// old one rather than leaving them sitting beside a board they may no longer describe. Re-running
     /// is one keystroke.</para>
     ///
+    /// <para><b>The reference test is kept, and the live seam is what makes it safe</b>
+    /// (R-rail20-2b). Getting this wrong produces "the first toggle works and the rest do not",
+    /// which is far harder to diagnose than "none of them work" — so it is written down here rather
+    /// than left to be inferred. An unsaved <c>.ctech</c> edit reaches this window as a FRESH
+    /// instance every time: <c>TechEditorViewModel.ApplySnapshot</c> deserialises a new clone per
+    /// committed edit, undo and redo, and <c>TechnologyCache.SetLive</c> stores that clone. Nothing
+    /// hands out the editor's own <c>Working</c> object, which is the thing that would make the
+    /// second toggle a no-op.</para>
+    ///
     /// <para><b>The BOARD is written to its backing field on purpose</b>, exactly as
     /// <see cref="NotifyArtworkChanged"/> explains: assigning the property would rebuild the
     /// <c>LayoutEditorViewModel</c> and take the viewport away from a user who is looking at it.</para>
@@ -393,7 +407,11 @@ public sealed partial class RailRfViewModel
         // The canvas reads its technology from this view model every frame and repaints on any of its
         // property changes, so this one assignment is both halves: the new layer table and the frame
         // that draws with it.
-        if (BoardLayout is { } canvas) canvas.Technology = technology;
+        // The rows are seeded from the new layer table; the canvas is then given whatever that
+        // leaves visible (SyncCanvasTechnology hands back the adopted instance itself where this
+        // window hides nothing, so the ordinary case costs no clone).
+        RebuildBoardLayers();
+        SyncCanvasTechnology();
         SyncHiddenLayers();
 
         // The stackup is what says which layers a via joins, so every galvanic walk is of the old
@@ -416,10 +434,21 @@ public sealed partial class RailRfViewModel
     /// it — otherwise turning a layer off in the <c>.ctech</c> removes the copper and leaves the drop
     /// map of it floating on the board (owner, 2026-09-19).
     /// </remarks>
-    private void SyncHiddenLayers() =>
-        BoardOverlayLayer.HiddenLayers = Board?.Technology is { } tech
-            ? new HashSet<LayerKey>(tech.Layers.Where(l => !l.Visible).Select(l => l.Key))
-            : new HashSet<LayerKey>();
+    /// <remarks>
+    /// <b>And the WINDOW's own hidden layers are unioned in here</b> (R-rail20-1c), which is the
+    /// whole of "there is exactly one hidden-layer set reaching the overlay, not two". railRF's own
+    /// layer list and the technology's <c>Vis</c> boxes answer the same question, so they arrive at
+    /// the overlay as one answer — see <c>RailRfViewModel.Layers.cs</c>.
+    /// </remarks>
+    private void SyncHiddenLayers()
+    {
+        var hidden = new HashSet<LayerKey>(WindowHiddenLayers);
+        if (Board?.Technology is { } tech)
+            foreach (var layer in tech.Layers)
+                if (!layer.Visible) hidden.Add(layer.Key);
+
+        BoardOverlayLayer.HiddenLayers = hidden;
+    }
 
     /// <summary>
     /// The part of a technology the SOLVE reads — its stackup, as text.

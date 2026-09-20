@@ -32457,3 +32457,76 @@ key gains a field.
 
 Gates: `tests/Ui.Tests/RailRf/RailRemovalTests.cs`, `PickNetHighlightTests.cs`,
 `BreakdownLocatorTests.cs`.
+
+## railRF — its own layer visibility, and the unsaved `.ctech` edit that never arrived (brief 20, 2026-09-20)
+
+Two halves of one first-time designer's complaint: the board is hard to navigate without being able
+to switch layers off, and editing the technology to do it "only works after saving the file and then
+closing railRF and reopening".
+
+### The list is the window's, and it is not the `.ctech`'s
+
+Layer visibility is a property of the VIEW, not of the process. A technology is a manufacturing
+document shared across a workspace, so using its `Vis` boxes as a per-window display switch makes one
+reader's navigation another reader's diff. The board pane now has its own list — a swatch, a name and
+a box per drawing layer — seeded from the technology and the window's own thereafter.
+
+- **It is a HIDDEN set unioned with the technology's, never a second answer.** `SyncHiddenLayers`
+  hands the overlay one set holding both, which is what keeps the drop map from floating over copper
+  the renderer has stopped drawing — the defect that comment already records, reachable from a new
+  direction the moment there are two places a layer can be switched off.
+- **A layer the technology hides is shown, unticked and DISABLED**, with a tooltip naming the file.
+  The union means ticking it could not show the layer, and a box that can be pressed and does nothing
+  is indistinguishable from one that is broken.
+- **The canvas gets a CLONE, and only when something is hidden.** `TechnologyCache` hands back a
+  shared instance, so writing `Visible` on it would narrow every later picture taken through that
+  cache — the layout editor beside this window included. Where nothing is hidden the adopted instance
+  is passed through unchanged, so the ordinary case costs no reflective copy per live keystroke and
+  `AdoptTechnology`'s reference test still compares two technologies rather than two copies of one.
+- **It never re-solves.** `StackupSignature` already draws that line; the window's own toggles are on
+  the same side of it and go nowhere near `ClearResults`.
+- It lives in the `.crail` beside the panel toggles, written only when something is hidden, and
+  "Follow the technology" clears it — without that a user who has hidden four layers has no way to
+  find out what the document itself states.
+
+### The live seam already existed. railRF's last link is what was missing
+
+**The brief's own trace was stale and should not be repeated.** It concluded that `TechEditorViewModel`
+reaches nobody without a save, and that a new display-only workspace event was needed. Not so: the
+editor has raised `TechLiveChanged` from its single edit funnel since brief-L1-fix, `WorkspaceViewModel`
+installs the clone with `TechnologyCache.SetLive`, and `SetLive` raises `TechnologyChanged` →
+`OnTechnologyChanged` → `TechnologyReResolved`. The layout editor has followed unsaved edits all along
+and `LayoutLiveTechnologyTests` has gated it.
+
+The fault was railRF's, in the last link. `RailRfWindow.AdoptLiveTechnology` had two routes to a
+technology and **both go through the `.clay`**: the open layout SESSION, which exists only while
+somebody has that file open in its own window, and `board.View`, which railRF's own OPEN path never
+sets — only the live-artwork swap does, and that swap needs a session too. So the pair of windows the
+layer question actually sends a user to, railRF and the technology editor, reached neither. A save did
+not help for the same reason, which is exactly why closing railRF and reopening it was the thing that
+worked.
+
+A third route fixes it and needs no session: the board already resolved a `.ctech` PATH, and
+`WorkspaceViewModel.TechnologyAt(path)` is the workspace's own reading of it — the live override where
+one is installed, the file otherwise. It is tried LAST, because the two above answer with the instance
+the layout editor is drawing with, so the two windows hold one object and asking again is free. The
+call also moved OUTSIDE the `ArtworkCellRef` gate: a board naming no workspace cell can still have
+resolved a technology.
+
+**R-rail20-2b, decided and written down**: the reference test in `AdoptTechnology` is KEPT. What makes
+it safe is that `ApplySnapshot` deserialises a fresh clone per committed edit, undo and redo, and
+`SetLive` stores that clone — nothing hands out the editor's mutated-in-place `Working`. Getting this
+wrong produces "the first toggle works and the rest do not", so it is asserted directly rather than
+left to be inferred.
+
+**No second, display-only seam was added**, deliberately, against R-rail20-2a's letter. One file with
+two live readings that could disagree is worse than the problem, and railRF already draws the
+display/stackup line where the brief wants it — on the CONSEQUENCE rather than on the event. A
+visibility edit keeps the numbers; a thickness edit drops them, because every number was priced
+against the stackup that just moved and railRF cannot tell the two apart from the outside. Both are
+asserted.
+
+Gates: `tests/Ui.Tests/RailRf/RailLayerVisibilityTests.cs` and
+`tests/Ui.Tests/Layout/TechnologyLiveDisplayEditTests.cs`. The second mirrors `AdoptLiveTechnology`
+because `WorkspaceViewModel` cannot be constructed headlessly, so it also SCANS the window's own file
+for the by-path route — a mirror alone would go on passing after the production method lost it.

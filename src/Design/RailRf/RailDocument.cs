@@ -1,3 +1,4 @@
+using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 
 namespace CircuitRF.Design.RailRf;
@@ -194,6 +195,28 @@ public sealed class RailDocument
     /// <summary>Which of the window's four panels are on screen. All four, in a document that says
     /// nothing — see <see cref="RailPanels"/>.</summary>
     public RailPanels Panels { get; set; } = new();
+
+    /// <summary>
+    /// The drawing layers the WINDOW is not drawing — its own layer-visibility list
+    /// (brief-railrf-20-layer-visibility.md R-rail20-1b).
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the <c>.ctech</c>'s, and that is the point.</b> Layer visibility is a property of the
+    /// VIEW, not of the process: a technology is a manufacturing document shared across a whole
+    /// workspace, so using its <c>Vis</c> boxes as a per-window display switch makes one reader's
+    /// navigation another reader's diff. Nothing here is ever written back to a technology.
+    ///
+    /// <para><b>It is a set of HIDDEN layers, unioned with the technology's own</b> — never a second
+    /// answer to the same question. A layer the <c>.ctech</c> does not draw stays undrawn whatever
+    /// this says, and exactly one hidden-layer set reaches the renderer and the map overlay
+    /// (R-rail20-1c).</para>
+    ///
+    /// <para><b>Document state, beside <see cref="Panels"/> and for its reason.</b> Which layers a
+    /// reader wants to see is a question about a BOARD — this board, read this way — rather than
+    /// about a sitting. Absent from the file means nothing is hidden, so a <c>.crail</c> written
+    /// before this existed opens exactly as it always did.</para>
+    /// </remarks>
+    public HashSet<LayerKey> HiddenLayers { get; } = [];
 
     /// <summary>
     /// Which regions of copper the user has forced the fast model to read either way

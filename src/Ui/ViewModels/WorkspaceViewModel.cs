@@ -1216,6 +1216,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public Technology? ResolveTechnologyForLayout(string clayPath, string? techRef) =>
         ResolveTechFor(techRef, clayPath).Tech;
 
+    /// <summary>
+    /// The technology at <paramref name="absCtechPath"/> <b>as this workspace currently reads it</b>
+    /// — the live unsaved <c>.ctech</c> edit where one is installed, and the file otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>For a viewer that resolved a technology once and holds only the PATH it came from.</b>
+    /// railRF's board panel is that viewer (brief-railrf-20-layer-visibility.md R-rail20-2): it
+    /// reaches a live edit through the open layout SESSION, and there is no session unless somebody
+    /// has the <c>.clay</c> open in its own window. A designer with railRF and the technology editor
+    /// side by side — which is exactly the pair the layer question sends you to — has no session, so
+    /// no unsaved edit reached him and closing railRF and reopening it was the only thing that
+    /// worked. This is the seam that does not need one.
+    ///
+    /// <para><b>The cache and not the file</b>, deliberately: a window that went to disk would draw
+    /// a different technology from the one beside it, which is worse than not following at all.</para>
+    /// </remarks>
+    public Technology? TechnologyAt(string absCtechPath) =>
+        absCtechPath is { Length: > 0 } ? _techCache.Get(absCtechPath) : null;
+
     /// <summary>Re-resolves every open layout document, regardless of which path it previously
     /// resolved against. Used by SetAsWorkspaceDefault, where the default itself changed —
     /// the OnTechnologyChanged path-match alone would miss documents that move from the old

@@ -135,6 +135,14 @@ public static class RailDocumentIo
             ShowResults       = d.Panels.ShowResults,
             ShowResultText    = d.Panels.ShowResultText,
         },
+        // R-rail20-1b: the WINDOW's own hidden layers, never the technology's. Written only when
+        // something is hidden, for Panels' reason — and sorted, so a document saved twice with no
+        // edit between is the same bytes.
+        HiddenLayers = d.HiddenLayers.Count > 0
+            ? [.. d.HiddenLayers
+                   .OrderBy(k => k.Layer).ThenBy(k => k.Datatype)
+                   .Select(k => new CrailLayerKey { Layer = k.Layer, Datatype = k.Datatype })]
+            : null,
         Rails = d.Rails.Count > 0 ? [.. d.Rails.Select(ToFile)] : null,
         // Deterministic order, so a document saved twice with no edit in between is the same bytes
         // and revision control has nothing to show.
@@ -280,6 +288,8 @@ public static class RailDocumentIo
         // content in it is not a state anything should have to be rescued from. See RailPanels.
         if (!doc.Panels.AnyShown) doc.Panels = new RailPanels();
 
+        foreach (var k in f.HiddenLayers ?? []) doc.HiddenLayers.Add(new LayerKey(k.Layer, k.Datatype));
+
         foreach (var r in f.Rails ?? []) doc.Rails.Add(FromFile(r));
 
         foreach (var o in f.ClassOverrides ?? [])
@@ -409,6 +419,10 @@ public static class RailDocumentIo
         /// collapsed a panel in.</summary>
         public CrailPanels?     Panels         { get; set; }
 
+        /// <summary>The drawing layers the window is not drawing. <b>Absent means none</b>, which
+        /// is every document written before railRF had a layer list of its own.</summary>
+        public List<CrailLayerKey>? HiddenLayers { get; set; }
+
         public List<CrailRail>? Rails          { get; set; }
 
         /// <summary>R-rail4-3's overrides. Absent on every document nobody has corrected, which is
@@ -425,6 +439,13 @@ public static class RailDocumentIo
         public long           X        { get; set; }
         public long           Y        { get; set; }
         public PdnCopperClass Class    { get; set; }
+    }
+
+    /// <summary>One drawing layer, as the file spells one.</summary>
+    private sealed class CrailLayerKey
+    {
+        public int Layer    { get; set; }
+        public int Datatype { get; set; }
     }
 
     /// <summary>Which panels are on screen. Each nullable for the format's own reason — an absent

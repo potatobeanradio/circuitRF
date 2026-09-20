@@ -174,6 +174,13 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         ForgetRestoredMarkers();   // a new document's markers are its own — see the rail-change note
         RebuildRails();
         AnnouncePanels();
+
+        // The new document carries its own hidden layers (R-rail20-1b). The rows are NOT rebuilt
+        // here — they are built from the BOARD, which the open path replaces immediately after this
+        // and which rebuilds them itself. This re-reads the set the existing rows are showing, for
+        // the one case where the new document's artwork does not resolve and the old board stands.
+        ApplyLayerVisibility();
+
         CaptureSnapshot();
         OnPropertyChanged(nameof(IsDirty));
 

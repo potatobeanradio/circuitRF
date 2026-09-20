@@ -80,9 +80,11 @@ public partial class RailRfWindow
                 // already shown. Shapes comes along because that is what the extraction reads.
                 vm.Board = board with { View = live, Shapes = live.Shapes };
             }
-
-            AdoptLiveTechnology();
         }
+
+        // OUTSIDE the ArtworkCellRef gate: a board that names no workspace cell can still have
+        // resolved a `.ctech`, and the by-path route below needs neither a cell nor a session.
+        AdoptLiveTechnology();
 
         WatchArtwork(vm.Board?.View);
     }
@@ -99,20 +101,44 @@ public partial class RailRfWindow
     /// <para>The open session's instance is preferred where there is one, so this window and the
     /// layout editor hold the SAME object and repeated asking is a no-op rather than a churn of equal
     /// copies.</para>
+    ///
+    /// <para><b>AND THERE IS USUALLY NO SESSION</b> (R-rail20-2, a first-time designer's report,
+    /// 2026-09-20: a <c>Vis</c> toggle "only works after saving the file and then closing railRF and
+    /// reopening"). Both routes above go through the <c>.clay</c>: the first needs a layout SESSION,
+    /// which exists only while somebody has that file open in its own window, and the second needs
+    /// <c>board.View</c>, which the OPEN path does not set at all — only the live-artwork swap does,
+    /// and that swap is itself conditional on a session. So the pair of windows the layer question
+    /// actually sends a user to — railRF and the technology editor — reached neither, and nothing
+    /// arrived until a save had been made AND this window had been reopened. The third route is the
+    /// one that needs no session: this board already resolved a <c>.ctech</c> PATH, and the
+    /// workspace's own cache is where the unsaved edit lives.</para>
+    ///
+    /// <para><b>Third and not first</b>, because the two above are more specific: they answer with
+    /// the instance the layout editor is drawing with, so the two windows hold one object and asking
+    /// again costs nothing. This one answers by path, which is right for the technology and says
+    /// nothing about which layout resolved it.</para>
     /// </remarks>
     private void AdoptLiveTechnology()
     {
         if (Vm is not { Board: { } board } vm) return;
-        if (board.ArtworkCellRef is not { Length: > 0 } clay) return;
         if (WorkspaceLocator.Any() is not { } workspace) return;
 
-        // The fallback is used only where this window holds the `.clay`'s own model, because the
-        // resolution needs that file's TechRef: resolving with a null one would walk up to the
-        // WORKSPACE DEFAULT, which is a different technology than the board names and would be adopted
-        // without anything saying so. Where neither is available, what is already held stands.
-        var tech = workspace.LiveLayoutTechnology(clay)
-                ?? (board.View is { } view ? workspace.ResolveTechnologyForLayout(clay, view.TechRef) : null);
+        Technology? tech = null;
 
+        if (board.ArtworkCellRef is { Length: > 0 } clay)
+        {
+            // The second is used only where this window holds the `.clay`'s own model, because the
+            // resolution needs that file's TechRef: resolving with a null one would walk up to the
+            // WORKSPACE DEFAULT, which is a different technology than the board names and would be
+            // adopted without anything saying so.
+            tech = workspace.LiveLayoutTechnology(clay)
+                ?? (board.View is { } view ? workspace.ResolveTechnologyForLayout(clay, view.TechRef) : null);
+        }
+
+        // By PATH — the board's own resolved `.ctech`, which needs no layout session and no model.
+        tech ??= board.TechPath is { Length: > 0 } techPath ? workspace.TechnologyAt(techPath) : null;
+
+        // Where none of the three answers, what is already held stands.
         if (tech is not null) vm.AdoptTechnology(tech);
     }
 
