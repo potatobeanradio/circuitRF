@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using CircuitRF.Design.Smith;
@@ -334,6 +335,70 @@ public sealed class SmithConstantQTests
         var trace = vmInside.ChartPlot.Traces.Single(t => t.CubeName == "band");
         Assert.Equal(33, trace.Points.Count);
         Assert.Equal((float)band.Gamma[0].Real, trace.Points[0].X);
+    }
+
+    /// <summary>
+    /// <b>A band asking for more points than <see cref="SmithSweep.MaxPoints"/> is refused, and it
+    /// draws NOTHING rather than being walked anyway.</b>
+    /// </summary>
+    /// <remarks>
+    /// The cap is about the DRAG rather than the sweep: the band is one whole
+    /// <c>SmithCascade.Evaluate</c> per point and it is re-walked inside every rebuild of the chart,
+    /// which is every pointer move of a gripper drag. Without a ceiling there is a point count at
+    /// which the window simply stops responding, reached by typing a number into a field. Both
+    /// halves are the claim — a refusal the window hangs before displaying is not a refusal, so
+    /// <c>SmithBand</c> has to decline the walk as well as the document declining the count.
+    /// </remarks>
+    [Fact]
+    public void ABandPastThePointCapIsRefusedAndIsNotWalked()
+    {
+        var d = Design();
+        d.Sweep.Enabled = true;
+        d.Sweep.StartHz = 1.9e9;
+        d.Sweep.StopHz  = 2.1e9;
+        d.Sweep.Points  = SmithSweep.MaxPoints + 1;
+
+        string refusal = Assert.IsType<string>(d.Refusal());
+        Assert.Contains(SmithSweep.MaxPoints.ToString(CultureInfo.InvariantCulture), refusal);
+        Assert.Empty(SmithBand.Evaluate(d).Gamma);
+
+        // …and the cap itself is walked, so the refusal is off by nothing.
+        d.Sweep.Points = SmithSweep.MaxPoints;
+        Assert.Null(d.Refusal());
+        Assert.Equal(SmithSweep.MaxPoints, SmithBand.Evaluate(d).Gamma.Count);
+    }
+
+    /// <summary>
+    /// <b>The band reports the frequency it took each sample at, and it is the grid it walked.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>circuitrf smith -o out.s1p</c> writes the band, and the only other way to know what
+    /// frequency each Γ belongs to is to rebuild the spacing from the two ends — a second copy of the
+    /// rule, which would agree with <c>SmithBand</c> until one of them changed and then differ
+    /// silently in a file nobody would re-check.
+    /// </remarks>
+    [Fact]
+    public void TheBandCarriesItsOwnFrequencyGrid()
+    {
+        var d = Design();
+        d.Sweep.Enabled = true;
+        d.Sweep.StartHz = 1.9e9;
+        d.Sweep.StopHz  = 2.1e9;
+        d.Sweep.Points  = 5;
+
+        var band = SmithBand.Evaluate(d);
+
+        Assert.Equal(band.Gamma.Count, band.FrequencyHz.Count);
+        Assert.Equal(band.StartHz, band.FrequencyHz[0],  6);
+        Assert.Equal(band.StopHz,  band.FrequencyHz[^1], 6);
+
+        // Each Γ is the load at the frequency beside it — which is what makes the pairing an
+        // assertion rather than an assumption.
+        for (int i = 0; i < band.FrequencyHz.Count; i++)
+        {
+            var nodes = SmithCascade.Evaluate(d, band.FrequencyHz[i], null, SmithOutOfBand.Clamp);
+            Assert.Equal(SmithCascade.Gamma(nodes[^1].Z, d.Chart.Z0Ohm), band.Gamma[i]);
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════

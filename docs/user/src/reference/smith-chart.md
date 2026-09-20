@@ -257,17 +257,17 @@ Beside each one is a faint **&#8853; target glyph**, at &Gamma;(conj(Z<sub>gen</
 frequency.
 
 <div class="callout note">
-<span class="label">Read the strip's three numbers for what each one is</span>
+<span class="label">Everything in the strip is against the chart's own Z<sub>0</sub></span>
 <p>The status strip states, for the design frequency: the load impedance, &Gamma; in polar and
-rectangular, <b>VSWR</b>, and <b>conj. mismatch</b>.</p>
-<p><b>VSWR and &Gamma;</b> are taken against the chart's own reference impedance <b>Z<sub>0</sub></b>,
-which is what "matched to 50 &#8486;" means: land the load point on the middle of the chart and VSWR
-goes to 1.</p>
-<p><b>conj. mismatch is a different question</b> and is not a return loss. It states how far the load
-point is from the <b>generator's own conjugate</b> &mdash; the &#8853; glyphs &mdash; and it reads zero
-exactly when the two coincide. On a network that takes a device to 50 &#8486; those are two different
-points, so the number is large even when the match is excellent. Use VSWR to judge a match to
-Z<sub>0</sub>.</p>
+rectangular, <b>VSWR</b>, and <b>mismatch</b> &mdash; and all four are taken against the chart's own
+reference impedance <b>Z<sub>0</sub></b>, which is what "matched to 50 &#8486;" means. Land the load
+point on the middle of the chart and &Gamma; goes to zero, VSWR to 1 and mismatch to 0 dB.</p>
+<p><b>mismatch is the power that reflection costs</b>, &minus;10&middot;log<sub>10</sub>(1&nbsp;&minus;&nbsp;|&Gamma;|<sup>2</sup>)
+&mdash; the same &Gamma; the VSWR beside it is made of, said in decibels. It is not a return loss:
+a return loss gets more negative as a match improves, and this goes to zero.</p>
+<p>The &#8853; glyphs are a <b>different</b> question and carry no number. Landing a frequency's load
+point on its own glyph is the conjugate match to the generator, which on a network that takes a device
+to 50 &#8486; is a different point from the middle of the chart.</p>
 </div>
 
 **Z<sub>0</sub> is a single, real, document-wide reference impedance**, 50 &#8486; by default and

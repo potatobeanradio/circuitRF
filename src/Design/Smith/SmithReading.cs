@@ -31,9 +31,11 @@ namespace CircuitRF.Design.Smith;
 /// unit circle. <b>A |Γ| ≥ 1 is not clamped</b>: an active S2P or a Z1P with negative R legitimately
 /// puts the load there, and reporting a finite VSWR for it would be a lie about a stability
 /// result.</param>
-/// <param name="ConjugateMismatchDb">The transducer loss against a conjugate match — zero exactly
-/// when Z_load = conj(Z_gen), which is the point the chart's target glyphs mark (§3.4), so the
-/// reading and the glyphs agree by construction.</param>
+/// <param name="MismatchDb">The power the mismatch costs, −10·log₁₀(1−|Γ|²) against
+/// <paramref name="Z0Ohm"/> — the same Γ as <paramref name="Gamma"/> and therefore the same question
+/// <paramref name="Vswr"/> answers, said in decibels. Zero exactly at Γ = 0, and
+/// <see cref="double.PositiveInfinity"/> at or outside the unit circle, where VSWR is infinite
+/// too.</param>
 public readonly record struct SmithReading(
     double  FrequencyHz,
     Complex GeneratorZ,
@@ -41,7 +43,7 @@ public readonly record struct SmithReading(
     double  Z0Ohm,
     Complex Gamma,
     double  Vswr,
-    double  ConjugateMismatchDb);
+    double  MismatchDb);
 
 /// <summary>The five numbers §5.3's strip states, computed once.</summary>
 public static class SmithReadings
@@ -80,13 +82,22 @@ public static class SmithReadings
         double mag   = gamma.Magnitude;
         double vswr  = mag < 1.0 ? (1.0 + mag) / (1.0 - mag) : double.PositiveInfinity;
 
-        // The reflection between the LOAD and the generator it is working into. Squared and put
-        // through −10·log₁₀(1−|Γ|²), which is the power the mismatch costs rather than the
-        // reflection itself — the quantity a strip saying "dB" has to mean.
-        var    mismatchGamma = (loadZ - Complex.Conjugate(generatorZ)) / (loadZ + generatorZ);
-        double mismatchSq    = mismatchGamma.Magnitude * mismatchGamma.Magnitude;
-        double mismatchDb    = mismatchSq < 1.0 ? -10.0 * Math.Log10(1.0 - mismatchSq)
-                                                : double.PositiveInfinity;
+        // THE MISMATCH IS AGAINST THE CHART'S OWN Z₀ AND NOT AGAINST conj(Z_gen) (Q-17, owner
+        // decision 2026-09-19). It is |Γ|² put through −10·log₁₀(1−|Γ|²) — the power the mismatch
+        // costs rather than the reflection itself, which is what a strip saying "dB" has to mean.
+        //
+        // WHAT IT USED TO BE, AND WHY THAT WAS WRONG IN THE HAND. §3.4 draws the conjugate-match
+        // target glyphs at Γ(conj(Z_gen)) and this reported the mismatch against THEM, which is
+        // faithful to the note and answers a different question from the VSWR sitting beside it.
+        // Driving the shipped example showed what that reads like: a two-element match taking
+        // 8 − j12 Ω to 50 Ω lands at VSWR 1.002 and the strip said 3.411 dB — and the number got
+        // SMALLER at the band edges, where the match is worse (2.068 dB at 2.3 GHz). A number
+        // labelled as a mismatch in decibels, in a column beside VSWR, reads as match quality; one
+        // that moves the other way is worse than no number at all. The target glyphs are unchanged
+        // and landing a load point on one is still the conjugate match — it simply has no column.
+        double mismatchSq = mag * mag;
+        double mismatchDb = mismatchSq < 1.0 ? -10.0 * Math.Log10(1.0 - mismatchSq)
+                                             : double.PositiveInfinity;
 
         return new SmithReading(fHz, generatorZ, loadZ, z0Ohm, gamma, vswr, mismatchDb);
     }

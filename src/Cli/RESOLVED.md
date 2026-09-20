@@ -2411,10 +2411,13 @@ Both were found by R-smith10-1's source scan rather than by a failure:
   `SmithChartViewModel`'s. The gripper RING is drawn wherever the chart is drawn, so the rule moved to
   `SmithComponentMap` beside `DefaultParameter`, which is the table it falls back to. Left where it
   was, a headless chart would have put a ring on a file element and the window would not.
-- **VSWR and the conjugate-match mismatch** were computed inline in `ComputeStatusLine`. They are
+- **VSWR and the mismatch loss** were computed inline in `ComputeStatusLine`. They are
   `SmithReadings` now, and the strip formats what that type computes. A verb deriving them a second
   time is a second chance to get a sign, a conjugate or a square wrong in a quantity whose wrong value
   looks entirely ordinary — a VSWR of 3.3 and a VSWR of 1.9 are both perfectly plausible numbers.
+  (The mismatch was against `conj(Z_gen)` when this was written; Q-17 moved it to the chart's own Z₀
+  on 2026-09-19, which is one line inside that same type and no change at all here — which is the
+  property this entry is about.)
 
 Same shape, one project along: **what a Smith Chart `Plot` IS** — panning unlocked, readout fixed —
 was two statements in `BuildChartHost`. `SmithPlotBuilder.NewChartPlot`/`Configure` is the one place

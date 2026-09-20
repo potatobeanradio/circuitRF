@@ -363,7 +363,18 @@ public static class SmithDesignIo
         VswrValue              = m.VswrValue   ?? 2.0,
     };
 
-    private static string? NullIfEmpty(string? s) => s is { Length: > 0 } ? s : null;
+    /// <summary>
+    /// A string, or null where there is nothing in it — <b>blank counting as nothing</b>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Length > 0</c> let a FileRef of <c>"   "</c> through, and the model reads a reference with
+    /// <c>IsNullOrWhiteSpace</c>: so an element carrying one was told it "names no file" by
+    /// <c>SmithElement.Refusal</c> while the writer kept writing the blank, and the two disagreed
+    /// about whether the element had a reference at all. Every field this guards — a name, a path, a
+    /// quantity, a colour — means the same thing blank as absent, so the one place to settle it is
+    /// here.
+    /// </remarks>
+    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     // ── the serialised shape ──────────────────────────────────────────────────
 

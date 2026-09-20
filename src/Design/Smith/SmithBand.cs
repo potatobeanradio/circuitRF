@@ -12,16 +12,23 @@ namespace CircuitRF.Design.Smith;
 /// <summary>
 /// The band, walked.
 /// </summary>
-/// <param name="Gamma">Γ of the load at each of <see cref="SmithSweep.Points"/> frequencies across
-/// <paramref name="StartHz"/>…<paramref name="StopHz"/>. Empty when the band is off, or when the
-/// cascade cannot be walked at all — in which case the strip's refusal half is already saying
-/// why.</param>
+/// <param name="FrequencyHz">Where each sample was taken, hertz — <b>the grid itself and not the
+/// two ends it was built from</b>. It is carried rather than left to be recomputed because a caller
+/// that has to write the band out (<c>circuitrf smith -o out.s1p</c>) would otherwise hold a second
+/// copy of the spacing rule, and two spacings that agree until one of them is changed is exactly
+/// the kind of pair this tool refuses to have anywhere else. Same length as
+/// <paramref name="Gamma"/>, and empty with it.</param>
+/// <param name="Gamma">Γ of the load at each of <paramref name="FrequencyHz"/>. Empty when the band
+/// is off, when the document refuses it, or when the cascade cannot be walked at all — in which case
+/// the strip's refusal half is already saying why.</param>
 /// <param name="StartHz">The band actually walked, AFTER any clamp.</param>
 /// <param name="StopHz">Likewise.</param>
 /// <param name="Clamped">True when the document asked for a wider band than the generator table can
 /// answer for. <b>A clamp, never a refusal</b> — the one caller allowed to (<c>R-smith2-5</c>).</param>
 public readonly record struct SmithBandResult(
-    IReadOnlyList<Complex> Gamma, double StartHz, double StopHz, bool Clamped);
+    IReadOnlyList<double>  FrequencyHz,
+    IReadOnlyList<Complex> Gamma,
+    double StartHz, double StopHz, bool Clamped);
 
 /// <summary>
 /// §3.6's third kind of frequency: a start/stop/npts band drawn as a thin continuous locus through
@@ -48,12 +55,20 @@ public static class SmithBand
         ArgumentNullException.ThrowIfNull(design);
 
         var sweep = design.Sweep;
-        if (!sweep.Enabled || sweep.Points < 2 || !(sweep.StartHz < sweep.StopHz))
-            return new SmithBandResult([], sweep.StartHz, sweep.StopHz, Clamped: false);
+
+        // A band the DOCUMENT refuses draws nothing rather than being walked anyway. The point cap
+        // is the one that matters here and not the floor: this runs inside every rebuild of the
+        // chart, which is every pointer move of a gripper drag, so walking a count the strip is
+        // already complaining about would hang the window before the complaint could be read.
+        if (!sweep.Enabled
+         || sweep.Points < 2 || sweep.Points > SmithSweep.MaxPoints
+         || !(sweep.StartHz < sweep.StopHz))
+            return new SmithBandResult([], [], sweep.StartHz, sweep.StopHz, Clamped: false);
 
         var (start, stop, clamped) = ClampToTable(design, sweep.StartHz, sweep.StopHz);
 
         double z0 = design.Chart.Z0Ohm;
+        var freqs = new List<double>(sweep.Points);
         var gamma = new List<Complex>(sweep.Points);
 
         try
@@ -66,6 +81,8 @@ public static class SmithBand
                 // brought every f inside the table, and this says so at the one call that is allowed
                 // to. A rounding step at either end of the band is not a reason to draw nothing.
                 var nodes = SmithCascade.Evaluate(design, f, documentDirectory, SmithOutOfBand.Clamp);
+
+                freqs.Add(f);
                 gamma.Add(SmithCascade.Gamma(nodes[^1].Z, z0));
             }
         }
@@ -74,10 +91,10 @@ public static class SmithBand
             // A cascade that cannot be walked at one frequency cannot be walked at any of them — the
             // failures are a missing file or a malformed element, not a frequency. Drawing the part
             // that worked would invite the reader to trust it.
-            return new SmithBandResult([], start, stop, clamped);
+            return new SmithBandResult([], [], start, stop, clamped);
         }
 
-        return new SmithBandResult(gamma, start, stop, clamped);
+        return new SmithBandResult(freqs, gamma, start, stop, clamped);
     }
 
     /// <summary>

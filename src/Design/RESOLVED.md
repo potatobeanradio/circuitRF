@@ -8624,3 +8624,118 @@ trip through that same writer, so unchecking the band's box and checking it agai
 defaults, with the user's own start, stop and point count gone and nothing said anywhere. The rule is
 now `SmithDesignIo.IsDefault`, and a document nobody has touched still writes neither block, so no
 existing file changes.
+
+## Smith cascade — two defects from a review pass over the finished series (2026-09-19)
+
+A read-through of briefs 1-11 after closeout, probing the evaluator from a throwaway test rather
+than from the window. Both findings are in `src/Design/Smith/SmithCascade.cs` and its
+`.Trajectories.cs` partial, both were reachable by typing an ordinary number into an ordinary
+field, and both produced a picture that was wrong rather than an error that said so. Gated by two
+new tests in `tests/Ui.Tests/Smith/SmithCascadeTests.cs`.
+
+### 1. The walk was projective in the NODE and not in the ELEMENT, so a zero-valued part was a NaN
+
+`SmithImmittance` states each kind's immittance in §3.3's own form — an impedance for R, L, SRLC
+and Z1P, an admittance for C, PRLC and the two stubs — and `Step` reached for the other one through
+`imm.Z` / `imm.Y`, which is a reciprocal. **`Complex.One / Complex.Zero` in .NET is `(NaN, NaN)` and
+not an infinity**: the division algorithm forms `0/0` internally whichever branch it takes. So six
+ordinary documents put a NaN into every node downstream of the element, the readout strip, the
+grippers, the trajectories and the exported picture, with **no refusal anywhere** — `SmithElement.Refusal`
+requires R, L and C to be non-NEGATIVE (brief 1, §94) and zero is not negative:
+
+| the element | what it is | what it did |
+|---|---|---|
+| shunt R = 0, shunt L = 0 | a dead short across the line | NaN |
+| series C = 0 | an open | NaN |
+| SRLC with C = 0 | an open — `1/(ωC)` is ±∞ before any reciprocal is taken | NaN |
+| PRLC with R = 0 or L = 0 | a short, likewise | NaN |
+
+That the projective `Zp` pair exists **for exactly this class of degeneracy** is what makes it a
+defect rather than a limitation: the file's own header says so about a quarter-wave open stub, and
+the element half was simply never written that way. `SmithCascade.Add` now folds the reciprocal into
+the pair — `Z' = (N·Y_e + D)/(D·Y_e)` and `Z' = N·Z_e/(D·Z_e + N)` — and both singular cases come out
+exact rather than approximate: a zero admittance in series is `(D, 0)`, which is Γ = +1, and a zero
+impedance in shunt is `(0, N)`, which is Γ = −1. SRLC and PRLC state themselves in the DUAL form when
+their own reciprocal term is singular, which is one `?:` each and needs no new type.
+
+`Zp.Value` and `SmithCascade.Gamma` had to learn the same lesson from the other side: a node handed
+back as a plain `Complex` has been divided once, so an open reads as `(∞, ∞)` there and Γ of it is
+the limit, +1. **A NaN still stays a NaN** — it is not an infinity and saying so would be a lie about
+which of the two happened, which is `MatchValueFormat.NonFinite`'s own rule one project along.
+
+**Refusing the six was considered and rejected.** It is smaller, and `SmithInverse`'s own
+`Linear`/`Reciprocal` split names exactly the same six cases, so the rule already had a home. But a
+dead short and an open are circuits, the brief says non-negative, and a tool whose whole premise is
+dragging a value continuously should not refuse the end of the range it drags to.
+
+### 2. A line a whole number of turns long was drawn as a DOT
+
+The adaptive sampler seeded two points and bisected on chord error. The three line kinds are
+**periodic in θ** — a `TLIN` rotates Γ by 2θ, a stub's susceptance has period π — so at E = 360°,
+720° or 1080° the samples at t = 0, ½ and 1 are the same point. The first chord test measured an
+error of zero, the loop stopped on it, and the whole trajectory was emitted as two coincident
+points. Measured: **E = 180° gave 65 points and E = 360° gave 2.** Nothing reported anything; the
+node either end of it was correct, so the picture simply had a move missing from it.
+
+The existing comment on `ChordError`'s degenerate-segment fallback is what made it look covered — it
+does rescue a SINGLE closed loop, where the midpoint is the antipode, and it cannot rescue an even
+number of them.
+
+**It is not an exotic document.** E is quoted at the element's own F_ref and scales with frequency,
+so a 90° line quoted at 1 GHz is θ = 720° at 8 GHz — one edit of the design frequency away from any
+quarter-wave stub.
+
+`Sample` now takes a seed count and `Seed` derives it from |θ| for the three line kinds only: a
+segment of θ ≤ 45° cannot close a period of π, and everything else keeps the two-point seed it has
+always had, because a lumped element's Γ(t) is the Möbius image of a straight segment — an arc,
+walked once, whose ends and midpoint can never coincide.
+
+### 3. Five smaller things the same pass turned up
+
+**A band had no upper point count, and the ceiling that matters is the DRAG's.** `SmithDesign.Refusal`
+checked `Points < 2` and nothing above; `SmithBand.Evaluate` is one whole `SmithCascade.Evaluate` per
+point and it runs inside every rebuild of the chart, which is every pointer move of a gripper drag.
+So a number typed into a field had a value at which the window stopped responding, with nothing said.
+`SmithSweep.MaxPoints` is 1,001 — a drawn locus on a chart a few hundred pixels across is already
+finer than its pixels at that — and **both halves are needed**: the document refuses the count AND
+`SmithBand` declines to walk it, because a refusal the window hangs before displaying is not a
+refusal.
+
+**The band's frequency grid existed twice.** `SmithBandResult` carried the two ends and `circuitrf
+smith -o out.s1p` rebuilt the spacing from them to label its rows — a second copy of a rule that would
+have agreed with `SmithBand` until one of them changed, and then differed silently in a file nobody
+re-checks. The result carries `FrequencyHz` now and the verb writes what was walked.
+
+**Two elements could be named `C1` and `c1`.** `SmithDesign.Refusal` compared ordinally while both
+surfaces that MAKE names — `SmithElementFactory.NextName` and the strip's rename field — already
+compared case-insensitively, so the document accepted a pair neither of them would ever produce. It
+matters past tidiness because brief 7 copies these out as schematic instance names.
+
+**A blank string was written where the model reads absent.** `SmithDesignIo`'s emptiness test was
+`Length > 0` and `SmithElement.Refusal`'s is `IsNullOrWhiteSpace`, so a `FileRef` of `"   "` was told
+it "names no file" and written out anyway. One rule now, at the writer.
+
+**`SeriesImpedance`/`ShuntAdmittance` were dead** — no caller anywhere, in the product or the tests,
+and not named by any brief — and they were the two wrappers that still took the reciprocal that
+finding 1 is about. Deleted. `SmithImmittance.Z`/`.Y` stay, because they are how a caller reads the
+form the element does not state itself in, and they now answer the limit rather than a NaN.
+
+### 4. Q-17 closed: the strip's mismatch is against the chart's Z₀, not against conj(Z_gen)
+
+Filed at closeout as an open owner decision (`docs/design/smith-chart.md` §12) and confirmed on this
+pass: the shipped example reads VSWR 1.002 and the strip said **3.411 dB**, and the number got
+*smaller* at the band edges where the match is worse. Owner's answer was **report it against
+Z₀_chart**, so `SmithReadings.Of` now returns −10·log₁₀(1−|Γ|²) on the Γ it already computed —
+**the same Γ the VSWR beside it is made of** — and the three rows read 0.17 / 0.00 / 0.22 dB.
+`ConjugateMismatchDb` is `MismatchDb`; `--json`'s `conjugateMismatchDb` is `mismatchDb`.
+
+**§3.4's conjugate-match target glyphs are unchanged and are not now decorative** — landing a
+frequency's load point on its own ⊕ is still the conjugate match; what it no longer has is a column,
+because the strip has no load impedance to state one against.
+
+**And the number needed a formatter of its own.** `MatchValueFormat.Significant` keeps a fixed count
+of MEANINGFUL digits, which is right for a component value spanning decades and wrong for a quantity
+whose ideal value is zero: the perfect match came out `0.000004551 dB` beside a clean `1.002`.
+`MatchValueFormat.Decibels` is two fixed places — a decibel has already had its decades taken out of
+it — and both the strip and the verb spell it that way, which is why the helper is below the firewall
+rather than in either of them.

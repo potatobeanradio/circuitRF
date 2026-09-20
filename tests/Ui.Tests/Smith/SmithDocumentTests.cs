@@ -131,6 +131,10 @@ public sealed class SmithDocumentTests
     // elements
     [InlineData("element-unnamed",      "no name")]
     [InlineData("element-duplicate",    "'C1'")]
+    // …and two names that differ only in case are one name, because the two surfaces that MAKE
+    // names — SmithElementFactory.NextName and the strip's rename field — both already say so, and
+    // brief 7 copies these out as schematic instance names.
+    [InlineData("element-duplicate-case", "'c1'")]
     [InlineData("shunt-s2p",            "'S1'")]
     [InlineData("fileref-missing",      "'S1'")]
     [InlineData("fileref-unexpected",   "'C1'")]
@@ -141,6 +145,7 @@ public sealed class SmithDocumentTests
     // the two document-wide settings
     [InlineData("sweep-backwards",      "band")]
     [InlineData("sweep-one-point",      "1 point")]
+    [InlineData("sweep-too-many-points","1001")]
     [InlineData("q-negative",           "Q")]
     public void EachWellFormednessRule_FiresAndNamesItsObject(string which, string mustName)
     {
@@ -206,6 +211,29 @@ public sealed class SmithDocumentTests
         Assert.True(SmithClipboard.TryDeserialize(SmithClipboard.Serialize(before), out var after));
 
         AssertSame(before, after!);
+    }
+
+    /// <summary>
+    /// <b>A BLANK string is written as absent, because the model reads it as absent.</b>
+    /// </summary>
+    /// <remarks>
+    /// A <c>FileRef</c> of <c>"   "</c> is "names no file" to <c>SmithElement.Refusal</c>, which
+    /// tests it with <c>IsNullOrWhiteSpace</c> — but the writer's own emptiness test was
+    /// <c>Length > 0</c>, so it kept writing the blank and the two disagreed about whether the
+    /// element had a reference at all. Every field the writer guards this way means the same thing
+    /// blank as absent, so one rule settles it.
+    /// </remarks>
+    [Fact]
+    public void ABlankReferenceIsWrittenAsAbsent()
+    {
+        var d = MinimalDesign();
+        d.Elements.Add(new SmithElement { Kind = SmithElementKind.C, Name = "C1", FileRef = "   " });
+
+        Assert.Null(d.Refusal());                                   // a C carries no file reference
+
+        string json = SmithDesignIo.Serialize(d);
+        Assert.DoesNotContain("\"FileRef\"", json, StringComparison.Ordinal);
+        Assert.Null(SmithDesignIo.Deserialize(json).Elements.Single().FileRef);
     }
 
     // ── 6. SerializeUnvalidated ──────────────────────────────────────────────
@@ -469,6 +497,11 @@ public sealed class SmithDocumentTests
                 d.Elements.Add(new SmithElement { Kind = SmithElementKind.C, Name = "C1" });
                 break;
 
+            case "element-duplicate-case":
+                d.Elements.Add(new SmithElement { Kind = SmithElementKind.C, Name = "C1" });
+                d.Elements.Add(new SmithElement { Kind = SmithElementKind.C, Name = "c1" });
+                break;
+
             case "shunt-s2p":
                 d.Elements.Add(new SmithElement
                 {
@@ -510,6 +543,14 @@ public sealed class SmithDocumentTests
 
             case "sweep-backwards":
                 d.Sweep = new SmithSweep { Enabled = true, StartHz = 3e9, StopHz = 1e9, Points = 21 };
+                break;
+
+            case "sweep-too-many-points":
+                d.Sweep = new SmithSweep
+                {
+                    Enabled = true, StartHz = 1e9, StopHz = 3e9,
+                    Points  = SmithSweep.MaxPoints + 1,
+                };
                 break;
 
             case "sweep-one-point":

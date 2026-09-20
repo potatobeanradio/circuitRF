@@ -105,9 +105,14 @@ so every setting in it was chosen to make the picture legible and nothing else:
   span resolves the bottom of it (which is a numerical zero, not a physical one) and moves nothing
   at the three frequencies quoted.
 
-## One number to read carefully
+## Two readings of the same network, against two references
 
-The status strip's **conj. mismatch** is not return loss. It states how far the load point is from
-the conjugate of the *generator* — the faint ⊕ target glyphs on the chart — and on this design it
-reads 3.41 dB at 2.45 GHz while the same network measures −59.8 dB of return loss. The two answer
-different questions. **VSWR and |Γ| are the readings that say how well this network matches 50 Ω.**
+The status strip's **mismatch** is the power the reflection costs against the **chart's own Z₀**,
+−10·log₁₀(1−|Γ|²) — the same Γ the VSWR beside it is made of. Here it reads **0.00 dB** at 2.45 GHz,
+0.17 dB at 2.30 GHz and 0.22 dB at 2.60 GHz, so it moves with the VSWR and with the picture.
+
+The **−59.8 dB** in the table above is a different reference and a different question: S11 out of the
+copied schematic is taken against the complex port-1 impedance, which makes it the **conjugate match
+at the device's own terminals**. That is what the faint ⊕ target glyphs on the chart mark, and it is
+why the two numbers are not two spellings of one thing — 50 Ω and conj(8 − j12) Ω are different
+points, and this network lands on both at once because it was designed to.

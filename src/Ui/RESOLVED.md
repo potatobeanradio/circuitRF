@@ -61,7 +61,7 @@ the one toolbar the document does have — and `reference/smith-chart.html` was 
 `DocAnchors.WholePages`, which is what makes `DocsFactoryTests` fail on a link that resolves to
 nothing.
 
-### What was NOT changed, and is filed instead: `conj. mismatch` reads backwards
+### `conj. mismatch` read backwards — filed as Q-17, closed 2026-09-19
 
 Driving the shipped example turned up a fourth thing, and it is a design question rather than a bug
 against the specification. §3.4 of the design note puts the conjugate-match targets at
@@ -81,10 +81,23 @@ is the answer VSWR agrees with. The two quantities are not in conflict; they ans
 questions, and the strip's is *"how far is the load point from the generator's own conjugate"*. But a
 figure labelled as a mismatch in decibels, sitting immediately beside VSWR, reads as match quality.
 
-**Left alone**, because §3.4 is recorded as an owner decision and *what it should be instead* has more
-than one defensible answer. Filed as **Q-17** in the design note's §12 with the numbers above, and
-both the user chapter and the example's README say plainly what the number is and is not, so nobody
-is misled while it is open.
+**Left alone at the time**, because §3.4 is recorded as an owner decision and *what it should be
+instead* had more than one defensible answer. Filed as **Q-17** in the design note's §12 with the
+numbers above.
+
+**Closed on the review pass, by the owner, as "report it against Z₀_chart".** The column is now
+`mismatch` and the quantity is −10·log₁₀(1−|Γ|²) taken against the chart's own Z₀ — **the same Γ the
+VSWR beside it is made of**, so the two move together and the strip answers one question in four
+spellings rather than two questions in one row. The same three rows now read 0.17 dB, 0.00 dB and
+0.22 dB. `SmithReading.ConjugateMismatchDb` became `MismatchDb` and `--json`'s
+`conjugateMismatchDb` became `mismatchDb`; `SmithReadings.Of` no longer takes a conjugate at all,
+which is why `SmithCliVerbTests`' source-scan still forbids `Complex.Conjugate` in `src/Cli` and now
+does so for a simpler reason.
+
+**§3.4's target glyphs did not change and are not now decorative.** Landing a frequency's load point
+on its own ⊕ is still the conjugate match to the generator; what it no longer has is a column, because
+the strip has no load impedance to state one against. The example's README puts the strip's 0.00 dB
+and the engine's −59.8 dB side by side as two references rather than warning about one of them.
 
 ### The example, and the one property that makes it worth shipping
 

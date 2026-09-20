@@ -411,6 +411,92 @@ public sealed class SmithCascadeTests : IDisposable
             $"The tangent {t.Tangent} points away from the walk {chord}.");
     }
 
+    /// <summary>
+    /// <b>A zero in a RECIPROCAL position is the short or the open — never a NaN.</b>
+    ///
+    /// <para>§3.3 states each kind's immittance in ONE form, so half the placements need the other,
+    /// and <c>1/0</c> in <see cref="Complex"/> is <c>(NaN, NaN)</c> rather than an infinity. A
+    /// document is refused for a NEGATIVE R, L or C and zero is not negative, so every case below is
+    /// typable — and each one used to put a NaN into every node downstream, the readout, the
+    /// grippers and the picture, with nothing said. The walk is projective for exactly this reason;
+    /// this is the claim that it is projective in the ELEMENT as well as in the node.</para>
+    /// </summary>
+    [Theory]
+    // A shunt element of zero impedance is a dead short across the line: Γ = −1.
+    [InlineData(SmithElementKind.R,    SmithPlacement.Shunt,  SmithParameter.R, -1.0)]
+    [InlineData(SmithElementKind.L,    SmithPlacement.Shunt,  SmithParameter.L, -1.0)]
+    [InlineData(SmithElementKind.Prlc, SmithPlacement.Shunt,  SmithParameter.R, -1.0)]
+    [InlineData(SmithElementKind.Prlc, SmithPlacement.Shunt,  SmithParameter.L, -1.0)]
+    // A series element of zero admittance is an open: Γ = +1.
+    [InlineData(SmithElementKind.C,    SmithPlacement.Series, SmithParameter.C, +1.0)]
+    [InlineData(SmithElementKind.Srlc, SmithPlacement.Series, SmithParameter.C, +1.0)]
+    public void AZeroValueInAReciprocalPosition_IsTheLimitAndNotANaN(
+        SmithElementKind kind, SmithPlacement placement, SmithParameter zeroed, double expectedGamma)
+    {
+        var dut = Dut(kind, placement);
+        SmithInverse.Apply(dut, zeroed, 0.0);
+
+        var d = Design(dut);
+        Assert.Null(d.Refusal());
+
+        var gamma = SmithCascade.Gamma(SmithCascade.Evaluate(d, DesignHz)[^1].Z, ChartZ0);
+        Assert.Equal(expectedGamma, gamma.Real, 12);
+        Assert.Equal(0.0,           gamma.Imaginary, 12);
+
+        // …and the curve that leads there is drawn, rather than being a polyline of NaN.
+        foreach (var g in Assert.Single(SmithCascade.Trajectories(d, DesignHz, Canvas)).Gamma)
+            Assert.True(double.IsFinite(g.Real) && double.IsFinite(g.Imaginary),
+                $"{kind} in {placement} with {zeroed} = 0 emitted {g}.");
+    }
+
+    /// <summary>
+    /// <b><c>SmithImmittance</c>'s other form is an INFINITY at zero, not a NaN.</b> The walk does
+    /// not come through these accessors — it folds the reciprocal into its projective pair — but a
+    /// caller holding one element's immittance on its own has nowhere else to go, and
+    /// <c>Complex.One / Complex.Zero</c> in .NET is <c>(NaN, NaN)</c>.
+    /// </summary>
+    [Fact]
+    public void AnImmittanceOfZero_ReportsTheOtherFormAsInfiniteRatherThanNaN()
+    {
+        // A zero capacitance states itself as an admittance of zero; its impedance is the open.
+        var open = SmithCascade.Immittance(
+            Element(SmithElementKind.C, SmithPlacement.Series, v => v.CFarad = 0.0), DesignHz);
+        Assert.Equal(Complex.Zero, open.Y);
+        Assert.True(double.IsInfinity(open.Z.Real));
+
+        // A zero resistance states itself as an impedance of zero; its admittance is the short.
+        var short_ = SmithCascade.Immittance(
+            Element(SmithElementKind.R, SmithPlacement.Shunt, v => v.ROhm = 0.0), DesignHz);
+        Assert.Equal(Complex.Zero, short_.Z);
+        Assert.True(double.IsInfinity(short_.Y.Real));
+    }
+
+    /// <summary>
+    /// <b>A line a whole number of turns long is still sampled as a curve.</b>
+    ///
+    /// <para>The three line kinds are PERIODIC in θ, so at E = 360° the samples at t = 0, ½ and 1
+    /// are the same point: adaptive subdivision measured a chord error of zero, stopped on its first
+    /// test and emitted the whole trajectory as two coincident points — a line that goes right round
+    /// the chart drawn as a dot, with nothing said. It is not an exotic document either: a 90° line
+    /// quoted at 1 GHz is θ = 720° at 8 GHz.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(SmithElementKind.Tline,       SmithPlacement.Series)]
+    [InlineData(SmithElementKind.StubOpen,    SmithPlacement.Shunt)]
+    [InlineData(SmithElementKind.StubShorted, SmithPlacement.Shunt)]
+    public void APeriodicLineIsSeededPastItsOwnPeriod(SmithElementKind kind, SmithPlacement placement)
+    {
+        var dut = Dut(kind, placement);
+        dut.Values.ElectricalLengthDeg  = 360.0;
+        dut.Values.ReferenceFrequencyHz = DesignHz;
+
+        var gamma = Assert.Single(SmithCascade.Trajectories(Design(dut), DesignHz, Canvas)).Gamma;
+
+        // The number is not the claim; that the curve was WALKED rather than collapsed is. A full
+        // turn at this canvas scale cannot be two points inside the chord tolerance.
+        Assert.True(gamma.Count > 16, $"A 360° {kind} was emitted as {gamma.Count} point(s).");
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  The equivalent netlist — written through the product's OWN mapping
     // ═════════════════════════════════════════════════════════════════════════

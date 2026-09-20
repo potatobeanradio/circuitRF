@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Matching;
 using CircuitRF.Design.Smith;
 using CircuitRF.Ui.Smith;
 using Xunit;
@@ -47,26 +48,37 @@ public sealed class SmithExampleTests(ITestOutputHelper output)
     /// wrong in the digit somebody reads.
     /// </remarks>
     [Theory]
-    [InlineData(2.30e9, 35.40,  +7.87, 0.193, 1.48,  "35.40 + j7.87")]
-    [InlineData(2.45e9, 49.98,  -0.10, 0.001, 1.002, "49.98 &minus; j0.10")]
-    [InlineData(2.60e9, 56.14, -23.09, 0.220, 1.56,  "56.14 &minus; j23.09")]
+    [InlineData(2.30e9, 35.40,  +7.87, 0.193, 1.48,  "0.17", "35.40 + j7.87")]
+    [InlineData(2.45e9, 49.98,  -0.10, 0.001, 1.002, "0.00", "49.98 &minus; j0.10")]
+    [InlineData(2.60e9, 56.14, -23.09, 0.220, 1.56,  "0.22", "56.14 &minus; j23.09")]
     public void TheShippedExampleEvaluatesToTheNumbersItsReadmeQuotes(
-        double fHz, double r, double x, double gamma, double vswr, string readmeSpelling)
+        double fHz, double r, double x, double gamma, double vswr, string mismatchDb,
+        string readmeSpelling)
     {
         var reading = SmithReadings.At(Example(), fHz, ExampleDir());
 
         output.WriteLine($"{fHz / 1e9:0.00} GHz  Z = {reading.LoadZ.Real:0.00} {reading.LoadZ.Imaginary:+0.00;-0.00}j  "
-                       + $"|G| = {reading.Gamma.Magnitude:0.0000}  VSWR = {reading.Vswr:0.000}");
+                       + $"|G| = {reading.Gamma.Magnitude:0.0000}  VSWR = {reading.Vswr:0.000}  "
+                       + $"mismatch = {MatchValueFormat.Decibels(reading.MismatchDb)} dB");
 
         Assert.Equal(r, reading.LoadZ.Real,      0.005);
         Assert.Equal(x, reading.LoadZ.Imaginary, 0.005);
         Assert.Equal(gamma, reading.Gamma.Magnitude, 0.0005);
         Assert.Equal(vswr,  reading.Vswr,            0.005);
 
+        // Q-17: THE MISMATCH IS THE SAME Γ THE VSWR IS MADE OF, against the chart's own Z₀ — so the
+        // two move together, and this design's best frequency is the one that reads 0.00 dB. It used
+        // to be taken against conj(Z_gen), where the middle row read 3.41 dB and the number got
+        // SMALLER at the band edges, which is the wrong way round for a column beside VSWR.
+        double mag = reading.Gamma.Magnitude;
+        Assert.Equal(-10.0 * Math.Log10(1.0 - mag * mag), reading.MismatchDb, 12);
+        Assert.Equal(mismatchDb, MatchValueFormat.Decibels(reading.MismatchDb));
+
         // The README's own table, in its own spelling (a real minus sign, an HTML entity in the
         // Markdown). A number the document no longer produces is a number the reader is being told.
         string readme = File.ReadAllText(Path.Combine(ExampleDir(), "README.md"));
         Assert.Contains(readmeSpelling.Replace("&minus;", "−"), readme, StringComparison.Ordinal);
+        Assert.Contains(mismatchDb + " dB", readme, StringComparison.Ordinal);
     }
 
     /// <summary>

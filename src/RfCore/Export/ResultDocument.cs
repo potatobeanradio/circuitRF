@@ -449,7 +449,8 @@ namespace RfCore.Export
     /// <param name="Vswr">Null where |Γ| ≥ 1 — an active S2P or a Z1P with negative R legitimately
     /// puts the load there. <b>Null rather than a large number</b>: a finite VSWR reported for a
     /// reflection coefficient outside the unit circle is a lie about a stability result.</param>
-    /// <param name="ConjugateMismatchDb">Null for the same reason, at a total mismatch.</param>
+    /// <param name="MismatchDb">Null for the same reason, at a total mismatch — it is the same
+    /// |Γ| the VSWR beside it is, put through −10·log₁₀(1−|Γ|²).</param>
     public sealed record SmithReportJson(
         string                        Document,
         string                        Name,
@@ -461,7 +462,7 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         double?                       Vswr,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        double?                       ConjugateMismatchDb,
+        double?                       MismatchDb,
         IReadOnlyList<SmithNodeJson>  Nodes,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         SmithBandJson?                Band);

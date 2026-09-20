@@ -139,8 +139,8 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
     /// <remarks>
     /// <b>A rule stated in a header is not a rule the code follows</b> — <c>AuthoringCliVerbTests</c>'
     /// own finding, and the reason this scan exists rather than a comment. What it looks for is the
-    /// SHAPE each duplicate would take: the VSWR quotient, the conjugate in the mismatch, the
-    /// decibel, and a <c>Plot</c> constructed rather than asked for.
+    /// SHAPE each duplicate would take: the VSWR quotient, the mismatch decibel, a conjugate of
+    /// any kind, and a <c>Plot</c> constructed rather than asked for.
     /// </remarks>
     [Fact]
     public void TheVerbHoldsNoEvaluatorAndNoPlotOfItsOwn()
@@ -150,9 +150,9 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         foreach (string forbidden in new[]
         {
             "new Plot(",            // the plot is SmithPlotBuilder's (NewChartPlot)
-            "Complex.Conjugate",    // the conjugate-match mismatch is SmithReadings'
-            "Math.Log10",           // ... including its decibel
-            "1.0 - mag",            // ... and the VSWR quotient, in either spelling
+            "Complex.Conjugate",    // every conjugate in this tool is SmithReadings' or the scene's
+            "Math.Log10",           // ... and the mismatch decibel is too
+            "1.0 - mag",            // ... as is the VSWR quotient, in either spelling
             "1.0 + mag",
             "SmithQArcs",           // the arcs are the scene's, never re-derived here
         })

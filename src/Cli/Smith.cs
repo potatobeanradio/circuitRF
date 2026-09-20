@@ -350,7 +350,9 @@ internal static class Smith
         Console.WriteLine($"  load               {Impedance(reading.LoadZ)}");
         Console.WriteLine($"  Γ                  {Gamma(reading.Gamma)}");
         Console.WriteLine($"  VSWR               {Finite(reading.Vswr)}");
-        Console.WriteLine($"  conj. mismatch     {Finite(reading.ConjugateMismatchDb)} dB");
+        // Decibels and not Significant — see MatchValueFormat.Decibels; the strip spells it the same
+        // way, which is the whole reason that helper is below the firewall rather than here.
+        Console.WriteLine($"  mismatch           {MatchValueFormat.Decibels(reading.MismatchDb)} dB");
 
         if (band.Gamma.Count > 0)
             Console.WriteLine($"  swept band         {Freq(band.StartHz)} to {Freq(band.StopHz)}, "
@@ -422,22 +424,15 @@ internal static class Smith
                                        SmithBandResult band)
     {
         // The port count was settled in Run, before anything was read — see there.
-        double[] freqs;
-        Complex[] gamma;
+        //
+        // THE GRID IS THE BAND'S OWN. SmithBandResult carries the frequency it took each sample at,
+        // so the file's rows are the points that were actually walked rather than a second copy of
+        // the spacing rule reconstructed from the two ends — which would agree with SmithBand until
+        // one of them was changed, and then differ silently in a file nobody would re-check.
+        bool wholeBand = band.Gamma.Count > 1;
 
-        if (band.Gamma.Count > 1)
-        {
-            int n = band.Gamma.Count;
-            freqs = new double[n];
-            for (int i = 0; i < n; i++)
-                freqs[i] = band.StartHz + (band.StopHz - band.StartHz) * i / (n - 1);
-            gamma = [.. band.Gamma];
-        }
-        else
-        {
-            freqs = [reading.FrequencyHz];
-            gamma = [reading.Gamma];
-        }
+        double[]  freqs = wholeBand ? [.. band.FrequencyHz] : [reading.FrequencyHz];
+        Complex[] gamma = wholeBand ? [.. band.Gamma]       : [reading.Gamma];
 
         var snp = new SNP(freqs, 1, MatrixType.S, MatrixFormat.MA,
                           new Complex(design.Chart.Z0Ohm, 0.0));
@@ -573,7 +568,7 @@ internal static class Smith
             [reading.LoadZ.Real, reading.LoadZ.Imaginary],
             [reading.Gamma.Real, reading.Gamma.Imaginary],
             double.IsFinite(reading.Vswr) ? reading.Vswr : null,
-            double.IsFinite(reading.ConjugateMismatchDb) ? reading.ConjugateMismatchDb : null,
+            double.IsFinite(reading.MismatchDb) ? reading.MismatchDb : null,
             walk,
             band.Gamma.Count > 0
                 ? new SmithBandJson(band.StartHz, band.StopHz, band.Gamma.Count, band.Clamped)

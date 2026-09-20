@@ -114,7 +114,8 @@ public static partial class SmithCascade
 
             Complex[] gamma = SmithComponentMap.UsesFile(e.Kind)
                 ? [zIn.Gamma(z0), zOut.Gamma(z0)]           // no parameter — a two-point chord
-                : Sample(Walk(e, zIn, fHz, documentDirectory), z0, toCanvas, tolerance, budget);
+                : Sample(Walk(e, zIn, fHz, documentDirectory), z0, toCanvas, tolerance, budget,
+                         Seed(e, fHz));
 
             var (mid, tangent) = MidpointAndTangent(gamma);
 
@@ -191,17 +192,59 @@ public static partial class SmithCascade
 
             default:
             {
-                var imm = Immittance(e, fHz, dir);
-                if (e.Placement == SmithPlacement.Series)
-                {
-                    Complex ze = imm.Z;                      // Z(t) = Z_in + t·Z_e
-                    return t => new Zp(zIn.N + t * ze * zIn.D, zIn.D);
-                }
+                var     imm    = Immittance(e, fHz, dir);
+                bool    series = e.Placement == SmithPlacement.Series;
+                Complex m      = imm.Value;
 
-                Complex ye = imm.Y;                          // Y(t) = Y_in + t·Y_e
-                return t => new Zp(zIn.N, zIn.D + t * ye * zIn.N);
+                // The element states itself in the placement's OWN form — one multiply, and t
+                // scales the immittance exactly as this file's header says it must.
+                if (series != imm.IsAdmittance)
+                    return series
+                        ? t => new Zp(zIn.N + t * m * zIn.D, zIn.D)          // Z(t) = Z_in + t·Z_e
+                        : t => new Zp(zIn.N, zIn.D + t * m * zIn.N);         // Y(t) = Y_in + t·Y_e
+
+                // …and in the other one, where the reciprocal is folded into the pair rather than
+                // taken — Step's own rule (see SmithCascade.Add), for its own reason. The t = 0
+                // guard is the one thing that is NOT shared with Step: at a singular m both halves
+                // of the pair vanish together there, which is 0/0 and not a limit, while the answer
+                // is simply Z_in — the element has not been grown yet. For every non-singular m the
+                // guard returns what the formula would have anyway.
+                return series
+                    ? t => t <= 0 ? zIn : new Zp(zIn.N * m + t * zIn.D, zIn.D * m)
+                    : t => t <= 0 ? zIn : new Zp(zIn.N * m, zIn.D * m + t * zIn.N);
             }
         }
+    }
+
+    /// <summary>
+    /// How many UNIFORM samples a curve is seeded with before the adaptive pass begins.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two is right for every kind whose parameter is a straight line, and catastrophically wrong
+    /// for the three that are PERIODIC.</b> A lumped element's Γ(t) is the Möbius image of a
+    /// straight segment in Z or Y — an arc, walked once, whose ends and midpoint can never coincide
+    /// — so a two-point seed always finds a chord error to bisect on. The three line kinds are
+    /// periodic in θ: a <c>TLIN</c> rotates Γ by 2θ and a stub's susceptance has period π, so at
+    /// E = 360°, 720°, 1080° the samples at t = 0, ½ and 1 are the SAME POINT. Adaptive subdivision
+    /// then measures a chord error of zero, stops on its first test, and emits the whole curve as
+    /// two coincident points — a line that goes right round the chart drawn as a dot, silently
+    /// (measured: E = 360° gave 2 points where E = 180° gave 65).
+    ///
+    /// <para>It is not an exotic document. A 90° line quoted at 1 GHz is θ = 720° at 8 GHz, which is
+    /// one edit of the design frequency away from any quarter-wave stub.</para>
+    ///
+    /// <para>A segment of θ ≤ 45° cannot close a period of π, so the seed resolves every one of them
+    /// and the adaptive pass then does what it always did. The cap is the budget's, because a seed
+    /// that spent it would leave nothing to bisect with.</para>
+    /// </remarks>
+    private static int Seed(SmithElement e, double fHz)
+    {
+        if (!SmithComponentMap.IsLine(e.Kind)) return 2;
+
+        double theta = Math.Abs(ThetaRadians(e, fHz));
+        if (!double.IsFinite(theta)) return 2;
+
+        return (int)Math.Clamp(Math.Ceiling(theta / (Math.PI / 4.0)) + 1.0, 2.0, 65.0);
     }
 
     /// <summary>
@@ -209,19 +252,25 @@ public static partial class SmithCascade
     /// evaluation budget: always split the worst segment first, and stop when the worst is under
     /// tolerance or the budget is gone.
     /// </summary>
+    /// <param name="seed">How many uniform samples to lay down before bisecting — see
+    /// <see cref="Seed"/>, which is the only thing that knows why it is ever more than two.</param>
     private static Complex[] Sample(
         Func<double, Zp>                    at,
         double                              z0,
         Func<Complex, (double X, double Y)> toCanvas,
         double                              tolerance,
-        int                                 budget)
+        int                                 budget,
+        int                                 seed = 2)
     {
         budget = Math.Max(budget, 3);
 
         Complex G(double t) => at(t).Gamma(z0);
 
-        var samples = new SortedList<double, Complex>(budget) { { 0.0, G(0.0) }, { 1.0, G(1.0) } };
-        int used = 2;
+        int n = Math.Clamp(seed, 2, budget - 1);
+
+        var samples = new SortedList<double, Complex>(budget);
+        for (int i = 0; i < n; i++) samples[(double)i / (n - 1)] = G((double)i / (n - 1));
+        int used = n;
 
         // Priority is −error, so the queue's head is the WORST segment.
         var queue = new PriorityQueue<(double T0, double T1, double Tm, Complex A, Complex B, Complex M), double>();
@@ -239,7 +288,11 @@ public static partial class SmithCascade
             queue.Enqueue((t0, t1, tm, a, b, m), -ChordError(toCanvas(m), toCanvas(a), toCanvas(b)));
         }
 
-        Offer(0.0, 1.0, samples[0.0], samples[1.0]);
+        for (int i = 1; i < n; i++)
+        {
+            double t0 = (double)(i - 1) / (n - 1), t1 = (double)i / (n - 1);
+            Offer(t0, t1, samples[t0], samples[t1]);
+        }
 
         while (queue.TryPeek(out _, out double negErr) && -negErr > tolerance && used < budget)
         {

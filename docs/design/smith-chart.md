@@ -452,8 +452,11 @@ correction that file records is worth repeating here because this tool will invi
 constant-VSWR circle about a marker is **not** centred on that marker unless the marker is at Γ = 0.
 
 The status strip reports, for the design frequency: the load impedance in R + jX, Γ in polar and
-rectangular, VSWR, and the conjugate-match mismatch in dB. Every number is the one the evaluator
-produced, formatted by `MatchValueFormat`, never re-derived for display.
+rectangular, VSWR, and the mismatch loss in dB — **all four against the chart's own Z₀**, so the strip
+answers one question in four spellings rather than two questions in one row (Q-17, closed). Every
+number is the one the evaluator produced, formatted by `MatchValueFormat`, never re-derived for
+display. The conjugate-match target glyphs are unchanged and carry no number: landing a frequency's
+load point on its glyph is still the conjugate match.
 
 ### 4.6 How this is gated — the engine is the oracle
 
@@ -536,7 +539,7 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 │                                                                                              │
 │  L2   L  [═══════════●═════════]   3.90 nH        [x] enabled                                │
 ├──────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 2.000 GHz · load 49.1 + j1.8 Ω · Γ 0.019 ∠61° · VSWR 1.04 · conj. mismatch 0.02 dB           │
+│ 2.000 GHz · load 49.1 + j1.8 Ω · Γ 0.019 ∠61° · VSWR 1.04 · mismatch 0.00 dB                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1097,24 +1100,32 @@ finished tool is only worth more than one given from a specification if it says 
   part of the schematic, which the figures show it is not. The splitter question the section raised
   therefore does not arise.
 
-**Opened at closeout:**
+**Opened at closeout, closed 2026-09-19:**
 
-- **Q-17 — is `conj. mismatch` the right quantity for the status strip?** §3.4 puts the target glyphs
-  at `Γ(conj(Z_gen(f)))` and the strip reports the mismatch against that, and the built tool is
-  faithful to it. Driving the shipped example showed what it reads like in the hand: a two-element
-  match that takes 8 − j12 Ω to 50 Ω lands at 49.98 − j0.10 Ω, VSWR 1.002, and the strip says
-  **conj. mismatch 3.411 dB** — and the number gets *smaller* at the band edges, where the match is
-  worse (2.068 dB at 2.3 GHz, 4.924 dB at 2.6 GHz). The engine's own reading of the same network,
-  through the copied schematic with port 1 at the generator impedance, is **−59.8 dB** of return loss
-  at the design frequency. The two are not in conflict — they answer different questions, the strip's
-  being *"how far is the load point from the generator's conjugate"* — but a number labelled as a
-  mismatch in decibels, sitting beside VSWR, reads as match quality, and on this tool's own headline
-  use case it moves the wrong way. **Recorded rather than changed**, because §3.4 is an owner decision
-  and *what it should be instead* has more than one defensible answer: drop it; report the mismatch
-  loss against Z₀_chart (0.00 dB here, 0.17 dB at 2.3 GHz), which is what VSWR already implies; or
-  give the document a load impedance so the conjugate target has something to be about. The user
-  chapter and the example's README both say plainly what the number is, so nobody is misled in the
-  meantime.
+- **Q-17 — is `conj. mismatch` the right quantity for the status strip?** *Closed: no, and the strip
+  now reports the mismatch loss against Z₀_chart instead (owner decision).* §3.4 put the target glyphs
+  at `Γ(conj(Z_gen(f)))` and the strip reported the mismatch against THEM, which is faithful to the
+  note and answers a different question from the VSWR beside it. Driving the shipped example showed
+  what that reads like in the hand: a two-element match taking 8 − j12 Ω to 50 Ω lands at
+  49.98 − j0.10 Ω, VSWR 1.002, and the strip said **3.411 dB** — and the number got *smaller* at the
+  band edges, where the match is worse (2.068 dB at 2.3 GHz, 4.924 dB at 2.6 GHz). A number labelled
+  as a mismatch in decibels, in a column beside VSWR, reads as match quality; one that moves the other
+  way is worse than no number at all.
+
+  The strip's column is now `mismatch`, −10·log₁₀(1−|Γ|²) against the chart's own Z₀ — **the same Γ
+  the VSWR beside it is made of**, so the strip answers one question in four spellings. It reads
+  0.00 dB on the example and 0.17 dB at 2.3 GHz, moving with the VSWR and with the picture.
+  `SmithReading.ConjugateMismatchDb` is `MismatchDb`, and `--json`'s `conjugateMismatchDb` is
+  `mismatchDb`.
+
+  **§3.4's target glyphs are UNCHANGED and this does not make them decorative.** Landing a frequency's
+  load point on its own ⊕ is still the conjugate match to the generator; what it no longer has is a
+  column, because the strip has no load impedance to state one against. The engine's own reading of
+  the copied schematic — S11 against the complex port-1 impedance, which IS the conjugate match at the
+  device's terminals — is −59.8 dB on the same network, and the example's README now puts the two side
+  by side rather than warning about one of them. The third option considered, **giving the document a
+  load impedance** so the conjugate target has something to be about, is a new field, a format change
+  and a terminus the walk does not have: its own brief if it is ever wanted, not a closeout fix.
 
 ---
 

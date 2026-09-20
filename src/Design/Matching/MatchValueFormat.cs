@@ -124,6 +124,28 @@ public static class MatchValueFormat
         return text.Length == 0 || text == "-" ? "0" : text;
     }
 
+    /// <summary>
+    /// A quantity that is already a LOGARITHM, to two decimal places — a loss or a gain in dB.
+    /// </summary>
+    /// <remarks>
+    /// <b>Significant digits are the wrong rule for a decibel and the mismatch loss is where it
+    /// shows.</b> <see cref="Significant"/> keeps a fixed number of MEANINGFUL digits, which is right
+    /// for a component value spanning decades and wrong for a quantity whose ideal value is zero: a
+    /// perfect match came out <c>0.000004551 dB</c>, four significant digits of arithmetic noise,
+    /// while the VSWR beside it read a clean 1.002. A decibel has already had its decades taken out
+    /// of it, so the useful precision is absolute — and below about 0.01 dB there is nothing left to
+    /// report.
+    ///
+    /// <para>Two places, and no trailing-zero trim: <c>0.00</c>, <c>0.17</c>, <c>3.41</c> read as one
+    /// column, and a column of decibels that changed width with its value would be harder to scan
+    /// than the number is to read. Non-finite goes through <see cref="InfinityGlyph"/> exactly as
+    /// everywhere else.</para>
+    /// </remarks>
+    public static string Decibels(double value)
+        => double.IsFinite(value)
+               ? value.ToString("F2", CultureInfo.InvariantCulture)
+               : NonFinite(value);
+
     /// <summary>The infinity glyph — never the word.</summary>
     /// <remarks>
     /// Owner, 2026-08-19: "use a real infinity symbol instead of the words 'infinity'". Under

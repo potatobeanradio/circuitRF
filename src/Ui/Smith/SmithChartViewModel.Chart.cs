@@ -284,6 +284,14 @@ public sealed partial class SmithChartViewModel
         _dragParameter = SmithParameter.None;
         DragPin        = null;
 
+        // THE Q FLAG IS CLEARED HERE and not only in EndQDrag, because this is the single exit both
+        // gestures leave by. BeginGripperDrag and BeginQDrag each force-cancel an in-flight drag
+        // through this method, so a Q drag abandoned that way used to leave _draggingQ standing —
+        // and the next pointer move would have been routed to DragQTo while a gripper was under the
+        // hand. The overlay cannot reach that order today; a flag whose correctness depends on the
+        // caller's order is one that stops being correct when the caller changes.
+        _draggingQ = false;
+
         if (cancelled)
         {
             ApplySnapshot(before);
@@ -356,7 +364,6 @@ public sealed partial class SmithChartViewModel
     internal void EndQDrag(bool cancelled)
     {
         if (!_draggingQ) return;
-        _draggingQ = false;
-        EndGripperDrag(cancelled);
+        EndGripperDrag(cancelled);          // …which clears _draggingQ — see there for why.
     }
 }

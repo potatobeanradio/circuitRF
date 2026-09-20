@@ -445,7 +445,7 @@ public sealed partial class SmithChartViewModel : ObservableObject
 
     /// <summary>
     /// What the strip says at the design frequency: the load impedance in R + jX, Γ in polar and
-    /// rectangular, VSWR, and the conjugate-match mismatch in dB.
+    /// rectangular, VSWR, and the mismatch loss in dB.
     /// </summary>
     /// <remarks>
     /// <b>Every number is the one the evaluator produced</b>, formatted by <see cref="MatchValueFormat"/>
@@ -537,7 +537,7 @@ public sealed partial class SmithChartViewModel : ObservableObject
 
         // EVERY NUMBER BELOW IS SmithReadings' (R-smith10-1). The strip formats; it does not
         // compute — `circuitrf smith` prints the same five quantities about the same document, and a
-        // VSWR or a conjugate mismatch derived twice is two chances to be wrong in a quantity whose
+        // VSWR or a mismatch loss derived twice is two chances to be wrong in a quantity whose
         // wrong value looks entirely ordinary.
         SmithReading r;
         try
@@ -555,7 +555,7 @@ public sealed partial class SmithChartViewModel : ObservableObject
         var    gamma      = r.Gamma;
         double mag        = gamma.Magnitude;
         double vswr       = r.Vswr;
-        double mismatchDb = r.ConjugateMismatchDb;
+        double mismatchDb = r.MismatchDb;
 
         string fText = MatchValueFormat.FormatWithUnit(f, MatchQuantity.Frequency, MatchValueFormat.AutoUnit, 5);
         string rText = MatchValueFormat.Significant(load.Real, 4);
@@ -569,7 +569,9 @@ public sealed partial class SmithChartViewModel : ObservableObject
              + $" · Γ {MatchValueFormat.Significant(mag, 4)} ∠{angle}°"
              + $" ({MatchValueFormat.Significant(gamma.Real, 4)}, {MatchValueFormat.Significant(gamma.Imaginary, 4)})"
              + $" · VSWR {Fmt(vswr)}"
-             + $" · conj. mismatch {Fmt(mismatchDb)} dB";
+             // A DECIBEL IS NOT A COMPONENT VALUE: MatchValueFormat.Decibels, not Significant, or a
+             // perfect match reads 0.000004551 dB beside a VSWR of 1.002. Its own remarks say why.
+             + $" · mismatch {MatchValueFormat.Decibels(mismatchDb)} dB";
 
         static string Fmt(double v) =>
             double.IsFinite(v) ? MatchValueFormat.Significant(v, 4) : MatchValueFormat.InfinityGlyph;

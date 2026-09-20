@@ -2160,7 +2160,7 @@ diff two revisions of a matching network and see only what changed about the net
 ### 18.5 What the report says, and why the table is the point
 
 With no `-o` the verb prints the reading the window's status strip states — the design frequency, the
-generator and load impedances, Γ in polar form, VSWR and the conjugate-match mismatch in dB — and then
+generator and load impedances, Γ in polar form, VSWR and the mismatch loss in dB — and then
 **the walk, one row per node**, generator first and load last, each with its impedance and its Γ.
 
 The reading alone answers *is it matched*. The table answers *where did it stop being matched*, which
@@ -2168,7 +2168,7 @@ is the question a caller has when the answer is no, and it is the half an exit c
 is also what a caller comparing two revisions of a network actually diffs.
 
 `--json` carries all of it as `result.smith`, including `nodes[]` and, when there is one, `band`.
-`vswr` and `conjugateMismatchDb` are **absent rather than large** where |Γ| ≥ 1: an active S2P or a
+`vswr` and `mismatchDb` are **absent rather than large** where |Γ| ≥ 1: an active S2P or a
 Z1P with negative R legitimately puts the load outside the unit circle, and a finite VSWR reported
 there is a lie about a stability result.
 

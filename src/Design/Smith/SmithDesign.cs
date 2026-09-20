@@ -436,6 +436,25 @@ public sealed class SmithChartSettings
 /// material and none of it is needed to match an impedance.</summary>
 public sealed class SmithSweep
 {
+    /// <summary>
+    /// The most points a band may be walked at.
+    /// </summary>
+    /// <remarks>
+    /// <b>There has to be one, and the reason is the DRAG rather than the sweep.</b> The band is one
+    /// full <see cref="SmithCascade.Evaluate"/> per point and it is re-walked inside every rebuild of
+    /// the chart — which is every pointer move of a gripper drag, twenty times a second. A point
+    /// count with no ceiling therefore has a value at which the window simply stops responding,
+    /// reached by typing a number into a field, with nothing said.
+    ///
+    /// <para><b>1,001 rather than a round million.</b> The band is a drawn locus on a chart a few
+    /// hundred pixels across, so a thousand points is already more than one per pixel — the cap costs
+    /// nothing anybody can see, and past it the picture stops improving while the drag gets worse.
+    /// A band that asks for more is <see cref="SmithDesign.Refusal"/>'s sentence naming the cap, and
+    /// <see cref="SmithBand"/> draws nothing rather than walking it, because a refusal the window
+    /// hangs before displaying is not a refusal.</para>
+    /// </remarks>
+    public const int MaxPoints = 1001;
+
     public bool   Enabled { get; set; }
     public double StartHz { get; set; }
     public double StopHz  { get; set; }
@@ -662,7 +681,12 @@ public sealed class SmithDesign
                      + "them.";
         }
 
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        // CASE-INSENSITIVELY, which is the same rule the two surfaces that MAKE names already use:
+        // SmithElementFactory.NextName will not hand out a name that differs from an existing one
+        // only in case, and the strip's rename field refuses one. Comparing ordinally here left the
+        // document accepting a pair those two would never produce — and brief 7 copies these names
+        // out as schematic instance names, where 'L1' and 'l1' are one part.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in Elements)
         {
             if (e.Refusal() is { } r) return r;
@@ -682,6 +706,14 @@ public sealed class SmithDesign
             if (Sweep.Points < 2)
                 return $"The swept band asks for {Sweep.Points} point(s); two is the fewest that "
                      + "draws a band.";
+
+            // The other end of the same rule — see SmithSweep.MaxPoints, where the reason lives.
+            if (Sweep.Points > SmithSweep.MaxPoints)
+                return $"The swept band asks for {Sweep.Points} points; {SmithSweep.MaxPoints} is "
+                     + "the most it may have. The band is a whole walk of the cascade per point and "
+                     + "it is re-walked on every frame of a gripper drag, so a count past that stops "
+                     + "the window responding without improving a locus that is already finer than "
+                     + "the pixels it is drawn on.";
         }
 
         if (ConstantQ.Enabled && !(double.IsFinite(ConstantQ.Q) && ConstantQ.Q > 0))

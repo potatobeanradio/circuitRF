@@ -63,10 +63,30 @@ public readonly record struct SmithNode(Complex Z, int ElementIndex);
 public readonly record struct SmithImmittance(Complex Value, bool IsAdmittance)
 {
     /// <summary>The impedance form.</summary>
-    public Complex Z => IsAdmittance ? Complex.One / Value : Value;
+    public Complex Z => IsAdmittance ? Other(Value) : Value;
 
     /// <summary>The admittance form.</summary>
-    public Complex Y => IsAdmittance ? Value : Complex.One / Value;
+    public Complex Y => IsAdmittance ? Value : Other(Value);
+
+    /// <summary>
+    /// The reciprocal of the form this element states itself in — <b>an INFINITY at zero, never a
+    /// NaN</b>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Complex.One / Complex.Zero</c> in .NET is <c>(NaN, NaN)</c>: the division forms <c>0/0</c>
+    /// internally whichever branch it takes. A zero here is an ordinary element — a series C of zero
+    /// farads is an open, a shunt R of zero ohms is a short — so the answer is the limit and saying
+    /// NaN would report the wrong failure.
+    ///
+    /// <para><b>The WALK does not come through here.</b> <see cref="SmithCascade"/> folds the
+    /// reciprocal into its projective pair instead (see its <c>Add</c>), where the same two cases
+    /// come out as exact finite pairs rather than as an infinity that has to be carried. This is for
+    /// a caller holding one element's immittance on its own, and it is the honest answer for one.</para>
+    /// </remarks>
+    private static Complex Other(Complex v)
+        => v == Complex.Zero
+               ? new Complex(double.PositiveInfinity, double.PositiveInfinity)
+               : Complex.One / v;
 }
 
 /// <summary>
@@ -184,11 +204,46 @@ public static partial class SmithCascade
             default:
             {
                 var imm = Immittance(e, fHz, dir);
-                return e.Placement == SmithPlacement.Series
-                    ? new Zp(zIn.N + imm.Z * zIn.D, zIn.D)                 // Z' = Z + Z_e
-                    : new Zp(zIn.N, zIn.D + imm.Y * zIn.N);                // Y' = Y + Y_e
+                return Add(zIn, imm, e.Placement == SmithPlacement.Series);
             }
         }
+    }
+
+    /// <summary>
+    /// §3.2's series sum or shunt parallel, <b>without ever forming the reciprocal of the form the
+    /// element states itself in</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the projective walk applied to the ELEMENT as well as to the node, and it is what
+    /// keeps a zero-valued part from taking the whole chart out.</b> §3.3 gives each kind its
+    /// immittance in one form only (an impedance for R, L and Z1P, an admittance for C), so half the
+    /// placements need the other one — and <c>1/0</c> in <see cref="Complex"/> is not an infinity, it
+    /// is <c>(NaN, NaN)</c>. A series C of zero farads is an OPEN and a shunt R of zero ohms is a
+    /// SHORT; both are ordinary, both are typable, and read through <see cref="SmithImmittance.Z"/> or
+    /// <see cref="SmithImmittance.Y"/> both used to produce a NaN that reached every node downstream,
+    /// the readout, the grippers and the picture — with no refusal, because
+    /// <c>SmithElement.Refusal</c> requires R, L and C to be non-NEGATIVE and zero is not negative
+    /// (brief-smith-1-document.md §94).
+    ///
+    /// <para>Written as a pair, the two singular cases are the ordinary arithmetic the rest of this
+    /// file already is: <c>Z' = (N·Y_e + D)/(D·Y_e)</c> at <c>Y_e = 0</c> is <c>(D, 0)</c>, which is
+    /// Z = ∞ and Γ = +1 exactly; <c>Z' = N·Z_e/(D·Z_e + N)</c> at <c>Z_e = 0</c> is <c>(0, N)</c>,
+    /// which is Z = 0 and Γ = −1 exactly.</para>
+    /// </remarks>
+    private static Zp Add(Zp zIn, SmithImmittance imm, bool series)
+    {
+        var m = imm.Value;
+
+        // The element states itself in the placement's OWN form: one multiply, no reciprocal.
+        if (series != imm.IsAdmittance)
+            return series
+                ? new Zp(zIn.N + m * zIn.D, zIn.D)                          // Z' = Z + Z_e
+                : new Zp(zIn.N, zIn.D + m * zIn.N);                         // Y' = Y + Y_e
+
+        // …and in the other one, where the reciprocal is folded into the pair instead of taken.
+        return series
+            ? new Zp(zIn.N * m + zIn.D, zIn.D * m)                          // Z' = Z + 1/Y_e
+            : new Zp(zIn.N * m, zIn.D * m + zIn.N);                         // Y' = Y + 1/Z_e
     }
 
     // ── The element immittances (R-smith2-2) ─────────────────────────────────
@@ -225,13 +280,26 @@ public static partial class SmithCascade
 
             case SmithElementKind.Srlc:
                 // Z = R + jωL + 1/(jωC) = R + j(ωL − 1/(ωC))
-                return new SmithImmittance(
-                    new Complex(v.ROhm, w * v.LHenry - 1.0 / (w * v.CFarad)), IsAdmittance: false);
+                //
+                // C = 0 is the OPEN, whose impedance has no finite value — so it is stated as the
+                // admittance it does have, which is zero, and Add() carries it. Writing the
+                // impedance instead gives Complex(R, −∞), and the first multiply after that is a
+                // NaN in every node downstream. Zero is a legal C (a document refuses a NEGATIVE
+                // one), so this is a value the user can type rather than a hypothetical.
+                return v.CFarad > 0
+                    ? new SmithImmittance(
+                          new Complex(v.ROhm, w * v.LHenry - 1.0 / (w * v.CFarad)), IsAdmittance: false)
+                    : new SmithImmittance(Complex.Zero, IsAdmittance: true);
 
             case SmithElementKind.Prlc:
                 // Y = 1/R + 1/(jωL) + jωC = 1/R + j(ωC − 1/(ωL))
-                return new SmithImmittance(
-                    new Complex(1.0 / v.ROhm, w * v.CFarad - 1.0 / (w * v.LHenry)), IsAdmittance: true);
+                //
+                // The dual of the SRLC's own case, twice over: R = 0 and L = 0 are both the SHORT,
+                // whose admittance has no finite value and whose impedance is zero.
+                return v.ROhm > 0 && v.LHenry > 0
+                    ? new SmithImmittance(
+                          new Complex(1.0 / v.ROhm, w * v.CFarad - 1.0 / (w * v.LHenry)), IsAdmittance: true)
+                    : new SmithImmittance(Complex.Zero, IsAdmittance: false);
 
             case SmithElementKind.Z1P:
                 // A complex constant over frequency — that is the point of it.
@@ -261,14 +329,6 @@ public static partial class SmithCascade
                   + "one — it has no immittance, and the cascade steps it with its own formula.");
         }
     }
-
-    /// <summary>The series form of <see cref="Immittance"/>.</summary>
-    public static Complex SeriesImpedance(SmithElement e, double fHz, string? documentDirectory = null)
-        => Immittance(e, fHz, documentDirectory).Z;
-
-    /// <summary>The shunt form of <see cref="Immittance"/>.</summary>
-    public static Complex ShuntAdmittance(SmithElement e, double fHz, string? documentDirectory = null)
-        => Immittance(e, fHz, documentDirectory).Y;
 
     /// <summary>
     /// True for the two kinds the cascade steps as a two-port rather than as an immittance —
@@ -364,9 +424,22 @@ public static partial class SmithCascade
 
     // ── Γ ────────────────────────────────────────────────────────────────────
 
-    /// <summary>The ordinary voltage reflection coefficient against the chart's real Z₀ (§3.4).</summary>
+    /// <summary>
+    /// The ordinary voltage reflection coefficient against the chart's real Z₀ (§3.4).
+    /// </summary>
+    /// <remarks>
+    /// <b>An INFINITE impedance is the open circuit, Γ = +1, and not a NaN.</b> The walk is
+    /// projective and never divides (<see cref="Zp"/>), but a node it hands back as a plain
+    /// <see cref="Complex"/> has already been divided once — and a cascade that ends on an open
+    /// (a series C of zero farads, an SRLC with no capacitance) legitimately ends there. Γ of it is
+    /// the limit, which is exactly what the chart draws and what the readout's VSWR of ∞ is about.
+    /// A NaN stays a NaN: it is not an infinity and saying so would be a lie about which of the two
+    /// happened.
+    /// </remarks>
     public static Complex Gamma(Complex z, double z0Chart)
-        => (z - z0Chart) / (z + z0Chart);
+        => double.IsInfinity(z.Real) || double.IsInfinity(z.Imaginary)
+               ? Complex.One
+               : (z - z0Chart) / (z + z0Chart);
 
     // ── Touchstone-backed elements (R-smith2-4) ──────────────────────────────
 
@@ -479,7 +552,21 @@ public static partial class SmithCascade
     /// </summary>
     private readonly record struct Zp(Complex N, Complex D)
     {
-        internal Complex Value => N / D;
+        /// <summary>
+        /// The impedance this pair stands for — <b>an INFINITY where the denominator has vanished,
+        /// never a NaN</b>.
+        /// </summary>
+        /// <remarks>
+        /// A vanished denominator is the open circuit, which is an ordinary node of an ordinary
+        /// cascade (a series C of zero farads is one). <see cref="Complex"/>'s own division answers
+        /// <c>(NaN, NaN)</c> for it — <c>0/0</c> appears inside its algorithm — so the one place the
+        /// projective walk has to come back to an ordinary number is the one place that has to say
+        /// so explicitly. <see cref="Gamma(Complex, double)"/> takes it back to Γ = +1.
+        /// </remarks>
+        internal Complex Value
+            => D == Complex.Zero && N != Complex.Zero
+                   ? new Complex(double.PositiveInfinity, double.PositiveInfinity)
+                   : N / D;
 
         /// <summary>Γ = (N − Z₀·D)/(N + Z₀·D) — the same expression as
         /// <see cref="Gamma(Complex, double)"/>, one division earlier.</summary>
