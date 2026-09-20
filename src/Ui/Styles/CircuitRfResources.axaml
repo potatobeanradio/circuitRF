@@ -18,6 +18,20 @@
         <FontFamily x:Key="DejaVuSans">avares://CircuitRF.Ui/Assets/Fonts#DejaVu Sans</FontFamily>
         <sys:Double x:Key="FontSize">12</sys:Double>
 
+        <!-- ── THE SCROLLBAR GUTTER, 16 px in Fluent, 12 here ───────────────────────────────
+             One key drives the whole bar: ScrollBar.MinWidth/MinHeight, the thumb's thickness and
+             the size of the line buttons at each end. It is also, since the ScrollViewer rule in
+             CircuitRfStyles.axaml stopped bars overlaying their content, the width a visible bar
+             takes OUT of that content — so it is worth being the narrow number the rest of this
+             UI is drawn at rather than the desktop-density default. A 12 px bar is still an easy
+             pointer target once expanded, and at rest it is the same 2 px sliver it always was.
+
+             An Application.Resources key wins a DynamicResource lookup over the theme's own
+             dictionary — the same mechanism the accent and tab-menu overrides below rely on — and
+             the theme reads this one dynamically in both variants, so one entry covers light and
+             dark. Verified against a headless Avalonia 12.0.3 harness: bars measure 12 px wide. -->
+        <sys:Double x:Key="ScrollBarSize">12</sys:Double>
+
         <!-- System.Warning brush — initialized from ColorTheme.BuiltIn in App.axaml.cs;
              updated on ThemeService.ThemeChanged so tree warning nodes follow the active theme. -->
         <SolidColorBrush x:Key="CrfWarningBrush" Color="#CE4A24"/>

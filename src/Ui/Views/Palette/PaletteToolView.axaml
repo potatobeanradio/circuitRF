@@ -72,7 +72,14 @@
                  gesture), so without this a click into the grid leaves focus wherever it was and the
                  Page/Home/End keys never reach this panel at all. The code-behind focuses it on
                  pointer press; the search box keeps focus when the user is typing there. -->
-            <ScrollViewer x:Name="TileScroll"
+            <!-- overlay-scroll: the bar FLOATS over the tiles here, which is the application-wide
+                 default everywhere else has given up (CircuitRfStyles.axaml). The column count is
+                 floor(width / 62) and this panel's widths are chosen to sit just above a boundary,
+                 so a 12 px gutter costs a whole column at the default width and leaves a dead strip
+                 at a hand-set one (owner, 2026-09-20). Safe here because nothing inside this
+                 ScrollViewer scrolls — the hazard the default guards against is a bar landing on a
+                 nested one. -->
+            <ScrollViewer x:Name="TileScroll" Classes="overlay-scroll"
                           Focusable="True" IsTabStop="False"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"

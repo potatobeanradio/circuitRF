@@ -1,5 +1,83 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A scrollbar inside a scrollbar: the outer one owned the strip all along (2026-09-20)
+
+Owner report: in railRF, a long Results ▸ Breakdown in a short window makes two scrollbars and the
+inner one is hard to grab — "the outer scroll bar becomes very wide and renders overtop of the inner
+scrollbar". Two candidate causes were offered with the report: force the outer bar narrow, or shorten
+the delay before a widened bar goes thin again. **Neither is the cause**, and that is the finding.
+
+**It is not the widening and it is not the timing — the bars overlap while both are COLLAPSED, and
+the strip belongs to the outer one at every instant.** Fluent's `ScrollViewer` theme makes an
+auto-hiding bar an *overlay*:
+
+```
+<Style Selector="^[AllowAutoHide=True] /template/ ScrollContentPresenter#PART_ContentPresenter">
+  <Setter Property="Grid.ColumnSpan" Value="2"/>
+```
+
+so the bar floats over the last `ScrollBarSize` pixels of its own content, transparent border and
+all — and a `Transparent` brush is hit-testable, so that strip takes the pointer whether the bar is
+thin or fat. What the expansion actually changes is only paint: the resting look is a `RenderTransform`
+scale on the thumb about `RenderTransformOrigin="100%,50%"`, i.e. the thin sliver is drawn hard
+against the bar's RIGHT edge.
+
+Measured in a throwaway headless Avalonia 12.0.3 harness (`AppBuilder.Configure<App>().UseHeadless()`,
+a window 360x300, railRF's own geometry: `Border.pane` Padding 10, `Border.card` Padding 8,5 with a
+1 px border):
+
+| | before | after |
+|---|---|---|
+| outer vertical bar | x = 333 .. 349 | x = 337 .. 349 |
+| inner vertical bar | x = 324 .. 340 | x = 316 .. 328 |
+| overlap | **7 px, the inner bar's right edge** | none, 9 px apart |
+| `InputHitTest` at the inner thumb | outer bar's `PART_PageDownButton` | the inner `ScrollBar` |
+
+So a click on the only part of the inner bar that is DRAWN paged the outer view instead of dragging
+the inner thumb; the only reachable part of the inner bar was the 9 px of empty track to its left,
+where nothing is painted. That is the whole of "hard to scroll", and no delay setting touches it.
+
+**The fix is one style in `Styles/CircuitRfStyles.axaml`** — the presenter stops spanning, so a
+visible bar reserves its own column instead of floating over content. Avalonia ties overlay and
+auto-hide to the one `AllowAutoHide` property (`False` un-overlaps a bar but also pins it permanently
+expanded, arrow buttons and all); overriding the theme's span setter takes the half we want and
+leaves the resting-thin, expand-under-the-pointer behaviour alone. `ScrollBarSize` goes 16 → 12 in
+`CircuitRfResources.axaml` at the same time, because that number is now the width a visible bar takes
+OUT of content, and `ShowDelay`/`HideDelay` go 0.5 s / 2 s → 0.2 s / 0.6 s, which is the half of the
+report that *was* about timing.
+
+**Two traps, both silent:**
+
+- **The `[AllowAutoHide=True]` qualifier on our selector is load-bearing.** Drop it and the selector
+  still matches, the setters still parse, and the span stays at 2. The theme's rule is activated by
+  that condition, and an unconditional style at the same priority does not displace an activated one.
+  Both forms were run in that harness at the stock 16 px bar: qualified gives a 322 px content
+  presenter, unqualified the unchanged 338 px. Nothing errors either way.
+- **Costs nothing where nothing scrolls.** An unneeded `ScrollBar` is `IsVisible="False"` and an Auto
+  column measures it at 0 — verified: the content presenter is the full 338 px with and without the
+  rule when the content fits. The 12 px only ever comes out of content that was already partly
+  underneath a bar.
+
+An exact-type selector, so `MenuScrollViewer` (a `ScrollViewer` subclass whose template is a
+`DockPanel`, where the setters would be inert anyway) is untouched.
+
+**And one panel wants the old behaviour back.** Owner, same day: the Library palette showed ONE
+column of components at its default width and left a dead strip down the right edge when widened by
+hand. It reflows on measured width — a `WrapPanel` of 60 px tiles in a 62 px slot, column count
+`floor(width / 62)` — and its widths sit just above a boundary, so 12 px is a whole column. It now
+wears `Classes="overlay-scroll"`, which a style declared *after* the rule above turns back into an
+overlay. **The order of the two styles is the mechanism**: both are activated styles at the same
+priority, so the later one takes the property; swapping them silently restores the gutter. An opt-out
+by class rather than a per-view copy of the setters, so it can be found — and it is only safe on a
+scroller that contains no other scroller, which is the hazard the default exists for.
+
+**Gate:** `tests/Ui.Tests/NestedScrollBarStylesTests.cs` — a source scan for the rule *including its
+qualifier*, the opt-out *including its position below the rule* and the palette wearing it, plus the
+Avalonia default it all stands on (`new ScrollBar().AllowAutoHide`), which is what a package upgrade
+would invalidate. This project has no headless Avalonia, so the behaviour itself was measured out of
+tree and the pixels were not seen in the running app.
+
+
 ## Settings ▸ Technology: the sixth tab, and the strip that no longer fits at 620 (2026-09-20)
 
 `TechnologySettingsView` + `RemoveTechnologyDialog`, and one figure. The rules are all in

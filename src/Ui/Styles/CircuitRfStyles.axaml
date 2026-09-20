@@ -391,6 +391,98 @@
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
         </Style>
 
+        <!-- ══ A SCROLLBAR NO LONGER SITS ON TOP OF THE ONE INSIDE IT ═══════════════════════
+             Owner-reported, 2026-09-20, against railRF's Results ▸ Breakdown: with a long breakdown
+             and a short window there are two scrollbars, and the inner one is "hard to scroll".
+
+             IT IS NOT THE EXPANSION ANIMATION AND IT IS NOT THE DELAY — the bars overlap even while
+             both are collapsed, and the strip belongs to the OUTER one at every instant. Measured on
+             railRF's own geometry (pane Padding 10, Border.card Padding 8,5 + 1 px border) in a
+             headless Avalonia 12.0.3 harness, window 360x300:
+
+                 outer bar   x = 333 .. 349     (16 px, ScrollBarSize)
+                 inner bar   x = 324 .. 340     the card insets it by 9 px
+                 overlap     x = 333 .. 340     7 px, the inner bar's RIGHT edge
+
+             and the collapsed thumb renders hard against that right edge — Fluent's ScrollBar theme
+             thins a resting bar by SCALING the thumb about RenderTransformOrigin 100%,50%, so the
+             2 px sliver a user aims at is the part that is covered. An InputHitTest at the middle of
+             that sliver returned the OUTER bar's PART_PageDownButton, so a click there PAGES THE
+             OUTER VIEW instead of dragging the inner thumb. The only reachable part of the inner bar
+             was the 9 px of empty track to its left, where nothing is drawn.
+
+             The cause is Fluent's ScrollViewer theme, which makes an auto-hiding bar an OVERLAY:
+
+                 Style Selector="^[AllowAutoHide=True] /template/ ScrollContentPresenter#PART_ContentPresenter"
+                   Setter Property="Grid.ColumnSpan" Value="2"      (the content spans under the bars)
+
+             so the bar floats over the last 16 px of content — its own transparent Border included,
+             which is what eats the pointer. Avalonia ties the two behaviours to one property:
+             AllowAutoHide="False" un-overlaps a bar but ALSO pins it permanently expanded, arrow
+             buttons and all. This rule takes the half we want and leaves the other: the presenter
+             stops spanning, so a visible bar RESERVES its column, while the bar itself still rests
+             thin and still expands under the pointer.
+
+             Costs nothing when nothing scrolls: an unneeded ScrollBar is IsVisible="False" and an
+             Auto column measures it at 0 — verified in the same harness (content presenter 338 px
+             wide with and without this rule when the content fits). When a bar IS shown the content
+             is 12 px narrower than it used to be, which is the whole point: those 12 px were never
+             usable, they were under the bar.
+
+             Exact-type selector, so MenuScrollViewer (a ScrollViewer subclass, and a DockPanel
+             template where these setters would be inert anyway) is not touched.
+
+             THE [AllowAutoHide=True] QUALIFIER IS LOAD-BEARING AND MUST NOT BE TIDIED AWAY. Without
+             it the selector still matches, the setters still parse, and the span STAYS AT 2 — the
+             theme's own rule is activated by that same condition, and an unconditional style at the
+             same priority does not displace an activated one. Both forms measured in that harness
+             at the stock 16 px bar: qualified gives a 322 px content presenter, unqualified the
+             unchanged 338 px. It fails silently, which is the only reason this paragraph exists.
+
+             To go back to overlay bars, delete this one Style. -->
+        <Style Selector="ScrollViewer[AllowAutoHide=True] /template/ ScrollContentPresenter#PART_ContentPresenter">
+            <Setter Property="Grid.ColumnSpan" Value="1"/>
+            <Setter Property="Grid.RowSpan"    Value="1"/>
+        </Style>
+
+        <!-- ── THE OPT-OUT, for a panel whose WIDTH IS THE DESIGN ────────────────────────────
+             Owner-reported the day the rule above landed: the Library palette showed ONE column of
+             components at its default width instead of two, and a hand-widened palette left an
+             awkward strip of empty space down its right edge.
+
+             The palette reflows on measured width — a WrapPanel of 60 px tiles in a 62 px slot, so
+             its column count is floor(width / 62) and the panel is sized deliberately to land just
+             above a boundary. Taking 12 px out of that content crosses it, and one column is not a
+             cosmetic difference. A panel like this WANTS the bar over its content: the tiles are
+             what the width is for, and the right-hand slot the bar floats across is 2 px of tile
+             margin most of the time.
+
+             So: wear this class and the bar goes back to floating. It is deliberately a class and
+             not a per-view copy of the setters — an opt-out that is named can be found, and the
+             nesting hazard the rule above exists for is a real one to weigh before wearing it. Do
+             not put it on a panel that CONTAINS another scroller.
+
+             Later in this file than the rule it reverses, which is how it wins: both are activated
+             styles at the same priority, so the last one applied takes the property. Verified in the
+             same harness, both in one run — classed viewer back to a 338 px presenter, unclassed one
+             still 326. -->
+        <Style Selector="ScrollViewer.overlay-scroll[AllowAutoHide=True] /template/ ScrollContentPresenter#PART_ContentPresenter">
+            <Setter Property="Grid.ColumnSpan" Value="2"/>
+            <Setter Property="Grid.RowSpan"    Value="2"/>
+        </Style>
+
+        <!-- The second half of the same report: a resting bar takes half a second to become
+             grabbable and stays fat for two seconds after the pointer leaves (Fluent's own
+             ShowDelay/HideDelay defaults). With the rule above the fat state no longer covers
+             anything, so this is feel rather than function — but 2 s of a widened bar sitting over
+             its own neighbour's edge is exactly what the report describes seeing. Short enough to
+             feel immediate, long enough that sweeping the pointer across a list on the way somewhere
+             else does not pop every bar open. -->
+        <Style Selector="ScrollBar">
+            <Setter Property="ShowDelay" Value="0:0:0.2"/>
+            <Setter Property="HideDelay" Value="0:0:0.6"/>
+        </Style>
+
         <!-- ── Segmented select buttons ──────────────────────────────────────────
              The resting look of IconSelectButton's PART_Button (Styles/SegmentedSelect.axaml) and of
              any toolbar button that wants to read as one segment of a group. Application scope
