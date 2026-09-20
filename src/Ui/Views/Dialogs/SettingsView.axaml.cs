@@ -165,6 +165,8 @@ public partial class SettingsView : Window
 
             ShowDockersOnLaunchCheck.IsChecked = prefs.ShowDockersOnLaunch ?? true;
 
+            SyncThemeButtons(prefs.Appearance ?? AppearanceMode.System);
+
             CopyColorCombo.ItemsSource   = new[] { "Follow System", "Force Light", "Force Dark" };
             CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
 
@@ -214,6 +216,35 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.ShowDockersOnLaunch = ShowDockersOnLaunchCheck.IsChecked);
+    }
+
+    // ── Theme (light / dark / system) ────────────────────────────────────────
+
+    /// <summary>
+    /// The three buttons are one control: whichever was clicked becomes the mode, and the other two
+    /// give up the accent. Which one was clicked is read from its <c>Tag</c> rather than from three
+    /// separate handlers — the handler is then the same code for all three, and adding a fourth mode
+    /// is one button.
+    ///
+    /// <para><b>Write-through, like every other General setting</b> — Cancel restores the colour
+    /// PALETTE and nothing else, and a live preview the user has been looking at for a minute is not
+    /// something to silently undo on the way out.</para>
+    /// </summary>
+    private void OnThemeModeClick(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        if (sender is not Button { Tag: string tag }
+            || !Enum.TryParse<AppearanceMode>(tag, out var mode)) return;
+
+        AppearanceService.Set(mode);
+        SyncThemeButtons(mode);
+    }
+
+    private void SyncThemeButtons(AppearanceMode mode)
+    {
+        ThemeSystemBtn.Classes.Set("ToolActive", mode == AppearanceMode.System);
+        ThemeLightBtn .Classes.Set("ToolActive", mode == AppearanceMode.Light);
+        ThemeDarkBtn  .Classes.Set("ToolActive", mode == AppearanceMode.Dark);
     }
 
     private void OnCopyColorChanged(object? sender, SelectionChangedEventArgs e)

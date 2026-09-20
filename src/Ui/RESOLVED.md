@@ -32320,3 +32320,44 @@ refreshed there for the same reason. No `Opening` handler remains in the file.
 suite instantiates no Avalonia control) asserting the plot-type gate lives in
 `RefreshContextMenuState`, that the call sits between `_contextMenu ??= BuildContextMenu()` and
 `_contextMenu.Open(this)`, and that nothing in the file hangs state off `.Opening` again.
+
+---
+
+## Settings ▸ General ▸ Theme — System / Light / Dark, live (2026-09-20)
+
+Three linked buttons in a new panel group beside *On Launch*, wearing the Layout Editor's toolbar
+button clothes (`Button.ToolActive`, the accent fill on the one in force). The preference is
+`appearance_mode` in `preferences.json`, serialized as an ordinal like `launch_action`, and all three
+applications apply it before their first window exists.
+
+**The whole mechanism is one assignment to `Application.RequestedThemeVariant`**, and that is the
+point: every window, dialog and docked panel resolves its brushes from the application's variant, so
+one write recolours all of them — including windows already open, and including the next one opened.
+Anything that walked a window list would miss whatever was opened afterwards.
+
+### Two findings worth keeping
+
+**1. A variant change had to be made to raise `ThemeService.ThemeChanged`.** Avalonia repaints its
+own templated controls when the variant changes; it has no way to know that a
+`DrawingContext.Custom` operation depended on the variant too. Every Skia canvas in the application
+(schematic, symbol, layout, wirebond, match, the palette glyphs, the rulers) resolves its colours per
+variant inside `Render` and — without exception, checked one by one — listens to
+`ThemeService.ThemeChanged` and to nothing else for a repaint. So switching light↔dark recoloured the
+chrome and left every canvas painted in the old palette until something unrelated happened to
+invalidate it. `ThemeService.CurrentVariant` is now a property that raises `ThemeChanged` **when the
+value actually changes**; the no-op guard is load-bearing, because each app's own `ThemeChanged`
+handler re-assigns `CurrentVariant` and an unconditional raise would recurse.
+
+**2. `Window.Styles` does not survive the User-Docs factory.** `DocSettingsFixtures` lifts
+`SettingsView`'s content Grid out of the window and hosts it elsewhere — a Window cannot live inside
+another Window — so a `Button.ToolActive` style declared on `Window.Styles` stopped applying at
+capture time only. The application drew the active button accented and **the documentation drew it
+unaccented**, with nothing failing anywhere and no way to notice except by looking at the figure. The
+styles moved onto the content root (`Grid.Styles`), which travels with what gets captured. Any
+scoped style in a view whose content is captured this way has the same exposure.
+
+### Not in scope, deliberately
+
+The Color Theme tab's own Light/Dark radios still open on the variant being rendered and are not
+re-synced when the appearance is changed while the dialog is open: editing the dark palette while
+looking at the light one is a thing someone does on purpose.

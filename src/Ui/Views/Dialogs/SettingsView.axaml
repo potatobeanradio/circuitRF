@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Dialogs.SettingsView"
         Title="circuitRF Settings"
         Width="720"
@@ -12,6 +13,31 @@
         ShowInTaskbar="False">
 
     <Grid RowDefinitions="*,Auto" Margin="14">
+
+        <!-- Button.ToolActive — copied from LayoutEditorView.axaml so the Theme buttons are the same
+             control the Layout Editor's tool buttons are, down to the accent fill. Scoped, never a
+             global selector: this dialog is not the only place Buttons live.
+
+             ON THE CONTENT ROOT AND NOT ON Window.Styles, and that is not cosmetic: the User-Docs
+             factory LIFTS this Grid out of the window and hosts it elsewhere (a Window cannot live
+             inside another Window), so a style declared on the Window stops applying the moment the
+             figure is captured — the active button would be drawn unaccented in the documentation
+             while being accented in the application, with nothing failing anywhere. -->
+        <Grid.Styles>
+            <Style Selector="Button.ToolActive">
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+            <Style Selector="Button.ToolActive /template/ ContentPresenter">
+                <Setter Property="Background">
+                    <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+                </Setter>
+            </Style>
+            <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+                <Setter Property="Background">
+                    <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Styles>
 
         <!-- ── Tabs ───────────────────────────────────────────────────────── -->
         <TabControl Grid.Row="0" Name="Tabs">
@@ -69,27 +95,65 @@
                 <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="0">
 
-                        <!-- On Launch section -->
-                        <TextBlock Text="On Launch" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,0,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto"
-                              Margin="0,0,0,20">
-                            <TextBlock Grid.Row="0" Grid.Column="0"
-                                       Text="Action:" VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Row="0" Grid.Column="1"
-                                       Name="LaunchActionCombo" FontSize="12" MinWidth="180"
-                                       HorizontalAlignment="Left"
-                                       SelectionChanged="OnLaunchSettingChanged"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0"
-                                       Text="Window Layout:" VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Row="2" Grid.Column="1"
-                                       Name="WindowLayoutCombo" FontSize="12" MinWidth="180"
-                                       HorizontalAlignment="Left"
-                                       SelectionChanged="OnLaunchSettingChanged"/>
-                            <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="ShowDockersOnLaunchCheck" FontSize="12"
-                                       Content="Show Dockers"
-                                       IsCheckedChanged="OnShowDockersOnLaunchChanged"/>
+                        <!-- On Launch, and Theme beside it. Two groups on one row because the
+                             On Launch column is ~310 px of a ~690 px page and the three theme
+                             buttons are ~100 px: stacked, the second group would push Copy / Export
+                             and everything under it below the fold for no reason. The middle column
+                             is the gutter. -->
+                        <Grid ColumnDefinitions="Auto,40,Auto" Margin="0,0,0,20">
+
+                            <!-- On Launch section -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="On Launch" FontSize="11" FontWeight="SemiBold"
+                                           Opacity="0.55" Margin="0,0,0,6"/>
+                                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto">
+                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                               Text="Action:" VerticalAlignment="Center" FontSize="12"/>
+                                    <ComboBox  Grid.Row="0" Grid.Column="1"
+                                               Name="LaunchActionCombo" FontSize="12" MinWidth="180"
+                                               HorizontalAlignment="Left"
+                                               SelectionChanged="OnLaunchSettingChanged"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0"
+                                               Text="Window Layout:" VerticalAlignment="Center" FontSize="12"/>
+                                    <ComboBox  Grid.Row="2" Grid.Column="1"
+                                               Name="WindowLayoutCombo" FontSize="12" MinWidth="180"
+                                               HorizontalAlignment="Left"
+                                               SelectionChanged="OnLaunchSettingChanged"/>
+                                    <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                                               Name="ShowDockersOnLaunchCheck" FontSize="12"
+                                               Content="Show Dockers"
+                                               IsCheckedChanged="OnShowDockersOnLaunchChanged"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Theme section — light/dark, or follow the OS.
+                                 One of the three is always active, so these are radio buttons wearing
+                                 the Layout Editor's toolbar-button clothes: same Padding, same
+                                 Button.ToolActive accent fill for the one in force. The active class
+                                 is set in code (SyncThemeButtons) rather than bound, because this
+                                 dialog has no view model and the state it reflects is a static
+                                 application property, not a bindable one.
+
+                                 This is the light/dark VARIANT, not the Color Theme tab's palette —
+                                 every palette carries both variants and the two compose. -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Theme" FontSize="11" FontWeight="SemiBold"
+                                           Opacity="0.55" Margin="0,0,0,6"/>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Name="ThemeSystemBtn" Click="OnThemeModeClick" Tag="System"
+                                            ToolTip.Tip="System" Padding="6,3">
+                                        <mi:MaterialIcon Kind="ThemeLightDark" Width="16" Height="16"/>
+                                    </Button>
+                                    <Button Name="ThemeLightBtn" Click="OnThemeModeClick" Tag="Light"
+                                            ToolTip.Tip="Light" Padding="6,3">
+                                        <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="16" Height="16"/>
+                                    </Button>
+                                    <Button Name="ThemeDarkBtn" Click="OnThemeModeClick" Tag="Dark"
+                                            ToolTip.Tip="Dark" Padding="6,3">
+                                        <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
                         </Grid>
 
                         <!-- Copy / Export section -->

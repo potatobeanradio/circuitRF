@@ -93,6 +93,11 @@ public partial class App : Application
         // Wire CrfWarningBrush to the active color theme so Project Tree warning nodes
         // use System.Warning from the theme rather than a literal color value.
         // Also keeps ThemeService.CurrentVariant in sync so ClipboardRenderPolicy.FollowSystem works.
+        // Light / dark / follow-the-system, before the first window exists — a window shown in one
+        // variant and repainted in the other is a visible flash on every launch. One assignment to
+        // Application.RequestedThemeVariant covers every window this process will ever open.
+        AppearanceService.ApplySaved(this);
+
         UpdateCrfWarningBrush();
         ThemeService.ThemeChanged += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);

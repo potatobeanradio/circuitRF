@@ -51,6 +51,11 @@ public partial class HarmonicaApp : Application
         // recolouring anything outside the wirebond editor.
         ThemeService.Active = ThemeResolver.Resolve(prefs.ActiveThemeName ?? ThemeResolver.DefaultThemeName);
 
+        // Light / dark / follow-the-system, before the first window exists — a window shown in one
+        // variant and repainted in the other is a visible flash on every launch. One assignment to
+        // Application.RequestedThemeVariant covers every window this process will ever open.
+        AppearanceService.ApplySaved(this);
+
         UpdateCrfWarningBrush();
         ThemeService.ThemeChanged += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);

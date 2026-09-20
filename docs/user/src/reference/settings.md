@@ -51,9 +51,10 @@ that edits a live document-like thing you might want to abandon.</p>
 </div>
 
 Most settings apply to the next thing you do: a launch setting takes effect at the next launch, a
-wirebond default applies to the next wire you draw. The two that are live are the **message timestamp
-format**, which re-renders the Messages panel as you change it, and every **colour role**, which
-repaints the application as you drag the slider.
+wirebond default applies to the next wire you draw. Three are live: the **theme**, which recolours
+every open window as you click it, the **message timestamp format**, which re-renders the Messages
+panel as you change it, and every **colour role**, which repaints the application as you drag the
+slider.
 
 ## General {#general}
 
@@ -73,6 +74,16 @@ repaints the application as you drag the slider.
 setting names, so there is one place a layout is chosen and not two that can disagree. The panels
 themselves are described in {{anchor: workspace.html#panels|the workspace chapter}}.</p>
 </div>
+
+### Theme
+
+Three buttons, one of them always in force: **System** follows your operating system's light/dark
+setting, **Light** and **Dark** pin circuitRF to one of them regardless. The change is immediate and
+applies to every open window and everything drawn in them.
+
+This is the light/dark *variant*. Which colour each thing is drawn in is the
+{{anchor: settings#color-theme|Color Theme}} tab, and every colour theme carries both variants — the two
+settings compose rather than competing.
 
 ### Copy / Export
 

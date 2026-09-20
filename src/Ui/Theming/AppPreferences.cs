@@ -86,6 +86,15 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CopyTransparentBackground { get; set; }
 
+    // Settings ▸ General ▸ Theme — light/dark, or follow the OS. Null means the default, which is
+    // AppearanceMode.System: following the operating system is what circuitRF did before this setting
+    // existed, so an installation that has never touched it behaves exactly as it always has. Per
+    // USER and not per workspace — it is how someone likes to look at a screen, not a property of any
+    // design — and shared by all three applications, which is why it is read at startup by each.
+    [JsonPropertyName("appearance_mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AppearanceMode? Appearance { get; set; }
+
     // Launch behavior — null means use the defaults (Welcome / WindowLayout.ProjectTreeAndLibrary).
     [JsonPropertyName("launch_action")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
