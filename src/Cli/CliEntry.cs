@@ -2126,7 +2126,7 @@ static int PrintHelp()
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");
     Console.WriteLine("  convert <in> -o <out>  (layout interchange: any format to any other)");
-    Console.WriteLine("  new workspace <dir>    (a workspace, with a shipped technology copied in)");
+    Console.WriteLine("  new workspace <dir>    (a workspace, with a technology copied in)");
     Console.WriteLine("  new cell <ws> <name>   (a cell folder with its view files)");
     Console.WriteLine("  import part <file>     (a footprint and its symbol, as a cell)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");

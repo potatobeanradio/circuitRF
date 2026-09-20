@@ -32,19 +32,50 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests;
 
-// In CellStatGlobalsCollection: the in-process half of these gates calls CellCreate,
+// Two process-globals, one collection. The in-process half of these gates calls CellCreate,
 // CellFolder.ResolvePrimary and ComponentImport.Import, and CellFolder routes every filesystem call
-// through CellStat's PROCESS-GLOBAL counter. Left out of the collection this class turns SL4's exact
-// count assertions red — which is a statement about the scheduler, not about either test. See
-// CellStatGlobalsCollection's own note: adding classes to this assembly is exactly what has made that
-// happen before.
-[Collection(CellStatGlobalsCollection.Name)]
-public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposable
+// through CellStat's PROCESS-GLOBAL counter — which is why this class was in CellStatGlobalsCollection.
+// It also redirects the per-user STATE DIRECTORY now (see StateDir), and that is a second global with
+// one slot: a concurrent class moving it makes the byte-for-byte comparisons compare two different
+// installations. UserStateDirectoryCollection is DisableParallelization, so it subsumes the first
+// collection's promise rather than trading it away.
+[Collection(UserStateDirectoryCollection.Name)]
+public sealed class AuthoringCliVerbTests : IDisposable
 {
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), "crf-authoring-" + Guid.NewGuid().ToString("N")[..12]);
 
-    public void Dispose() { try { Directory.Delete(_root, true); } catch { /* best effort */ } }
+    /// <summary>
+    /// A throwaway per-user state directory, for BOTH halves of every gate here.
+    ///
+    /// <para><b>It became necessary when the default technology stopped being a constant.</b> It is
+    /// the user's own choice now (Settings ▸ Technology), read out of <c>preferences.json</c> by
+    /// <c>TechnologyCatalog</c>, and <c>TechnologyCatalog.UserDirectory</c> can hold technologies the
+    /// shipped list does not. Without this, "the verb writes what the GUI's call writes" would be
+    /// compared between a child process reading the DEVELOPER's preferences and an in-process call
+    /// reading them too — agreeing by luck on a machine that had never opened the tab, and failing on
+    /// one that had. Redirected, both see a first-launch installation.</para>
+    ///
+    /// <para>In-process through <see cref="CircuitRF.Ui.AppDataRoot"/> (which also drops the caches
+    /// resolved against the old location) and out-of-process through <c>CRF_STATE_DIR</c>, which is
+    /// what that variable exists for — <c>RunCli</c> sets it on every launch.</para>
+    /// </summary>
+    private string StateDir => Path.Combine(_root, "state");
+
+    private readonly ITestOutputHelper _output;
+
+    public AuthoringCliVerbTests(ITestOutputHelper output)
+    {
+        _output = output;
+        Directory.CreateDirectory(StateDir);
+        CircuitRF.Ui.AppDataRoot.RedirectTo(StateDir);
+    }
+
+    public void Dispose()
+    {
+        CircuitRF.Ui.AppDataRoot.RedirectTo(null);
+        try { Directory.Delete(_root, true); } catch { /* best effort */ }
+    }
 
     private string Dir(string name)
     {
@@ -90,11 +121,21 @@ public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposabl
     }
 
     /// <summary>R-aut3-3: no <c>--tech</c> selects what the New Workspace dialog pre-selects. A
-    /// headless default that differs from the dialog's is a second product.</summary>
+    /// headless default that differs from the dialog's is a second product.
+    ///
+    /// <para><b>Both sides are <see cref="TechnologyCatalog.DefaultId"/> now</b>, which is the whole
+    /// point of the rule rather than a weaker version of it: the dialog's pre-selection is the user's
+    /// own choice since Settings ▸ Technology, and a verb still naming
+    /// <c>ShippedTechnologies.DefaultId</c> would have gone on creating workspaces on circuitRF's
+    /// default while the dialog beside it opened on theirs. That this state directory is a fresh one
+    /// is what makes the second assertion below say something: with no preference recorded, the
+    /// catalog's answer IS the shipped one.</para>
+    /// </summary>
     [Fact]
     public void NewWorkspace_DefaultTechnologyIsTheOneTheDialogPreSelects()
     {
-        Assert.Equal(ShippedTechnologies.DefaultId, WorkspaceCreate.DefaultTechnologyId);
+        Assert.Equal(TechnologyCatalog.DefaultId, WorkspaceCreate.DefaultTechnologyId);
+        Assert.Equal(ShippedTechnologies.DefaultId, TechnologyCatalog.DefaultId);
 
         string ws = Path.Combine(Dir("dflt"), "Amp");
         Assert.Equal(0, RunCli("new", "workspace", ws).ExitCode);
@@ -256,7 +297,7 @@ public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposabl
 
         string snp = Path.Combine(ws, "Divider", "divider.s2p");
         var run = RunCli("sparam", cnl, "--freq", "1GHz:1GHz:1GHz", "-o", snp);
-        output.WriteLine(run.StdErr);
+        _output.WriteLine(run.StdErr);
         Assert.Equal(0, run.ExitCode);
         Assert.True(File.Exists(snp), "sparam wrote no Touchstone");
 
@@ -304,7 +345,7 @@ public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposabl
 
         Assert.Equal(1, run.ExitCode);
         Assert.False(Directory.Exists(ws), "a refused creation left a directory behind");
-        foreach (var e in ShippedTechnologies.All)
+        foreach (var e in TechnologyCatalog.All)
             Assert.Contains(e.Id, run.StdErr, StringComparison.Ordinal);
     }
 
@@ -543,8 +584,8 @@ public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposabl
         byte[] expected = File.ReadAllBytes(expectedPath), actual = File.ReadAllBytes(actualPath);
         if (!expected.AsSpan().SequenceEqual(actual))
         {
-            output.WriteLine($"expected ({expectedPath}):\n{File.ReadAllText(expectedPath)}");
-            output.WriteLine($"actual   ({actualPath}):\n{File.ReadAllText(actualPath)}");
+            _output.WriteLine($"expected ({expectedPath}):\n{File.ReadAllText(expectedPath)}");
+            _output.WriteLine($"actual   ({actualPath}):\n{File.ReadAllText(actualPath)}");
         }
         Assert.Equal(expected, actual);
     }
@@ -585,6 +626,11 @@ public sealed class AuthoringCliVerbTests(ITestOutputHelper output) : IDisposabl
         };
         psi.ArgumentList.Add(CliDll());
         foreach (string a in args) psi.ArgumentList.Add(a);
+
+        // The same throwaway per-user state the in-process half is redirected onto — see StateDir.
+        // An unset variable here would have the child read the developer's own preferences, and the
+        // byte-for-byte comparisons would then be comparing two different installations.
+        psi.Environment[CircuitRF.Design.UserStateDirectory.EnvironmentVariable] = StateDir;
 
         using var proc = Process.Start(psi)!;
         var outTask = proc.StandardOutput.ReadToEndAsync();

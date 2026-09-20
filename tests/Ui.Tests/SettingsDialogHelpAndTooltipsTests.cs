@@ -138,15 +138,16 @@ public class SettingsDialogHelpAndTooltipsTests
     {
         string page = Read("docs", "user", "src", "reference", "settings.md");
 
-        foreach (var id in new[] { "settings-general", "settings-security", "settings-revision-control",
-                                   "settings-color-theme", "settings-wirebonds" })
+        foreach (var id in new[] { "settings-general", "settings-technology", "settings-security",
+                                   "settings-revision-control", "settings-color-theme",
+                                   "settings-wirebonds" })
         {
             Assert.Contains(FigureCatalog.Catalog, r => r.Id == id);
             Assert.Contains("{{ui: " + id + "}}", page);
         }
 
         int tabs = Occurrences(Dialog("SettingsView.axaml"), "<TabItem Header=");
-        Assert.Equal(5, tabs);
+        Assert.Equal(6, tabs);
     }
 
     /// <summary>

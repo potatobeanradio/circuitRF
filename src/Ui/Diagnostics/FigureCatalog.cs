@@ -487,7 +487,7 @@ public static class FigureCatalog
         // ── Settings, one figure per tab ──────────────────────────────────────────
         // 720x506 is the dialog's OWN declared size (720x540) less the synthetic title bar, so a
         // reader is looking at the window their own build opens rather than a re-proportioned one.
-        // The tab strip is in every figure: it is how the page's five sections are told apart.
+        // The tab strip is in every figure: it is how the page's six sections are told apart.
 
         new("settings-general", DocSettingsFixtures.General,
             DocSettingsFixtures.Width, DocSettingsFixtures.Height,
@@ -495,6 +495,13 @@ public static class FigureCatalog
             "Settings, General: what circuitRF does on launch, how a copied picture is coloured, "
           + "whether an export is design-rule checked first, and how the Messages panel stamps its "
           + "lines. Help at the leading edge of the footer opens this chapter."),
+
+        new("settings-technology", DocSettingsFixtures.Technology,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, Technology: every technology File > New Workspace offers, what the selected "
+          + "one is made of, and which one new workspaces open on. Your own .ctech files are added "
+          + "here and are offered from then on; the ones circuitRF ships cannot be removed."),
 
         new("settings-security", DocSettingsFixtures.Security,
             DocSettingsFixtures.Width, DocSettingsFixtures.Height,

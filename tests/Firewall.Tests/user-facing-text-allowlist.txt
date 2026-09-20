@@ -655,7 +655,7 @@ src/Design/Symbol/SymbolPersistence.cs|Failed to deserialize .csym file.
 src/Design/Layout/ShippedTechnologies.cs|Embedded technology resource \"{entry.ResourceName}\" not found.
 src/Design/Layout/ShippedTechnologies.cs|No shipped technology named \"{id}\".
 src/Design/Workspace/WorkspaceCreate.cs|A folder named '{name}' already exists at that location.
-src/Design/Workspace/WorkspaceCreate.cs|No shipped technology named '{id}'. The shipped technologies are: 
+src/Design/Workspace/WorkspaceCreate.cs|No technology named '{id}'. The available technologies are: 
 
 # ReferenceLibrary's one sentence is the SAME case as ShippedTechnologies' first, one brief later
 # (brief-automation-6-reference-and-components.md R-aut6-5): a missing embedded stream means the

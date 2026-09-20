@@ -1,5 +1,68 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## User-installed technologies: the middle rung the resolution chain never had (2026-09-20)
+
+`TechnologyCatalog` + `TechnologySummary` in `src/Design/Layout`, and the Settings ▸ Technology tab
+above them. A user's own `.ctech` in `<per-user state>/technologies` is now an ordinary member of the
+list a new workspace is created from, and which member is the default is a preference rather than a
+`const`. Gated by `tests/Ui.Tests/TechnologyCatalogTests.cs` (11 tests, ~100 ms).
+
+**1. Dropping a `.ctech` beside the executable had never done anything, and could not have.**
+`ShippedTechnologies.Discover` enumerates `Assembly.GetManifestResourceNames()` — EmbeddedResource
+manifest names, not a directory — and nothing anywhere scanned `AppContext.BaseDirectory`, the `.app`
+bundle or `LocalApplicationData` for a technology. What made this worth fixing rather than
+documenting is that the same resolution chain already existed twice: `ThemeResolver.UserThemesDir`
+and `TemplateManager.UserTemplatesDir` both go workspace → per-user → embedded. Technologies were the
+one asset kind with the middle rung missing.
+
+**2. A second type, not a wider `ShippedTechnologies`.** That type means exactly one thing — what
+this binary carries — and its "ship" gate test, its `TechPersistence` round-trip test and a dozen
+fixtures across `Ui.Tests` depend on that meaning. Widening it would have made the gate that proves
+circuitRF's own five technologies parse depend on what is in somebody's home directory.
+
+**3. `WorkspaceCreate.DefaultTechnologyId` had to stop being a `const`.** It was
+`public const string DefaultTechnologyId = ShippedTechnologies.DefaultId`, and a constant is folded
+at every call site at compile time — so every caller would have gone on naming the shipped default
+while the dialog beside it opened on the user's choice, with nothing to see. It is a static property
+now.
+
+**4. The preference is READ below the firewall and WRITTEN above it**, which is
+`RevisionIdentity`'s arrangement and was adopted for its reason. `circuitrf new workspace` with no
+`--tech` must create what the dialog would (R-aut3-3), so `TechnologyCatalog.DefaultId` reads
+`preferences.json` directly — reading a JSON file in the per-user directory crosses no firewall.
+Writing goes through `AppPreferencesIo`, which holds the one in-process copy and writes the file
+whole; a second writer down here would silently drop whatever another window had changed.
+
+**5. An id collision is a REFUSAL, and shadowing was the tempting wrong answer.** A user file whose
+stem matches an installed or shipped id is refused, naming the collision and the remedy. Shadowing
+would let one id mean different bytes on two machines — and the id is what the `.cws` records, what
+`--tech` takes and what the default preference stores, so a design's own history would disagree with
+itself. `TemplateManager` shadows by name; that is defensible for a template, which nothing refers to
+by id afterwards, and wrong here.
+
+**6. A removed default falls back and is deliberately NOT cleaned up.** `DefaultId` answers the
+shipped default when the preference names nothing installed, so deleting a file cannot break File ▸
+New Workspace. The preference keeps naming it, so re-adding the same file restores the choice instead
+of having silently forgotten it. `PreferredDefaultId()` is the unfiltered read, for the one caller
+that needs to tell "never chosen" from "chose one that has gone".
+
+**7. Nothing is cached.** The Settings tab adds and removes files in that directory while the
+application is running, and a cache would need invalidating from each of those places. `All` parses a
+handful of small JSON files per call, which is what `NewWorkspaceDialog` already did on every open —
+and it now parses FEWER, because the entry carries the name the combo box displays.
+
+**8. `AuthoringCliVerbTests` had to be pinned to a throwaway state directory.** Its gates compare a
+child process byte for byte against an in-process call; once the default became a preference and the
+catalog could hold user files, both halves were reading the developer's own installation. They agreed
+by luck on a machine that had never opened the tab. In-process through `AppDataRoot.RedirectTo`,
+out-of-process through `CRF_STATE_DIR` set on every `RunCli` launch.
+
+**9. The summary's thickness needed two decimals, not `LayoutUnits.Format`'s four.** A stackup's sum
+carries every entry's rounding: the nominally 20 mil shipped board reads **22.7559 mil** once its two
+1.4 mil coppers are added. The last two digits are arithmetic, not a specification, and this is a
+summary — the technology editor is where the exact figures are.
+
+
 ## The Smith cascade evaluator, and the one sign the design note had backwards (2026-09-19)
 
 Brief 2 of the Smith Chart series: `src/Design/Smith/SmithCascade.cs` and its

@@ -6,7 +6,7 @@
         Title="circuitRF Settings"
         Width="720"
         Height="540"
-        MinWidth="620"
+        MinWidth="720"
         MinHeight="440"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -38,7 +38,17 @@
                  (Those per-header widths also say the four-tab dialog was ALREADY over the line
                  before this tab existed: 656 px against 592. It fitted at the 720 default and spilled
                  as the window narrowed, which is exactly the failure TechEditorView records — nobody
-                 had looked at 620.) -->
+                 had looked at 620.)
+
+                 MinWidth IS 720 BECAUSE OF THE SIXTH HEADER, and that was measured too, on the same
+                 headless harness: with the style below, General/Technology/Security & Permissions/
+                 Revision Control/Color Theme/Wirebonds measure 68/91/158/119/99/85 = 620 px. The old
+                 MinWidth="620" leaves 592 px usable, so the strip overran it by 28 px — and because
+                 the ItemsPanel is a StackPanel the overrun CLIPS rather than wraps, so the symptom
+                 would have been a "Wirebond" header with its last letters missing, at a width the
+                 user chose and nobody tests at. 720 leaves 692 px usable, 72 px spare. The window
+                 can no longer be dragged narrower than its own tab strip, which is the honest
+                 constraint; a seventh header will need this number raised again, or shorter names. -->
             <TabControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -139,6 +149,23 @@
 
                     </StackPanel>
                 </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Technology tab ─────────────────────────────────────────────
+                 Immediately after General, and before the three administrative tabs. What is on it is
+                 about the DESIGNS you make — which technologies File ▸ New Workspace offers, and which
+                 one it opens on — and that is the same kind of thing General is about. Security,
+                 Revision Control and Color Theme are about what the application is permitted to do and
+                 what it looks like; a designer looking for "where do I put my fab's stackup" will not
+                 look under any of them.
+
+                 The controls and their handlers live in TechnologySettingsView, as Revision Control's
+                 do, so this file stays about which tabs exist rather than about what is on them. The
+                 RULES — what is offered, what an id collision means, what the default falls back to —
+                 are below the firewall in TechnologyCatalog, because `circuitrf new workspace` has to
+                 reach the same answers with no display attached. -->
+            <TabItem Header="Technology">
+                <dlg:TechnologySettingsView Margin="0,8,0,0"/>
             </TabItem>
 
             <!-- ── Security & Permissions tab ─────────────────────────────────

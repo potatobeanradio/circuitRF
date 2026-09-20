@@ -373,9 +373,9 @@ internal static class ToolCatalog
                     [new("path", true, "The workspace directory, or its parent when name is given.")],
                     [
                         new("name", "--name", OptKind.Str,  "The workspace name."),
-                        new("tech", "--tech", OptKind.Str,  "A shipped technology id, or none. Default: the one the New Workspace dialog pre-selects."),
+                        new("tech", "--tech", OptKind.Str,  "A technology id, or none. Default: the one the New Workspace dialog pre-selects."),
                     ],
-                    "A workspace, with a shipped technology copied in."),
+                    "A workspace, with a technology copied in."),
                 new("cell", ["new", "cell"],
                     [
                         new("workspace", true,  "The workspace the cell is created in."),

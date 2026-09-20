@@ -491,6 +491,26 @@ public sealed class AppPreferences
     [JsonPropertyName("revision_reclaim_age_days")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? RevisionReclaimAgeDays { get; set; }
+
+    /// <summary>
+    /// Settings ▸ Technology — which technology the New Workspace picker opens pre-selected on, by
+    /// its file-stem id. Null means the user has never chosen, which reads as
+    /// <c>ShippedTechnologies.DefaultId</c>.
+    ///
+    /// <para><b>Written here and read below the firewall.</b> The value is consumed by
+    /// <see cref="CircuitRF.Design.Layout.TechnologyCatalog.DefaultId"/>, which <c>src/Cli</c> reads
+    /// so that <c>circuitrf new workspace</c> with no <c>--tech</c> creates what the dialog would —
+    /// R-aut3-3's rule, which a preference the CLI could not see would have quietly broken. The two
+    /// agree by <c>TechnologyCatalog.DefaultIdPreferenceKey</c>, exactly as the commit identity's two
+    /// keys are shared with <c>RevisionIdentity</c>.</para>
+    ///
+    /// <para><b>An id that no longer names anything is NOT cleaned up here.</b> Removing a technology
+    /// leaves this naming it, and the catalog falls back to the shipped default — so re-installing the
+    /// same file restores the choice rather than silently having forgotten it.</para>
+    /// </summary>
+    [JsonPropertyName(CircuitRF.Design.Layout.TechnologyCatalog.DefaultIdPreferenceKey)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultTechnologyId { get; set; }
 }
 
 public static class AppPreferencesIo

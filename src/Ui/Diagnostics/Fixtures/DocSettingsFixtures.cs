@@ -29,28 +29,40 @@ public static class DocSettingsFixtures
     /// <summary>General: launch behaviour, copy/export, the export-time DRC gate, message timestamps.</summary>
     public static FigureScene General() => Tab(0);
 
+    /// <summary>
+    /// Technology: which technologies File ▸ New Workspace offers, and which one it opens on.
+    ///
+    /// <para><b>Index 1, inserted between General and Security, which is why the four below it
+    /// moved</b> — the same re-pointing RC-4's insertion caused, and caught by the same test. The
+    /// figure shows circuitRF's own four with none installed, because <c>tools/DocGen</c> redirects
+    /// the per-user state directory to a throwaway one: what a reader sees is a first-launch
+    /// installation, not whatever the generating machine has added.</para>
+    /// </summary>
+    public static FigureScene Technology() => Tab(1);
+
     /// <summary>Security &amp; Permissions: what circuitRF may RUN, and what it may FETCH.</summary>
-    public static FigureScene Security() => Tab(1);
+    public static FigureScene Security() => Tab(2);
 
     /// <summary>
     /// Revision Control: which git, who changes are attributed to, what is kept and for how long.
     ///
-    /// <para><b>Index 2, inserted between Security and Color Theme (RC-4 R-rc4-1), which is why the two
-    /// below it moved.</b> These fixtures select a tab by INDEX, so an insertion here silently
+    /// <para><b>Inserted between Security and Color Theme (RC-4 R-rc4-1), which is why the two below
+    /// it moved.</b> These fixtures select a tab by INDEX, so an insertion anywhere above silently
     /// re-points every figure after it — two chapters illustrating the wrong tab, with no test failing
-    /// on the substance. That is what <c>SettingsDialogFiguresShowTheTabTheyClaim</c> now checks.</para>
+    /// on the substance. That is what <c>SettingsDialogFiguresShowTheTabTheyClaim</c> now checks, and
+    /// it is what moved this one from 2 to 3 when the Technology tab arrived.</para>
     ///
     /// <para>Captured with the tab forced visible. The application hides it on a machine with no usable
     /// git (§4.3), and a figure that depended on whether the generating machine had git installed would
     /// not be reproducible.</para>
     /// </summary>
-    public static FigureScene RevisionControl() => Tab(2);
+    public static FigureScene RevisionControl() => Tab(3);
 
     /// <summary>Color Theme: the role list, the RGBA editor and the light/dark variant toggle.</summary>
-    public static FigureScene ColorTheme() => Tab(3);
+    public static FigureScene ColorTheme() => Tab(4);
 
     /// <summary>Wirebonds: the per-user creation defaults, and the built-in wire-clearance rule.</summary>
-    public static FigureScene Wirebonds() => Tab(4);
+    public static FigureScene Wirebonds() => Tab(5);
 
     // ── Shared ────────────────────────────────────────────────────────────────
 

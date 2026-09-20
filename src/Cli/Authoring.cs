@@ -117,9 +117,9 @@ public static class Authoring
         // R-aut3-5: an unknown id is a refusal that lists the valid ones — never a fallback to the
         // default, because a caller that asked for a specific process and silently got another has a
         // wrong design and no way to know.
-        if (techId is not null && ShippedTechnologies.All.All(e => e.Id != techId))
+        if (techId is not null && TechnologyCatalog.Find(techId) is null)
             return JsonRun.Fail(CliDiagnostics.NewUnknownTechnology(
-                techId, string.Join(", ", ShippedTechnologies.All.Select(e => e.Id))));
+                techId, string.Join(", ", TechnologyCatalog.All.Select(e => e.Id))));
 
         // R-aut11-4: a missing PARENT is created, rather than refused. The refusal it replaces was
         // defensible and it was discovered by hitting it — `create` under a path whose parent does

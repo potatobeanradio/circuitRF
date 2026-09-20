@@ -51,13 +51,28 @@ public sealed class NewWorkspaceTechnologyPickerTests
         return File.ReadAllText(Path.Combine(dir!, relativePath));
     }
 
+    /// <summary>
+    /// The combo box is filled from <c>TechnologyCatalog</c> and pre-selects its default.
+    ///
+    /// <para><b>The catalog, no longer <c>ShippedTechnologies</c> directly.</b> Since Settings ▸
+    /// Technology the list is the shipped ones PLUS whatever this installation has installed, and the
+    /// pre-selection is the user's own choice — so a dialog still reading the shipped list would
+    /// silently offer fewer technologies than the machine has and open on circuitRF's default instead
+    /// of theirs. Scanned rather than run because this project calls no Avalonia runtime API; what is
+    /// pinned is which source of truth the dialog reads, which is the property that went wrong.</para>
+    /// </summary>
     [Fact]
-    public void NewWorkspaceDialog_PopulatesComboFromShippedTechnologies_DefaultsToDefaultId()
+    public void NewWorkspaceDialog_PopulatesComboFromTheTechnologyCatalog_DefaultsToItsDefaultId()
     {
         string src = ReadRepoFile(Path.Combine("src", "Ui", "Views", "Dialogs", "NewWorkspaceDialog.axaml.cs"));
-        Assert.Contains("ShippedTechnologies.All", src);
-        Assert.Contains("ShippedTechnologies.DefaultId", src);
+        Assert.Contains("TechnologyCatalog.All", src);
+        Assert.Contains("TechnologyCatalog.DefaultId", src);
         Assert.Contains("TechCombo.ItemsSource", src);
+
+        // Not the shipped list, and not a second pre-selection rule beside the catalog's.
+        Assert.DoesNotContain("ShippedTechnologies.All", src);
+        Assert.DoesNotContain("ShippedTechnologies.DefaultId", src);
+
         // No more radio-button trio for technology choice.
         Assert.DoesNotContain("NewWorkspaceTechChoice", src);
         Assert.DoesNotContain("StarterTechnologies", src);

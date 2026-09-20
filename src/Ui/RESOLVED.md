@@ -1,5 +1,33 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Settings ▸ Technology: the sixth tab, and the strip that no longer fits at 620 (2026-09-20)
+
+`TechnologySettingsView` + `RemoveTechnologyDialog`, and one figure. The rules are all in
+`TechnologyCatalog` below the firewall — see `src/Design/RESOLVED.md` for those. Three findings here.
+
+**1. The tab strip was already at its limit, and the sixth header broke it — by CLIPPING, not
+wrapping.** `SettingsView.axaml`'s own comment records that the five headers measure 529 px against
+the 592 px usable at `MinWidth="620"`, 63 px spare. Measured on a throwaway headless harness
+(`AppBuilder.Configure<..>().UseSkia().UseHeadless(...)`, `TabItem.DesiredSize.Width`), the six are
+General 68 / Technology 91 / Security & Permissions 158 / Revision Control 119 / Color Theme 99 /
+Wirebonds 85 = **620 px**, which overruns 592 by 28. Because the `ItemsPanel` is a `StackPanel` — the
+fix for the ORIGINAL wrap bug — the overrun clips instead of wrapping, so the symptom would have been
+a "Wirebond" header with its last letters gone, at a width the user chose and nobody tests at.
+`MinWidth` is 720, leaving 72 px spare. A seventh header needs this raised again, or shorter names.
+
+**2. The "Default" chip was invisible exactly when it was being looked at.** It was a
+`ThemeAccentBrush`-filled border, and the list opens with the default row SELECTED — an accent fill on
+an accent background. Outlined now (`BorderThickness="1"` + `ThemeBorderMidBrush`, inherited
+foreground), which reads in both variants and on both states. Caught by rasterising the generated
+figure, not by reading the XAML.
+
+**3. The tab sits at INDEX 1, which re-pointed four `DocSettingsFixtures` figures.** Those fixtures
+select a tab by index, so an insertion anywhere above silently makes a chapter illustrate the wrong
+tab with nothing failing on the substance — the exact failure RC-4 recorded and wrote
+`EachSettingsFigureSelectsTheTabItClaimsToShow` for. That test did its job: it is what stopped this
+landing without its figure and its chapter section.
+
+
 ## Smith Chart, round four — overlays move to the Plot Properties inspector (2026-09-19)
 
 Owner instruction: remove the Overlays panel; overlay S-parameter data sources are added through the

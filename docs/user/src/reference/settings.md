@@ -4,7 +4,7 @@ slug: reference/settings.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Settings
 lede: Every tab of the circuitRF Settings dialog, control by control — what each one changes, when it takes effect, and which of them are shared with harmonicaRF and wBond.
-keywords: preferences, options, configuration, theme, dark mode, colours, colors
+keywords: preferences, options, configuration, theme, dark mode, colours, colors, technology, ctech, stackup, default technology
 ---
 
 <nav class="toc">
@@ -12,6 +12,7 @@ keywords: preferences, options, configuration, theme, dark mode, colours, colors
 <ol>
 <li><a href="#opening">Opening it, and when a change takes effect</a></li>
 <li><a href="#general">General</a></li>
+<li><a href="#technology">Technology</a></li>
 <li><a href="#security">Security &amp; Permissions</a></li>
 <li><a href="#revision-control">Revision Control</a></li>
 <li><a href="#color-theme">Color Theme</a></li>
@@ -43,8 +44,8 @@ watch what it does without closing anything.
 
 <div class="callout note">
 <span class="label">Every tab but Color Theme writes immediately</span>
-<p>A combo box, a checkbox or a number on the <b>General</b>, <b>Security &amp; Permissions</b>,
-<b>Revision Control</b> and <b>Wirebonds</b> tabs is saved the moment you change it. There is no "apply" step, and
+<p>A combo box, a checkbox or a number on the <b>General</b>, <b>Technology</b>, <b>Security &amp;
+Permissions</b>, <b>Revision Control</b> and <b>Wirebonds</b> tabs is saved the moment you change it. There is no "apply" step, and
 <b>Cancel does not undo it</b> — Cancel and Revert act on the colour editor only, which is the one tab
 that edits a live document-like thing you might want to abandon.</p>
 </div>
@@ -95,6 +96,61 @@ The rules themselves, and the panel that lists the violations, are in
 
 **Timestamps** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
 is live; the panel re-renders as you change it.
+
+## Technology {#technology}
+
+{{ui: settings-technology}}
+
+Which technologies **File ▸ New Workspace** offers, and which one it opens on. A technology is a
+`.ctech` file — the drawing layers, the stackup, the design rules and the drafting defaults of one
+board or one process — and it is what a layout is drawn against. The four circuitRF ships are listed
+here, and you can add your own.
+
+| Control | What it does |
+|---|---|
+| **Add…** | Copies a `.ctech` into circuitRF's own technologies folder, so it is offered for every new workspace from then on. Pick several at once and each is reported on its own terms. |
+| **Remove** | Stops offering a technology you added, and deletes circuitRF's copy of it. It asks first. Only your own can be removed; the four circuitRF ships cannot. |
+| **Set as Default** | Makes the selected technology the one the New Workspace picker opens pre-selected on. |
+| **Open Folder** | Opens the folder your technologies live in. A `.ctech` copied there by hand is offered exactly as one added here. |
+
+Selecting a technology shows what it is made of — how many drawing layers it declares, how many
+conductors, dielectrics and vias are in its stackup, what those add up to, how many design rules it
+carries and which units its editors open in. It is enough to tell two boards apart without opening
+either.
+
+<div class="callout note">
+<span class="label">Removing a technology cannot break a design</span>
+<p>Creating a workspace <b>copies</b> the technology into that workspace's own <code>tech/</code>
+folder, and everything in the workspace reads that copy from then on. So this list is about what is
+<i>offered</i>, never about what an existing design depends on — removing one here leaves every
+workspace made with it exactly as it was, and is also why a workspace opens correctly on a machine
+that has never seen the file.</p>
+</div>
+
+<div class="callout note">
+<span class="label">The file name is the id</span>
+<p>A technology's <b>name</b> is what this list displays and comes from inside the file; its
+<b>id</b> is the file's name without the extension, and that is what a workspace records, what
+<code>--tech</code> takes on the command line, and what the default setting stores. Two technologies
+cannot share one — adding a file whose name is already in use is refused, naming the collision,
+rather than one of them quietly shadowing the other. Rename the file you are adding, or remove the
+one that is there.</p>
+</div>
+
+<div class="callout note">
+<span class="label">The default is a pre-selection, not a rule</span>
+<p>Every new workspace can still choose a different technology, or <b>None</b> — a workspace with no
+technology is a supported state, and layouts in it draw on a fallback palette. The default is also
+what <code>circuitrf new workspace</code> uses when it is given no <code>--tech</code>, so the
+command line creates what the dialog would; see {{anchor: cli.html|the command-line chapter}}. If
+you remove the technology you had set as the default, new workspaces go back to circuitRF's own
+until you choose another.</p>
+</div>
+
+To author or edit a technology rather than install one, see
+{{anchor: stackup.html|the stackup chapter}} — the technology editor is where its layers, its stackup
+and its design rules are written, and **File ▸ Save As** from it produces exactly the `.ctech` this
+tab installs.
 
 ## Security &amp; Permissions {#security}
 
@@ -374,7 +430,8 @@ the trailing edge.
 
 One `preferences.json`, in circuitRF's per-user state directory —
 `%LOCALAPPDATA%\circuitRF` on Windows, `~/Library/Application Support/circuitRF` on macOS,
-`~/.local/share/circuitRF` on Linux. Saved themes are `.ccolor` files in a `themes` folder beside it.
+`~/.local/share/circuitRF` on Linux. Saved themes are `.ccolor` files in a `themes` folder beside it, and the technologies you add are
+`.ctech` files in a `technologies` folder beside that.
 
 <div class="callout note">
 <span class="label">One file serves all three applications</span>

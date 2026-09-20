@@ -9,11 +9,11 @@ using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
-/// <summary>One combobox row in the New Workspace dialog's Technology picker — either a shipped
-/// technology (<see cref="Id"/> = its <see cref="ShippedTechnologyEntry.Id"/>) or the synthetic
-/// "None" entry (<see cref="Id"/> = null, R-misc-12). <see cref="ToString"/> is what the ComboBox
-/// displays — its own authored <c>.ctech</c> <c>Name</c> for a real entry, "None" for the synthetic
-/// one.</summary>
+/// <summary>One combobox row in the New Workspace dialog's Technology picker — either a technology
+/// this machine offers (<see cref="Id"/> = its <see cref="TechnologyCatalogEntry.Id"/>, shipped or
+/// user-installed alike) or the synthetic "None" entry (<see cref="Id"/> = null, R-misc-12).
+/// <see cref="ToString"/> is what the ComboBox displays — its own authored <c>.ctech</c> <c>Name</c>
+/// for a real entry, "None" for the synthetic one.</summary>
 public sealed record NewWorkspaceTechItem(string? Id, string DisplayName)
 {
     public override string ToString() => DisplayName;
@@ -23,8 +23,8 @@ public sealed record NewWorkspaceTechItem(string? Id, string DisplayName)
 /// Result returned by NewWorkspaceDialog on OK.  ParentDir is the chosen parent folder;
 /// Name is the validated workspace name.  The workspace folder = ParentDir/Name/ and must
 /// not already exist — the dialog gates OK on this and the caller re-checks at create time.
-/// TechnologyId is the chosen shipped technology's <see cref="ShippedTechnologyEntry.Id"/>, or null
-/// for "None" (docs/sonnet-briefs/brief-misc-termg-units-technologies.md §4, R-misc-11/12).
+/// TechnologyId is the chosen technology's <see cref="TechnologyCatalogEntry.Id"/>, or null for
+/// "None" (docs/sonnet-briefs/brief-misc-termg-units-technologies.md §4, R-misc-11/12).
 /// </summary>
 public sealed record NewWorkspaceResult(string ParentDir, string Name, string? TechnologyId);
 
@@ -48,15 +48,19 @@ public partial class NewWorkspaceDialog : Window
         _parentDir = defaultParentDir;
         UpdateSuggestedName();
 
-        // R-misc-11: all four shipped technologies + "None", defaulting to ShippedTechnologies.
-        // DefaultId (the owner's own choice). Loading all four here (once, per dialog open) just to
-        // read their own authored Name for the combobox label is cheap — four small JSON parses.
-        var items = ShippedTechnologies.All
-            .Select(e => new NewWorkspaceTechItem(e.Id, ShippedTechnologies.Load(e).Name))
+        // R-misc-11: every technology this machine offers + "None", pre-selected on the default.
+        // TechnologyCatalog is the SHIPPED ones plus whatever the user installed under Settings ▸
+        // Technology, and DefaultId is their own choice of which — so this combo box is the one place
+        // that whole feature is FOR, and `circuitrf new workspace` reads the same two through the same
+        // type rather than a headless copy of them.
+        var items = TechnologyCatalog.All
+            .Select(e => new NewWorkspaceTechItem(e.Id, e.Name))
             .ToList();
         items.Add(new NewWorkspaceTechItem(null, "None"));
         TechCombo.ItemsSource = items;
-        TechCombo.SelectedItem = items.FirstOrDefault(i => i.Id == ShippedTechnologies.DefaultId) ?? items[0];
+
+        string defaultId = TechnologyCatalog.DefaultId;
+        TechCombo.SelectedItem = items.FirstOrDefault(i => i.Id == defaultId) ?? items[0];
 
         UpdateView();
         NameBox.Focus();

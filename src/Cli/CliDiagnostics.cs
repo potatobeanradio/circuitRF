@@ -536,12 +536,13 @@ internal static class CliDiagnostics
         "new.name.invalid", DiagnosticSeverity.Error,
         "Invalid {kind} name '{name}': {reason}", ("kind", kind), ("name", name), ("reason", reason));
 
-    /// <summary>R-aut3-5: an unknown shipped-technology id lists the ones that exist. Not a fallback
-    /// to the default — a caller that asked for a specific process and silently got another has a
-    /// wrong design and no way to know.</summary>
+    /// <summary>R-aut3-5: an unknown technology id lists the ones that exist — the shipped ones and
+    /// whatever this machine has installed under Settings ▸ Technology. Not a fallback to the default
+    /// — a caller that asked for a specific process and silently got another has a wrong design and
+    /// no way to know.</summary>
     public static Diagnostic NewUnknownTechnology(string id, string known) => Diagnostic.Create(
         "new.tech.unknown", DiagnosticSeverity.Error,
-        "No shipped technology named '{id}'. The shipped technologies are: {known}. "
+        "No technology named '{id}'. The available technologies are: {known}. "
         + "Use --tech none for a workspace with no technology.", ("id", id), ("known", known));
 
     public static Diagnostic NewParentNotFound(string path) => Diagnostic.Create(

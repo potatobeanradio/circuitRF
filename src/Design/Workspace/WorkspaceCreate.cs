@@ -38,13 +38,15 @@ public sealed record WorkspaceCreateResult(string WorkspaceDir, string CwsPath, 
 public static class WorkspaceCreate
 {
     /// <summary>
-    /// The technology a caller that says nothing gets — <see cref="ShippedTechnologies.DefaultId"/>,
+    /// The technology a caller that says nothing gets — <see cref="TechnologyCatalog.DefaultId"/>,
     /// which is what the New Workspace dialog's combobox opens pre-selected on.
     ///
     /// <para>R-aut3-3: the headless default IS the GUI's default. A headless default that differs
-    /// from the dialog's is a second product.</para>
+    /// from the dialog's is a second product. <b>It stopped being a <c>const</c> when the default
+    /// became something the user chooses</b> (Settings ▸ Technology): a constant folded at compile
+    /// time would have gone on naming the shipped one in every caller that read it, silently.</para>
     /// </summary>
-    public const string DefaultTechnologyId = ShippedTechnologies.DefaultId;
+    public static string DefaultTechnologyId => TechnologyCatalog.DefaultId;
 
     /// <summary>
     /// R-sl2-13's rule, in one place: the refusal sentence for creating into a directory that cannot
@@ -57,24 +59,25 @@ public static class WorkspaceCreate
             : null;
 
     /// <summary>
-    /// R-aut3-5: resolves a shipped-technology id, or throws naming the ones that exist.
+    /// R-aut3-5: resolves a technology id — shipped or user-installed — or throws naming the ones
+    /// that exist.
     ///
     /// <para>Not a fallback to the default. A caller that asked for a specific process and silently
     /// got another has a wrong design and no way to know.</para>
     /// </summary>
-    public static ShippedTechnologyEntry ResolveTechnology(string id)
-        => ShippedTechnologies.All.FirstOrDefault(e => e.Id == id)
+    public static TechnologyCatalogEntry ResolveTechnology(string id)
+        => TechnologyCatalog.Find(id)
            ?? throw new ArgumentException(
-               $"No shipped technology named '{id}'. The shipped technologies are: "
-               + string.Join(", ", ShippedTechnologies.All.Select(e => e.Id)) + ".",
+               $"No technology named '{id}'. The available technologies are: "
+               + string.Join(", ", TechnologyCatalog.All.Select(e => e.Id)) + ".",
                nameof(id));
 
     /// <summary>
     /// Creates the workspace: the directory, the optional technology copy, and the <c>.cws</c>.
     /// </summary>
     /// <param name="technologyId">
-    /// A <see cref="ShippedTechnologies"/> id, or null for a workspace with no technology. Unknown
-    /// ids throw (R-aut3-5).
+    /// A <see cref="TechnologyCatalog"/> id — shipped or user-installed — or null for a workspace
+    /// with no technology. Unknown ids throw (R-aut3-5).
     /// </param>
     /// <exception cref="IOException">
     /// R-aut3-6: the target already exists. <see cref="WorkspaceLock"/>'s own header explains what is
@@ -103,7 +106,7 @@ public static class WorkspaceCreate
             var techDir = Path.Combine(workspaceDir, "tech");
             Directory.CreateDirectory(techDir);
             techPath = Path.Combine(techDir, entry.Id + ".ctech");
-            File.WriteAllText(techPath, ShippedTechnologies.LoadRawJson(entry));
+            File.WriteAllText(techPath, TechnologyCatalog.LoadRawJson(entry));
             cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
         }
 

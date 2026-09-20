@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+             x:Class="CircuitRF.Ui.Views.Dialogs.TechnologySettingsView">
+
+    <!--
+      Settings > Technology. The technologies a NEW WORKSPACE can be created from, and which of them
+      the New Workspace picker opens pre-selected on.
+
+      It is a per-USER tab, like Wirebonds: a technology installed here is offered for every workspace
+      this installation creates, and a workspace someone sends you neither adds one nor takes one away.
+      What a workspace already holds is its own copy in its own tech/ folder, which is why removing a
+      technology here cannot break a design that was made with it.
+
+      One list for both origins, deliberately. The shipped four and the user's own are the same kind of
+      thing at the moment a workspace is created - the id is what the .cws records either way - so a
+      picker that separated them would be describing where the bytes came from rather than what can be
+      chosen. Which is which is a subtitle, and only the user's own can be removed.
+    -->
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+
+        <!-- Heading and what the tab is for -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,10">
+            <TextBlock Text="Technologies" FontSize="11" FontWeight="SemiBold" Opacity="0.55"/>
+            <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                       Text="The technologies File &#9656; New Workspace offers, and the one it opens on. Add your own .ctech - a fab's stackup, or one saved from the technology editor - and it is offered from then on. A new workspace gets its own copy of whichever you choose, so removing one here never changes a design that already exists."/>
+        </StackPanel>
+
+        <!-- The list, and what the selected one is -->
+        <Grid Grid.Row="1" ColumnDefinitions="300,12,*">
+
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource ThemeBorderMidBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    ClipToBounds="True">
+                <ListBox Name="TechList"
+                         SelectionMode="Single"
+                         SelectionChanged="OnSelectionChanged"
+                         Padding="2">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="dialogs:TechnologyRowModel">
+                            <Grid ColumnDefinitions="*,Auto" Margin="2,3">
+                                <StackPanel Grid.Column="0" Spacing="1">
+                                    <TextBlock Text="{Binding Name}" FontSize="12"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="10.5" Opacity="0.55"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <!-- OUTLINED, not filled. A ThemeAccentBrush fill disappears the
+                                     moment the default row is also the SELECTED row, which is the
+                                     state this list opens in — so the one marker the list carries was
+                                     invisible exactly when it was being looked at. A border and the
+                                     inherited foreground read on both. -->
+                                <Border Grid.Column="1"
+                                        IsVisible="{Binding IsDefault}"
+                                        VerticalAlignment="Center"
+                                        Margin="6,0,2,0" Padding="5,1"
+                                        CornerRadius="3"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource ThemeBorderMidBrush}">
+                                    <TextBlock Text="Default" FontSize="9.5" FontWeight="SemiBold"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="10">
+
+                    <TextBlock Name="DetailName" FontSize="13" FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+
+                    <Grid Name="DetailGrid" ColumnDefinitions="110,*"
+                          RowDefinitions="Auto,4,Auto,4,Auto,4,Auto,4,Auto,4,Auto,4,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Id:"             FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Name="DetailId"        FontSize="12" TextWrapping="Wrap"
+                                   FontFamily="Courier New,Consolas,monospace"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Source:"         FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Name="DetailSource"    FontSize="12" TextWrapping="Wrap"/>
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Drawing layers:" FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Name="DetailLayers"    FontSize="12"/>
+
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Stackup:"        FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="6" Grid.Column="1" Name="DetailStackup"   FontSize="12" TextWrapping="Wrap"/>
+
+                        <!-- Its own row rather than a tail on Stackup's (owner, 2026-09-20). What the
+                             stack is MADE of and what it MEASURES are two different questions, and
+                             the second is the one somebody scanning this list for the right board is
+                             usually asking. -->
+                        <TextBlock Grid.Row="8" Grid.Column="0" Text="Thickness:"      FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="8" Grid.Column="1" Name="DetailThickness" FontSize="12"/>
+
+                        <TextBlock Grid.Row="10" Grid.Column="0" Text="Design rules:"  FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="10" Grid.Column="1" Name="DetailRules"    FontSize="12"/>
+
+                        <TextBlock Grid.Row="12" Grid.Column="0" Text="Units:"         FontSize="12" Opacity="0.7"/>
+                        <TextBlock Grid.Row="12" Grid.Column="1" Name="DetailUnits"    FontSize="12"/>
+                    </Grid>
+
+                    <TextBlock Name="DetailNotice" FontSize="11" Opacity="0.7"
+                               TextWrapping="Wrap" IsVisible="False"/>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+            <Button Name="AddButton" Content="Add..." FontSize="12" Padding="8,4"
+                    Click="OnAddClick"
+                    ToolTip.Tip="Copies a .ctech file into circuitRF's own technologies folder, so it is offered for every new workspace from now on. The file name becomes the technology's id, which is what a workspace records - so it cannot be one a technology already uses."/>
+            <Button Name="RemoveButton" Content="Remove" FontSize="12" Padding="8,4"
+                    Click="OnRemoveClick"
+                    ToolTip.Tip="Stops offering a technology you added, and deletes circuitRF's copy of it. Workspaces already created keep their own copy and are unaffected. The technologies circuitRF ships cannot be removed."/>
+            <Button Name="DefaultButton" Content="Set as Default" FontSize="12" Padding="8,4"
+                    Click="OnSetDefaultClick"
+                    ToolTip.Tip="Makes this the technology File &#9656; New Workspace opens pre-selected on, and the one circuitrf new workspace uses when it is given no --tech. It is still only a pre-selection: every new workspace can choose something else, or None."/>
+            <Button Name="FolderButton" Content="Open Folder" FontSize="12" Padding="8,4"
+                    Click="OnOpenFolderClick"
+                    ToolTip.Tip="Opens the folder circuitRF keeps your own technologies in. A .ctech copied in there by hand is offered exactly as one added here."/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="3" Name="StatusText" FontSize="11" Opacity="0.75"
+                   TextWrapping="Wrap" Margin="0,8,0,0" IsVisible="False"/>
+
+    </Grid>
+</UserControl>

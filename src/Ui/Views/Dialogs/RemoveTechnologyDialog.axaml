@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.RemoveTechnologyDialog"
+        Title="Remove technology"
+        Width="460"
+        SizeToContent="Height"
+        MinHeight="170"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!--
+      The confirmation for Settings > Technology > Remove, built on ReclaimSpaceDialog's shape and for
+      the same two reasons.
+
+        WHAT IS DESTROYED - circuitRF's copy of a file the user supplied, named by its path. circuitRF
+        is not where that file came from and may hold the only copy left, which is what makes this
+        worth asking about at all.
+
+        WHAT SURVIVES - every workspace already created with it, because each holds its own copy in
+        its own tech/ folder. Without that sentence this reads as "delete my stackup?", which is the
+        thing it specifically is not.
+
+      The default button is CANCEL, as it is there: a return key pressed at the wrong moment must not
+      be the gesture that deletes somebody's only copy of a fab's stackup.
+    -->
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="10">
+            <TextBlock x:Name="HeadlineLabel" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="DestroysLabel" FontSize="12" TextWrapping="Wrap"/>
+            <TextBlock x:Name="DefaultLabel"  FontSize="12" TextWrapping="Wrap" IsVisible="False"/>
+            <TextBlock x:Name="SurvivesLabel" FontSize="12" Opacity="0.75" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,16,0,0">
+            <Button Content="Cancel" Width="90" FontSize="12"
+                    IsCancel="True" IsDefault="True"
+                    HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Remove" Width="110" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnRemoveClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

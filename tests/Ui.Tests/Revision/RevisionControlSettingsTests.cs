@@ -60,14 +60,19 @@ public class RevisionControlSettingsTests
     // ── Gate 1: order and position ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The fifth tab is at INDEX 2, headed "Revision Control", immediately after Security &amp;
+    /// Revision Control is headed "Revision Control" and sits immediately after Security &amp;
     /// Permissions (R-rc4-1, owner 2026-09-06).
+    ///
+    /// <para>Its INDEX moved from 2 to 3 when the Technology tab was inserted after General, which is
+    /// why this asserts the whole strip rather than one position: the property is the ORDER, and a
+    /// test naming one number would have to be rewritten by anyone who added a tab anywhere above.</para>
     /// </summary>
     [Fact]
-    public void TheTabIsAtIndexTwoImmediatelyAfterSecurityAndPermissions()
+    public void TheTabIsImmediatelyAfterSecurityAndPermissions()
     {
         Assert.Equal(
-            ["General", "Security & Permissions", "Revision Control", "Color Theme", "Wirebonds"],
+            ["General", "Technology", "Security & Permissions", "Revision Control", "Color Theme",
+             "Wirebonds"],
             TabHeaders());
     }
 
@@ -135,6 +140,7 @@ public class RevisionControlSettingsTests
         var expected = new (string Method, string Header)[]
         {
             ("General",         "General"),
+            ("Technology",      "Technology"),
             ("Security",        "Security & Permissions"),
             ("RevisionControl", "Revision Control"),
             ("ColorTheme",      "Color Theme"),
@@ -160,10 +166,10 @@ public class RevisionControlSettingsTests
         => Assert.Contains("ShowAsAvailableForCapture",
                            StripCode(Read("src", "Ui", "Diagnostics", "Fixtures", "DocSettingsFixtures.cs")));
 
-    // ── Gate 4: five figures, five citations ─────────────────────────────────────────────────────
+    // ── Gate 4: one figure and one citation per tab ──────────────────────────────────────────────
     // (SettingsDialogHelpAndTooltipsTests.EveryTabOfTheDialogHasItsOwnFigureAndThePageCitesThemAll was
     //  EXTENDED to five rather than relaxed — that test doing its job is why the tab could not land
-    //  without its figure and its chapter section.)
+    //  without its figure and its chapter section, and it is why the Technology tab could not either.)
 
     /// <summary>The new figure exists in the catalogue and the chapter has a section for the tab.</summary>
     [Fact]
