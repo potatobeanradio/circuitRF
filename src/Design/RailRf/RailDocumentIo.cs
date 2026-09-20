@@ -243,6 +243,18 @@ public static class RailDocumentIo
         // what makes every .crail written before this flag existed read exactly as it did — and
         // what keeps the ordinary document free of a line saying nothing.
         Mounted                   = p.Mounted ? null : false,
+
+        // brief 25, and the SAME rule: absent means SHUNT, and absent means DOWNSTREAM. Every
+        // .crail written before a series element existed reads exactly as it did, and an ordinary
+        // decoupling row is not given two lines saying what it already is.
+        Connection                = p.Connection == RailPartConnection.Shunt ? null : p.Connection,
+        TerminalA                 = p.TerminalA is { } ta ? ToFile(ta) : null,
+        TerminalB                 = p.TerminalB is { } tb ? ToFile(tb) : null,
+        DcResistanceOhms          = p.DcResistanceOhms,
+        SeriesResistanceOhms      = p.SeriesResistanceOhms,
+        SeriesInductanceHenries   = p.SeriesInductanceHenries,
+        TouchstoneRef             = NullIfEmpty(p.TouchstoneRef),
+        Side                      = p.Side == RailSection.Downstream ? null : p.Side,
     };
 
     private static CrailTarget? ToFile(RailTarget? t) => t is null ? null : new CrailTarget
@@ -379,6 +391,18 @@ public static class RailDocumentIo
         MountingInductanceHenries = p.MountingInductanceHenries,
         Origin                    = p.Origin,
         Mounted                   = p.Mounted ?? true,
+
+        // brief 25. ABSENT READS AS SHUNT and ABSENT READS AS DOWNSTREAM, which is what makes every
+        // .crail written before this unchanged. The terminals read back through the ONE anchor
+        // reader, so a series terminal and a load port agree about what "both or neither" means.
+        Connection                = p.Connection ?? RailPartConnection.Shunt,
+        TerminalA                 = p.TerminalA is null ? null : FromFile(p.TerminalA),
+        TerminalB                 = p.TerminalB is null ? null : FromFile(p.TerminalB),
+        DcResistanceOhms          = p.DcResistanceOhms,
+        SeriesResistanceOhms      = p.SeriesResistanceOhms,
+        SeriesInductanceHenries   = p.SeriesInductanceHenries,
+        TouchstoneRef             = p.TouchstoneRef,
+        Side                      = p.Side ?? RailSection.Downstream,
     };
 
     private static RailTarget? FromFile(CrailTarget? t) => t is null ? null : new RailTarget
@@ -554,6 +578,30 @@ public static class RailDocumentIo
 
         /// <summary>Null — the ordinary case — means MOUNTED. See <see cref="RailPart.Mounted"/>.</summary>
         public bool?           Mounted                   { get; set; }
+
+        /// <summary>Null — the ordinary case — means SHUNT. See <see cref="RailPart.Connection"/>.</summary>
+        public RailPartConnection? Connection              { get; set; }
+
+        /// <summary>The series element's two rail-side terminals. Null on a shunt part.</summary>
+        public CrailAnchor?    TerminalA                 { get; set; }
+
+        /// <summary>The other one.</summary>
+        public CrailAnchor?    TerminalB                 { get; set; }
+
+        /// <summary>OHMS. Null is UNSTATED, never zero — see <see cref="RailPart.DcResistanceOhms"/>.</summary>
+        public double?         DcResistanceOhms          { get; set; }
+
+        /// <summary>OHMS, of the R-L model over frequency — a different number from the DCR.</summary>
+        public double?         SeriesResistanceOhms      { get; set; }
+
+        /// <summary>HENRIES, of the same model.</summary>
+        public double?         SeriesInductanceHenries   { get; set; }
+
+        /// <summary>The element's own measured impedance, relative to the <c>.crail</c>.</summary>
+        public string?         TouchstoneRef             { get; set; }
+
+        /// <summary>Null — the ordinary case — means DOWNSTREAM. See <see cref="RailPart.Side"/>.</summary>
+        public RailSection?    Side                      { get; set; }
     }
 
     /// <summary>One target of any of the four kinds. <see cref="Kind"/> says which, and exactly the

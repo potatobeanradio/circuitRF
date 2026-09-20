@@ -65,11 +65,27 @@ public sealed class RailPartModelSet
     /// loop intact — that surviving number is the whole difference between unmounting a part and
     /// deleting it, and it is what makes putting it back give the answer it gave before.
     /// </remarks>
-    public IReadOnlyList<RailPartModel> Mounted => [.. Models.Where(m => m.Mounted)];
+    /// <remarks>
+    /// <b>And it is the SHUNT bank</b> (brief 25, R-rail25-1a). The one series element a rail may
+    /// carry is not a decoupling capacitor: its model is <see cref="RailSeriesModel"/>, built from
+    /// the document row's own R-L or measured file, and it reaches the sweep as the branch BETWEEN
+    /// the rail's two nodes rather than as one more branch hanging off one. Counting it here would
+    /// report a ferrite as an unresolved capacitor in every headline number below.
+    /// </remarks>
+    public IReadOnlyList<RailPartModel> Mounted =>
+        [.. Models.Where(m => m.Mounted && !m.IsSeries)];
+
+    /// <summary>The series element's own model, or null — <b>carried so a caller can see it was
+    /// separated rather than dropped</b>. Its numbers come from <see cref="RailSeriesModel"/>, not
+    /// from here.</summary>
+    public RailPartModel? Series => Models.FirstOrDefault(m => m.IsSeries);
 
     /// <summary>The parts deliberately left off the board. Named on the result, because a curve
-    /// that silently lost a bulk capacitor is the one thing this feature must not produce.</summary>
-    public IReadOnlyList<RailPartModel> Unmounted => [.. Models.Where(m => !m.Mounted)];
+    /// that silently lost a bulk capacitor is the one thing this feature must not produce.
+    /// <b>Shunt only</b>: unmounting a SERIES element opens the rail and is refused rather than
+    /// reported (R-rail25-3c).</summary>
+    public IReadOnlyList<RailPartModel> Unmounted =>
+        [.. Models.Where(m => !m.Mounted && !m.IsSeries)];
 
     /// <summary>Parts the library has no row for at all. Brief 7 lists them AS UNRESOLVED.
     /// <b>Over the MOUNTED set</b>: an unmounted part contributes nothing, so its data problem is
@@ -269,20 +285,20 @@ public sealed class RailPartResolver
     {
         if (part.MountingInductanceHenries is { } typed)
             return Resolve(part.PartNumber, railVoltageV, typed, part.Refdes,
-                           RailMountingBasis.Typed, part.Mounted);
+                           RailMountingBasis.Typed, part.Mounted, part.Connection);
 
         if (computedMountingHenries is not null &&
             part.Refdes is { Length: > 0 } refdes &&
             computedMountingHenries.TryGetValue(refdes, out double computed))
             return Resolve(part.PartNumber, railVoltageV, computed, part.Refdes,
-                           RailMountingBasis.ComputedFromGeometry, part.Mounted);
+                           RailMountingBasis.ComputedFromGeometry, part.Mounted, part.Connection);
 
         // R-rail23-1b: an unmounted part is resolved EXACTLY as a mounted one — same library row,
         // same file, same mounting loop off the same via geometry — and carries the flag. Resolving
         // it differently, or not at all, is what would make re-mounting it give a different answer
         // from the one it gave before.
         return Resolve(part.PartNumber, railVoltageV, null, part.Refdes,
-                       RailMountingBasis.Typed, part.Mounted);
+                       RailMountingBasis.Typed, part.Mounted, part.Connection);
     }
 
     /// <summary>R-rail11-1, by part number.</summary>
@@ -292,22 +308,28 @@ public sealed class RailPartResolver
     /// <param name="refdes">The instance this is of, where it is of one.</param>
     /// <param name="mounted">Whether the part is fitted (R-rail23-1a). A bare part number is
     /// mounted by construction — there is no instance for anyone to have unmounted.</param>
+    /// <param name="connection">Shunt or series (brief 25, R-rail25-1a). <b>Carried, not
+    /// modelled</b>: a series element's impedance over frequency is its own row's R-L or its own
+    /// measured file (<see cref="RailSeriesModel"/>), never the library's capacitor arithmetic —
+    /// what this flag does is keep it out of the shunt bank and out of every count that is about
+    /// one, so a ferrite with no library row does not report as an unresolved capacitor.</param>
     public RailPartModel Resolve(
         string partNumber, double? railVoltageV,
         double? mountingInductanceHenries = null, string? refdes = null,
         RailMountingBasis mountingBasis = RailMountingBasis.Typed,
-        bool mounted = true)
+        bool mounted = true,
+        RailPartConnection connection = RailPartConnection.Shunt)
     {
         var resolution = _library.ResolveModel(partNumber);
 
         if (resolution.Row is not { } row)
             return Unresolved(partNumber, refdes, mountingInductanceHenries, mountingBasis, mounted,
                 $"'{partNumber}' is not in the part library, so railRF has no C, no f₀ and no " +
-                "dielectric class for it. Nothing about it is defaulted.");
+                "dielectric class for it. Nothing about it is defaulted.", connection);
 
         return resolution.Source == PartModelSource.AttachedFile
-            ? FromFile(row, resolution, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted)
-            : FromRow(row, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted);
+            ? FromFile(row, resolution, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted, connection)
+            : FromRow(row, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted, connection);
     }
 
     /// <summary>
@@ -342,7 +364,8 @@ public sealed class RailPartResolver
 
     private static RailPartModel FromRow(
         PartLibraryRow row, double? railVoltageV, double? mountingH, string? refdes,
-        RailMountingBasis mountingBasis, bool mounted = true)
+        RailMountingBasis mountingBasis, bool mounted = true,
+        RailPartConnection connection = RailPartConnection.Shunt)
     {
         var capacitance = RailDerating.Apply(row, railVoltageV);
         var warnings = new List<string>();
@@ -403,6 +426,7 @@ public sealed class RailPartResolver
             StatedEsrOhms             = row.EsrOhms,
             Warnings                  = warnings,
             Mounted                   = mounted,
+            Connection                = connection,
         };
     }
 
@@ -411,7 +435,8 @@ public sealed class RailPartResolver
     private RailPartModel FromFile(
         PartLibraryRow row, PartModelResolution resolution,
         double? railVoltageV, double? mountingH, string? refdes,
-        RailMountingBasis mountingBasis, bool mounted = true)
+        RailMountingBasis mountingBasis, bool mounted = true,
+        RailPartConnection connection = RailPartConnection.Shunt)
     {
         string path = resolution.FilePath ?? row.ModelRef ?? "";
 
@@ -421,7 +446,7 @@ public sealed class RailPartResolver
         // the numbers a parts table shows — with the model source still reported as the file.
         if (!PartLibrary.IsTouchstone(path))
         {
-            var subcircuit = FromRow(row, railVoltageV, mountingH, refdes, mountingBasis, mounted);
+            var subcircuit = FromRow(row, railVoltageV, mountingH, refdes, mountingBasis, mounted, connection);
             return CopyWithSource(subcircuit, PartModelSource.AttachedFile);
         }
 
@@ -429,6 +454,7 @@ public sealed class RailPartResolver
 
         if (measured is null)
             return Unresolved(row.PartNumber, refdes, mountingH, mountingBasis, mounted,
+                connection: connection, reason:
                 $"Part '{row.PartNumber}' attaches the file '{System.IO.Path.GetFileName(path)}', " +
                 "which could not be read" + (readFailure is { } m ? $" ({m})" : "") + ". The file " +
                 "OVERRIDES the row, so railRF did not silently fall back to the row's own C and f₀ " +
@@ -473,6 +499,7 @@ public sealed class RailPartResolver
             Measured                  = measured,
             Warnings                  = warnings,
             Mounted                   = mounted,
+            Connection                = connection,
         };
     }
 
@@ -522,7 +549,8 @@ public sealed class RailPartResolver
 
     private static RailPartModel Unresolved(
         string partNumber, string? refdes, double? mountingH,
-        RailMountingBasis mountingBasis, bool mounted, string reason) =>
+        RailMountingBasis mountingBasis, bool mounted, string reason,
+        RailPartConnection connection = RailPartConnection.Shunt) =>
         new()
         {
             PartNumber                = partNumber,
@@ -536,6 +564,7 @@ public sealed class RailPartResolver
             MountingBasis             = mountingH is not null ? mountingBasis : null,
             Warnings                  = [reason],
             Mounted                   = mounted,
+            Connection                = connection,
         };
 
     private static RailPartModel CopyWithSource(RailPartModel m, PartModelSource source) =>
@@ -558,5 +587,6 @@ public sealed class RailPartResolver
             Measured                  = m.Measured,
             Warnings                  = m.Warnings,
             Mounted                   = m.Mounted,
+            Connection                = m.Connection,
         };
 }

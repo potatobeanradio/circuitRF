@@ -191,10 +191,23 @@ dielectric thickness at once, and a stackup copied from the last board shows up 
   part's own body inductance or the loop area in the plane of the board. On a board whose rail is a
   trace on the same layer as its capacitors — no power via at all — the computed figure is
   structurally low, and typing one is the right answer there.
-- **The series FET and the ferrite are the source's R and L**, not rows of their own. In the lumped
-  model the source is the whole branch feeding the rail node, and this is where a series part lives.
-- **Every observation port on the rail reads the same Z(f).** That is P1's lumped model rather than
-  a defect: there is no copper between the ports in the frequency model, so nothing in it could make
-  them differ. The run says so on its own notes.
+- **The series FET and the ferrite are rolled into the source's R and L *on this example*, and they
+  no longer have to be.** railRF models a series element in its own right: a part row marked
+  *series*, with its two rail-side terminals, its DC resistance and its impedance over frequency
+  (an R-L, or its own Touchstone file). The rail then has a *before* and an *after* — everything
+  upstream of the element sees one impedance and everything downstream sees another — and which
+  side each capacitor and each port is on is **measured off the artwork**, by cutting the rail at
+  the element's two pads and walking, rather than typed. This example keeps the lumped form
+  because that is what its numbers below were computed from; a rail with a ferrite in the middle of
+  it, which is where ferrites go, is the case the lumped form cannot express at all.
+- **Every observation port on the rail reads the same Z(f) — *on a rail with no series element*.**
+  That is P1's lumped model rather than a defect: there is no copper between the ports in the
+  frequency model, so nothing in it could make them differ, and the run says so on its own notes.
+  Put a series element in the rail and the ports genuinely differ, by that element's own impedance
+  at every frequency; the note is then absent, because it would be false.
+- **A ferrite modelled as an R-L is optimistic, and railRF says so on the result.** A bead's
+  impedance is strongly bias-dependent and its datasheet curve is measured at zero DC bias; at a
+  few hundred milliamps the same part is worth a fraction of its marked figure, and the curve looks
+  entirely ordinary. Attach the part's own measured impedance to replace the caveat.
 - **Nothing above about 180 MHz.** The top of the band is a tenth of this plane pair's first cavity
   mode; past that the plane is distributed and the lumped answer is not the right one.

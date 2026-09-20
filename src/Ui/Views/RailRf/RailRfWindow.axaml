@@ -308,6 +308,20 @@
             <Setter Property="Opacity" Value="0.45"/>
         </Style>
 
+        <!-- A SERIES parts row: the element the rail runs THROUGH (brief 25, R-rail25-4a). A
+             series 1 Ω and a shunt 1 Ω do OPPOSITE things to a rail and a table that spelled them
+             the same is a table that will be misread — so the whole row carries a faint accent
+             band. Not dimming and not italic: both of those already mean something else on this
+             table (an unresolved row, and an indicative ESR), and a third meaning on a shared
+             mark is how a reader learns to ignore all three. The two number columns say it in
+             words as well — the capacitance column reads the element's impedance, because it has
+             no capacitance, and the ESR column reads its DCR. -->
+        <Style Selector="Grid.series">
+            <Setter Property="Background">
+                <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.14"/>
+            </Setter>
+        </Style>
+
         <!-- A CHECKBOX SIZED FOR A TABLE ROW, and it brings its own TEMPLATE (owner, 2026-09-20:
              the checkbox dominates the row height; then, sized down, it sat half in the row below).
 
@@ -1624,6 +1638,7 @@
                                         <Grid ColumnDefinitions="20,52,*,96,62,64,92,78,86" Margin="0,1"
                                               Classes.unresolved="{Binding IsUnresolved}"
                                               Classes.unmounted="{Binding IsUnmounted}"
+                                              Classes.series="{Binding IsSeries}"
                                               ToolTip.Tip="{Binding RowTooltip}">
                                             <!-- FITTED, OR NOT. Bound one way and written by the
                                                  handler, because clearing it is an EDIT that goes

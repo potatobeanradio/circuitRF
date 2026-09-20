@@ -227,12 +227,36 @@ public sealed partial class RailRfViewModel
             sources.Add(RailSourceLife.Of(row, i, measured));
         }
 
+        // ── brief 25: the element the rail runs THROUGH, and which side everything is on ──────
+        //
+        // Its own file goes through the SAME reader a part's and a source's do (R-rail25-1b), and
+        // the partition comes off the ARTWORK wherever there is artwork (R-rail25-2a) — the very
+        // walk the DC extraction already did, so the section a part is shaded in on the copper map
+        // is the section its branch is stamped on. With no board the sides are the ROWS' own
+        // (R-rail25-2d), which is what §6's artwork-optional P1 case leaves.
+        RailSeriesModel? series = null;
+        RailSeriesPartition? partition = null;
+
+        if (rail.SeriesElement is { } element)
+        {
+            var measured = element.TouchstoneRef is { Length: > 0 } seriesRef
+                ? resolver.ReadMeasured(ResolveRelative(seriesRef), out _)
+                : null;
+
+            series = RailSeriesModel.Of(element, measured);
+            partition = SeriesRegions(rail) is { } walked
+                ? RailSeriesPartition.FromArtworkRegions(rail, walked, Board?.Pads ?? [])
+                : RailSeriesPartition.Typed(rail);
+        }
+
         return new PdnSweepRequest
         {
-            Rail    = rail,
-            Parts   = resolver.ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail)),
-            Sources = sources,
-            Model   = kind,
+            Rail      = rail,
+            Parts     = resolver.ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail)),
+            Sources   = sources,
+            Series    = series,
+            Partition = partition,
+            Model     = kind,
 
             // The BOARD's units, exactly as BuildRequest passes them to the DC run (owner,
             // 2026-09-19). Without it every port this sweep names — the mask verdict's rows, the
@@ -289,6 +313,23 @@ public sealed partial class RailRfViewModel
 
         return map.Count > 0 ? map : null;
     }
+
+    /// <summary>
+    /// The rail's own galvanic islands, off the last DC answer, or null where none exists yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>Read back off the RESULT rather than walked again</b> (brief 25). The walk is the
+    /// extraction's — <c>PdnRailRegions.Walk</c> through <c>PdnGraphExtractor</c> — and doing it a
+    /// second time here would be a second connectivity model beside the one the DC answer and the
+    /// copper map are built from. Null before the first solve, and the sweep then takes the rows'
+    /// own stated sides, which is exactly what a rail with no artwork gets.
+    /// </remarks>
+    private PdnRailRegionSet? SeriesRegions(RailSpec rail) =>
+        Board is null
+            ? null
+            : ByModel.Values
+                     .Select(v => v.Result.Rail(rail.Name)?.Regions)
+                     .FirstOrDefault(r => r is { Power.Count: > 0 });
 
     /// <summary>A document-relative reference, against the <c>.crail</c>'s own folder.</summary>
     private string ResolveRelative(string reference) =>

@@ -92,6 +92,9 @@ public readonly record struct RailMapTile(
 /// <b>It is what fixes the painting order</b> (R-rail18-3): every region is opaque paint, so on a
 /// board whose reference is a PLANE — every board this feature is for — a reference drawn last
 /// covers the whole map.</param>
+/// <param name="Section">Which side of the rail's series element this island is on, or null on a
+/// rail with no series element — <b>what the copper tab shades from</b> (brief 25, R-rail25-4c), so
+/// <i>which side of the ferrite am I on</i> is answerable by looking.</param>
 public sealed record RailMapRegion(
     LayerKey Layer,
     Paths64 Copper,
@@ -100,7 +103,8 @@ public sealed record RailMapRegion(
     bool Forced,
     PdnRegionRef Region,
     string Readout,
-    bool IsReference = false);
+    bool IsReference = false,
+    RailSection? Section = null);
 
 /// <summary>What one marker on the map is.</summary>
 public enum RailMarkerKind
@@ -356,11 +360,23 @@ public sealed class RailMapScene
                 if (paths.Count == 0) continue;
                 var bb = BoundsOf(paths);
                 bounds = bounds.Union(bb);
+
+                // brief 25, R-rail25-4c. Null on every rail with no series element, which is every
+                // rail before this brief — so the tab draws exactly what it drew. The section is
+                // the SOLVE's own partition, carried on the result, never a second walk here.
+                RailSection? section =
+                    result.Sections.TryGetValue(island.Index, out var s) ? s : null;
+
                 regions.Add(new RailMapRegion(
                     layer, paths, bb, PdnCopperClass.Trace, Forced: false,
                     PdnCopperClassifier.RefOf(layer, paths),
                     $"Island {island.Index} of rail '{result.RailName}' on layer " +
-                    $"{layer.Layer}/{layer.Datatype}. {set.IslandReport}"));
+                    $"{layer.Layer}/{layer.Datatype}." +
+                    (section is { } which
+                        ? $" {which.ToString().ToUpperInvariant()} of the rail's series element."
+                        : "") +
+                    $" {set.IslandReport}",
+                    IsReference: false, Section: section));
             }
 
         return new RailMapScene

@@ -137,6 +137,24 @@ public sealed class RailSpec
     public List<RailPart> Parts { get; } = [];
 
     /// <summary>
+    /// The one part the rail runs THROUGH, or null — brief 25's ferrite bead, protection FET or
+    /// sense resistor (R-rail25-1a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Singular, and <see cref="Refusal"/> is what keeps it so</b> (R-rail25-2c). Two series
+    /// elements make three or more sections and a topology that may not be a chain, so v1 refuses a
+    /// second by name and says what to do instead — put it on a rail of its own. A refusal is a
+    /// scope boundary a user can see; a wrong answer is not.
+    /// </remarks>
+    public RailPart? SeriesElement =>
+        Parts.FirstOrDefault(p => p.Connection == RailPartConnection.Series);
+
+    /// <summary>The decoupling — every part that is NOT the series element. What the frequency
+    /// model's shunt branches are built from, and what every part count is about.</summary>
+    public IEnumerable<RailPart> ShuntParts =>
+        Parts.Where(p => p.Connection == RailPartConnection.Shunt);
+
+    /// <summary>
     /// The voltage this rail nominally sits at, in VOLTS — the highest open-circuit voltage any
     /// source on it states, or null where none does.
     ///
@@ -195,6 +213,20 @@ public sealed class RailSpec
                 return $"{rail} lists part '{p.Refdes}' twice. A refdes is one part on the board, " +
                        "and two rows for it would be two mounting loops for one pad.";
         }
+
+        // R-rail25-2c. ONE series element per rail in v1, and a second is refused BY NAME with what
+        // to do about it. Two of them make three or more sections and a topology that may not be a
+        // chain at all — the partition off the artwork has no way to say which section is between
+        // which pair, and every answer it produced would look entirely ordinary.
+        var series = Parts.Where(p => p.Connection == RailPartConnection.Series).ToList();
+        if (series.Count > 1)
+            return $"{rail} has {series.Count} series elements — " +
+                   string.Join(", ", series.Select(p => $"'{p.Refdes}'")) + ". railRF models ONE " +
+                   "series element per rail: it cuts the rail at that element's two pads and the " +
+                   "board falls into two sections. Two elements make three or more sections and a " +
+                   "topology that may not be a chain. Put the second one on a rail of its own — " +
+                   "which is also how two branches through different parts are asked about, one " +
+                   "rail each.";
 
         return null;
     }

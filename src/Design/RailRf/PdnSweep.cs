@@ -21,6 +21,18 @@
 // the SAME curve. That is honest at P1 — the lumped model contains nothing that could make them
 // differ — and it is stated on the result rather than left to look like a bug.
 //
+// ── …UNLESS THERE IS A SERIES ELEMENT, AND THEN THE RAIL HAS TWO NODES ─────────────────────────
+//
+// brief 25. A ferrite, a protection FET or a sense resistor IN the rail partitions it: everything
+// upstream of it sees one impedance and everything downstream sees another, so "the rail is ONE
+// node here" is true of a rail with no series element and FALSE of a rail with one. Both halves
+// matter — the second node is what makes the answer right, and the note above is what has to STOP
+// BEING PRINTED, because a sentence that is correct today and becomes a lie when a feature lands is
+// the failure nothing fails on (R-rail25-4b).
+//
+// Which rows are on which side is NOT typed here and is not typed anywhere there is artwork: it is
+// RailSeriesPartition's measurement off the board, in the same currency as the mounting loops.
+//
 // ── THE NETLIST IS REBUILT AT EVERY FREQUENCY, ON PURPOSE ──────────────────────────────────────
 //
 // A part's ESR is not a constant: a class default is DF/(2*pi*f*C) and falls as 1/f, and a measured
@@ -67,6 +79,32 @@ public sealed class PdnSweepRequest
     /// legal: a rail with no source is the decoupling network on its own, which is a question a user
     /// may legitimately ask.</summary>
     public IReadOnlyList<RailSourceModel> Sources { get; init; } = [];
+
+    /// <summary>
+    /// The one element the rail runs THROUGH, or null on a rail that has none (brief 25).
+    /// </summary>
+    /// <remarks>
+    /// <b>Non-null is what gives the rail a SECOND NODE</b>, and therefore what makes two
+    /// observation ports read different curves. Its impedance over frequency is its own —
+    /// <see cref="RailSeriesModel"/>, which is <see cref="RailSourceModel"/>'s shape reused rather
+    /// than a second impedance type — and it is stamped BETWEEN the two nodes rather than from one
+    /// of them to the reference, which is the whole difference between a series 1 Ω and a shunt one.
+    /// </remarks>
+    public RailSeriesModel? Series { get; init; }
+
+    /// <summary>
+    /// Which side of <see cref="Series"/> each part, load and source is on, or null where the rail
+    /// has no series element.
+    /// </summary>
+    /// <remarks>
+    /// <b>Handed in rather than computed here</b>, for the reason every other input to this file is:
+    /// the partition is a measurement off the ARTWORK (R-rail25-2a) and this file sees no artwork.
+    /// A null one on a rail that HAS a series element puts everything downstream, which is where
+    /// decoupling goes — but a caller that has a board should never hand one in, because then the
+    /// section a part is shaded in on the copper map and the node its branch is stamped on would be
+    /// two answers to one question.
+    /// </remarks>
+    public RailSeriesPartition? Partition { get; init; }
 
     /// <summary>The grid, or null to take <see cref="RailSpec.Band"/>'s own.</summary>
     public double[]? FrequenciesHz { get; init; }
@@ -304,6 +342,26 @@ public static class PdnSweep
         var rail = request.Rail;
         if (rail.Refusal() is { } railRefusal) return PdnSweepResult.Refused(railRefusal);
 
+        // ── R-rail25-3c: unmounting a series element OPENS THE RAIL ───────────────────────────
+        //
+        // Brief 23's unmount is "a shunt branch is not fitted", which is an ordinary depopulated
+        // board and is reported. A SERIES element carries everything, so clearing its checkbox does
+        // not remove a branch — it disconnects the rail from its own source, and the honest answer
+        // to "what is |Z| of half a rail fed by nothing" is not a curve. Refused with the reason
+        // rather than solved as an open circuit; R-rail23-1e names this case and defers to here.
+        if (rail.SeriesElement is { Mounted: false } off)
+            return PdnSweepResult.Refused(
+                $"Series element {off.Refdes} on rail '{rail.Name}' is UNMOUNTED, which OPENS the " +
+                "rail: everything downstream of it is fed by nothing, and an open rail has no " +
+                "impedance to report. Unmounting a decoupling capacitor takes a branch off a rail; " +
+                "unmounting the element the rail runs THROUGH takes the rail apart. Mount it to " +
+                "answer this, or delete the row to ask about a board that never had it.");
+
+        // The partition is a measurement and a measurement can fail — a bridged element, a terminal
+        // on no copper. Non-null here means NOTHING was swept, which is this file's own contract.
+        if (request.Partition is { Refusal: { } partitionRefusal })
+            return PdnSweepResult.Refused(partitionRefusal);
+
         var notes = new List<string>();
         var warnings = new List<string>();
 
@@ -388,11 +446,33 @@ public static class PdnSweep
                 PdnCoincidence.Find(peaks, aggressors, request.CoincidenceFraction)));
         }
 
-        if (rail.Loads.Count > 1)
+        // ── R-rail25-4b: THIS SENTENCE IS CONDITIONAL FROM NOW ON ─────────────────────────────
+        //
+        // It is true of a rail with one node and FALSE of a rail with a series element, where the
+        // ports genuinely differ — by that element's own impedance, at every frequency. Printing it
+        // in the second case would be a false statement about the model, and nothing fails when a
+        // lie is printed, which is why it is a gate of its own.
+        if (rail.Loads.Count > 1 && request.Series is null)
             notes.Add(
                 "Every observation port on this rail reads the same curve. That is P1's lumped model " +
                 "rather than a defect: there is no copper between the ports yet, so nothing in the " +
                 "model can make them differ. The distributed low band is P2a.");
+
+        if (request.Series is { } seriesModel)
+        {
+            notes.Add(
+                $"This rail has a SERIES element, {seriesModel.Refdes}, so it is two nodes rather " +
+                "than one and its observation ports read DIFFERENT curves — they differ by that " +
+                $"element's own impedance at every frequency. {seriesModel.Describe()}");
+
+            if (request.Partition?.Describe() is { } how) notes.Add(how);
+            notes.AddRange(request.Partition?.Notes ?? []);
+
+            // R-rail25-1c: a sentence on the RESULT, never a log line, and it goes away where a
+            // measured curve replaced the R-L. A warning rather than a note, because a reader has
+            // to act on it — the number is optimistic by a large factor and looks ordinary.
+            if (seriesModel.BiasDependentLine is { } bias) warnings.Add(bias);
+        }
 
         // ── §2.4's capacitor ranking ───────────────────────────────────────────────────────────
 
@@ -422,12 +502,16 @@ public static class PdnSweep
     /// take off the board.</param>
     /// <param name="Member">Its own name within that bank.</param>
     /// <param name="PartName">The part this is, for the removal ranking, or null.</param>
+    /// <param name="Section">Which side of the rail's series element it hangs off (brief 25).
+    /// <see cref="RailSection.Downstream"/> on a rail with no series element, where there is one
+    /// node and both spellings name it.</param>
     private sealed record Branch(
         string Path,
         Func<double, Complex> Impedance,
         string? Group,
         string? Member,
-        string? PartName);
+        string? PartName,
+        RailSection Section = RailSection.Downstream);
 
     private static Complex Admittance(Branch b, double f)
     {
@@ -475,7 +559,11 @@ public static class PdnSweep
             branches.Add(new Branch(
                 $"source{k + 1}",
                 f => source.ImpedanceAt(band is { } b ? Math.Clamp(f, b.LowHz, b.HighHz) : f),
-                Group: null, Member: null, PartName: null));
+                Group: null, Member: null, PartName: null,
+                // A source is UPSTREAM of the series element by definition — that is what upstream
+                // MEANS — but it is read off the partition rather than assumed, because the
+                // partition is what measured it and a board can put a second source anywhere.
+                Section: request.Partition?.SourceSection(k) ?? RailSection.Downstream));
 
             if (band is { } sb && (sb.LowHz > request.Rail.Band.StartHz ||
                                    sb.HighHz < request.Rail.Band.StopHz))
@@ -527,7 +615,8 @@ public static class PdnSweep
             string group = part.Row?.PartNumber is { Length: > 0 } pn ? pn : part.PartNumber;
 
             branches.Add(new Branch(
-                $"part{branches.Count + 1}", z, group, part.Refdes ?? part.Name, part.Name));
+                $"part{branches.Count + 1}", z, group, part.Refdes ?? part.Name, part.Name,
+                request.Partition?.PartSection(part.Refdes) ?? RailSection.Downstream));
 
             if (measuredBand is { } pb && (pb.LowHz > request.Rail.Band.StartHz ||
                                            pb.HighHz < request.Rail.Band.StopHz))
@@ -618,8 +707,20 @@ public static class PdnSweep
         PdnSweepRequest request, List<Branch> branches, double frequencyHz, int ports)
     {
         var netlist = new ElaboratedNetlist();
-        int rail = netlist.Nodes.GetOrAssign("rail");
+
+        // ── ONE NODE, OR TWO (brief 25) ───────────────────────────────────────────────────────
+        //
+        // With no series element the rail is ONE node called "rail" and every path below is exactly
+        // what it was, so a document with no series element assembles the identical netlist and
+        // returns the identical DataSet (gate 10). With one, the rail has a BEFORE and an AFTER and
+        // the second node is the whole of what makes two ports read different curves.
+        bool split = request.Series is not null;
+        int upstream = netlist.Nodes.GetOrAssign(split ? "rail.up" : "rail");
+        int downstream = split ? netlist.Nodes.GetOrAssign("rail.down") : upstream;
         double w = 2.0 * Math.PI * frequencyHz;
+
+        int NodeOf(RailSection section) =>
+            section == RailSection.Upstream ? upstream : downstream;
 
         foreach (var b in branches)
         {
@@ -630,6 +731,8 @@ public static class PdnSweep
             // states one within its own noise, and stamping it would put energy into the rail.
             double r = Math.Max(0.0, z.Real);
             double x = z.Imaginary;
+
+            int rail = NodeOf(b.Section);
 
             // The two elements meet at an internal node only when there are two of them. A branch
             // that is pure R, pure X, or an outright short is one element between the rail and its
@@ -649,9 +752,49 @@ public static class PdnSweep
                 Add(netlist, "R", $"{b.Path}.r", [rail, 0], new ResistorModel(), ("R", 0.0));
         }
 
+        // ── the series element: BETWEEN the two nodes, never from one to the reference ────────
+        //
+        // Same decomposition as a branch, one node different, and that one node is the entire
+        // difference between a series 1 Ω and a shunt 1 Ω. An element whose measured file does not
+        // reach this frequency is HELD at the nearest end it states, exactly as a source's is: the
+        // alternatives are dropping it — which OPENS the rail between one sweep point and the next
+        // — or stamping a NaN, and neither is an answer.
+        if (request.Series is { } series)
+        {
+            var band = series.Impedance.Measured?.Band;
+            var z = series.ImpedanceAt(
+                band is { } sb ? Math.Clamp(frequencyHz, sb.LowHz, sb.HighHz) : frequencyHz);
+
+            double r = double.IsFinite(z.Real) ? Math.Max(0.0, z.Real) : 0.0;
+            double x = double.IsFinite(z.Imaginary) ? z.Imaginary : 0.0;
+            string path = $"series.{series.Refdes}";
+
+            if (r > 0 && x != 0)
+            {
+                int inner = netlist.Nodes.GetOrAssign($"{path}.i");
+                Add(netlist, "R", $"{path}.r", [upstream, inner], new ResistorModel(), ("R", r));
+                if (x > 0)
+                    Add(netlist, "L", $"{path}.l", [inner, downstream], new InductorModel(), ("L", x / w));
+                else
+                    Add(netlist, "C", $"{path}.c", [inner, downstream], new CapacitorModel(), ("C", -1.0 / (w * x)));
+            }
+            else if (r > 0)
+                Add(netlist, "R", $"{path}.r", [upstream, downstream], new ResistorModel(), ("R", r));
+            else if (x > 0)
+                Add(netlist, "L", $"{path}.l", [upstream, downstream], new InductorModel(), ("L", x / w));
+            else if (x < 0)
+                Add(netlist, "C", $"{path}.c", [upstream, downstream], new CapacitorModel(), ("C", -1.0 / (w * x)));
+            else
+                // A zero-impedance element is a LINK, and it is stamped rather than omitted: the
+                // two nodes are then shorted and every port reads the same curve again, which is
+                // the honest answer for a 0 Ω part and is not the same thing as having no element.
+                Add(netlist, "R", $"{path}.r", [upstream, downstream], new ResistorModel(), ("R", 0.0));
+        }
+
         for (int k = 0; k < ports; k++)
-            Add(netlist, "Port", $"port{k + 1}", [rail, 0], new PortModel(),
-                ("Num", k + 1), ("Z", request.PortReferenceOhms));
+            Add(netlist, "Port", $"port{k + 1}",
+                [NodeOf(request.Partition?.LoadSection(k) ?? RailSection.Downstream), 0],
+                new PortModel(), ("Num", k + 1), ("Z", request.PortReferenceOhms));
 
         return netlist;
     }

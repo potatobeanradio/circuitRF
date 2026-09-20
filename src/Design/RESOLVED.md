@@ -9071,3 +9071,82 @@ second spelling of `.crlib` and nothing to keep in step. Gate:
 `tests/Ui.Tests/RailRf/PartLibraryEditorTests.cs` — the same file saved unedited is byte for byte
 what it was, and a saved refused row comes back through the validated read as the sentence the
 editor showed.
+
+## railRF brief 25 — the rail gains a second node, and five things that had to be true first (2026-09-20)
+
+`brief-railrf-25-series-element.md`. A ferrite bead, a protection FET or a sense resistor IN the rail
+is now a part row of its own — `RailPart.Connection = Series`, two rail-side terminals, a DC
+resistance and an impedance over frequency — and the rail it sits in has an upstream node and a
+downstream node instead of one. Everything below is what the implementation turned up that the brief
+did not already say.
+
+### The partition needed no cutting code, because the copper is already cut
+
+R-rail25-2a asks for "cut the rail at the series element's two pads and walk from each". There is no
+cut anywhere in `RailSeriesPartition`: **on imported artwork the copper already stops at every pad**
+— §2.8's own sentence, and the whole reason `PdnSeriesElement` exists at all — so
+`PdnRailRegions.Walk` hands back a rail that is ALREADY two galvanically separate islands, and the
+measurement is only *which island does each terminal land in*.
+
+That matters beyond being cheaper. Subtracting a synthetic gap at each pad would have been a second
+connectivity model beside `DrcConnectivity`'s, and the section a part is shaded in on the copper map
+would then be a different answer from the node its branch was stamped on, arrived at by different
+code. As built they are one answer: `RailDcResult.Sections` is the partition the solve used, and the
+scene reads it rather than walking anything.
+
+**R-rail25-2b falls out of it rather than being checked for.** Both terminals landing in one island
+IS "there is copper around the element", so the bridged refusal is the `a == b` branch of the same
+measurement — no separate bridging test exists, and there is nothing for one to drift from.
+
+### A ferrite resolved as an unresolved CAPACITOR, and every headline count was wrong
+
+`RailPartModelSet`'s counts — `Unresolved`, `ModelledFromFile`, `WithoutEsrBasis`, `Summary`, and
+`Mounted`, which is what the sweep's shunt bank is built from — are all over "the parts". A series
+element is a part row, has no library row (the library is keyed on C and f₀, which a bead has
+neither of), and therefore arrived in every one of them as a part railRF had failed on.
+
+The fix is `RailPartConnection` carried onto `RailPartModel` and `Mounted`/`Unmounted` narrowed to
+the SHUNT bank, with `Series` beside them so the separation is visible rather than a disappearance.
+`RailPartRowViewModel.IsUnresolved` needed the same exemption — without it the window dimmed the
+one row the table exists to mark, and reported a data problem the document does not have.
+
+**The general shape: a new `Connection` on a row is not a new field, it is a new denominator.** Any
+count phrased "the parts" has to be re-read when one of them stops being a capacitor.
+
+### The terminals cannot be defaulted from the refdes, and the failure is silent
+
+`PdnAttachments.Resolve` on an anchor naming only a refdes returns EVERY pad of that part. For a
+two-pad ferrite that is both ends, which `PdnAssembly.Merge` ties into one node — so the element
+gets stamped across a short, the rail solves, and the answer is the answer for a board with no
+ferrite on it. Both `RailSeriesPartition.FromArtworkRegions` and `RailDcRun.SeriesRefusal` therefore
+refuse an element with no terminals rather than filling them in, and both refusals say why a refdes
+alone is not enough.
+
+### Gate 10 cannot be run as the brief writes it, and what stands in its place
+
+The brief asks for the shipped example run before and after the change and compared bit for bit.
+That needs the pre-change binary and nothing in the repository has one. What
+`Gate10_ARailWithNoSeriesElement_IsUnchangedByThisBrief` gates instead is that the new path is
+**inert**: the same rail with `Series`/`Partition` null and with a `RailSeriesPartition.None`, giving
+byte-identical `Z` cubes and identical note and warning lists. That is what would break if the second
+node, the per-port node assignment or the new notes leaked into a document with no series element —
+which is the failure gate 10 exists for. It is a weaker claim than the brief's and the test says so
+in its own remarks. **The assembly is written to make it true structurally as well**: with no series
+element the rail node is still called `rail`, no second node is assigned, and every component path
+below is unchanged.
+
+### The fast model refuses a 1 mm-wide rail, which is a test-fixture trap and not a defect
+
+The first artwork fixture drew the rail 1 mm wide over 4 mm, and `PdnGraphExtractor` refused the
+whole solve: the closed form has no bounded error across copper the current fans out in, so it
+classifies that as *spreading* and declines to price it. The fixture is 0.3 mm now, matching
+`PdnDcSolveTests`' own board. Worth recording because the refusal names the LOAD ("rail reaches
+U1.VDD only through …"), which reads like an anchor problem and is a geometry one.
+
+### Where the sentence that becomes a lie was
+
+`PdnSweep`'s "every observation port on this rail reads the same curve" is correct on a rail with
+one node and false on a rail with two, and **nothing fails when a lie is printed** — which is why
+R-rail25-4b has a gate of its own and why it is the gate most likely to be skipped. It is now
+conditional on `request.Series is null`, and what replaces it says the opposite by name. The same
+conditionality had to reach `examples/Power Rail/README.md`, which stated it as a flat fact.

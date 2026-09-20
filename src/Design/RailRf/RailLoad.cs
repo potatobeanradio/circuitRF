@@ -50,6 +50,18 @@ public sealed record RailLoad
     /// only where this is stated, and says on the report which rails had no minimum.</para></summary>
     public double? MinimumInputVoltageV { get; init; }
 
+    /// <summary>
+    /// Which side of the rail's series element this port sits on, <b>where nothing measured it</b>
+    /// (brief 25, R-rail25-2d).
+    ///
+    /// <para><b>Read only on a rail with no artwork</b>, and only on a rail that HAS a series
+    /// element. With artwork, <see cref="RailSeriesPartition"/> cuts the rail at the element's two
+    /// pads and this port lands on a side by where its own pads are — a measurement off the board
+    /// in the same currency as the mounting inductances, which follows a re-layout by itself.
+    /// Defaulted to <see cref="RailSection.Downstream"/>, which is the side a load is on.</para>
+    /// </summary>
+    public RailSection Side { get; init; } = RailSection.Downstream;
+
     /// <summary>True when this row states no current: an observation port, and nothing else.</summary>
     public bool IsObservationOnly => DcCurrentA is null;
 

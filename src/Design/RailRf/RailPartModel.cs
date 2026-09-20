@@ -213,6 +213,22 @@ public sealed class RailPartModel
     /// </summary>
     public bool Mounted { get; init; } = true;
 
+    /// <summary>
+    /// <see cref="RailPart.Connection"/>, carried through (brief 25, R-rail25-1a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Carried, not modelled.</b> A series element's impedance over frequency is
+    /// <see cref="RailSeriesModel"/>'s, built from the DOCUMENT row's own R-L or its own measured
+    /// file — the library's C-and-f₀ arithmetic is a capacitor's and a ferrite has neither. What
+    /// this flag does is keep such a row out of the shunt bank and out of every count that is about
+    /// one: without it a ferrite with no library row reports as an unresolved CAPACITOR, which is a
+    /// data problem the document does not have.
+    /// </remarks>
+    public RailPartConnection Connection { get; init; } = RailPartConnection.Shunt;
+
+    /// <summary>True where this is the element the rail runs THROUGH.</summary>
+    public bool IsSeries => Connection == RailPartConnection.Series;
+
     // ── capacitance: all three of §9's numbers ────────────────────────────────────────────────
 
     /// <summary>Q-12's triple — marked, derated, and which was used. <b>Never reduced to one

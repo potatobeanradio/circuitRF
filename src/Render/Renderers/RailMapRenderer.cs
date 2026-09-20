@@ -27,6 +27,7 @@
 
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
+using CircuitRF.Design.RailRf;
 using SkiaSharp;
 
 namespace CircuitRF.Render;
@@ -447,6 +448,10 @@ public static class RailMapRenderer
 
     // ── the class tab, and the copper tab's islands ────────────────────────────────────────────
 
+    /// <summary>How opaque the copper tab's two series sections are washed — light enough that the
+    /// artwork under them is still what the tab shows.</summary>
+    private const byte SectionWashAlpha = 56;
+
     private static void DrawRegions(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme,
                                     IReadOnlySet<LayerKey>? hiddenLayers)
     {
@@ -468,6 +473,21 @@ public static class RailMapRenderer
 
             if (outlineOnly)
             {
+                // ── brief 25, R-rail25-4c: the two sections shade differently ────────────────
+                //
+                // Only where the rail HAS a series element — Section is null otherwise and the tab
+                // draws the bare outline it always drew. A translucent wash rather than the class
+                // tab's opaque fill: this tab's job is to show the artwork AS DRAWN with the rail
+                // outlined over it, and painting over the copper would take that away to answer a
+                // question that only exists on a rail with a series element in it.
+                if (region.Section is { } section)
+                {
+                    fill.Color = (section == RailSection.Upstream
+                                      ? theme.ClassTrace
+                                      : theme.ClassSpreading).WithAlpha(SectionWashAlpha);
+                    canvas.DrawPath(path, fill);
+                }
+
                 stroke.Color = theme.CopperHighlight;
                 stroke.StrokeWidth = 1.5f;
                 canvas.DrawPath(path, stroke);

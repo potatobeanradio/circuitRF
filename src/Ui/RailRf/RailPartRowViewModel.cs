@@ -158,6 +158,13 @@ public sealed class RailPartRowViewModel
     {
         get
         {
+            // ── brief 25, R-rail25-4a: A SERIES 1 Ω AND A SHUNT 1 Ω DO OPPOSITE THINGS ────────
+            //
+            // So this column does not print a capacitance for a series element — it has none, and
+            // a blank would read as a part railRF failed on. It prints the element's own model
+            // over frequency, which is the quantity in the same place on the row.
+            if (_part.IsSeries) return SeriesImpedanceText;
+
             if (Model is not { } m) return MarkedText;
             if (m.Capacitance.Basis == RailCapacitanceBasis.Measured) return Farads(m.Capacitance.UsedFarads);
 
@@ -202,7 +209,14 @@ public sealed class RailPartRowViewModel
     /// and the height of the anti-resonance the part takes part in.</para>
     /// </remarks>
     public string EsrText =>
-        Model?.EsrOhms is { } r && double.IsFinite(r)
+        // A series element's number in this place is its DCR — the resistance the LOAD CURRENT
+        // runs through, which is what it costs the rail, and the analogue of the loss term a
+        // capacitor's ESR is. Unstated is unstated, never zero (R-rail25-3b).
+        _part.IsSeries
+            ? (_part.DcResistanceOhms is { } dcr
+                  ? RailValueFormat.FormatWithUnit(dcr, RailQuantity.Resistance, 3)
+                  : UnstatedText)
+        : Model?.EsrOhms is { } r && double.IsFinite(r)
             ? RailValueFormat.FormatWithUnit(r, RailQuantity.Resistance, 3)
             : UnresolvedText;
 
@@ -315,7 +329,9 @@ public sealed class RailPartRowViewModel
 
     /// <summary>The whole row as one sentence, with every provenance said out loud — the row's own
     /// tooltip. <c>RailPartModel.Describe</c> owns it; nothing here writes a second version.</summary>
-    public string RowTooltip => _resolved?.Describe() ?? OriginText;
+    public string RowTooltip => _part.IsSeries
+        ? SeriesTooltip
+        : _resolved?.Describe() ?? OriginText;
 
     /// <summary>What the library row says about this part that is not electrical — description,
     /// footprint, dielectric class and voltage rating, for the part-number column's tooltip.</summary>
@@ -445,12 +461,75 @@ public sealed class RailPartRowViewModel
     /// perfectly well and is deliberately absent; an unresolved one is a data problem. Two states,
     /// two spellings, and the table must not collapse them — a row can be either, both or neither.
     /// </remarks>
+    /// <remarks>
+    /// <b>A SERIES element is never this</b> (brief 25). Its model is its own row's R-L or its own
+    /// measured file, not the library's capacitor arithmetic, so a ferrite the library has no row
+    /// for is completely resolved — dimming it would report a data problem the document does not
+    /// have.
+    /// </remarks>
     public bool IsUnresolved =>
-        PartNumber == UnresolvedText || _model is null || _model.Row is null;
+        !_part.IsSeries &&
+        (PartNumber == UnresolvedText || _model is null || _model.Row is null);
 
     /// <summary>What the dielectric class was parsed as, or empty — shown beside the description it
     /// came from, for correction (brief 2's R-rail2-5).</summary>
     public string DielectricClassText => _bom?.Parsed.DielectricClass ?? "";
+
+    // ══ IN THE RAIL, NOT ACROSS IT (brief 25) ════════════════════════════════════════════════
+
+    /// <summary>What an UNSTATED number reads — and it is not <see cref="UnresolvedText"/>.</summary>
+    /// <remarks>
+    /// Two states, two spellings, on the rule R-rail23-1d already set for mounted-versus-unresolved.
+    /// <i>Unresolved</i> is a data problem: railRF looked and could not work the number out.
+    /// <i>Unstated</i> is the document saying nothing, which is honest and is the reason the drop
+    /// answer reports a LOWER BOUND rather than a total (R-rail25-3b).
+    /// </remarks>
+    public const string UnstatedText = "unstated";
+
+    /// <summary>
+    /// True where this row is the element the rail runs THROUGH rather than something hung off it
+    /// (R-rail25-4a).
+    /// </summary>
+    /// <remarks>
+    /// <b>The table must mark it</b>: a series 1 Ω and a shunt 1 Ω do opposite things to a rail,
+    /// and a table that spells them the same is a table that will be misread. It is marked three
+    /// ways — the row carries the <c>series</c> style, the capacitance column reads the element's
+    /// impedance instead of a capacitance it does not have, and the ESR column reads its DCR.
+    /// </remarks>
+    public bool IsSeries => _part.IsSeries;
+
+    /// <summary>The element's model over frequency, as the capacitance column reads it on a series
+    /// row — its own measured file, or the R-L.</summary>
+    public string SeriesImpedanceText
+    {
+        get
+        {
+            if (_part.TouchstoneRef is { Length: > 0 } file)
+                return $"file — {System.IO.Path.GetFileName(file)}";
+
+            if (!_part.IsRl) return UnstatedText;
+
+            string r = RailValueFormat.FormatWithUnit(
+                _part.SeriesResistanceOhms ?? 0, RailQuantity.Resistance, 3);
+            string l = RailValueFormat.FormatWithUnit(
+                _part.SeriesInductanceHenries ?? 0, RailQuantity.Inductance, 3);
+            return $"{r} + {l}";
+        }
+    }
+
+    /// <summary>The sentence behind a series row — what it is, what it costs, and the one caveat a
+    /// lumped R-L standing in for a ferrite cannot leave out (R-rail25-1c).</summary>
+    public string SeriesTooltip =>
+        RailSeriesModel.Of(_part) is { } m
+            ? m.Describe() + " " +
+              (m.BiasDependentLine ?? "Its impedance is its own measured curve, so nothing here is " +
+                                      "a lumped stand-in.") +
+              " Everything upstream of it sees one impedance and everything downstream sees another."
+            : RowTooltip;
+
+    /// <summary>Which side of the rail's series element this row is on, where the ROW states it —
+    /// read only on a rail with no artwork (R-rail25-2d).</summary>
+    public string SideText => _part.Side == RailSection.Upstream ? "upstream" : "downstream";
 
     // ══ MOUNTED, AND IT IS NOT "UNRESOLVED" (brief 23) ════════════════════════════════════════
 
@@ -473,7 +552,9 @@ public sealed class RailPartRowViewModel
     /// The sentence behind the checkbox. <b>It says what SURVIVES</b>, because that is the whole
     /// difference between unmounting a part and deleting it.
     /// </summary>
-    public string MountTooltip => _part.Mounted
+    public string MountTooltip =>
+        _part.IsSeries && _part.Mounted ? SeriesMountTooltip
+        : _part.Mounted
         ? "Fitted. Clear this to depopulate it: the row stays, with its part number, its position "
         + "and its computed mounting loop, and the rail re-solves without it. The layout is not "
         + "touched — this says what is fitted to the board, not what the board is."
@@ -481,4 +562,15 @@ public sealed class RailPartRowViewModel
         + "position and its mounting loop are all kept, so ticking this again gives the answer it "
         + "gave before. This is a different state from UNRESOLVED — unresolved is a data "
         + "problem, and this is a design question.";
+
+    /// <summary>
+    /// <b>R-rail25-3c.</b> Clearing a SERIES element's checkbox is not a depopulated board — it
+    /// OPENS the rail, and the run refuses with that reason rather than answering for half a rail
+    /// fed by nothing. Said on the checkbox so the refusal is not the first anyone hears of it.
+    /// </summary>
+    public string SeriesMountTooltip =>
+        "Fitted. This element is IN the rail and carries the whole load current, so clearing it "
+        + "does not take a branch off the rail — it OPENS the rail, and everything downstream is "
+        + "then fed by nothing. railRF refuses that with the reason rather than answering for an "
+        + "open circuit. Delete the row to ask about a board that never had it.";
 }

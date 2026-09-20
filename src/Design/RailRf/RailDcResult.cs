@@ -183,6 +183,23 @@ public sealed class RailDcResult
     public PdnRailRegionSet? Regions { get; init; }
 
     /// <summary>
+    /// Which side of this rail's series element each of <see cref="Regions"/>' power islands is on,
+    /// by island index — <b>what the copper map shades from</b> (brief 25, R-rail25-4c).
+    /// </summary>
+    /// <remarks>
+    /// <b>Empty on every rail with no series element</b>, which is every rail written before brief
+    /// 25 — so the copper tab draws exactly what it drew. Where it is not empty, <i>which side of
+    /// the ferrite am I on</i> is answerable by LOOKING, which is the same question the class map
+    /// already answers for trace-versus-mesh and through the same overlay.
+    ///
+    /// <para>It is the partition the SOLVE used, carried on the result, rather than a second walk
+    /// the picture does for itself — the section a part is shaded in has to be the section its
+    /// branch was stamped on.</para>
+    /// </remarks>
+    public IReadOnlyDictionary<int, RailSection> Sections { get; init; } =
+        new Dictionary<int, RailSection>();
+
+    /// <summary>
     /// Which copper the fast model treated as a trace and which it meshed, with the reason for each
     /// (R-rail4-3). Empty from the accurate reading, which meshes everything and so classifies
     /// nothing.
