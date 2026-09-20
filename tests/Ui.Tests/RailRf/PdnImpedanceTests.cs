@@ -640,7 +640,10 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         // line. A filter that dropped everything would pass the assertion above for free.
         int curves = traces.Count(t => t.CubeName == "Z");
         Assert.True(curves > 1, "one curve only — the multi readout has nothing to report.");
-        Assert.Equal(curves, lines.Count(l => l.Text.StartsWith("Z(", StringComparison.Ordinal)));
+        // R-rail21-1d: the rows are named for the QUANTITY now — "Z(1,1)" is a cube shorthand and
+        // says nothing about which of this window's two impedances it is.
+        Assert.Equal(curves, lines.Count(l => l.Text.StartsWith($"|Z| {PdnImpedanceNames.Rail} (",
+                                                                StringComparison.Ordinal)));
 
         // The exclusion is load-bearing, not decorative: read directly, an annotation trace is
         // exactly the NaN row that was on screen.
@@ -1058,7 +1061,7 @@ public class PdnImpedanceTests(ITestOutputHelper output)
 
         Mask(vm, out double maskDb);
         Assert.Equal(20 * Math.Log10(limitOhms), maskDb, 3);
-        Assert.Equal("|Z| (dBΩ)", vm.ImpedancePlot.CustomYLabel);
+        Assert.Equal($"|Z| {PdnImpedanceNames.Rail} (dBΩ)", vm.ImpedancePlot.CustomYLabel);
 
         // ── Ohms, as the trace card sets it ───────────────────────────────────────────────────
         curve.Transform = CubeTransform.Mag;
@@ -1070,7 +1073,7 @@ public class PdnImpedanceTests(ITestOutputHelper output)
 
         Mask(vm, out double maskOhms);
         Assert.Equal(limitOhms, maskOhms, 6);                       // the target adapted
-        Assert.Equal("|Z| (Ω)", vm.ImpedancePlot.CustomYLabel);
+        Assert.Equal($"|Z| {PdnImpedanceNames.Rail} (Ω)", vm.ImpedancePlot.CustomYLabel);
 
         // ── And a marker and a chosen style, to be carried ─────────────────────────────────────
         curve.Markers.Add(new Marker(curve, curve.Points[0].X, isMulti: false, isDelta: false,
@@ -1086,7 +1089,7 @@ public class PdnImpedanceTests(ITestOutputHelper output)
         Assert.Equal(CubeTransform.Mag, rebuilt.Transform);
         Assert.Equal(4.0, rebuilt.Properties.LineWidth);
         Assert.Single(rebuilt.Markers);
-        Assert.Equal("|Z| (Ω)", vm.ImpedancePlot.CustomYLabel);
+        Assert.Equal($"|Z| {PdnImpedanceNames.Rail} (Ω)", vm.ImpedancePlot.CustomYLabel);
 
         Mask(vm, out double maskAfter);
         Assert.Equal(limitOhms, maskAfter, 6);

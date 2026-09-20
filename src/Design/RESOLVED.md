@@ -1,5 +1,110 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 21 — two numbers with one name, and where the breakdown's extra millivolts are (2026-09-20)
+
+A first-time designer's pass produced three reports, and the first two were the same failure: one
+window printing two different quantities under one name. Nothing here was an arithmetic bug — every
+number was correct — so all three fixes are naming, presentation and one measurement.
+
+### The 465 Ω and the 23 mΩ are both right, and now say which is which
+
+The board map is `PdnPlaneModes.Of`'s `ImpedanceMap`: the PLANE PAIR alone, its copper, its shape
+and its stackup, driven from one observation port. The plot's curve is `PdnSweep`'s: the DECOUPLED
+rail — thirteen capacitors, their ESR, their mounting loops, the source's R and L. At 50 MHz a bare
+plane pair between two points is hundreds of ohms and the same rail with its decoupling is tens of
+milliohms. The correct sentence already existed, in `PdnPlaneAnswer.Notes` — a list on a different
+tab, which is not where somebody looking at a picture reads.
+
+`PdnImpedanceNames` is now the one place the distinction is spelled (`plane pair alone`, `this
+rail`, and the note itself). The map caption, the hover readout, the strip over the map, the |Z|
+tab's tooltip, the plot's Y axis and every marker on it take their words from it. **The marker
+needed a new seam**: its text came from the cube name, so it read `Z(1,1) Mag` — a matrix-element
+shorthand that names no quantity at all. `Trace.QuantityName` is an owner-supplied override that
+`TraceLabeler.QuantityFor` honours, and `ComputeMinimalLabels` was re-pointed at `QuantityFor`
+rather than keeping its own copy of the cube/network dispatch, so a legend and a marker box cannot
+honour it differently.
+
+### R-rail21-2c — the breakdown's total is 50.131 mV, and the gap is a parallel leg
+
+**Measured on the shipped Power Rail example** (`circuitrf rail "examples/Power Rail/Sensor
+board/Sensor board.crail"`), not inferred. Thirteen rows:
+
+| drop (mV) | R (mΩ) | I = drop/R (mA) | what |
+|---:|---:|---:|---|
+| 22.722 | 64.919 | 350.0 | 26.462 mm of 0.209 mm BOT copper |
+| 21.000 | 60.000 | 350.0 | the source's series resistance |
+|  1.582 |  5.441 | 290.8 | 3.927 mm of 0.387 mm TOP copper |
+|  1.318 | 22.264 |  59.2 | 9.334 mm of 0.227 mm BOT copper |
+|  1.069 |  3.056 | 349.8 | 2.577 mm of 0.45 mm TOP copper |
+|  0.974 |  2.782 | 350.1 | 2.313 mm of 0.43 mm TOP copper |
+|  0.619 |  1.770 | 349.7 | the reference return |
+|  0.322 |  5.441 |  59.2 | 3.927 mm of 0.387 mm TOP copper |
+|  0.219 |  0.627 | 349.3 | 2 parallel vias |
+|  0.182 |  0.627 | 290.3 | 2 parallel vias |
+|  0.087 |  1.471 |  59.1 | 1.5 squares of IN3 copper |
+|  0.037 |  0.627 |  59.0 | 2 parallel vias |
+|  0.000 |  0.647 |   ~0  | 0.7 squares of IN3 copper |
+
+They sum to **50.131 mV** — which is the 50.1 the designer reported, and the README's published
+table shows only its top seven rows, which is where the 49.3 came from. `U1.VDD` is **48.368 mV**
+below the source. The difference is **1.763 mV**.
+
+Sort the rows by current and it is immediate. Six groups carry the full 350 mA and drop 46.603 mV
+between them. The rest divide: four carry **290.8 mA** and drop 1.582 + 0.182 = **1.764 mV**, and
+four carry **59.2 mA** and drop 1.318 + 0.322 + 0.087 + 0.037 = **1.764 mV**. Two legs across one
+pair of nodes drop the same voltage, as they must. 46.603 + 1.764 = 48.367, the port's own drop;
+46.603 + 1.764 + 1.764 = 50.131, the table's.
+
+**So the gap is the second parallel leg, counted once by the port and twice by the table. It is NOT
+the reference return** — the brief's own guess, and the obvious one, because the return is "not in
+the source-to-port path". It is: the port's voltage is V(power) − V(reference) at its pin field, so
+the return copper is inside the loop that drop is measured across and is counted exactly once.
+
+The arithmetic in `PdnBreakdown.Rank` is right and unchanged — its shares are deliberately taken
+against the sum of the rows so they add to one exactly whatever the board is. What was missing is
+that the sum had no name and the difference had no explanation, so `PdnBreakdown.TotalLine` and
+`PdnBreakdown.Reconcile` sit beside `Rank`, which is the one place that knows what the total IS.
+The reconciliation prints only where the two differ by more than display rounding (n rows × half a
+display unit), because a note about two numbers that agree is noise under a table.
+
+### The legend was unreadable because the PLATE shrinks, not because the fitting rule was wrong
+
+R-rail18-4 fixed the three labels OVERLAPPING on a small canvas by shrinking them to fit, with no
+floor, on the argument that small text is recoverable and a missing model name is not. Measured:
+`RailMapLegend.Box` is 7.5 % of the map's longer side in DBU, so on a 400 px pane the whole plate is
+about 24 device pixels tall, its colour ramp takes half of that, and **the strip left for the labels
+is 9 px**. The fitting rule was then doing exactly what it was told — the caption came out at 4.99 px
+at 200 px and 10 px was simply larger than the box.
+
+So there are two halves to the fix and only one of them is the floor:
+
+- `RailMapRenderer.LegendFloorPx` (= `LabelSizePx`, so the legend is never smaller than the marker
+  callouts drawn beside it) is the size text is never drawn below. Below it the CAPTION is dropped
+  and the end labels kept — they are the scale — and below that nothing is drawn at all, because a
+  colour ramp with no numbers is a coloured box sitting where the answer would be. This reverses
+  R-rail18-4's "the caption may never be dropped": a six-pixel caption names the model to nobody
+  while taking the space the two end labels need.
+- `TryPlate` gives the plate a MINIMUM SCREEN SIZE — tall enough for a floor-height label band, wide
+  enough for the three labels at the floor — anchored at the world box's own top-left so a dragged
+  plate stays where it was put, and clamped to the viewport. R-rail18-4 ruled out widening the plate
+  and was right about the reason (the box is world geometry and `RailMapScene.Bounds` frames it),
+  but that reason binds on the SCENE, which is what Zoom to Fit reads. Painting a minimum-size plate
+  is a screen decision and leaves the world extent, the drag and the framing untouched.
+
+**Two float traps, both of which silently dropped the caption on every legend the plate had been
+widened for.** `TryPlate` derives the label band from the plate height by one route and
+`LayOutLabels` compares it by another, so an exactly-equal band read 9.9999995 px; and the plate is
+sized from the strings measured at the FLOOR while the fit measures them at `LegendSizePx` and
+scales down, so a plate widened to the exact requirement lands a hundredth of a pixel on the wrong
+side of it. Both are answered with half a pixel of slack and a `Math.Max` onto the floor, rather
+than by making the two routes agree exactly — which they cannot, being different arithmetic.
+
+Measured after, on the |Z| map: **10, 10 and 10.05 px at 200, 400 and 1200 px canvas widths**, where
+before they were **1.57, 3.15 and 9.44 px**. The 10.05 is not a rounding artefact — at 1200 px the
+world plate is genuinely wide enough for the fit to land just above the floor, which is the 2026-09-19
+"the text tracks the plate upwards" behaviour still working. At 200 px the caption is dropped and the
+two end labels are kept at the floor; at 36 px nothing is drawn.
+
 ## The Smith Chart's RLC vocabulary: eight kinds, two formulas, one element set (2026-09-20)
 
 Owner: put the six new two-element RLC parts in the Smith Chart's element list too. The Chart's

@@ -1166,8 +1166,12 @@
                                     ToolTip.Tip="Drop — the artwork coloured by node voltage">
                                 <mi:MaterialIcon Kind="GradientVertical" Width="14" Height="14"/>
                             </Button>
+                            <!-- The tooltip is the VIEW MODEL's, because it carries the one phrase
+                                 that distinguishes this picture from the |Z| CURVE on the Frequency
+                                 tab (PdnImpedanceNames, R-rail21-1a). A literal here would be a
+                                 fifth spelling of a distinction that has to be one. -->
                             <Button Classes="tabbtn" Name="ImpedanceTab"
-                                    ToolTip.Tip="|Z| — how many ohms the plane presents between the chosen load pin and every point on the board, at ONE frequency. Not a sweep: the curve over frequency is on the Frequency results tab.">
+                                    ToolTip.Tip="{Binding ImpedanceTabTip}">
                                 <mi:MaterialIcon Kind="Omega" Width="14" Height="14"/>
                             </Button>
                             <Button Classes="tabbtn" Name="ClassTab"
@@ -1426,6 +1430,17 @@
                                         <TextBlock Classes="note" TextWrapping="Wrap" MaxWidth="360"
                                                    Text="{Binding PlaneStage}"/>
                                     </StackPanel>
+                                    <!-- ── WHAT THIS PICTURE IS OF, ON THE PICTURE (R-rail21-1b) ──
+                                         It was in Notes — a list on a different tab, which nobody
+                                         reads while looking at a map. It is the single most
+                                         important thing a reader of this picture needs, and where a
+                                         sweep has been run it carries the rail's own |Z| at the same
+                                         frequency beside it, so the four orders of magnitude between
+                                         the two reads as two questions rather than as a fault. -->
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         MaxWidth="360"
+                                                         IsVisible="{Binding HasImpedanceMapNote}"
+                                                         Text="{Binding ImpedanceMapNote}"/>
                                 </StackPanel>
                             </Border>
                         </Panel>
@@ -1697,6 +1712,20 @@
                                     <TextBlock Classes="note" TextWrapping="Wrap"
                                                Text="{Binding BreakdownLocatorNote}"
                                                IsVisible="{Binding BreakdownLocatorNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    <!-- ── WHAT THE ROWS ADD UP TO, AND WHY IT IS NOT THE DROP ────
+                                         R-rail21-2. The shares are taken against the sum of the
+                                         rows and that sum was nowhere on screen, so a reader who
+                                         added the millivolts got a number the Drop card above
+                                         contradicted — 50.1 mV against 48.4 — with nothing saying
+                                         they answer different questions. The second line appears
+                                         only where they actually differ: a reconciliation note
+                                         about two numbers that match is noise. -->
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding BreakdownTotalLine}"
+                                                         IsVisible="{Binding BreakdownTotalLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         Text="{Binding BreakdownReconciliation}"
+                                                         IsVisible="{Binding HasBreakdownReconciliation}"/>
                                 </StackPanel>
                             </Border>
 

@@ -102,27 +102,38 @@ public sealed class RailBoardViewTests
         var layout = RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline,
                                                   baseline - bar.Bottom);
 
-        // All three are always drawn: the caption carries the model kind, and §2.9 rule 1 makes that
-        // the one thing a picture which has left the window must still say.
-        Assert.True(layout.Cold.Width > 0 && layout.Caption.Width > 0 && layout.Hot.Width > 0,
-                    "the plate lost one of its three labels.");
+        // ── WHAT IS DRAWN NEVER OVERLAPS, AND IS NEVER UNDER THE FLOOR (R-rail21-3a) ─────────
+        //
+        // The "all three are always drawn" half of this test was R-rail18-4's and brief 21 reversed
+        // it: below the readable floor the CAPTION IS DROPPED rather than the text shrunk, and
+        // below the floor for the end labels too nothing is drawn at all. A six-pixel caption names
+        // the model to nobody, so what the old rule protected was not actually being delivered —
+        // see RailMapRenderer.LegendFloorPx. What survives unchanged is that whatever IS drawn does
+        // not collide, which is what this ladder was written for.
+        if (!layout.Drawn) return;
+
+        Assert.True(layout.TextSizePx >= RailMapRenderer.LegendFloorPx,
+                    $"legend text at {layout.TextSizePx:0.##} px at {widthPx} px canvas, under the "
+                  + $"{RailMapRenderer.LegendFloorPx} px floor.");
+
+        Assert.True(layout.Cold.Width > 0 && layout.Hot.Width > 0,
+                    "the plate lost one of its end labels, which ARE the scale.");
+
+        Assert.False(layout.Cold.IntersectsWith(layout.Hot),
+                     $"the minimum and the maximum overlap at {widthPx} px.");
+
+        if (!layout.CaptionDrawn) return;
 
         Assert.False(layout.Cold.IntersectsWith(layout.Caption),
                      $"the minimum and the caption overlap at {widthPx} px.");
         Assert.False(layout.Caption.IntersectsWith(layout.Hot),
                      $"the caption and the maximum overlap at {widthPx} px.");
-        Assert.False(layout.Cold.IntersectsWith(layout.Hot),
-                     $"the minimum and the maximum overlap at {widthPx} px.");
 
         // ── and the half that gives the assertions above their teeth ──────────────────────────
         //
         // Wherever the renderer had to shrink, the OLD full-size layout really did overlap. Without
         // this the ladder could pass on a renderer that never had a problem — which is how this
         // defect survived brief 8's own gate.
-        Assert.True(widthPx > 240 || layout.TextSizePx < RailMapRenderer.LegendSizePx,
-                    $"nothing was shrunk at {widthPx} px, so the narrow rungs of this ladder are not "
-                  + "exercising the fix.");
-
         if (layout.TextSizePx >= RailMapRenderer.LegendSizePx) return;
 
         var full = FullSizeLabels(legend!, bar, baseline);
@@ -164,8 +175,17 @@ public sealed class RailBoardViewTests
 
         float outFar = SizeAt(0.5), fit = SizeAt(1), inNear = SizeAt(4), inFar = SizeAt(16);
 
-        Assert.True(outFar < fit, $"zooming out did not shrink the text ({outFar} vs {fit}).");
-        Assert.True(fit < inNear, $"zooming in did not grow the text ({fit} vs {inNear}).");
+        // ── DOWNWARDS IT STOPS AT THE FLOOR (R-rail21-3a) ────────────────────────────────────
+        //
+        // This read `outFar < fit` — the text tracked the plate all the way down, with no floor,
+        // which is exactly what produced a legend the owner could not read without heavy zoom. The
+        // claim this test exists for is the UPWARD one (2026-09-19: the text stopped growing when
+        // zoomed in and there was no zoom at which it came back); downwards, the correct behaviour
+        // is now to stop rather than to keep shrinking.
+        Assert.True(outFar >= RailMapRenderer.LegendFloorPx,
+                    $"zooming out took the text to {outFar} px, under the floor.");
+        Assert.True(outFar <= fit, $"zooming out ENLARGED the text ({outFar} vs {fit}).");
+        Assert.True(fit <= inNear, $"zooming in shrank the text ({fit} vs {inNear}).");
         Assert.True(inNear < inFar,
                     $"the text stopped growing past {inNear} px — this is the reported defect.");
 
@@ -278,7 +298,8 @@ public sealed class RailBoardViewTests
             new SKRect(bar.Left, top, bar.Left + unscaled.Cold.Width, baseline),
             new SKRect(centre - unscaled.Caption.Width / 2f, top,
                        centre + unscaled.Caption.Width / 2f, baseline),
-            new SKRect(bar.Right - unscaled.Hot.Width, top, bar.Right, baseline));
+            new SKRect(bar.Right - unscaled.Hot.Width, top, bar.Right, baseline),
+            Drawn: true, CaptionDrawn: true);
     }
 
     // ══ fixtures ═════════════════════════════════════════════════════════════════════════════

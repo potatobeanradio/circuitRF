@@ -377,6 +377,11 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(HasCoincidences));
         OnPropertyChanged(nameof(HasAntiResonances));
         OnPropertyChanged(nameof(HasRemovalRanking));
+
+        // The |Z| MAP's readout states this rail's own |Z| beside the plane pair's (R-rail21-1c),
+        // and that number comes out of this sweep — so a finished sweep re-raises the map's
+        // sentences too. Without it the second number appears only when the map is next re-run.
+        AnnounceImpedanceMap();
         AnnounceCardVisibility();
         RebuildImpedancePlot();
     }
@@ -416,15 +421,26 @@ public sealed partial class RailRfViewModel
     private static string CurveKey(PdnModelKind kind, int portIndex) =>
         string.Create(CultureInfo.InvariantCulture, $"{kind}|{portIndex}");
 
-    /// <summary>What the axis is called, in whatever unit the curves are currently in.</summary>
+    /// <summary>
+    /// What the axis is called, in whatever unit the curves are currently in — <b>and WHICH |Z| it
+    /// is</b> (R-rail21-1d).
+    /// </summary>
+    /// <remarks>
+    /// This curve is the DECOUPLED rail: thirteen capacitors, their ESR, their mounting loops and
+    /// the source's own R and L. The board map on the |Z| tab is the plane pair with none of that
+    /// on it, and at one frequency the two differ by four orders of magnitude — so an axis reading
+    /// only "|Z|" leaves a reader with two impedances of one board and no way to tell them apart.
+    /// The name is <see cref="PdnImpedanceNames.Rail"/>'s, the same one the map's own surfaces use
+    /// for the other half of the distinction.
+    /// </remarks>
     private string ImpedanceYLabel => ImpedanceTransform switch
     {
-        CubeTransform.dB20              => "|Z| (dBΩ)",
-        CubeTransform.dB10 or CubeTransform.dB => "|Z| (dB, 10·log₁₀)",
-        CubeTransform.Real              => "Re(Z) (Ω)",
-        CubeTransform.Imag              => "Im(Z) (Ω)",
-        CubeTransform.Phase             => "∠Z (°)",
-        _                               => "|Z| (Ω)",
+        CubeTransform.dB20              => $"|Z| {PdnImpedanceNames.Rail} (dBΩ)",
+        CubeTransform.dB10 or CubeTransform.dB => $"|Z| {PdnImpedanceNames.Rail} (dB, 10·log₁₀)",
+        CubeTransform.Real              => $"Re(Z) {PdnImpedanceNames.Rail} (Ω)",
+        CubeTransform.Imag              => $"Im(Z) {PdnImpedanceNames.Rail} (Ω)",
+        CubeTransform.Phase             => $"∠Z {PdnImpedanceNames.Rail} (°)",
+        _                               => $"|Z| {PdnImpedanceNames.Rail} (Ω)",
     };
 
     /// <summary>
@@ -673,6 +689,15 @@ public sealed partial class RailRfViewModel
         var trace = CubeTrace(cubeName, slice, transform, spec,
                               Style(colour, kind == PdnModelKind.Accurate
                                                 ? LineType.Solid : LineType.Dashed, width: 1.0));
+
+        // ── THE MARKER SAYS WHICH |Z| THIS IS (R-rail21-1d) ──────────────────────────────────
+        //
+        // "Z(1,1) Mag" is a CUBE NAME, not an answer: it is the shorthand for a matrix element and
+        // it says nothing about which of this window's two impedances the number under it belongs
+        // to. A reader comparing it against the board map's 465 Ω saw one name over two quantities
+        // twenty thousand apart. The port is named rather than numbered for the same reason —
+        // "U1.VDD" is what they typed, "(1,1)" is an index into a matrix they never built.
+        trace.QuantityName = $"|Z| {PdnImpedanceNames.Rail} ({port.Name})";
 
         // WHICH READING this curve is of. The Plot Inspector re-resolves a cube trace from its
         // source on every edit, and this is what it resolves against — see RailPlotDataSources.

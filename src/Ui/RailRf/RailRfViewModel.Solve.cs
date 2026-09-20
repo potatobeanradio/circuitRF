@@ -136,11 +136,18 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ExportResults));
         OnPropertyChanged(nameof(PortLines));
         OnPropertyChanged(nameof(BreakdownRows));
+        OnPropertyChanged(nameof(BreakdownTotalLine));
+        OnPropertyChanged(nameof(BreakdownReconciliation));
+        OnPropertyChanged(nameof(HasBreakdownReconciliation));
         OnPropertyChanged(nameof(PlaneCapacitanceLine));
         OnPropertyChanged(nameof(PlaneCapacitanceShort));
         OnPropertyChanged(nameof(HasPlaneCapacitance));
         AnnounceCardVisibility();
         SyncBoardOverlayResult();
+
+        // The |Z| map's readout prints THIS reading's rail impedance beside the plane pair's
+        // (R-rail21-1c), and which reading is on screen is exactly what just changed.
+        AnnounceImpedanceMap();
     }
 
     /// <summary>
@@ -229,6 +236,51 @@ public sealed partial class RailRfViewModel
     [
         .. Breakdown.Select(b => new RailBreakdownRowViewModel(b, BreakdownText(b))),
     ];
+
+    /// <summary>
+    /// <b>R-rail21-2a — what the rows add up to, and what that sum IS.</b>
+    /// </summary>
+    /// <remarks>
+    /// The shares are computed against the sum of the rows (<c>PdnBreakdown.Rank</c>, deliberately,
+    /// so they add to one exactly whatever the board is), and that sum was nowhere on screen: a
+    /// reader who added the millivolts got a number the Drop card contradicted and no statement of
+    /// which was which. Printing it NAMED is the whole of the fix — the arithmetic is right and §5
+    /// of the brief forbids changing it.
+    /// </remarks>
+    public string BreakdownTotalLine => PdnBreakdown.TotalLine(Breakdown);
+
+    /// <summary>The port the reconciliation is written against: the one that is furthest below the
+    /// source, because that is the reading a budget is judged on.</summary>
+    private RailPortDrop? WorstDropPort =>
+        Ports.Where(p => p.DropV is not null)
+             .OrderByDescending(p => p.DropV!.Value)
+             .FirstOrDefault();
+
+    /// <summary>
+    /// <b>R-rail21-2b — why the two totals differ, on the boards where they do.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>The rows' sum is not the drop at a port, and both are right.</b> A row is counted wherever
+    /// current flows through it: where the rail divides between parallel paths, every leg is in the
+    /// table and the port drops only ONE of them; copper carrying current to a different port is in
+    /// the table and is on no path this port sees. Measured on the shipped Power Rail example, the
+    /// thirteen rows sum to 50.131 mV against U1.VDD's 48.368 mV, and the 1.763 mV difference is
+    /// exactly the second of two parallel legs — each carries part of the 350 mA and each drops
+    /// 1.764 mV between the same two nodes (the arithmetic is in <c>src/Design/RESOLVED.md</c>).
+    /// Not the reference return, which is in the loop the port voltage is measured across and is
+    /// counted once.
+    ///
+    /// <para><b>Nothing is printed where they agree</b> — the ordinary single-path board. A
+    /// reconciliation note about two numbers that match is noise, and noise beside a table is how a
+    /// reader learns to stop reading the sentences under it.</para>
+    /// </remarks>
+    public string BreakdownReconciliation =>
+        WorstDropPort is { DropV: { } drop } port
+            ? PdnBreakdown.Reconcile(Breakdown, port.Name, drop)
+            : "";
+
+    /// <summary>Whether R-rail21-2b has anything to say on this board.</summary>
+    public bool HasBreakdownReconciliation => BreakdownReconciliation.Length > 0;
 
     /// <summary>The one formatter — see <see cref="BreakdownRows"/>.</summary>
     private static string BreakdownText(PdnBreakdownRow b) =>

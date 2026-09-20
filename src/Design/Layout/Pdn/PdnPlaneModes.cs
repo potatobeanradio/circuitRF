@@ -329,10 +329,10 @@ public static class PdnPlaneModes
                 "pieces and the map is of the one the port is on. Those cells are left UNCOLOURED " +
                 "rather than coloured zero, because no current of this drive flows in them at all.");
 
-        notes.Add(
-            "These modes and this map are the PLANE PAIR's own — its copper, its shape and its " +
-            "stackup. The decoupling parts, the sources and the loads hanging on it are not in " +
-            "either of them; their answer is the |Z| curve.");
+        // ONE COPY — the window prints the same sentence on the map panel beside the colour bar
+        // (R-rail21-1b), because a note in a list on another tab is not where a reader of a picture
+        // looks. See PdnImpedanceNames.
+        notes.Add(PdnImpedanceNames.PlanePairNote);
 
         var answer = new PdnPlaneAnswer(
             null, modes, cells, map, mapHz, mapPort, set.Pieces,

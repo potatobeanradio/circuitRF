@@ -680,6 +680,24 @@ namespace CircuitRF.Render.DataDisplay
         public CubeTransform Transform      { get; set; } = CubeTransform.None;
         public string?       InvalidSpecText { get; set; }
 
+        /// <summary>
+        /// What this trace's QUANTITY is called, where its owner knows better than the cube does.
+        /// Null — the ordinary case — leaves <see cref="TraceLabeler.QuantityFor"/> to build the
+        /// name out of the cube, its pinned axes and its transform, exactly as before.
+        /// </summary>
+        /// <remarks>
+        /// <b>railRF (R-rail21-1d).</b> Its plot's Z cube is named "Z", so the axis and every marker
+        /// read <c>Z(1,1) Mag</c> — the shorthand for a matrix element, which says nothing about
+        /// WHICH impedance it is. That window computes two of them at one frequency from one port
+        /// name, four orders of magnitude apart, and a reader took the pair as evidence the tool
+        /// was broken. The owner is the only thing that knows the difference.
+        ///
+        /// <para>The transform suffix still follows it, so <c>… dB20</c> stays on every label in
+        /// the plot's one language, and the SOURCE prefix still applies — a name here replaces the
+        /// quantity component of a label and nothing else.</para>
+        /// </remarks>
+        public string? QuantityName { get; set; }
+
         /// <summary>Full element-wise expression string (e.g. <c>mag(V[:, 0, 0]) + mag(V[:, 0, 1])</c>).
         /// When non-null, the owner resolves via <c>TraceExpression</c> instead of the single-slice path.
         /// Supersedes CubeName/Slice/Transform for value production.</summary>

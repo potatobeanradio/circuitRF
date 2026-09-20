@@ -35,14 +35,20 @@ namespace CircuitRF.Render;
 /// Where the legend plate's three labels land, and at what size (R-rail18-4) —
 /// <see cref="RailMapRenderer.LayOutLabels"/> decides it, this carries the decision.
 /// </summary>
-/// <param name="TextSizePx">The size all three are drawn at, device pixels. It tracks the PLATE,
-/// which is world geometry, so it grows and shrinks with the zoom in both directions;
-/// <see cref="RailMapRenderer.LegendSizePx"/> is only the size the strings are measured at.</param>
+/// <param name="TextSizePx">The size the labels are drawn at, device pixels. It tracks the PLATE,
+/// which is world geometry, so it GROWS with the zoom — and it is never below
+/// <see cref="RailMapRenderer.LegendFloorPx"/>, because text under that is not a legend
+/// (R-rail21-3a). <see cref="RailMapRenderer.LegendSizePx"/> is the size the strings are measured
+/// at.</param>
 /// <param name="Cold">The minimum's box, device pixels.</param>
-/// <param name="Caption">The caption's.</param>
+/// <param name="Caption">The caption's. Empty when <paramref name="CaptionDrawn"/> is false.</param>
 /// <param name="Hot">The maximum's.</param>
+/// <param name="Drawn">False where not even the two end labels fit at the floor — then NOTHING is
+/// drawn, plate included (R-rail21-3b).</param>
+/// <param name="CaptionDrawn">False where the caption was dropped to keep the end labels at the
+/// floor.</param>
 public readonly record struct RailMapLabelLayout(
-    float TextSizePx, SKRect Cold, SKRect Caption, SKRect Hot);
+    float TextSizePx, SKRect Cold, SKRect Caption, SKRect Hot, bool Drawn, bool CaptionDrawn);
 
 /// <summary>
 /// An empty tab's own sentence, wrapped — <see cref="RailMapRenderer.LayOutNote"/> decides it, this
@@ -80,6 +86,25 @@ public static class RailMapRenderer
     /// enough canvas the three labels do not fit at this size and are drawn smaller.</summary>
     public const float LegendSizePx = 11f;
 
+
+    /// <summary>
+    /// <b>The size legend text is never drawn below, device pixels (R-rail21-3a).</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>It is <see cref="LabelSizePx"/> on purpose, and that is the whole definition.</b> The
+    /// marker callouts on this same picture are drawn at that size and are screen-fixed — a
+    /// deliberate decision, so a callout on a backplane is the same size as one on a module. A
+    /// legend smaller than the callouts beside it is not a legend, and pinning the floor to that
+    /// number means there is ONE notion of "readable on this map" rather than two that drift.
+    ///
+    /// <para>R-rail18-4 fixed the three labels OVERLAPPING on a small canvas by shrinking them to
+    /// fit. It did not fix their size, and it had no floor: on a real board's pane the caption came
+    /// out around six pixels — a grey smear, with the numbers at the ends barely a pixel tall
+    /// (2026-09-20). <b>An unreadable legend is strictly worse than no legend</b>: it occupies the
+    /// space where the answer would go and looks like a rendering fault. So below this, text is
+    /// DROPPED rather than scaled — see <see cref="LayOutLabels"/>.</para>
+    /// </remarks>
+    public const float LegendFloorPx = LabelSizePx;
 
     /// <summary>What an empty tab's sentence is drawn at, device pixels, before it is wrapped.</summary>
     public const float NoteSizePx = LegendSizePx + 1;
@@ -631,7 +656,14 @@ public static class RailMapRenderer
 
         if (!TryPlate(legend, vp, out var plate, out var bar, out float textBaseline)) return;
 
-        float x0 = plate.Left, x1 = plate.Right, y0 = plate.Top, y1 = plate.Bottom;
+        // ── NOTHING FITS AT THE FLOOR ⇒ NOTHING IS DRAWN (R-rail21-3b) ───────────────────────
+        //
+        // Decided BEFORE the plate, because a plate and a colour ramp with no numbers on either
+        // end is not a scale — it is a coloured box sitting where the answer would be. That is the
+        // "rendering fault" reading the floor exists to prevent, so the whole legend goes.
+        var layout = LayOutLabels(legend, bar.Left, bar.Right, textBaseline,
+                                  textBaseline - bar.Bottom);
+        if (!layout.Drawn) return;
 
         // OPAQUE, and this is the one line of this file the §11.7 rule is actually about.
         using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendBackground };
@@ -654,10 +686,6 @@ public static class RailMapRenderer
             canvas.DrawRect(new SKRect(a, barTop, b + 0.5f, barBottom), band);
         }
 
-        // The label band is what is left of the plate under the ramp — the second of the two
-        // constraints the text is fitted to. See LayOutLabels.
-        var layout = LayOutLabels(legend, barLeft, barRight, textBaseline, textBaseline - barBottom);
-
         using var font = Font(SkiaFonts.PlexRegular, layout.TextSizePx);
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.LegendInk };
 
@@ -667,9 +695,12 @@ public static class RailMapRenderer
         canvas.DrawText(legend.ColdLabel, barLeft, textBaseline, SKTextAlign.Left, font, ink);
         canvas.DrawText(legend.HotLabel, barRight, textBaseline, SKTextAlign.Right, font, ink);
 
-        // The caption carries the model kind (§2.9 rule 1: every result says which model produced it,
-        // and a picture pasted into a document is a result that has left the window behind). It is
-        // therefore ALWAYS drawn — see LayOutLabels.
+        // The caption carries the model kind (§2.9 rule 1), so it is drawn wherever it can be drawn
+        // READABLY — and dropped rather than shrunk where it cannot (R-rail21-3b). A caption at six
+        // pixels names the model to nobody; what it does do is take the space the two end labels
+        // need in order to stay at the floor.
+        if (!layout.CaptionDrawn) return;
+
         using var caption = Font(SkiaFonts.PlexSemiBold, layout.TextSizePx);
         canvas.DrawText(legend.Caption, (barLeft + barRight) / 2, textBaseline, SKTextAlign.Center,
                         caption, ink);
@@ -686,6 +717,23 @@ public static class RailMapRenderer
     /// <param name="baseline">Where the labels' baseline sits.</param>
     /// <returns>False where the plate has collapsed to nothing on screen, in which case it is not
     /// drawn at all.</returns>
+    /// <remarks>
+    /// <b>The plate has a MINIMUM SCREEN SIZE, which is R-rail21-3's half that R-rail18-4 could not
+    /// reach from where it was standing.</b> <c>RailMapLegend.Box</c> is 7.5 % of the map's longer
+    /// side in DBU, so on a pane-sized canvas the whole plate is around 24 device pixels tall and
+    /// the strip left under the colour ramp is nine. That is why the text was six pixels: it was
+    /// not the fitting rule that was wrong, it was that THE BOX the rule fits into shrinks with the
+    /// canvas. Floor-size text inside a shrinking box is text that does not fit.
+    ///
+    /// <para>So below the size <see cref="LegendFloorPx"/> needs, the plate is drawn LARGER than
+    /// its world box — anchored at the box's own top-left corner, so a plate the user has dragged
+    /// stays where they put it, and clamped to the viewport, so the answer to "there is no room" is
+    /// eventually <see cref="LayOutLabels"/> drawing less rather than this drawing off-screen.
+    /// R-rail18-4 ruled out widening the plate and was right about the reason — the box is world
+    /// geometry and <c>RailMapScene.Bounds</c> frames it — but that reason binds on the SCENE,
+    /// which is what Zoom to Fit reads. Painting a minimum-size plate is a screen decision and
+    /// leaves the world extent, the drag and the framing exactly as they were.</para>
+    /// </remarks>
     public static bool TryPlate(
         RailMapLegend legend, LayoutViewport vp, out SKRect plate, out SKRect bar, out float baseline)
     {
@@ -702,11 +750,64 @@ public static class RailMapRenderer
 
         if (x1 - x0 < 2 || y1 - y0 < 2) return false;
 
-        float pad = (y1 - y0) * 0.12f;
-        bar = new SKRect(x0 + pad, y0 + pad, x1 - pad, y0 + (y1 - y0) * 0.5f);
-        baseline = y1 - pad;
+        // ── the floor's own minimum, clamped to the viewport ─────────────────────────────────
+        float h = Math.Max(plate.Height, MinPlateHeightPx);
+        float w = Math.Max(plate.Width, MinPlateWidthPx(legend, h));
+
+        if (vp.Width > 0)  w = Math.Min(w, (float)vp.Width);
+        if (vp.Height > 0) h = Math.Min(h, (float)vp.Height);
+
+        float left = x0, top = y0;
+        if (vp.Width > 0 && left + w > vp.Width)   left = Math.Max(0f, (float)vp.Width - w);
+        if (vp.Height > 0 && top + h > vp.Height)  top  = Math.Max(0f, (float)vp.Height - h);
+
+        plate = new SKRect(left, top, left + w, top + h);
+
+        float pad = h * PlatePadFraction;
+        bar = new SKRect(left + pad, top + pad, left + w - pad, top + h * BarBottomFraction);
+        baseline = top + h - pad;
         return true;
     }
+
+    /// <summary>The plate's border inset, as a fraction of its height.</summary>
+    private const float PlatePadFraction = 0.12f;
+
+    /// <summary>Where the colour ramp stops, as a fraction of the plate's height.</summary>
+    private const float BarBottomFraction = 0.5f;
+
+    /// <summary>What is left for the labels, as a fraction of the plate's height — the ramp's
+    /// bottom to the baseline. Derived from the two above so it cannot drift from them.</summary>
+    private const float LabelBandFraction = 1f - PlatePadFraction - BarBottomFraction;
+
+    /// <summary>The shortest plate whose label band is a floor-height line.</summary>
+    public static float MinPlateHeightPx => LegendFloorPx / LabelBandFraction;
+
+    /// <summary>
+    /// The narrowest plate that holds all three labels at <see cref="LegendFloorPx"/> — the width
+    /// <see cref="LayOutLabels"/> is about to ask for, computed from the same strings and the same
+    /// spacing rather than from a second estimate of them.
+    /// </summary>
+    public static float MinPlateWidthPx(RailMapLegend legend, float plateHeightPx)
+    {
+        ArgumentNullException.ThrowIfNull(legend);
+
+        using var regular  = Font(SkiaFonts.PlexRegular,  LegendFloorPx);
+        using var semibold = Font(SkiaFonts.PlexSemiBold, LegendFloorPx);
+
+        float perSide = Math.Max(regular.MeasureText(legend.ColdLabel),
+                                 regular.MeasureText(legend.HotLabel))
+                      + semibold.MeasureText(legend.Caption) / 2f
+                      + LegendFloorPx * GapFraction;
+
+        // Two pixels of slack, because the fit this has to satisfy measures the same strings at
+        // LegendSizePx and scales down to the floor — a plate sized to the exact requirement lands
+        // on the wrong side of it by rounding.
+        return 2f * perSide + 2f * plateHeightPx * PlatePadFraction + 2f;
+    }
+
+    /// <summary>Clear space between neighbouring labels, as a fraction of the text size — labels
+    /// that merely touch read as one word.</summary>
+    private const float GapFraction = 0.6f;
 
     /// <summary>
     /// Where the plate's three labels go, and how big they are — <b>the one place that decides it</b>,
@@ -719,24 +820,30 @@ public static class RailMapRenderer
     /// canvas the minimum, the caption and the maximum ran into each other — in the window, and in
     /// every <c>.svg</c> and <c>.pdf</c> copied out of it.
     ///
-    /// <para><b>Of the three possible answers the fix is SHRINK THE TEXT TO FIT THE BOX</b>, and the
-    /// reason is that the other two give up something that is not theirs to give. WIDENING the box
-    /// cannot be done here — the box is world geometry and <see cref="RailMapScene.Bounds"/> frames
-    /// it, so a renderer that widened the plate would draw outside what Zoom to Fit framed (§11.6
-    /// trap 4, which this legend's placement exists to satisfy); and widening it in the SCENE would
-    /// make a world extent depend on a screen font size. DROPPING THE CAPTION is the one that looks
-    /// cheapest and is not available at all: the caption carries the MODEL KIND, and §2.9 rule 1
-    /// says every result names the model that produced it — a picture copied out of the window is a
-    /// result that has left the window behind, so a plate without it is a fast answer that cannot be
-    /// told from an accurate one. <c>RailZMapTests</c> asserts exactly that, and it is what rejected
-    /// the threshold this was first written with.</para>
+    /// <para><b>WIDENING the box is not available</b> — it is world geometry and
+    /// <see cref="RailMapScene.Bounds"/> frames it, so a renderer that widened the plate would draw
+    /// outside what Zoom to Fit framed (§11.6 trap 4, which this legend's placement exists to
+    /// satisfy); and widening it in the SCENE would make a world extent depend on a screen font
+    /// size. So the text is fitted to the box.
     ///
-    /// <para>So all three labels always appear and the text scales without a floor. Small text is
-    /// recoverable — the exports are vector and the window can be widened; overlapping text is not,
-    /// and a missing model name is not either.</para>
+    /// <para><b>But NOT below <see cref="LegendFloorPx"/>, which is R-rail21-3 and reverses half of
+    /// what R-rail18-4 decided.</b> That brief shrank the three labels without a floor, on the
+    /// grounds that small text is recoverable — the exports are vector and the window can be
+    /// widened — while a missing model name is not. On a real board's pane that produced a caption
+    /// of about six pixels and end labels barely a pixel tall: <i>"text is not readable in the
+    /// scale, unless using heavy zoom"</i> (2026-09-20). An unreadable legend is strictly worse
+    /// than no legend, because it occupies the space where the answer would go and reads as a
+    /// rendering fault — and a six-pixel caption names the model to nobody, so what R-rail18-4
+    /// protected was not actually being delivered.</para>
     ///
-    /// <para><b>And it scales without a CEILING either</b>, which is the 2026-09-19 half: see the
-    /// two constraints in the body.</para>
+    /// <para>So, in order: draw all three at whatever size fits, never below the floor; where that
+    /// cannot be done, DROP THE CAPTION and keep the two end labels at the floor — they are the
+    /// scale, and a scale with no numbers is nothing; where even those will not fit, draw no legend
+    /// at all. Never scaled below the floor at any step.</para>
+    ///
+    /// <para><b>And it scales without a CEILING</b>, which is the 2026-09-19 half and is unchanged:
+    /// see the two constraints in the body. The floor and the ceiling are not in tension — the text
+    /// tracks the plate upwards and stops tracking it downwards.</para>
     ///
     /// <param name="legend">The plate.</param>
     /// <param name="left">The bar's left edge, device pixels — where the cold label starts.</param>
@@ -760,9 +867,9 @@ public static class RailMapRenderer
         float available = Math.Max(0f, right - left);
         float centre = (left + right) / 2f;
 
-        // Clear space between neighbouring labels, in the SAME units the widths are in, so it scales
-        // with them: labels that merely touch read as one word.
-        const float Gap = LegendSizePx * 0.6f;
+        // Clear space between neighbouring labels, in the SAME units the widths are in, so it
+        // scales with them — see GapFraction, which MinPlateWidthPx sizes the plate from.
+        const float Gap = LegendSizePx * GapFraction;
 
         // Each side of the centred caption on its own. A total-width test is not enough — one long
         // end label and one short one fits by total and still runs into a centred caption.
@@ -784,15 +891,55 @@ public static class RailMapRenderer
         float size = perSide > 0 ? LegendSizePx * (available / 2f / perSide) : LegendSizePx;
         if (bandHeightPx > 0 && size > bandHeightPx) size = bandHeightPx;
 
+        // ── THE FLOOR, AND WHAT IS GIVEN UP TO STAY ABOVE IT (R-rail21-3a, R-rail21-3b) ───────
+        //
+        // Everything above this line is the fit; everything below is the refusal to go under the
+        // floor. Note that the BAND is a hard ceiling in both branches — text taller than the strip
+        // left under the ramp does not fit inside the plate at all, and a legend drawn over its own
+        // border is the rendering fault again in a different spelling.
+        // Half a pixel of slack, and then pinned AT the floor: TryPlate sizes the plate from these
+        // same strings measured at the FLOOR while the fit above measures them at LegendSizePx and
+        // scales, so a plate widened to fit exactly comes back a hundredth of a pixel short of its
+        // own target. Without this, every legend the plate was widened for would drop its caption.
+        if (size >= LegendFloorPx - 0.5f)
+            return Labels(Math.Max(size, LegendFloorPx), left, right, centre, baseline,
+                          wCold, wCaption, wHot, captionDrawn: true, drawn: true);
+
+        // Half a pixel of slack: TryPlate derives the band from the plate's height by one route and
+        // this compares it by another, and an exact-equality band was reported as 9.9999995 px.
+        bool bandFits = !(bandHeightPx > 0) || bandHeightPx + 0.5f >= LegendFloorPx;
+
+        // Without the caption the constraint is the two END labels and the gap between them, at the
+        // floor. They ARE the scale; the caption is what the scale is of, and a reader looking at a
+        // colour bar with two numbers on it has the part that cannot be reconstructed.
+        float endsAtFloor = (wCold + wHot + Gap) * (LegendFloorPx / LegendSizePx);
+
+        return bandFits && endsAtFloor <= available
+            ? Labels(LegendFloorPx, left, right, centre, baseline,
+                     wCold, wCaption, wHot, captionDrawn: false, drawn: true)
+            : Labels(LegendFloorPx, left, right, centre, baseline,
+                     wCold, wCaption, wHot, captionDrawn: false, drawn: false);
+    }
+
+    /// <summary>The three boxes at one size — the arithmetic <see cref="LayOutLabels"/> ends on,
+    /// once for each of its three answers.</summary>
+    private static RailMapLabelLayout Labels(
+        float size, float left, float right, float centre, float baseline,
+        float wCold, float wCaption, float wHot, bool captionDrawn, bool drawn)
+    {
         float scale  = size / LegendSizePx;
         float ascent = size;                           // a conservative single-line box
 
         return new RailMapLabelLayout(
             size,
             new SKRect(left, baseline - ascent, left + wCold * scale, baseline),
-            new SKRect(centre - wCaption * scale / 2f, baseline - ascent,
-                       centre + wCaption * scale / 2f, baseline),
-            new SKRect(right - wHot * scale, baseline - ascent, right, baseline));
+            captionDrawn
+                ? new SKRect(centre - wCaption * scale / 2f, baseline - ascent,
+                             centre + wCaption * scale / 2f, baseline)
+                : SKRect.Empty,
+            new SKRect(right - wHot * scale, baseline - ascent, right, baseline),
+            drawn,
+            captionDrawn);
     }
 
     /// <summary>

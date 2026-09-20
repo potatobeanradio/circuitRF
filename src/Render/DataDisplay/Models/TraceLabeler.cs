@@ -54,9 +54,11 @@ namespace CircuitRF.Render.DataDisplay
                 sources[i] = !string.IsNullOrEmpty(alias)
                     ? alias
                     : (t.EffectiveSourcePath is { } sp ? Path.GetFileNameWithoutExtension(sp) : null);
-                quantities[i] = t.IsCubeBound
-                    ? BuildCubeQuantity(t)
-                    : BuildNetworkQuantity(t);
+                // THE SAME METHOD a marker readout calls, rather than a second dispatch beside it:
+                // the two used to choose the cube/network branch independently, so an owner-supplied
+                // quantity name (Trace.QuantityName) honoured in one would have been ignored in the
+                // other — the legend and the marker box disagreeing about one curve.
+                quantities[i] = QuantityFor(t);
             }
 
             // ---- Step 2: decide which components to show -------------------
@@ -98,7 +100,11 @@ namespace CircuitRF.Render.DataDisplay
         /// drift again.
         /// </remarks>
         public static string QuantityFor(Trace t) =>
-            t.IsCubeBound ? BuildCubeQuantity(t) : BuildNetworkQuantity(t);
+            // An owner that knows what its quantity IS says so, and the transform suffix still
+            // follows — see Trace.QuantityName for the window that needed it.
+            t.QuantityName is { Length: > 0 } named
+                ? named + TransformSuffix(t.DisplayTransform)
+                : t.IsCubeBound ? BuildCubeQuantity(t) : BuildNetworkQuantity(t);
 
         // ----------------------------------------------------------------
         //  Private helpers

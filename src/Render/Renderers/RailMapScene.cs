@@ -628,10 +628,19 @@ public sealed class RailMapScene
         // A FLAT map's plate says so instead of printing one number at both ends of a ramp. The
         // reason lives on the answer's notes (PdnPlaneModes) — this is the half that is on the
         // picture, so a copy of it carries the caveat too.
+        // ── AND IT SAYS WHICH |Z| IT IS (R-rail21-1a) ────────────────────────────────────────
+        //
+        // This picture and the |Z| CURVE beside it are two different quantities of one board at one
+        // frequency from one port name, four orders of magnitude apart, and neither surface named
+        // itself: a reader took 465 Ω here and 23 mΩ there as evidence the tool was broken
+        // (2026-09-20). The phrase is PdnImpedanceNames' so the caption, the hover readout, the
+        // tab's tooltip and the panel's note cannot come to spell the distinction four ways.
+        string which = $" — {PdnImpedanceNames.PlanePair}";
+
         string caption = (plane.MapIsFlat
             ? $"{rail}{model} · |Z| {Ohms(OhmsFromDecibels(hot))} EVERYWHERE at " +
-              $"{PdnMask.Hertz(plane.MapFrequencyHz)}{driven} — below the first mode"
-            : $"{rail}{model} · |Z| at {PdnMask.Hertz(plane.MapFrequencyHz)}{driven}")
+              $"{PdnMask.Hertz(plane.MapFrequencyHz)}{driven}{which} — below the first mode"
+            : $"{rail}{model} · |Z| at {PdnMask.Hertz(plane.MapFrequencyHz)}{driven}{which}")
             .TrimStart(' ', '·').TrimStart();
 
         // ── A FLAT FIELD IS PAINTED FLAT, and this is the half that was actually on screen ────

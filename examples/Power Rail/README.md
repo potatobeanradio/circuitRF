@@ -72,6 +72,13 @@ the rail to its reference. The generator refuses to write anything if either is 
  0.6 mV   1%   the reference return                     1.8 mOhm
 ```
 
+Those are the top seven of thirteen rows, and the window states the rest and their total. **Do not
+add the millivolts up and expect 48.4** — the full thirteen come to 50.1 mV, and that is not a
+disagreement. The table counts every group carrying current anywhere on the rail, and the port drops
+only what is on the path from the source to it: this rail divides into two legs that rejoin, each
+drops 1.76 mV between the same pair of nodes, and the port drops one of them while the table lists
+both. The Breakdown card names its own total and says so on any board where the two differ.
+
 Half the budget is one trace. That is the finding this example exists for: on a compact board
 with thin copper the artwork is not a rounding error on the parts, it is the largest single term
 after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout

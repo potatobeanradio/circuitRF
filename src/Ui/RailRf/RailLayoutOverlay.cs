@@ -108,6 +108,18 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
         set { if (!ReferenceEquals(_plane, value)) { _plane = value; Invalidate(); } }
     }
 
+    /// <summary>
+    /// The DECOUPLED rail's own |Z| at the map's frequency and driven port, or null where no sweep
+    /// covers it — <b>R-rail21-1c, the second number the readout prints</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Handed in rather than computed here.</b> The overlay holds the plane answer because it
+    /// draws it; the sweep belongs to the view model, which interpolates it through
+    /// <c>PdnSweepResult.MagnitudeAt</c> — the one reading of that curve. Changing it does not
+    /// change the PICTURE, only the sentence under the cursor, so it does not invalidate the scene.
+    /// </remarks>
+    public double? RailOhmsAtMapFrequency { get; set; }
+
     /// <summary>Which tab is showing. <b>Switching it rebuilds the SCENE and nothing else</b>
     /// (R-rail8-12): one canvas, one <c>LayoutView</c>, four tab states — a tab that rebuilt the
     /// canvas would drop the viewport and undo R-rail8-8.</summary>
@@ -563,9 +575,22 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
                    "from that drive flows in it — so it has no impedance to it, rather than a " +
                    "low one.";
 
-        string where = $"{RailMapScene.Ohms(hit.OhmsMagnitude)} at " +
-                       $"{PdnMask.Hertz(plane.MapFrequencyHz)}" +
-                       (plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "");
+        // ── TWO NUMBERS, TWO NAMES, ONE LINE (R-rail21-1a, R-rail21-1c) ──────────────────────
+        //
+        // This readout printed ohms with no name on them while the plot beside it printed the
+        // DECOUPLED rail's ohms with no name either — 465 Ω here and 23 mΩ there, one board, one
+        // frequency, one port name, and a factor of twenty thousand between two correct answers.
+        // So the map's number says which |Z| it is, and where a sweep has been run the rail's own
+        // number is stated beside it rather than left in a document: that is the answer to the
+        // question at the moment it is asked, and it costs one interpolation into a curve that is
+        // already computed.
+        string hz = PdnMask.Hertz(plane.MapFrequencyHz);
+
+        string where = $"{PdnImpedanceNames.PlanePair} {RailMapScene.Ohms(hit.OhmsMagnitude)} at " +
+                       hz + (plane.MapPortName.Length > 0 ? $" from {plane.MapPortName}" : "");
+
+        if (RailOhmsAtMapFrequency is { } railOhms)
+            where += $" · {PdnImpedanceNames.RailAt(hz)} {RailMapScene.Ohms(railOhms)}";
 
         var mode = plane.Modes
             .Where(m => best < m.Field.Count)

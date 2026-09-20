@@ -104,11 +104,81 @@ public sealed partial class RailRfViewModel
     public bool ShowImpedanceRefind =>
         HasBoard && SelectedBoardOverlay == RailBoardOverlay.Impedance && HasImpedanceMap;
 
-    /// <summary>What the strip says the map on screen is of.</summary>
+    /// <summary>
+    /// What the strip says the map on screen is of — <b>with the quantity NAMED</b> (R-rail21-1a).
+    /// </summary>
+    /// <remarks>
+    /// The phrase is <see cref="PdnImpedanceNames.PlanePair"/>'s, the same one the caption, the
+    /// hover readout and the tab's tooltip carry. Without it this strip, the map's own plate and
+    /// the |Z| curve on the Frequency tab printed three numbers of two different quantities under
+    /// one name (2026-09-20).
+    /// </remarks>
     public string ImpedanceMapAt =>
         Plane is { Refusal: null } p && p.ImpedanceMap.Count > 0
-            ? $"|Z| at {PdnMask.Hertz(p.MapFrequencyHz)} from {p.MapPortName}"
+            ? $"|Z| at {PdnMask.Hertz(p.MapFrequencyHz)} from {p.MapPortName} — " +
+              PdnImpedanceNames.PlanePair
             : "";
+
+    /// <summary>
+    /// <b>R-rail21-1b — the note that was only in <c>Notes</c>, on the picture.</b>
+    /// </summary>
+    /// <remarks>
+    /// The single most important thing a reader of this map needs to know is what is NOT on it, and
+    /// it lived in a list on a different tab. It is <see cref="PdnImpedanceNames.PlanePairNote"/> —
+    /// the same string <c>PdnPlaneModes</c> puts on every answer, never a second copy.
+    ///
+    /// <para><b>And where a sweep has been run, both numbers</b> (R-rail21-1c): the plane pair's
+    /// own reading at the driven port and the rail's own at the same frequency, named, so the two
+    /// orders of magnitude between them read as two questions rather than as a fault.</para>
+    /// </remarks>
+    public string ImpedanceMapNote
+    {
+        get
+        {
+            if (Plane is not { Refusal: null } p || p.ImpedanceMap.Count == 0) return "";
+
+            string hz = PdnMask.Hertz(p.MapFrequencyHz);
+            string note = PdnImpedanceNames.PlanePairNote;
+
+            return RailOhmsAtMapFrequency is { } ohms
+                ? note + $" At {hz}, {PdnImpedanceNames.RailAt(hz)} reads " +
+                         $"{RailMapScene.Ohms(ohms)}."
+                : note;
+        }
+    }
+
+    /// <summary>The |Z| tab button's own tooltip — <b>the same phrase, on the control that opens
+    /// the picture</b> (R-rail21-1a).</summary>
+    public string ImpedanceTabTip =>
+        "|Z| — how many ohms the plane presents between the chosen load pin and every point on " +
+        $"the board, at ONE frequency. It is the {PdnImpedanceNames.PlanePair}: its copper, its " +
+        "shape and its stackup, with no decoupling parts, sources or loads on it. Not a sweep, and " +
+        "not the same quantity as the |Z| curve on the Frequency results tab, which is " +
+        $"{PdnImpedanceNames.Rail} with its parts.";
+
+    /// <summary>
+    /// The DECOUPLED rail's |Z| at the map's frequency and driven port, or null — R-rail21-1c.
+    /// </summary>
+    /// <remarks>
+    /// <b>One reading of the curve</b>, <c>PdnSweepResult.MagnitudeAt</c>'s, so the readout, the
+    /// panel note and anything else that prints it cannot interpolate three ways. Null is the
+    /// ordinary case before a sweep, or where the map's frequency is outside the swept band — and
+    /// then nothing is printed rather than an extrapolation nobody asked for.
+    /// </remarks>
+    internal double? RailOhmsAtMapFrequency
+    {
+        get
+        {
+            if (Plane is not { Refusal: null } p || p.ImpedanceMap.Count == 0) return null;
+            if (Sweep is not { Refusal: null } sweep) return null;
+
+            // The map is driven from ONE port and the curve is per port: reading another port's
+            // curve here would put two different questions' answers on one line.
+            var driven = sweep.Ports.FirstOrDefault(q => string.Equals(q.Name, p.MapPortName,
+                                                                       StringComparison.Ordinal));
+            return driven is null ? null : sweep.MagnitudeAt(driven.Index, p.MapFrequencyHz);
+        }
+    }
 
     /// <summary>
     /// What the empty |Z| tab says: the last run's refusal, or what the map is for.
@@ -145,7 +215,16 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(ShowImpedanceRefind));
         OnPropertyChanged(nameof(ImpedanceFinderNote));
         OnPropertyChanged(nameof(ImpedanceMapAt));
+        OnPropertyChanged(nameof(ImpedanceMapNote));
+        OnPropertyChanged(nameof(HasImpedanceMapNote));
+
+        // The overlay draws the map; the CURVE is the view model's, so the second number the
+        // readout prints is pushed rather than reached for (R-rail21-1c).
+        BoardOverlayLayer.RailOhmsAtMapFrequency = RailOhmsAtMapFrequency;
     }
+
+    /// <summary>Whether the map panel has the note to print — see <see cref="ImpedanceMapNote"/>.</summary>
+    public bool HasImpedanceMapNote => ImpedanceMapNote.Length > 0;
 
     /// <summary>The extraction the plane answer is of — <b>its own</b>, not the DC run's.</summary>
     [ObservableProperty]

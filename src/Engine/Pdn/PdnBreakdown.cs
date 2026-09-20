@@ -146,6 +146,81 @@ public static class PdnBreakdown
         return rows;
     }
 
+    // ── WHAT THE ROWS ADD UP TO, AND WHY IT IS NOT THE DROP (R-rail21-2) ──────────────────────
+    //
+    // The shares above are taken against the sum of the rows, deliberately, so that they add to one
+    // exactly whatever the board is. That sum was nowhere on screen, and it is NOT the drop at a
+    // port: a reader who added the millivolts got 50.1 mV where the Drop card said 48.4, both
+    // labelled in millivolts, with nothing saying they answer different questions (2026-09-20).
+    //
+    // MEASURED ON THE SHIPPED POWER RAIL EXAMPLE, because a sentence written from a guess is worse
+    // than no sentence. Its thirteen rows sum to 50.131 mV against U1.VDD's 48.368 mV, and the
+    // 1.763 mV difference is not the reference return — that is inside the loop the port voltage is
+    // measured across and is counted once. It is a PARALLEL LEG. The rail divides: six groups carry
+    // the full 350 mA, four carry 290.8 mA and four carry 59.2 mA, and each of those two sets drops
+    // 1.764 mV between the same pair of nodes. The port drops one of them; the table lists both.
+    // src/Design/RESOLVED.md carries the arithmetic row by row.
+    //
+    // The arithmetic is right and stays exactly as it is (the brief's §5 says so). What was missing
+    // is that the total had no name and the difference had no explanation, so both are here — beside
+    // Rank, because this is the one place that knows what the total IS.
+
+    /// <summary>The sum the shares are taken against — every group's own drop on this rail.</summary>
+    public static double TotalDropV(IEnumerable<PdnBreakdownRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        double total = 0;
+        foreach (var row in rows) total += row.DropV;
+        return total;
+    }
+
+    /// <summary>
+    /// The total, NAMED — <b>R-rail21-2a</b>. Empty where there are no rows.
+    /// </summary>
+    public static string TotalLine(IReadOnlyList<PdnBreakdownRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        return rows.Count == 0
+            ? ""
+            : $"These rows sum to {TotalDropV(rows) * 1e3:0.###} mV — every group's drop on this " +
+              "rail, which is what the percentages are shares of.";
+    }
+
+    /// <summary>
+    /// Why that total differs from one port's own drop, or empty where it does not — <b>R-rail21-2b</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is printed where they agree</b>, which is the ordinary single-path board. A
+    /// reconciliation note about two numbers that match is noise, and noise under a table is how a
+    /// reader learns to stop reading the sentences there.
+    ///
+    /// <para>The threshold is DISPLAY ROUNDING and not an invented tolerance: every row prints to
+    /// 0.001 mV, so a sum of n rows can disagree with an exactly equal port drop by n half-units and
+    /// by nothing more. Anything above that is a real difference with something to say.</para>
+    /// </remarks>
+    /// <param name="rows">The ranked table.</param>
+    /// <param name="portName">The port the drop belongs to, as the user spells it.</param>
+    /// <param name="portDropV">How far that port is below the source.</param>
+    public static string Reconcile(
+        IReadOnlyList<PdnBreakdownRow> rows, string portName, double portDropV)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (rows.Count == 0) return "";
+
+        double gap = TotalDropV(rows) - portDropV;
+        if (Math.Abs(gap) <= rows.Count * 0.5e-6) return "";
+
+        return $"{portName} is {portDropV * 1e3:0.###} mV below the source — " +
+               $"{Math.Abs(gap) * 1e3:0.###} mV {(gap > 0 ? "less" : "more")} than the rows add up " +
+               "to. The two answer different questions: the table counts every group carrying " +
+               "current anywhere on this rail, and the port drops only what is on the path from the " +
+               "source to it — so where the rail divides between parallel paths each leg is a row " +
+               "and only one of them is in the drop, and copper feeding another port is a row on no " +
+               "path this port sees. Both numbers are right.";
+    }
+
     private sealed class Group(string label)
     {
         public string Label { get; } = label;

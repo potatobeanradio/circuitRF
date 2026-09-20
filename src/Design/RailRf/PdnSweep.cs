@@ -239,6 +239,50 @@ public sealed record PdnSweepResult(
     /// <summary>The parts §2.6 step 7 calls candidates for deletion.</summary>
     public IReadOnlyList<PdnRemovalRow> Redundant => PdnRemovalRanking.Redundant(Removal);
 
+    /// <summary>
+    /// This rail's own |Z| at one frequency, read off the curve that is already computed —
+    /// <b>R-rail21-1c</b>. Null where nothing was swept, the port is not one of these, or the
+    /// frequency is outside the grid.
+    /// </summary>
+    /// <remarks>
+    /// <b>Interpolated in log |Z| against log f, which is the axis the curve is DRAWN on.</b> A PDN
+    /// impedance spans decades between a bank's minimum and an anti-resonance, and a linear reading
+    /// between two grid points straddling a peak is wrong by most of the peak. Nothing is
+    /// extrapolated: outside the swept band there is no curve, and a number invented there is a
+    /// number a reader believes.
+    ///
+    /// <para><b>It exists so the map's readout can print BOTH numbers</b> — the plane pair's ohms
+    /// and the rail's, named, at the moment the question is asked rather than in a document (see
+    /// <see cref="PdnImpedanceNames"/>). It costs one interpolation into a curve already in hand.
+    /// </para>
+    /// </remarks>
+    /// <param name="portIndex">The port's index in the rail's own load list.</param>
+    /// <param name="hz">The frequency to read at.</param>
+    public double? MagnitudeAt(int portIndex, double hz)
+    {
+        if (Refusal is not null || !(hz > 0) || FrequenciesHz.Length == 0) return null;
+
+        var port = Ports.FirstOrDefault(p => p.Index == portIndex);
+        if (port is null || port.MagnitudeOhms.Length != FrequenciesHz.Length) return null;
+
+        double[] f = FrequenciesHz, z = port.MagnitudeOhms;
+
+        if (hz < f[0] || hz > f[^1]) return null;
+
+        int i = Array.BinarySearch(f, hz);
+        if (i >= 0) return z[i];
+
+        i = ~i;                                   // the first point ABOVE hz; f[0] < hz < f[^1]
+        if (i <= 0 || i >= f.Length) return null;
+
+        double f0 = f[i - 1], f1 = f[i], z0 = z[i - 1], z1 = z[i];
+        if (!(f0 > 0) || !(f1 > 0) || !(z0 > 0) || !(z1 > 0) || f1 <= f0)
+            return f1 > f0 ? z0 + (z1 - z0) * (hz - f0) / (f1 - f0) : z0;
+
+        double t = (Math.Log(hz) - Math.Log(f0)) / (Math.Log(f1) - Math.Log(f0));
+        return Math.Exp(Math.Log(z0) + t * (Math.Log(z1) - Math.Log(z0)));
+    }
+
     internal static PdnSweepResult Refused(string why) => new(why, null, [], [], [], [], []);
 }
 
