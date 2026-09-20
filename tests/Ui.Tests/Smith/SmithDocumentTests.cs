@@ -112,13 +112,22 @@ public sealed class SmithDocumentTests
     /// refusal has to contain — because a refusal whose text does not identify the offending object
     /// is not a refusal anyone can act on (overview §4.2).
     /// </summary>
+    /// <remarks>
+    /// <b>The frequency rows name the spelling the USER typed, and they used to name "2E+09"</b>
+    /// (R-smith11-4). <c>SmithDesign.Fmt</c> was <c>"G6"</c>, which switches to exponential the
+    /// moment the decimal exponent reaches the precision — so every frequency in every refusal this
+    /// tool raises came out in scientific notation and in bare hertz, against a field the user had
+    /// typed <c>2 GHz</c> into. Naming an object the user cannot match to what they typed is the
+    /// half of "a refusal names the thing that answers it" that had been missed, and these rows are
+    /// where it was pinned.
+    /// </remarks>
     [Theory]
     // the generator table: non-empty, sorted, unique frequencies
     [InlineData("generator-empty",      "generator table")]
-    [InlineData("generator-duplicate",  "2E+09")]
-    [InlineData("generator-unsorted",   "1E+09")]
+    [InlineData("generator-duplicate",  "2 GHz")]
+    [InlineData("generator-unsorted",   "1 GHz")]
     // the design frequency against the table's span
-    [InlineData("design-freq-outside",  "5E+09")]
+    [InlineData("design-freq-outside",  "5 GHz")]
     // elements
     [InlineData("element-unnamed",      "no name")]
     [InlineData("element-duplicate",    "'C1'")]

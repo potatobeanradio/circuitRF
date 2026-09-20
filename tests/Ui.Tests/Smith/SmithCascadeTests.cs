@@ -265,8 +265,10 @@ public sealed class SmithCascadeTests : IDisposable
 
         var refusal = Assert.Throws<InvalidDataException>(
             () => SmithCascade.GeneratorImpedance(g, 4.0e9));
-        Assert.Contains("1E+09", refusal.Message);
-        Assert.Contains("3E+09", refusal.Message);
+        // The span as the user would have typed it, never "1E+09" — R-smith11-4, and
+        // SmithDesign.Fmt's own remarks.
+        Assert.Contains("1 GHz", refusal.Message);
+        Assert.Contains("3 GHz", refusal.Message);
 
         // The swept band is the one caller allowed to clamp, and it has to ASK.
         Assert.Equal(new Complex(40.0, 30.0),

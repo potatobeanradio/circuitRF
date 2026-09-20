@@ -65,6 +65,8 @@ visually until you draw one.
       <tr><td><code>.cem</code></td><td>EM setup — one electromagnetic run's configuration: which layout, the stackup mapping, the ports and their reference impedances, the mesh settings, the frequency plan and the de-embedding choice. See <a href="em-setup.html">EM Setup</a>.</td></tr>
       <tr><td><code>.charm</code></td><td>harmonicaRF document — the DUT, the source and load termination planes at every harmonic, the package, the display configuration and the markers. See <a href="harmonicarf.html">harmonicaRF</a>.</td></tr>
       <tr><td><code>.wBond</code></td><td>wBond design — bondwire geometry: the wires, their arrays and profiles, the substrate and the solver settings. Self-contained and shareable. See <a href="wbond.html">wBond</a>.</td></tr>
+      <tr><td><code>.crail</code></td><td>railRF document — the rails, their sources, loads and reference, the parts and the part library they resolve against, the target and the band. See <a href="railrf.html">railRF</a>.</td></tr>
+      <tr><td><code>.csmith</code></td><td>Smith Chart document — a generator impedance over frequency and an ordered cascade of two-pin elements, plus what the chart is normalized to, the overlays, the markers and the constant-Q setting. Numbers are in base SI. See <a href="smith-chart.html">Smith Chart</a>.</td></tr>
     </tbody>
   </table>
 
@@ -76,7 +78,8 @@ in this family and are not documents you open: they are imported into cells, or 
 <div class="callout note">
 <span class="label">Which of these are documents you open</span>
 <p><code>.csch</code>, <code>.csym</code>, <code>.clay</code>, <code>.cdd</code>, <code>.ctech</code>,
-<code>.cem</code>, <code>.charm</code> and <code>.wBond</code> each open as a tab in the workspace.
+<code>.cem</code>, <code>.charm</code>, <code>.wBond</code>, <code>.crail</code> and
+<code>.csmith</code> each open as a tab in the workspace.
 <code>.ccell</code>, <code>.clib</code>, <code>.cws</code> and <code>.cwsuser</code> are manifests the
 application maintains for you — though double-clicking either half of a workspace opens the whole
 workspace. <code>.cnl</code> is the engine's input and is normally derived rather than edited.</p>

@@ -90,6 +90,11 @@ public partial class SmithChartView : UserControl
 
     private void OnActivationFocusRequested() => FocusSelf();
 
+    /// <summary>The Smith Chart chapter, through the launcher every other Help button in the
+    /// application uses.</summary>
+    private void OnHelp(object? sender, RoutedEventArgs e)
+        => DocLauncher.Open("reference/smith-chart.html");
+
     /// <summary>
     /// Takes the keyboard for this document.
     /// </summary>

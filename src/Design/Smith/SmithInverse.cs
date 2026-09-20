@@ -135,11 +135,11 @@ public static class SmithInverse
         // ── The things no formula below can proceed past ─────────────────────
 
         if (!(fHz > 0) || !double.IsFinite(fHz))
-            return Hold(e, p, current, $"{SmithDesign.Fmt(fHz)} Hz is not a frequency to invert at");
+            return Hold(e, p, current, $"{SmithDesign.FmtHz(fHz)} is not a frequency to invert at");
 
         if (!(z0Chart > 0) || !double.IsFinite(z0Chart))
             return Hold(e, p, current,
-                $"the chart's reference impedance is {SmithDesign.Fmt(z0Chart)} Ω, which is not one");
+                $"the chart's reference impedance is {SmithDesign.FmtOhm(z0Chart)}, which is not one");
 
         if (!IsFinite(gammaDrag))
             return Hold(e, p, current, "the drag point is not a finite Γ");
@@ -325,7 +325,7 @@ public static class SmithInverse
         // frame is not something a pointer handler can do anything with, so it is a pin here.
         if (!(fRef > 0) || !double.IsFinite(fRef))
             return Hold(e, p, current,
-                $"its length is quoted at {SmithDesign.Fmt(fRef)} Hz, and the length scales as "
+                $"its length is quoted at {SmithDesign.FmtHz(fRef)}, and the length scales as "
               + "f/F_ref, so F_ref has to be a positive frequency");
 
         double theta = Math.PI / 180.0 * v.ElectricalLengthDeg * fHz / fRef;
@@ -372,12 +372,12 @@ public static class SmithInverse
         // case — and neither is an error.
         if (gIn.Magnitude < GammaIsCentre)
             return Hold(e, p, current,
-                $"what arrives here is already the line's own {SmithDesign.Fmt(z0L)} Ω, so no "
+                $"what arrives here is already the line's own {SmithDesign.FmtOhm(z0L)}, so no "
               + "length changes anything");
 
         if (gD.Magnitude < GammaIsCentre)
             return Hold(e, p, current,
-                $"the drag landed on the line's own {SmithDesign.Fmt(z0L)} Ω, where the rotation "
+                $"the drag landed on the line's own {SmithDesign.FmtOhm(z0L)}, where the rotation "
               + "has no angle to read");
 
         // Γ_d = Γ_in·e^(−2jθ)  ⇒  θ = (arg Γ_in − arg Γ_d)/2, modulo π.
@@ -458,7 +458,7 @@ public static class SmithInverse
         // the current value pinned is the honest answer; dividing by the zero is not.
         if (!double.IsFinite(t) || Math.Abs(t) < TanIsZero)
             return Hold(e, p, current,
-                $"a line {SmithDesign.Fmt(e.Values.ElectricalLengthDeg)}° long transforms nothing "
+                $"a line {SmithDesign.FmtOf(SmithParameter.ElectricalLength, e.Values.ElectricalLengthDeg)} long transforms nothing "
               + "at this frequency, so no characteristic impedance changes where the walk lands");
 
         Complex a    = Complex.ImaginaryOne * t;
@@ -497,7 +497,7 @@ public static class SmithInverse
         double t = Math.Tan(theta);
         if (!double.IsFinite(t) || Math.Abs(t) < TanIsZero)
             return Hold(e, p, current,
-                $"a stub {SmithDesign.Fmt(e.Values.ElectricalLengthDeg)}° long "
+                $"a stub {SmithDesign.FmtOf(SmithParameter.ElectricalLength, e.Values.ElectricalLengthDeg)} long "
               + (e.Kind == SmithElementKind.StubOpen
                     ? "presents no susceptance at this frequency"
                     : "is a short across the line at this frequency")
@@ -533,7 +533,7 @@ public static class SmithInverse
         return value >= 0
             ? new InverseResult(value, false, null)
             : new InverseResult(0.0, true,
-                $"'{e.Name}' would need {Label(p)} = {SmithDesign.Fmt(value)} {Unit(p)}, and "
+                $"'{e.Name}' would need {Label(p)} = {SmithDesign.FmtOf(p, value)}, and "
               + $"{Noun(p)} is non-negative — pinned at 0 {Unit(p)}.");
     }
 
@@ -554,7 +554,7 @@ public static class SmithInverse
             return new InverseResult(current, true,
                 $"'{e.Name}' cannot reach there with any {Label(p)} — the drag asks for more than "
               + $"an infinite {Noun(p)} would give, so {Label(p)} is held at "
-              + $"{SmithDesign.Fmt(current)} {Unit(p)}.");
+              + $"{SmithDesign.FmtOf(p, current)}.");
 
         double value = 1.0 / scalar;
 
@@ -569,9 +569,8 @@ public static class SmithInverse
         => double.IsFinite(value) && value > 0
             ? new InverseResult(value, false, null)
             : new InverseResult(current, true,
-                $"'{e.Name}' would need {Label(p)} = {SmithDesign.Fmt(value)} {Unit(p)}, and a "
-              + $"line's characteristic impedance is positive — held at {SmithDesign.Fmt(current)} "
-              + $"{Unit(p)}.");
+                $"'{e.Name}' would need {Label(p)} = {SmithDesign.FmtOf(p, value)}, and a "
+              + $"line's characteristic impedance is positive — held at {SmithDesign.FmtOf(p, current)}.");
 
     /// <summary>A parameter with NO physical bound — either part of a Z1P, which §4.2 draws outside
     /// the unit circle rather than clamping.</summary>
@@ -584,7 +583,7 @@ public static class SmithInverse
     /// number.</summary>
     private static InverseResult Hold(SmithElement e, SmithParameter p, double current, string because)
         => new(current, true,
-            $"'{e.Name}' keeps {Label(p)} = {SmithDesign.Fmt(current)} {Unit(p)}: {because}.");
+            $"'{e.Name}' keeps {Label(p)} = {SmithDesign.FmtOf(p, current)}: {because}.");
 
     // ── What the reasons call things ─────────────────────────────────────────
 

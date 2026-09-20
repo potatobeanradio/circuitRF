@@ -297,7 +297,7 @@ public static partial class SmithCascade
         double fRef = e.Values.ReferenceFrequencyHz;
         if (!(fRef > 0) || !double.IsFinite(fRef))
             throw new InvalidDataException(
-                $"'{e.Name}' quotes its electrical length at {SmithDesign.Fmt(fRef)} Hz — the length "
+                $"'{e.Name}' quotes its electrical length at {SmithDesign.FmtHz(fRef)} — the length "
               + "scales as f/F_ref, so F_ref has to be a positive frequency.");
 
         return Math.PI / 180.0 * e.Values.ElectricalLengthDeg * fHz / fRef;
@@ -339,8 +339,8 @@ public static partial class SmithCascade
         {
             if (outOfBand == SmithOutOfBand.Refuse)
                 throw new InvalidDataException(
-                    $"{SmithDesign.Fmt(fHz)} Hz is outside the generator table's span "
-                  + $"{SmithDesign.Fmt(startHz)} Hz to {SmithDesign.Fmt(stopHz)} Hz — the generator "
+                    $"{SmithDesign.FmtHz(fHz)} is outside the generator table's span "
+                  + $"{SmithDesign.FmtHz(startHz)} to {SmithDesign.FmtHz(stopHz)} — the generator "
                   + "impedance is interpolated between rows, never extrapolated past them.");
 
             f = Math.Clamp(f, startHz, stopHz);

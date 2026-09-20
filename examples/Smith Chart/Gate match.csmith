@@ -1,0 +1,98 @@
+{
+  "FormatVersion": 1,
+  "Name": "Gate match",
+  "Chart": {
+    "Z0Ohm": 50,
+    "DesignFrequencyHz": 2450000000,
+    "ShowGrippers": true,
+    "ShowTargets": true,
+    "ShowLabels": true
+  },
+  "Generator": {
+    "Rows": [
+      {
+        "FrequencyHz": 2300000000,
+        "ResistanceOhm": 8.6,
+        "ReactanceOhm": -12.8
+      },
+      {
+        "FrequencyHz": 2450000000,
+        "ResistanceOhm": 8,
+        "ReactanceOhm": -12
+      },
+      {
+        "FrequencyHz": 2600000000,
+        "ResistanceOhm": 7.5,
+        "ReactanceOhm": -11.3
+      }
+    ]
+  },
+  "Elements": [
+    {
+      "Kind": "L",
+      "Placement": "Series",
+      "Name": "L1",
+      "Enabled": true,
+      "ActiveParameter": "L",
+      "Values": {
+        "ROhm": 0,
+        "LHenry": 1.97E-09,
+        "CFarad": 0,
+        "Z0Ohm": 50,
+        "ElectricalLengthDeg": 0,
+        "ReferenceFrequencyHz": 0,
+        "ImpedanceRealOhm": 0,
+        "ImpedanceImagOhm": 0
+      },
+      "SliderRange": [
+        {
+          "Parameter": "L",
+          "Min": 0,
+          "Max": 6E-09
+        }
+      ]
+    },
+    {
+      "Kind": "C",
+      "Placement": "Shunt",
+      "Name": "C1",
+      "Enabled": true,
+      "ActiveParameter": "C",
+      "Values": {
+        "ROhm": 0,
+        "LHenry": 0,
+        "CFarad": 2.98E-12,
+        "Z0Ohm": 50,
+        "ElectricalLengthDeg": 0,
+        "ReferenceFrequencyHz": 0,
+        "ImpedanceRealOhm": 0,
+        "ImpedanceImagOhm": 0
+      },
+      "SliderRange": [
+        {
+          "Parameter": "C",
+          "Min": 0,
+          "Max": 8E-12
+        }
+      ]
+    }
+  ],
+  "Sweep": {
+    "Enabled": true,
+    "StartHz": 2300000000,
+    "StopHz": 2600000000,
+    "Points": 61
+  },
+  "ConstantQ": {
+    "Enabled": true,
+    "Q": 2.291
+  },
+  "View": {
+    "SplitterMain": 0.65,
+    "SplitterSide": 0.5,
+    "NetworkScrollX": 0,
+    "NetworkScrollY": 0,
+    "NetworkZoom": 1,
+    "MirrorNetwork": false
+  }
+}

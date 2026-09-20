@@ -40,6 +40,11 @@
       "Folder": "Power Rail",
       "Title": "Power Rail Integrity",
       "Summary": "A four-layer board with one 3.3 V rail: the DC drop and where it goes, Z(f) against a flat target, and which of thirteen capacitors are actually doing anything."
+    },
+    {
+      "Folder": "Smith Chart",
+      "Title": "Smith Chart (narrowband match)",
+      "Summary": "A device input of 8 \u2212 j12 \u03a9, stated over three frequencies, matched to 50 \u03a9 by hand with a series L and a shunt C. Drag either gripper and watch the band edges move."
     }
   ]
 }

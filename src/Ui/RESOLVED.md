@@ -1,5 +1,153 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart — the user chapter, the example, and three defects that reported nothing (2026-09-19)
+
+brief-smith-11-docs-and-example.md — the closeout of the eleven-brief series. A user chapter with six
+generated figures, a shipped `Smith Chart` example workspace, `docs/design/smith-chart.md` moved from
+PROPOSED to BUILT with §9.1 and §12's open questions answered from the built tool, and the three
+defects that came out of driving it as a user. Gate:
+`tests/Ui.Tests/Smith/SmithExampleTests.cs` (9 tests, 3 of which fail at HEAD), plus the 249 existing
+Smith tests and the docs factory's own suite.
+
+### The three defects, and why none of them reported a failure
+
+**Every frequency in every refusal was in scientific notation, in bare hertz.** `SmithDesign.Fmt` was
+`v.ToString("G6")`, under a doc comment promising *"never scientific notation for an ordinary one"*.
+.NET's `G` switches to exponential the moment the decimal exponent reaches the precision, and every
+frequency this tool deals in is 10⁹, so the promise was broken for the whole of its domain:
+
+```
+The design frequency 2.9E+09 Hz is outside the generator table's span 2.3E+09 Hz to 2.6E+09 Hz
+'L1' would need L = -5.55285E-10 H, and an inductance is non-negative — pinned at 0 H
+```
+
+The second one is the worse of the two, because it is what the status strip says **during a drag**,
+beside a slider reading `1.97 nH`. It is the same defect `MatchValueFormat.Significant`'s own remarks
+record from the Match Designer's value grid, one project along — which is why the fix is a call to
+that rather than a third spelling of it: `Fmt` now goes through `Significant`, and `FmtHz`, `FmtOhm`
+and `FmtOf(SmithParameter, double)` pick the SI prefix so a refusal says `2.9 GHz` and `-555.285 pH`,
+exactly as the field the user typed into does. `FmtOf` takes the PARAMETER rather than a
+`MatchQuantity` because an electrical length is the one value in a `.csmith` that is not base SI, has
+no SI ladder, and would otherwise be offered as `45 m°`.
+
+**Three existing tests were pinning the wrong spelling** — `SmithDocumentTests`' `InlineData` rows
+(`"2E+09"`, `"1E+09"`, `"5E+09"`), `SmithCascadeTests`' span assertion and `SmithCliVerbTests`'
+`--at` refusal. They were asserting that the refusal *named the offending object*, which it did; what
+nobody had asked was whether the name was one the user could match to what they typed. Each now
+asserts the user's own spelling, and the new tests assert the ABSENCE of a scientific mantissa
+(`\d[Ee][+-]\d`) as well — a sentence that happened to contain both spellings would satisfy the
+presence half on its own.
+
+**The generator table's column headers sat over the wrong columns.** The header `Grid` and the row
+`DataTemplate` share `ColumnDefinitions="86,*,*"`, so they agree about where the columns ARE — but
+the headers carried `Classes="gridhdr"`, which is left-aligned (correct for the click-to-sort text
+headers in railRF and the Match Designer that the class was written for), while R and X are
+right-aligned numbers with a 4 px left margin. The result is that `X` was drawn directly above the R
+column's digits and `R` above nothing at all. **Two ohm values one place out of step is a wrong
+impedance read off a table that looks entirely ordinary**, and there is nothing to report: both
+halves are individually correct. The headers now take their own column's alignment and margin, cell
+for cell.
+
+*Gated as a source scan*, which is this area's documented fallback (`SmithWindowTests`' own header
+says why): `tests/Ui.Tests` stands up no Avalonia application, so a real arrange pass over a compiled
+`.axaml` is not available. The declaration is what is checkable and the declaration is where the
+defect was.
+
+**There was no route from the window to its own chapter.** railRF, harmonicaRF, wBond and the Match
+Designer each carry a Help button wired to `DocLauncher`; the Smith Chart document did not, so the
+chapter written for it in this very brief was reachable only by knowing it existed. A docked document
+has no title bar of its own to hang one on, so it went at the end of the network strip's toolbar —
+the one toolbar the document does have — and `reference/smith-chart.html` was added to
+`DocAnchors.WholePages`, which is what makes `DocsFactoryTests` fail on a link that resolves to
+nothing.
+
+### What was NOT changed, and is filed instead: `conj. mismatch` reads backwards
+
+Driving the shipped example turned up a fourth thing, and it is a design question rather than a bug
+against the specification. §3.4 of the design note puts the conjugate-match targets at
+`Γ(conj(Z_gen(f)))` and has the strip report the mismatch against them; `SmithReadings.Of` does
+exactly that. On the example — a two-element L match taking 8 − j12 Ω to 50 Ω — the strip reads:
+
+| | load Z | VSWR | conj. mismatch |
+|---|---|---|---|
+| 2.30 GHz | 35.40 + j7.87 | 1.48 | **2.07 dB** |
+| 2.45 GHz | 49.98 − j0.10 | 1.002 | **3.41 dB** |
+| 2.60 GHz | 56.14 − j23.09 | 1.56 | **4.92 dB** |
+
+The number is *largest* where the match is *best*. The engine's independent reading of the same
+network — the copied schematic, port 1 at the generator impedance, run through the ordinary
+S-parameter analysis — is **−59.8 dB** of return loss at 2.45 GHz and −15 dB at the band edges, which
+is the answer VSWR agrees with. The two quantities are not in conflict; they answer different
+questions, and the strip's is *"how far is the load point from the generator's own conjugate"*. But a
+figure labelled as a mismatch in decibels, sitting immediately beside VSWR, reads as match quality.
+
+**Left alone**, because §3.4 is recorded as an owner decision and *what it should be instead* has more
+than one defensible answer. Filed as **Q-17** in the design note's §12 with the numbers above, and
+both the user chapter and the example's README say plainly what the number is and is not, so nobody
+is misled while it is open.
+
+### The example, and the one property that makes it worth shipping
+
+`examples/Smith Chart/` is a device input of 8 − j12 Ω stated over 2.30 / 2.45 / 2.60 GHz, matched to
+50 Ω by a 1.97 nH series L and a 2.98 pF shunt C. The loaded Q at the corner is 22.9/8.0 = 2.291, the
+constant-Q arcs ship switched on at exactly that, and the band edges come apart to 1.48:1 and 1.56:1
+from 1.002:1 in the middle — which is the whole point of the example and the thing a reader is meant
+to drag.
+
+**The committed `.csch` beside it is the network strip's own Copy output**, produced by
+`SmithSchematicCopy.Build` and given nothing but an S-parameter card by hand. `SmithExampleTests`
+compares the two component for component, coordinate for coordinate, and asserts that the projection
+carries **no** analysis while the committed bench carries one — so a hand edit to either, or a change
+to the projection, stops them being the same circuit while both still look perfectly ordinary. The
+same file's first test reads the shipped document with the shipped evaluator and holds the answer
+against **the numbers the README quotes**, in the README's own spelling, in both directions. An
+example that is wrong is worse than no example, because it is the first thing somebody copies.
+
+**`.csmith` had to be added to `ExampleWorkspacesTests`' runnable document kinds.** That test's own
+remark already names the shape — *"a row added to `DocumentKinds.Classify` obliges an arm in `check`
+and a case in `explain` in the same change"* — and this is one place further along again: a `.crail`
+was the first kind to arrive after the gate was written and failed it with "has nothing to run"; a
+`.csmith` is the second, and for the same reason (`circuitrf smith` needs no analysis card, because
+the cascade IS the thing to run).
+
+### The figures, and the churn
+
+Six figures, twelve SVGs: the whole document on the shipped example; a three-element teaching design
+with its three curve shapes and the same design with the Q arcs on; the network strip both ways round;
+and the copied network in the schematic editor where it lands. `DocSmithFixtures` follows
+`DocRailFixtures`' rule — **the window figures are of the example a reader can open** — with one
+deliberate exception, stated in the type's own remarks: the shipped example is a two-element L match
+on purpose, and the figure that has to show what a per-element trajectory IS needs three curves of
+three different shapes, so that design is built in code.
+
+Two things about it are worth knowing. There is **no `WindowFrame`** on any of the document figures —
+a docked document is the inside of a window and the tab strip above it belongs to the shell — and the
+capture is 1400×920 rather than 1400×860 because the generator column takes the chart pane's own 65 %
+of the height to fit six cards into, and at 860 the Swept band card's last row was cut off by the
+panel's own scroll view, which in a figure reads as a broken panel rather than as one you can scroll.
+
+The line in the teaching design was tuned twice and both wrong answers are instructive. At **45°** it
+runs from the middle of the chart out to the rim and reads as a stray line; at **20°** it is forty
+pixels long and the load-point label sits on top of it. It ships as a **75 Ω quarter wave** taking
+50 Ω to 112.5 Ω — a half turn that is plainly centred on the line's own impedance and not on the
+chart's middle, which is the thing §3.3 says a tool with a fixed 50 Ω line could not have drawn.
+
+**DocGen churn, classified rather than counted.** A run reports 11 modified SVGs beside the 12 new
+ones. **None of them is this work's**: a DocGen run in a worktree at HEAD, with nothing of this brief
+in it, reproduces exactly the same 11 files
+(`antenna-patch-em-setup-dark`, `em-setup-loaded` ×2, `railrf-*` ×6, `settings-color-theme` ×2). Of
+those, `em-setup-loaded.svg` also differs between two consecutive runs of the SAME tree and is
+genuinely nondeterministic; the other ten are deterministic and simply stale in the commit. The four
+modified HTML pages that go with them are the pages those figures are inlined into. This work's own
+output is the twelve new `smith-*.svg`, the new chapter, and the TOC / Previous-Next / search-index
+updates that inserting a chapter into `_nav.txt` produces.
+
+*(Method, so the next person does not re-derive it: `git worktree add /tmp/crf-head HEAD --detach`,
+run DocGen there, and diff. Never `git stash` to get a baseline — that is the full run again plus a
+restore, with a half-finished change at risk. Figures were checked by rasterising with `Svg.Skia` and
+reading `Picture.CullRect`, never `qlmanage`, which forces a square canvas and crops so a complete
+figure reads as clipped.)*
+
 ## Smith Chart — the overlays, the markers, and the field MarkerConfig does not have (2026-09-19)
 
 brief-smith-8-overlays-markers.md. Reference material under the work: a Touchstone file or a cube in

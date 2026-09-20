@@ -31,11 +31,14 @@ connected. Almost every early surprise is one of those two.</p>
 </div>
 
 <div class="callout note">
-<span class="label">Four chapters that are easy to miss</span>
-<p>Three of these are tools in their own right rather than components with a dialog, and the fourth
+<span class="label">Five chapters that are easy to miss</span>
+<p>Four of these are tools in their own right rather than components with a dialog, and the fifth
 is a whole class of parts.</p>
 <p><b><a href="match.html">The Match Component</a></b> synthesises a bandpass matching network that
-absorbs both terminations — closed-form, no optimiser. <b><a href="harmonicarf.html">harmonicaRF</a></b>
+absorbs both terminations — closed-form, no optimiser, and <i>broadband</i>.
+<b><a href="smith-chart.html">The Smith Chart</a></b> is its narrowband opposite: it synthesises nothing,
+and instead draws one curve per component so you can drag the network into place by hand.
+<b><a href="harmonicarf.html">harmonicaRF</a></b>
 runs harmonic load-pull on one device while you drag a marker. <b><a href="wbond.html">wBond</a></b>
 models bondwire arrays as geometry rather than as a number you looked up. And
 <b><a href="system-components.html">System Components</a></b> covers the ideal blocks a system block

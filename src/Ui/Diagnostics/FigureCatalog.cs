@@ -588,6 +588,46 @@ public static class FigureCatalog
           + "against its target, the anti-resonances the run named, and what removing each "
           + "capacitor would cost."),
 
+        // ── The Smith Chart document ────────────────────────────────────────────
+        // 1400x920 rather than the shell's 1200x800. The chart pane takes 65% of the height by the
+        // document's own splitter, so the generator column beside it gets that same 65% to fit six
+        // cards into: at 860 the Swept band card's last row was cut off by the panel's own scroll
+        // view, which in a figure reads as a broken panel rather than as one you can scroll. No
+        // WindowFrame on any of these — a docked document is the INSIDE of a window, and the tab
+        // strip above it belongs to the shell.
+
+        new("smith-window", DocSmithFixtures.Window, 1400, 920, null,
+            "The Smith Chart document on the shipped Smith Chart example: the generator table over "
+          + "three frequencies, the two trajectories of an L match with a gripper at each joint, the "
+          + "three load points with their conjugate targets, the swept band through them, and the "
+          + "network the walk is a picture of."),
+
+        new("smith-trajectories", DocSmithFixtures.Trajectories, 1400, 920, null,
+            "Three elements and therefore three curves: a series inductor walking a "
+          + "constant-resistance circle, a shunt capacitor walking a constant-conductance circle, "
+          + "and a 75 ohm quarter-wave line taking 50 ohms to 112.5 - a half turn about the LINE's "
+          + "own impedance, not about the chart's centre. The arrowhead on each says which way the "
+          + "walk runs; the ring at each joint is the gripper that drags the element it belongs to."),
+
+        new("smith-constant-q", DocSmithFixtures.ConstantQ, 1400, 920, null,
+            "The same walk with the constant-Q pair switched on at Q = 1.75. Every point on the two "
+          + "arcs has |x|/r = Q, so a joint inside them is a wider-band network and a joint outside "
+          + "them is a narrower one."),
+
+        new("smith-network-strip", DocSmithFixtures.NetworkStrip, 820, 260, null,
+            "The network strip as the example draws it: the generator on the left, the cascade "
+          + "growing rightward, one ground under each shunt column, and the load at the far end."),
+
+        new("smith-network-mirrored", DocSmithFixtures.NetworkStripMirrored, 820, 260, null,
+            "The same network after the mirror button. The drawing and the symbols are reflected; "
+          + "the element order, the circuit and the chart are not."),
+
+        new("smith-copied-schematic", DocSmithFixtures.CopiedSchematic, 1100, 700,
+            WindowFrame.Titled("circuitRF - Matched input"),
+            "What Copy on the network strip puts into a schematic: the same parts at the same "
+          + "coordinates, with the generator end terminated as port 1 carrying the generator "
+          + "impedance at the design frequency and the load end as port 2 carrying the chart's Z0."),
+
         new("match-form-glyphs", DocMatchFixtures.FormGlyphs, 780, 150, null,
             "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
           + "two or three smaller bandpass groups mean two or three bands."),

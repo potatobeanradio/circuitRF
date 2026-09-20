@@ -236,10 +236,20 @@
                              column here is width-shared with anything. -->
                         <Border Classes="card">
                             <StackPanel>
+                                <!-- A HEADER SITS OVER ITS OWN COLUMN, which means it takes that
+                                     column's alignment and its margin rather than gridhdr's own.
+                                     R and X are right-aligned numbers, so left-aligned headers put
+                                     "X" directly above the R column's digits and "R" above nothing
+                                     at all - two ohm values one place out of step, which is a wrong
+                                     impedance read off a table that looks entirely ordinary
+                                     (R-smith11-4). The three Margin/alignment pairs below are the
+                                     row template's, copied cell for cell. -->
                                 <Grid ColumnDefinitions="86,*,*" Margin="0,0,0,2">
                                     <TextBlock Grid.Column="0" Classes="gridhdr" Text="f"/>
-                                    <TextBlock Grid.Column="1" Classes="gridhdr" Text="R"/>
-                                    <TextBlock Grid.Column="2" Classes="gridhdr" Text="X"/>
+                                    <TextBlock Grid.Column="1" Classes="gridhdr" Text="R" Margin="4,0,0,0"
+                                               HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Classes="gridhdr" Text="X" Margin="4,0,0,0"
+                                               HorizontalAlignment="Right"/>
                                 </Grid>
 
                                 <ListBox Classes="rows" MaxHeight="190"
@@ -594,6 +604,18 @@
                                 Click="OnNetworkZoomToFit"
                                 ToolTip.Tip="Zoom to Fit  (F). The strip re-frames itself whenever the drawing changes size — adding, deleting or mirroring — and keeps your zoom when it does not.">
                             <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- HELP (R-smith11-4). railRF, harmonicaRF, wBond and the Match Designer
+                             each carry one of these and this window did not, so the chapter written
+                             for it was reachable only by knowing it existed. A docked document has
+                             no title bar of its own to hang it on, so it goes at the end of the one
+                             toolbar this document does have. The destination is DocAnchors' —
+                             the docs run fails on a link that resolves to nothing. -->
+                        <Button Name="HelpButton" Classes="SelectionBtn" Padding="6,3"
+                                Click="OnHelp"
+                                ToolTip.Tip="Help — the Smith Chart chapter of the circuitRF reference.">
+                            <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
                         </Button>
                     </StackPanel>
                 </Grid>

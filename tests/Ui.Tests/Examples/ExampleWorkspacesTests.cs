@@ -488,7 +488,7 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             {
                 string ext = Path.GetExtension(doc);
                 if (ext is not (".csch" or ".cem" or ".clay" or ".cws" or ".ccell"
-                                      or ".crail" or ".crlib" or ".ctech")) continue;
+                                      or ".crail" or ".crlib" or ".ctech" or ".csmith")) continue;
 
                 string text = File.ReadAllText(doc);
                 Assert.DoesNotContain("/Users/", text, StringComparison.Ordinal);
@@ -498,8 +498,9 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                 if (ext is ".cem") runnable = true;
 
                 // A .crail runs on its own — `circuitrf rail` needs no analysis card, because the
-                // rail set IS the thing to run.
-                if (ext is ".crail") runnable = true;
+                // rail set IS the thing to run. A .csmith is the same shape: `circuitrf smith`
+                // evaluates the cascade the document IS, and there is no card to carry.
+                if (ext is ".crail" or ".csmith") runnable = true;
                 if (ext is ".csch" && text.Contains("\"Analyses\"", StringComparison.Ordinal)
                                    && text.Contains("\"Type\"", StringComparison.Ordinal))
                     runnable = true;

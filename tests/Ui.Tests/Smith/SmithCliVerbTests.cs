@@ -225,8 +225,8 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         output.WriteLine(stderr);
 
         Assert.Equal(1, exit);
-        Assert.Contains("1.8E+09", stderr, StringComparison.Ordinal);
-        Assert.Contains("2.2E+09", stderr, StringComparison.Ordinal);
+        Assert.Contains("1.8 GHz", stderr, StringComparison.Ordinal);
+        Assert.Contains("2.2 GHz", stderr, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -122,6 +122,17 @@ To keep the format family coherent, name the siblings now (full specs when their
 - **Workspace file (`.cws` — “circuit workspace”)** — the top-level project document (`ui-design.md` §1):
   references to the cells/schematics/libraries/data-display configs in the workspace, plus the **Dock
   layout** (§2.0). It references `.csch`/`.csym`/`.cdd`/`.cnl` files rather than embedding them.
+- **`.csmith`** — a **Smith Chart document** (`smith-chart.md` §7): a generator impedance as a table over
+  frequency, an ordered cascade of two-pin elements with their values, the chart's own reference impedance
+  and design frequency, the overlays, the markers, the constant-Q setting and the optional swept band. It
+  is a `System.Text.Json` document on `RailDocumentIo`'s own conventions — `WriteIndented`, enums as
+  strings, `WhenWritingNull`, a `FormatVersion` that **refuses a newer file rather than half-reading it**,
+  an atomic write and a gzip sniff on load. **Numbers are in base SI** — hertz, henries, farads, ohms —
+  with one deliberate exception, electrical length, stored in degrees in a field named `…Deg`. Like the
+  `.cdd` it opens as a docked document and needs no workspace.
+- The three other **tool documents** are the same family and are specified in their own notes rather than
+  here: **`.charm`** (harmonicaRF, `harmonicarf.md`), **`.wbond`** (wBond, `wbond.md`) and **`.crail`**
+  (railRF, `railrf.md` §2.2). Named here so the family reads as complete.
 - **`.ccolor` — “circuitRF color”** — a named **color theme** (light + dark role→RGBA maps) for rendering.
   Built-in presets ship in `/Assets/Color`; custom themes (forked when a user edits a color) save as
   `.ccolor` in the user themes dir or workspace dir. The `.cws` records which theme name is active; resolution

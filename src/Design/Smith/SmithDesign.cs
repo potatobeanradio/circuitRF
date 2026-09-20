@@ -19,6 +19,7 @@
 // inverse are briefs 2 and 3, beside this file; the window is brief 4, above the firewall.
 
 using System.Numerics;
+using CircuitRF.Design.Matching;
 
 namespace CircuitRF.Design.Smith;
 
@@ -249,7 +250,7 @@ public sealed class SmithElement
             };
 
             if (p is SmithParameter.R or SmithParameter.L or SmithParameter.C && !(v >= 0))
-                return $"'{Name}' has {p} = {SmithDesign.Fmt(v)} — a negative or undefined "
+                return $"'{Name}' has {p} = {SmithDesign.FmtOf(p, v)} — a negative or undefined "
                      + $"{(p == SmithParameter.R ? "resistance" : p == SmithParameter.L ? "inductance" : "capacitance")} "
                      + "is not a component anyone can build, and the trajectory it would draw is a "
                      + "true picture of a nonsensical question.";
@@ -258,18 +259,18 @@ public sealed class SmithElement
         if (SmithComponentMap.IsLine(Kind))
         {
             if (!(Values.Z0Ohm > 0))
-                return $"'{Name}' has Z0 = {SmithDesign.Fmt(Values.Z0Ohm)} Ω — a line's "
+                return $"'{Name}' has Z0 = {SmithDesign.FmtOhm(Values.Z0Ohm)} — a line's "
                      + "characteristic impedance is what sets which circle the rotation happens on, "
                      + "so it has to be positive.";
 
             if (!(Values.ElectricalLengthDeg >= 0))
                 return $"'{Name}' has an electrical length of "
-                     + $"{SmithDesign.Fmt(Values.ElectricalLengthDeg)}° — a line has a non-negative "
+                     + $"{SmithDesign.FmtOf(SmithParameter.ElectricalLength, Values.ElectricalLengthDeg)} — a line has a non-negative "
                      + "length, and a negative one is a shorter line pointing the other way.";
 
             if (!(Values.ReferenceFrequencyHz > 0))
                 return $"'{Name}' quotes its electrical length at "
-                     + $"{SmithDesign.Fmt(Values.ReferenceFrequencyHz)} Hz — the length scales as "
+                     + $"{SmithDesign.FmtHz(Values.ReferenceFrequencyHz)} — the length scales as "
                      + "f/F_ref, so F_ref has to be a positive frequency.";
         }
 
@@ -368,13 +369,13 @@ public sealed class SmithGenerator
             double thisHz     = Rows[i].FrequencyHz;
 
             if (thisHz == previousHz)
-                return $"The generator table has two rows at {SmithDesign.Fmt(thisHz)} Hz — one "
+                return $"The generator table has two rows at {SmithDesign.FmtHz(thisHz)} — one "
                      + "frequency is one impedance, and two answers there is not something this "
                      + "tool may pick between on its own.";
 
             if (thisHz < previousHz)
-                return $"The generator table is out of order: {SmithDesign.Fmt(thisHz)} Hz follows "
-                     + $"{SmithDesign.Fmt(previousHz)} Hz. Rows are sorted by frequency, which is "
+                return $"The generator table is out of order: {SmithDesign.FmtHz(thisHz)} follows "
+                     + $"{SmithDesign.FmtHz(previousHz)}. Rows are sorted by frequency, which is "
                      + "what makes the span an interpolator can be asked about.";
         }
 
@@ -655,8 +656,8 @@ public sealed class SmithDesign
         {
             var (startHz, stopHz) = Generator.Span!.Value;
             if (!(Chart.DesignFrequencyHz >= startHz && Chart.DesignFrequencyHz <= stopHz))
-                return $"The design frequency {Fmt(Chart.DesignFrequencyHz)} Hz is outside the "
-                     + $"generator table's span {Fmt(startHz)} Hz to {Fmt(stopHz)} Hz — the "
+                return $"The design frequency {FmtHz(Chart.DesignFrequencyHz)} is outside the "
+                     + $"generator table's span {FmtHz(startHz)} to {FmtHz(stopHz)} — the "
                      + "generator impedance is interpolated between rows, never extrapolated past "
                      + "them.";
         }
@@ -675,8 +676,8 @@ public sealed class SmithDesign
         if (Sweep.Enabled)
         {
             if (!(Sweep.StartHz < Sweep.StopHz))
-                return $"The swept band starts at {Fmt(Sweep.StartHz)} Hz and stops at "
-                     + $"{Fmt(Sweep.StopHz)} Hz — a band has to go somewhere.";
+                return $"The swept band starts at {FmtHz(Sweep.StartHz)} and stops at "
+                     + $"{FmtHz(Sweep.StopHz)} — a band has to go somewhere.";
 
             if (Sweep.Points < 2)
                 return $"The swept band asks for {Sweep.Points} point(s); two is the fewest that "
@@ -690,7 +691,51 @@ public sealed class SmithDesign
         return null;
     }
 
-    /// <summary>The house number spelling for a refusal: enough digits to identify the value the
-    /// user typed, and never scientific notation for an ordinary one.</summary>
-    internal static string Fmt(double v) => v.ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>
+    /// The house number spelling for a refusal: enough digits to identify the value the user typed,
+    /// and <b>never scientific notation for an ordinary one</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>This used to be <c>"G6"</c>, which is the one format that cannot keep that promise</b>
+    /// (R-smith11-4). .NET's <c>G</c> switches to exponential the moment the decimal exponent
+    /// reaches the precision, so every frequency in this tool crossed over: a user who typed
+    /// <c>2.9 GHz</c> was refused with <i>"the design frequency 2.9E+09 Hz is outside …"</i>, and a
+    /// drag that pinned an inductor reported <c>1.97E-09 H</c>. It is the same defect
+    /// <see cref="MatchValueFormat.Significant"/>'s own remarks record from the Match Designer's
+    /// value grid, one project along, so the fix is to call that rather than to write a third
+    /// spelling of it.
+    ///
+    /// <para>Use this one only for a <b>dimensionless</b> number or for degrees — a ratio, an angle,
+    /// a point count. Anything carrying an SI unit goes through <see cref="FmtHz"/>,
+    /// <see cref="FmtOhm"/> or <see cref="FmtOf"/>, which pick the prefix as well, so the refusal
+    /// says <c>2.9 GHz</c> exactly as the field the user typed it into does.</para>
+    /// </remarks>
+    internal static string Fmt(double v) => MatchValueFormat.Significant(v, 6);
+
+    /// <summary>A frequency, with its own prefix — <c>2.45 GHz</c>, never <c>2.45E+09 Hz</c>.</summary>
+    internal static string FmtHz(double hz)
+        => MatchValueFormat.FormatWithUnit(hz, MatchQuantity.Frequency, MatchValueFormat.AutoUnit, 6);
+
+    /// <summary>An impedance, with its unit.</summary>
+    internal static string FmtOhm(double ohm)
+        => MatchValueFormat.FormatWithUnit(ohm, MatchQuantity.Resistance, MatchValueFormat.AutoUnit, 6);
+
+    /// <summary>
+    /// One settable parameter's value with its own unit — <c>1.97 nH</c>, <c>2.98 pF</c>,
+    /// <c>50 Ω</c>, <c>45°</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The degree case is why this takes the parameter rather than a <see cref="MatchQuantity"/>.</b>
+    /// An electrical length is the one value in this document that is not base SI (see this file's
+    /// header), it has no SI ladder, and putting it through one would offer to call 45° "45 m°".
+    /// </remarks>
+    internal static string FmtOf(SmithParameter p, double v) => p switch
+    {
+        SmithParameter.L => MatchValueFormat.FormatWithUnit(v, MatchQuantity.Inductance,  MatchValueFormat.AutoUnit, 6),
+        SmithParameter.C => MatchValueFormat.FormatWithUnit(v, MatchQuantity.Capacitance, MatchValueFormat.AutoUnit, 6),
+        SmithParameter.R or SmithParameter.Z0
+            or SmithParameter.ImpedanceReal or SmithParameter.ImpedanceImag => FmtOhm(v),
+        SmithParameter.ElectricalLength => Fmt(v) + "°",
+        _                               => Fmt(v),
+    };
 }

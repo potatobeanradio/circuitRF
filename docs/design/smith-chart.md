@@ -1,6 +1,7 @@
 # circuitRF — Smith Chart: narrowband matching, by hand, with the chart doing the arguing
 
-**Status:** **PROPOSED** — rev 1, for review · **Date:** 2026-09-19 · **Phase:** P1…P3, see §9
+**Status:** **BUILT** — rev 1, closed out 2026-09-19 · **Date:** 2026-09-19 · **Phase:** P1…P3 shipped; see §9.1
+**Implementation:** [`docs/sonnet-briefs/brief-smith-0-overview.md`](../sonnet-briefs/brief-smith-0-overview.md) — 11 briefs, all built 2026-09-19
 **Reads with:** `docs/design/match.md` §9 (the Designer this one is deliberately *not*, and the window
 conventions this one borrows), `docs/design/harmonicarf.md` §7.2 (the interactive Smith chart that
 already exists, and what it proved), `docs/design/data-display.md` (the plot layer this reuses whole),
@@ -903,6 +904,44 @@ same `src/Design/Smith` functions the window calls and holds no logic of its own
 every other verb has — the CLI as a *process*, byte for byte against the in-process call, plus a
 comment-stripped source scan proving the view model kept no second copy.
 
+### 9.1 What shipped, per brief (2026-09-19)
+
+All eleven briefs were built. Findings live in the `RESOLVED.md` beside each project — `src/Design` for
+briefs 1–3, `src/Ui` for 4–9 and 11, `src/Cli` for 10 — and never here.
+
+| Brief | What landed |
+|---|---|
+| **1 — the document** | `SmithDesign` and its element records, `SmithDesignIo` (`.csmith`), `SmithClipboard`, and all seven registration points — the `OpenFiles` dispatcher, `WorkspaceViewModel`, `WorkspaceScanner`, the macOS `Info.plist`, the WiX `.wxs`, the Linux mime file and `DocumentKinds.Classify` |
+| **2 — the cascade** | `SmithCascade`, every element immittance, the projective walk, the trajectory sampler, the Touchstone elements and the generator interpolation — gated against the S-parameter engine, every element type in both placements |
+| **3 — the gripper inverse** | every closed-form inverse, the TLIN Z₀ quadratic, the stub branch unwrap, and physicality pinned at the boundary with the parameter and the limit named |
+| **4 — the document window** | `SmithChartDocument`, the view model, the chrome, `InlineEditText` everywhere, the generator panel with `.s1p` import and Conjugate, Tools ▸ Smith Chart, and the `LaunchAction` row with the ordinal test that holds its position |
+| **5 — the chart** | the `Plot` built from the evaluator, `PlotControl` hosting **and its container**, the gripper overlay seam, the drag loop and its one-entry undo contract, the load points and their conjugate targets |
+| **6 — the network strip** | the projection onto `SchematicRenderer`, selection, add / insert / delete / reorder, the sliders, the active-parameter rule and the mirror |
+| **7 — the clipboard** | the network out as a runnable two-port, the chart out as PDF/SVG/JSON/bitmap, a `.csch` selection in, the topology recognizer and its five refusals, and the mirror-aware end rule |
+| **8 — overlays and markers** | Touchstone and cube sources, renormalization to Z₀_chart, derived stability circles, markers and their VSWR circles |
+| **9 — constant Q and the band** | the arc pair and its closed-form in-disc range, its drag inverse and the shift quarter-step, the swept band and its clamp |
+| **10 — the verb** | `circuitrf smith`, the reading, the per-node walk, `-o .s1p` and the picture — and the plot half moved to `CircuitRF.Render` so the picture is the window's |
+| **11 — docs and example** | `docs/user/reference/smith-chart.*` with six generated figures, the `Smith Chart` example workspace, and this record |
+
+**Driving the finished tool as a user found three defects, none of which reported a failure** — which is
+the shape `railrf.md` §6.1 records for its own equivalent round, and the reason `R-smith11-4` exists.
+Each has a test that fails at HEAD; the detail is in `src/Ui/RESOLVED.md`.
+
+- **Every frequency in every refusal was in scientific notation, in bare hertz.** `SmithDesign.Fmt` was
+  `"G6"`, and .NET's `G` switches to exponential the moment the decimal exponent reaches the precision, so
+  a user who typed `2.9 GHz` was refused with *"the design frequency 2.9E+09 Hz is outside …"* and a drag
+  that pinned an inductor reported `-5.55285E-10 H` beside a slider reading `1.97 nH`. It is the same
+  defect `MatchValueFormat.Significant`'s own remarks record from the Match Designer's value grid one
+  project along. Fixed by calling that, with `FmtHz`/`FmtOhm`/`FmtOf` picking the prefix.
+- **The generator table's column headers sat over the wrong columns.** The header grid and the row
+  template share `ColumnDefinitions="86,*,*"`, but the headers took `gridhdr`'s left alignment while R and
+  X are right-aligned numbers — so `X` was drawn directly above the R column's digits. Two ohm values one
+  place out of step is a wrong impedance read off a table that looks entirely ordinary.
+- **There was no route from the window to its own chapter.** railRF, harmonicaRF, wBond and the Match
+  Designer each carry a Help button; this one did not, so §11's chapter was reachable only by knowing it
+  existed. A docked document has no title bar of its own, so it went at the end of the network strip's
+  toolbar and its destination is `DocAnchors`', which the docs run gates.
+
 ---
 
 ## 10. Acceptance
@@ -1008,40 +1047,74 @@ written and are recorded closed, with the reasoning, in the sections named.
   `FlipHorizontal`; the drawing and the symbols mirror, the topology and the chart do not (§5.5).
 - **Q-9 — the inline editor.** *Closed:* every editable value in the tool is an `InlineEditText` (§5.3).
 
-**Open:**
+**Answered at closeout, from the built tool (2026-09-19, `brief-smith-11-docs-and-example.md`
+`R-smith11-5`).** Each records the evidence as well as the answer, because an answer given from a
+finished tool is only worth more than one given from a specification if it says what it looked at.
 
-- **Q-10 — should `F_ref` track the design frequency by default?** §3.3 says no, and gives the reason: a
-  line that re-specifies itself on every retune is a different physical line each time, and the
-  multi-frequency load points stop meaning anything. But the common mental model is *"a 30° line"*, and a
-  user who never leaves one frequency would never notice the difference. The default is one line of code
-  either way; the reasoning is the part that needs review.
-- **Q-11 — should `S1P` be in the element vocabulary?** The specification names `S2P`, series and shunt
-  `Z1P`, and an `.s1p` import for the *generator*. §3.3 adds `S1P` as an element on the grounds that a
-  measured one-port — a real capacitor's file — is the obvious thing to put in shunt, and that it costs
-  nothing given `S2P` is already there. Confirm or drop.
-- **Q-12 — what should the gripper drag on a three-parameter element?** §4.3's answer is "the active
-  parameter", which is the last slider touched. The alternative is a fixed per-type choice (L for SRLC,
-  C for PRLC) with no mode at all. The active-parameter rule is more capable and has the property that
-  the handle's meaning depends on invisible state, which is a real cost.
-- **Q-13 — the two ends of the walk are the only places this deviates from the specification.** The ask
-  was a gripper at *each* start and end point; §4.3 makes **node 0 an anchor** (it would have to guess
-  which generator-table row a drag meant) and leaves **node N draggable**, where it drags the *last*
-  element. Both are arguable. Node N in particular is correct and possibly surprising: a user may expect
-  to drag "the load" and have the tool solve the network, which it will not and cannot do. The
-  alternatives are a draggable node 0 that edits the design frequency's generator row in place, and an
-  anchored node N with the last element dragged from node N−1.
-- **Q-14 — does the network strip need a second row for long cascades?** Ten elements fit; twenty
-  scroll. A wrapped two-row ladder is a drawing problem, not a model problem, and can wait until someone
-  builds a twenty-element narrowband match — which would be an odd thing to do.
-- **Q-15 — should a `.csmith` be able to reference a workspace cell** as an overlay source, rather than
-  only a file or an open cube? It would mean resolving a cell reference, which is a walk-up with its own
-  refusals, for a feature the user did not ask for. Recorded, not designed.
-- **Q-16 — when the network is mirrored, should the generator PANEL move to the right of the chart
-  too?** §5.5 says no: the instruction named the network rendering, and the panel is a docked region with
-  a persisted splitter, so moving it is a window-layout change rather than a drawing one. The argument
-  the other way is real — a generator panel on the far left of a window whose network runs right-to-left
-  is slightly incongruous — and the cost is a column swap plus deciding what happens to the splitter
-  position when it swaps back.
+- **Q-10 — should `F_ref` track the design frequency by default?** *Closed: no, as §3.3 said.* Two
+  things the built tool has that the question did not. First, the cost of "no" is **stated rather than
+  silent**: `SmithChartViewModel.NoteStrandedReferenceFrequencies` raises a sentence the first time a
+  design-frequency edit leaves a line's F_ref behind, naming the elements and saying where to change
+  it — so the user the question worried about is told, once, exactly when it starts to matter.
+  Second, the network strip **draws F on the element's own label** (`F = 2 GHz` on the trajectories
+  figure), so the reference frequency is legible in the picture instead of being invisible state. And
+  the case for "yes" is self-cancelling: a user who never leaves one frequency has F_ref equal to it
+  already, so tracking would change nothing for them while silently re-specifying a line for everyone
+  else.
+- **Q-11 — should `S1P` be in the element vocabulary?** *Closed: keep it.* It cost what the question
+  guessed — `SmithComponentMap` is two rows (`Snp` with `NumPorts=1`, no parameters, no gripper) and
+  it shares S2P's reader, its cache and its refusals. And it is load-bearing rather than merely free:
+  **S2P is series-only by rule**, so without S1P a measured one-port cannot go in shunt at all, and
+  the only remaining spelling for "a real capacitor's file to ground" would be `Z1P`, which is
+  constant over frequency and is therefore the wrong model for a measured part.
+- **Q-12 — what should the gripper drag on a three-parameter element?** *Closed: the active parameter,
+  as §4.3 said.* The question's real cost was *"the handle's meaning depends on invisible state"*, and
+  in the built window it is not invisible: the slider panel marks the active row
+  (`SmithSliderRowViewModel.IsActive` → `Classes.activeparam`) and clicking a row's label makes it
+  active without moving anything, so *the slider I just used* and *the handle on the chart* are
+  connected on screen. The fixed-per-type alternative would also have made a TLIN's Z₀ — which is what
+  decides **which circle** the rotation happens on — permanently undraggable.
+- **Q-13 — the two ends of the walk.** *Closed: node 0 anchored, node N draggable, as §4.3 said.* Node
+  0 offers no handle at all (`BeginGripperDrag` returns false and the overlay draws no ring), so it
+  does not invite a drag and then decline one. Node N does surprise, exactly as the question predicted
+  — so it is **documented rather than removed**: the user chapter says in its own words that the last
+  node drags the last element and does not solve the network. An anchored node N would have cost the
+  tool its most-named gesture to remove a surprise one sentence answers.
+- **Q-14 — does the network strip need a second row for long cascades?** *Re-filed, unchanged.*
+  Nothing built exercises it: the strip scrolls horizontally, Zoom to Fit reframes on every change
+  that alters the count, and no design anybody has authored in this tool — including every test
+  fixture and the shipped example — goes past four elements. Still a drawing problem rather than a
+  model problem, and still waiting for somebody to build a twenty-element narrowband match.
+- **Q-15 — should a `.csmith` be able to reference a workspace cell as an overlay source?**
+  *Re-filed, unchanged.* The two sources that were built — a document-relative Touchstone file and a
+  cube in an open `DataSet` — cover every overlay the tool has been asked for, and a cell reference
+  is a walk-up with its own refusals for a feature nobody has wanted yet.
+- **Q-16 — when the network is mirrored, should the generator PANEL move too?** *Closed: no, as §5.5
+  said, and the built window makes it a smaller question than it looked.* The panel is not the left
+  end of a signal path: it is a **column of six settings cards** — generator table, import, chart
+  Z₀ and design frequency, overlays, constant Q, swept band — of which only the first has anything to
+  do with the generator. Moving a settings column because a drawing was flipped would be reading it as
+  part of the schematic, which the figures show it is not. The splitter question the section raised
+  therefore does not arise.
+
+**Opened at closeout:**
+
+- **Q-17 — is `conj. mismatch` the right quantity for the status strip?** §3.4 puts the target glyphs
+  at `Γ(conj(Z_gen(f)))` and the strip reports the mismatch against that, and the built tool is
+  faithful to it. Driving the shipped example showed what it reads like in the hand: a two-element
+  match that takes 8 − j12 Ω to 50 Ω lands at 49.98 − j0.10 Ω, VSWR 1.002, and the strip says
+  **conj. mismatch 3.411 dB** — and the number gets *smaller* at the band edges, where the match is
+  worse (2.068 dB at 2.3 GHz, 4.924 dB at 2.6 GHz). The engine's own reading of the same network,
+  through the copied schematic with port 1 at the generator impedance, is **−59.8 dB** of return loss
+  at the design frequency. The two are not in conflict — they answer different questions, the strip's
+  being *"how far is the load point from the generator's conjugate"* — but a number labelled as a
+  mismatch in decibels, sitting beside VSWR, reads as match quality, and on this tool's own headline
+  use case it moves the wrong way. **Recorded rather than changed**, because §3.4 is an owner decision
+  and *what it should be instead* has more than one defensible answer: drop it; report the mismatch
+  loss against Z₀_chart (0.00 dB here, 0.17 dB at 2.3 GHz), which is what VSWR already implies; or
+  give the document a load impedance so the conjugate target has something to be about. The user
+  chapter and the example's README both say plainly what the number is, so nobody is misled in the
+  meantime.
 
 ---
 

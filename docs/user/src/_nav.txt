@@ -65,6 +65,7 @@ reference/em-setup.html        | The EM Setup panel, control by control, and whe
 reference/antennas.html        | Patch antennas: the pattern, the numbers that go with it, and the limits that bound both.
 
 == Tools
+reference/smith-chart.html | Narrowband matching by hand: one curve per component, a handle on every joint, and the load moving as you drag.
 reference/harmonicarf.html | Interactive harmonic load-pull on one device, at the speed of a mouse drag.
 reference/wbond.html       | Bondwire arrays: geometry, the 3D kernel, and S-parameters out.
 reference/railrf.html      | Power integrity on the board you drew: DC drop, Z(f) against a target, and which decaps earn their place.

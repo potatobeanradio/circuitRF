@@ -877,9 +877,9 @@ src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind}, which is not a file e
 src/Design/Smith/SmithCascade.cs|'{e.Name}' is a {e.Kind}, which transforms an impedance rather than adding to 
 src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', and there is no file at '{full}'. A {e.Kind} IS its 
 src/Design/Smith/SmithCascade.cs|'{e.Name}' names '{raw}', which could not be read as Touchstone: {ex.Message}
-src/Design/Smith/SmithCascade.cs|'{e.Name}' quotes its electrical length at {SmithDesign.Fmt(fRef)} Hz — the length 
+src/Design/Smith/SmithCascade.cs|'{e.Name}' quotes its electrical length at {SmithDesign.FmtHz(fRef)} — the length 
 src/Design/Smith/SmithCascade.cs|The generator table is empty — this tool starts from an impedance, so it needs at 
-src/Design/Smith/SmithCascade.cs|{SmithDesign.Fmt(fHz)} Hz is outside the generator table's span 
+src/Design/Smith/SmithCascade.cs|{SmithDesign.FmtHz(fHz)} is outside the generator table's span 
 
 # Brief 3's gripper inverse (brief-smith-3-gripper-inverse.md R-smith3-1). Unlike the two families
 # above these are NOT refusals and no user will ever read one: R-smith3-1 says a gripper on a file
