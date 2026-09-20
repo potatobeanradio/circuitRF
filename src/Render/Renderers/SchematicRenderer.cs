@@ -117,6 +117,9 @@ public static class SchematicRenderer
         using var wirePaint       = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
                                                    StrokeWidth = (float)Math.Max(1.0, zoom * 4),    Color = theme.Wire,
                                                    StrokeJoin  = SKStrokeJoin.Miter };
+        // The wire is STROKED to define its shape and FILLED to draw it — see DrawWire.
+        using var wireFillPaint   = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Fill,
+                                                   Color = theme.Wire };
         using var bodyPaint       = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
                                                    StrokeWidth = (float)Math.Max(1.0, zoom * 3),    Color = theme.SymbolLine,
                                                    StrokeJoin  = SymbolStrokeJoinStyle, StrokeCap = SymbolStrokeCapStyle };
@@ -149,8 +152,9 @@ public static class SchematicRenderer
         var wireDragPts = overlay?.WireDragPoints;
         var liveEndConn = overlay?.LiveWireEndpointConnected;
 
-        // Reused path object — Rewind() resets it without reallocation.
-        using var wirePath = new SKPath();
+        // Reused path objects — Rewind() resets them without reallocation.
+        using var wirePath    = new SKPath();
+        using var wireOutline = new SKPath();
 
         foreach (int wi in visWires)
         {
@@ -178,7 +182,7 @@ public static class SchematicRenderer
                     var (ax, ay) = ToPixel(pts[pi].X, pts[pi].Y, panX, panY, zoom);
                     wirePath.LineTo(ax, ay);
                 }
-                canvas.DrawPath(wirePath, wirePaint);
+                DrawWire(canvas, wirePath, wirePaint, wireFillPaint, wireOutline);
             }
 
             // Unconnected endpoint squares. The model's own flags are computed at drag-END, which
@@ -220,7 +224,7 @@ public static class SchematicRenderer
                     var (px, py) = ToPixel(pts[pi].X, pts[pi].Y, panX, panY, zoom);
                     wirePath.LineTo(px, py);
                 }
-                canvas.DrawPath(wirePath, wirePaint);
+                DrawWire(canvas, wirePath, wirePaint, wireFillPaint, wireOutline);
             }
         }
 
@@ -1542,6 +1546,44 @@ public static class SchematicRenderer
     }
 
     // ── Canvas-object rendering ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Draws a wire polyline as a FILLED outline instead of a stroke.
+    /// </summary>
+    /// <remarks>
+    /// <b>Identical pixels, and it is not a style choice.</b> On the owner's machine WebKit — Safari
+    /// and Finder's Quick Look alike, though not a bare offscreen <c>WKWebView</c> — paints some of
+    /// the stroked <c>&lt;path&gt;</c> elements Skia's SVG device writes with the PRECEDING element's
+    /// paint. In the user-doc figures that put the schematic wires in the grid's own
+    /// <c>#AAA</c> at <c>stroke-opacity="0.1373"</c>, which composites to <c>#EFEFEF</c> on the
+    /// canvas — sampled off the owner's screenshot, exactly the rendered colour of a grid line beside
+    /// it. The wire was there, at the right place and the right width, and invisible; four
+    /// figures read as components with nothing connecting them (2026-09-20).
+    ///
+    /// <para><b>What was ruled out, because each looked like the answer first.</b> The figure files
+    /// held both wire paths, valid and unclipped; every page's inline copy matched its file byte for
+    /// byte; Skia, <c>qlmanage</c> and an offscreen <c>WKWebView</c> all drew them correctly; a
+    /// minimal SVG of the same shape drew correctly in the owner's own Safari; and widening the
+    /// stroke, adding <c>stroke-opacity="1"</c>, wrapping the path in its own <c>&lt;g&gt;</c> and
+    /// emitting a <c>&lt;line&gt;</c> instead all still came out grey. A filled <c>&lt;rect&gt;</c>
+    /// and a filled <c>&lt;path&gt;</c> inserted at the same point in the same group drew in colour.
+    /// <b>Fills survive there; strokes do not</b> — so the wire is stroked to DEFINE its shape and
+    /// filled to DRAW it.</para>
+    ///
+    /// <para>Same move <c>e670f8c9</c> made for the Smith arc family when Skia's SVG device dropped
+    /// everything inside a <c>SaveLayer</c>: the geometry is unchanged, only how it reaches the
+    /// canvas. A conversion that fails falls back to stroking, because a wire drawn the old way is
+    /// better than no wire.</para>
+    /// </remarks>
+    private static void DrawWire(SKCanvas canvas, SKPath polyline,
+                                 SKPaint strokePaint, SKPaint fillPaint, SKPath scratch)
+    {
+        scratch.Rewind();
+        if (strokePaint.GetFillPath(polyline, scratch))
+            canvas.DrawPath(scratch, fillPaint);
+        else
+            canvas.DrawPath(polyline, strokePaint);
+    }
 
     private static void DrawBitmaps(
         SKCanvas canvas,

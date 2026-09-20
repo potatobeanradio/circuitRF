@@ -3,6 +3,19 @@
 Same pattern as the other `RESOLVED.md` files in this repo: a completed investigation's detail lands
 here, and `CLAUDE.md` stays for durable, still-true conventions only.
 
+## Smith Chart figures with no wires — not a figure bug, and not a stale page either (2026-09-20)
+
+The second "something is missing from a figure" report in three days, with the answer in a third
+place. The `.svg` files held their wire paths and every page's inline copy matched its file byte for
+byte; WebKit was painting the stroked wire paths with the preceding grid line's paint, so they drew
+at the right place in `#EFEFEF`. Detail, the probe table and the fix are in `src/Render/RESOLVED.md`
+under the same date.
+
+**The order to check, from the pair:** the figure file, then the page's inline copy, then the PIXELS
+— a figure can be complete, correctly inlined, and still not reach the screen. And when a
+correlation partitions the evidence perfectly, confirm the mechanism before fixing it: a real
+sub-pixel measurement here split exactly four-bad-to-two-good and was a coincidence.
+
 ## Two Smith charts in the Data Display chapter had no grid, and the figures were innocent (2026-09-17)
 
 Owner: some Smith charts in the user docs render with no axis grid lines.

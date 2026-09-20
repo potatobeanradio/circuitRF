@@ -1,5 +1,76 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Schematic wires were invisible in the user-doc figures, and nothing was missing from them (2026-09-20)
+
+Owner: four of the six Smith Chart figures draw the components with nothing connecting them —
+`smith-window`, `smith-trajectories`, `smith-constant-q`, `smith-copied-schematic`, light and dark
+alike — while `smith-network-strip` and `smith-network-mirrored` are fine.
+
+**Every figure contained both wire paths, and they were being PAINTED WITH THE PRECEDING ELEMENT'S
+PAINT.** On the owner's machine WebKit renders some of the stroked `<path>` elements Skia's SVG
+device writes using the paint of the element before them. In these figures the wires follow a run of
+84 grid-line paths carrying `stroke="#AAA" stroke-opacity="0.1373"`, which composites to `#EFEFEF`
+over the canvas — so the wire drew at the right place and the right width in a colour one step from
+the background.
+
+**The measurement that settled it** was taken off the owner's own screenshot rather than argued:
+the band is `#EFEFEF`, flat, neutral, 20 device pixels tall at 2× — a 10 px stroke — and a real grid
+line sampled beside it is the same `#EFEFEF`. A red stroke at any alpha keeps R above G and B; this
+was perfectly neutral, so no red was being painted at all.
+
+### Everything that looked like the answer first, and why each is worth knowing
+
+- **The figure files were right.** All six held both wire paths, well formed, inside their clips,
+  covered by nothing, with valid colours.
+- **The pages were right.** Every inline `<svg>` block matched its own `.svg` byte for byte — which
+  is what the last report of this shape turned out to be (`src/Ui/Diagnostics/RESOLVED.md`,
+  2026-09-17), so it is the first thing to check and it was clean here.
+- **Every renderer available locally drew them**: Skia, `qlmanage`, and an offscreen `WKWebView` on
+  the owner's own machine. Only Safari and Finder's Quick Look — the on-screen, GPU-composited
+  hosts — showed the fault, which is why six rounds of reasoning about the file went nowhere.
+- **A minimal SVG of the same shape drew correctly in the owner's Safari**, including 55 grid paths
+  followed by a wide red stroke. The reduction does not reproduce it; the real document does.
+- **Sub-pixel contrast was measured, was real, and was NOT the cause.** A 1 px stroke centred at
+  `y = 710.05` splits ~0.45/0.55 across two rows while one at `y = 92.59` puts 0.91 on one row, and
+  those two cases are exactly the four bad figures and the two good ones. It is a genuine
+  coincidence and it cost a whole wrong fix (a `MinWirePx = 2.0` floor, reverted): widening a stroke
+  that is not being painted in its own colour just makes a wider invisible line. **A correlation
+  that partitions the evidence perfectly is not a mechanism.**
+
+### What was tested in the real document, which is the only place it reproduces
+
+Probes built by patching the shipped `smith-window.svg` and handed to the owner to open:
+
+| variant, inserted at the same point in the same group | result |
+|---|---|
+| the stroked `<path>` we emit today | grey |
+| same, `stroke-width` 10 | grey |
+| same, plus `stroke-opacity="1"` | grey |
+| same, wrapped in its own `<g>` | grey |
+| a `<line>` element instead of a `<path>` | grey |
+| a filled `<rect>` | **correct colour** |
+| a filled `<path>` (a stroke turned into its own outline) | **correct colour** |
+
+**Fills survive there; strokes do not.** So `SchematicRenderer.DrawWire` strokes the polyline to
+DEFINE its shape and fills the resulting outline to DRAW it — `SKPaint.GetFillPath`, falling back to
+stroking if the conversion fails. Same move `e670f8c9` made for the Smith arc family when Skia's SVG
+device dropped everything inside a `SaveLayer`. A wire now emits as
+`<path fill="#A43F81" d="…Z" />` with no stroke at all. Identical pixels; the change is only in how
+the geometry reaches the canvas.
+
+### Regenerating the figures without the churn
+
+31 figures and 6 pages changed. The affected set is predictable in advance — every figure holding a
+path painted `#A43F81` (light) or `#D67AB2` (dark) — so DocGen was run once, its output classified
+by whether those paths actually moved from stroked to filled, the other 35 files it rewrote restored
+from HEAD, and the pages re-inlined from the figure files the way `Placeholders.ReadInline` does
+rather than re-run. Checking afterwards that no page's inline block differs from its own `.svg` is
+the cheap proof it was done right.
+
+**`docs/user/assets/figures/pin-port-term{,-dark}.svg` are orphans** — no catalog row, no page names
+them, so they do not regenerate and still carry stroked wires. Left alone; noticed only because they
+were the one exception to the predicted set.
+
 ## Smith Chart, round four — overlays are Data Display trace configs now (2026-09-19)
 
 The half of brief 12 that landed below the firewall. The window's half is in `src/Ui/RESOLVED.md` under
