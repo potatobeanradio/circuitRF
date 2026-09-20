@@ -168,6 +168,7 @@ mistake would land the cost **inside a drag**, which is the one place in this to
 | [9 — constant Q and the swept band](brief-smith-9-q-and-sweep.md) | P2 | The constant-Q circle pair, its drag inverse and the shift quarter-step; the optional swept band and its clamp. | `SmithConstantQTests.cs` — `\|x\|/r = Q` on every drawn sample |
 | [10 — the `smith` CLI verb](brief-smith-10-cli-verb.md) | P3 | `circuitrf smith`, per `docs/design/cli.md`. `--set`, `-o out.s1p`, the picture through `render`. | `SmithCliVerbTests.cs` — byte identity against the in-process call |
 | [11 — docs, example, closeout](brief-smith-11-docs-and-example.md) | — | The user chapter, the figures, an example `.csmith` in an example workspace, and the design note's own status. | DocGen, reported |
+| [12 — overlays via the inspector](brief-smith-12-overlays-via-the-inspector.md) | post-ship | **Replaces brief 8's Overlays panel.** Reference data is added through Plot Properties, as on any Data Display Smith chart; a user trace is persisted as a `TraceConfig` and survives the rebuild. | `SmithOverlayTests.cs`, extended |
 
 ### Dependency order
 
@@ -185,6 +186,9 @@ mistake would land the cost **inside a drag**, which is the one place in this to
 - **10 needs 2 only**, not the window — that is the point of the CLI, and it is what §9 of the note means
   by *"the arithmetic lives below the firewall from day one, so P3 is wiring."*
 - **8 and 9 are independent of each other** and can be taken in either order.
+- **12 replaces 8's panel** and is post-ship. Brief 8 still stands for everything else it decided — the
+  renormalization requirement, the reference-not-copy rule, the markers and their VSWR circles; what 12
+  takes away is the side panel it built to pick a source.
 
 ---
 

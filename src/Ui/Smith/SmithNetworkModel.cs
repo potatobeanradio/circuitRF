@@ -96,8 +96,10 @@ public static class SmithNetworkModel
     /// <summary>The suffix a shunt column's own ground carries, so its id is unique.</summary>
     public const string GroundNameSuffix = "_GND";
 
-    /// <summary>The generator termination's instance name.</summary>
-    public const string GeneratorName = "Gen";
+    /// <summary>The generator termination's instance name. <b>Spelled out</b> (owner instruction,
+    /// 2026-09-19): it is the name a copied schematic's port carries into a `.csch`, where "Gen"
+    /// is a three-letter abbreviation of nothing else in the document.</summary>
+    public const string GeneratorName = "Generator";
 
     /// <summary>The load marker's instance name.</summary>
     public const string LoadName = "load";

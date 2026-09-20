@@ -44,7 +44,17 @@ namespace CircuitRF.Ui.Tests.Smith;
 /// directly, which are the functions <c>SmithChartViewModel</c> calls on every edit, and those are
 /// gated against the engine and against the window by the rest of this folder. The chain is what
 /// makes it an end-to-end claim.</para>
+///
+/// <para><b>Party to the typeface collection</b> (<see cref="SkiaFontsTypefaceCollection"/>), by its
+/// second membership rule — <i>a class that compares rendered TEXT bytes against another process
+/// belongs here</i> — which this class met from the day it was written and was not declared on. The
+/// symptom is the one that type documents: a neighbour holds <c>SkiaFonts.TestOverrideTypeface</c>
+/// for the length of one test, the in-process render of this gate lands in that window and comes
+/// back in Helvetica, and the fresh CLI process has no override to read and comes back in IBM Plex
+/// Sans. Reliably green alone, red beside its neighbours — and it only surfaced when an unrelated
+/// change moved the schedule.</para>
 /// </summary>
+[Collection(SkiaFontsTypefaceCollection.Name)]
 public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _root = Path.Combine(

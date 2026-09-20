@@ -15,6 +15,8 @@
 // it had been handed, because the target was remembered rather than passed.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using CircuitRF.Design.Matching;
 using CircuitRF.Design.Smith;
@@ -76,27 +78,27 @@ public static class SmithChartChrome
     internal const double HitRadius = 8.0;
 
     /// <summary>
-    /// How far, in Γ, the FIRST load point's label is offset from the point it names — and the step
-    /// each one after it adds.
+    /// The clearance, in canvas pixels at the nominal line width, between a load point's glyph and
+    /// the nearest edge of the label box naming it.
     /// </summary>
-    /// <remarks>
-    /// <b>The stub grows with the index because the points do not.</b> A generator table is a few
-    /// frequencies a few percent apart, so the load points sit almost on top of each other while
-    /// their labels are fifty pixels wide; the iso-line placer's own per-ring stagger spaces labels
-    /// along ONE polyline and is far too small a fraction of one stub to separate them. Fanning the
-    /// stubs radially outward is what does — and the box is still the placer's, which is the part
-    /// <c>R-smith5-3</c> is about.
-    /// </remarks>
-    private const double LabelOffsetGamma = 0.085;
-    private const double LabelOffsetStep  = 0.075;
+    private const float LabelClearance = 7f;
+
+    /// <summary>The gap left between two label boxes, and between a box and a glyph it is not
+    /// naming, when a box has to be pushed further out to clear one.</summary>
+    private const float LabelBoxGap = 2f;
+
+    /// <summary>How many times a box may be pushed one row further out before it is drawn where it
+    /// is. A bound rather than a loop: a chart zoomed until every point is one pixel apart has no
+    /// placement that clears, and marching off the canvas is worse than a slight overlap.</summary>
+    private const int LabelPushLimit = 6;
 
     /// <summary>
-    /// A spacing wider than the label stub's own arc length, which
-    /// <c>ContourRenderer.ComputeLabelAnchors</c> answers with exactly ONE anchor — see its own
-    /// remarks. That is the property being used here: one box per load point, placed by the shared
-    /// placer, staggered by ring index.
+    /// Handed to <c>ContourRenderer.ComputeLabelAnchors</c> as the world-unit spacing. The stub
+    /// passed with it is TWO PIXELS long in canvas coordinates, so any spacing above that answers
+    /// with exactly ONE anchor — see that method's own remarks. One box per load point, placed by
+    /// the shared placer.
     /// </summary>
-    private const double LabelSpacing = 10.0;
+    private const double LabelSpacing = 1e6;
 
     private const float LabelFontSize = 9f;
     private const float LabelBaseLw   = 2.0f;
@@ -170,11 +172,12 @@ public static class SmithChartChrome
         using var font = new SKFont(SkiaFonts.PlexRegular, LabelFontSize * lw / LabelBaseLw);
         font.GetFontMetrics(out var metrics);
 
-        string text  = "Q " + MatchValueFormat.Significant(q.Q, 4);
+        // "Q=1.234", with the equals sign (owner instruction, 2026-09-19): a bare gap read as two
+        // separate things rather than as one quantity and its value.
+        string text  = "Q=" + MatchValueFormat.Significant(q.Q, 4);
         float  width = font.MeasureText(text);
 
         var   at = tf.PrimaryToCanvas(apex.Real, apex.Imaginary);
-        float padX = 3f * lw / LabelBaseLw;
         float padY = 2f * lw / LabelBaseLw;
 
         // Hangs from the apex: the baseline is one ascent below it, plus the gap, so the text's TOP
@@ -182,14 +185,37 @@ public static class SmithChartChrome
         float baseline = at.Y + padY - metrics.Ascent;
         float left     = at.X - width / 2f;
 
-        using var bg = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,
-                                     Color = theme.BackgroundColor.WithAlpha(190) };
-        canvas.DrawRect(new SKRect(left - padX, baseline + metrics.Ascent - padY,
-                                   left + width + padX, baseline + metrics.Descent + padY), bg);
-
+        // NO BACKGROUND FILL (owner instruction, 2026-09-19). The panel drew a near-opaque plate
+        // behind the number, which on a light theme reads as a white patch punched out of the grid
+        // directly under the arc — more conspicuous than the grid lines it was hiding.
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
                                       Color = ReadingColorOpaque };
         canvas.DrawText(text, left, baseline, SKTextAlign.Left, font, ink);
+    }
+
+    /// <summary>
+    /// Which way load point <paramref name="k"/>'s label hangs: <b>−1 above the glyph, +1 below
+    /// it</b> (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <param name="canvasY">Every load point's canvas Y, in canvas coordinates — so LARGER is
+    /// further DOWN the screen.</param>
+    /// <remarks>
+    /// <b>Away from the rest of the cluster</b>, decided by the mean of the others. For the two
+    /// points the rule was stated about that is exactly "is the other one below me": the lower
+    /// frequency's label goes above its glyph and the higher one's below, which is the arrangement
+    /// with no box between the two points. It is separate from the drawing so the rule can be
+    /// checked without a canvas.
+    /// </remarks>
+    internal static float LabelDirection(IReadOnlyList<float> canvasY, int k)
+    {
+        ArgumentNullException.ThrowIfNull(canvasY);
+        if (canvasY.Count < 2) return -1f;
+
+        float others = 0f;
+        for (int j = 0; j < canvasY.Count; j++) if (j != k) others += canvasY[j];
+        others /= canvasY.Count - 1;
+
+        return others > canvasY[k] ? -1f : +1f;
     }
 
     /// <summary>True when node <paramref name="k"/> belongs to an element with a parameter to
@@ -222,25 +248,21 @@ public static class SmithChartChrome
     private static void DrawQHandle(SKCanvas canvas, TransformSet tf, RenderTheme theme,
                                     SmithChromeState state)
     {
-        if ((state.DragQ ?? state.HoverQ) is not { } handle) return;
+        // ON THE DRAG ONLY (owner instruction, 2026-09-19). The hover ring appeared whenever the
+        // pointer came within eight pixels of either arc and then glided along it, which over a
+        // chart crossed by two arcs reads as a circle chasing the cursor rather than as a handle.
+        // The arcs are still grabbed exactly as before — SmithGripperOverlay's hit test is
+        // untouched — and once a drag is under way the ring is drawn, so what is held is visible.
+        if (state.DragQ is not { } handle) return;
 
         var at = tf.PrimaryToCanvas(handle.At.Real, handle.At.Imaginary);
 
         using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
-                                       Color = theme.BackgroundColor.WithAlpha(150) };
+                                       Color = ReadingColorOpaque };
         using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
                                          StrokeWidth = 1.6f, Color = ReadingColorOpaque };
 
-        if (state.DragQ is not null)
-        {
-            fill.Color = ReadingColorOpaque;
-            canvas.DrawCircle(at.X, at.Y, RingRadius, fill);
-        }
-        else
-        {
-            canvas.DrawCircle(at.X, at.Y, RingRadius - 1.4f, fill);
-        }
-
+        canvas.DrawCircle(at.X, at.Y, RingRadius, fill);
         canvas.DrawCircle(at.X, at.Y, RingRadius, stroke);
     }
 
@@ -288,19 +310,29 @@ public static class SmithChartChrome
     }
 
     /// <summary>
-    /// Each load point's frequency, in a label box.
+    /// Each load point's frequency, in a label box <b>placed clear of the glyphs</b>.
     /// </summary>
     /// <remarks>
-    /// <b>The box is the loadpull iso-lines' own</b> (<c>R-smith5-3</c>): the padded, world-unit
-    /// spaced, staggered box <c>ContourRenderer.DrawIsoLineLabel</c> draws and
-    /// <c>ComputeLabelAnchors</c> places. It is CALLED, not re-drawn — the two surfaces cannot then
-    /// drift apart in appearance, which is the whole reason the design note names this reuse
-    /// specifically.
+    /// <b>The box is the loadpull iso-lines' own</b> (<c>R-smith5-3</c>): the padded box
+    /// <c>ContourRenderer.DrawIsoLineLabel</c> draws. It is CALLED, not re-drawn — the two surfaces
+    /// cannot then drift apart in appearance, which is the whole reason the design note names this
+    /// reuse specifically. What is passed to it is a two-point stub in CANVAS coordinates with an
+    /// identity projection, so the placement below is in pixels and the box is still the placer's.
     ///
-    /// <para>The placer walks a POLYLINE, so each point is handed a short stub running radially
-    /// outward from the centre of the chart, and the stagger that spaces successive iso-line labels
-    /// is what spaces successive load points' boxes here. Outward rather than in any fixed
-    /// direction, so a label never lands over the middle of the chart where the trajectories are.</para>
+    /// <para><b>The placement is vertical and it is chosen per point</b> (owner instruction,
+    /// 2026-09-19 — a label was landing on a glyph). The stubs used to fan radially outward from the
+    /// centre of the chart, which spaces labels apart from EACH OTHER but says nothing about where
+    /// the other load points are: a locus running outward from the centre puts every label straight
+    /// over the next point along it. So each label goes ABOVE its own glyph when the other load
+    /// points are below it on the chart and BELOW when they are above — the lowest frequency's label
+    /// above the cluster, the highest frequency's below it, which is the owner's own rule and
+    /// generalises to any number of rows through the mean.</para>
+    ///
+    /// <para><b>Then the boxes are pushed out until they clear.</b> Every glyph and every box already
+    /// placed is an obstacle; a box that overlaps one is moved one row further along its own
+    /// direction and tried again. It is bounded — see <see cref="LabelPushLimit"/> — because a chart
+    /// zoomed until the points are a pixel apart has no placement that clears, and a label marching
+    /// off the canvas is worse than a slight overlap.</para>
     /// </remarks>
     private static void DrawLoadLabels(SKCanvas canvas, TransformSet tf, RenderTheme theme,
                                        SmithChartScene scene)
@@ -321,29 +353,67 @@ public static class SmithChartChrome
         using var bgStroke   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke,
                                              StrokeWidth = 0.75f, Color = theme.GridColor };
 
-        float padX = 4f * lw / LabelBaseLw;
-        float padY = 3f * lw / LabelBaseLw;
+        float scale = lw / LabelBaseLw;
+        float padX  = 4f * scale;
+        float padY  = 3f * scale;
 
-        SKPoint Project(double wx, double wy) => tf.PrimaryToCanvas(wx, wy);
-
+        // The points, in canvas pixels, with the ones that cannot be projected dropped.
+        var at    = new List<SKPoint>(scene.LoadPoints.Count);
+        var index = new List<int>(scene.LoadPoints.Count);
         for (int i = 0; i < scene.LoadPoints.Count; i++)
         {
             var g = scene.LoadPoints[i].Gamma;
             if (!double.IsFinite(g.Real) || !double.IsFinite(g.Imaginary)) continue;
 
-            double mag = g.Magnitude;
-            var dir = mag > 1e-9 ? g / mag : Complex.One;
+            var p = tf.PrimaryToCanvas(g.Real, g.Imaginary);
+            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y)) continue;
 
-            double reach = LabelOffsetGamma + LabelOffsetStep * i;
-            (double X, double Y)[] stub =
-            [
-                (g.Real, g.Imaginary),
-                (g.Real + dir.Real * reach, g.Imaginary + dir.Imaginary * reach),
-            ];
+            at.Add(p);
+            index.Add(i);
+        }
+        if (at.Count < 2) return;
 
-            ContourRenderer.DrawIsoLineLabel(canvas, stub, Project,
-                                             scene.LoadPoints[i].Label, LabelSpacing, i,
-                                             font, labelPaint, bgPaint, bgStroke, padX, padY);
+        font.GetFontMetrics(out var metrics);
+        float boxH  = metrics.Descent - metrics.Ascent + 2f * padY;
+        float step  = boxH + LabelBoxGap;
+        float first = LabelClearance * scale + boxH / 2f;
+
+        // Every glyph is an obstacle from the start, including the ones whose own label has not been
+        // placed yet — otherwise the first label placed would be the only one that avoided anything.
+        float glyphHalf = LabelClearance * scale;
+        var   taken     = at.Select(p => new SKRect(p.X - glyphHalf, p.Y - glyphHalf,
+                                                    p.X + glyphHalf, p.Y + glyphHalf)).ToList();
+
+        for (int k = 0; k < at.Count; k++)
+        {
+            string text = scene.LoadPoints[index[k]].Label;
+
+            float tw    = font.MeasureText(text);
+            float halfW = tw / 2f + padX;
+            float halfH = boxH / 2f;
+
+            float dir = LabelDirection([.. at.Select(p => p.Y)], k);
+
+            SKRect box = default;
+            for (int push = 0; push <= LabelPushLimit; push++)
+            {
+                float cy = at[k].Y + dir * (first + push * step);
+                box = new SKRect(at[k].X - halfW, cy - halfH, at[k].X + halfW, cy + halfH);
+                if (!taken.Any(r => r.IntersectsWith(box))) break;
+            }
+
+            taken.Add(box);
+
+            // The box is the shared placer's. The stub is two pixels long about the box's centre and
+            // the projection is the identity, so ComputeLabelAnchors' single anchor lands exactly
+            // where the arithmetic above put it — see LabelSpacing.
+            float cx = box.MidX, cyFinal = box.MidY;
+            (double X, double Y)[] stub = [(cx, cyFinal - 1.0), (cx, cyFinal + 1.0)];
+
+            ContourRenderer.DrawIsoLineLabel(
+                canvas, stub, static (x, y) => new SKPoint((float)x, (float)y),
+                text, LabelSpacing, ringIndex: 1,
+                font, labelPaint, bgPaint, bgStroke, padX, padY);
         }
     }
 

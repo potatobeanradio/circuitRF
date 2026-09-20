@@ -1,5 +1,83 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart, round three — the glyph was on the wrong side of the real axis (2026-09-19)
+
+The half of that round that landed below the firewall. The window's half is in `src/Ui/RESOLVED.md`
+under the same date, and `docs/design/smith-chart.md` §9.3 records what changed in the design's own
+decisions.
+
+### The generator glyph was drawn at the conjugate of the generator
+
+Owner report: the generator impedance renders at the conjugate of what the Generator table says.
+
+It did, and on purpose — §3.4 specified a faint, un-selectable **conjugate-match target** at
+Γ(conj(Z_gen(f))), on the reasoning that landing that frequency's load point on it *is* the conjugate
+match. That reasoning is sound and the mismatch column still reports exactly that. What it costs is
+the thing the report is about: conj(Z_gen) is Z_gen mirrored about the real axis, so the glyph sits at
+the right magnitude with the wrong sign on its reactance, and **nothing in the picture says which one
+it is**. The one glyph the generator table could be checked against was the one place the table's own
+numbers were not. `SmithChartScene.ConjugateTargets` is `GeneratorPoints`, the trace is `Zgen`, and
+`SmithChartSettings.ShowTargets` keeps its name so existing `.csmith` files still read.
+
+The gate carries a generator with a REACTANCE (12 − 8.5j Ω) for the obvious reason: a real Z_gen is
+its own conjugate and could not tell the two placements apart.
+
+### A load point was dropped silently when its row could not be evaluated
+
+Every generator-table frequency gets a load point — that is what the table is for, and the swept band
+ADDS frequencies to that set rather than replacing it. The only thing that can stop one is a file
+element whose Touchstone does not span that row, which `BuildScene` caught and skipped with a comment
+saying it dropped "that row and no other". A chart with three generator rows and two load points on it
+looks exactly like a chart with two rows, so the dropped frequencies are now named in the status
+strip.
+
+### The frequency labels were placed by a rule that could not see the other points
+
+The label stubs fanned radially outward from the centre of the chart, each one a little longer than
+the last. That spaces the labels from EACH OTHER, which was the problem it was written for — a
+generator table is a few frequencies a few percent apart and the boxes are fifty pixels wide — but it
+says nothing about where the other LOAD POINTS are, and a locus running outward from the centre puts
+every label straight over the next point along it.
+
+The placement is vertical now and chosen per point: a box hangs above its own glyph when the other
+load points are below it and below when they are above — the owner's own rule for two points,
+generalised through the mean — then is pushed one row further out until it clears every glyph and
+every box already placed. The push is BOUNDED (six rows): a chart zoomed until the points are a pixel
+apart has no placement that clears, and a label marching off the canvas is worse than a slight
+overlap. `SmithChartChrome.LabelDirection` is the side choice on its own so it can be checked without
+a canvas — canvas Y grows downward, which is the part that is easy to get backwards and impossible to
+see in a screenshot of a chart whose points happen to be nearly level.
+
+The box is still `ContourRenderer.DrawIsoLineLabel`'s, which is what §5.4's reuse is about. What
+changed is that the stub handed to it is now in CANVAS coordinates with an identity projection, so the
+arithmetic above is in pixels and the placer still draws the box.
+
+### The constant-Q chrome
+
+**`Q=1.75`, and no background plate.** The plate was near-opaque and on a light theme read as a white
+patch punched out of the grid directly under the arc — more conspicuous than the grid lines it was
+hiding. **The grab ring is drawn only while an arc is being DRAGGED**: on hover it appeared within
+eight pixels of either arc and glided along it, which over a chart crossed by two arcs reads as a
+circle chasing the cursor. `SmithGripperOverlay`'s hit test is untouched, so the arcs are grabbed
+exactly as before.
+
+### `Trace.ExcludeFromAxisLabels`
+
+New, default false, set on every trace `SmithPlotBuilder.CubeTrace` produces and left clear on the
+overlays. It governs both halves of a complex plot's axis labelling — `PlotLabelStrips.For` (the
+per-trace Y strips) and `AxesRenderer.DrawComplexXLabels` (the `freq (a to b)` rows) — plus
+`PlotCanvasGeometry.BottomLabelExtraLogical`, which sizes the canvas for those rows and must agree
+with the renderer or the chart carries a band of empty space under it. That third one was also
+counting CONTOUR traces the renderer has always filtered out; the two now agree about those too.
+`src/Ui/RESOLVED.md` has the two reports it came from.
+
+### Sizes
+
+The generator glyphs are half the size they were (3.0 → 1.5) and the load points a tenth smaller
+(2.0 → 1.8, and 3.6 for the design frequency's). The generator table is a few frequencies a few
+percent apart, so the glyphs land almost on top of one another and the cluster read as one blob.
+
+
 ## `PlacedPlot` gained an overlay, because a copy composed from containers had none (2026-09-19)
 
 brief-smith-7-clipboard.md, the half that landed below the firewall. The reasoning is in

@@ -52,8 +52,10 @@ public sealed class SmithChartScene
     /// them.</summary>
     public IReadOnlyList<SmithLoadPoint> LoadPoints { get; init; } = [];
 
-    /// <summary>Γ(conj(Z_gen(f))) per generator-table row — the faint, un-selectable targets.</summary>
-    public IReadOnlyList<Complex> ConjugateTargets { get; init; } = [];
+    /// <summary>Γ(Z_gen(f)) per generator-table row — the faint, un-selectable generator glyphs.
+    /// <b>The generator as the table states it</b>, not its conjugate (owner report,
+    /// 2026-09-19).</summary>
+    public IReadOnlyList<Complex> GeneratorPoints { get; init; } = [];
 
     /// <summary>The constant-Q arcs' two branches, inside the unit disc, or empty when the pair is
     /// off (<c>brief-smith-9-q-and-sweep.md</c> <c>R-smith9-1</c>). <b>Chrome</b>: drawn beneath the

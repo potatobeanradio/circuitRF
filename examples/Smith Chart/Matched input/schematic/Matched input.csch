@@ -6,7 +6,7 @@
   "AuthorGridDivisor": 20,
   "Components": [
     {
-      "InstanceName": "Gen",
+      "InstanceName": "Generator",
       "Symbol": "TermG",
       "X": 0,
       "Y": 200,

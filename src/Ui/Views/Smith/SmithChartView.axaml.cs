@@ -270,6 +270,12 @@ public partial class SmithChartView : UserControl
             // what makes it safe on a pan.
             vm.HarvestMarkers();
         };
+        // A REMOVAL from the marker context menu: two of that menu's three paths go through the
+        // CONTAINER's view model and never raise PlotChanged at all, so the harvest above missed
+        // them and the deleted marker was re-attached from the document on the next rebuild — the
+        // owner's report of 2026-09-19, a marker that came back whenever a component value changed.
+        plot.MarkerRemoved += (_, _) => vm.HarvestMarkers();
+
         plot.MarkerMoved += (_, _) => { container.OnMarkerMoved(); vm.HarvestMarkers(); };
         plot.MarkerAdded += (marker, trace) => { container.OnMarkerAdded(marker, trace); vm.HarvestMarkers(); };
         container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
@@ -400,8 +406,11 @@ public partial class SmithChartView : UserControl
             Kind      = binding.SymbolKind,
             PortCount = binding.NumPorts,
             Rotation  = SmithNetworkModel.RotationFor(entry.Kind, entry.Placement),
-            Width     = 22,
-            Height    = 18,
+            // HALF AGAIN AS LARGE (owner instruction, 2026-09-19). A menu row's job here is to be
+            // recognised at a glance — an R from an L from a shunt C — and at 22x18 the three
+            // two-terminal lumped glyphs were near-indistinguishable beside their own names.
+            Width     = 33,
+            Height    = 27,
         };
     }
 

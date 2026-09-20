@@ -1,5 +1,108 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart, round three — a glyph on the wrong side of the real axis, and a marker that would not stay deleted (2026-09-19)
+
+Owner items from driving the finished tool again. `docs/design/smith-chart.md` §9.3 records what
+changed in the design's own decisions; the render half is in `src/Render/RESOLVED.md` under the same
+date. Gate: `tests/Ui.Tests/Smith/SmithRoundThreeTests.cs` (five tests, one per claim whose failure
+would be silent).
+
+### A marker deleted from its context menu came back on the next component edit
+
+The document is the authority for the marker set — every trace on this chart is rebuilt from the
+design on each edit, so `SmithPlotBuilder.Fill` re-attaches the markers from `design.Markers` on every
+rebuild. `SmithChartViewModel.HarvestMarkers` is what writes the plot's markers back into the
+document, and the view called it from three events: `MarkerAdded`, `MarkerMoved`, and `PlotChanged`.
+
+**A removal raises none of them, except sometimes.** `PlotControl.ShowMarkerContextMenu` has three
+removal branches — the info-box view model's, the container's, and a bare `trace.Markers.Remove` — and
+only the last raises `PlotChanged`. The other two go through `DataDisplayViewModel.InternalRemoveMarker`,
+which calls `container.OnPlotChanged(...)` — a method on the CONTAINER's view model, not the control's
+event, and a different thing with a confusingly similar name. So the harvest never ran, the document
+kept the marker, and the next keystroke put it back.
+
+`PlotControl.MarkerRemoved` is a new event raised in all three branches, and the Smith view harvests on
+it. **Not folded into `PlotChanged`**: the container path already raises that by its own route, so
+doing both would rebuild the Data Display's info boxes twice for one removal.
+
+### Add Marker offered a submenu that could not change the answer
+
+On this chart `Plot.FreeMarkers` is on: a marker is a POSITION anywhere on the chart, not a reading of
+one curve at a frequency. The trace it is stored on decides nothing about where it lands or what it
+reads, so the submenu asked a question with no consequence, one row per trajectory, load-point trace,
+arc, band and overlay. `RefreshAddMarkerSubmenu` now makes the item a single clickable row on a
+free-marker plot and stores the marker on the first non-annotation trace.
+
+### Delete, Escape, and a selection nothing could clear
+
+**Delete** on the chart did nothing — the Data Display binds it at the window level and this document
+has no such binding. It is now a `KeyBinding` on the view's root, on `DeleteSelectedMarkers`, which is
+deliberately NOT `DataDisplayViewModel.DeleteSelected`: that also removes selected plot CONTAINERS and
+this document's one chart is not deletable. The Match Designer and railRF each carry the same note for
+the same reason. **Escape** clears both selections — the markers' and the network strip's element —
+because the window has two and one key. The network canvas takes Escape first, so the command is
+reached the same way whichever pane has the focus, and it is idempotent.
+
+Both are on the ROOT, after the two surfaces that want either key for themselves: the network canvas
+handles Delete as "delete the selected element", and `PlotControl` consumes Escape while an overlay
+drag is in flight (R-smith5-8).
+
+### A chart full of axis labels nobody asked for
+
+Two reports, one mechanism: a chart pasted into a presentation carried a column of y-axis labels the
+window had never shown, and the chart itself carried a stack of x-axis labels — the owner's rule
+being that the only labels on these axes should be the ones naming data sources the user plotted
+through the Plot Properties inspector.
+
+A Smith plot labels its axes **per trace**: one Y-axis label strip down the side
+(`PlotLabelStrips.For`) and one `freq (a to b GHz)` row along the bottom
+(`AxesRenderer.DrawComplexXLabels`). This chart derives a dozen traces — one per cascade element,
+the load points, the generator points, the swept band, the two constant-Q arcs — and each of them
+was taking one of each.
+
+The Y half **never drew on screen at all**: this window hosts a bare `PlotControl` rather than a
+`PlotContainerView`, so the strips only ever appeared in a copy, an SVG/PDF export or a headless
+`circuitrf smith`. That is the worse half of the report, because the surface that shows it is not the
+surface anybody looks at while working.
+
+`Trace.ExcludeFromAxisLabels` is a new per-TRACE flag, set on everything `SmithPlotBuilder.CubeTrace`
+produces and left clear on the OVERLAYS — the reference data the user chose, which is exactly what
+the labels are for. **Per trace rather than per plot**, because that is the shape of the rule: the
+two kinds of curve sit on the same plot and a switch on the plot could only silence both. It is read
+in three places that must agree — the strip set, the rows, and
+`PlotCanvasGeometry.BottomLabelExtraLogical`, which sizes the canvas for those rows; a canvas made
+tall for rows nobody draws is a band of empty space under every chart. (That third one was also
+counting CONTOUR traces the renderer has always filtered out, so the two now agree about those too.)
+
+### A byte-identity gate that had never declared what it is
+
+`SmithCliVerbTests` compares the SVG the verb writes as a PROCESS against the one this process
+renders. `SkiaFontsTypefaceCollection` states the membership rule for exactly that: *a class that
+sets either typeface static, **or that compares rendered TEXT bytes against another process**,
+belongs here* — and names the second half as the one that is easy to miss, "because such a class
+looks like it touches no global at all." This class met it from the day it was written and was not
+declared on.
+
+It surfaced only when the changes above moved the schedule: a neighbour holds
+`SkiaFonts.TestOverrideTypeface` for the length of one test, the in-process render landed in that
+window and came back in Helvetica, and the fresh CLI process has no override to read and came back in
+IBM Plex Sans. Green alone, red beside its neighbours — the shape that type documents. `RenderCliVerbTests`
+and `ConvertCliVerbTests` were already declared; this one is now too.
+
+### The rest
+
+- **The generator column is narrower** and gives the space to the chart, where marker info boxes are
+  parked. Its **Conjugate** button moved above **Import .s1p…**: Conjugate edits the table directly
+  above it, and the import is what replaces that table.
+- **The constant-Q toolbar button is the LETTER Q**, a `TextBlock`, not Material's `AlphaQ` — a Q
+  inside a rounded box, which at 16 px reads as an O with a tick.
+- **The Add and Insert menu rows' component glyphs are half again as large** (22×18 → 33×27). The
+  three two-terminal lumped glyphs were near-indistinguishable beside their own names.
+- **The copied generator port is named `Generator`**, not `Gen`. The shipped example's committed
+  `.csch` and its README moved with it — `SmithExampleTests` compares the two component for
+  component, which is what caught the README.
+
+
 ## Smith Chart — the user chapter, the example, and three defects that reported nothing (2026-09-19)
 
 brief-smith-11-docs-and-example.md — the closeout of the eleven-brief series. A user chapter with six

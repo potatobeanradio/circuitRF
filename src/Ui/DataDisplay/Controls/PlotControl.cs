@@ -157,6 +157,26 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         public event EventHandler? PlotChanged;
 
         /// <summary>
+        /// Raised after a marker has been taken off its trace by this control's own marker context
+        /// menu — <b>whichever of the three removal paths that menu took</b>.
+        /// </summary>
+        /// <remarks>
+        /// <b>A removal had no event of its own, and that was a defect</b> (owner report,
+        /// 2026-09-19: a marker deleted from the context menu came back on the next component
+        /// edit). A host whose DOCUMENT is the authority for the marker set — the Smith Chart tool,
+        /// whose traces are all rebuilt from the design on every edit — has to be told, or its copy
+        /// of the marker simply survives and is re-attached on the next rebuild. Two of the three
+        /// paths route through the container's view model and never reach
+        /// <see cref="PlotChanged"/> at all; the third raises it, and a host listening only to that
+        /// one saw the removal only sometimes.
+        ///
+        /// <para><b>Not folded into <see cref="PlotChanged"/></b>: that event already fires on the
+        /// container path by its own route, so raising it here as well would rebuild the Data
+        /// Display's info boxes twice for one removal.</para>
+        /// </remarks>
+        public event EventHandler? MarkerRemoved;
+
+        /// <summary>
         /// Raised when the user chooses "Delete Plot" from the context menu.
         /// The host (PlotContainerView) should remove this plot from the DataDisplay.
         /// </summary>
@@ -896,7 +916,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (!hasTraces) return;
 
-            foreach (var t in _plot!.Traces)
+            // A FREE-MARKER PLOT GETS NO SUBMENU (owner instruction, 2026-09-19). On the Smith Chart
+            // tool a marker is not a reading of one curve — it is a position anywhere on the chart
+            // (Plot.FreeMarkers) — so asking which trace to put it on offers a choice that changes
+            // nothing about where it lands or what it reads. The trace it is STORED on still has to
+            // be one of them, and the first non-annotation trace is as good an answer as the menu's
+            // own first row was.
+            if (_plot!.FreeMarkers)
+            {
+                var host = _plot.Traces.First(t => !t.IsAnnotation);
+                _addMarkerMenuItem.Click -= OnAddFreeMarkerHere;
+                _addMarkerMenuItem.Click += OnAddFreeMarkerHere;
+                _freeMarkerHostTrace = host;
+                return;
+            }
+
+            _freeMarkerHostTrace = null;
+
+            foreach (var t in _plot.Traces)
             {
                 if (t.IsAnnotation) continue;
 
@@ -905,6 +942,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 sub.Click += (_, _) => AddMarkerAtCanvasPoint(captured, _lastRightClickPos);
                 _addMarkerMenuItem.Items.Add(sub);
             }
+        }
+
+        /// <summary>The trace a free-marker plot's flat <b>Add Marker</b> row stores its marker on —
+        /// see <see cref="RefreshAddMarkerSubmenu"/>. Null on every plot that keeps the submenu.</summary>
+        private Trace? _freeMarkerHostTrace;
+
+        private void OnAddFreeMarkerHere(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (_freeMarkerHostTrace is { } host) AddMarkerAtCanvasPoint(host, _lastRightClickPos);
         }
 
         // ============================================================
@@ -2379,6 +2425,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                             PlotChanged?.Invoke(this, EventArgs.Empty);
                         }
                     }
+
+                    // ALL THREE PATHS, which is the whole point of the event — see MarkerRemoved.
+                    MarkerRemoved?.Invoke(this, EventArgs.Empty);
                 },
                 showFilePrefix,
                 onContourModeToggled: () =>

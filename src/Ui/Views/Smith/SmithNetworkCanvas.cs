@@ -327,6 +327,12 @@ public sealed class SmithNetworkCanvas : Control
         if (e.Key == Key.F)                            { ZoomToFit();                   e.Handled = true; }
         else if (e.Key == Key.M)                       { _vm?.ToggleMirrorCommand.Execute(null); e.Handled = true; }
         else if (e.Key is Key.Delete or Key.Back)      { _vm?.DeleteElementCommand.Execute(null); e.Handled = true; }
+
+        // ESCAPE DROPS BOTH SELECTIONS (owner instruction, 2026-09-19) — this strip's element and
+        // the chart's markers — because the window has two selections and one key. Left UNHANDLED
+        // so the document's own Escape binding still runs when the focus is anywhere else; the
+        // command is the same one either way, and it is idempotent.
+        else if (e.Key == Key.Escape)                  { _vm?.ClearSelectionCommand.Execute(null); e.Handled = true; }
     }
 
     // ── Render ───────────────────────────────────────────────────────────────

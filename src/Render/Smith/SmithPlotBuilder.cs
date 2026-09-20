@@ -133,7 +133,12 @@ public static class SmithPlotBuilder
 
         var loads   = new List<SmithLoadPoint>();
         var targets = new List<Complex>();
+        var dropped = new List<double>();
 
+        // EVERY GENERATOR-TABLE ROW GETS A LOAD POINT (owner instruction, 2026-09-19). The table is
+        // the set of frequencies this design is about, so the chart shows where the load lands at
+        // each of them; the swept band is the OPTIONAL extra, and it adds frequencies rather than
+        // replacing these.
         foreach (var row in design.Generator.Rows)
         {
             try
@@ -144,14 +149,21 @@ public static class SmithPlotBuilder
                     FrequencyLabel(row.FrequencyHz),
                     IsDesignFrequency: row.FrequencyHz == f));
 
-                // The conjugate-match target: Γ of conj(Z_gen) at this row's own frequency, which is
-                // where the load would have to land for the mismatch the strip reports to be zero.
-                targets.Add(SmithCascade.Gamma(Complex.Conjugate(rowNodes[0].Z), z0));
+                // THE GENERATOR ITSELF, at this row's own frequency — Γ(Z_gen), not Γ(conj(Z_gen))
+                // (owner report, 2026-09-19: the glyph rendered at the conjugate of what the table
+                // says). It used to be drawn at the conjugate-match TARGET, which is the mirror of
+                // this point about the real axis and is therefore indistinguishable from it on a
+                // real generator — so the one glyph the table can be checked against was the one
+                // place the table's own numbers were not.
+                targets.Add(SmithCascade.Gamma(rowNodes[0].Z, z0));
             }
             catch (Exception)
             {
-                // One row that cannot be evaluated — a file that does not span it — drops that row
-                // and no other. A table whose every row refused simply draws no load points.
+                // One row that cannot be evaluated — an S1P or S2P element whose file does not span
+                // it — drops that row and no other, and SAYS SO. It used to drop it silently, which
+                // is the one outcome the rule above cannot tolerate: a chart with three generator
+                // rows and two load points on it looks exactly like a chart with two rows.
+                dropped.Add(row.FrequencyHz);
             }
         }
 
@@ -184,11 +196,13 @@ public static class SmithPlotBuilder
             NodeGamma        = [.. nodes.Select(n => SmithCascade.Gamma(n.Z, z0))],
             Trajectories     = curves,
             LoadPoints       = loads,
-            ConjugateTargets = targets,
+            GeneratorPoints  = targets,
             QArcInductive    = qInd,
             QArcCapacitive   = qCap,
             Band             = band.Gamma,
-            BandClampNote    = band.Clamped ? BandClampNote(band) : null,
+            BandClampNote    = band.Clamped ? BandClampNote(band)
+                             : dropped.Count > 0 ? DroppedRowNote(dropped)
+                             : null,
         };
     }
 
@@ -207,6 +221,22 @@ public static class SmithPlotBuilder
          + $"{FrequencyLabel(band.StartHz)} to {FrequencyLabel(band.StopHz)} — a band is a viewing "
          + "choice, so it is narrowed to what the table can answer for rather than refused. The "
          + "generator impedance is interpolated between rows, never extrapolated past them.";
+
+    /// <summary>
+    /// The sentence a generator row with no load point puts in the status strip, <b>naming the
+    /// frequencies</b> (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>A dropped row is reported, never simply absent.</b> Every generator-table frequency is
+    /// supposed to carry a load point; the only thing that can stop one is a file element whose
+    /// Touchstone does not span that frequency, and a chart quietly a point short looks exactly like
+    /// a chart of a shorter table. The frequencies are spelled by <see cref="FrequencyLabel"/> — the
+    /// strip's own spelling — for <see cref="BandClampNote"/>'s reason.
+    /// </remarks>
+    private static string DroppedRowNote(IReadOnlyList<double> hz)
+        => $"No load point could be drawn at {string.Join(", ", hz.Select(FrequencyLabel))} — a file "
+         + "element does not span that frequency, so the cascade cannot be evaluated there. Every "
+         + "other generator-table row is drawn.";
 
     /// <summary>The status strip's own spelling of a frequency, so the label on the chart and the
     /// sentence along the bottom cannot disagree about which point is which.</summary>
@@ -345,11 +375,11 @@ public static class SmithPlotBuilder
         //  Two traces rather than one, because the emphasis is a MARKER SIZE and that is a per-trace
         //  property. The design frequency's point is the larger of the two (R-smith5-2).
         AddPoints(plot, keys, "load", scene.LoadPoints.Where(p => !p.IsDesignFrequency).Select(p => p.Gamma),
-                  ReadingColorIndex, size: 2.0, annotation: false, excludeFromAutoscale: false);
+                  ReadingColorIndex, size: 1.8, annotation: false, excludeFromAutoscale: false);
         AddPoints(plot, keys, "load (design f)", scene.LoadPoints.Where(p => p.IsDesignFrequency).Select(p => p.Gamma),
-                  ReadingColorIndex, size: 4.0, annotation: false, excludeFromAutoscale: false);
+                  ReadingColorIndex, size: 3.6, annotation: false, excludeFromAutoscale: false);
 
-        // ── the conjugate targets ────────────────────────────────────────────
+        // ── the generator points ─────────────────────────────────────────────
         //
         //  IsAnnotation is exactly "not a reading": it is drawn like any other trace and excluded
         //  from everything a MARKER does — no Add Marker entry, no double-click, no row in another
@@ -358,8 +388,12 @@ public static class SmithPlotBuilder
         //  And excluded from the autoscale (R-smith5-4), because a wildly mismatched generator would
         //  otherwise set the window and squash the cascade the user is actually looking at into a
         //  corner of it.
+        //
+        //  HALF THE SIZE THE TARGETS WERE (owner instruction, 2026-09-19): the table is a few
+        //  frequencies a few percent apart, so these land almost on top of one another, and at 3.0
+        //  the cluster read as one blob.
         if (design.Chart.ShowTargets)
-            AddPoints(plot, keys, "conj(Zgen)", scene.ConjugateTargets, ColorLUTGrey, size: 3.0,
+            AddPoints(plot, keys, "Zgen", scene.GeneratorPoints, ColorLUTGrey, size: 1.5,
                       annotation: true, excludeFromAutoscale: true, opacity: 0.45,
                       markerType: MarkerType.Plus);
 
@@ -566,6 +600,14 @@ public static class SmithPlotBuilder
             CubeName   = name,
             Transform  = CubeTransform.None,
             Expression = name,
+
+            // NOTHING THIS FILE DERIVES PUTS ITS NAME ON AN AXIS (owner report, 2026-09-19). Every
+            // trace built here — the trajectories, the load points, the generator points, the band
+            // and the constant-Q arcs — took a label column down the side of the chart and a
+            // `freq (a to b)` row along the bottom, a dozen of each on an ordinary design, none of
+            // which the user asked for by name. The OVERLAYS do not come through this factory: they
+            // are the reference data the user chose, and they are what the axis labels are for.
+            ExcludeFromAxisLabels = true,
         };
 
     private static TraceProperties Style(int colorIndex, LineType type, double width)

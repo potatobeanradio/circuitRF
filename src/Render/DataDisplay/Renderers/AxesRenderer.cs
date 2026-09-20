@@ -1399,8 +1399,12 @@ namespace CircuitRF.Render.DataDisplay
 
             bool hasCustomX = plot.CustomXLabelOn && !string.IsNullOrEmpty(plot.CustomXLabel);
 
-            // Contour traces never emit freq X-labels; filter them out.
-            var nonContourTraces = traces.Where(t => !t.IsContourTrace).ToList();
+            // Contour traces never emit freq X-labels, and neither does a trace its plot's HOST
+            // derived (Trace.ExcludeFromAxisLabels — the Smith Chart tool's dozen). The same filter
+            // is in PlotCanvasGeometry.BottomLabelExtraLogical, which sizes the canvas for these
+            // rows; the two must agree or the chart carries a band of empty space under it.
+            var nonContourTraces = traces.Where(t => !t.IsContourTrace && !t.ExcludeFromAxisLabels)
+                                         .ToList();
             if (!hasCustomX && nonContourTraces.Count == 0) return;
 
             bool multiTrace = nonContourTraces.Count > 1;

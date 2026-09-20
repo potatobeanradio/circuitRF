@@ -166,8 +166,8 @@ public sealed class SmithChartTests
         Assert.Equal(1, byName["load (design f)"].Points.Count);
         Assert.Equal(2, byName["load"].Points.Count);
 
-        // One conjugate target per generator-table row.
-        Assert.Equal(3, byName["conj(Zgen)"].Points.Count);
+        // One generator glyph per generator-table row.
+        Assert.Equal(3, byName["Zgen"].Points.Count);
 
         Assert.Equal(6, vm.ChartPlot.Traces.Count);
 
@@ -457,8 +457,8 @@ public sealed class SmithChartTests
         Assert.True(halfSpan > 1.0,
             $"the window stayed inside the unit disc ({halfSpan}), so the node was clamped.");
 
-        // The chrome is out of that measurement: the conjugate targets are annotation, and excluded.
-        var targets = vm.ChartPlot.Traces.Single(t => t.CubeName == "conj(Zgen)");
+        // The chrome is out of that measurement: the generator glyphs are annotation, and excluded.
+        var targets = vm.ChartPlot.Traces.Single(t => t.CubeName == "Zgen");
         Assert.True(targets.ExcludeFromAutoscale);
         Assert.True(targets.IsAnnotation);
 

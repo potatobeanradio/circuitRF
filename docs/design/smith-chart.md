@@ -244,12 +244,18 @@ ordinary voltage reflection coefficient against it:
 
 Every overlay (§5.7) is renormalized to it on the way in, and the grid is the ordinary Smith grid, fixed.
 
-**And a conjugate-match target is drawn.** At each generator-table frequency the tool draws a faint,
-un-selectable target glyph at `Γ(conj(Z_gen(f)))`. Landing that frequency's load point on its target *is*
-the conjugate match, and the readout strip states the mismatch in dB for the design frequency. This is
-what a moving, generator-referenced normalization would have bought, without the cost of it — a grid
-whose meaning changes under the user's hands whenever the generator or the design frequency is edited,
-and an overlay that has to be renormalized per frequency to stay comparable.
+**And the generator is drawn.** At each generator-table frequency the tool draws a faint,
+un-selectable glyph at `Γ(Z_gen(f))` — where the table says the generator is — and the readout strip
+states the mismatch in dB for the design frequency. Between them that is what a moving,
+generator-referenced normalization would have bought, without the cost of it: a grid whose meaning
+changes under the user's hands whenever the generator or the design frequency is edited, and an overlay
+that has to be renormalized per frequency to stay comparable.
+
+*Superseded, §9.3:* the glyph used to sit at `Γ(conj(Z_gen(f)))`, the conjugate-match target, on the
+reasoning that landing a load point on it **is** the conjugate match. That is still true and the
+mismatch number still reports it — but the target is the load point's MIRROR about the real axis, so
+the one glyph the generator table could be checked against was the one place the table's own numbers
+were not, and nothing in the picture said so.
 
 The alternative was considered and rejected on exactly that ground; it is recorded in §12 as Q-2 in case
 review disagrees, because the code difference is one function.
@@ -298,8 +304,9 @@ output, because two adjacent arcs sharing a gripper are otherwise ambiguous abou
 2. **The table frequencies.** Every generator-table row produces a **load point** on the chart, with a
    small label box naming the frequency — the same `ContourRenderer.DrawIsoLineLabel` box the loadpull
    iso-lines use, placed by the same anchor walk, so the two surfaces cannot drift apart in appearance.
-   The design frequency's point is drawn emphasised; the others are secondary. Each carries its
-   conjugate-match target (§3.4).
+   The design frequency's point is drawn emphasised; the others are secondary. Beside each sits that
+   frequency's GENERATOR glyph (§3.4). The label boxes are placed vertically, away from the cluster
+   (§9.3).
 3. **The swept band — optional, off by default (owner decision).** A start/stop/npts band, drawn as a
    thin continuous locus through the load points. This is what makes bandwidth visible on a tool whose
    premise is that bandwidth is not the question, and it costs one evaluation per point of arithmetic
@@ -455,8 +462,8 @@ The status strip reports, for the design frequency: the load impedance in R + jX
 rectangular, VSWR, and the mismatch loss in dB — **all four against the chart's own Z₀**, so the strip
 answers one question in four spellings rather than two questions in one row (Q-17, closed). Every
 number is the one the evaluator produced, formatted by `MatchValueFormat`, never re-derived for
-display. The conjugate-match target glyphs are unchanged and carry no number: landing a frequency's
-load point on its glyph is still the conjugate match.
+display. The generator glyphs carry no number (§3.4, §9.3): a load point landing on the MIRROR of its
+frequency's glyph about the real axis is the conjugate match, which is what the mismatch column reports.
 
 ### 4.6 How this is gated — the engine is the oracle
 
@@ -601,7 +608,7 @@ the two.
 ### 5.4 The chart
 
 A `PlotControl` in `PlotType.Smith`, fed a `Plot` the view model rebuilds from the evaluator. Its traces
-are: one per enabled element (the trajectories), one for the load points, one for the conjugate targets,
+are: one per enabled element (the trajectories), one for the load points, one for the generator points,
 one for the optional swept band, and one per overlay. Pan, zoom, the marker context menu, the plot
 inspector, axis limits and **copy the plot to the clipboard** are the control's own and are not
 re-implemented.
@@ -893,7 +900,7 @@ the arithmetic below the firewall **from day one** so that P3 is wiring rather t
 
 **P1 — the tool.** The document and its `.csmith`; the generator panel with `.s1p` import and Conjugate;
 the element vocabulary; the evaluator and the trajectories; the network strip; selection and sliders;
-grippers and their inverse; undo/redo; the per-frequency load points and the conjugate targets; both
+grippers and their inverse; undo/redo; the per-frequency load points and the generator glyphs; both
 clipboard directions; Tools ▸ Smith Chart and the On Launch row. **This is the whole tool as specified**,
 and it is the phase to build if only one is ever built.
 
@@ -918,7 +925,7 @@ briefs 1–3, `src/Ui` for 4–9 and 11, `src/Cli` for 10 — and never here.
 | **2 — the cascade** | `SmithCascade`, every element immittance, the projective walk, the trajectory sampler, the Touchstone elements and the generator interpolation — gated against the S-parameter engine, every element type in both placements |
 | **3 — the gripper inverse** | every closed-form inverse, the TLIN Z₀ quadratic, the stub branch unwrap, and physicality pinned at the boundary with the parameter and the limit named |
 | **4 — the document window** | `SmithChartDocument`, the view model, the chrome, `InlineEditText` everywhere, the generator panel with `.s1p` import and Conjugate, Tools ▸ Smith Chart, and the `LaunchAction` row with the ordinal test that holds its position |
-| **5 — the chart** | the `Plot` built from the evaluator, `PlotControl` hosting **and its container**, the gripper overlay seam, the drag loop and its one-entry undo contract, the load points and their conjugate targets |
+| **5 — the chart** | the `Plot` built from the evaluator, `PlotControl` hosting **and its container**, the gripper overlay seam, the drag loop and its one-entry undo contract, the load points and the per-frequency generator glyphs |
 | **6 — the network strip** | the projection onto `SchematicRenderer`, selection, add / insert / delete / reorder, the sliders, the active-parameter rule and the mirror |
 | **7 — the clipboard** | the network out as a runnable two-port, the chart out as PDF/SVG/JSON/bitmap, a `.csch` selection in, the topology recognizer and its five refusals, and the mirror-aware end rule |
 | **8 — overlays and markers** | Touchstone and cube sources, renormalization to Z₀_chart, derived stability circles, markers and their VSWR circles |
@@ -994,6 +1001,55 @@ Two defects, both recorded with their causes in the `RESOLVED.md` files: the Sav
 during a drag because a Clear-and-refill of the trace collection autoscaled once per trace — including
 once on an empty plot — and because `Plot.RenderSnapshot` shared the trace COLLECTION with the live
 plot on the premise that traces are not rebuilt under a pointer, which this tool is the first to break.
+
+### 9.3 Round three — from driving it again (2026-09-19)
+
+Detail in `src/Ui/RESOLVED.md` and `src/Render/RESOLVED.md`; what changed **in this document's own
+decisions** is here, because the sections above would otherwise be wrong.
+
+- **§3.4, §5.4 — the faint glyph at each generator frequency is the GENERATOR, not the conjugate-match
+  target.** It is drawn at Γ(Z_gen(f)), where the table says the generator is. It used to be drawn at
+  Γ(conj(Z_gen(f))), which is that point mirrored about the real axis — a perfectly plausible position,
+  at the right magnitude, with the wrong sign on its reactance, and nothing in the picture to say which
+  it was. *The conjugate match is unchanged as a concept and is still what the strip's mismatch number
+  is about; what is gone is the glyph that claimed to mark it.* The trace is named `Zgen`, and
+  `SmithChartScene.ConjugateTargets` is now `GeneratorPoints`. `SmithChartSettings.ShowTargets` keeps
+  its name so existing `.csmith` files still read.
+- **§5.4 — a load point is drawn at EVERY generator-table frequency**, and a row that cannot be
+  evaluated — a file element whose Touchstone does not span it — is now NAMED in the status strip
+  rather than silently dropped. The swept band adds frequencies to that set; it does not replace it.
+- **§5.4 — the frequency labels are placed VERTICALLY, away from the cluster.** Each box hangs above
+  its own glyph when the other load points are below it and below when they are above, then is pushed
+  one row further out until it clears every glyph and every box already placed. The old rule fanned the
+  stubs radially outward from the centre of the chart, which spaces the labels from each other but says
+  nothing about where the other points are — and a locus running outward from the centre put every
+  label straight over the next point along it.
+- **§5.4 — the constant-Q value reads `Q=1.75` and carries no background plate**, and **the grab ring
+  is drawn only while an arc is being DRAGGED.** On hover it appeared within eight pixels of either arc
+  and then glided along it, which over a chart crossed by two arcs reads as a circle chasing the
+  cursor. The hit test is unchanged, so the arcs are grabbed exactly as before.
+- **§5.4 — only the user's own data names an axis** (`Trace.ExcludeFromAxisLabels`). A Smith plot
+  carries one Y-axis label strip and one `freq (a to b)` X row PER TRACE, and this chart derives a
+  dozen traces nobody asked for by name — one per cascade element, the load points, the generator
+  points, the band, the arcs. Every one of them was taking a label column down the side and a row
+  along the bottom. The flag is set on everything `SmithPlotBuilder` derives and left clear on the
+  OVERLAYS, which are the reference data the user chose and are what the labels are for. The Y half
+  never drew on screen at all — this window hosts a bare `PlotControl` rather than a
+  `PlotContainerView`, so the strips only ever appeared in a copy or an export, and a chart pasted
+  into a presentation came out with a column of labels the window had never shown.
+- **§4.5 — Add Marker is a single row on this chart, not a submenu.** A marker here is a position
+  rather than a reading of one curve (`Plot.FreeMarkers`), so asking which trace to put it on offered a
+  choice that changes nothing. **Delete removes the selected markers and Escape drops both selections**
+  — the markers' and the network strip's element.
+- **§5.2 — the generator column is narrower**, and its **Conjugate** button now sits above **Import
+  .s1p…**: Conjugate edits the table directly above it, and the import is what replaces that table.
+- **§6.1 — the copied generator port is named `Generator`**, not `Gen`.
+
+**One defect fixed with a new event.** A marker deleted from its context menu came back on the next
+component edit. Two of that menu's three removal paths go through the container's view model and never
+raise `PlotChanged`, so this document — which is the authority for the marker set, and which rebuilds
+every trace on every edit — never heard about the removal and re-attached the marker. `PlotControl`
+now raises `MarkerRemoved` on all three.
 
 ---
 
@@ -1083,9 +1139,10 @@ written and are recorded closed, with the reasoning, in the sections named.
 **Closed before drafting:**
 
 - **Q-1 — the trajectory rule.** *Closed:* scale the element's immittance, not its component values (§3.5).
-- **Q-2 — what the chart is normalized to.** *Closed:* a fixed real Z₀, plus conjugate-match target glyphs
-  (§3.4). Worth re-raising only if review wants the generator-referenced grid; the code difference is one
-  function and the cost is a grid that moves under the user.
+- **Q-2 — what the chart is normalized to.** *Closed:* a fixed real Z₀, plus a per-frequency GENERATOR
+  glyph (§3.4; the glyph was the conjugate-match target until §9.3). Worth re-raising only if review
+  wants the generator-referenced grid; the code difference is one function and the cost is a grid that
+  moves under the user.
 - **Q-3 — the swept band.** *Closed:* optional, off by default (§3.6).
 - **Q-4 — how far beyond the window.** *Closed:* window first, CLI verb as P3, arithmetic below the
   firewall from day one (§9).

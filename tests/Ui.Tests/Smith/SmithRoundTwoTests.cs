@@ -249,13 +249,13 @@ public sealed class SmithRoundTwoTests
         // THE WHOLE LABEL, not the number on its own. A bare "1.75" is also SVG path data — an
         // exported chart is full of "Q381.753 343.596" quadratic segments — so the number alone
         // passes on a picture that draws no label at all, which is exactly the failure this test is
-        // for. Caught by writing the negative half first.
+        // for. Caught by writing the negative half first. The equals sign is the owner's, 2026-09-19.
         string svg = PlotExporter.BuildSvgStringForContainers([vm.ChartContainer], RenderTheme.Light);
-        Assert.Contains("Q 1.75", svg, StringComparison.Ordinal);
+        Assert.Contains("Q=1.75", svg, StringComparison.Ordinal);
 
         design.ConstantQ.Enabled = false;
         vm.RebuildChart();
-        Assert.DoesNotContain("Q 1.75", PlotExporter.BuildSvgStringForContainers(
+        Assert.DoesNotContain("Q=1.75", PlotExporter.BuildSvgStringForContainers(
             [vm.ChartContainer], RenderTheme.Light), StringComparison.Ordinal);
     }
 

@@ -17,6 +17,7 @@
 // ================================================================
 
 using System;
+using System.Linq;
 
 namespace CircuitRF.Render.DataDisplay;
 
@@ -86,8 +87,12 @@ public static class PlotCanvasGeometry
             // ANT-7 §4: a pattern plot's rows are its CAPTION lines, not one per trace — the branch
             // DrawComplexXLabels takes first. Mirrored here for the same reason every other formula
             // in this file is: a row the canvas is not made tall enough for is a clipped sentence.
+            // THE SAME FILTER DrawComplexXLabels DRAWS BY (Trace.ExcludeFromAxisLabels) — a canvas
+            // made tall for rows nobody draws is a band of empty space under every chart, and one
+            // made short for rows that are drawn clips the last sentence.
+            int  labelled   = plot.Traces.Count(t => !t.IsContourTrace && !t.ExcludeFromAxisLabels);
             int  n          = plot.IsPolarPattern ? Math.Max(1, PatternCaption.Lines(plot).Count)
-                            : hasCustomX ? 1 : Math.Max(1, plot.Traces.Count);
+                            : hasCustomX ? 1 : Math.Max(1, labelled);
 
             // Mirror DrawComplexXLabels: lw = min(W,H)/200.  Once extra height
             // is added H > W, so effectiveH = W → lw = W/200.

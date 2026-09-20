@@ -265,4 +265,56 @@ public sealed partial class SmithChartViewModel
             foreach (var m in markers) _design.Markers.Add(m);
         }
     }
+
+    /// <summary>
+    /// <b>Delete</b> on the chart: removes every selected marker, and harvests
+    /// (owner report, 2026-09-19 — the key did nothing).
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately not <c>DataDisplayViewModel.DeleteSelected</c></b>, for the Match Designer's
+    /// own reason: that also removes selected PLOT CONTAINERS, and this document's one chart is not
+    /// deletable — the AXAML sets <c>CanDeletePlot="False"</c> because every trace on it is rebuilt
+    /// from the design on each edit. A gesture that could silently take the chart with the marker
+    /// would be worse than no gesture.
+    ///
+    /// <para><b>The harvest is the second half and is not optional.</b> The document is the
+    /// authority for the marker set (see <see cref="HarvestMarkers"/>), so a marker taken off a
+    /// trace and not written back is re-attached on the very next rebuild.</para>
+    /// </remarks>
+    [RelayCommand]
+    public void DeleteSelectedMarkers()
+    {
+        var boxes = ChartContainer.GetMarkerInfoBoxes().Where(b => b.IsSelected).ToList();
+        if (boxes.Count == 0) return;
+
+        foreach (var box in boxes)
+            box.Container.RemoveMarkerWithUndo(box.Marker, box.Trace);
+
+        HarvestMarkers();
+    }
+
+    /// <summary>
+    /// <b>Escape</b>: drops the marker selection and the network strip's element selection
+    /// (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>Both, because the window has two selections and one key.</b> A marker's selection lives on
+    /// its info box — it is what the Delete above acts on and what the glyph highlight is drawn from
+    /// — and the element's is this view model's own single integer. Neither is an edit: no undo
+    /// entry and no dirty mark.
+    ///
+    /// <para><b>Not the same key as an abandoned drag.</b> <c>PlotControl.OnKeyDown</c> consumes
+    /// Escape while an overlay gesture is in flight and restores the before-value, which is
+    /// <c>R-smith5-8</c>; this only ever runs on the Escape that reaches the document, which is the
+    /// one with nothing being dragged.</para>
+    /// </remarks>
+    [RelayCommand]
+    public void ClearSelection()
+    {
+        foreach (var box in ChartContainer.GetMarkerInfoBoxes())
+            box.IsSelected = false;
+
+        SelectElement(-1);
+        ChartContainer.RequestPlotRedraw();
+    }
 }

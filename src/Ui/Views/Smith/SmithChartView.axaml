@@ -228,6 +228,23 @@
         </Style>
     </UserControl.Styles>
 
+    <!-- ── The two document-wide keys (owner instruction, 2026-09-19) ─────────────────────────────
+         DELETE removes the selected MARKERS and nothing else — deliberately not the Data Display's
+         own DeleteSelectedCommand, which also removes selected plot containers and this document's
+         one chart is not deletable. ESCAPE drops both selections, the marker's and the network
+         strip's element.
+
+         On the ROOT, so they work wherever the focus is inside the document — and the two surfaces
+         that want either key for themselves already take it before it gets here: the network canvas
+         handles Delete as "delete the selected element", and PlotControl consumes Escape while an
+         overlay drag is in flight (R-smith5-8). A KeyBinding only ever sees the keys neither of them
+         marked handled. -->
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Delete" Command="{Binding ViewModel.DeleteSelectedMarkersCommand}"/>
+        <KeyBinding Gesture="Back"   Command="{Binding ViewModel.DeleteSelectedMarkersCommand}"/>
+        <KeyBinding Gesture="Escape" Command="{Binding ViewModel.ClearSelectionCommand}"/>
+    </UserControl.KeyBindings>
+
     <!-- The two splits are the document's own View block, applied and written back in CODE rather
          than bound: a RowDefinition is not in the logical tree, inherits no DataContext, and a
          binding on its Height resolves against nothing — silently, with the splitter simply not
@@ -248,9 +265,14 @@
         <!-- ══ Top region: the generator column and the chart ═══════════════════════════════════ -->
         <Grid Grid.Row="0" Name="TopRegion">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.22*" MinWidth="210"/>
+                <!-- NARROWER THAN §5.2's SKETCH (owner instruction, 2026-09-19): the space it
+                     gives back is the chart's, and the chart is where marker info boxes are parked.
+                     The minimum is what the three fixed-width table columns plus their padding
+                     actually need — below it the frequency cells start to clip, which the in-place
+                     inline editor has no way to report. -->
+                <ColumnDefinition Width="0.16*" MinWidth="176"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="0.78*" MinWidth="200"/>
+                <ColumnDefinition Width="0.84*" MinWidth="200"/>
             </Grid.ColumnDefinitions>
 
             <!-- ── The generator panel (R-smith4-7) ────────────────────────────────────────────── -->
@@ -316,9 +338,18 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Import / Re-import / Conjugate. -->
+                        <!-- Conjugate / Import / Re-import.
+
+                             CONJUGATE FIRST (owner instruction, 2026-09-19). It acts on the table
+                             that is directly above it, so it sits next to it; the import is what
+                             REPLACES that table, and it belongs below with the path it read from
+                             rather than between the table and the one button that edits it. -->
                         <Border Classes="card">
                             <StackPanel Spacing="4">
+                                <Button Classes="panel" Content="Conjugate"
+                                        Command="{Binding ViewModel.ConjugateCommand}"
+                                        ToolTip.Tip="Negate every row's reactance, once. One undo entry, and not a persistent flag — pressing it twice puts the table back."/>
+
                                 <Button Classes="panel" Name="ImportS1pButton" Content="Import .s1p…"
                                         Click="OnImportS1pClick"
                                         ToolTip.Tip="Read a one-port Touchstone file. Its rows REPLACE the table, and the path is recorded as provenance only — the numbers are copied in, so this document stays portable if the file moves."/>
@@ -337,10 +368,6 @@
                                             Command="{Binding ViewModel.ReimportGeneratorCommand}"
                                             ToolTip.Tip="Repeat the read from the file above."/>
                                 </Grid>
-
-                                <Button Classes="panel" Content="Conjugate"
-                                        Command="{Binding ViewModel.ConjugateCommand}"
-                                        ToolTip.Tip="Negate every row's reactance, once. One undo entry, and not a persistent flag — pressing it twice puts the table back."/>
                             </StackPanel>
                         </Border>
 
@@ -546,7 +573,13 @@
                             Command="{Binding ViewModel.ToggleConstantQCommand}"
                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4"
                             ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
-                        <mi:MaterialIcon Kind="AlphaQ" Width="16" Height="16"/>
+                        <!-- THE LETTER, not the glyph (owner instruction, 2026-09-19). Material's
+                             AlphaQ is a Q inside a rounded box, which at 16 px on a toolbar reads as
+                             an O with a tick rather than as a Q. A TextBlock sized and centred to the
+                             same 16x16 box keeps the button square and the row aligned. -->
+                        <TextBlock Text="Q" Width="16" Height="16" FontSize="14" FontWeight="SemiBold"
+                                   TextAlignment="Center" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" LineHeight="16"/>
                     </Button>
                 </Grid>
             </Border>

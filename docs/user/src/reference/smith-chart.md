@@ -253,8 +253,8 @@ design frequency's point is drawn emphasised and the others are secondary. Toget
 picture of the network coming apart at the band edges &mdash; which, on a narrowband match, is the
 thing you are actually deciding about.
 
-Beside each one is a faint **&#8853; target glyph**, at &Gamma;(conj(Z<sub>gen</sub>)) for that
-frequency.
+Beside each one is a faint **&#8853; generator glyph**, at &Gamma;(Z<sub>gen</sub>) for that
+frequency &mdash; where the Generator table says the generator is.
 
 <div class="callout note">
 <span class="label">Everything in the strip is against the chart's own Z<sub>0</sub></span>
@@ -265,9 +265,10 @@ point on the middle of the chart and &Gamma; goes to zero, VSWR to 1 and mismatc
 <p><b>mismatch is the power that reflection costs</b>, &minus;10&middot;log<sub>10</sub>(1&nbsp;&minus;&nbsp;|&Gamma;|<sup>2</sup>)
 &mdash; the same &Gamma; the VSWR beside it is made of, said in decibels. It is not a return loss:
 a return loss gets more negative as a match improves, and this goes to zero.</p>
-<p>The &#8853; glyphs are a <b>different</b> question and carry no number. Landing a frequency's load
-point on its own glyph is the conjugate match to the generator, which on a network that takes a device
-to 50 &#8486; is a different point from the middle of the chart.</p>
+<p>The &#8853; glyphs are a <b>different</b> question and carry no number: they mark the generator
+itself, at each frequency in the table. Landing a frequency's load point on the MIRROR of its glyph
+about the horizontal axis &mdash; the conjugate &mdash; is the conjugate match to the generator, which
+on a network that takes a device to 50 &#8486; is a different point from the middle of the chart.</p>
 </div>
 
 **Z<sub>0</sub> is a single, real, document-wide reference impedance**, 50 &#8486; by default and

@@ -76,7 +76,7 @@ The three grippers are at the three nodes of the walk: the generator (anchored),
 network strip and a paste into a new schematic — component for component, wire for wire, with the
 two ends terminated. Nothing in it was drawn by hand except the S-parameter card.
 
-The generator end is `Gen`, a `TermG` with `Num=1` and `Z = complex(8,-12)`; the far end is `load`,
+The generator end is `Generator`, a `TermG` with `Num=1` and `Z = complex(8,-12)`; the far end is `load`,
 a `TermG` with `Num=2` and `Z = 50 Ω`. **Port 1 carries the generator impedance at the design
 frequency and nowhere else** — a `Term` holds one impedance and the generator table holds three
 rows, which is what the strip says when you press Copy.

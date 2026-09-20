@@ -80,7 +80,11 @@ public static class PlotLabelStrips
     private static List<Trace> Labelled(IEnumerable<Trace> traces,
                                         IReadOnlyDictionary<Trace, string> labels)
     {
-        var all  = traces.Where(t => !t.IsContourTrace).ToList();
+        // A trace the plot's HOST derived puts nothing on an axis — see
+        // Trace.ExcludeFromAxisLabels. On the Smith Chart tool that is every trajectory, the load
+        // points, the generator points, the band and the arcs; what is left is the reference data
+        // the user chose, which is what the strips are for.
+        var all  = traces.Where(t => !t.IsContourTrace && !t.ExcludeFromAxisLabels).ToList();
         var kept = new List<Trace>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 

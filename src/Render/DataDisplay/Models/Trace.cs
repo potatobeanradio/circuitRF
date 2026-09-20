@@ -622,6 +622,30 @@ namespace CircuitRF.Render.DataDisplay
         public bool IsAnnotation { get; set; }
 
         /// <summary>
+        /// True where this trace must not put its name on an AXIS — no per-trace Y-axis label strip
+        /// beside a Smith or Polar plot, and no <c>freq (a to b)</c> row under it.
+        /// </summary>
+        /// <remarks>
+        /// <b>For a plot whose trace list is its HOST's rather than the user's</b> (owner report,
+        /// 2026-09-19). The Smith Chart tool draws one trace per cascade element plus the load
+        /// points, the generator points, the swept band and the constant-Q arcs — a dozen curves the
+        /// user never asked for by name — and each of them took a label column down the side and a
+        /// frequency row along the bottom. The rule the report states is that the only labels on
+        /// this chart's axes should be the ones the user put there, so the tool sets this on
+        /// everything it derives and leaves it clear on the reference data the user chose.
+        ///
+        /// <para><b>A per-TRACE flag rather than a per-plot one</b>, because that is the shape of the
+        /// rule: the two kinds of curve sit on the same plot, and a switch on the plot could only
+        /// silence both.</para>
+        ///
+        /// <para>Read in three places, which must agree: <c>PlotLabelStrips.For</c> (the strip set),
+        /// <c>AxesRenderer.DrawComplexXLabels</c> (the rows) and
+        /// <c>PlotCanvasGeometry.BottomLabelExtraLogical</c> (the canvas height those rows need).
+        /// A canvas made tall for rows nobody draws is a band of empty space under every chart.</para>
+        /// </remarks>
+        public bool ExcludeFromAxisLabels { get; set; }
+
+        /// <summary>
         /// True where this trace's extent must not set the plot's window.
         /// </summary>
         /// <remarks>
