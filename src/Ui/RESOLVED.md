@@ -32212,3 +32212,44 @@ quit whose windows close one at a time through their own close boxes.
 comment-stripped source scan (this project has no headless Avalonia, so there is no lifetime to close
 a window against) asserting the call is in `QuitAsync` at the method's own nesting level and that
 nothing in that body queues it. Verified to fail on the old shape, not merely to pass on the new one.
+
+---
+
+## A hand-opened `ContextMenu` never raises `Opening`, so every refresh in that handler was dead (2026-09-20)
+
+**Reported:** the Data Display plot context menu offered *Show Admittance Grid* on rectangular,
+polar, table and 3D plots; it belongs to a Smith chart only.
+
+The gate existed and read correctly — `_admittanceMenuItem.IsVisible = _plot?.PlotType ==
+PlotType.Smith` — but it lived in a `menu.Opening += …` handler in
+`PlotControl.BuildContextMenu`, **and that handler had never run once.**
+
+**Avalonia raises `ContextMenu.Opening` from exactly one place.** Decompiled from
+`Avalonia.Controls` 12.1.0: the event is invoked only by the private `CancelOpening()`, whose only
+caller is the static `ControlContextRequested` handler — the framework's own path, which runs when a
+menu is a control's **`ContextMenu` property** and the framework opens it. The public
+`Open(Control)` overload goes straight to the private `Open(control, placementTarget, placement)`
+and the popup, raising nothing. `PlotControl` opens its menu by hand from the right-button-up
+handler (`_contextMenu.Open(this)`), so nothing in that handler ever executed.
+
+**Nothing errored and the menu looked right**, which is why it survived: a row built before the
+first right-click simply keeps its default `IsVisible` of `true`, and the two checkbox glyphs
+(*Show Admittance Grid*, *Lock Axes Panning*) kept whatever they were built with. The other menus
+in this file were unaffected because they are **repopulated** on every right-click rather than
+refreshed on open, and the two elsewhere that do use `Opening`
+(`MarkerInfoBoxView`, `ReadoutStripView`) assign `ContextMenu = menu` and are therefore on the
+framework path.
+
+**It also re-reads an earlier fix.** The 2026-08-28 greying report was closed by calling
+`ApplyMenuAvailability()` at build time as well, described as supplying "the half that was missing".
+It was not a missing half — it replaced a hook that had never fired, which is why the build-time
+call alone was enough to make the symptom go away.
+
+**Fix:** the handler's body became `RefreshContextMenuState()`, called at build time and again from
+the right-click that opens the menu, beside the `RefreshAddMarkerSubmenu()` that was already being
+refreshed there for the same reason. No `Opening` handler remains in the file.
+
+**Gate:** `tests/Ui.Tests/PlotContextMenuSmithGateTests.cs` — a comment-stripped source scan (this
+suite instantiates no Avalonia control) asserting the plot-type gate lives in
+`RefreshContextMenuState`, that the call sits between `_contextMenu ??= BuildContextMenu()` and
+`_contextMenu.Open(this)`, and that nothing in the file hangs state off `.Opening` again.

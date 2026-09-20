@@ -502,9 +502,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var item1 = new MenuItem { Header = "Plot Properties…", Icon = icon };
             item1.Click += OnMenuPlotProperties;
             _plotPropertiesMenuItem = item1;
-            // Set NOW as well as on every open. The Opening refresh below is what keeps a host that
-            // flips the flag later honest; this is what makes the FIRST open right without depending
-            // on that event having fired at all.
+            // Set NOW as well as on every open (RefreshContextMenuState, below), so the item is
+            // right from the moment the menu exists.
             ApplyMenuAvailability();
 
             icon = new MaterialIcon { Kind = MaterialIconKind.Numeric };
@@ -599,38 +598,54 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(new Separator());
             menu.Items.Add(item9);
 
-            menu.Opening += (_, _) =>
-            {
-                _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
-                    ? MaterialIconKind.CheckboxOutline
-                    : MaterialIconKind.CheckboxBlankOutline;
-
-                // ONLY ON A SMITH CHART. There is no admittance grid to show on a rectangular plot
-                // or a table, and a row that did nothing would be worse than no row.
-                if (_admittanceMenuItem is not null)
-                {
-                    _admittanceMenuItem.IsVisible = _plot?.PlotType == PlotType.Smith;
-                    _iconAdmittance.Kind = _plot?.ShowSmithAdmittanceGrid ?? false
-                        ? MaterialIconKind.CheckboxOutline
-                        : MaterialIconKind.CheckboxBlankOutline;
-                }
-
-                // Re-read on every open, not once at build time: the menu instance is cached for the
-                // control's lifetime (Pattern A), so a host that sets either flag after the first
-                // right-click would otherwise never be heard.
-                ApplyMenuAvailability();
-            };
-
-            // BUILD TIME as well, and this is the half that was missing (owner-reported again,
-            // 2026-08-28: "the Delete Plot context menu should be disabled (greyed out) on the two
-            // response plots"). The remark below has always claimed both, and only the Opening hook
-            // was wired — so a host that sets either flag in its AXAML depended entirely on that
-            // event reaching this menu instance. Applying it here as well makes the item's state a
-            // property of the menu from the moment it exists, with the Opening hook left as the
-            // refresh it is described as.
-            ApplyMenuAvailability();
+            // Everything that depends on the plot's CURRENT state is applied here and again before
+            // every open — see RefreshContextMenuState for why an Opening handler cannot do it.
+            RefreshContextMenuState();
 
             return menu;
+        }
+
+        /// <summary>
+        /// Re-reads the plot into the cached context menu: the two checkbox glyphs, the Smith-only
+        /// rows, and the enablement <see cref="ApplyMenuAvailability"/> owns.
+        /// </summary>
+        /// <remarks>
+        /// <b>This is deliberately NOT a <c>ContextMenu.Opening</c> handler, and it used to be
+        /// (owner-reported, 2026-09-20: "Show Admittance Grid" showing on rect, polar, table and 3D
+        /// plots).</b> Avalonia raises <c>Opening</c> from ONE place — the static
+        /// <c>ControlContextRequested</c> handler, which runs only for a menu the framework opens
+        /// because it is a control's <c>ContextMenu</c> PROPERTY. This menu is opened by hand,
+        /// <c>_contextMenu.Open(this)</c> from the right-button-up handler, so the public
+        /// <c>Open(Control)</c> overload runs straight to the popup and the event never fires at
+        /// all. Nothing errors and the menu appears correctly — it just appears carrying whatever
+        /// state it was BUILT with, which for a row built before the first right-click means the
+        /// default <see cref="Visual.IsVisible"/> of true on every plot type.
+        ///
+        /// <para>That also explains the 2026-08-28 greying report: applying the availability at
+        /// build time did not merely cover a case the Opening hook missed, it replaced a hook that
+        /// had never run once.</para>
+        ///
+        /// <para>Called from build time and from the right-click that opens the menu, beside
+        /// <see cref="RefreshAddMarkerSubmenu"/>, which is refreshed the same way for the same
+        /// reason.</para>
+        /// </remarks>
+        private void RefreshContextMenuState()
+        {
+            _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
+                ? MaterialIconKind.CheckboxOutline
+                : MaterialIconKind.CheckboxBlankOutline;
+
+            // ONLY ON A SMITH CHART. There is no admittance grid to show on a rectangular or polar
+            // plot, a table or a 3D pattern, and a row that did nothing would be worse than no row.
+            if (_admittanceMenuItem is not null)
+            {
+                _admittanceMenuItem.IsVisible = _plot?.PlotType == PlotType.Smith;
+                _iconAdmittance.Kind = _plot?.ShowSmithAdmittanceGrid ?? false
+                    ? MaterialIconKind.CheckboxOutline
+                    : MaterialIconKind.CheckboxBlankOutline;
+            }
+
+            ApplyMenuAvailability();
         }
 
         /// <summary>
@@ -1722,6 +1737,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     _contextMenu ??= BuildContextMenu();
                     RefreshAddMarkerSubmenu();
+                    RefreshContextMenuState();
                     _contextMenu.Open(this);
                 }
             }
