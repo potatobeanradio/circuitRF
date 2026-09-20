@@ -63,6 +63,7 @@ public static class PlotConfigLoader
         plot.PolarDbReferenceValue       = pc.PolarDbReferenceValue;
         plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
         plot.ShowPolarAngleLabels        = pc.PolarAngleLabels;
+        plot.ShowSmithAdmittanceGrid     = pc.SmithAdmittanceGrid;
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
         plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
@@ -120,6 +121,7 @@ public static class PlotConfigLoader
                         MaximumFractionDigits  = mc.MaximumFractionDigits,
                         InfoBoxPos             = new PlotPoint(mc.InfoBoxX, mc.InfoBoxY),
                         PositionStatic         = new System.Numerics.Vector2(mc.PositionStaticX, mc.PositionStaticY),
+                        FreePosition           = mc.FreePosition,
                         MarkerKind             = mc.MarkerKind,
                         ShowInfoBox            = mc.ShowInfoBox,
                         ContourSnapped         = mc.ContourSnapped,

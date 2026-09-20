@@ -230,10 +230,13 @@ public static class SmithPlotBuilder
 
     /// <summary>The two settings, applied to a plot somebody else created.</summary>
     /// <remarks>
-    /// <b>Panning is UNLOCKED</b>, which is the opposite of railRF's choice and for the opposite
-    /// reason: a new <c>Plot</c> locks axis panning so a drag on a Data Display CANVAS moves and
-    /// selects the plot instead, and there is no canvas here — the chart fills its own pane, and
-    /// <c>R-smith5-6</c>'s rule is that a press on empty chart still pans.
+    /// <b>Panning starts LOCKED</b> (owner instruction, 2026-09-19), which reverses this file's
+    /// original choice. The first revision left it unlocked because a press on empty chart should
+    /// pan and there is no Data Display canvas here for the move/select gesture to conflict with —
+    /// but the gesture this chart actually spends its time on is a DRAG, on a gripper, on a Q arc
+    /// or on a marker, and every press that misses one of those by a few pixels slid the chart
+    /// instead. The menu item is still there and still says what state it is in; what changed is
+    /// which state a chart opens on.
     ///
     /// <para><b>The trace set is the DOCUMENT's</b>: every trace is rebuilt from the design on each
     /// edit, so one added in the Plot Inspector would be gone by the next keystroke and one removed
@@ -243,8 +246,14 @@ public static class SmithPlotBuilder
     {
         ArgumentNullException.ThrowIfNull(plot);
 
-        plot.Axes.LockedPanning = false;
+        plot.Axes.LockedPanning = true;
         plot.IsFixedReadout     = true;
+
+        // MARKERS ARE FREE HERE (owner instruction, 2026-09-19). On an ordinary Data Display trace a
+        // marker is a reading of that trace at a frequency; on a matching chart it is a TARGET the
+        // user is aiming the network at, which is a position. Shift while dragging snaps it onto the
+        // nearest curve — see Marker.FreePosition, where the two behaviours are set out.
+        plot.FreeMarkers        = true;
         return plot;
     }
 
@@ -265,6 +274,21 @@ public static class SmithPlotBuilder
         ArgumentNullException.ThrowIfNull(plot);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(design);
+
+        // THE ADMITTANCE GRID IS THE DOCUMENT'S, applied on every refill. It is a Plot setting
+        // rather than a Smith-Chart one — the context menu that toggles it is PlotControl's and
+        // works on any Smith chart — so this is the one line that keeps the `.csmith`'s own copy and
+        // the plot in step, and it is what makes a headless `circuitrf smith` draw the grid the
+        // document was saved with.
+        plot.ShowSmithAdmittanceGrid = design.Chart.ShowAdmittanceGrid;
+
+        // ONE BATCH OVER THE WHOLE REFILL (owner report, 2026-09-19 — the drag glitch). Clearing and
+        // re-adding raises CollectionChanged once per trace, and Plot's handler AUTOSCALES on each
+        // one, including on the empty plot the Clear leaves behind. During a gripper or constant-Q
+        // drag this window is rebuilt on every pointer move, so the user's own framing was being
+        // re-fitted underneath the hand holding it. The window is decided at the bottom of this
+        // method and nowhere else.
+        using var batch = plot.BeginTraceBatch();
 
         plot.Traces.Clear();
         var keys = new List<SmithTraceKey>();
@@ -359,6 +383,14 @@ public static class SmithPlotBuilder
         //  scratch and the markers that were on the previous set went with them. So they are
         //  re-attached here, from `design.Markers`, on every rebuild — which is also what makes an
         //  undo of a marker edit restore the markers rather than only the numbers.
+        // EVERY CURVE HERE IS REFERENCED TO THE DOCUMENT'S OWN Z₀ (§3.4), and saying so on the trace
+        // is what lets a freely-placed marker report an impedance rather than a Γ and a guess: its
+        // readout is Z₀·(1+Γ)/(1−Γ) against this number. An overlay that carries an explicit
+        // override is left alone — that one has already been told what it is referenced to.
+        var chartZ0 = new Complex(design.Chart.Z0Ohm, 0);
+        foreach (var t in plot.Traces)
+            if (!t.Z0OverrideEnabled) t.Z0 = chartZ0;
+
         RestoreMarkers(keys, design);
 
         plot.SetAxesViewport();

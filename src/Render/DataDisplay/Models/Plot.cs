@@ -212,14 +212,62 @@ namespace CircuitRF.Render.DataDisplay
 
         // ---- Traces -----------------------------------------------------
 
-        private readonly ObservableCollection<Trace> _traces = new();
+        // NOT readonly, so RenderSnapshot can give a frame its own stable list — see there.
+        private ObservableCollection<Trace> _traces = new();
         public ObservableCollection<Trace> Traces => _traces;
+
+        /// <summary>Depth of the <see cref="BeginTraceBatch"/> scopes currently open.</summary>
+        private int _traceBatchDepth;
 
         private void OnTracesChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            if (_traceBatchDepth > 0) return;
             Axes.ShowSecondary = NeedsSecondary;
             SetAxesViewport();
             Autoscale();
+        }
+
+        /// <summary>
+        /// A scope over a WHOLESALE replacement of <see cref="Traces"/>: the per-item
+        /// <c>CollectionChanged</c> work is suppressed until it closes, and the caller decides what
+        /// the window ends up being.
+        /// </summary>
+        /// <remarks>
+        /// <b>This exists because a Clear-then-refill is N+1 autoscales, and one of them is of an
+        /// EMPTY plot</b> — reported by the owner on 2026-09-19 as a Smith chart trace that glitches
+        /// occasionally during a drag, mostly smooth and now and then not.
+        /// The Smith Chart rebuilds every trace on every pointer move of a gripper or
+        /// a constant-Q drag, and <see cref="OnTracesChanged"/> ran <see cref="Autoscale"/> on each
+        /// of those mutations — so the window the user had panned to was re-fitted mid-gesture, from
+        /// a trace set that was momentarily half there. It shows up "once in a while" because a fit
+        /// only MOVES the window when the geometry's extent crosses what the current one holds.
+        ///
+        /// <para>Nothing is autoscaled when the scope closes. The two callers that hold one both set
+        /// the window themselves afterwards — a refill that wants a fit asks for one.</para>
+        /// </remarks>
+        public IDisposable BeginTraceBatch()
+        {
+            _traceBatchDepth++;
+            return new TraceBatch(this);
+        }
+
+        private sealed class TraceBatch : IDisposable
+        {
+            private Plot? _plot;
+            internal TraceBatch(Plot plot) => _plot = plot;
+
+            public void Dispose()
+            {
+                if (_plot is not { } p) return;
+                _plot = null;
+                if (--p._traceBatchDepth > 0) return;
+
+                // What OnTracesChanged does MINUS the autoscale: the secondary axis and the viewport
+                // are structural — a trace set that no longer needs a right-hand axis must not keep
+                // one — and they cost nothing.
+                p.Axes.ShowSecondary = p.NeedsSecondary;
+                p.SetAxesViewport();
+            }
         }
 
         public bool          NeedsSecondary   => Traces.Any(t => t.UseSecondaryAxis);
@@ -273,6 +321,33 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>The effective floor: the property above, and never on a Polar plot.</summary>
         private bool UnityMinimumApplies
             => AutoscaleEnforceUnityMinimum && PlotType != PlotType.Polar;
+
+        /// <summary>
+        /// The <b>admittance grid</b> — the constant-g/constant-b family, mirrored from the
+        /// impedance one and drawn in a faded red (owner instruction, 2026-09-19). <b>False by
+        /// default</b>, so a <c>.cdd</c> written before this existed draws the picture it always
+        /// drew. Ignored on every plot type but <see cref="PlotType.Smith"/>.
+        /// </summary>
+        /// <remarks>
+        /// It lives on the plot rather than on <see cref="Axes"/> for <see cref="ShowPolarAngleLabels"/>'s
+        /// reason: a plot keeps one <c>Axes</c> per plot type and swaps the whole object when the
+        /// type changes, so a per-type setting would silently revert on a trip through another type
+        /// and back. This is a property of the PLOT.
+        /// </remarks>
+        public bool ShowSmithAdmittanceGrid { get; set; }
+
+        /// <summary>
+        /// Markers on this plot are placed <b>anywhere</b> rather than on a curve — see
+        /// <see cref="Marker.FreePosition"/>, which is the per-marker flag this one sets on the
+        /// markers the plot creates.
+        /// </summary>
+        /// <remarks>
+        /// <b>Off everywhere but the Smith Chart document</b>, which sets it in
+        /// <c>SmithPlotBuilder.Configure</c>. It is deliberately not persisted in a <c>.cdd</c>: it
+        /// is a property of the TOOL hosting the plot, not of the picture, and the markers
+        /// themselves each carry the flag that actually decides how they are placed.
+        /// </remarks>
+        public bool FreeMarkers { get; set; }
 
         // ---- The dB radial mode (ANT-7 §2) ------------------------------
 
@@ -779,6 +854,17 @@ namespace CircuitRF.Render.DataDisplay
         {
             var snapshot = (Plot)MemberwiseClone();
             snapshot.Axes = new Axes(Axes);
+
+            // THE TRACE LIST IS COPIED TOO, for the reason the Axes are — and the paragraph above
+            // saying the collection may be shared was true only while "geometry is rebuilt only on a
+            // structural change, never during a pan" was. The Smith Chart broke that premise: a
+            // gripper drag CLEARS and refills this collection on every pointer move, so a frame the
+            // compositor happened to run mid-refill walked a list with some of its traces missing.
+            // A shallow copy is a handful of references per frame and makes each frame coherent; the
+            // Trace objects themselves are still shared, which is safe because a rebuild replaces
+            // them rather than mutating them. No handler is attached, so the snapshot still cannot
+            // trigger an autoscale.
+            snapshot._traces = new ObservableCollection<Trace>(_traces);
             return snapshot;
         }
 

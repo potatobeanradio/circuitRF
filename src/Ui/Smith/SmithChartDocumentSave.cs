@@ -51,9 +51,14 @@ internal static class SmithChartDocumentSave
                 Title               = saveAs ? "Save Smith Chart As" : "Save Smith Chart",
                 DefaultExtension    = SmithDesignIo.Extension.TrimStart('.'),
                 ShowOverwritePrompt = true,
-                SuggestedFileName   = doc.FilePath is { } p
-                                          ? Path.GetFileName(p)
-                                          : doc.Title?.TrimStart('•', ' ') + SmithDesignIo.Extension,
+                // NO extension on the suggested name. Avalonia's storage provider appends
+                // DefaultExtension itself when the name carries none, so supplying both spelled it
+                // twice — "Untitled-Smith-1.csmith.csmith" (owner-reported). Dropping
+                // DefaultExtension instead would be the wrong half to drop: it is what gives a name
+                // the user types WITHOUT an extension one. The Match Designer's export path and
+                // railRF's Save both carry this same note.
+                SuggestedFileName   = Path.GetFileNameWithoutExtension(
+                                          doc.FilePath ?? doc.Title?.TrimStart('•', ' ') ?? "smith"),
                 FileTypeChoices     = [FileType],
             });
             if (file is null) return null;      // cancelled — not a failure

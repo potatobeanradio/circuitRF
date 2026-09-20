@@ -16,6 +16,7 @@
 
 using System;
 using System.Numerics;
+using CircuitRF.Design.Matching;
 using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
 using SkiaSharp;
@@ -128,9 +129,67 @@ public static class SmithChartChrome
         if (!scene.HasContent) return;
 
         DrawArrowheads(canvas, tf, scene);
+        DrawQValue(canvas, tf, theme, design);
         if (design.Chart.ShowLabels)   DrawLoadLabels(canvas, tf, theme, scene);
         if (design.Chart.ShowGrippers) DrawGrippers(canvas, tf, theme, scene, design, state);
         DrawQHandle(canvas, tf, theme, state);
+    }
+
+    /// <summary>
+    /// The constant-Q value, <b>printed on the chart under the apex of the inductive arc</b> (owner
+    /// instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>It is drawn HERE, with the chart, and not in the side panel</b>, which is the whole point
+    /// of the instruction: this file is below the firewall and is what a copy to the clipboard, an
+    /// SVG/PDF export and a headless <c>circuitrf smith</c> all run, so the number travels with the
+    /// picture. A value that lived only in a panel would be missing from every chart anybody sent
+    /// anyone.
+    ///
+    /// <para><b>Anchored to the arc, not to the frame.</b> The inductive circle is centred at
+    /// (0, −1/Q) with radius √(1 + 1/Q²), so its topmost point is Γ = (0, √(1 + 1/Q²) − 1/Q) — inside
+    /// the disc for every positive Q. The text is centred on that point horizontally and hangs from
+    /// it downwards, which puts it immediately under the line and makes it track the arc up and down
+    /// as a drag changes Q. It is drawn UNDER the handle and over the trajectories, like every other
+    /// piece of chrome here.</para>
+    ///
+    /// <para>A background fill and no border: the arcs cross the busiest part of the chart, and a
+    /// boxed number there would read as one more annotation rather than as the ruler's own scale.</para>
+    /// </remarks>
+    private static void DrawQValue(SKCanvas canvas, TransformSet tf, RenderTheme theme,
+                                   SmithDesign design)
+    {
+        var q = design.ConstantQ;
+        if (!q.Enabled || !(double.IsFinite(q.Q) && q.Q > 0)) return;
+
+        var circle = SmithQArcs.Circle(q.Q, inductive: true);
+        var apex   = new Complex(0.0, circle.Centre.Imaginary + circle.Radius);
+
+        float lw = AxesRenderer.LineWidth((tf.CanvasSize.W, tf.CanvasSize.H));
+
+        using var font = new SKFont(SkiaFonts.PlexRegular, LabelFontSize * lw / LabelBaseLw);
+        font.GetFontMetrics(out var metrics);
+
+        string text  = "Q " + MatchValueFormat.Significant(q.Q, 4);
+        float  width = font.MeasureText(text);
+
+        var   at = tf.PrimaryToCanvas(apex.Real, apex.Imaginary);
+        float padX = 3f * lw / LabelBaseLw;
+        float padY = 2f * lw / LabelBaseLw;
+
+        // Hangs from the apex: the baseline is one ascent below it, plus the gap, so the text's TOP
+        // sits on the line rather than across it.
+        float baseline = at.Y + padY - metrics.Ascent;
+        float left     = at.X - width / 2f;
+
+        using var bg = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,
+                                     Color = theme.BackgroundColor.WithAlpha(190) };
+        canvas.DrawRect(new SKRect(left - padX, baseline + metrics.Ascent - padY,
+                                   left + width + padX, baseline + metrics.Descent + padY), bg);
+
+        using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
+                                      Color = ReadingColorOpaque };
+        canvas.DrawText(text, left, baseline, SKTextAlign.Left, font, ink);
     }
 
     /// <summary>True when node <paramref name="k"/> belongs to an element with a parameter to
@@ -246,7 +305,11 @@ public static class SmithChartChrome
     private static void DrawLoadLabels(SKCanvas canvas, TransformSet tf, RenderTheme theme,
                                        SmithChartScene scene)
     {
-        if (scene.LoadPoints.Count == 0) return;
+        // ONE LOAD POINT CARRIES NO LABEL (owner instruction, 2026-09-19). The label exists to tell
+        // one frequency's point from another's; with a single frequency there is nothing to tell it
+        // from, the status strip along the bottom already names that frequency, and the box sits on
+        // top of the one reading the chart is about. Two or more and it comes back.
+        if (scene.LoadPoints.Count < 2) return;
 
         float lw = AxesRenderer.LineWidth((tf.CanvasSize.W, tf.CanvasSize.H));
 

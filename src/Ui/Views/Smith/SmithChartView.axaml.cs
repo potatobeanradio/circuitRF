@@ -13,6 +13,7 @@ using Avalonia.Styling;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
 using CircuitRF.Ui.Clipboard;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -370,11 +371,38 @@ public partial class SmithChartView : UserControl
                 flyout.Items.Add(new MenuItem
                 {
                     Header           = entry.Header,
+                    Icon             = ElementGlyph(entry),
                     Command          = command,
                     CommandParameter = entry,
                 });
             return flyout;
         }
+    }
+
+    /// <summary>
+    /// A menu row's picture: <b>the part's own symbol, turned the way the strip will draw it</b>
+    /// (owner instruction, 2026-09-19) — horizontal for a series element, vertical for a shunt one.
+    /// </summary>
+    /// <remarks>
+    /// <b>The palette's glyph control, not a second drawing of the same parts.</b> It renders through
+    /// <c>SchematicRenderer.DrawSymbol</c>, which is what the network strip below and the schematic
+    /// editor both draw with, so a menu row cannot come to disagree with the thing it places. The
+    /// rotation is <see cref="SmithNetworkModel.RotationFor"/>'s — the one rule, asked without an
+    /// element — rather than a second table that would have to be kept in step; the two-terminal
+    /// lumped glyphs are drawn upright natively and the rest horizontally, which is why "series" is
+    /// not simply "R0".
+    /// </remarks>
+    private static Control ElementGlyph(SmithElementMenuEntry entry)
+    {
+        var binding = SmithComponentMap.Component(entry.Kind);
+        return new PaletteGlyphControl
+        {
+            Kind      = binding.SymbolKind,
+            PortCount = binding.NumPorts,
+            Rotation  = SmithNetworkModel.RotationFor(entry.Kind, entry.Placement),
+            Width     = 22,
+            Height    = 18,
+        };
     }
 
     /// <summary>

@@ -36,6 +36,25 @@ public sealed class PaletteGlyphControl : Control
     public static readonly StyledProperty<string?> SymbolCellDirProperty =
         AvaloniaProperty.Register<PaletteGlyphControl, string?>(nameof(SymbolCellDir));
 
+    public static readonly StyledProperty<SymbolRotation> RotationProperty =
+        AvaloniaProperty.Register<PaletteGlyphControl, SymbolRotation>(nameof(Rotation));
+
+    /// <summary>
+    /// How the glyph is turned before it is fitted — <c>R0</c> for a palette tile, and what the Smith
+    /// Chart's Add/Insert menus set so a SERIES element reads horizontally and a SHUNT one vertically.
+    /// </summary>
+    /// <remarks>
+    /// <b>The fit is computed on the ROTATED bounding box</b>, not on the symbol's own: a resistor is
+    /// tall and narrow, and framing it upright and then turning it would push half of it out of the
+    /// tile. The corners go through <c>SchematicGeometry.LocalToWorld</c> — the same transform the
+    /// renderer applies to every primitive — rather than through a hand-written axis swap.
+    /// </remarks>
+    public SymbolRotation Rotation
+    {
+        get => GetValue(RotationProperty);
+        set => SetValue(RotationProperty, value);
+    }
+
     /// <summary>
     /// Optional cell folder whose primary symbol is drawn when no <see cref="IconPath"/> resolves.
     /// This is what keeps a kit part's tile showing the KIT's own symbol rather than the generic
@@ -94,6 +113,7 @@ public sealed class PaletteGlyphControl : Control
         AffectsRender<PaletteGlyphControl>(MonochromeProperty);
         AffectsRender<PaletteGlyphControl>(IconPathProperty);
         AffectsRender<PaletteGlyphControl>(SymbolCellDirProperty);
+        AffectsRender<PaletteGlyphControl>(RotationProperty);
     }
 
     private ColorTheme _activeTheme = ColorTheme.BuiltIn;
@@ -123,7 +143,7 @@ public sealed class PaletteGlyphControl : Control
         var theme     = SchematicRenderTheme.FromTheme(_activeTheme, variant);
         var effective = Monochrome ? theme.WithMonochrome(variant == ColorVariant.Light) : theme;
         context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, PortCount, effective,
-                                              IconPath, ResolveCellPrimitives()));
+                                              IconPath, ResolveCellPrimitives(), Rotation));
     }
 
     /// <summary>
@@ -146,12 +166,14 @@ public sealed class PaletteGlyphControl : Control
         private readonly SchematicRenderTheme _theme;
         private readonly string?              _iconPath;
         private readonly IReadOnlyList<SymbolPrimitive>? _cellPrims;
+        private readonly SymbolRotation       _rotation;
 
         private const double Padding = 0.12; // 12% inset on each side
 
         internal GlyphDrawOperation(Rect bounds, SymbolKind kind, int portCount,
                                     SchematicRenderTheme theme, string? iconPath,
-                                    IReadOnlyList<SymbolPrimitive>? cellPrims)
+                                    IReadOnlyList<SymbolPrimitive>? cellPrims,
+                                    SymbolRotation rotation = SymbolRotation.R0)
         {
             _cellPrims = cellPrims;
             _bounds    = bounds;
@@ -159,6 +181,7 @@ public sealed class PaletteGlyphControl : Control
             _portCount = portCount;
             _theme     = theme;
             _iconPath  = iconPath;
+            _rotation  = rotation;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -219,6 +242,24 @@ public sealed class PaletteGlyphControl : Control
                 bbMinX = -200; bbMinY = -200; bbMaxX = 200; bbMaxY = 200;
             }
 
+            // THE FIT IS ON THE ROTATED BOX. The four corners go through the renderer's own
+            // transform rather than a hand-written axis swap, so a glyph laid on its side is framed
+            // by what will actually be drawn.
+            if (_rotation != SymbolRotation.R0)
+            {
+                double rMinX = double.MaxValue, rMinY = double.MaxValue;
+                double rMaxX = double.MinValue, rMaxY = double.MinValue;
+                foreach (var (lx, ly) in new[] { (bbMinX, bbMinY), (bbMaxX, bbMinY),
+                                                 (bbMinX, bbMaxY), (bbMaxX, bbMaxY) })
+                {
+                    var (wx, wy) = SchematicGeometry.LocalToWorld(
+                        (float)lx, (float)ly, 0, 0, _rotation, mirrorX: false);
+                    if (wx < rMinX) rMinX = wx; if (wx > rMaxX) rMaxX = wx;
+                    if (wy < rMinY) rMinY = wy; if (wy > rMaxY) rMaxY = wy;
+                }
+                bbMinX = rMinX; bbMaxX = rMaxX; bbMinY = rMinY; bbMaxY = rMaxY;
+            }
+
             double worldW = bbMaxX - bbMinX;
             double worldH = bbMaxY - bbMinY;
 
@@ -236,7 +277,7 @@ public sealed class PaletteGlyphControl : Control
             SchematicRenderer.DrawSymbol(
                 canvas, prims,
                 compX: 0, compY: 0,
-                rotation: SymbolRotation.R0, mirrorX: false,
+                rotation: _rotation, mirrorX: false,
                 panX: panX, panY: panY, zoom: zoom,
                 theme: _theme);
 
@@ -255,8 +296,8 @@ public sealed class PaletteGlyphControl : Control
                 foreach (var (_, lx, ly) in ports)
                 {
                     float innerX = lx < 0f ? -bodyEdge : bodyEdge;
-                    var (ax, ay) = SchematicRenderer.LocalToPixel(lx, ly, 0, 0, SymbolRotation.R0, false, panX, panY, zoom);
-                    var (bx, by) = SchematicRenderer.LocalToPixel(innerX, ly, 0, 0, SymbolRotation.R0, false, panX, panY, zoom);
+                    var (ax, ay) = SchematicRenderer.LocalToPixel(lx, ly, 0, 0, _rotation, false, panX, panY, zoom);
+                    var (bx, by) = SchematicRenderer.LocalToPixel(innerX, ly, 0, 0, _rotation, false, panX, panY, zoom);
                     canvas.DrawLine(ax, ay, bx, by, leadPaint);
                 }
             }

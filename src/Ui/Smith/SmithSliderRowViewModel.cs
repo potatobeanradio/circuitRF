@@ -17,12 +17,15 @@ namespace CircuitRF.Ui.Smith;
 /// the whole design (<c>SmithChartViewModel.ApplySnapshot</c>), so a reference captured at construction
 /// would write into an object the document no longer owns and the strip would quietly stop responding.
 ///
-/// <para><b>The slider is logarithmic for R, L, C and a line's Z₀ and linear for the rest</b>, which is
-/// not decoration: those four span decades and a linear slider over 1 pF … 100 pF spends nine tenths of
-/// its travel above 10 pF. An electrical length and a Z1P's two parts are naturally linear and one of
-/// them is routinely negative, which a log axis cannot express at all.</para>
+/// <para><b>The RANGE a row spans is a constant, not a function of the value</b> — see
+/// <see cref="DefaultRange"/>, which is where the owner's per-component defaults live and where the
+/// runaway that made this necessary is written down. The slider over it is logarithmic for R, L, C and
+/// a line's Z₀ whenever that range starts above zero, and linear otherwise: those four span decades,
+/// and a linear slider over 1 pF … 100 pF spends nine tenths of its travel above 10 pF. An electrical
+/// length and a Z1P's two parts are naturally linear and one of them is routinely negative, which a log
+/// axis cannot express at all.</para>
 ///
-/// <para><b>Typing a value outside the range RE-CENTRES the range rather than clamping it</b>
+/// <para><b>Typing a value outside the range WIDENS the range rather than clamping it</b>
 /// (<c>R-smith6-4</c>). A typed number is an instruction; a dragged one is a gesture. Clamping a typed
 /// value silently substitutes a different design for the one that was asked for, and the only evidence
 /// is a number that did not change.</para>
@@ -80,10 +83,20 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
     public bool IsActive => _owner.ElementAt(ElementIndex) is { } e
                          && SmithComponentMap.ActiveParameterOf(e) == Parameter;
 
-    /// <summary>True for the four parameters whose slider is logarithmic.</summary>
-    public bool IsLogarithmic => IsLog(Parameter);
+    /// <summary>
+    /// True when this row's slider is logarithmic — the four decade-spanning parameters,
+    /// <b>and only when the range in force starts above zero</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A log axis cannot express zero, so a range that includes it is drawn linearly.</b> That is
+    /// not a compromise, it is what makes the owner's own defaults expressible: an inductor's range
+    /// is 0 … 10 nH and a shunt capacitor's 0 … 10 pF, while a series capacitor's 0.1 pF … 1000 pF
+    /// spans four decades and would be unusable on anything but a log slider. The rule keys on the
+    /// RANGE rather than the parameter so a user who re-ranges a row gets the axis that range needs.
+    /// </remarks>
+    public bool IsLogarithmic => IsLogKind(Parameter) && Range.Min > 0;
 
-    private static bool IsLog(SmithParameter p)
+    private static bool IsLogKind(SmithParameter p)
         => p is SmithParameter.R or SmithParameter.L or SmithParameter.C or SmithParameter.Z0;
 
     // ── The value ────────────────────────────────────────────────────────────
@@ -180,62 +193,118 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
     {
         get
         {
-            if (_owner.ElementAt(ElementIndex) is not { } e) return DefaultRange(0.0);
+            if (_owner.ElementAt(ElementIndex) is not { } e) return DefaultRange(null, 0.0);
 
             double v = Read(e, Parameter);
             return e.SliderRange.TryGetValue(Parameter, out var r) && IsUsable(r) && Covers(r, v)
                 ? r
-                : DefaultRange(v);
+                : DefaultRange(e, v);
         }
     }
 
-    private bool IsUsable(SmithSliderRange r)
-        => double.IsFinite(r.Min) && double.IsFinite(r.Max) && r.Max > r.Min
-        && (!IsLogarithmic || r.Min > 0);
+    private static bool IsUsable(SmithSliderRange r)
+        => double.IsFinite(r.Min) && double.IsFinite(r.Max) && r.Max > r.Min;
 
     private static bool Covers(SmithSliderRange r, double value)
         => double.IsFinite(value) && value >= r.Min && value <= r.Max;
 
     /// <summary>
-    /// The range a row opens on: <b>one decade either side of the value</b> on a logarithmic row, and a
-    /// span on a linear one that is wide enough to be worth dragging.
+    /// The range a row opens on: a <b>FIXED</b> span per parameter and placement, widened only when
+    /// the element's own value falls outside it.
     /// </summary>
     /// <remarks>
-    /// A non-positive value has no logarithm, so a log row centres on a per-parameter FLOOR instead —
-    /// one picofarad, one picohenry, one milliohm. That is a range the user can drag out of, where a
-    /// range built from zero would be no range at all.
+    /// <b>A range derived from the current value is a runaway, and that is what this replaces</b>
+    /// (owner report, 2026-09-19: a series L dragged to the right end of its slider reached
+    /// <i>9999999 H</i>). The old rule was one decade either side of the value, recomputed on every
+    /// read: drag the thumb to the top and the value becomes the old maximum, so the next read
+    /// centred the range on THAT and the maximum moved up again. Each pointer move multiplied the
+    /// ceiling by ten and the slider never ran out of travel. <see cref="BaseRange"/> does not move,
+    /// so a drag to the end is a drag to the end.
+    ///
+    /// <para><b>The spans are the ones that mean something at the design frequency this tool opens
+    /// on</b> (2 GHz, owner instruction): 10 nH is about 125 Ω of series reactance there and 10 pF
+    /// about 8 Ω of shunt, which is the useful width of a narrowband match. A series capacitor is
+    /// the one that is not symmetric with its shunt twin — it is usually a DC block rather than a
+    /// matching element — so it runs 0.1 pF … 1000 pF, and its bottom end is above zero because a
+    /// series C of zero farads is an open circuit rather than a small capacitor.</para>
+    ///
+    /// <para><b>Widening is decade-snapped rather than value-centred</b>, which is what keeps it
+    /// stable: a value carried past the top by a gripper drag (which has no slider to bound it)
+    /// raises the ceiling to the next 1/2/5 × 10ⁿ at or above it, and dragging the thumb to that new
+    /// ceiling leaves it exactly where it is. The element's stored range, if it has one, is
+    /// untouched and comes back the moment the value returns to it.</para>
     /// </remarks>
-    private SmithSliderRange DefaultRange(double value)
+    private SmithSliderRange DefaultRange(SmithElement? element, double value)
     {
-        if (IsLogarithmic)
-        {
-            double centre = value > 0 && double.IsFinite(value) ? value : Floor;
-            return new SmithSliderRange(centre / 10.0, centre * 10.0);
-        }
+        var (min, max) = BaseRange(element);
 
-        if (Parameter == SmithParameter.ElectricalLength)
-        {
-            // A full turn. A line longer than 360° exists and is reachable by typing, which re-centres
-            // the range around it — but a slider that opened on one would waste most of its travel on
-            // lengths nobody reaches for first.
-            double top = Math.Max(360.0, double.IsFinite(value) ? Math.Ceiling(value / 90.0) * 90.0 : 0.0);
-            return new SmithSliderRange(0.0, top);
-        }
+        if (!double.IsFinite(value) || (value >= min && value <= max))
+            return new SmithSliderRange(min, max);
 
-        // A Z1P's two parts: symmetric about the value, because the imaginary one is negative as often
-        // as not and a range that started at zero could not express half of them.
-        double span = double.IsFinite(value) ? Math.Max(Math.Abs(value), 50.0) : 50.0;
-        return new SmithSliderRange(value - span, value + span);
+        if (value > max) max = NiceCeiling(value);
+        else             min = NiceFloor(value);
+
+        return new SmithSliderRange(min, max);
     }
 
-    /// <summary>The smallest value a logarithmic row will centre on when the element's own is not
-    /// positive.</summary>
-    private double Floor => Parameter switch
+    /// <summary>
+    /// What a row spans before anything has been dragged past it — <b>a constant, per parameter and
+    /// placement</b>, quoted for a 2 GHz design frequency.
+    /// </summary>
+    private (double Min, double Max) BaseRange(SmithElement? element)
     {
-        SmithParameter.L => 1e-12,    // one picohenry
-        SmithParameter.C => 1e-12,    // one picofarad
-        _                => 1e-3,     // one milliohm — R and Z₀
-    };
+        bool shunt = element?.Placement == SmithPlacement.Shunt;
+
+        return Parameter switch
+        {
+            // A series R of zero ohms is a wire and perfectly meaningful; a shunt R of zero is a dead
+            // short, so that one starts at an ohm and spans decades instead.
+            SmithParameter.R  => shunt ? (1.0, 1e4) : (0.0, 1e3),
+
+            // 10 nH ≈ 125 Ω at 2 GHz, in either placement.
+            SmithParameter.L  => (0.0, 10e-9),
+
+            // 10 pF ≈ 8 Ω of shunt at 2 GHz; a series C is a blocking capacitor and wants the decades.
+            SmithParameter.C  => shunt ? (0.0, 10e-12) : (0.1e-12, 1000e-12),
+
+            // A line's characteristic impedance: what is buildable, rather than what is expressible.
+            SmithParameter.Z0 => (5.0, 500.0),
+
+            // A full turn. Longer lines exist and are reachable by typing, which widens the range.
+            SmithParameter.ElectricalLength => (0.0, 360.0),
+
+            // A Z1P's two parts. The imaginary one is negative as often as not, so it is symmetric;
+            // a passive real part is not.
+            SmithParameter.ImpedanceReal => (0.0, 500.0),
+            SmithParameter.ImpedanceImag => (-500.0, 500.0),
+
+            _ => (0.0, 1.0),
+        };
+    }
+
+    /// <summary>The smallest 1/2/5 × 10ⁿ at or above <paramref name="v"/>.</summary>
+    private static double NiceCeiling(double v)
+    {
+        if (!(v > 0)) return 0.0;
+        double mag = Math.Pow(10.0, Math.Floor(Math.Log10(v)));
+        foreach (double step in Steps)
+            if (v <= step * mag * (1.0 + 1e-12)) return step * mag;
+        return 10.0 * mag;
+    }
+
+    /// <summary>The largest 1/2/5 × 10ⁿ at or below <paramref name="v"/>, and zero for anything that
+    /// is not positive — a range whose bottom is zero is simply drawn linearly.</summary>
+    private static double NiceFloor(double v)
+    {
+        if (v <= 0) return v < 0 ? -NiceCeiling(-v) : 0.0;
+        double mag = Math.Pow(10.0, Math.Floor(Math.Log10(v)));
+        double best = mag;
+        foreach (double step in Steps)
+            if (step * mag <= v * (1.0 + 1e-12)) best = step * mag;
+        return best;
+    }
+
+    private static readonly double[] Steps = [1.0, 2.0, 5.0];
 
     /// <summary>
     /// Re-ranges this row. <b>One undo entry</b>, because a stored range is part of the document.
@@ -243,8 +312,10 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
     public void SetRange(double min, double max)
     {
         if (!double.IsFinite(min) || !double.IsFinite(max) || !(max > min)) { NotifyAll(); return; }
-        if (IsLogarithmic && !(min > 0))                                    { NotifyAll(); return; }
 
+        // A minimum of zero is NOT refused any more — IsLogarithmic reads the range, so a row whose
+        // span reaches zero simply becomes a linear one. That is what lets an inductor's default be
+        // the 0 … 10 nH the owner asked for.
         _owner.SetSliderRange(ElementIndex, Parameter, min, max);
     }
 
@@ -255,7 +326,7 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
         var r = Range;
         if (v >= r.Min && v <= r.Max) return;
 
-        var next = DefaultRange(v);
+        var next = DefaultRange(_owner.ElementAt(ElementIndex), v);
         _owner.SetSliderRange(ElementIndex, Parameter, next.Min, next.Max);
     }
 

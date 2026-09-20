@@ -127,6 +127,7 @@ public static class SmithDesignIo
             ShowGrippers = d.Chart.ShowGrippers,
             ShowTargets  = d.Chart.ShowTargets,
             ShowLabels   = d.Chart.ShowLabels,
+            ShowAdmittanceGrid = d.Chart.ShowAdmittanceGrid,
         },
         Generator = new CsmithGenerator
         {
@@ -231,6 +232,7 @@ public static class SmithDesignIo
         IsDelta                = m.IsDelta,
         PositionStaticX        = m.PositionStaticX,
         PositionStaticY        = m.PositionStaticY,
+        FreePosition           = m.FreePosition,
         MarkerKind             = m.MarkerKind,
         ShowInfoBox            = m.ShowInfoBox,
         ContourSnapped         = m.ContourSnapped,
@@ -259,6 +261,9 @@ public static class SmithDesignIo
                 ShowGrippers      = f.Chart?.ShowGrippers ?? true,
                 ShowTargets       = f.Chart?.ShowTargets  ?? true,
                 ShowLabels        = f.Chart?.ShowLabels   ?? true,
+                // Absent is OFF — a `.csmith` written before the admittance grid existed opens on
+                // the picture it was saved as.
+                ShowAdmittanceGrid = f.Chart?.ShowAdmittanceGrid ?? false,
             },
             Sweep = new SmithSweep
             {
@@ -354,6 +359,7 @@ public static class SmithDesignIo
         InfoBoxY               = m.InfoBoxY ?? 0.0,
         IsMulti                = m.IsMulti ?? false,
         IsDelta                = m.IsDelta ?? false,
+        FreePosition           = m.FreePosition ?? false,
         PositionStaticX        = m.PositionStaticX ?? 0f,
         PositionStaticY        = m.PositionStaticY ?? 0f,
         MarkerKind             = m.MarkerKind  ?? "Polyline",
@@ -426,6 +432,7 @@ public static class SmithDesignIo
         public bool?         ShowGrippers      { get; set; }
         public bool?         ShowTargets       { get; set; }
         public bool?         ShowLabels        { get; set; }
+        public bool?         ShowAdmittanceGrid { get; set; }
     }
 
     /// <summary>Γ extents — dimensionless, so there is no unit to get wrong here.</summary>
@@ -539,6 +546,7 @@ public static class SmithDesignIo
         public bool?   IsDelta                { get; set; }
         public float?  PositionStaticX        { get; set; }
         public float?  PositionStaticY        { get; set; }
+        public bool?   FreePosition           { get; set; }
         public string? MarkerKind             { get; set; }
         public bool?   ShowInfoBox            { get; set; }
         public bool?   ContourSnapped         { get; set; }

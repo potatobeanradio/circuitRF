@@ -31599,3 +31599,75 @@ and the direction that surprises somebody who deliberately opted out. Left as it
 Gates: `RetentionHoldAndOffTests.TheWorkspaceRootHoldSaysSoWhenItsQuestionIsSuppressed` (the
 exception, pinned beside the rule it excepts, so neither can be "fixed" into the other) and
 `.TheAdoptionQuestionIsPutOnTheEdgeAndNotOnTheLevel`.
+
+---
+
+## Smith Chart, round 2 — the slider runaway, the picker, and free markers (2026-09-19)
+
+Ten owner items after the first ship. Four of them are worth writing down.
+
+### A slider whose range is derived from its own value is a runaway
+
+Owner report: a series L dragged to the right end of its slider reached **9999999 H**.
+
+`SmithSliderRowViewModel.DefaultRange` was *one decade either side of the current value*, recomputed
+on every read of `Range`. Drag the thumb to the top and the value becomes the old maximum; the next
+read centres the range on **that**, so the maximum moves up again. Each pointer move multiplied the
+ceiling by ten and the slider never ran out of travel. The bug is not in the drag, the binding or the
+undo path — it is that the control's bounds were a function of the quantity the control sets.
+
+The range is now a **constant per parameter and placement** (`BaseRange`), quoted for the 2 GHz design
+frequency this tool opens on: L 0 … 10 nH (≈ 125 Ω of series reactance there), shunt C 0 … 10 pF
+(≈ 8 Ω), series C 0.1 pF … 1000 pF — the series capacitor is a DC block rather than a matching
+element, and its bottom end is above zero because a series C of zero farads is an *open circuit*
+rather than a small capacitor. A value carried outside by a gripper drag (which has no slider to
+bound it) **widens the range to the next 1/2/5 × 10ⁿ**, decade-snapped rather than value-centred —
+which is what keeps it stable, because dragging the thumb to that new ceiling leaves it exactly where
+it is.
+
+**`IsLogarithmic` now reads the RANGE, not the parameter.** A log axis cannot express zero, so a range
+that reaches zero is drawn linearly. That is what makes the owner's own defaults expressible at all —
+without it, "inductor, min 0" is a refusal.
+
+### `SuggestedFileName` + `DefaultExtension` spells the extension twice
+
+`Untitled-Smith-1.csmith.csmith` in the Save picker. Avalonia's storage provider appends
+`DefaultExtension` to a suggested name that carries none, so supplying both duplicates it. Dropping
+`DefaultExtension` is the wrong half to drop — it is what gives a name the user types without an
+extension one. **This is the third time this exact defect has shipped** (the Match Designer's
+Touchstone export, railRF's Save, now this); both of those files carry the note, and now so does
+`SmithChartDocumentSave`.
+
+### Free markers are a property of the PLOT, not of the marker model
+
+Reported by the owner: markers are stuck on the traces, and they should instead be placeable anywhere
+on the Smith chart.
+
+A marker on an ordinary Data Display trace is a reading **of** that trace at a frequency: it steps
+with the arrow keys, it reports S₂₁ at that point, its info box names the frequency. Cutting every
+marker loose would make all of that meaningless. On a *matching* chart the marker is a **target** the
+user is aiming the network at, which is a position and not a sample. So both behaviours exist and
+`Plot.FreeMarkers` says which — set today only by `SmithPlotBuilder.Configure`.
+
+Per marker it is `Marker.FreePosition`, and then `PositionStatic` **is** the world Γ: `Trace`'s four
+resolution paths (nearest frequency, stem, cube index, stability perimeter) are all skipped, and the
+info box reads Γ and Z = Z₀·(1+Γ)/(1−Γ) with no frequency row, because the marker is not at one.
+`Fill` sets every trace's `Z0` to the document's own chart Z₀ so that second row is against the same
+reference the status strip reports (Q-17) rather than against a defaulted 50.
+
+**Shift snaps to the nearest curve, measured in CANVAS PIXELS and across every trace on the plot** —
+not just the one the marker is stored on. "The nearest geometric trace" is a question about the
+picture, so the answer has to be the one that *looks* nearest at whatever zoom the chart is at.
+Annotations are included deliberately: the constant-Q arcs and the conjugate-match glyphs are geometry
+somebody may well want to land on.
+
+### The Q value is drawn by the renderer, not by the window
+
+Owner instruction, mid-round: the Q value text has to render with the Smith chart and travel with a
+copy to EMF/SVG/PNG. It is therefore in `SmithChartChrome` (below the firewall) and not in a panel — the
+same reasoning `PlacedPlot.Overlay` already exists for. It hangs from the apex of the inductive arc,
+Γ = (0, √(1+1/Q²) − 1/Q), so it tracks the arc up and down as a drag changes Q.
+
+**The typed-entry field went with the card.** Q is now set by dragging an arc (shift lands on an exact
+quarter); `ConstantQEntry` survives on the view model but has no surface. If an exact typed Q is wanted
+back, it belongs on the chart's own context menu or the button's, not in the panel that was removed.

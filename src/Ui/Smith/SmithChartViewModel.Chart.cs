@@ -85,7 +85,7 @@ public sealed partial class SmithChartViewModel
 
         // WHAT A SMITH CHART PLOT IS, said in one place — SmithPlotBuilder.Configure, which is also
         // what a headless `circuitrf smith` applies to the plot it has to create for itself
-        // (R-smith10-1). Panning unlocked and the readout fixed; both are invisible in a picture and
+        // (R-smith10-1). Panning LOCKED and the readout fixed; both are invisible in a picture and
         // change what the plot DOES, which is exactly the kind of setting a second copy loses.
         SmithPlotBuilder.Configure(ChartPlot);
 
@@ -141,6 +141,13 @@ public sealed partial class SmithChartViewModel
     /// </remarks>
     public void CaptureChartWindow()
     {
+        // THE ADMITTANCE GRID IS HARVESTED HERE TOO, and for the same reason the window is: it is
+        // toggled from the chart's own context menu, which is PlotControl's and knows nothing about
+        // this document. PlotChanged is the one event that says "something about the plot the host
+        // may want to keep changed", so both settings come back through it. Like the window, it is
+        // NOT an edit — no undo entry and no dirty mark; it rides along on the next real save.
+        _design.Chart.ShowAdmittanceGrid = ChartPlot.ShowSmithAdmittanceGrid;
+
         var w = ChartPlot.Axes.Window;
         if (!(w.Width > 0) || !(w.Height > 0)) return;
 

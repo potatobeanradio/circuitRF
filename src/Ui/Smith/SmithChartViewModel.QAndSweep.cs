@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using CircuitRF.Design.Smith;
 using CircuitRF.Ui.Matching;
+using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Smith;
 
@@ -40,6 +41,19 @@ public sealed partial class SmithChartViewModel
             OnPropertyChanged();
         }
     }
+
+    /// <summary>
+    /// Flips <see cref="ConstantQEnabled"/> — what the <b>Q</b> button in the chart's top-left corner
+    /// does (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>A command rather than a two-way binding</b>, because the control is a square toolbar
+    /// button like every other one in this window and a <c>Button</c> has no checked state to bind;
+    /// what says it is on is its <c>ToolActive</c> class, which the same property drives. The undo
+    /// entry and the dirty mark are <see cref="ConstantQEnabled"/>'s own and are unchanged.
+    /// </remarks>
+    [RelayCommand]
+    private void ToggleConstantQ() => ConstantQEnabled = !ConstantQEnabled;
 
     /// <summary>
     /// Q itself, <c>|x|/r</c> — <b>a bare number with no unit</b>, because it is a ratio of two

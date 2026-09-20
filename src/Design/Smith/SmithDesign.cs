@@ -430,6 +430,18 @@ public sealed class SmithChartSettings
 
     /// <summary>The per-frequency load-point label boxes.</summary>
     public bool ShowLabels { get; set; } = true;
+
+    /// <summary>
+    /// The <b>admittance grid</b> — the constant-g/constant-b family mirrored from the impedance one
+    /// and drawn in a faded red (owner instruction, 2026-09-19). <b>Off by default.</b>
+    /// </summary>
+    /// <remarks>
+    /// It is a <c>Plot</c> setting (<c>Plot.ShowSmithAdmittanceGrid</c>) and is carried here so a
+    /// <c>.csmith</c> reopens with it, exactly as a <c>.cdd</c> does. The toggle is the chart's own
+    /// context menu, which is generic: every Smith chart in circuitRF has it, and this document is
+    /// one of them rather than a second implementation of one.
+    /// </remarks>
+    public bool ShowAdmittanceGrid { get; set; }
 }
 
 /// <summary>The optional swept band drawn through the load points (§3.6). Off by default: it is P2
@@ -612,6 +624,11 @@ public sealed class SmithMarker
 
     public float PositionStaticX { get; set; }
     public float PositionStaticY { get; set; }
+
+    /// <summary>A freely-placed marker — its position IS <see cref="PositionStaticX"/>/
+    /// <see cref="PositionStaticY"/> rather than a point on the trace it is stored against
+    /// (<c>Marker.FreePosition</c>). Every marker this tool places is one.</summary>
+    public bool FreePosition { get; set; }
 
     /// <summary>A <c>MarkerKind</c> member name.</summary>
     public string MarkerKind { get; set; } = "Polyline";

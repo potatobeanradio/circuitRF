@@ -167,7 +167,16 @@ public sealed class SmithClipboardTests
     [Fact]
     public async Task AChartCopyProducesRealBytes()
     {
-        var vm = new SmithChartViewModel(FourElements());
+        var design = FourElements();
+
+        // A SECOND GENERATOR ROW, because the probe below is a load-point LABEL and a chart with one
+        // frequency deliberately carries none (owner instruction, 2026-09-19 — with nothing to tell
+        // the point apart from, the box sits on top of the one reading the chart is about). Two rows
+        // is the ordinary case for a labelled chart and it is what this claim needs to be about the
+        // overlay rather than about the label rule.
+        design.Generator.Rows.Add(new SmithGeneratorRow(DesignHz * 1.1, 11.0, -9.4));
+
+        var vm = new SmithChartViewModel(design);
 
         // What SmithChartView.BindChartPlot does, and the only part of it this claim depends on.
         vm.ChartContainer.Overlay = vm.ChartOverlay;

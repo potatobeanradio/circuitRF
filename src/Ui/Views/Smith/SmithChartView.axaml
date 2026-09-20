@@ -170,6 +170,34 @@
             <Setter Property="Opacity" Value="0.35"/>
         </Style>
 
+        <!-- A toolbar button that is ON — the schematic and layout editors' own ToolActive, taken
+             verbatim so the constant-Q button reads the way every other latched tool in circuitRF
+             does. It is what replaces the "Show arcs" checkbox the panel used to carry. -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pressed /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- A slider row's parameter label. It is a BUTTON because clicking it does something —
              it makes that parameter the one the chart's gripper drags (R-smith6-5) — and it is
              chromeless because a row of three raised buttons beside three sliders would read as the
@@ -419,37 +447,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ── The constant-Q arcs (brief 9) ────────────────────────────────
-                             R-smith9-1/-2/-3; docs/design/smith-chart.md §4.4.
-
-                             A RULER LAID OVER THE WORK, and off by default for that reason. Each
-                             branch is a true circle — centre (0, ∓1/Q), radius √(1+1/Q²) — so the
-                             pair is emitted at uniform θ and never sampled in the z plane and
-                             mapped across, which is the mistake the VSWR locus's own note records.
-
-                             THE ARCS ARE DRAWN AS TRACES, beneath the trajectories, carrying no
-                             marker and out of the autoscale; the thing on the overlay is the
-                             HANDLE. Dragging either branch moves both, because they are one
-                             setting, and holding shift rounds the computed Q to the nearest
-                             quarter BEFORE it is stored. -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Constant Q"/>
-
-                                <CheckBox MinHeight="0" FontSize="11" Content="Show arcs"
-                                          IsChecked="{Binding ViewModel.ConstantQEnabled, Mode=TwoWay}"
-                                          ToolTip.Tip="Draw the constant-Q pair. Both branches are one setting: dragging either one moves both, and holding shift rounds Q to the nearest quarter."/>
-
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Q"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                        IsEnabled="{Binding ViewModel.ConstantQEnabled}"
-                                                        Text="{Binding ViewModel.ConstantQEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="|x|/r on the arcs — a ratio, so it carries no unit. Double-click to edit, or drag an arc on the chart."/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
                         <!-- ── The swept band (brief 9) ─────────────────────────────────────
                              R-smith9-4; docs/design/smith-chart.md §3.6.
 
@@ -526,10 +523,32 @@
                      PlotControl asks its HOST for the marker index, the info-box view model, the
                      selected markers and the CONTAINER, and a host that is null answers "nothing"
                      to all four, silently. See the code-behind's own note. -->
-                <ddc:PlotControl Name="ChartPlotControl"
-                                 Plot="{Binding ViewModel.ChartPlot}"
-                                 Library="{Binding ViewModel.PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="True"/>
+                <Grid>
+                    <ddc:PlotControl Name="ChartPlotControl"
+                                     Plot="{Binding ViewModel.ChartPlot}"
+                                     Library="{Binding ViewModel.PlotHost.Library}"
+                                     CanDeletePlot="False" CanEditPlotProperties="True"/>
+
+                    <!-- ── The constant-Q toggle (owner instruction, 2026-09-19) ────────────────
+                         IN THE CHART'S TOP-LEFT CORNER and not in the side panel, because the arcs
+                         are a ruler laid over THIS picture and the control for them belongs on it.
+                         A square toolbar button with a Q glyph, the schematic editor's own
+                         SelectionBtn/ToolActive pair, so "on" reads the way every other latched tool
+                         in circuitRF reads.
+
+                         THE VALUE IS NOT HERE. It is drawn on the chart itself, below the apex of
+                         the inductive arc, by SmithChartChrome — which is below the firewall, so it
+                         travels with every copy, export and headless render of the picture rather
+                         than living in a panel that no exported chart carries. Dragging either arc
+                         is how it is set; the text follows the arc up and down as it moves. -->
+                    <Button Classes="SelectionBtn" Padding="6,3"
+                            Classes.ToolActive="{Binding ViewModel.ConstantQEnabled}"
+                            Command="{Binding ViewModel.ToggleConstantQCommand}"
+                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4"
+                            ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
+                        <mi:MaterialIcon Kind="AlphaQ" Width="16" Height="16"/>
+                    </Button>
+                </Grid>
             </Border>
         </Grid>
 
@@ -563,13 +582,24 @@
                                VerticalAlignment="Center"/>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                        <Button Name="AddElementButton" Classes="panel" Content="Add ▾"
-                                ToolTip.Tip="Add an element at the end of the cascade, nearest the load."/>
-                        <Button Name="InsertElementButton" Classes="panel" Content="Insert ▾"
-                                ToolTip.Tip="Insert an element before the selected one. With nothing selected this appends, because &quot;before nothing&quot; and &quot;at the end&quot; are the same place in a list."/>
-                        <Button Classes="panel" Content="Delete"
+                        <!-- SQUARE ICON BUTTONS, the schematic and layout toolbars' own control
+                             (owner instruction, 2026-09-19): Classes="SelectionBtn", Padding 6,3, a
+                             16x16 MaterialIcon and no text. The three of them sat beside four that
+                             already looked like that, so the row read as two toolbars. Each menu row
+                             underneath carries the PART'S OWN GLYPH — see BuildElementMenus. -->
+                        <Button Name="AddElementButton" Classes="SelectionBtn" Padding="6,3"
+                                ToolTip.Tip="Add — an element at the end of the cascade, nearest the load.">
+                            <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+                        </Button>
+                        <Button Name="InsertElementButton" Classes="SelectionBtn" Padding="6,3"
+                                ToolTip.Tip="Insert — an element before the selected one. With nothing selected this appends, because &quot;before nothing&quot; and &quot;at the end&quot; are the same place in a list.">
+                            <mi:MaterialIcon Kind="TableColumnPlusBefore" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes="SelectionBtn" Padding="6,3"
                                 Command="{Binding ViewModel.DeleteElementCommand}"
-                                ToolTip.Tip="Remove the selected element. The chain closes up."/>
+                                ToolTip.Tip="Delete — removes the selected element. The chain closes up.">
+                            <mi:MaterialIcon Kind="Delete" Width="16" Height="16"/>
+                        </Button>
 
                         <!-- Reorder. The arrows are DRAWING-relative and not list-relative: a
                              left-pointing button beside a picture moves the part left, and in a

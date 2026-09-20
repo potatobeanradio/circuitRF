@@ -635,12 +635,27 @@ namespace CircuitRF.Render.DataDisplay
         //  Smith chart grid
         // ================================================================
 
+        /// <summary>
+        /// The admittance grid's colour — <b>a faded red</b>, and a literal rather than a theme
+        /// role (owner instruction, 2026-09-19).
+        /// </summary>
+        /// <remarks>
+        /// The impedance family is drawn in the theme's grid colour because it IS the chart; the
+        /// admittance family is a second reading laid over it, and what makes it legible is that it
+        /// is a DIFFERENT colour from everything else on the plot rather than a themed one. It is
+        /// stroked at the same transparency the impedance arcs carry, in one path and one draw, for
+        /// the reason recorded below — two 50% strokes crossing read 75% and the grid goes dark
+        /// exactly where it is busiest.
+        /// </remarks>
+        private static readonly SKColor SmithAdmittanceColor = new(198, 64, 64);
+
         public static void DrawSmithGrid(
             SKCanvas             canvas,
             (double W, double H) canvasSize,
             Axes                 axes,
             TransformSet         tf,
-            RenderTheme          theme)
+            RenderTheme          theme,
+            bool                 admittance = false)
         {
             float lw     = LineWidth(canvasSize);
             float gridSw = lw * (float)axes.GridThicknessFactor;
@@ -723,28 +738,48 @@ namespace CircuitRF.Render.DataDisplay
             double[] constantRLabelValues = { 1, 0.5, 2, 5, 10 };
             double[] constantXLabelValues = { 1, 0.2, 0.5, 2, 5, 10 };
 
-            var rCircles = new (float cx, float cy, float r, double rVal)[constantRValues.Length];
-            for (int i = 0; i < constantRValues.Length; i++)
+            // THE ADMITTANCE FAMILY IS THE IMPEDANCE FAMILY REFLECTED THROUGH Γ = 0, and that is
+            // the whole of it (owner instruction, 2026-09-19). Constant-g circles and constant-b
+            // arcs are what constant-r and constant-x become under y = 1/z, which in the reflection
+            // coefficient plane is Γ → −Γ; so the same two tables, the same masking, the same
+            // one-path-one-draw accumulation produce both, with `s` the only difference. Deriving
+            // the g/b circles independently would be a second set of formulas for one picture, and
+            // the two would disagree the first time either was touched.
+            //
+            // The real axis and the unit circle are their OWN reflections, so they are drawn once.
+            (float cx, float cy, float r, double rVal)[] RCircles(double s)
             {
-                double rv     = constantRValues[i];
-                double radius = 1.0 / (1.0 + rv);
-                double centreX = 1.0 - radius;
-                var    cPx    = tf.PrimaryToCanvas(centreX, 0.0);
-                var    ePx    = tf.PrimaryToCanvas(centreX + radius, 0.0);
-                float  pxR    = Math.Abs(ePx.X - cPx.X);
-                rCircles[i]   = (cPx.X, cPx.Y, pxR, rv);
+                var result = new (float cx, float cy, float r, double rVal)[constantRValues.Length];
+                for (int i = 0; i < constantRValues.Length; i++)
+                {
+                    double rv      = constantRValues[i];
+                    double radius  = 1.0 / (1.0 + rv);
+                    double centreX = s * (1.0 - radius);
+                    var    cPx     = tf.PrimaryToCanvas(centreX, 0.0);
+                    var    ePx     = tf.PrimaryToCanvas(centreX + radius, 0.0);
+                    float  pxR     = Math.Abs(ePx.X - cPx.X);
+                    result[i]      = (cPx.X, cPx.Y, pxR, rv);
+                }
+                return result;
             }
 
-            var xCircles = new (float cx, float cy, float r, double xVal)[constantXValues.Length];
-            for (int i = 0; i < constantXValues.Length; i++)
+            (float cx, float cy, float r, double xVal)[] XCircles(double s)
             {
-                double xv     = constantXValues[i];
-                double radius = 1.0 / xv;
-                var    cPx    = tf.PrimaryToCanvas(1.0, -radius);
-                var    ePx    = tf.PrimaryToCanvas(1.0 + radius, -radius);
-                float  pxR    = Math.Abs(ePx.X - cPx.X);
-                xCircles[i]   = (cPx.X, cPx.Y, pxR, xv);
+                var result = new (float cx, float cy, float r, double xVal)[constantXValues.Length];
+                for (int i = 0; i < constantXValues.Length; i++)
+                {
+                    double xv     = constantXValues[i];
+                    double radius = 1.0 / xv;
+                    var    cPx    = tf.PrimaryToCanvas(s * 1.0, s * -radius);
+                    var    ePx    = tf.PrimaryToCanvas(s * 1.0 + radius, s * -radius);
+                    float  pxR    = Math.Abs(ePx.X - cPx.X);
+                    result[i]     = (cPx.X, cPx.Y, pxR, xv);
+                }
+                return result;
             }
+
+            var rCircles = RCircles(+1.0);
+            var xCircles = XCircles(+1.0);
 
             var rMaskTable = new System.Collections.Generic.Dictionary<int, int[]>
             {
@@ -803,7 +838,8 @@ namespace CircuitRF.Render.DataDisplay
             // The angular spans of the circle (cx, cy, pxR) that lie inside `masks`, removed; what
             // is left is added to `family` as open arcs. Skia measures angles from +x towards +y,
             // which in canvas coordinates is the same convention `Math.Atan2(dy, dx)` gives here.
-            void AccumulateArc(float cx, float cy, float pxR, IEnumerable<(float cx, float cy, float r)>? masks)
+            void AccumulateArc(SKPath path, float cx, float cy, float pxR,
+                               IEnumerable<(float cx, float cy, float r)>? masks)
             {
                 if (pxR <= 0 || !float.IsFinite(pxR)) return;
 
@@ -832,7 +868,7 @@ namespace CircuitRF.Render.DataDisplay
                 if (cuts.Count == 0)
                 {
                     // Closed, so there is no butt-capped seam where the sweep would have met itself.
-                    family.AddCircle(cx, cy, pxR);
+                    path.AddCircle(cx, cy, pxR);
                     return;
                 }
 
@@ -855,59 +891,90 @@ namespace CircuitRF.Render.DataDisplay
                 double at = 0.0;
                 foreach (var (lo, hi) in spans)
                 {
-                    if (lo - at > MinSweepDeg) family.AddArc(oval, (float)at, (float)(lo - at));
+                    if (lo - at > MinSweepDeg) path.AddArc(oval, (float)at, (float)(lo - at));
                     at = Math.Max(at, hi);
                 }
-                if (360.0 - at > MinSweepDeg) family.AddArc(oval, (float)at, (float)(360.0 - at));
+                if (360.0 - at > MinSweepDeg) path.AddArc(oval, (float)at, (float)(360.0 - at));
             }
 
             float realAxisY = tf.PrimaryToCanvas(0.0, 0.0).Y;
 
-            for (int i = 0; i < rCircles.Length; i++)
+            // ONE family, accumulated into one path. Called twice when the admittance grid is on —
+            // the second time with the reflected circles, which is what makes the two pictures the
+            // same picture.
+            void AccumulateFamily(SKPath path,
+                                  (float cx, float cy, float r, double rVal)[] rC,
+                                  (float cx, float cy, float r, double xVal)[] xC)
             {
-                var (cx, cy, pxR, rVal) = rCircles[i];
-
-                // r = 0 IS the unit circle — the chart's outline. It is drawn after the family, at
-                // full strength like the real axis, and never inside it: it is not one of the arcs
-                // the transparency is for.
-                if (rVal == 0) continue;
-
-                if (rMaskTable.TryGetValue(i, out int[]? xMaskIndices))
+                for (int i = 0; i < rC.Length; i++)
                 {
-                    var maskedCircles = xMaskIndices
-                        .SelectMany(xi =>
-                        {
-                            var (xcx, xcy, xr, _) = xCircles[xi];
-                            return new[] { (xcx, xcy, xr), (xcx, 2f * realAxisY - xcy, xr) };
-                        });
+                    var (cx, cy, pxR, rVal) = rC[i];
 
-                    AccumulateArc(cx, cy, pxR, maskedCircles);
+                    // r = 0 IS the unit circle — the chart's outline. It is drawn after the family,
+                    // at full strength like the real axis, and never inside it: it is not one of the
+                    // arcs the transparency is for. It is also its own reflection, so the admittance
+                    // pass skips it for the same reason and draws nothing extra.
+                    if (rVal == 0) continue;
+
+                    if (rMaskTable.TryGetValue(i, out int[]? xMaskIndices))
+                    {
+                        var maskedCircles = xMaskIndices
+                            .SelectMany(xi =>
+                            {
+                                var (xcx, xcy, xr, _) = xC[xi];
+                                return new[] { (xcx, xcy, xr), (xcx, 2f * realAxisY - xcy, xr) };
+                            });
+
+                        AccumulateArc(path, cx, cy, pxR, maskedCircles);
+                    }
+                    else
+                    {
+                        AccumulateArc(path, cx, cy, pxR, null);
+                    }
                 }
-                else
+
+                for (int i = 0; i < xC.Length; i++)
                 {
-                    AccumulateArc(cx, cy, pxR, null);
+                    var (cx, cy, pxR, _) = xC[i];
+                    float conjCy = 2f * realAxisY - cy;
+
+                    if (xMaskTable.TryGetValue(i, out int[]? rMaskIndices))
+                    {
+                        var maskCircles = rMaskIndices
+                            .Select(ri => { var (rcx, rcy, rr, _) = rC[ri]; return (rcx, rcy, rr); })
+                            .ToArray();
+
+                        AccumulateArc(path, cx, cy,     pxR, maskCircles);
+                        AccumulateArc(path, cx, conjCy, pxR, maskCircles);
+                    }
+                    else
+                    {
+                        AccumulateArc(path, cx, cy,     pxR, null);
+                        AccumulateArc(path, cx, conjCy, pxR, null);
+                    }
                 }
             }
 
-            for (int i = 0; i < xCircles.Length; i++)
+            AccumulateFamily(family, rCircles, xCircles);
+
+            // THE ADMITTANCE FAMILY GOES DOWN FIRST, under the impedance one: it is the reference
+            // grid the work is read against, and the chart's own arcs are what the reader is
+            // following. Same stroke, same transparency, its own colour.
+            if (admittance)
             {
-                var (cx, cy, pxR, _) = xCircles[i];
-                float conjCy = 2f * realAxisY - cy;
+                using var yFamily = new SKPath();
+                AccumulateFamily(yFamily, RCircles(-1.0), XCircles(-1.0));
 
-                if (xMaskTable.TryGetValue(i, out int[]? rMaskIndices))
+                using var yPaint = new SKPaint
                 {
-                    var maskCircles = rMaskIndices
-                        .Select(ri => { var (rcx, rcy, rr, _) = rCircles[ri]; return (rcx, rcy, rr); })
-                        .ToArray();
-
-                    AccumulateArc(cx, cy,     pxR, maskCircles);
-                    AccumulateArc(cx, conjCy, pxR, maskCircles);
-                }
-                else
-                {
-                    AccumulateArc(cx, cy,     pxR, null);
-                    AccumulateArc(cx, conjCy, pxR, null);
-                }
+                    Color       = SmithAdmittanceColor.WithAlpha(
+                        (byte)Math.Clamp(axes.MinorTransparencyScale * 255.0, 0, 255)),
+                    StrokeWidth = gridSw,
+                    Style       = SKPaintStyle.Stroke,
+                    StrokeCap   = SKStrokeCap.Butt,
+                    IsAntialias = true,
+                };
+                canvas.DrawPath(yFamily, yPaint);
             }
 
             canvas.DrawPath(family, arcPaint);

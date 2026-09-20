@@ -226,6 +226,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private ContextMenu? _tableContextMenu;
         private MaterialIcon _iconAxesLocked = new MaterialIcon();
 
+        // The admittance grid's own checkbox glyph and its row — the same two-object pattern the
+        // lock above uses, and for the same reason: the menu instance is cached for the control's
+        // lifetime, so the tick has to be re-read on every open rather than set once at build time.
+        private MaterialIcon _iconAdmittance = new MaterialIcon();
+        private MenuItem?    _admittanceMenuItem;
+
         // Marker symbol drag state
         private Marker? _draggingMarker;
         private Trace?  _draggingTrace;
@@ -490,6 +496,29 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var item3 = new MenuItem { Header = "Axes Labels…", Icon = icon };
             item3.Click += OnMenuActionThree;
 
+            // THE ADMITTANCE GRID, below Axes Labels… (owner instruction, 2026-09-19). It is a
+            // property of the PLOT and not of this window, so it is here rather than in the Smith
+            // Chart document's own chrome: every Smith chart in a Data Display gets it, and it
+            // persists in the `.cdd` and in a `.csmith` alike. The tick is drawn with the Lock Axes
+            // Panning row's own checkbox glyphs — one idea, one appearance.
+            _iconAdmittance.Kind = _plot?.ShowSmithAdmittanceGrid ?? false
+                ? MaterialIconKind.CheckboxOutline
+                : MaterialIconKind.CheckboxBlankOutline;
+            var itemAdmittance = new MenuItem { Header = "Show Admittance Grid", Icon = _iconAdmittance };
+            itemAdmittance.Click += (_, _) =>
+            {
+                if (_plot is null) return;
+                _plot.ShowSmithAdmittanceGrid ^= true;
+                _iconAdmittance.Kind = _plot.ShowSmithAdmittanceGrid
+                    ? MaterialIconKind.CheckboxOutline
+                    : MaterialIconKind.CheckboxBlankOutline;
+                InvalidateVisual();
+                // PlotChanged is what a host listens to in order to HARVEST the change into its own
+                // document — the Smith Chart's window does exactly that for the chart's pan and zoom.
+                PlotChanged?.Invoke(this, EventArgs.Empty);
+            };
+            _admittanceMenuItem = itemAdmittance;
+
             icon = new MaterialIcon { Kind = MaterialIconKind.TriangleDown };
             var item4 = new MenuItem { Header = "Add Marker", Icon = icon };
             _addMarkerMenuItem = item4;
@@ -538,6 +567,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(item1);
             menu.Items.Add(item2);
             menu.Items.Add(item3);
+            menu.Items.Add(itemAdmittance);
             menu.Items.Add(new Separator());
             menu.Items.Add(item4);
             menu.Items.Add(itemSelectAll);
@@ -554,6 +584,16 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
                     ? MaterialIconKind.CheckboxOutline
                     : MaterialIconKind.CheckboxBlankOutline;
+
+                // ONLY ON A SMITH CHART. There is no admittance grid to show on a rectangular plot
+                // or a table, and a row that did nothing would be worse than no row.
+                if (_admittanceMenuItem is not null)
+                {
+                    _admittanceMenuItem.IsVisible = _plot?.PlotType == PlotType.Smith;
+                    _iconAdmittance.Kind = _plot?.ShowSmithAdmittanceGrid ?? false
+                        ? MaterialIconKind.CheckboxOutline
+                        : MaterialIconKind.CheckboxBlankOutline;
+                }
 
                 // Re-read on every open, not once at build time: the menu instance is cached for the
                 // control's lifetime (Pattern A), so a host that sets either flag after the first
@@ -1458,7 +1498,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // ---- Marker symbol drag ----
             if (_draggingMarker is not null && _draggingTrace is not null)
             {
-                MoveMarkerToCanvasPoint(_draggingTrace, _draggingMarker, current, tf);
+                MoveMarkerToCanvasPoint(_draggingTrace, _draggingMarker, current, tf,
+                                        _plot, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 InvalidateVisual();
                 MarkerMoved?.Invoke(this, EventArgs.Empty);
                 return;
@@ -2035,6 +2076,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_plot is null) return;
 
+            if (TryAddFreeMarker(trace, canvasPt)) return;
             if (TryAddContourMarker(trace, canvasPt)) return;
             if (TryAddStemMarker(trace, canvasPt)) return;
             if (TryAddCubeMarker(trace, canvasPt)) return;
@@ -2049,6 +2091,46 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (!hit.HasValue) return;
 
             AddMarkerAtFreqIndex(trace, hit.Value.FreqIndex, hit.Value.NearestPoint);
+        }
+
+        /// <summary>
+        /// Adds a <b>freely placed</b> marker at the cursor, on a plot whose markers are free
+        /// (<see cref="Plot.FreeMarkers"/>), and reports whether it did.
+        /// </summary>
+        /// <remarks>
+        /// <b>Where the pointer is, not where the curve is.</b> The marker is stored on
+        /// <paramref name="trace"/> because that is where markers live, and it reads its own
+        /// position rather than that trace (<see cref="Marker.FreePosition"/>). Shift-dragging it
+        /// afterwards is what puts it exactly on a curve.
+        /// </remarks>
+        private bool TryAddFreeMarker(Trace trace, Point canvasPt)
+        {
+            if (_plot is null || !_plot.FreeMarkers) return false;
+
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+            if (!double.IsFinite(wx) || !double.IsFinite(wy)) return false;
+
+            int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
+            var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
+            {
+                FreePosition          = true,
+                PositionStatic        = new System.Numerics.Vector2((float)wx, (float)wy),
+                MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
+                FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
+                // A Γ-plane reading is magnitude and angle; the impedance row beside it keeps its
+                // own R + jX, which is the number that goes into a matching network.
+                MatrixFormat          = _plot.PlotType is PlotType.Smith or PlotType.Polar
+                    ? MatrixFormat.MA
+                    : MatrixFormat.RI,
+            };
+
+            trace.Markers.Add(marker);
+            _renderDetail = PlotDetail.Full;
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+            MarkerAdded?.Invoke(marker, trace);
+            return true;
         }
 
         // Returns true if it added a contour marker at the cursor world point.
@@ -2495,9 +2577,36 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             Trace          trace,
             Marker         marker,
             Point          canvasPt,
-            TransformSet   tf)
+            TransformSet   tf,
+            Plot?          plot  = null,
+            bool           shift = false)
         {
             var clipRect = PlotRenderer.ViewportClipRect(tf.Viewport, tf.CanvasSize);
+
+            // ── A FREELY-PLACED MARKER (owner instruction, 2026-09-19) ───────────────────────
+            //
+            //  It goes where the pointer is. HOLDING SHIFT snaps it to the nearest geometry on the
+            //  plot — a stability circle, the cascade's own locus, an overlaid S11 — which is how a
+            //  free marker is put EXACTLY on a curve rather than very nearly on one. The search is
+            //  over every trace of the plot and not just the one the marker is stored on, because
+            //  "the nearest curve" is a question about the picture; and it is measured in CANVAS
+            //  pixels, so the nearest curve is the one that looks nearest at whatever zoom the chart
+            //  is at rather than the one that wins in Γ.
+            if (marker.FreePosition)
+            {
+                var (fwx, fwy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+                if (!double.IsFinite(fwx) || !double.IsFinite(fwy)) return;
+
+                var world = new System.Numerics.Vector2((float)fwx, (float)fwy);
+                if (shift && plot is not null && SnapToNearestCurve(plot, world, tf) is { } snapped)
+                    world = snapped;
+
+                var atPx = tf.ToCanvas(world.X, world.Y, false);
+                if (!clipRect.Contains(atPx.X, atPx.Y)) return;
+
+                marker.PositionStatic = world;
+                return;
+            }
 
             if (trace.IsContourTrace)
             {
@@ -2570,6 +2679,36 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 if (!trace.IsCubeBound && hit.Value.FreqIndex >= 0 && hit.Value.FreqIndex < freqs.Length)
                     marker.Freq = freqs[hit.Value.FreqIndex];
             }
+        }
+
+        /// <summary>
+        /// The point on the nearest DRAWN curve to <paramref name="world"/>, or null when the plot
+        /// has no geometry to snap to.
+        /// </summary>
+        /// <remarks>
+        /// <b>Nearest in pixels, across every trace.</b> An annotation — the constant-Q arcs, the
+        /// conjugate-match glyphs — is deliberately included: it is geometry on the chart, and
+        /// "snap to the nearest geometric trace" is about what is drawn rather than about what
+        /// carries readings. A trace with no points contributes nothing rather than a zero.
+        /// </remarks>
+        private static System.Numerics.Vector2? SnapToNearestCurve(
+            Plot plot, System.Numerics.Vector2 world, TransformSet tf)
+        {
+            var    at   = tf.ToCanvas(world.X, world.Y, false);
+            double best = double.MaxValue;
+            System.Numerics.Vector2? result = null;
+
+            foreach (var t in plot.Traces)
+            {
+                var hit = t.FindNearestTraceData(world, tf.XLog);
+                if (!hit.HasValue) continue;
+
+                var p  = tf.ToCanvas(hit.Value.NearestPoint.X, hit.Value.NearestPoint.Y, t.UseSecondaryAxis);
+                double d = (p.X - at.X) * (p.X - at.X) + (p.Y - at.Y) * (p.Y - at.Y);
+                if (d < best) { best = d; result = hit.Value.NearestPoint; }
+            }
+
+            return result;
         }
 
         // ============================================================

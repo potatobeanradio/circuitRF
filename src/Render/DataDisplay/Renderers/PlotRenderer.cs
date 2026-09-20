@@ -301,7 +301,8 @@ namespace CircuitRF.Render.DataDisplay
                                                plot.ShowPolarAngleLabels);
                     break;
                 case PlotType.Smith:
-                    AxesRenderer.DrawSmithGrid(canvas, canvasSize, plot.Axes, tf, theme);
+                    AxesRenderer.DrawSmithGrid(canvas, canvasSize, plot.Axes, tf, theme,
+                                               plot.ShowSmithAdmittanceGrid);
                     break;
             }
 

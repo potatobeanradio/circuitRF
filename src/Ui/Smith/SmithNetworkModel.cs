@@ -280,9 +280,16 @@ public static class SmithNetworkModel
     /// implicit reference) below it.</para>
     /// </remarks>
     private static SymbolRotation RotationFor(SmithElement e)
-        => e.Placement == SmithPlacement.Shunt
-               ? (IsVerticalGlyph(e.Kind) ? SymbolRotation.R0  : SymbolRotation.R90)
-               : (IsVerticalGlyph(e.Kind) ? SymbolRotation.R270 : SymbolRotation.R0);
+        => RotationFor(e.Kind, e.Placement);
+
+    /// <summary>
+    /// The same rule, reachable without an element — what the Add and Insert menus turn each entry's
+    /// glyph by, so a menu row and the part it places are drawn the same way up.
+    /// </summary>
+    public static SymbolRotation RotationFor(SmithElementKind kind, SmithPlacement placement)
+        => placement == SmithPlacement.Shunt
+               ? (IsVerticalGlyph(kind) ? SymbolRotation.R0  : SymbolRotation.R90)
+               : (IsVerticalGlyph(kind) ? SymbolRotation.R270 : SymbolRotation.R0);
 
     /// <summary>True for the kinds whose built-in glyph runs top to bottom with its pins at
     /// (0, ∓200) — R, L, C, SRLC and PRLC.</summary>

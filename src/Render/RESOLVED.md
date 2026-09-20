@@ -3302,3 +3302,57 @@ forced the decision. It is also the honest one: this is a cross-assembly API now
 **Nothing here caches a canvas, a transform or a theme**, which is the same rule `ContourRenderer`'s
 own header states after it once drew every contour on every Smith plot to the first target it had been
 handed.
+
+---
+
+## The Smith Chart's drag glitch was an autoscale, not a race (2026-09-19)
+
+Reported by the owner: the trace in the Smith chart glitches now and then during a drag — mostly
+smooth, occasionally not — and dragging the constant-Q line does the same.
+
+**Two independent causes, both in `Plot`, and both about the same premise having stopped being true.**
+
+**1. `OnTracesChanged` autoscales, and a Smith refill is a Clear plus N Adds.** Every pointer move of
+a gripper or constant-Q drag calls `SmithPlotBuilder.Fill`, which clears the trace collection and
+re-adds every trace — so `Plot`'s own `CollectionChanged` handler ran `Autoscale()` **N + 1 times per
+frame, the first of them on an empty plot**. `Fill`'s `autoscale: false` argument guarded only the
+explicit window assignment at the bottom of the method, so during a drag the window the user had
+panned to was being replaced by whatever the collection events had just fitted. It reads as
+"occasional" because a fit only *moves* the window when the geometry's extent crosses what the
+current one already holds — which is exactly what a drag makes happen now and then.
+
+Fixed with `Plot.BeginTraceBatch()`, a scope that suppresses the per-item handler and, on close, does
+what the handler does **minus** the autoscale (the secondary axis and the viewport are structural and
+cost nothing). The caller decides the window; a refill that wants a fit asks for one. `Fill` is the
+only holder.
+
+**2. `RenderSnapshot` shared the trace COLLECTION with the live plot.** Its own remark said the
+traces could be shared because "their geometry is rebuilt only on a structural change, never during a
+pan". The Smith Chart broke that premise: it *is* a structural change, on every pointer move. A frame
+the compositor happened to execute mid-refill therefore walked a list with some of its traces
+missing. The snapshot now takes a shallow copy of the collection — a handful of references per frame,
+no handler attached, so it still cannot trigger an autoscale. The `Trace` objects stay shared, which
+is safe because a rebuild replaces them rather than mutating them.
+
+**The general lesson is the second one.** `RenderSnapshot` is the right idea; what made it correct was
+an assumption about how often traces change, written in a comment rather than enforced anywhere. Any
+new caller that rebuilds traces under a pointer needs both halves of this.
+
+## The admittance grid is the impedance grid reflected (2026-09-19)
+
+`Plot.ShowSmithAdmittanceGrid`, drawn by `AxesRenderer.DrawSmithGrid`'s own accumulation with one sign
+flipped. Constant-g circles and constant-b arcs are what constant-r and constant-x become under
+y = 1/z, which in the Γ plane is **Γ → −Γ** — so the same two value tables, the same masking tables
+and the same one-path-one-draw accumulation produce both families. Deriving g/b circles independently
+would be a second set of formulas for one picture, and the two would disagree the first time either
+was touched.
+
+**The real axis and the unit circle are their own reflections** and are drawn once; the admittance
+pass skips r = 0 for that reason. The admittance family goes down **first**, under the impedance one,
+because it is the reference grid the work is read against. It carries **no numbers**: the impedance
+labels already crowd in two dimensions (that is what the placement/thinning pass above them is for),
+and a second set mirrored into the same disc would collide with them by construction.
+
+It is a `Plot` property rather than an `Axes` one, for `ShowPolarAngleLabels`' reason: a plot keeps one
+`Axes` per plot type and **swaps the whole object** when the type changes, so a per-type setting
+silently reverts on a trip through another type and back.

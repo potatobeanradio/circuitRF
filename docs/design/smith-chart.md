@@ -945,6 +945,56 @@ Each has a test that fails at HEAD; the detail is in `src/Ui/RESOLVED.md`.
   existed. A docked document has no title bar of its own, so it went at the end of the network strip's
   toolbar and its destination is `DocAnchors`', which the docs run gates.
 
+### 9.2 Round two — ten items from driving it (2026-09-19)
+
+A second pass over the finished tool. The detail is in `src/Ui/RESOLVED.md` and
+`src/Render/RESOLVED.md`; what changed **in this document's own decisions** is listed here, because the
+sections above would otherwise now be wrong.
+
+- **§5.4 — the chart opens with axis panning LOCKED**, reversing the original choice. The reasoning
+  then was that a press on empty chart should pan and there is no Data Display canvas here for the
+  move/select gesture to conflict with. The gesture this chart actually spends its time on is a drag,
+  on a gripper, a Q arc or a marker, and every press that missed one of those slid the chart instead.
+  The context-menu item is unchanged; what changed is the state a chart opens on.
+- **§5.4 — markers are placed FREELY** (`Plot.FreeMarkers`, `Marker.FreePosition`). §4.5's claim that
+  markers are "the Data Display's own `Marker` objects" still holds — they are the same objects, on the
+  same traces, with the same VSWR circles and the same persistence — but their POSITION is no longer
+  resolved against the curve they are stored on. A marker on a matching chart is a target the user is
+  aiming the network at, not a reading of a trace at a frequency. **Holding shift while dragging snaps
+  to the nearest curve on the plot**, measured in canvas pixels and across every trace including the
+  annotations, which is how one is put exactly on a stability circle or on the load locus. The readout
+  is Γ and Z = Z₀·(1+Γ)/(1−Γ) against the chart's own Z₀, with no frequency row.
+- **§5.4 — the chart carries an optional ADMITTANCE GRID**, the constant-g/constant-b family, which is
+  the impedance family reflected through Γ = 0 and drawn in a faded red beneath it. It is a `Plot`
+  setting toggled from the chart's own context menu below *Axes Labels…*, so **every** Smith chart in
+  circuitRF has it; it persists in a `.cdd` and in the `.csmith`'s `Chart` block alike. It carries no
+  numbers — the impedance labels already crowd in two dimensions.
+- **§4.4, §5.2 — the constant-Q card is gone.** The toggle is a square toolbar button with a **Q** glyph
+  in the chart's top-left corner, and **the VALUE is drawn on the chart**, hanging from the apex of the
+  inductive arc so it tracks the arc as a drag moves it. It is drawn by `SmithChartChrome`, below the
+  firewall, so it travels with every copy, export and headless render rather than living in a panel no
+  exported picture carries. The typed-entry field went with the card: Q is set by dragging an arc, and
+  shift still lands on an exact quarter.
+- **§5.6 — a slider's range is a CONSTANT per parameter and placement**, quoted for the 2 GHz design
+  frequency. The original rule — one decade either side of the value — was a runaway: the maximum was a
+  function of the value the slider sets, so dragging to the top multiplied the ceiling by ten on every
+  pointer move. A value carried outside by a gripper drag widens the range to the next 1/2/5 × 10ⁿ,
+  decade-snapped, which is stable. **A range that reaches zero is drawn on a LINEAR slider**, because a
+  log axis cannot express zero and 0 … 10 nH is the range an inductor wants.
+- **§5.5 — Add, Insert and Delete are square icon buttons**, the schematic and layout toolbars' own, and
+  **each Add/Insert menu row carries the part's own symbol**, drawn by `SchematicRenderer` through the
+  palette's glyph control and turned the way the strip will draw it: horizontal for a series element,
+  vertical for a shunt one.
+- **§5.4 — a chart with ONE frequency draws no load-point label.** With nothing to tell the point apart
+  from, the box sat on top of the one reading the chart is about, and the status strip already names
+  that frequency.
+
+Two defects, both recorded with their causes in the `RESOLVED.md` files: the Save picker spelled
+`.csmith` twice (the third appearance of one Avalonia trap in this repository), and the trace glitched
+during a drag because a Clear-and-refill of the trace collection autoscaled once per trace — including
+once on an empty plot — and because `Plot.RenderSnapshot` shared the trace COLLECTION with the live
+plot on the premise that traces are not rebuilt under a pointer, which this tool is the first to break.
+
 ---
 
 ## 10. Acceptance

@@ -2907,6 +2907,10 @@ namespace CircuitRF.Render.DataDisplay
 
         public Vector2 GetMarkerDataLocation(Marker m)
         {
+            // A FREELY-PLACED MARKER IS WHERE IT WAS PUT. It is stored on this trace but is not a
+            // reading of it (Marker.FreePosition), so every resolution below — nearest frequency,
+            // stem, cube index, stability perimeter — would be answering a question nobody asked.
+            if (m.FreePosition)    return m.PositionStatic;
             if (IsContourTrace)    return m.PositionStatic;   // contour markers positioned by world Γ/Z
             if (IsHarmonicStem)    return StemPointFor(m);
             if (IsCubeXMarker)     return CubeMarkerPointFor(m);
@@ -3460,6 +3464,7 @@ namespace CircuitRF.Render.DataDisplay
 
         public Complex GetMarkerDataPoint(Marker m)
         {
+            if (m.FreePosition)    return new Complex(m.PositionStatic.X, m.PositionStatic.Y);
             if (IsCubeBound)       return new Complex(double.NaN, double.NaN);
             if (IsStabilityCircle) return new Complex(m.PositionStatic.X, m.PositionStatic.Y);
 
@@ -3890,6 +3895,23 @@ namespace CircuitRF.Render.DataDisplay
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,
             bool showFilePrefix = true, IReadOnlyList<Trace>? plotTraces = null)
         {
+            // A FREELY-PLACED MARKER READS ITS OWN POSITION, in the two spellings that position has
+            // on a Γ plane: the reflection coefficient and the impedance it stands for. There is no
+            // frequency row, because the marker is not at a frequency — it is a TARGET the user put
+            // on the chart, and printing the frequency of whichever trace happens to hold it would
+            // be a number about something else.
+            if (m.FreePosition)
+            {
+                var g = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
+                var z0 = Z0 == Complex.Zero ? new Complex(50, 0) : Z0;
+                return
+                [
+                    (m.MarkerString, true),
+                    (DbFloor.Label("Γ", m.FormatComplex(g)), false),
+                    (DbFloor.Label("Z", m.FormatImpedanceComplex(RfHelpers.G2Z(g) * z0)) + " Ω", false),
+                ];
+            }
+
             if (IsContourTrace && ContourData is { } cd)
             {
                 var lines = new List<(string, bool)> { (m.MarkerString, true) };

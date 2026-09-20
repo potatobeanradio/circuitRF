@@ -99,6 +99,27 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public System.Numerics.Vector2 PositionStatic { get; set; }
 
+        /// <summary>
+        /// <b>This marker is placed where it was put, not on a curve</b> —
+        /// <see cref="PositionStatic"/> IS its world position and nothing resolves it against a
+        /// trace (owner instruction, 2026-09-19: markers were stuck on the traces and should be
+        /// placeable anywhere on the Smith chart).
+        /// </summary>
+        /// <remarks>
+        /// <b>Set by <see cref="Plot.FreeMarkers"/>, which today only the Smith Chart document turns
+        /// on.</b> A marker on an ordinary Data Display trace is a reading OF that trace at a
+        /// frequency — it steps with the arrow keys, it reports S₂₁ at that point, and cutting it
+        /// loose would make all of that meaningless. On a matching chart the marker is a TARGET the
+        /// user is aiming the network at, which is a position and not a sample. So the two
+        /// behaviours coexist and the plot says which it is.
+        ///
+        /// <para>The marker still belongs to a trace's <c>Markers</c> list, because that is where
+        /// markers live; what changes is that the list is storage rather than meaning. Holding shift
+        /// while dragging snaps the position onto the nearest curve on the plot, which is how a free
+        /// marker is put exactly on a stability circle or on the load locus.</para>
+        /// </remarks>
+        public bool FreePosition { get; set; }
+
         // ---- Display strings (no Trace access needed) -------------------
 
         public string MarkerString => Name;
@@ -144,6 +165,7 @@ namespace CircuitRF.Render.DataDisplay
             IsDelta                = src.IsDelta;
             InfoBoxPos             = src.InfoBoxPos;
             PositionStatic         = src.PositionStatic;
+            FreePosition           = src.FreePosition;
             UseNormalizedImpedance = src.UseNormalizedImpedance;
             FormatString           = src.FormatString;
             Style                  = src.Style;

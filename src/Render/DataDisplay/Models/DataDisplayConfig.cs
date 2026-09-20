@@ -130,6 +130,10 @@ public sealed class PlotContainerConfig
     /// 2026-09-11 draws the picture it always drew.</summary>
     public bool                 PolarAngleLabels      { get; set; }
 
+    /// <summary>The Smith chart's admittance grid (<c>Plot.ShowSmithAdmittanceGrid</c>). <b>False by
+    /// default</b>, for <see cref="PolarAngleLabels"/>'s reason.</summary>
+    public bool                 SmithAdmittanceGrid   { get; set; }
+
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //
     //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are
@@ -461,6 +465,12 @@ public sealed class MarkerConfig
     // For stability-circle markers: snapped world position.
     public float PositionStaticX { get; set; }
     public float PositionStaticY { get; set; }
+
+    /// <summary>A freely-placed marker (<c>Marker.FreePosition</c>) — its position IS
+    /// <see cref="PositionStaticX"/>/<see cref="PositionStaticY"/>. <b>False by default</b>, so
+    /// every marker in a display written before free placement existed reads back bound to its
+    /// trace exactly as it was.</summary>
+    public bool FreePosition { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerKind MarkerKind { get; set; } = MarkerKind.Polyline;
