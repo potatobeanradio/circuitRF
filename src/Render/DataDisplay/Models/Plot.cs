@@ -575,6 +575,30 @@ namespace CircuitRF.Render.DataDisplay
         /// </remarks>
         public bool   IsFixedReadout { get; set; } = false;
 
+        /// <summary>
+        /// Re-opens the TRACE SET on a fixed read-out: the inspector's <b>Add</b> button and each
+        /// card's remove button come back, while the plot TYPE stays the kind it is.
+        /// </summary>
+        /// <remarks>
+        /// <b><see cref="IsFixedReadout"/> means two things and only one of them is wanted here.</b>
+        /// The Smith Chart tool rebuilds every trace it DERIVES from the design on each edit, which
+        /// is why the flag is set — but a trace the user added in the inspector is reference
+        /// material the DOCUMENT can carry, and it survives the rebuild because the document is
+        /// harvested and re-resolved. So the two halves come apart: the type stays fixed, the set
+        /// opens.
+        ///
+        /// <para><b>Default false, and it must stay false everywhere else.</b> railRF's
+        /// <c>ImpedancePlot</c> and the Match Designer's two response plots set only
+        /// <see cref="IsFixedReadout"/>, and neither has anywhere to write a user-added trace down
+        /// — one added there would be silently discarded on the next solve, which is exactly the
+        /// failure the flag was introduced to prevent.</para>
+        ///
+        /// <para>It says nothing about which traces are the owner's: that is
+        /// <see cref="Trace.ExcludeFromAxisLabels"/>, which the Smith Chart tool already sets on
+        /// everything it derives.</para>
+        /// </remarks>
+        public bool   AllowUserTraces { get; set; } = false;
+
         public bool   CustomTitleOn  { get; set; } = false;
 
         /// <summary>Renders <see cref="Title"/> in bold. Defaults false — every existing plot keeps

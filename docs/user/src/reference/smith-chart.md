@@ -308,22 +308,31 @@ is why the two are treated differently.
 
 ## Overlays and markers {#overlays}
 
-**Overlays** put reference data under the work, from either of the two sources circuitRF already has:
+**Overlays** put reference data under the work, and you add one **exactly as you would add a trace to a
+Smith chart on a Data Display**:
 
-- **a Touchstone file**, referenced by a path **relative to the document** &mdash; so it survives a
-  moved or archived workspace;
+1. pick the data in the **source combo** in the chart's top strip, beside the **Q** button;
+2. right-click the chart &rsaquo; **Plot Properties&hellip;**;
+3. press **Add**, and edit the trace card that appears.
+
+The two sources circuitRF already has are both offered:
+
+- **a Touchstone file**. The combo's **Add from file&hellip;** loads one with no workspace open at all,
+  which is what makes a scratch `.csmith` a real document. It is **referenced, never copied into the
+  file**, by a path relative to the document &mdash; so the pair survives a moved or archived workspace;
 - **a cube in an open data set**, referenced the way a Data Display trace card references one.
 
-Each row picks its quantity through the same machinery a trace card uses: a raw S-parameter
-(`S11`, `S21`, &hellip;), a virtual Z or Y, or a derived quantity &mdash; of which
-**SourceStabilityCircle** and **LoadStabilityCircle** are drawn as circles in the &Gamma; plane.
+Because it is the ordinary trace card, everything on it is yours: the matrix element, a virtual Z or Y,
+a derived quantity &mdash; of which **SourceStabilityCircle** and **LoadStabilityCircle** are drawn as
+circles in the &Gamma; plane &mdash; the colour, the line, the marker glyph, the reference impedance, the
+cube slice, and the trace's own markers. Remove one with the card's trash button.
 
 | | |
 |---|---|
-| **Renormalize** | On by default, and on is the right answer: a 75 &#8486; part drawn on a 50 &#8486; chart without it is a curve in the wrong place that looks entirely plausible. |
-| **Autoscale** | Off by default. A stability circle can be enormous, and one unlucky overlay would squash the cascade into a corner. |
-| **Visible** | A hidden row is not on the chart at all, so it is also out of the trace list and out of the Add Marker menu. |
-| **An overlay that does not resolve** | Is reported and does not stop the document opening. |
+| **Z&#8320; &rsaquo; Override** | Seeded **on**, at the chart's own Z&#8320;, and on is the right answer: a 75 &#8486; part drawn on a 50 &#8486; chart without it is a curve in the wrong place that looks entirely plausible. Turn it off to see the file's own numbers. |
+| **Autoscale** | Seeded **off** for a trace you add here. A stability circle can be enormous, and one unlucky overlay would squash the cascade into a corner. |
+| **The chart's own curves** | The trajectories, the load points and the constant-Q arcs are rebuilt from your design on every edit, so their cards offer no trash and no source pickers &mdash; only how they look. |
+| **An overlay that does not resolve** | Is reported in the status strip, does not stop the document opening, and is **kept**: a reference whose file is temporarily missing is not deleted from your document. |
 
 **Markers** are the Data Display's own markers, which means placement, drag, the info box, the context
 menu and the editor all behave exactly as they do on a plot &mdash; including the constant-VSWR circle

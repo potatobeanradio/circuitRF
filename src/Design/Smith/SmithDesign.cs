@@ -19,6 +19,7 @@
 // inverse are briefs 2 and 3, beside this file; the window is brief 4, above the firewall.
 
 using System.Numerics;
+using System.Text.Json;
 using CircuitRF.Design.Matching;
 
 namespace CircuitRF.Design.Smith;
@@ -508,7 +509,7 @@ public sealed class SmithView
 
 // ── overlays and markers ─────────────────────────────────────────────────────
 
-/// <summary>Where an overlay's data comes from.</summary>
+/// <summary>Where a LEGACY overlay's data comes from — see <see cref="SmithOverlayRef"/>.</summary>
 public enum SmithOverlaySource
 {
     /// <summary>A Touchstone file, by a path RELATIVE TO THE DOCUMENT — the `.cdd` convention, and
@@ -521,15 +522,22 @@ public enum SmithOverlaySource
 }
 
 /// <summary>
-/// One piece of reference material under the work (§5.7). <b>Not part of the cascade</b>: it carries
-/// its own colour and style, it may carry markers, and it is excluded from autoscale unless the row
-/// says otherwise.
-///
-/// <para><see cref="Quantity"/> and <see cref="Derived"/> are STRINGS naming members of the Data
-/// Display's own <c>DerivedParameters</c> and its quantity spelling, because those types live in
-/// <c>src/Render</c> and this project is below it. Brief 8 parses them where it can see the enum;
-/// the wire bytes are the same either way, which is the property that matters to a format.</para>
+/// <b>A brief-8 overlay row, read from an older `.csmith` and never written to a new one</b> — the
+/// shape the file used before overlays became ordinary Data Display trace configs
+/// (<c>brief-smith-12-overlays-via-the-inspector.md</c> <c>R-smith12-4c</c>).
 /// </summary>
+/// <remarks>
+/// <b>It could not hold what a trace card authors.</b> Seven properties, against the card's thirty:
+/// no line width or type, no marker glyph, size or colour, no complex Z₀, no matrix format or
+/// precision, no cube name or slice, no expression, no <i>plot versus</i> X spec, no markers of its
+/// own. Storing seven of thirty and silently dropping the rest is worse than the panel it belonged
+/// to was, which is why <see cref="SmithDesign.Overlays"/> now carries the card's own config.
+///
+/// <para><b>Rows in this shape MIGRATE on read and the block is dropped on write.</b> Nothing
+/// shipped carries an overlay, so this is cheap insurance rather than a feature — and the
+/// alternative is a user's own `.csmith` quietly losing its reference data. The mapping lives where
+/// <c>TraceConfig</c> is visible, which is not this project.</para>
+/// </remarks>
 public sealed class SmithOverlayRef
 {
     public SmithOverlaySource SourceKind { get; set; } = SmithOverlaySource.TouchstoneFile;
@@ -665,7 +673,38 @@ public sealed class SmithDesign
     public SmithSweep     Sweep     { get; set; } = new();
     public SmithConstantQ ConstantQ { get; set; } = new();
 
-    public IList<SmithOverlayRef> Overlays { get; } = new List<SmithOverlayRef>();
+    /// <summary>
+    /// The reference material drawn under the work — <b>one Data Display <c>TraceConfig</c> per
+    /// overlay, as opaque JSON</b> (<c>R-smith12-4b</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>Opaque on purpose, and this is the one place in the document that is.</b>
+    /// <see cref="SmithMarker"/> is a hand-written mirror of the Data Display's <c>MarkerConfig</c>,
+    /// field for field, because that type lives in <c>src/Render</c> and this project is below it —
+    /// and that works because a marker's shape is settled. <c>TraceConfig</c>'s is not: it pulls in
+    /// five more config types and it GROWS whenever the Data Display gains a per-trace setting, and
+    /// a mirror would fall out of step in silence. The symptom would be a setting that survives in a
+    /// `.cdd` and vanishes from a `.csmith`.
+    ///
+    /// <para>So the `.csmith` still contains ordinary readable JSON — the same keys a `.cdd` writes
+    /// for the same trace — and what it no longer does is give that JSON a type in a project that
+    /// must not know about traces. <c>src/Ui</c> and <c>src/Cli</c> read and write it with the
+    /// <b>same</b> <c>JsonSerializerOptions</c> the `.cdd` uses, so there is one spelling.</para>
+    /// </remarks>
+    public IList<JsonElement> Overlays { get; } = new List<JsonElement>();
+
+    /// <summary>
+    /// Overlay rows read from a `.csmith` written before <see cref="Overlays"/> carried trace
+    /// configs. <b>Populated by the reader, migrated by the caller, and never written.</b>
+    /// </summary>
+    /// <remarks>
+    /// The migration needs <c>TraceConfig</c>, which this project cannot see, so it cannot happen in
+    /// the reader — see <see cref="SmithOverlayRef"/>. A caller that does not migrate simply draws
+    /// no overlays and writes none; a caller that does migrates once, and the next write is in the
+    /// new shape.
+    /// </remarks>
+    public IList<SmithOverlayRef> LegacyOverlays { get; } = new List<SmithOverlayRef>();
+
     public IList<SmithMarker>     Markers  { get; } = new List<SmithMarker>();
 
     public SmithView View { get; set; } = new();

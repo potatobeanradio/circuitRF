@@ -130,14 +130,13 @@ public sealed class SmithRoundThreeTests
 
         // An overlay is the user's own reference data and DOES name an axis. Resolved through the
         // same call the chart makes, so this is the trace the chart would carry.
-        string s1p = Fixture("generator-3pt.s1p");
-        var    res = SmithOverlayResolver.Resolve(
-            new SmithOverlayRef { SourceKind = SmithOverlaySource.TouchstoneFile, Source = s1p,
-                                  Quantity = "S11" },
-            documentDirectory: null, z0Chart: 50.0, sources: null, colorIndex: 0);
+        string s1p   = Fixture("generator-3pt.s1p");
+        var    trace = SmithOverlays.Load(
+            new TraceConfig { SourcePath = s1p, YAxis = DependentVarFormat.Complex },
+            new SmithDocumentSources(System.IO.Path.GetDirectoryName(s1p)));
 
-        Assert.NotNull(res.Trace);
-        Assert.False(res.Trace!.ExcludeFromAxisLabels);
+        Assert.NotNull(trace);
+        Assert.False(trace!.ExcludeFromAxisLabels);
     }
 
     // ═════════════════════════════════════════════════════════════════════════

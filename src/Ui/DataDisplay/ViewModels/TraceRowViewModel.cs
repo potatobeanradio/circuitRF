@@ -2398,6 +2398,33 @@ public partial class TraceRowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _z0OverrideEnabled;
 
+    /// <summary>
+    /// The <b>Autoscale</b> checkbox — whether this trace takes part in the plot's autoscale.
+    /// </summary>
+    /// <remarks>
+    /// <b>The inverse of <see cref="Trace.ExcludeFromAutoscale"/>, because the checkbox reads as an
+    /// opt-in and the flag is an opt-out</b> (<c>R-smith12-6</c>). The flag existed and was set only
+    /// in code until the Smith Chart tool's reference material had to persist it, and this is the
+    /// control that was missing with it: §5.7's reason is specific — a stability circle can be
+    /// enormous, and one unlucky overlay should not reframe the work.
+    ///
+    /// <para><b>Nothing is re-fitted here.</b> Turning it on does not immediately autoscale, because
+    /// the plot's window may be the user's own pan and zoom — the Data Display's Autoscale button
+    /// and the next rebuild are what re-fit. This only changes what the next fit is allowed to
+    /// see.</para>
+    /// </remarks>
+    public bool IncludeInAutoscale
+    {
+        get => !_trace.ExcludeFromAutoscale;
+        set
+        {
+            if (!_trace.ExcludeFromAutoscale == value) return;
+            _trace.ExcludeFromAutoscale = !value;
+            OnPropertyChanged();
+            _parent.RequestRedraw();
+        }
+    }
+
     // Suppresses OnZ0OverrideEnabledChanged rebuild while ApplySourceZ0 is resetting the field.
     private bool _applyingSource;
 
@@ -2628,7 +2655,14 @@ public partial class TraceRowViewModel : ViewModelBase
 
     /// <summary>False where the plot's owner produces the trace list — see
     /// <see cref="Plot.IsFixedReadout"/>. The card's trash button is hidden by it.</summary>
-    public bool CanRemove => _parent.CanEditTraceSet;
+    /// <remarks>
+    /// <b>A plot may open its trace set and still own SOME of the traces on it</b>
+    /// (<c>Plot.AllowUserTraces</c>, <c>R-smith12-1</c>). On the Smith Chart tool the trajectories,
+    /// the load points and the constant-Q arcs are the tool's and are rebuilt from the design on
+    /// every edit, so removing one removes it until the next keystroke; the user's own reference
+    /// traces are the document's and removing one is real. The card's trash follows that line.
+    /// </remarks>
+    public bool CanRemove => _parent.CanEditTraceSet && !_parent.IsOwnersTrace(_trace);
 
     /// <summary>
     /// False where WHAT this trace shows is the plot owner's — see <see cref="Plot.IsFixedReadout"/>.
@@ -2643,7 +2677,7 @@ public partial class TraceRowViewModel : ViewModelBase
     /// <para>What stays is everything about how the trace LOOKS, which is why the panel opens at
     /// all: the transform (the Y unit), the colour, the line, the symbols, the markers.</para>
     /// </remarks>
-    public bool CanPickTraceData => _parent.CanEditTraceSet;
+    public bool CanPickTraceData => _parent.CanEditTraceSet && !_parent.IsOwnersTrace(_trace);
 
     /// <summary>The identity row — the group and quantity pickers, the matrix type and the
     /// right-axis toggle. Hidden whole on a fixed read-out, so the row costs no height and its two

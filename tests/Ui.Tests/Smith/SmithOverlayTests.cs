@@ -1,10 +1,12 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Render.Smith;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Smith;
 using RfCore;
 using Xunit;
@@ -12,15 +14,23 @@ using Xunit;
 namespace CircuitRF.Ui.Tests.Smith;
 
 /// <summary>
-/// Overlays and markers — the reference material under the work
-/// (<c>brief-smith-8-overlays-markers.md</c> §3; <c>docs/design/smith-chart.md</c> §5.7, §4.5).
-/// <b>One test per claim.</b>
+/// Overlays — the reference material under the work, added through the Plot Properties inspector
+/// (<c>brief-smith-12-overlays-via-the-inspector.md</c> §8; <c>docs/design/smith-chart.md</c> §5.7,
+/// §7). <b>One test per claim, and only the claims whose failure would be silent.</b>
 /// </summary>
 /// <remarks>
-/// <b>Every one of these runs with no display</b>, which is the same property brief 5's gate has and
-/// for the same reason: an overlay is a <c>Trace</c> the existing machinery resolves and draws, a
-/// marker is the Data Display's own object, and the persistence is <c>SmithDesignIo</c>'s. What a
-/// running Avalonia would add is the pixels.
+/// <b>Every one of these runs with no display.</b> An overlay is an ordinary Data Display
+/// <c>Trace</c>, resolved by <c>PlotConfigLoader.LoadTrace</c> and written by
+/// <c>DataDisplayViewModel.BuildTraceConfig</c> — the `.cdd`'s own reader and writer — and the
+/// persistence is <c>SmithDesignIo</c>'s. What a running Avalonia would add is the pixels.
+///
+/// <para><b>Three of the brief's ten claims are gated elsewhere and are not repeated here:</b>
+/// <c>PlotConfigLoader.LoadPlot</c>'s behaviour is the existing `.cdd` suite run as-is (the
+/// extraction is pure, so if any of it had moved the extraction was wrong);
+/// <c>SmithRoundThreeTests.OnlyTheUsersOwnDataNamesAnAxis</c> is the axis-label claim, re-pointed at
+/// the new path; and <c>PdnImpedanceTests.ThePanelRestylesThisPlotAndCannotReAimIt</c> already
+/// asserts, by name, that railRF's impedance plot still refuses <b>Add</b> — which is exactly
+/// <c>R-smith12-1</c>'s "a plot with <c>IsFixedReadout</c> and no <c>AllowUserTraces</c>".</para>
 /// </remarks>
 public sealed class SmithOverlayTests
 {
@@ -43,8 +53,7 @@ public sealed class SmithOverlayTests
     /// <b>This is the whole point of the renormalization test.</b> S₁₁ = 0 against 75 Ω IS 75 Ω, so
     /// on a 50 Ω chart it belongs at Γ = (75 − 50)/(75 + 50) = <b>0.2</b> exactly. A trace that was
     /// not renormalized draws it at the ORIGIN — the perfect match — which is a plausible-looking
-    /// curve in entirely the wrong place and is exactly the failure <c>R-smith8-3</c> exists to
-    /// prevent.
+    /// curve in entirely the wrong place.
     /// </remarks>
     private static string Write75OhmS1p(string dir, string name = "part.s1p")
     {
@@ -54,30 +63,12 @@ public sealed class SmithOverlayTests
     }
 
     /// <summary>
-    /// A 50 Ω two-port whose load stability circle has round numbers:
-    /// S = [0.7, 0.2; 3.0, 0.5], so Δ = 0.35 − 0.6 = −0.25 and
-    /// |S₂₂|² − |Δ|² = 0.25 − 0.0625 = 0.1875.
-    /// </summary>
-    private static string WriteUnstableS2p(string dir, string name = "device.s2p")
-    {
-        string path = Path.Combine(dir, name);
-        // Touchstone 2-port row order is S11 S21 S12 S22.
-        File.WriteAllText(path,
-            "# HZ S RI R 50\n"
-          + "1.0e9 0.7 0.0 3.0 0.0 0.2 0.0 0.5 0.0\n"
-          + "2.0e9 0.7 0.0 3.0 0.0 0.2 0.0 0.5 0.0\n"
-          + "3.0e9 0.7 0.0 3.0 0.0 0.2 0.0 0.5 0.0\n");
-        return path;
-    }
-
-    /// <summary>
     /// A one-port whose |Γ| is 3 — far outside the disc, so what it does to the window is visible.
     /// </summary>
     /// <remarks>
     /// <b>The three points are deliberately NOT collinear.</b> <c>Plot.AutoscaleCore</c> skips a
     /// trace whose bounding box is degenerate in both axes, so a fixture repeating one Γ would be
-    /// ignored by the autoscale for a reason that has nothing to do with the flag under test — and
-    /// the test would pass whatever the flag said.
+    /// ignored by the autoscale for a reason that has nothing to do with the flag under test.
     /// </remarks>
     private static string WriteFarOutS1p(string dir, string name = "far.s1p")
     {
@@ -92,110 +83,361 @@ public sealed class SmithOverlayTests
         d.Chart.Z0Ohm             = ChartZ0;
         d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 50.0, 0.0));
+        d.Elements.Add(new SmithElement
+        {
+            Kind = SmithElementKind.L, Placement = SmithPlacement.Series, Name = "L1",
+            Values = new SmithElementValues { LHenry = 2e-9 },
+        });
         return d;
     }
 
-    private static SmithOverlayRef Overlay(string relative, string quantity = "S11",
-                                        string derived = "None", bool renormalize = true)
-        => new()
+    /// <summary>One overlay, in the shape the document stores — a Touchstone reference relative to
+    /// the document, renormalized to the chart, out of the autoscale.</summary>
+    private static System.Text.Json.JsonElement Overlay(string relative, bool renormalize = true,
+                                                        bool excludeFromAutoscale = true)
+        => SmithOverlays.Write(new TraceConfig
         {
-            SourceKind  = SmithOverlaySource.TouchstoneFile,
-            Source      = relative,
-            Quantity    = quantity,
-            Derived     = derived,
-            Renormalize = renormalize,
-        };
+            SourcePath           = relative,
+            YAxis                = DependentVarFormat.Complex,
+            Z0                   = "50",
+            Z0Override           = renormalize,
+            ExcludeFromAutoscale = excludeFromAutoscale,
+        });
 
-    private static SmithOverlayResolver.Resolution Resolve(
-        SmithOverlayRef overlay, string? dir, double z0 = ChartZ0)
-        => SmithOverlayResolver.Resolve(overlay, dir, z0, sources: null, colorIndex: 1);
+    /// <summary>The window, with one Touchstone in its data-source library and selected — which is
+    /// what <b>Add</b> seeds a trace from.</summary>
+    private static async Task<SmithChartViewModel> WindowWithSource(SmithDesign design, string dir,
+                                                                    string absSource)
+    {
+        var vm = new SmithChartViewModel(design) { DocumentDirectory = dir };
+        await vm.PlotHost.Library!.SelectDataSourceAsync(absSource);
+        return vm;
+    }
 
-    // ── 1. R-smith8-3 — the renormalization, with a hand-computed point ──────
+    private static Trace AddedTrace(SmithChartViewModel vm)
+    {
+        vm.ChartContainer.Inspector.AddTraceCommand.Execute(null);
+        return vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
+    }
+
+    // ── 1. R-smith12-4 — the whole feature ───────────────────────────────────
 
     /// <summary>
-    /// <b>A 75 Ω Touchstone overlay lands where 50 Ω says it should.</b>
+    /// <b>A trace added in the inspector survives a component edit</b> — with its colour and its
+    /// markers.
     /// </summary>
     /// <remarks>
-    /// The one test that catches a plausible-looking wrong curve. Both halves are asserted: ON, the
-    /// point is at Γ = 0.2, the closed-form answer for 75 Ω on a 50 Ω chart; OFF, it is at the
-    /// origin, which is the file's own number and is what a reader would see and believe.
+    /// <c>SmithPlotBuilder.Fill</c> clears the plot's traces and refills them from the design on
+    /// every committed edit, which is why brief 5 closed the trace set in the first place. On the old
+    /// code this test fails on its second act.
     /// </remarks>
     [Fact]
-    public void SeventyFiveOhmOverlay_IsRenormalizedToTheChartsZ0()
+    public async Task ATraceAddedInTheInspector_SurvivesAComponentEdit()
+    {
+        string dir = TempDir();
+        string abs = Write75OhmS1p(dir);
+
+        var vm    = await WindowWithSource(Design(), dir, abs);
+        var trace = AddedTrace(vm);
+
+        trace.Properties.LineWidth = 3.5;
+        trace.Markers.Add(new Marker(trace, 2.0, false, false, 1, FreqUnit.GHz));
+        vm.HarvestMarkers();
+
+        // An ordinary committed edit, which replaces the whole design through a snapshot.
+        vm.DesignFrequencyEntry = "2.1 GHz";
+
+        var after = vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
+        Assert.Equal(3.5, after.Properties.LineWidth);
+        Assert.Single(after.Markers);
+
+        // And the document carries it, so a save would too.
+        Assert.Single(vm.Design.Overlays);
+    }
+
+    // ── 2. R-smith12-5a — the same object, not a copy of it ──────────────────
+
+    /// <summary>
+    /// <b>…and it is the SAME <c>Trace</c> instance.</b>
+    /// </summary>
+    /// <remarks>
+    /// The inspector's trace cards, its selection and the trace's markers all hold the OBJECT.
+    /// Re-resolving every overlay from its config on each <c>Fill</c> leaves every one of them
+    /// pointing at a discarded copy — and round three's own marker test did exactly that, removing a
+    /// marker from nothing. A test that only compared the trace's SETTINGS would pass on that code.
+    /// </remarks>
+    [Fact]
+    public async Task TheAddedTraceIsTheSameInstanceAcrossARebuild()
+    {
+        string dir = TempDir();
+        string abs = Write75OhmS1p(dir);
+
+        var vm    = await WindowWithSource(Design(), dir, abs);
+        var trace = AddedTrace(vm);
+
+        vm.DesignFrequencyEntry = "2.1 GHz";
+
+        Assert.Same(trace, vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels));
+    }
+
+    // ── 3. R-smith12-4a — the full card state, through the UNDO path ─────────
+
+    /// <summary>
+    /// <b>A `.csmith` round-trips a trace card's full state, including fields
+    /// <c>SmithOverlayRef</c> could not hold.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Through <c>SerializeUnvalidated</c> specifically</b>, which is what every committed edit
+    /// calls to build the undo snapshot: a round trip that loses a field there loses it on the next
+    /// UNDO rather than on the next save, which is a far harder thing to notice.
+    ///
+    /// <para>Line width, marker glyph and a cube slice are asserted by name because they are three of
+    /// the twenty-three properties the old seven-field row had no room for.</para>
+    /// </remarks>
+    [Fact]
+    public void TheCardsFullStateRoundTripsThroughTheUndoSnapshot()
+    {
+        var design = Design();
+        design.Overlays.Add(SmithOverlays.Write(new TraceConfig
+        {
+            SourcePath            = "meas/dut.s2p",
+            Row                   = 1,
+            Col                   = 0,
+            YAxis                 = DependentVarFormat.Complex,
+            Z0                    = "75",
+            Z0Override            = true,
+            ExcludeFromAutoscale  = true,
+            MaximumFractionDigits = 6,
+            CubeName              = "SP1.S",
+            CubeSlice             = [new AxisSliceConfig { AxisName = "freq", Index = 3 }],
+            Properties = new TracePropertiesConfig
+            {
+                LineEnabled = true, LineWidth = 3.5, LineType = LineType.Dashed,
+                MarkerEnabled = true, MarkerType = MarkerType.Diamond, MarkerSize = 4.5,
+            },
+        }));
+
+        var back = SmithDesignIo.DeserializeUnvalidated(SmithDesignIo.SerializeUnvalidated(design));
+
+        var cfg = SmithOverlays.Read(Assert.Single(back.Overlays));
+        Assert.NotNull(cfg);
+        Assert.Equal("meas/dut.s2p", cfg!.SourcePath);
+        Assert.Equal(1, cfg.Row);
+        Assert.Equal("75", cfg.Z0);
+        Assert.True(cfg.Z0Override);
+        Assert.True(cfg.ExcludeFromAutoscale);
+        Assert.Equal(6, cfg.MaximumFractionDigits);
+        Assert.Equal("SP1.S", cfg.CubeName);
+        Assert.Equal(3, Assert.Single(cfg.CubeSlice).Index);
+        Assert.Equal(3.5, cfg.Properties.LineWidth);
+        Assert.Equal(LineType.Dashed, cfg.Properties.LineType);
+        Assert.Equal(MarkerType.Diamond, cfg.Properties.MarkerType);
+    }
+
+    // ── 4. R-smith12-4c — a brief-8 document still opens and draws ───────────
+
+    /// <summary>
+    /// <b>A <c>SmithOverlayRef</c>-era `.csmith` opens and draws the same curve</b>, and writes
+    /// itself back in the new shape.
+    /// </summary>
+    /// <remarks>
+    /// Nothing shipped carries an overlay, so this is cheap insurance rather than a feature — and the
+    /// alternative is a user's own `.csmith` quietly losing its reference data. The Γ asserted is the
+    /// one brief 8's own resolver produced for this fixture: 0.2, the closed form for 75 Ω on a 50 Ω
+    /// chart.
+    /// </remarks>
+    [Fact]
+    public void ABriefEightDocumentOpensDrawsTheSameCurveAndIsRewritten()
     {
         string dir = TempDir();
         Write75OhmS1p(dir);
 
-        var on = Resolve(Overlay("part.s1p"), dir);
-        Assert.Null(on.Unresolved);
-        Assert.NotNull(on.Trace);
+        // Hand-written in the old shape, which is the only way it can exist now: the writer has no
+        // code for it at all.
+        string json = """
+        {
+          "FormatVersion": 1,
+          "Chart": { "Z0Ohm": 50, "DesignFrequencyHz": 2000000000 },
+          "Generator": { "Rows": [ { "FrequencyHz": 2000000000, "ResistanceOhm": 50, "ReactanceOhm": 0 } ] },
+          "Overlays": [
+            { "SourceKind": "TouchstoneFile", "Source": "part.s1p", "Quantity": "S11",
+              "Renormalize": true, "Visible": true, "IncludeInAutoscale": false, "Dashed": true }
+          ]
+        }
+        """;
 
-        // Six places, not more: Trace.Points is Vector2 and the numbers are single precision. The
-        // distinction this test is about is 0.2 versus 0.0.
-        var point = on.Trace!.Points[0];
-        Assert.Equal(0.2, point.X, 6);      // (75 − 50) / (75 + 50), exactly
-        Assert.Equal(0.0, point.Y, 6);
+        var design = SmithDesignIo.Deserialize(json);
+        Assert.Empty(design.Overlays);                       // not yet migrated
+        Assert.Single(design.LegacyOverlays);
 
-        // And OFF is the file's own numbers — the perfect match it is not.
-        var off = Resolve(Overlay("part.s1p", renormalize: false), dir);
-        Assert.NotNull(off.Trace);
-        Assert.Equal(0.0, off.Trace!.Points[0].X, 6);
-        Assert.Equal(0.0, off.Trace!.Points[0].Y, 6);
+        var vm = new SmithChartViewModel(design) { DocumentDirectory = dir };
+
+        var trace = vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
+        Assert.Equal(0.2, trace.Points[0].X, 6);
+        Assert.Equal(0.0, trace.Points[0].Y, 6);
+        Assert.True(trace.ExcludeFromAutoscale);             // IncludeInAutoscale was false
+        Assert.Equal(LineType.Dashed, trace.Properties.LineType);
+
+        // And the old block is gone from what it writes.
+        string written = vm.Serialize();
+        Assert.DoesNotContain("\"SourceKind\"", written, StringComparison.Ordinal);
+        Assert.Contains("\"SourcePath\"", written, StringComparison.Ordinal);
     }
 
-    // ── 2. R-smith8-1 — stability circles through the EXISTING derived path ──
+    // ── 5. R-smith12-7 — the one that catches a plausible wrong curve ────────
 
     /// <summary>
-    /// <b>A stability-circle overlay resolves through <c>DerivedParameters</c> and produces the
-    /// published centre and radius.</b>
+    /// <b>A 75 Ω overlay lands where 50 Ω says it should, and a trace the inspector adds seeds that
+    /// way.</b>
     /// </summary>
     /// <remarks>
-    /// The oracle is the textbook closed form written out here independently —
-    /// C_L = conj(S₂₂ − Δ·conj(S₁₁)) / (|S₂₂|² − |Δ|²), r_L = |S₁₂S₂₁| / ‖S₂₂|² − |Δ|²|. The fixture
-    /// is chosen so both are exact: C_L = 0.675/0.1875 = 3.6 and r_L = 0.6/0.1875 = 3.2.
-    ///
-    /// <para>What this actually gates is that <b>no second stability computation was written</b>:
-    /// the overlay sets <c>Trace.Derived</c> and <c>BuildDerivedPath</c> — the Data Display's own —
-    /// fills the circle lists.</para>
+    /// Renormalization to the chart's Z₀ is a requirement and not an option (<c>R-smith8-3</c>): a
+    /// 75 Ω part drawn on a 50 Ω chart without it is a curve in the wrong place that looks entirely
+    /// plausible. Both halves are asserted — ON, the point is at Γ = 0.2; OFF, it is at the origin,
+    /// which is the file's own number and is what a reader would see and believe.
     /// </remarks>
     [Fact]
-    public void StabilityCircleOverlay_ResolvesThroughTheExistingDerivedPath()
+    public async Task ASeventyFiveOhmOverlay_LandsWhereFiftyOhmsSaysItShould()
     {
         string dir = TempDir();
-        WriteUnstableS2p(dir);
+        string abs = Write75OhmS1p(dir);
 
-        var resolved = Resolve(Overlay("device.s2p", derived: "LoadStabilityCircle"), dir);
-        Assert.Null(resolved.Unresolved);
+        var on = new SmithChartViewModel(Design()) { DocumentDirectory = dir };
+        on.Design.Overlays.Add(Overlay("part.s1p"));
+        on.ReloadOverlays(force: true);
+        on.RebuildChart();
 
-        var trace = resolved.Trace!;
-        Assert.Equal(DerivedParameters.LoadStabilityCircle, trace.Derived);
-        Assert.True(trace.IsStabilityCircle);
-        Assert.NotEmpty(trace.StabilityCircleCentres);
+        var renormalized = on.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
+        Assert.Equal(0.2, renormalized.Points[0].X, 6);   // (75 − 50) / (75 + 50), exactly
+        Assert.Equal(0.0, renormalized.Points[0].Y, 6);
 
-        Assert.Equal(3.6, trace.StabilityCircleCentres[0].X, 6);
-        Assert.Equal(0.0, trace.StabilityCircleCentres[0].Y, 6);
-        Assert.Equal(3.2, trace.StabilityCircleRadii[0],     6);
+        var off = new SmithChartViewModel(Design()) { DocumentDirectory = dir };
+        off.Design.Overlays.Add(Overlay("part.s1p", renormalize: false));
+        off.ReloadOverlays(force: true);
+        off.RebuildChart();
+        Assert.Equal(0.0, off.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels).Points[0].X, 6);
 
-        // And the source circle, from the same fixture through the same path:
-        //   C_S = conj(S11 − Δ·conj(S22)) / (|S11|² − |Δ|²) = (0.7 + 0.125) / (0.49 − 0.0625)
-        var source = Resolve(Overlay("device.s2p", derived: "SourceStabilityCircle"), dir);
-        Assert.Equal(0.825 / 0.4275, source.Trace!.StabilityCircleCentres[0].X, 6);
-        Assert.Equal(0.6   / 0.4275, source.Trace!.StabilityCircleRadii[0],     6);
+        // And the seed is the ON answer, because the user never asked for the OFF one.
+        var added = AddedTrace(await WindowWithSource(Design(), dir, abs));
+        Assert.True(added.Z0OverrideEnabled);
+        Assert.Equal(ChartZ0, added.Z0.Real, 9);
+        Assert.Equal(0.2, added.Points[0].X, 6);
     }
 
-    // ── 3. R-smith8-2 — an unresolvable reference marks its row ──────────────
+    // ── 6. R-smith12-2 — Add seeds from the library, not from the last trace ─
 
     /// <summary>
-    /// <b>A reference that does not resolve marks its row with the path in its tooltip, and the
-    /// document still opens with everything else drawn.</b>
+    /// <b><c>Add</c> seeds from the selected source, on a chart whose last trace is the tool's
+    /// own.</b>
     /// </summary>
     /// <remarks>
-    /// This is the requirement that separates an overlay from an S1P ELEMENT. An element's missing
-    /// file is a refusal because the cascade cannot be walked without it; an overlay's costs the
-    /// user a comparison and nothing else, so the chart must carry on.
+    /// On a Data Display the commonest <b>Add</b> is "another one like the last", and that is right
+    /// there. Here the last trace is always one of the tool's — a cube trace whose name is an
+    /// element's and whose points were pushed in by the evaluator — so a clone of it is bound to a
+    /// cube that exists nowhere and draws a frozen copy of a curve that will not track the design. It
+    /// looks like a trace and it is not one, which is why the assertion is on what the added trace is
+    /// BOUND to rather than on the count.
     /// </remarks>
     [Fact]
-    public void AnUnresolvableOverlay_MarksItsRowAndDoesNotStopTheDocument()
+    public async Task AddSeedsFromTheLibraryAndNotFromTheToolsOwnLastTrace()
+    {
+        string dir = TempDir();
+        string abs = Write75OhmS1p(dir);
+
+        var vm = await WindowWithSource(Design(), dir, abs);
+
+        // The last trace before Add is one of the tool's, and it is the one a clone would copy.
+        var last = vm.ChartPlot.Traces.Last();
+        Assert.True(last.ExcludeFromAxisLabels);
+
+        var added = AddedTrace(vm);
+        Assert.NotEqual(last.CubeName, added.CubeName);
+        Assert.Equal(abs, added.SourceRef);
+        Assert.NotEmpty(added.Points);
+
+        // R-smith12-7: the user's own data is what names an axis, so the flag must stay CLEAR.
+        Assert.False(added.ExcludeFromAxisLabels);
+    }
+
+    // ── 7. R-smith12-1 — the flag is split, and only the set is opened ───────
+
+    /// <summary>
+    /// <b>The trace set is open and the plot type is not.</b>
+    /// </summary>
+    /// <remarks>
+    /// <c>Plot.IsFixedReadout</c> means two things; this chart wants only the second undone. The
+    /// per-card half is the other half of the same rule: a card for one of the tool's OWN traces
+    /// offers no trash and no data pickers, because removing it would remove it until the next
+    /// keystroke and re-aiming it would be undone by the next rebuild.
+    /// </remarks>
+    [Fact]
+    public async Task TheTraceSetIsOpenAndThePlotTypeIsNot()
+    {
+        string dir = TempDir();
+        string abs = Write75OhmS1p(dir);
+
+        var vm        = await WindowWithSource(Design(), dir, abs);
+        var inspector = vm.ChartContainer.Inspector;
+
+        Assert.True(vm.ChartPlot.IsFixedReadout);
+        Assert.True(vm.ChartPlot.AllowUserTraces);
+        Assert.True(inspector.CanEditTraceSet);
+        Assert.False(inspector.CanChangePlotType);
+
+        AddedTrace(vm);
+
+        var ours    = inspector.Traces.Single(c => c.Trace.ExcludeFromAxisLabels == false);
+        var toolsOwn = inspector.Traces.First(c => c.Trace.ExcludeFromAxisLabels);
+
+        Assert.True(ours.CanRemove);
+        Assert.True(ours.CanPickTraceData);
+        Assert.False(toolsOwn.CanRemove);
+        Assert.False(toolsOwn.CanPickTraceData);
+    }
+
+    // ── 8. R-smith12-5c — the marker key survives a reorder ──────────────────
+
+    /// <summary>
+    /// <b>A marker taken on an overlay is stored against a name that does not move when the overlay
+    /// list is reordered.</b>
+    /// </summary>
+    /// <remarks>
+    /// Markers are stored against a trace's LABEL rather than its index, because an index moves the
+    /// moment an element is deleted or an overlay is reordered — and a marker that silently slid onto
+    /// the next curve would be a reading reported against the wrong thing. The key is therefore
+    /// derived from the overlay's own config and from nothing else.
+    /// </remarks>
+    [Fact]
+    public void TheMarkerKeyIsTheOverlaysOwnAndDoesNotMoveOnAReorder()
+    {
+        var a = new TraceConfig { SourcePath = "meas/dut.s2p", Row = 1, Col = 0 };
+        var b = new TraceConfig { SourcePath = "ref/part.s1p" };
+
+        Assert.Equal("dut.s2p S21", SmithOverlays.Key(a));
+        Assert.Equal("part.s1p S11", SmithOverlays.Key(b));
+
+        // Two configs with the same content are the same key wherever they sit in the list.
+        Assert.Equal(SmithOverlays.Key(a),
+                     SmithOverlays.Key(SmithOverlays.Read(SmithOverlays.Write(a))!));
+    }
+
+    // ── 9. R-smith8-2 — a reference that does not resolve ────────────────────
+
+    /// <summary>
+    /// <b>An overlay whose file is missing says why, does not stop the document, and is not thrown
+    /// away.</b>
+    /// </summary>
+    /// <remarks>
+    /// That is the requirement separating an overlay from an S1P ELEMENT: an element's missing file
+    /// is a refusal because the cascade cannot be walked without it; an overlay's costs the user a
+    /// comparison and nothing else.
+    ///
+    /// <para><b>The last assertion is the one with teeth.</b> An unresolved overlay has no trace on
+    /// the plot, so a harvest that wrote back only what it could see would DELETE a user's reference
+    /// material because the file it names happened to be on a disk that was not mounted.</para>
+    /// </remarks>
+    [Fact]
+    public void AnUnresolvableOverlaySaysWhy_AndIsNotDiscardedByTheNextHarvest()
     {
         string dir = TempDir();
         Write75OhmS1p(dir);
@@ -206,19 +448,60 @@ public sealed class SmithOverlayTests
 
         var vm = new SmithChartViewModel(design) { DocumentDirectory = dir };
 
-        Assert.Null(vm.Refusal);                                   // the document is fine
-        Assert.Equal(2, vm.OverlayRows.Count);
+        Assert.Null(vm.Refusal);                                       // the document is fine
+        Assert.True(vm.HasUnresolvedOverlays);
+        Assert.Contains("no-such-part.s2p", vm.UnresolvedOverlayNote);
+        Assert.Contains("no-such-part.s2p", vm.StripNotice);
 
-        Assert.False(vm.OverlayRows[0].IsUnresolved);
-        Assert.True(vm.OverlayRows[1].IsUnresolved);
-        Assert.Contains("no-such-part.s2p", vm.OverlayRows[1].Unresolved);
+        // The one that DID resolve is on the chart; the other is not.
+        var drawn = Assert.Single(vm.ChartPlot.Traces.Where(t => !t.ExcludeFromAxisLabels));
+        Assert.Equal("part.s1p", drawn.SourceRef);
 
-        // The one that DID resolve is still on the chart. Everything else on it is the cascade's.
-        Assert.Contains(vm.ChartPlot.Traces, t => t.SourceRef == "part.s1p");
-        Assert.DoesNotContain(vm.ChartPlot.Traces, t => t.SourceRef == "no-such-part.s2p");
+        vm.HarvestOverlays();
+        Assert.Equal(2, vm.Design.Overlays.Count);
     }
 
-    // ── 4. R-smith8-2 — a relative path survives a moved document ────────────
+    // ── 10. R-smith12-6 — out of the autoscale, and the card can say otherwise ─
+
+    /// <summary>
+    /// <b>An overlay does not reframe the chart, and does when its card says so.</b>
+    /// </summary>
+    /// <remarks>
+    /// §5.7's reason is specific: a stability circle can be enormous — an unconditionally stable
+    /// device's load circle routinely sits far outside the unit disc — and one unlucky overlay
+    /// reframing the window would squash the cascade the user is working on into a corner of it.
+    /// Brief 8 had this as a column on a panel; it is now a field on <c>TraceConfig</c> and a
+    /// checkbox on the trace card, which is also what makes it reach a `.cdd`.
+    /// </remarks>
+    [Fact]
+    public void AnOverlayStaysOutOfTheAutoscale_UnlessItsCardSaysOtherwise()
+    {
+        string dir = TempDir();
+        WriteFarOutS1p(dir);
+
+        var excluded = new SmithChartViewModel(Design()) { DocumentDirectory = dir };
+        excluded.Design.Overlays.Add(Overlay("far.s1p"));
+        excluded.ReloadOverlays(force: true);
+        excluded.RebuildChart();
+        double unitDisc = excluded.ChartPlot.Axes.Window.Width;
+
+        var included = new SmithChartViewModel(Design()) { DocumentDirectory = dir };
+        included.Design.Overlays.Add(Overlay("far.s1p", excludeFromAutoscale: false));
+        included.ReloadOverlays(force: true);
+        included.RebuildChart();
+
+        Assert.True(included.ChartPlot.Axes.Window.Width > unitDisc * 2,
+                    "an included overlay at |Γ| = 3 should open the window well past the disc: "
+                  + $"{unitDisc} → {included.ChartPlot.Axes.Window.Width}");
+
+        // And the card's checkbox is the control for it, in both directions.
+        var card = excluded.ChartContainer.Inspector.Traces.Single(c => !c.Trace.ExcludeFromAxisLabels);
+        Assert.False(card.IncludeInAutoscale);
+        card.IncludeInAutoscale = true;
+        Assert.False(card.Trace.ExcludeFromAutoscale);
+    }
+
+    // ── 11. R-smith8-2 — a relative reference survives a moved document ──────
 
     /// <summary>
     /// <b>Write the pair, move them both, reopen: the overlay still resolves.</b>
@@ -226,20 +509,26 @@ public sealed class SmithOverlayTests
     /// <remarks>
     /// That is the whole reason the reference is relative to the DOCUMENT rather than absolute — an
     /// archived or moved workspace is the ordinary case, and an absolute path in a `.csmith` would
-    /// resolve on one machine and nowhere else.
+    /// resolve on one machine and nowhere else. <b>It survives the change of writer</b>: the config
+    /// is written by the `.cdd`'s own <c>BuildTraceConfig</c>, which spells a reference relative to
+    /// the results ROOT and cannot reach a file sitting beside a scratch document.
     /// </remarks>
     [Fact]
-    public void ARelativeOverlayReference_SurvivesAMovedDocument()
+    public async Task ARelativeOverlayReference_SurvivesAMovedDocument()
     {
         string first = TempDir();
         Directory.CreateDirectory(Path.Combine(first, "data"));
-        Write75OhmS1p(Path.Combine(first, "data"));
+        string abs = Write75OhmS1p(Path.Combine(first, "data"));
 
-        var design = Design();
-        design.Overlays.Add(Overlay(Path.Combine("data", "part.s1p")));
+        var vm = await WindowWithSource(Design(), first, abs);
+        AddedTrace(vm);
 
         string csmith = Path.Combine(first, "match.csmith");
-        File.WriteAllText(csmith, SmithDesignIo.Serialize(design));
+        File.WriteAllText(csmith, vm.Serialize());
+
+        // The reference is RELATIVE, which is what makes the move work at all.
+        var stored = SmithOverlays.Read(Assert.Single(vm.Design.Overlays));
+        Assert.Equal("data/part.s1p", stored!.SourcePath);
 
         // Move the PAIR — the document and the folder beside it — as an archive would.
         string second = TempDir();
@@ -247,72 +536,27 @@ public sealed class SmithOverlayTests
         File.Move(csmith, Path.Combine(second, "match.csmith"));
 
         var reopened = SmithDesignIo.LoadFromFile(Path.Combine(second, "match.csmith"));
-        var vm       = new SmithChartViewModel(reopened) { DocumentDirectory = second };
+        var vm2      = new SmithChartViewModel(reopened) { DocumentDirectory = second };
 
-        Assert.False(vm.OverlayRows[0].IsUnresolved);
+        Assert.False(vm2.HasUnresolvedOverlays);
 
         // And it is the SAME curve, in the same place — a reference that resolved to a different
         // file would pass an "is it marked" test and fail the user.
-        var trace = vm.ChartPlot.Traces.Single(t => t.SourceRef == Path.Combine("data", "part.s1p"));
+        var trace = vm2.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
         Assert.Equal(0.2, trace.Points[0].X, 6);
     }
 
-    // ── 5. R-smith8-4 — out of the autoscale unless the row says otherwise ───
-
-    /// <summary>
-    /// <b>An overlay does not reframe the chart, and does when its row says so.</b>
-    /// </summary>
-    /// <remarks>
-    /// A stability circle can be enormous — this fixture's load circle is centred at 3.6 with radius
-    /// 3.2 — and one unlucky overlay reframing the window would squash the cascade the user is
-    /// working on into a corner of it.
-    /// </remarks>
-    [Fact]
-    public void OverlaysAreOutOfTheAutoscale_UnlessTheRowSaysOtherwise()
-    {
-        string dir = TempDir();
-        WriteFarOutS1p(dir);
-
-        var excluded = Resolve(Overlay("far.s1p"), dir);
-        Assert.True(excluded.Trace!.ExcludeFromAutoscale);
-
-        var included = new SmithOverlayRef
-        {
-            Source             = "far.s1p",
-            Quantity           = "S11",
-            IncludeInAutoscale = true,
-        };
-        Assert.False(Resolve(included, dir).Trace!.ExcludeFromAutoscale);
-
-        // And the flag reaches the window rather than only the field.
-        var design = Design();
-        design.Overlays.Add(Overlay("far.s1p"));
-        var vm = new SmithChartViewModel(design) { DocumentDirectory = dir };
-        double unitDisc = vm.ChartPlot.Axes.Window.Width;
-
-        var design2 = Design();
-        design2.Overlays.Add(new SmithOverlayRef
-        {
-            Source = "far.s1p", Quantity = "S11", IncludeInAutoscale = true,
-        });
-        var vm2 = new SmithChartViewModel(design2) { DocumentDirectory = dir };
-
-        Assert.True(vm2.ChartPlot.Axes.Window.Width > unitDisc * 2,
-                    $"an included overlay at |Γ| = 3 should open the window well past the disc: "
-                  + $"{unitDisc} → {vm2.ChartPlot.Axes.Window.Width}");
-    }
-
-    // ── 6. R-smith8-6 — the VSWR circle is NOT centred on the marker ─────────
+    // ── 12. R-smith8-6 — the VSWR circle is NOT centred on the marker ────────
 
     /// <summary>
     /// <b>A constant-VSWR circle about an off-centre marker is <c>VswrLocus</c>'s circle.</b>
     /// </summary>
     /// <remarks>
     /// The correction <c>vswr-locus-gamma-plane.md</c> records and <c>HarmonicaVswrHandle</c>'s
-    /// header repeats: "the matched point" in that derivation means Γ = 0 specifically, not
-    /// "wherever the marker happens to be". A marker at (0.3, −0.2) with VSWR 3 has its true centre
-    /// at about (0.23, −0.16) — far outside any grab tolerance — and the CENTRE is asserted because
-    /// that is where the wrong version differs visibly.
+    /// header repeats: "the matched point" in that derivation means Γ = 0 specifically, not "wherever
+    /// the marker happens to be". A marker at (0.3, −0.2) with VSWR 3 has its true centre at about
+    /// (0.23, −0.16) — far outside any grab tolerance — and the CENTRE is asserted because that is
+    /// where the wrong version differs visibly.
     /// </remarks>
     [Fact]
     public void AVswrCircleAboutAnOffCentreMarker_IsNotCentredOnTheMarker()
@@ -323,8 +567,6 @@ public sealed class SmithOverlayTests
         Assert.Equal(0.23,  centre.Real,      2);
         Assert.Equal(-0.16, centre.Imaginary, 2);
 
-        // The wrong answer — a circle of radius ρ = (V−1)/(V+1) centred on the marker — is the one
-        // this test exists to keep out. It is off by far more than any grab tolerance.
         Assert.True((centre - marker).Magnitude > 0.05,
                     $"the centre {centre} is suspiciously close to the marker {marker}; "
                   + "a circle centred on the marker is the documented mistake.");
@@ -341,11 +583,10 @@ public sealed class SmithOverlayTests
             Assert.Equal(radius, (p - centre).Magnitude, 9);
     }
 
-    // ── 7. R-smith8-5 — markers round-trip through the `.csmith` ─────────────
+    // ── 13. R-smith8-5 — markers on an overlay round-trip ────────────────────
 
     /// <summary>
-    /// <b>A marker placed on a curve survives a save, a reload and every rebuild in between, in the
-    /// Data Display's own shape.</b>
+    /// <b>A marker placed on an overlay survives a save, a reload and every rebuild in between.</b>
     /// </summary>
     /// <remarks>
     /// The rebuild is the part that is easy to miss: every trace on this chart is thrown away and
@@ -354,7 +595,7 @@ public sealed class SmithOverlayTests
     /// rather than only the numbers.
     /// </remarks>
     [Fact]
-    public void MarkersRoundTripThroughTheCsmith_InTheDataDisplaysOwnShape()
+    public void MarkersOnAnOverlayRoundTripThroughTheCsmith()
     {
         string dir = TempDir();
         Write75OhmS1p(dir);
@@ -362,45 +603,70 @@ public sealed class SmithOverlayTests
         var design = Design();
         design.Overlays.Add(Overlay("part.s1p"));
 
-        var vm = new SmithChartViewModel(design) { DocumentDirectory = dir };
+        var vm      = new SmithChartViewModel(design) { DocumentDirectory = dir };
+        var overlay = vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
 
-        var overlayTrace = vm.ChartPlot.Traces.Single(t => t.SourceRef == "part.s1p");
-        overlayTrace.Markers.Add(new Marker(overlayTrace, 2.0, false, false, 1, FreqUnit.GHz)
+        overlay.Markers.Add(new Marker(overlay, 2.0, false, false, 1, FreqUnit.GHz)
         {
-            VswrEnabled = true,
-            VswrValue   = 3.0,
-            Style       = MarkerStyle.Large,
+            VswrEnabled = true, VswrValue = 3.0, Style = MarkerStyle.Large,
         });
-
         vm.HarvestMarkers();
 
         var stored = Assert.Single(vm.Design.Markers);
         Assert.Equal("part.s1p S11", stored.TraceName);
         Assert.True(stored.VswrEnabled);
-        Assert.Equal(3.0, stored.VswrValue);
-        Assert.Equal("Large", stored.Style);
-        Assert.Equal("GHz", stored.FreqUnits);
 
-        // A REBUILD must not lose it — every trace was just replaced.
+        // A REBUILD must not lose it — every trace the TOOL owns was just replaced.
         vm.RebuildChart();
-        Assert.Single(vm.ChartPlot.Traces.Single(t => t.SourceRef == "part.s1p").Markers);
+        Assert.Single(vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels).Markers);
 
         // And so must a save and a reload, onto the same curve.
-        string json     = vm.Serialize();
-        var    reloaded = SmithDesignIo.Deserialize(json);
-        var    vm2      = new SmithChartViewModel(reloaded) { DocumentDirectory = dir };
+        var vm2 = new SmithChartViewModel(SmithDesignIo.Deserialize(vm.Serialize()))
+        { DocumentDirectory = dir };
 
-        var restored = vm2.ChartPlot.Traces.Single(t => t.SourceRef == "part.s1p").Markers;
-        var one      = Assert.Single(restored);
+        var one = Assert.Single(vm2.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels).Markers);
         Assert.True(one.VswrEnabled);
         Assert.Equal(3.0, one.VswrValue);
         Assert.Equal(MarkerStyle.Large, one.Style);
-        Assert.Equal(FreqUnit.GHz, one.FreqUnits);
+    }
 
-        // A placement is ONE undo entry, and undoing it takes the marker off the chart.
-        Assert.Contains("Add marker", vm.UndoRedo.UndoDescription, StringComparison.Ordinal);
-        vm.UndoRedo.Undo();
-        Assert.Empty(vm.Design.Markers);
-        Assert.Empty(vm.ChartPlot.Traces.Single(t => t.SourceRef == "part.s1p").Markers);
+    // ── 14. §8 — the panel is gone ───────────────────────────────────────────
+
+    /// <summary>
+    /// <b>No Overlays panel survives anywhere in <c>src/Ui</c>.</b>
+    /// </summary>
+    /// <remarks>
+    /// A panel left in place beside the inspector is two authors of one list, and the two would
+    /// disagree the first time either changed. The scan is over the SOURCE because that is where a
+    /// half-removed feature hides: a view model with no view, a command nothing binds.
+    /// </remarks>
+    [Fact]
+    public void TheOverlaysPanelIsGone()
+    {
+        string ui = SourceRoot("src/Ui");
+
+        foreach (string name in new[] { "SmithOverlayRowViewModel", "AddOverlayCommand",
+                                        "RemoveOverlayCommand", "OverlayRows" })
+        {
+            var hits = Directory
+                .EnumerateFiles(ui, "*.*", SearchOption.AllDirectories)
+                .Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                         || f.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase))
+                .Where(f => File.ReadAllText(f).Contains(name, StringComparison.Ordinal))
+                .ToList();
+
+            Assert.True(hits.Count == 0,
+                        $"'{name}' is brief 8's Overlays panel and must be gone; found in "
+                      + string.Join(", ", hits.Select(Path.GetFileName)));
+        }
+    }
+
+    private static string SourceRoot(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitrf.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return Path.Combine(dir!.FullName, relative);
     }
 }

@@ -457,20 +457,26 @@ public partial class SmithChartView : UserControl
         return relative.StartsWith("..", StringComparison.Ordinal) ? full : relative;
     }
 
-    // ── the overlays (brief-smith-8-overlays-markers.md R-smith8-2) ─────────
+    // ── the overlays (brief-smith-12-overlays-via-the-inspector.md R-smith12-3) ──
 
     /// <summary>
-    /// The file picker <b>Add overlay</b> opens.
+    /// The file picker the chart strip's data-source combo opens for <b>Add from file…</b>.
     /// </summary>
     /// <remarks>
-    /// <b>Relative to the document wherever that is possible</b> — the `.cdd` convention, and the
-    /// one that survives an archived or moved workspace: the pair moves together and the reference
-    /// still resolves. An absolute path is kept only when the file lives somewhere a relative
-    /// reference could not reach, which is the same rule an S1P ELEMENT's own picker follows.
+    /// <b>The picker brief 8's <c>Add overlay</c> used, wired to the data-source library</b> — so a
+    /// Touchstone can still be loaded and drawn with no workspace open, which is a scratch
+    /// `.csmith`'s whole case.
+    ///
+    /// <para><b>It returns the ABSOLUTE path</b>, because that is what
+    /// <c>DataSourceLibraryViewModel.LoadFileAsync</c> takes. The document-relative reference — brief
+    /// 8's convention, and the one that survives an archived or moved workspace — is computed on the
+    /// way out, where the trace's config is written (<c>SmithChartViewModel.ToStoredOverlay</c>).
+    /// Handing a relative path to the library instead would resolve it against the process working
+    /// directory, which is not the document's folder and very rarely anything.</para>
     ///
     /// <para><b>Any port count</b>, unlike the element pickers. An overlay is reference material and
-    /// its quantity is chosen on the row afterwards, so an <c>.s2p</c> here is an ordinary thing to
-    /// want — a two-port part whose S₁₁ is what the match is being checked against.</para>
+    /// its quantity is chosen on the trace card afterwards, so an <c>.s2p</c> here is an ordinary
+    /// thing to want — a two-port part whose S₁₁ is what the match is being checked against.</para>
     /// </remarks>
     private async Task<string?> PickOverlayFile()
     {
@@ -489,14 +495,7 @@ public partial class SmithChartView : UserControl
             ],
         });
 
-        if (files.Count == 0) return null;
-
-        string  full = files[0].Path.LocalPath;
-        string? dir  = _doc?.ViewModel.DocumentDirectory;
-        if (dir is not { Length: > 0 }) return full;
-
-        string relative = Path.GetRelativePath(dir, full);
-        return relative.StartsWith("..", StringComparison.Ordinal) ? full : relative;
+        return files.Count == 0 ? null : files[0].Path.LocalPath;
     }
 
     /// <summary>Zoom to Fit on the strip — the button, and the F key the canvas handles itself.</summary>

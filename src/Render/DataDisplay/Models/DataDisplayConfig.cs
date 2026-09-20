@@ -344,6 +344,22 @@ public sealed class TraceConfig
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();
 
+    /// <summary>
+    /// Keep this trace out of the plot's autoscale — see <see cref="Trace.ExcludeFromAutoscale"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Absent, i.e. false, in every <c>.cdd</c> written before it</b>, which is the framing those
+    /// files already had: until now the flag was set only in code, by railRF's masks and by the
+    /// Smith Chart tool's own chrome, and neither of those is persisted.
+    ///
+    /// <para>It is persisted because the Smith Chart tool's OVERLAYS are, and their whole reason for
+    /// carrying it is specific: a stability circle can be enormous — an unconditionally stable
+    /// device's load circle routinely sits far outside the unit disc — and one unlucky piece of
+    /// reference material reframing the chart would squash the cascade the user is working on into
+    /// a corner of it.</para>
+    /// </remarks>
+    public bool ExcludeFromAutoscale { get; set; }
+
     /// <summary>Non-null when this trace draws a WSProbe metric (WSP-4, R-wsp4-11). The trace is
     /// still cube-bound — <see cref="CubeName"/> names the run's own <c>…wsp</c> matrix and
     /// <see cref="CubeSlice"/> is authored against the METRIC's axes — so a reader that does not

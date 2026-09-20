@@ -1962,6 +1962,24 @@
 
                                         </StackPanel>
 
+                                        <!-- ── Autoscale (brief-smith-12 R-smith12-6) ─────────────
+                                             ON is the ordinary answer and every trace written before
+                                             this checkbox existed is on, so no saved display changes.
+
+                                             OFF says "draw me, but do not frame the plot around me",
+                                             which is what reference material wants: a stability
+                                             circle can be enormous — an unconditionally stable
+                                             device's load circle routinely sits far outside the unit
+                                             disc — and one unlucky trace reframing the plot squashes
+                                             the work into a corner of it. A Smith Chart tool overlay
+                                             seeds with this OFF; anything else seeds with it on. -->
+                                        <CheckBox Content="Autoscale"
+                                                  IsChecked="{Binding IncludeInAutoscale, Mode=TwoWay}"
+                                                  IsVisible="{Binding IsStandardTrace}"
+                                                  VerticalAlignment="Center"
+                                                  FontSize="{StaticResource FontSize}"
+                                                  ToolTip.Tip="Let this trace take part in the plot's autoscale. Off draws it without letting it set the window — which is what reference material wants, since one enormous curve would squash everything else into a corner."/>
+
                                     </StackPanel>
                                     <!-- end trace body -->
 

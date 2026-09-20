@@ -16,7 +16,8 @@ namespace CircuitRF.Cli;
 /// <c>.npy</c>, <c>TouchstoneIO</c> plus <c>DataSetBuilder.FromSnp</c> for a Touchstone. That is
 /// exactly the pair <c>circuitrf read</c> uses and exactly the pair
 /// <c>DataSourceEntryViewModel</c> uses; a third loader here would be a file the CLI and the GUI
-/// could disagree about.</para>
+/// could disagree about. <b>It is now literally one function</b> — <see cref="PlotSourceFile"/>, below
+/// the firewall — because the Smith Chart tool's own document sources would have been the third.</para>
 ///
 /// <para><b>Every source is resolved before anything is drawn, and an unresolved one is a
 /// refusal.</b> R-rnd4-4 — and the reason is worth repeating at the point where it is enforced: an
@@ -284,37 +285,7 @@ internal sealed class CddSources : IPlotDataSources
     /// different file.
     /// </summary>
     public static (DataSet? Data, SNP? Snp, string? Error) LoadResult(string path)
-    {
-        try
-        {
-            if (string.Equals(Path.GetExtension(path), ".npy", StringComparison.OrdinalIgnoreCase))
-            {
-                var (data, _) = DataSetImporter.Import(path);
-
-                // The two things a loaded source GAINS before a trace can be resolved against it,
-                // and both were found missing by §5.2's per-kind gate. Without the first, a trace on
-                // "SP1.Z" — a VIRTUAL cube, converted from S and Z0 on first read — resolves to
-                // nothing. Without the second, every DERIVED trace (Max Gain, µ, a stability
-                // circle) is dropped as the display opens, because a simulated run has no SNP by
-                // design and this narrow view is what stands in for one.
-                //
-                // Both are the same functions the application's own source library calls.
-                DataSourceView.MaterializeNetworkParamCubes(data);
-                return (data, DataSourceView.NetworkViewOf(data), null);
-            }
-
-            if (TouchstoneIO.ParsePortsFromExtension(path) is not null)
-            {
-                var snp = TouchstoneIO.ReadFile(path);
-                return (DataSetBuilder.FromSnp(snp), snp, null);
-            }
-
-            // .spl / .lpcwave and anything else the importer recognizes.
-            var (other, _) = DataSetImporter.Import(path);
-            return (other, null, null);
-        }
-        catch (Exception ex) { return (null, null, ex.Message); }
-    }
+        => PlotSourceFile.Load(path);
 
     // ── IPlotDataSources ─────────────────────────────────────────────────────
 

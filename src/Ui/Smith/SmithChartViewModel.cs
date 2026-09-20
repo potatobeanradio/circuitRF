@@ -47,7 +47,14 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // field initializer cannot build it because AddPlot is a call on another initialized field.
         BuildChartHost();
 
+        // The inspector is this document's way IN for reference material (brief 12): its Add button
+        // and its trace cards are the overlay UI, and its PlotStructureChanged is what writes the
+        // result back. Before the first ReloadOverlays, because a document that opens with overlays
+        // must not harvest an empty plot over them.
+        WireOverlayInspector();
+
         RebuildRows();
+        ReloadOverlays();
         RefreshDerived();
 
         // The document's dirty mark IS the stack's own saved-position marker. Nothing else decides it,
@@ -92,7 +99,16 @@ public sealed partial class SmithChartViewModel : ObservableObject
     public string? DocumentDirectory
     {
         get => _documentDirectory;
-        set { _documentDirectory = value; RefreshDerived(); }
+        set
+        {
+            _documentDirectory = value;
+            // An overlay's reference is relative to THIS folder, so every one of them resolves
+            // differently once it is known — which is exactly what happens on a Save As, and on the
+            // ordinary open, where the folder arrives after the design. FORCED for that reason: the
+            // LIST is the same, and the answers are not.
+            ReloadOverlays(force: true);
+            RefreshDerived();
+        }
     }
     private string? _documentDirectory;
 
@@ -161,6 +177,12 @@ public sealed partial class SmithChartViewModel : ObservableObject
     {
         _design = SmithDesignIo.DeserializeUnvalidated(json);
         RebuildRows();
+
+        // THE DESIGN OBJECT IS REPLACED, so the configs the overlay traces were built from are gone
+        // with it and the traces have to be built again. This is the one place they are: everywhere
+        // else the instances are carried across the rebuild, because the inspector's cards and each
+        // trace's markers hold the OBJECT (R-smith12-5a).
+        ReloadOverlays();
         RefreshDerived();
         DesignChanged?.Invoke();
     }
@@ -214,12 +236,6 @@ public sealed partial class SmithChartViewModel : ObservableObject
         RemoveGeneratorRowCommand.NotifyCanExecuteChanged();
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
 
-        // The overlay rows are rebuilt on the SAME channel and for the same reason: every committed
-        // edit replaces the whole design, so a row holding the old SmithOverlayRef would be editing
-        // a document nobody can see. Here rather than in RefreshDerived, which also runs on every
-        // pointer move of a gripper drag — clearing and refilling an ObservableCollection twenty
-        // times a second would rebuild the list's controls under the hand holding it.
-        RebuildOverlayRows();
     }
 
     /// <summary>
@@ -489,6 +505,13 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // the one about what just happened.
         if (Scene.BandClampNote is { } clamped && _stripNotice is null) StripNotice = clamped;
 
+        // AND SO IS A REFERENCE THAT DOES NOT RESOLVE (R-smith8-2). With the Overlays panel gone
+        // there is no row to mark, and the sentence still has to be said: the document opened, the
+        // rest of the chart drew, and one piece of reference material is missing. It never displaces
+        // a note somebody just raised about the edit that is landing — the strip is ONE line, and
+        // the newer sentence is the one about what just happened.
+        if (UnresolvedOverlayNote is { } missing && _stripNotice is null) StripNotice = missing;
+
         IsDesignFrequencyInvalid = _design.Generator.Rows.Count > 1
             && _design.Generator.Span is { } span
             && !(_design.Chart.DesignFrequencyHz >= span.StartHz
@@ -639,5 +662,13 @@ public sealed partial class SmithChartViewModel : ObservableObject
     /// <exception cref="InvalidDataException">The document is not well formed — the sentence names the
     /// element, the frequency or the setting, and <see cref="SmithDesignIo.Serialize"/> refuses rather
     /// than writing a file whose only symptom is that it will not open next week.</exception>
-    public string Serialize() => SmithDesignIo.Serialize(_design);
+    public string Serialize()
+    {
+        // THE OVERLAY CARDS' OWN SETTINGS RIDE ALONG HERE (R-smith12-5b). An add or a remove is one
+        // undo entry and is harvested when it happens; a colour, a line width or a marker glyph is
+        // not an entry — an entry per card keystroke is the Match Designer's "eight edits took
+        // fourteen undos" by a slower route — so this is where they reach the file.
+        HarvestOverlays();
+        return SmithDesignIo.Serialize(_design);
+    }
 }

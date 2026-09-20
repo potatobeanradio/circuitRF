@@ -23,10 +23,17 @@ namespace CircuitRF.Render.Smith;
 public readonly record struct SmithTraceKey(string Key, Trace Trace);
 
 /// <summary>An overlay that resolved, ready to go on the plot.</summary>
-/// <remarks><b>Resolution is not this file's</b> — <see cref="SmithOverlayResolver"/> does it, so the
-/// row can report what failed and why while the chart carries on drawing everything that did
-/// resolve (<c>R-smith8-2</c>).</remarks>
-public readonly record struct SmithOverlayTrace(string Key, Trace Trace, bool Visible);
+/// <remarks>
+/// <b>Resolution is not this file's</b> — <see cref="SmithOverlays.Load"/> does it through the
+/// `.cdd`'s own <c>PlotConfigLoader.LoadTrace</c>, so the caller can report what failed and why
+/// while the chart carries on drawing everything that did resolve (<c>R-smith8-2</c>).
+///
+/// <para><b>There is no Visible flag and there must not be one</b> (<c>R-smith12-6</c>):
+/// <c>TraceProperties.Enabled</c> is read by nothing, and a hidden trace would still sit in the
+/// trace list, the legend and the Add Marker menu. On a Data Display you delete the trace; here the
+/// card's trash is the same affordance.</para>
+/// </remarks>
+public readonly record struct SmithOverlayTrace(string Key, Trace Trace);
 
 /// <summary>
 /// Builds the chart's <c>Plot</c> from the evaluator — <b>the traces, and nothing that draws</b>
@@ -279,6 +286,14 @@ public static class SmithPlotBuilder
         plot.Axes.LockedPanning = true;
         plot.IsFixedReadout     = true;
 
+        // …BUT THE TRACE SET IS OPEN (R-smith12-1). IsFixedReadout means two things — the plot TYPE
+        // and the trace SET — and only the first is wanted here: it is a Smith chart and it stays
+        // one, while reference data goes onto it the way it goes onto a Smith chart on a Data
+        // Display, through Plot Properties ▸ Add. What makes that affordable is that a trace the
+        // user adds is written into the DOCUMENT and restored on the next rebuild; a plot with
+        // nowhere to write one down must leave this alone.
+        plot.AllowUserTraces    = true;
+
         // MARKERS ARE FREE HERE (owner instruction, 2026-09-19). On an ordinary Data Display trace a
         // marker is a reading of that trace at a frequency; on a matching chart it is a TARGET the
         // user is aiming the network at, which is a position. Shift while dragging snaps it onto the
@@ -399,17 +414,19 @@ public static class SmithPlotBuilder
 
         // ── the overlays (R-smith8-1, R-smith8-4) ───────────────────────────
         //
-        //  LAST, so reference material draws OVER the work rather than under it, and so a row added
-        //  or removed cannot renumber the trajectories' colours. An invisible row is not on the plot
-        //  at all — TraceProperties.Enabled is read by nothing, and a trace left on the plot would
-        //  still be in the trace list, the legend and the Add Marker menu.
+        //  LAST, so reference material draws OVER the work rather than under it, and so one added
+        //  or removed cannot renumber the trajectories' colours.
         //
         //  They are ordinary traces and this loop is the whole of what makes them one: their
-        //  quantity, their renormalization and their autoscale exclusion were all settled by
-        //  SmithOverlayResolver, on the Trace's OWN fields.
+        //  quantity, their renormalization and their autoscale exclusion are the Trace's OWN fields,
+        //  restored from the document's trace config by PlotConfigLoader.LoadTrace.
+        //
+        //  AND THEY DO NOT COME THROUGH CubeTrace, which is what leaves ExcludeFromAxisLabels clear
+        //  on them (R-smith12-7): everything this file DERIVES keeps its name off the axes, and the
+        //  overlays are the reference data the user chose by name — they are what the axis labels
+        //  are for. It is also how the inspector tells the two apart.
         foreach (var overlay in overlays ?? [])
-            if (overlay.Visible)
-                Add(plot, keys, overlay.Key, overlay.Trace);
+            Add(plot, keys, overlay.Key, overlay.Trace);
 
         // ── the markers (R-smith8-5) ────────────────────────────────────────
         //
@@ -505,6 +522,13 @@ public static class SmithPlotBuilder
     private static void RestoreMarkers(List<SmithTraceKey> keys, SmithDesign design)
     {
         if (keys.Count == 0) return;
+
+        // EVERY TRACE STARTS EMPTY, and that line is not redundant. It used to be: the whole trace
+        // set was rebuilt on each refill, so the markers went with the objects that carried them. An
+        // OVERLAY is now the SAME Trace object from one rebuild to the next (R-smith12-5a — the
+        // inspector's cards and the trace's own markers hold it), so its markers survive the refill
+        // and re-attaching the document's would add a second copy of each on every keystroke.
+        foreach (var (_, trace) in keys) trace.Markers.Clear();
 
         foreach (var stored in design.Markers)
         {

@@ -1,5 +1,95 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart, round four — overlays move to the Plot Properties inspector (2026-09-19)
+
+Owner instruction: remove the Overlays panel; overlay S-parameter data sources are added through the
+Plot Properties inspector, **the same way they are added to a Smith chart on a Data Display**. Brief 12,
+which replaces brief 8. `docs/design/smith-chart.md` §5.7 and §7 are rewritten and §9.4 records the
+round; the below-the-firewall half is in `src/Render/RESOLVED.md` under the same date. Gate:
+`tests/Ui.Tests/Smith/SmithOverlayTests.cs` (14 tests) plus one case added to
+`SmithCliVerbTests`.
+
+### The Add button was the small part; making the trace survive was the work
+
+`SmithPlotBuilder.Fill` clears the plot's traces and refills them from the design on every committed
+edit — which is precisely why brief 5 set `Plot.IsFixedReadout` and closed the trace set. Three things
+had to change together before Add could be allowed:
+
+- **The flag had to be split.** `IsFixedReadout` gated the plot TYPE and the trace SET, and only the
+  first is wanted here. `Plot.AllowUserTraces` opens the second and defaults **off**; railRF's
+  `ImpedancePlot` and the Match Designer's two response plots set only `IsFixedReadout` and must stay
+  as they were, because neither has anywhere to write a user-added trace down.
+- **The trace INSTANCES had to be carried across the rebuild**, not re-resolved from their configs.
+  The inspector's cards, its selection and each trace's markers all hold the `Trace` object.
+- **The set had to be harvested into the `.csmith`** on the inspector's `PlotStructureChanged`. An add
+  or a remove is one undo entry; a card's own settings ride along on the next save, which is
+  `HarvestMarkers`' split for `HarvestMarkers`' reason.
+
+### Two loops that only close once a Trace outlives a refill
+
+**The harvest and the rebuild are mutually recursive, and the cure is a flag.** Harvesting on a count
+change pushes an undo entry, which replaces the design, which rebuilds the chart, which calls
+`Inspector.ReloadTraceCards()` — which raises `PlotStructureChanged` again. `_rebuildingChart` is set
+around the whole of `RebuildChart` and the handler returns on it. (`ReloadTraceCards` is itself new
+here and is railRF's own line for railRF's own reason: this document builds its inspector before it has
+any traces, so without it the Plot Properties panel of a saved `.csmith` opened empty every time.)
+
+**A snapshot restore must not throw the user's traces away.** Every committed edit in this window —
+a component value, a generator row — replaces the whole design through `SmithSnapshotCommand`, so "the
+document was replaced" is the wrong question to ask before rebuilding the overlays. The right one is
+whether the OVERLAY LIST in it changed, and `SmithOverlays.Signature` is that comparison. It is
+**compact rather than raw**: the file writes indented and nests the block two levels in, so the same
+content comes back with different whitespace and a raw comparison would report a change on every save.
+
+Two callers pass `force`, and both are cases where the list is the same and the ANSWERS are not: the
+`DocumentDirectory` setter (every relative reference resolves differently once the folder is known —
+and on an ordinary open the folder arrives *after* the design) and the `OverlayDataSources` setter.
+
+### The sentinel is not a reference a document can keep
+
+`PlotInspectorViewModel.AddTrace` stamps `DataSourceRef.Selected` — "whichever source this display has
+selected" — which is right for a `.cdd`, where the combo is part of the document and travels with it.
+A `.csmith` has no such selection to come back to, so an overlay stored against the sentinel resolves
+to nothing the next time it is opened. It is pinned to the concrete file in `SeedNewOverlay`, at the
+one moment the answer is known.
+
+The reference is then made **relative to the document** on the way out, which is brief 8's convention
+and the one that survives an archived or moved workspace. `BuildTraceConfig` — the one writer, and it
+stays the one writer — spells a reference relative to the results ROOT, which is right for a workspace
+run and cannot reach a file sitting beside a scratch `.csmith`.
+
+### The picker changed hands, and its answer changed shape
+
+`OverlayFileChooser` is now the library's `AddSourceFileRequested`, so the combo's **Add from file…**
+loads a Touchstone with no workspace open at all. It had to start returning the **absolute** path:
+`DataSourceLibraryViewModel.LoadFileAsync` resolves what it is handed against the process working
+directory, which is not the document's folder and very rarely anything.
+
+### An unresolved overlay must not be deleted by the next harvest
+
+It has no trace on the plot, so a harvest that wrote back only what it could see would delete a user's
+reference material because the file it names happened to be on a disk that was not mounted. They are
+kept verbatim and re-appended, and the sentence goes in the status strip as a standing condition —
+which also meant clearing the strip's own note when the overlays are re-resolved, or the message from
+the first (folder-less) attempt sat there naming a file that was in fact right beside the document.
+
+### What went, and what deliberately did not
+
+`SmithOverlayRowViewModel`, `AddOverlayCommand`, `RemoveOverlayCommand`, `OverlayRows` and the panel in
+`SmithChartView.axaml` are gone, and a source scan holds them gone — a panel left in place beside the
+inspector is two authors of one list. `Visible` went with them and has no replacement:
+`TraceProperties.Enabled` is read by nothing, and a hidden trace would still sit in the trace list, the
+legend and the Add Marker menu. **`ExcludeFromAutoscale` did not**: it moved onto `TraceConfig` and
+onto the Data Display's own trace card as an `Autoscale` checkbox, which is the one place this round
+touches that card. The flag existed on `Trace`, was set only in code, and had neither a control nor
+persistence; §5.7's reason for it is specific enough that losing either the protection or the control
+was not acceptable.
+
+`TraceRowViewModel.CanRemove` and `CanPickTraceData` are now per-trace rather than per-plot
+(`PlotInspectorViewModel.IsOwnersTrace`, which is `Trace.ExcludeFromAxisLabels` on a fixed read-out):
+a card for one of the tool's own traces offers no trash and no pickers, because removing it would
+remove it until the next keystroke and re-aiming it would be undone by the next rebuild.
+
 ## Smith Chart, round three — a glyph on the wrong side of the real axis, and a marker that would not stay deleted (2026-09-19)
 
 Owner items from driving the finished tool again. `docs/design/smith-chart.md` §9.3 records what

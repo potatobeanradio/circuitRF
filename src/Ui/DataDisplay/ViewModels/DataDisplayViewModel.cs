@@ -1653,6 +1653,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 MarkerColorIndex = t.Properties.MarkerColorIndex,
                 MarkerType       = t.Properties.MarkerType,
             },
+            // Set only in code until the Smith Chart tool's overlays needed to persist it, and false
+            // in every `.cdd` written before — which is the framing those files already had.
+            ExcludeFromAutoscale = t.ExcludeFromAutoscale,
         };
 
         // Contour trace authoring state (7.4e).

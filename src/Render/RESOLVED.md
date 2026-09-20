@@ -1,5 +1,64 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Smith Chart, round four — overlays are Data Display trace configs now (2026-09-19)
+
+The half of brief 12 that landed below the firewall. The window's half is in `src/Ui/RESOLVED.md` under
+the same date, and `docs/design/smith-chart.md` §5.7, §7 and §9.4 record the design's own decisions.
+
+### `PlotConfigLoader.LoadTrace` — a pure extraction, and the point of the round
+
+`LoadPlot` was the only code that turns a `TraceConfig` into a `Trace`, and it was welded to a
+`PlotContainerConfig` and to building a whole new `Plot`. The per-trace body is now
+`LoadTrace(cfg, plotType, freqUnit, sources)` and `LoadPlot` is the loop that calls it. **No behaviour
+change** — the `.cdd` suite is the gate, and it ran green with nothing moved.
+
+It exists because a `.csmith` now stores its overlays as trace configs too. A second loader there would
+be a second reading of the same thirty fields, free to drift silently; the symptom would be a setting
+that survives in a `.cdd` and vanishes from a `.csmith`.
+
+### `SmithOverlayResolver` is gone, and almost none of it was replaced
+
+What it did — locate a Touchstone, parse an `S11`-style quantity, set a renormalization, exclude a row
+from the autoscale — a trace config **says**, and `LoadTrace` has honoured since the Data Display's
+first release. What is left is `SmithOverlayMigration`, which is the brief-8 mapping and nothing else,
+plus two small files that are not resolution:
+
+- **`SmithOverlays`** — the JSON a `.csmith` stores a config as (through `DataDisplayJson.Options`, so
+  one spelling), the fingerprint of a whole list, and the trace's **key**: the name a marker on it is
+  stored against, derived from the config alone so it is the same string across a rebuild *and* across
+  a reorder. A key that moved on a reorder would put a reading on the wrong curve.
+- **`SmithDocumentSources`** — an `IPlotDataSources` over a document folder, with the host's library
+  consulted first. This is what keeps brief 8's relative-reference convention working now that
+  resolution goes through the `.cdd`'s own loader, and what lets a scratch `.csmith` with no workspace
+  draw a Touchstone sitting beside it. `circuitrf smith` uses the same type, with the workspace's
+  `results/` as a second search directory, so the verb and the window resolve one document's overlays
+  through one loader.
+
+### `PlotSourceFile` — the third copy of "read one result file" was not written
+
+`CddSources.LoadResult` was the second, and `SmithDocumentSources` would have been the third. It is one
+function in `src/Render/DataDisplay` now and `CddSources` forwards to it. The two lines under `.npy`
+are not optional and each was found missing by a gate rather than by reading the code:
+`MaterializeNetworkParamCubes` (without it a trace on a virtual `Z` cube resolves to nothing) and
+`NetworkViewOf` (without it every derived trace is dropped as the display opens, because a simulated
+run has no SNP by design).
+
+### `RestoreMarkers` now clears before it restores
+
+That line used to be genuinely unnecessary: the whole trace set was rebuilt on each refill, so the
+markers went with the objects that carried them. An **overlay is now the same `Trace` object from one
+rebuild to the next**, so its markers survive the refill and re-attaching the document's added a second
+copy of each — on every keystroke. This is the shape of defect that only appears once an object
+outlives the loop that used to recreate it.
+
+### `TraceConfig.ExcludeFromAutoscale`, and `Plot.AllowUserTraces`
+
+Both new, both default to the value every existing file and every existing plot already had — false.
+The first makes §5.7's autoscale exclusion persistable (and gives the Data Display's own trace card a
+control for a flag that had none); the second splits `Plot.IsFixedReadout`'s two meanings so a plot can
+keep its type fixed while opening its trace set. A plot with nowhere to write a user-added trace down
+must leave `AllowUserTraces` alone, which is why it is opt-in rather than inferred.
+
 ## Smith Chart, round three — the glyph was on the wrong side of the real axis (2026-09-19)
 
 The half of that round that landed below the firewall. The window's half is in `src/Ui/RESOLVED.md`

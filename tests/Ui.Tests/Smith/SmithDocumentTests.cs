@@ -4,6 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using CircuitRF.Design.Smith;
+using CircuitRF.Render.DataDisplay;
+using CircuitRF.Render.Smith;
+using RfCore;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Smith;
@@ -396,23 +399,30 @@ public sealed class SmithDocumentTests
         // And one disabled element, because Enabled defaults true and would otherwise be untested.
         d.Elements[2].Enabled = false;
 
-        d.Overlays.Add(new SmithOverlayRef
+        // Two overlays, in the shape a `.csmith` now stores them: the Data Display's own
+        // TraceConfig, opaque to src/Design (brief-smith-12 R-smith12-4b). One network-bound with
+        // several fields SmithOverlayRef could not hold, one derived.
+        d.Overlays.Add(SmithOverlays.Write(new TraceConfig
         {
-            SourceKind         = SmithOverlaySource.TouchstoneFile,
-            Source             = "meas/dut.s2p",
-            Quantity           = "S11",
-            Renormalize        = false,
-            Visible            = false,
-            IncludeInAutoscale = true,
-            ColorHex           = "#ff8800",
-            Dashed             = true,
-        });
-        d.Overlays.Add(new SmithOverlayRef
+            SourcePath           = "meas/dut.s2p",
+            MatrixType           = MatrixType.S,
+            YAxis                = DependentVarFormat.Complex,
+            Z0                   = "75",
+            Z0Override           = true,
+            ExcludeFromAutoscale = true,
+            MaximumFractionDigits = 6,
+            Properties = new TracePropertiesConfig
+            {
+                LineEnabled = true, LineWidth = 2.5, LineType = LineType.Dashed,
+                MarkerEnabled = true, MarkerType = MarkerType.Square, MarkerSize = 4.0,
+            },
+        }));
+        d.Overlays.Add(SmithOverlays.Write(new TraceConfig
         {
-            SourceKind = SmithOverlaySource.Cube,
-            Source     = "SP1.S",
-            Derived    = "SourceStabilityCircle",
-        });
+            SourcePath = "SP1.npy",
+            Derived    = DerivedParameters.SourceStabilityCircle,
+            YAxis      = DependentVarFormat.Complex,
+        }));
 
         d.Markers.Add(new SmithMarker
         {
@@ -643,20 +653,13 @@ public sealed class SmithDocumentTests
         Assert.Equal(a.ConstantQ.Enabled, b.ConstantQ.Enabled);
         Assert.Equal(a.ConstantQ.Q,       b.ConstantQ.Q);
 
+        // The overlay block is opaque JSON on both sides, so the comparison is the CONTENT — which
+        // is the strongest form of "every field survived" available, and the one that keeps working
+        // as TraceConfig grows. Compact rather than raw: the same content comes back with different
+        // whitespace, and a test that compared GetRawText would be a test of the writer's
+        // indentation.
         Assert.Equal(a.Overlays.Count, b.Overlays.Count);
-        for (int i = 0; i < a.Overlays.Count; i++)
-        {
-            var (x, y) = (a.Overlays[i], b.Overlays[i]);
-            Assert.Equal(x.SourceKind,         y.SourceKind);
-            Assert.Equal(x.Source,             y.Source);
-            Assert.Equal(x.Quantity,           y.Quantity);
-            Assert.Equal(x.Derived,            y.Derived);
-            Assert.Equal(x.Renormalize,        y.Renormalize);
-            Assert.Equal(x.Visible,            y.Visible);
-            Assert.Equal(x.IncludeInAutoscale, y.IncludeInAutoscale);
-            Assert.Equal(x.ColorHex,           y.ColorHex);
-            Assert.Equal(x.Dashed,             y.Dashed);
-        }
+        Assert.Equal(SmithOverlays.Signature(a.Overlays), SmithOverlays.Signature(b.Overlays));
 
         Assert.Equal(a.Markers.Count, b.Markers.Count);
         for (int i = 0; i < a.Markers.Count; i++)

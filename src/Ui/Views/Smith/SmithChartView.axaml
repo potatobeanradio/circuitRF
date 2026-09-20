@@ -393,87 +393,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ── The overlays (brief 8) ───────────────────────────────────────
-                             R-smith8-1/-2/-3/-4; docs/design/smith-chart.md §5.7.
-
-                             REFERENCE MATERIAL UNDER THE WORK, and none of it is part of the
-                             cascade: an overlay is not an element, it is not in the node array, it
-                             is not in the network strip, and it stays out of the chart's autoscale
-                             unless its own row says otherwise — a stability circle can be enormous
-                             and one unlucky overlay must not reframe the work.
-
-                             EVERY ROW IS AN ORDINARY DATA DISPLAY TRACE. The quantity cell takes
-                             what a trace card takes — S11, S21, Z11, a cube slice — and the derived
-                             cell takes a DerivedParameters name, of which SourceStabilityCircle and
-                             LoadStabilityCircle are the two this tool was asked for. Nothing here
-                             computes any of it.
-
-                             A ROW THAT DOES NOT RESOLVE IS MARKED AND SAYS WHY, and the document
-                             still opens with the rest of the chart drawn. That is the opposite of
-                             an S1P ELEMENT, whose missing file is a refusal, and the difference is
-                             the point: the cascade cannot be walked without an element, and an
-                             overlay's absence costs the user a comparison and nothing else. -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Overlays"/>
-
-                                <TextBlock Classes="note" IsVisible="{Binding !ViewModel.HasOverlays}"
-                                           TextWrapping="Wrap"
-                                           Text="Reference data under the work — a Touchstone file, or a cube in an open data set. Everything is renormalized to the chart's Z₀ on the way in."/>
-
-                                <ListBox Classes="rows" MaxHeight="150"
-                                         IsVisible="{Binding ViewModel.HasOverlays}"
-                                         ItemsSource="{Binding ViewModel.OverlayRows}"
-                                         SelectedItem="{Binding ViewModel.SelectedOverlay, Mode=TwoWay}">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate x:DataType="sm:SmithOverlayRowViewModel">
-                                            <StackPanel Margin="0,1" Spacing="1">
-                                                <Grid ColumnDefinitions="Auto,*">
-                                                    <CheckBox Grid.Column="0" Padding="4,0,0,0" MinHeight="0"
-                                                              IsChecked="{Binding Visible, Mode=TwoWay}"
-                                                              ToolTip.Tip="Draw this overlay. A hidden row is not on the chart at all, so it is also out of the trace list and the Add Marker menu."/>
-                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                                                               Classes.bad="{Binding IsUnresolved}"
-                                                               Text="{Binding Label}"
-                                                               ToolTip.Tip="{Binding Unresolved}"/>
-                                                </Grid>
-
-                                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="20,0,0,0">
-                                                    <TextBlock Classes="detailLabel" Text="Quantity"/>
-                                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                                        Text="{Binding QuantityEntry, Mode=TwoWay}"
-                                                                        ToolTip.Tip="S11, S21, Z11, Y21 — a matrix letter and a pair of 1-BASED port numbers — or a cube slice. Double-click to edit."/>
-                                                    <ctl:InlineEditText Grid.Column="2" Classes="val" Margin="6,0,0,0"
-                                                                        Text="{Binding DerivedEntry, Mode=TwoWay}"
-                                                                        ToolTip.Tip="A derived quantity, or None. SourceStabilityCircle and LoadStabilityCircle are drawn as circles in the Γ plane; a derived row ignores the quantity beside it."/>
-                                                </Grid>
-
-                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="20,0,0,0">
-                                                    <CheckBox MinHeight="0" FontSize="11" Content="Renormalize"
-                                                              IsChecked="{Binding Renormalize, Mode=TwoWay}"
-                                                              ToolTip.Tip="Renormalize to the chart's Z₀ on the way in. ON is the right answer: a 75 Ω part drawn on a 50 Ω chart without it is a curve in the wrong place that looks entirely plausible."/>
-                                                    <CheckBox MinHeight="0" FontSize="11" Content="Autoscale"
-                                                              IsChecked="{Binding IncludeInAutoscale, Mode=TwoWay}"
-                                                              ToolTip.Tip="Let this row take part in the chart's autoscale. Off by default — a stability circle can be enormous, and one unlucky overlay would squash the cascade into a corner."/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-
-                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0"
-                                            HorizontalAlignment="Right">
-                                    <Button Classes="tiny" Content="+"
-                                            Command="{Binding ViewModel.AddOverlayCommand}"
-                                            ToolTip.Tip="Add a Touchstone file as an overlay. It is REFERENCED by a path relative to this document, never copied into it — an overlay is reference material, so a stale copy would be the wrong answer."/>
-                                    <Button Classes="tiny" Content="−"
-                                            Command="{Binding ViewModel.RemoveOverlayCommand}"
-                                            ToolTip.Tip="Remove the selected overlay. Nothing else changes — an overlay is not part of the cascade."/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
                         <!-- ── The swept band (brief 9) ─────────────────────────────────────
                              R-smith9-4; docs/design/smith-chart.md §3.6.
 
@@ -541,10 +460,14 @@
                      and the load-point labels — and the overlay draws above the trajectories and
                      below the markers, inside PlotRenderer's own draw.
 
-                     CanDeletePlot is False and Plot.IsFixedReadout hides the Add and the per-card
-                     trash: every trace here is rebuilt from the design on each edit, so a trace
-                     added in the inspector would be gone by the next keystroke and one removed would
-                     be back. What the panel CAN change — a colour, a line — is carried across.
+                     CanDeletePlot is False and Plot.IsFixedReadout keeps the plot TYPE fixed — it is
+                     a Smith chart and it stays one. THE TRACE SET IS OPEN, though
+                     (Plot.AllowUserTraces, brief 12): reference data goes onto this chart the way it
+                     goes onto a Smith chart on a Data Display — pick a source in the strip, open
+                     Plot Properties…, press Add, and edit the trace card. What makes that safe is
+                     that a trace the user adds is harvested into the `.csmith` and restored on the
+                     next rebuild; the tool's OWN traces are still the design's and their cards offer
+                     no data pickers and no trash.
 
                      THE FOUR PROVIDERS AND THE OVERLAY ARE WIRED IN CODE, in BindChartPlot: a
                      PlotControl asks its HOST for the marker index, the info-box view model, the
@@ -556,31 +479,58 @@
                                      Library="{Binding ViewModel.PlotHost.Library}"
                                      CanDeletePlot="False" CanEditPlotProperties="True"/>
 
-                    <!-- ── The constant-Q toggle (owner instruction, 2026-09-19) ────────────────
-                         IN THE CHART'S TOP-LEFT CORNER and not in the side panel, because the arcs
-                         are a ruler laid over THIS picture and the control for them belongs on it.
-                         A square toolbar button with a Q glyph, the schematic editor's own
-                         SelectionBtn/ToolActive pair, so "on" reads the way every other latched tool
-                         in circuitRF reads.
+                    <!-- ── The chart's own top strip ────────────────────────────────────────
+                         ON THE CHART and not in the generator column, because both controls here
+                         belong to the picture: the arcs are a ruler laid over it, and the data
+                         source is what the next trace added to it is seeded from. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4">
 
-                         THE VALUE IS NOT HERE. It is drawn on the chart itself, below the apex of
-                         the inductive arc, by SmithChartChrome — which is below the firewall, so it
-                         travels with every copy, export and headless render of the picture rather
-                         than living in a panel that no exported chart carries. Dragging either arc
-                         is how it is set; the text follows the arc up and down as it moves. -->
-                    <Button Classes="SelectionBtn" Padding="6,3"
-                            Classes.ToolActive="{Binding ViewModel.ConstantQEnabled}"
-                            Command="{Binding ViewModel.ToggleConstantQCommand}"
-                            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4"
-                            ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
-                        <!-- THE LETTER, not the glyph (owner instruction, 2026-09-19). Material's
-                             AlphaQ is a Q inside a rounded box, which at 16 px on a toolbar reads as
-                             an O with a tick rather than as a Q. A TextBlock sized and centred to the
-                             same 16x16 box keeps the button square and the row aligned. -->
-                        <TextBlock Text="Q" Width="16" Height="16" FontSize="14" FontWeight="SemiBold"
-                                   TextAlignment="Center" HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" LineHeight="16"/>
-                    </Button>
+                        <!-- ── The constant-Q toggle (owner instruction, 2026-09-19) ────────────
+                             A square toolbar button with a Q glyph, the schematic editor's own
+                             SelectionBtn/ToolActive pair, so "on" reads the way every other latched
+                             tool in circuitRF reads.
+
+                             THE VALUE IS NOT HERE. It is drawn on the chart itself, below the apex
+                             of the inductive arc, by SmithChartChrome — which is below the firewall,
+                             so it travels with every copy, export and headless render of the picture
+                             rather than living in a panel that no exported chart carries. Dragging
+                             either arc is how it is set; the text follows the arc as it moves. -->
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Classes.ToolActive="{Binding ViewModel.ConstantQEnabled}"
+                                Command="{Binding ViewModel.ToggleConstantQCommand}"
+                                ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
+                            <!-- THE LETTER, not the glyph (owner instruction, 2026-09-19).
+                                 Material's AlphaQ is a Q inside a rounded box, which at 16 px on a
+                                 toolbar reads as an O with a tick rather than as a Q. A TextBlock
+                                 sized and centred to the same 16x16 box keeps the button square. -->
+                            <TextBlock Text="Q" Width="16" Height="16" FontSize="14" FontWeight="SemiBold"
+                                       TextAlignment="Center" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" LineHeight="16"/>
+                        </Button>
+
+                        <!-- ── The data source (brief 12, R-smith12-3) ──────────────────────────
+                             THE DATA DISPLAY'S OWN COMBO, bound exactly as DataDisplayView.axaml
+                             binds it. Plot Properties ▸ Add seeds a new trace from the library's
+                             SELECTED entry, so without a way to choose one the button would add
+                             nothing and say nothing about why.
+
+                             A SCRATCH .csmith WITH NO WORKSPACE HAS NO PROVIDERS and this list is
+                             then empty — which has to keep working, because it is what makes this a
+                             real document rather than a workspace feature. The combo's own "Add from
+                             file…" path is wired to the picker the Overlays panel used, so a
+                             Touchstone can be loaded and drawn with nothing else open. -->
+                        <ComboBox Width="180" Padding="6,3"
+                                  ItemsSource="{Binding ViewModel.AvailableDataSources}"
+                                  SelectedItem="{Binding ViewModel.SelectedDataSourceItem, Mode=TwoWay}"
+                                  ToolTip.Tip="{Binding ViewModel.SelectedDataSourceAbs}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="ddv:DataSourceItem">
+                                    <TextBlock Text="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>

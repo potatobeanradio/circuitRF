@@ -114,14 +114,36 @@ public sealed partial class SmithChartViewModel
 
         bool dragging = _dragBefore is not null;
 
-        Scene      = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
-        _traceKeys = SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging,
-                                           ResolveOverlays());
-        _lastWindow = ChartPlot.Axes.Window;
+        // THE TRACE SET IS BEING REPLACED BY THIS DOCUMENT, so the inspector's own
+        // PlotStructureChanged — which ReloadTraceCards below raises — is not a user adding or
+        // removing anything and must not be harvested. Without this the harvest would push an edit,
+        // the edit would rebuild the chart, and the rebuild would reload the cards again.
+        _rebuildingChart = true;
+        try
+        {
+            Scene      = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
+            _traceKeys = SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging,
+                                               ResolveOverlays());
+            _lastWindow = ChartPlot.Axes.Window;
 
-        if (!dragging) ChartContainer.OnPlotChanged(this, EventArgs.Empty);
-        ChartContainer.RequestPlotRedraw();
+            if (!dragging)
+            {
+                ChartContainer.OnPlotChanged(this, EventArgs.Empty);
+
+                // railRF's own line, for railRF's own reason: a plot whose traces are produced by
+                // something else has to SAY when it has replaced them, or the panel opens on the
+                // cards of traces that no longer exist — or, as railRF's did, on none at all. This
+                // document builds its inspector before it has any traces, so without this the Plot
+                // Properties panel of a saved `.csmith` would open empty every time.
+                ChartContainer.Inspector.ReloadTraceCards();
+            }
+            ChartContainer.RequestPlotRedraw();
+        }
+        finally { _rebuildingChart = false; }
     }
+
+    /// <summary>True while <see cref="RebuildChart"/> is replacing the plot's traces — see there.</summary>
+    private bool _rebuildingChart;
 
     /// <summary>The window the last frame was drawn in — what the adaptive sampler's canvas map is
     /// built from, so a zoomed-in curve is sampled for the zoom it is actually drawn at.</summary>

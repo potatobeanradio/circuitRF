@@ -245,6 +245,18 @@ internal static class Smith
         catch (Exception ex)
         { return JsonRun.Fail(CliDiagnostics.SmithDocumentUnreadable(path, ex.Message)); }
 
+        // WHERE THIS DOCUMENT'S OVERLAY DATA IS (R-smith12-3). An overlay is a REFERENCE, by a path
+        // relative to the document, and this is the same IPlotDataSources the window resolves one
+        // through — so the verb and the window read one `.csmith`'s reference material through one
+        // loader rather than two that could disagree about which file a reference names.
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) ?? ".";
+        var sources = new SmithDocumentSources(dir, inner: null, alsoSearch: ResultsDirs(dir));
+
+        // BEFORE THE COPY BELOW, which writes the document out and reads it back: the brief-8
+        // overlay block is READ and never written (R-smith12-4c), so a round trip taken before the
+        // migration would drop every overlay an older `.csmith` carries, silently.
+        SmithOverlayMigration.Apply(design, sources);
+
         // ── step 2: the overrides, on a COPY ─────────────────────────────────
         //
         //  `rail`'s rule and RailDcRun's reason: the document is the user's, and a run that wrote
@@ -281,8 +293,6 @@ internal static class Smith
         //  with the span in the sentence, and with the one-row table's exception already in it.
         if (design.Refusal() is { } refusal)
             return JsonRun.Fail(CliDiagnostics.SmithDocumentRefused(path, refusal));
-
-        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) ?? ".";
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("evaluate");
@@ -325,7 +335,25 @@ internal static class Smith
 
         return OutputKindOf(o.Output) == OutputKind.Touchstone
             ? WriteTouchstone(o, design, reading, band)
-            : DrawChart(o, path, design, dir);
+            : DrawChart(o, path, design, dir, sources);
+    }
+
+    /// <summary>
+    /// The workspace's <c>results/</c>, when this document is inside one — the second place a
+    /// relative overlay reference is looked for.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same two directories <c>CddSources</c> searches for a `.cdd`'s references</b>, because
+    /// a cube overlay names a run exactly as a `.cdd` trace does: a bare <c>&lt;name&gt;.npy</c>
+    /// against the flat, shared results directory. A `.csmith` outside a workspace gets the document
+    /// folder alone, which is all a Touchstone reference needs.
+    /// </remarks>
+    private static IReadOnlyList<string> ResultsDirs(string dir)
+    {
+        if (CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(dir) is not { } cws)
+            return [];
+        if (System.IO.Path.GetDirectoryName(cws) is not { Length: > 0 } wsDir) return [];
+        return [CircuitRF.Design.Results.ResultsWriter.ResultsDirectory(wsDir)];
     }
 
     // ── the report (R-smith10-2) ─────────────────────────────────────────────
@@ -482,30 +510,33 @@ internal static class Smith
     /// (<see cref="SmithChromeState.None"/>): those are states a live pointer has and an export does
     /// not, and inventing one would put a highlighted ring on a picture nobody was touching.</para>
     /// </remarks>
-    private static int DrawChart(Options o, string path, SmithDesign design, string dir)
+    private static int DrawChart(Options o, string path, SmithDesign design, string dir,
+                                 SmithDocumentSources sources)
     {
         var scene = SmithPlotBuilder.BuildScene(design, dir, (ChartBox, ChartBox), window: null);
 
-        // The overlays a `.csmith` names, resolved exactly as the window resolves them. A row that
-        // does not resolve marks itself and the chart carries on drawing everything that did
-        // (R-smith8-2) — reference material that is missing must not take the work down with it —
-        // so each one is REPORTED here rather than being allowed to refuse the picture.
+        // The overlays a `.csmith` names, resolved exactly as the window resolves them — through
+        // `PlotConfigLoader.LoadTrace`, which is the `.cdd`'s own reader and the only one
+        // (R-smith12-5). One that does not resolve is REPORTED and the chart carries on drawing
+        // everything that did (R-smith8-2): reference material that is missing must not take the
+        // work down with it.
         var overlays = new List<SmithOverlayTrace>();
-        for (int i = 0; i < design.Overlays.Count; i++)
+        foreach (var stored in design.Overlays)
         {
-            var row = design.Overlays[i];
-            var resolved = SmithOverlayResolver.Resolve(
-                row, dir, design.Chart.Z0Ohm, sources: null,
-                colorIndex: SmithPlotBuilder.ColorIndexFor(design.Elements.Count + i));
-
-            if (resolved.Trace is { } trace)
+            var cfg = SmithOverlays.Read(stored);
+            if (cfg is not null && SmithOverlays.Load(cfg, sources) is { } trace)
             {
-                overlays.Add(new SmithOverlayTrace(SmithOverlayResolver.Label(row), trace, row.Visible));
+                overlays.Add(new SmithOverlayTrace(SmithOverlays.Key(cfg), trace));
                 continue;
             }
 
-            var note = CliDiagnostics.SmithOverlayUnresolved(
-                SmithOverlayResolver.Label(row), resolved.Unresolved ?? "");
+            string label = cfg is not null ? SmithOverlays.Key(cfg) : "overlay";
+            string why   = cfg is null
+                ? "this overlay is not a trace circuitRF can read."
+                : sources.WhyUnresolved(cfg.SourcePath)
+                  ?? $"'{cfg.SourcePath}' is not one of the data sets that are open.";
+
+            var note = CliDiagnostics.SmithOverlayUnresolved(label, why);
             Console.Error.WriteLine("warning: " + note.Render());
             JsonRun.Note(note);
         }

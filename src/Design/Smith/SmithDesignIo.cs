@@ -154,7 +154,11 @@ public static class SmithDesignIo
         ConstantQ = IsDefault(d.ConstantQ)
                         ? null
                         : new CsmithConstantQ { Enabled = d.ConstantQ.Enabled, Q = d.ConstantQ.Q },
-        Overlays  = d.Overlays.Count > 0 ? [.. d.Overlays.Select(ToFile)] : null,
+        // THE TRACE CONFIGS, VERBATIM (R-smith12-4b). They arrived as JSON and they leave as JSON;
+        // nothing here knows what a trace is. The LEGACY block is not written at all — a document
+        // read in the old shape and written back is written in the new one, which is what makes the
+        // migration a one-way door rather than a reader that has to keep working forever.
+        Overlays  = d.Overlays.Count > 0 ? [.. d.Overlays] : null,
         Markers   = d.Markers.Count  > 0 ? [.. d.Markers.Select(ToFile)]  : null,
         View = new CsmithView
         {
@@ -199,19 +203,6 @@ public static class SmithDesignIo
                        Max       = kv.Value.Max,
                    })]
             : null,
-    };
-
-    private static CsmithOverlay ToFile(SmithOverlayRef o) => new()
-    {
-        SourceKind         = o.SourceKind,
-        Source             = o.Source,
-        Quantity           = NullIfEmpty(o.Quantity),
-        Derived            = o.Derived,
-        Renormalize        = o.Renormalize,
-        Visible            = o.Visible,
-        IncludeInAutoscale = o.IncludeInAutoscale,
-        ColorHex           = NullIfEmpty(o.ColorHex),
-        Dashed             = o.Dashed,
     };
 
     private static CsmithMarker ToFile(SmithMarker m) => new()
@@ -294,7 +285,25 @@ public static class SmithDesignIo
                 r.FrequencyHz ?? 0.0, r.ResistanceOhm ?? 0.0, r.ReactanceOhm ?? 0.0));
 
         foreach (var e in f.Elements ?? []) d.Elements.Add(FromFile(e));
-        foreach (var o in f.Overlays ?? []) d.Overlays.Add(FromFile(o));
+        // ── overlays: the new shape, or the brief-8 one migrated by the caller (R-smith12-4c) ──
+        //
+        //  ONE LIST ON DISK, TWO SHAPES IN IT — told apart by the one key that cannot be in both.
+        //  A trace config names its source in `SourcePath`; a brief-8 row named it in `Source` and
+        //  had no `SourcePath` at all. An element that has neither is a row a newer circuitRF wrote
+        //  and is carried through untouched, which is the `.ctech` rule this file opens with: an
+        //  unknown key is ignored rather than losing the keys beside it.
+        foreach (var o in f.Overlays ?? [])
+        {
+            if (o.ValueKind == JsonValueKind.Object
+                && !o.TryGetProperty("SourcePath", out _)
+                && o.TryGetProperty("Source", out _))
+            {
+                var legacy = o.Deserialize<CsmithOverlay>(JsonOpts);
+                if (legacy is not null) { d.LegacyOverlays.Add(FromFile(legacy)); continue; }
+            }
+            d.Overlays.Add(o);
+        }
+
         foreach (var m in f.Markers  ?? []) d.Markers.Add(FromFile(m));
 
         return d;
@@ -419,7 +428,10 @@ public static class SmithDesignIo
         /// <summary>Same rule as <see cref="Sweep"/>.</summary>
         public CsmithConstantQ?       ConstantQ     { get; set; }
 
-        public List<CsmithOverlay>?   Overlays      { get; set; }
+        /// <summary>One Data Display <c>TraceConfig</c> per overlay, opaque here — see
+        /// <see cref="SmithDesign.Overlays"/>. A `.csmith` written before 2026-09-19 carries
+        /// <c>CsmithOverlay</c> rows in this same list instead; both are read.</summary>
+        public List<JsonElement>?     Overlays      { get; set; }
         public List<CsmithMarker>?    Markers       { get; set; }
         public CsmithView?            View          { get; set; }
     }
@@ -508,6 +520,7 @@ public static class SmithDesignIo
         public double? Q       { get; set; }
     }
 
+    /// <summary>The brief-8 overlay row. <b>Read only</b> — see <see cref="SmithOverlayRef"/>.</summary>
     private sealed class CsmithOverlay
     {
         public SmithOverlaySource SourceKind         { get; set; }

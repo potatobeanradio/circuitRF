@@ -524,6 +524,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     private void Redraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Asks the host to redraw. For a card setting that changes what is DRAWN without
+    /// changing what any trace resolves to.</summary>
+    internal void RequestRedraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+
     private void ApplyRadialChange()
     {
         // force: the window a pattern plot wants is its own unit disc, and the window a linear one
@@ -638,7 +642,28 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// The Add button and every card's trash button are hidden by it, rather than disabled: a
     /// control that is permanently grey is a control the user goes on trying.
     /// </summary>
-    public bool CanEditTraceSet => !_plot.IsFixedReadout;
+    /// <remarks>
+    /// <b><see cref="Plot.AllowUserTraces"/> re-opens it on a fixed read-out</b>
+    /// (<c>R-smith12-1</c>): the flag means two things — the plot TYPE and the trace SET — and the
+    /// Smith Chart tool wants only the first. It can afford the second because it writes a
+    /// user-added trace into its own document and restores it on the next rebuild; railRF's
+    /// impedance plot and the Match Designer's response plots cannot, which is why the default is
+    /// off and must stay off there.
+    /// </remarks>
+    public bool CanEditTraceSet => !_plot.IsFixedReadout || _plot.AllowUserTraces;
+
+    /// <summary>
+    /// True for a trace the PLOT'S OWNER derives and rebuilds — on a fixed read-out, everything
+    /// except the user's own additions.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="Trace.ExcludeFromAxisLabels"/> is that fact, already written down</b>
+    /// (<c>R-smith12-2</c>): the Smith Chart tool sets it on every trace it derives — the
+    /// trajectories, the load points, the generator points, the band, the constant-Q arcs — and
+    /// leaves it clear on reference material the user chose. A second marker of the same fact would
+    /// be a second thing to keep in step.
+    /// </remarks>
+    internal bool IsOwnersTrace(Trace t) => _plot.IsFixedReadout && t.ExcludeFromAxisLabels;
 
     /// <summary>
     /// False where the plot is the kind it is — the segmented type header is hidden by it.
@@ -652,8 +677,28 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public bool CanAddTrace =>
         CanEditTraceSet &&
-        (_plot.Traces.Count > 0 ||
+        (CloneSource() is not null ||
          (_library?.SelectedEntry is { } e && HasPlottableData(e, _plot.PlotType == PlotType.Table)));
+
+    /// <summary>
+    /// The trace <b>Add</b> copies when it copies one — the last, or null when there is nothing to
+    /// copy.
+    /// </summary>
+    /// <remarks>
+    /// <b>On a plot whose own traces are derived, the last trace is never a candidate</b>
+    /// (<c>R-smith12-2</c>). On a Data Display "another one like the last" is the commonest Add and
+    /// is right; on the Smith Chart tool the last trace is one of the TOOL's — a cube trace whose
+    /// name is an element's (<c>"L2"</c>, <c>"band"</c>, <c>"Zgen"</c>) and whose points were pushed
+    /// in from the evaluator — so a copy of it would be bound to a cube that exists nowhere, drawing
+    /// a frozen curve that will not track the design. It looks like a trace and it is not one.
+    ///
+    /// <para>So such a plot seeds from the LIBRARY, and falls back to a clone only once it has a
+    /// user trace of its own to clone.</para>
+    /// </remarks>
+    private Trace? CloneSource()
+        => _plot.AllowUserTraces
+               ? _plot.Traces.LastOrDefault(t => !IsOwnersTrace(t))
+               : _plot.Traces.LastOrDefault();
 
     /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
     /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).
@@ -1103,9 +1148,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         Trace trace;
 
-        if (_plot.Traces.Count > 0)
+        if (CloneSource() is { } src)
         {
-            var src = _plot.Traces.Last();
             trace = new Trace(src, incrementColorBy: 1, includeMarkers: false);
             trace.SourceRef = src.SourceRef;
         }

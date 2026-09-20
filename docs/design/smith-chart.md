@@ -514,7 +514,7 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │ • lna_input_match.csmith                                                        (document tab)│
 ├───────────────────────┬──────────────────────────────────────────────────────────────────────┤
-│ GENERATOR             │                                                                      │
+│ GENERATOR             │ [Q] [ lna_s2p          ▾ ]                                           │
 │  f        R      X    │                     ╭────────────────────────╮                       │
 │  1.80 G  12.0  −8.5   │                   ╭─┤                        ├─╮                     │
 │  2.00 G  11.4  −9.1   │                  │     ·2.20G                  │                    │
@@ -532,9 +532,8 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 │      201 pts          │                                                                      │
 │  [x] Constant Q  1.75 │                                                                      │
 │                       │                                                                      │
-│  OVERLAYS      [+][−] │                                                                      │
-│   lna_s2p · S11       │                                                                      │
-│   lna_s2p · µ-circles │                                                                      │
+│                       │   (overlays are added in Plot Properties… — §5.7 — and the strip's    │
+│                       │    combo at the top left is what a new trace is seeded from)          │
 ├───────────────────────┴──────────────────────────────────────────────────────────────────────┤
 │ NETWORK                                      [ Add ▾ ] [ Insert ▾ ] [ Delete ] [ ⇅ ] [ ⇄ ]   │
 │                                                                                              │
@@ -576,7 +575,8 @@ Not "most", and not "the ones in the specification pane". **Every** number, name
 can change in this window is an `InlineEditText`: the generator table's f, R and X cells; the chart Z₀;
 the design frequency; the sweep's start, stop and point count; the constant-Q value; every parameter
 value beside every slider; a TLIN's F_ref; each element's instance name; each slider's range endpoints;
-and an overlay row's label.
+and a TLIN's F_ref. (An overlay's own fields are the Data Display trace card's — §5.7 — and that card
+is the Data Display's, unchanged.)
 
 The reason is the one the owner gives: the control is already carrying the Match Designer's specification
 pane, railRF's source/load/aggressor rows and harmonicaRF's readout strip, so **the user has already
@@ -691,21 +691,63 @@ Each row is a label, a compact slider and an `InlineEditText` showing the value 
 
 ### 5.7 Overlays
 
-Additional data on the chart, from either of the two sources circuitRF already has:
+Additional data on the chart, added **the way it is added to a Smith chart on a Data Display**: pick a
+source in the combo above the chart, open **Plot Properties…**, press **Add**, and edit the trace card.
+There is no Overlays panel. *(Owner instruction, 2026-09-19; brief 12, which replaces brief 8's panel.)*
+
+That sentence is a constraint rather than a comparison, and it settles most of the design: **nothing here
+invents an overlay UI.** The trace card already picks a matrix element, a virtual Z or Y, a derived
+`DerivedParameters` mode — of which `SourceStabilityCircle` and `LoadStabilityCircle` are the two this
+tool was asked for by name — a colour, a line style, a marker glyph, a Z₀ and its override, a cube name
+and slice, an expression, a *plot versus* X spec, and its own markers. The panel it replaces had seven
+properties where the card has thirty, and a panel left in place beside the inspector would be two authors
+of one list.
+
+The sources are the two circuitRF already has:
 
 - **a Touchstone file**, referenced by a path **relative to the document** (the `.cdd` convention, and the
   one that survives an archived or moved workspace — the repointing work in the archive/Window-Layout
-  round is what made relative references actually resolve);
+  round is what made relative references actually resolve). A scratch `.csmith` with no workspace open
+  can still load one: the combo's **Add from file…** is wired to the same picker, which is what keeps
+  this a real document rather than a workspace feature;
 - **a cube in an open `DataSet`**, referenced the way a Data Display trace card references one.
 
-Each overlay row picks its quantity through the **existing** trace machinery: a raw S-parameter
-(`S11`, `S22`, …), a virtual Z or Y, or a derived `DerivedParameters` mode — of which
-`SourceStabilityCircle` and `LoadStabilityCircle` are the two this tool was asked for by name. All of it
-is renormalized to Z₀_chart on the way in (§3.4).
+All of it is renormalized to Z₀_chart on the way in (§3.4), and a trace the card creates seeds with the
+chart's Z₀ and the override **on** — *a 75 Ω part drawn on a 50 Ω chart without it is a curve in the wrong
+place that looks entirely plausible.* It also seeds **out of the autoscale**: a stability circle can be
+enormous, and one unlucky overlay should not reframe the work. Both are the card's to change afterwards,
+the second through a checkbox the Data Display's own trace card gained for this (`Trace.ExcludeFromAutoscale`
+existed, was set only in code, and had no control and no persistence).
 
-Overlays are **reference material**: they are not part of the cascade, they carry their own colour and
-style, they may carry markers, and they are excluded from the chart's autoscale unless the row says
-otherwise.
+**Opening the trace set is the small part; making an added trace survive is the work.**
+`SmithPlotBuilder.Fill` clears the plot's traces and refills them from the design on every committed
+edit, so a trace added in the inspector would be gone by the next keystroke and one removed would be back
+— which is why brief 5 closed the set in the first place. Three things reopen it:
+
+1. **The plot says so.** `Plot.IsFixedReadout` meant two things — the plot TYPE and the trace SET — and
+   only the first is wanted here, so `Plot.AllowUserTraces` opens the second. It defaults **off** and must
+   stay off on railRF's `ImpedancePlot` and the Match Designer's response plots, which have nowhere to
+   write a user-added trace down.
+2. **The trace INSTANCES are carried across the rebuild**, not re-resolved from their configs. The
+   inspector's cards, its selection and each trace's markers all hold the `Trace` object; replacing it
+   leaves every one of them pointing at a discarded copy.
+3. **The set is harvested back into the `.csmith`** as the Data Display's own trace configs (§7). Every
+   trace on the plot without `ExcludeFromAxisLabels` is a user trace — the tool sets that flag on
+   everything it derives — and an add or a remove is **one undo entry**, while a card's own settings ride
+   along on the next save. (An entry per card keystroke is the Match Designer's "eight edits took fourteen
+   undos" by a slower route.)
+
+A card for one of the **tool's own** traces offers no trash and no data pickers: removing it would remove
+it until the next keystroke, and re-aiming it would be undone by the next rebuild.
+
+**Visible is gone, with no replacement.** `TraceProperties.Enabled` is read by nothing, and a hidden trace
+would still sit in the trace list, the legend and the Add Marker menu. On a Data Display you delete the
+trace; here the card's trash is the same affordance.
+
+A reference that does not resolve **says why in the status strip and stops there** — the document opens,
+the rest of the chart draws, and the overlay is **kept in the document** rather than dropped by the next
+harvest. That is the opposite of an S1P element, whose missing file is a refusal because the cascade
+cannot be walked without it.
 
 ### 5.8 Menus and commands
 
@@ -853,16 +895,42 @@ SmithDesign
                  SliderRange{ Min, Max } per parameter
   Sweep        : Enabled, StartHz, StopHz, Points
   ConstantQ    : Enabled, Q
-  Overlays[]   : Source (relative path | cube ref), Quantity | Derived, Style, Renormalize
+  Overlays[]   : the Data Display TraceConfig shape, verbatim — one per overlay, opaque JSON
   Markers[]    : the Data Display Marker shape, verbatim
   View         : splitter positions, network scroll/zoom, MirrorNetwork
 ```
+
+**Both of the last two blocks are the Data Display's own, and only one of them is a mirror.** A marker is
+`SmithMarker`, a hand-written copy of `MarkerConfig` field for field, so *the bytes a `.csmith` puts on
+disk for a marker are the bytes a `.cdd` puts on disk for the same marker*. That works because a marker's
+shape is settled.
+
+**`TraceConfig`'s is not, so `Overlays[]` is opaque JSON and `SmithDesign` holds it as
+`List<JsonElement>`** (brief 12). It pulls in `TracePropertiesConfig`, `MarkerConfig`, `AxisSliceConfig`,
+`WspTraceConfig`, `ContourTraceConfig` and `SummaryColumnConfig`, and it is a live type that grows
+whenever the Data Display gains a per-trace setting — WSProbe, pattern mirroring, the dBm reference
+override and *plot versus* are all recent additions to it. A mirror would fall out of step in silence, and
+the symptom would be a setting that survives in a `.cdd` and vanishes from a `.csmith`. The file still
+contains ordinary readable JSON with the same keys a `.cdd` writes; what it no longer does is give that
+JSON a type in a project that must not know about traces. `src/Ui` and `src/Cli` read and write it with
+the **same** `JsonSerializerOptions` the `.cdd` uses.
+
+**Brief 8's seven-field `Overlays[]` rows migrate on read and the old block is dropped on write.** Nothing
+shipped carries an overlay, so that is cheap insurance rather than a feature — and the alternative is a
+user's own `.csmith` quietly losing its reference data. Two of the seven do not survive, both
+deliberately: `Visible` (§5.7 — it goes with no replacement, and a hidden row migrates as a visible
+trace rather than being dropped) and `ColorHex` (a `.cdd` stores a colour as an INDEX into the palette
+and never as an ARGB value, which is the property that made the palette change in RND-4 cost no saved
+file).
 
 **Validated on the way out as well as in**: a document that cannot be read back is a document that was
 never written, and the alternative is a file whose only symptom is that it refuses to open next week.
 The **clipboard** flavour skips the outbound validation, on `RailDocumentIo.SerializeUnvalidated`'s own
 reasoning — a half-built design is exactly what someone copies while they are still working, and a copy
-that writes nothing leaves the *previous* copy on the clipboard for the next paste to find.
+that writes nothing leaves the *previous* copy on the clipboard for the next paste to find. **It is also
+the undo path**, which is why the overlay round trip is gated through it specifically: every committed
+edit calls it to build the snapshot, so a field lost there is lost on the next *undo* rather than on the
+next save.
 
 The extension is registered with the shell like every other document type, so a double-click opens it;
 `project-file-formats.md` gains a row.
@@ -1050,6 +1118,48 @@ component edit. Two of that menu's three removal paths go through the container'
 raise `PlotChanged`, so this document — which is the authority for the marker set, and which rebuilds
 every trace on every edit — never heard about the removal and re-attached the marker. `PlotControl`
 now raises `MarkerRemoved` on all three.
+
+### 9.4 Round four — overlays move to the inspector (2026-09-19)
+
+**Owner instruction:** remove the Overlays panel; overlay S-parameter data sources are added through the
+Plot Properties inspector, **the same way they are added to a Smith chart on a Data Display.** Brief 12,
+which replaces brief 8's panel. §5.7 and §7 are rewritten for it.
+
+- **The panel is deleted** — `SmithOverlayRowViewModel`, `AddOverlayCommand`, `RemoveOverlayCommand` and
+  the list in `SmithChartView.axaml` — and a source-scan test holds it deleted. Two authors of one list
+  would disagree the first time either changed.
+- **`Plot.IsFixedReadout` is split.** It meant the plot TYPE and the trace SET, and this chart wants only
+  the first kept. `Plot.AllowUserTraces` (default **off**) opens the set; the type picker is untouched.
+  railRF's `ImpedancePlot` and the Match Designer's two response plots set only `IsFixedReadout` and are
+  unaffected, which their own gates assert by name.
+- **`Add` seeds from the LIBRARY on such a plot, never from the last trace.** On a Data Display "another
+  one like the last" is the commonest Add and is right there; here the last trace is always one of the
+  tool's — a cube trace whose name is an element's and whose points were pushed in by the evaluator — so
+  a clone of it is bound to a cube that exists nowhere, drawing a frozen copy of a curve that will not
+  track the design. The two kinds are told apart by `Trace.ExcludeFromAxisLabels`, which round three
+  already set on everything the tool derives.
+- **The chart grew a data-source combo**, the Data Display's own, in the strip beside the **Q** button.
+  `Add` seeds from `DataSourceLibraryViewModel.SelectedEntry`, so without a way to choose one the button
+  would add nothing and say nothing about why.
+- **`SmithDesign.Overlays` is now `List<JsonElement>`** — the Data Display's own `TraceConfig`, opaque to
+  `src/Design`. §7 gives the reason; brief-8 rows migrate on read.
+- **`PlotConfigLoader.LoadTrace` was extracted** from `LoadPlot`'s loop — a pure extraction, gated by the
+  existing `.cdd` suite — so the window and `circuitrf smith` restore an overlay through the `.cdd`'s own
+  reader. The writer already existed: `DataDisplayViewModel.BuildTraceConfig`.
+- **`TraceConfig.ExcludeFromAutoscale` and a trace-card checkbox** are the one place this round touches
+  the Data Display's own card. The flag existed on `Trace`, was set only in code, and had no UI and no
+  persistence; §5.7's reason for it is specific enough that losing either the protection or the control
+  was not acceptable.
+- **`SmithOverlayResolver` is gone.** What it did — read a Touchstone, parse a quantity, set a
+  renormalization — a trace config says and `LoadTrace` has honoured since the Data Display's first
+  release. What is left of the file is `SmithOverlayMigration`, which is the brief-8 mapping and nothing
+  else.
+- **Two defects the reuse exposed**, both of which only appear once a `Trace` outlives a refill:
+  `SmithPlotBuilder.RestoreMarkers` now clears each trace's markers before re-attaching the document's
+  (a reused overlay accumulated a second copy of every marker on every keystroke), and the status strip
+  clears its own unresolved-overlay sentence when the overlays are re-resolved (a document's folder
+  arrives *after* its design, so every relative reference fails once and then resolves — and the note
+  from the first attempt sat there naming a file that was in fact right beside it).
 
 ---
 

@@ -1,225 +1,420 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
+using System.Numerics;
+using System.Text.Json;
 using System.Threading.Tasks;
 using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Render.Smith;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Smith;
 
 /// <summary>
-/// The overlays list and the markers — <b>the reference material under the work</b>
-/// (<c>brief-smith-8-overlays-markers.md</c>; <c>docs/design/smith-chart.md</c> §5.7, §4.5).
+/// The overlays and the markers — <b>the reference material under the work</b>
+/// (<c>brief-smith-12-overlays-via-the-inspector.md</c>; <c>docs/design/smith-chart.md</c> §5.7,
+/// §4.5).
 /// </summary>
 /// <remarks>
-/// <b>None of this is needed to match an impedance, which is why it is P2</b> — and all of it is
-/// what makes a match checkable against the part it is matching.
+/// <b>There is no overlays panel and there must not be one.</b> Reference data goes onto this chart
+/// the way it goes onto a Smith chart in a Data Display: pick a source in the strip above the chart,
+/// open <b>Plot Properties…</b>, press <b>Add</b>, and edit the trace card. Brief 8 built a second,
+/// smaller version of that card in a side panel — seven properties where the card has thirty — and
+/// a panel left in place beside the inspector would be two authors of one list.
 ///
-/// <para><b>Nothing here is a second anything.</b> An overlay is an ordinary Data Display
-/// <c>Trace</c> resolved by <see cref="SmithOverlayResolver"/> through the existing machinery — the
-/// SNP path, the cube path and the derived path, stability circles included. A marker is the Data
-/// Display's own <c>Marker</c> on this <c>Plot</c>, which is why placement, drag, hit-test, the info
-/// box, the context menu, the editor and the VSWR circle all arrived with brief 5's hosting and this
-/// file only has to persist them.</para>
+/// <para><b>What this file is, then, is the DOCUMENT half of that.</b>
+/// <c>SmithPlotBuilder.Fill</c> clears the plot's traces and refills them from the design on every
+/// committed edit, so a trace added in the inspector would be gone by the next keystroke and one
+/// removed would be back — which is exactly why brief 5 closed the trace set in the first place.
+/// Three things reopen it: the plot says so (<c>Plot.AllowUserTraces</c>), the trace INSTANCES are
+/// carried across the rebuild rather than re-resolved (<c>R-smith12-5a</c> — the inspector's cards,
+/// its selection and the trace's markers all hold the object), and the set is harvested back into
+/// the `.csmith` as the Data Display's own trace configs (<c>R-smith12-4</c>).</para>
+///
+/// <para><b>Nothing here resolves or writes a trace.</b> <c>PlotConfigLoader.LoadTrace</c> is the
+/// one reader and <c>DataDisplayViewModel.BuildTraceConfig</c> is the one writer, and both are the
+/// `.cdd`'s.</para>
 /// </remarks>
 public sealed partial class SmithChartViewModel
 {
-    // ── the overlay rows ─────────────────────────────────────────────────────
-
-    /// <summary>The list, one view model per document row, in the document's own order.</summary>
-    public ObservableCollection<SmithOverlayRowViewModel> OverlayRows { get; } = [];
-
-    /// <summary>Which row <c>[−]</c> removes. Null when nothing is selected.</summary>
-    public SmithOverlayRowViewModel? SelectedOverlay
-    {
-        get => _selectedOverlay;
-        set
-        {
-            if (ReferenceEquals(_selectedOverlay, value)) return;
-            _selectedOverlay = value;
-            OnPropertyChanged();
-            RemoveOverlayCommand.NotifyCanExecuteChanged();
-        }
-    }
-    private SmithOverlayRowViewModel? _selectedOverlay;
+    // ── where the data is (R-smith12-3) ──────────────────────────────────────
 
     /// <summary>
-    /// Where a <see cref="SmithOverlaySource.Cube"/> overlay's data comes from.
+    /// The host's own data sources — what a CUBE overlay resolves against.
     /// </summary>
     /// <remarks>
-    /// <b>Supplied by the host, and null is an honest answer.</b> A scratch `.csmith` opened with no
-    /// workspace has no data sets open, and a cube row in one says so rather than throwing. When a
-    /// workspace IS open the shell hands over the same <c>IPlotDataSources</c> seam a Data Display
-    /// resolves through and <c>circuitrf render</c> implements over the files a caller named — so a
-    /// cube overlay and a `.cdd` trace over the same run resolve through one lookup.
+    /// <b>Supplied by the shell, and null is an honest answer.</b> A scratch `.csmith` opened with no
+    /// workspace has no data sets open, and that has to keep working — it is what makes this a real
+    /// document rather than a workspace feature. When a workspace IS open the shell hands over the
+    /// same <c>IPlotDataSources</c> seam a Data Display's trace cards resolve through, so a cube
+    /// overlay and a `.cdd` trace over the same run go through ONE lookup.
+    ///
+    /// <para>A Touchstone overlay needs none of it: that one is a path relative to the document, and
+    /// <see cref="OverlaySources"/> is what resolves it either way.</para>
     /// </remarks>
     public IPlotDataSources? OverlayDataSources
     {
         get => _overlayDataSources;
-        set { _overlayDataSources = value; RefreshDerived(); }
+        set
+        {
+            _overlayDataSources = value;
+            _overlaySources     = null;
+            // FORCED: the document's overlay list has not changed, but what it RESOLVES against
+            // has, so the guard in ReloadOverlays would leave the old answers standing.
+            ReloadOverlays(force: true);
+        }
     }
     private IPlotDataSources? _overlayDataSources;
 
     /// <summary>
-    /// The file picker <b>Add overlay</b> opens, supplied by the view. Returns a path RELATIVE to
-    /// the document where that is possible — the `.cdd` convention, and the one that survives an
-    /// archived or moved workspace.
+    /// The document's own sources: the host's library first, then files beside the `.csmith`.
     /// </summary>
-    public Func<Task<string?>>? OverlayFileChooser { get; set; }
-
-    /// <summary>Rebuilds the rows from the document — called on every load, undo and snapshot
-    /// restore, for <see cref="ApplySnapshot"/>'s reason: the design object is REPLACED, so a row
-    /// holding the old <c>SmithOverlayRef</c> would be editing a document nobody can see.</summary>
-    private void RebuildOverlayRows()
-    {
-        string? selected = _selectedOverlay?.Overlay.Source;
-
-        OverlayRows.Clear();
-        foreach (var o in _design.Overlays) OverlayRows.Add(new SmithOverlayRowViewModel(this, o));
-
-        _selectedOverlay = OverlayRows.FirstOrDefault(
-            r => string.Equals(r.Overlay.Source, selected, StringComparison.Ordinal));
-
-        OnPropertyChanged(nameof(SelectedOverlay));
-        OnPropertyChanged(nameof(HasOverlays));
-        RemoveOverlayCommand.NotifyCanExecuteChanged();
-    }
-
-    /// <summary>True when the document carries any reference material at all — what the view hides
-    /// the empty list behind.</summary>
-    public bool HasOverlays => _design.Overlays.Count > 0;
-
-    /// <summary>One committed edit to one row. <see cref="EditGeneratorRow"/>'s shape.</summary>
-    internal void EditOverlay(SmithOverlayRowViewModel row, string description,
-                              Action<SmithOverlayRef> mutate)
-    {
-        Edit(description, () => mutate(row.Overlay));
-        row.NotifyAll();
-    }
-
-    /// <summary><b>Add overlay</b> — a Touchstone file, by a path relative to the document.</summary>
     /// <remarks>
-    /// <b>Referenced and not copied, which is the opposite of the generator's <c>.s1p</c> import
-    /// (<c>R-smith8-2</c>), and deliberately.</b> An overlay is reference material the user is
-    /// comparing against, so a reference is right and a stale copy would be wrong; the generator is
-    /// part of the design, so a copy is right and a broken path would be fatal.
+    /// <b>The relative-path convention is brief 8's and is kept</b> (<c>R-smith8-2</c>): an overlay
+    /// is a REFERENCE and never a copy, by a path relative to the document wherever that is
+    /// possible, so the pair moves together and the reference still resolves. That is the opposite
+    /// choice from the generator's `.s1p` import, deliberately — the generator is part of the design
+    /// so a copy is right there, and reference material the user is comparing against would be wrong
+    /// as a stale copy.
     /// </remarks>
-    [RelayCommand]
-    private async Task AddOverlay()
+    internal IPlotDataSources OverlaySources =>
+        _overlaySources ??= new SmithDocumentSources(() => DocumentDirectory, _overlayDataSources);
+    private IPlotDataSources? _overlaySources;
+
+    // ── the source combo, in the chart's own top strip ───────────────────────
+
+    /// <summary>The sources the strip's combo lists — the library's own collection, not a copy.</summary>
+    public ObservableCollection<DataSourceItem> AvailableDataSources =>
+        PlotHost.Library?.AvailableDataSources ?? _noSources;
+    private readonly ObservableCollection<DataSourceItem> _noSources = [];
+
+    /// <summary>
+    /// Bound two-way to the strip's combo — <c>DisplayWindowViewModel.SelectedDataSourceItem</c>'s
+    /// own shape, because <b>Add</b> seeds from <c>DataSourceLibraryViewModel.SelectedEntry</c> and
+    /// without a way to set one the button would add nothing and say nothing about why.
+    /// </summary>
+    public DataSourceItem? SelectedDataSourceItem
     {
-        string? path = OverlayFileChooser is null ? null : await OverlayFileChooser();
-        if (string.IsNullOrWhiteSpace(path))
+        get => PlotHost.Library is { } lib
+                   ? lib.AvailableDataSources.FirstOrDefault(i => i.LogicalId == lib.SelectedDataSourceRef)
+                   : null;
+        set
         {
-            StripNotice = "No overlay was added — an overlay IS a reference to data somewhere, and "
-                        + "there is nothing for one with no source to draw.";
-            return;
+            if (value is null || PlotHost.Library is not { } lib) return;
+            _ = lib.SelectDataSourceAsync(value.LogicalId);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedDataSourceAbs));
         }
+    }
 
-        var overlay = new SmithOverlayRef
-        {
-            SourceKind = SmithOverlaySource.TouchstoneFile,
-            Source     = path,
-            Quantity   = "S11",
-        };
+    /// <summary>What the combo's tooltip shows — the file the selection actually names.</summary>
+    public string? SelectedDataSourceAbs => PlotHost.Library?.SelectedDataSourceAbs;
 
-        Edit($"Add overlay {Path.GetFileName(path.Replace('\\', '/'))}",
-             () => _design.Overlays.Add(overlay));
-
-        SelectedOverlay = OverlayRows.LastOrDefault();
+    /// <summary>Re-enumerates the sources without loading any file. The shell calls it when the
+    /// workspace's results change.</summary>
+    public void RefreshAvailableDataSources()
+    {
+        PlotHost.Library?.RefreshAvailableDataSources();
+        OnPropertyChanged(nameof(SelectedDataSourceItem));
+        OnPropertyChanged(nameof(SelectedDataSourceAbs));
     }
 
     /// <summary>
-    /// <b>Add overlay</b> — a cube in an open data set, referenced the way a Data Display trace card
-    /// references one.
+    /// The file picker the combo's <b>Add from file…</b> row opens, supplied by the view.
     /// </summary>
     /// <remarks>
-    /// <b>The chooser is the host's and the decision is not</b>, which is what keeps the whole path
-    /// drivable with no display: this takes a resolved source reference and a quantity, exactly as
-    /// <see cref="ImportGeneratorFrom"/> takes a resolved path.
+    /// <b>The same picker the Overlays panel used, wired to the library instead</b>
+    /// (<c>R-smith12-3</c>) — so a Touchstone can be loaded and drawn with nothing else open, which
+    /// is the scratch document's whole case. It returns an ABSOLUTE path, because that is what the
+    /// library loads; the document-relative reference is computed on the way OUT, in
+    /// <see cref="HarvestOverlays"/>.
     /// </remarks>
-    public void AddCubeOverlay(string sourceRef, string quantity)
+    public Func<Task<string?>>? OverlayFileChooser
     {
-        var overlay = new SmithOverlayRef
-        {
-            SourceKind = SmithOverlaySource.Cube,
-            Source     = sourceRef,
-            Quantity   = string.IsNullOrWhiteSpace(quantity) ? "S11" : quantity.Trim(),
-        };
-
-        Edit($"Add overlay {sourceRef}", () => _design.Overlays.Add(overlay));
-        SelectedOverlay = OverlayRows.LastOrDefault();
+        get => PlotHost.Library?.AddSourceFileRequested;
+        set { if (PlotHost.Library is { } lib) lib.AddSourceFileRequested = value; }
     }
 
-    private bool CanRemoveOverlay() => SelectedOverlay is not null;
-
-    /// <summary><b>Remove</b> — the selected row. Nothing else changes: an overlay is not part of
-    /// the cascade, so removing one takes no element with it.</summary>
-    [RelayCommand(CanExecute = nameof(CanRemoveOverlay))]
-    private void RemoveOverlay()
-    {
-        if (SelectedOverlay?.Overlay is not { } target) return;
-
-        int index = _design.Overlays.IndexOf(target);
-        if (index < 0) return;
-
-        _selectedOverlay = null;
-        Edit($"Remove overlay {SmithOverlayResolver.Label(target)}",
-             () => _design.Overlays.RemoveAt(index));
-    }
-
-    // ── resolution (R-smith8-2, R-smith8-3) ──────────────────────────────────
+    // ── the user's traces, across a rebuild (R-smith12-5a) ───────────────────
 
     /// <summary>
-    /// Resolves every overlay row, marking the ones that could not be.
+    /// The resolved overlay traces, in document order — <b>the same <c>Trace</c> objects from one
+    /// rebuild to the next</b>.
     /// </summary>
     /// <remarks>
-    /// <b>A reference that does not resolve marks its row and stops there.</b> The document still
-    /// opens, the rest of the chart still draws, and the sentence names the path — which is the
-    /// opposite of an S1P ELEMENT, whose missing file is a refusal because the cascade cannot be
-    /// walked without it.
+    /// <b>Not re-resolved per rebuild, and that is a requirement rather than an optimisation.</b>
+    /// The inspector's trace cards, its selection and each trace's markers all hold the <c>Trace</c>
+    /// OBJECT; replacing it leaves every one of them pointing at a discarded copy. Round three's own
+    /// marker test held a stale <c>Trace</c> across one rebuild and removed a marker from nothing.
     ///
-    /// <para><b>The colour index continues the trajectories' own run</b> rather than restarting, so
-    /// an overlay never comes up in the same colour as the element it is being compared with.</para>
+    /// <para>They are re-resolved exactly when the DOCUMENT is replaced — a load, an undo, a
+    /// snapshot restore — because then the configs they were built from are gone too.</para>
+    /// </remarks>
+    private List<Trace> _overlayTraces = [];
+
+    /// <summary>Overlay configs that did not resolve, kept verbatim so a harvest cannot drop them.
+    /// Paired with the sentence saying why.</summary>
+    private List<(JsonElement Json, string Why)> _unresolvedOverlays = [];
+
+    /// <summary>The chart Z₀ <see cref="_overlayTraces"/> are currently referenced to.</summary>
+    private double _overlayZ0 = double.NaN;
+
+    /// <summary>
+    /// The overlay list <see cref="_overlayTraces"/> were built from, as
+    /// <see cref="SmithOverlays.Signature"/> spells it.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is what keeps the trace INSTANCES alive across an ordinary edit</b>
+    /// (<c>R-smith12-5a</c>). Every committed edit in this window replaces the whole design through
+    /// a snapshot — that is <see cref="SmithSnapshotCommand"/>'s whole design — so "the document was
+    /// replaced" is not the question to ask. The question is whether the OVERLAY LIST in it changed,
+    /// and only then are the traces rebuilt.
+    /// </remarks>
+    private string _overlaySignature = "";
+
+    /// <summary>True when some of the document's reference material could not be read.</summary>
+    public bool HasUnresolvedOverlays => _unresolvedOverlays.Count > 0;
+
+    /// <summary>
+    /// The first unresolved overlay's sentence, for the status strip.
+    /// </summary>
+    /// <remarks>
+    /// <b>A reference that does not resolve says why and stops there</b> (<c>R-smith8-2</c>): the
+    /// document still opens, the rest of the chart still draws, and the sentence names the path.
+    /// That is the opposite of an S1P ELEMENT, whose missing file is a refusal because the cascade
+    /// cannot be walked without it — an overlay's absence costs the user a comparison and nothing
+    /// else. It is a STANDING CONDITION and is re-raised on every refresh, like the band's clamp
+    /// note, because it stays true until the file comes back.
+    /// </remarks>
+    public string? UnresolvedOverlayNote => _unresolvedOverlays.Count switch
+    {
+        0 => null,
+        1 => _unresolvedOverlays[0].Why,
+        _ => $"{_unresolvedOverlays[0].Why} ({_unresolvedOverlays.Count - 1} more overlay(s) did "
+           + "not resolve either.)",
+    };
+
+    /// <summary>
+    /// Rebuilds <see cref="_overlayTraces"/> from the document. <b>Called when the design object is
+    /// REPLACED</b> — construction, load, undo, snapshot restore — and never on an ordinary refresh.
+    /// </summary>
+    internal void ReloadOverlays(bool force = false)
+    {
+        // The brief-8 rows, if this document still carries any. Migration needs TraceConfig, which
+        // src/Design cannot see, so the reader hands them over and this is where they land
+        // (R-smith12-4c). It runs once: the next write is in the new shape and has no old block.
+        SmithOverlayMigration.Apply(_design, OverlaySources);
+
+        string signature = SmithOverlays.Signature(_design.Overlays);
+        if (!force && signature == _overlaySignature) return;
+        _overlaySignature = signature;
+
+        // A SENTENCE RAISED ABOUT THE PREVIOUS RESOLUTION IS VOID. The commonest case is the
+        // ordinary open: the design arrives before the document's FOLDER does, so every relative
+        // reference fails once and then resolves — and the note from the first attempt would sit in
+        // the strip naming a file that is in fact right there. Only the note this file raised is
+        // cleared; one somebody else just put up is left alone.
+        if (StripNotice is not null && StripNotice == UnresolvedOverlayNote) StripNotice = null;
+
+        _overlayTraces      = [];
+        _unresolvedOverlays = [];
+        _overlayZ0          = _design.Chart.Z0Ohm;
+
+        foreach (var stored in _design.Overlays)
+        {
+            string why = "This overlay is not a trace circuitRF can read.";
+
+            if (SmithOverlays.Read(stored) is { } cfg)
+            {
+                var trace = SmithOverlays.Load(cfg, OverlaySources);
+                if (trace is not null) { _overlayTraces.Add(trace); continue; }
+
+                why = OverlaySources is SmithDocumentSources docs
+                          && docs.WhyUnresolved(cfg.SourcePath) is { } sentence
+                      ? sentence
+                      : $"'{cfg.SourcePath}' is not one of the data sets that are open.";
+            }
+
+            _unresolvedOverlays.Add((stored, why));
+        }
+    }
+
+    /// <summary>
+    /// The overlay traces, ready for <c>SmithPlotBuilder.Fill</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The chart's Z₀ is followed rather than frozen.</b> Every overlay is renormalized to the
+    /// document's one reference impedance (<c>R-smith8-3</c>) and the trace's own
+    /// <c>Z0OverrideEnabled</c>/<c>Z0</c> pair is the single gate on it — so when the chart's number
+    /// changes, a trace still pointing at the OLD one is re-pointed and its path rebuilt. A trace
+    /// the user gave a Z₀ of its own is left alone, because that one has already been told what it
+    /// is referenced to.
     /// </remarks>
     private List<SmithOverlayTrace> ResolveOverlays()
     {
-        var resolved = new List<SmithOverlayTrace>();
-        if (_design.Overlays.Count == 0) return resolved;
-
         double z0 = _design.Chart.Z0Ohm;
 
-        for (int i = 0; i < _design.Overlays.Count; i++)
+        if (_overlayZ0 != z0)
         {
-            var overlay = _design.Overlays[i];
-            var row     = i < OverlayRows.Count ? OverlayRows[i] : null;
-
-            SmithOverlayResolver.Resolution result;
-            try
-            {
-                result = SmithOverlayResolver.Resolve(
-                    overlay, DocumentDirectory, z0, _overlayDataSources,
-                    SmithPlotBuilder.ColorIndexFor(_design.Elements.Count + i));
-            }
-            catch (Exception ex)
-            {
-                // Resolving reference material is a READ, and an unforeseen failure in one has no
-                // business taking the document down with it — TraceResolve's own containment, for
-                // its own reason.
-                result = SmithOverlayResolver.Resolution.No(
-                    $"'{overlay.Source}' could not be read: {ex.Message}");
-            }
-
-            if (row is not null) row.Unresolved = result.Unresolved;
-
-            if (result.Trace is { } trace)
-                resolved.Add(new SmithOverlayTrace(
-                    SmithOverlayResolver.Label(overlay), trace, overlay.Visible));
+            var was = new Complex(_overlayZ0, 0.0);
+            foreach (var t in _overlayTraces)
+                if (t.Z0OverrideEnabled && t.Z0 == was)
+                {
+                    t.Z0 = new Complex(z0, 0.0);
+                    RebuildOverlayPath(t);
+                }
+            _overlayZ0 = z0;
         }
 
-        return resolved;
+        return [.. _overlayTraces.Select(t => new SmithOverlayTrace(OverlayKey(t), t))];
+    }
+
+    /// <summary>The name a marker on <paramref name="trace"/> is stored against — derived from the
+    /// trace's own config so it is the same string across a rebuild AND across a reorder
+    /// (<c>R-smith12-5c</c>).</summary>
+    private string OverlayKey(Trace trace)
+        => SmithOverlays.Key(DataDisplayViewModel.BuildTraceConfig(
+               trace, DocumentDirectory ?? "", PlotHost.Library));
+
+    private void RebuildOverlayPath(Trace t)
+    {
+        if (t.IsCubeBound)
+            TraceResolve.ResolveCubeTrace(t, OverlaySources, PlotType.Smith, FreqUnit.GHz);
+        else
+            t.BuildPath(PlotType.Smith, FreqUnit.GHz);
+    }
+
+    // ── the harvest (R-smith12-5b) ───────────────────────────────────────────
+
+    /// <summary>
+    /// Writes the traces now on the chart back into the document.
+    /// </summary>
+    /// <remarks>
+    /// <b>Subscribed to the inspector's <c>PlotStructureChanged</c></b>, which fires on add, remove
+    /// and reorder. Every trace on the plot WITHOUT <c>ExcludeFromAxisLabels</c> is a user trace —
+    /// the tool sets that flag on everything it derives — and its <c>BuildTraceConfig</c> is the
+    /// document's overlay list.
+    ///
+    /// <para><b>An add or a remove is ONE undo entry; anything else rides along on the next
+    /// save.</b> <see cref="HarvestMarkers"/>' split, for <see cref="HarvestMarkers"/>' reason
+    /// (<c>R-smith4-3</c>): an entry per card keystroke is the Match Designer's "eight edits took
+    /// fourteen undos" by a slower route.</para>
+    ///
+    /// <para><b>An overlay that did not resolve is preserved.</b> It has no trace on the plot, so a
+    /// harvest that wrote only what it could see would delete a user's reference material because
+    /// the file it names happened to be missing. The unresolved ones are re-appended verbatim.</para>
+    /// </remarks>
+    public void HarvestOverlays()
+    {
+        var harvested = ChartPlot.Traces
+            .Where(t => !t.ExcludeFromAxisLabels)
+            .Select(ToStoredOverlay)
+            .ToList();
+
+        // The traces the inspector now holds, in ITS order — which a reorder has just changed.
+        _overlayTraces = [.. ChartPlot.Traces.Where(t => !t.ExcludeFromAxisLabels)];
+
+        foreach (var (json, _) in _unresolvedOverlays) harvested.Add(json);
+
+        // BEFORE the Edit below, which replaces the design through a snapshot and comes straight
+        // back here through ApplySnapshot: the traces that were just harvested ARE this list, so the
+        // reload that follows must recognise it and leave them alone.
+        _overlaySignature = SmithOverlays.Signature(harvested);
+
+        int before = _design.Overlays.Count;
+        if (harvested.Count != before)
+            Edit(harvested.Count > before ? "Add overlay" : "Remove overlay", () => Replace(harvested));
+        else
+            Replace(harvested);
+
+        void Replace(List<JsonElement> overlays)
+        {
+            _design.Overlays.Clear();
+            foreach (var o in overlays) _design.Overlays.Add(o);
+        }
+    }
+
+    /// <summary>
+    /// One live trace as the document stores it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The writer is the `.cdd`'s own and there is no second one</b> (<c>R-smith12-9</c>). The
+    /// one thing added afterwards is the reference SPELLING: a source under the document's own
+    /// folder is stored relative to it, which is brief 8's convention and the one that survives an
+    /// archived or moved workspace. <c>BuildTraceConfig</c> writes the alias relative to the results
+    /// ROOT, which is right for a workspace run and cannot reach a file sitting beside a scratch
+    /// `.csmith`.
+    /// </remarks>
+    private JsonElement ToStoredOverlay(Trace trace)
+    {
+        var cfg = DataDisplayViewModel.BuildTraceConfig(trace, DocumentDirectory ?? "", PlotHost.Library);
+
+        if (DocumentDirectory is { Length: > 0 } dir
+            && cfg.SourcePath is { Length: > 0 } sref
+            && System.IO.Path.IsPathRooted(sref))
+        {
+            string rel = System.IO.Path.GetRelativePath(dir, sref);
+            if (!rel.StartsWith("..", StringComparison.Ordinal) && !System.IO.Path.IsPathRooted(rel))
+                cfg.SourcePath = rel.Replace('\\', '/');
+        }
+
+        return SmithOverlays.Write(cfg);
+    }
+
+    /// <summary>
+    /// Seeds a trace the inspector has just added — <b>the two things the Add button cannot know</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Renormalization to the chart's Z₀ is a requirement, not an option</b> (<c>R-smith8-3</c>,
+    /// <c>R-smith12-7</c>). A 75 Ω part drawn on a 50 Ω chart without it is a curve in the wrong
+    /// place that looks entirely plausible — so a new trace seeds with the chart's Z₀ and the
+    /// override ON, and the card is where a user who wants the file's own numbers turns it off.
+    ///
+    /// <para><b>And out of the autoscale</b> (<c>R-smith12-6</c>): a stability circle can be
+    /// enormous, and one unlucky overlay should not reframe the work. Also the card's, also
+    /// changeable there.</para>
+    ///
+    /// <para>Seeded ONCE, on the traces this harvest has not seen before — re-applying it on every
+    /// harvest would put back the two settings the user had just turned off.</para>
+    /// </remarks>
+    private void SeedNewOverlay(Trace trace)
+    {
+        // THE SENTINEL IS NOT A REFERENCE A DOCUMENT CAN KEEP. Add stamps `DataSourceRef.Selected`
+        // — "whichever source this display has selected" — which is right for a `.cdd`, where the
+        // combo is part of the document and travels with it. A `.csmith` has no such selection to
+        // come back to, so an overlay stored against the sentinel would resolve to nothing the next
+        // time it was opened. It is pinned to the concrete file here, at the one moment the answer
+        // is known.
+        if (trace.SourceRef is null or DataSourceRef.Selected
+            && PlotHost.Library?.SelectedDataSourceAbs is { Length: > 0 } abs)
+            trace.SourceRef = abs;
+
+        trace.Z0                   = new Complex(_design.Chart.Z0Ohm, 0.0);
+        trace.Z0OverrideEnabled    = true;
+        trace.ExcludeFromAutoscale = true;
+        RebuildOverlayPath(trace);
+    }
+
+    /// <summary>
+    /// Wires the inspector to this document: its trace set is harvested, and a newly added trace is
+    /// seeded first.
+    /// </summary>
+    internal void WireOverlayInspector()
+    {
+        ChartContainer.Inspector.SetDataSources(OverlaySources);
+        ChartContainer.Inspector.PlotStructureChanged += (_, _) =>
+        {
+            // Not while this document is the one replacing them — see RebuildChart.
+            if (_rebuildingChart) return;
+
+            foreach (var t in ChartPlot.Traces)
+                if (!t.ExcludeFromAxisLabels && !_overlayTraces.Contains(t)) SeedNewOverlay(t);
+
+            HarvestOverlays();
+        };
     }
 
     // ── markers (R-smith8-5) ─────────────────────────────────────────────────
@@ -273,9 +468,8 @@ public sealed partial class SmithChartViewModel
     /// <remarks>
     /// <b>Deliberately not <c>DataDisplayViewModel.DeleteSelected</c></b>, for the Match Designer's
     /// own reason: that also removes selected PLOT CONTAINERS, and this document's one chart is not
-    /// deletable — the AXAML sets <c>CanDeletePlot="False"</c> because every trace on it is rebuilt
-    /// from the design on each edit. A gesture that could silently take the chart with the marker
-    /// would be worse than no gesture.
+    /// deletable — the AXAML sets <c>CanDeletePlot="False"</c>. A gesture that could silently take
+    /// the chart with the marker would be worse than no gesture.
     ///
     /// <para><b>The harvest is the second half and is not optional.</b> The document is the
     /// authority for the marker set (see <see cref="HarvestMarkers"/>), so a marker taken off a

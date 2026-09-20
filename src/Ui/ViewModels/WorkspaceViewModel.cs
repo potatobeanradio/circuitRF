@@ -9408,6 +9408,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
 
         doc.ViewModel.OverlayDataSources = new DataDisplay.ViewModels.LibraryDataSources(lib);
+
+        // AND THE COMBO'S OWN LIST (R-smith12-3). The three providers above are what a reference
+        // RESOLVES through; this is what the chart strip OFFERS, and Plot Properties ▸ Add seeds a
+        // new trace from whichever of them is selected — so without it the button would be there
+        // with nothing to add. Enumeration only: no file is read until one is picked.
+        doc.ViewModel.RefreshAvailableDataSources();
     }
 
     /// <summary>

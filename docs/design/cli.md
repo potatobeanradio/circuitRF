@@ -2083,7 +2083,9 @@ note promised rather than a rewrite:
 
 - **`SmithPlotBuilder`, `SmithChartScene`, `SmithMarkerBridge` and `SmithOverlayResolver`** →
   `src/Render/Smith/`. They were already framework-free; they simply lived in `src/Ui`, which
-  `src/Cli` cannot reference.
+  `src/Cli` cannot reference. *(`SmithOverlayResolver` is retired as of `smith-chart.md` §9.4: an
+  overlay is now a Data Display trace config, restored through `PlotConfigLoader.LoadTrace` over a
+  `SmithDocumentSources`, which are in the same folder and reached by the same route.)*
 - **The DRAW half of `SmithGripperOverlay`** → `src/Render/Smith/SmithChartChrome.cs`. The gesture —
   hit test, press, drag, undo entry — stayed in `src/Ui` with the view model it calls back into.
   Without the split, a headless picture silently loses the arrowheads and the load-point frequency

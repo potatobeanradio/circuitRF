@@ -29,6 +29,7 @@ using System.Threading;
 using CircuitRF.Cli;
 using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Render.Smith;
 using SkiaSharp;
 using Xunit;
 using Xunit.Abstractions;
@@ -138,6 +139,43 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, exit);
 
         AssertSameSvg(File.ReadAllText(outPath), InProcessChartSvg(doc), "chart");
+    }
+
+    /// <summary>
+    /// The same gate on a document that carries an <b>overlay</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The overlay path is the one that changed</b> (brief 12): a `.csmith` now stores its
+    /// reference material as the Data Display's own <c>TraceConfig</c>, and both the window and the
+    /// verb restore one through <c>PlotConfigLoader.LoadTrace</c>. A verb that resolved it any other
+    /// way would draw a curve that is plausible, which is indistinguishable from a right one until
+    /// somebody compares a picture with an export. Here they are compared.
+    /// </remarks>
+    [Fact]
+    public void DrawingAChartWithAnOverlay_WritesTheBytesTheRendererWrites()
+    {
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(Path.Combine(_root, "ref.s1p"),
+            "# HZ S RI R 75\n1.0e9 0.0 0.0\n2.0e9 0.1 0.0\n3.0e9 0.2 0.1\n");
+
+        var design = Demo();
+        design.Overlays.Add(SmithOverlays.Write(new TraceConfig
+        {
+            SourcePath           = "ref.s1p",
+            YAxis                = DependentVarFormat.Complex,
+            Z0                   = "50",
+            Z0Override           = true,
+            ExcludeFromAutoscale = true,
+        }));
+
+        string doc     = WriteDesign("overlay.csmith", design);
+        string outPath = Path.Combine(_root, "cli-overlay.svg");
+
+        var (exit, stdout, stderr) = RunCli("smith", doc, "-o", outPath);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+
+        AssertSameSvg(File.ReadAllText(outPath), InProcessChartSvg(doc), "chart with overlay");
     }
 
     // ── gate 2: the verb holds no logic of its own (R-smith10-1) ─────────────
@@ -420,9 +458,22 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         var design = SmithDesignIo.LoadFromFile(documentPath);
         string dir = Path.GetDirectoryName(Path.GetFullPath(documentPath))!;
 
+        // The document's reference material, resolved the way the WINDOW resolves it: through the
+        // `.cdd`'s own PlotConfigLoader.LoadTrace over an IPlotDataSources. Stated here rather than
+        // taken from the verb, for the reason above — a comparison with the verb's own helper would
+        // be a comparison of it with a copy of itself.
+        var sources  = new SmithDocumentSources(dir);
+        var overlays = design.Overlays
+            .Select(SmithOverlays.Read)
+            .Where(cfg => cfg is not null)
+            .Select(cfg => (Cfg: cfg!, Trace: SmithOverlays.Load(cfg!, sources)))
+            .Where(p => p.Trace is not null)
+            .Select(p => new SmithOverlayTrace(SmithOverlays.Key(p.Cfg), p.Trace!))
+            .ToList();
+
         var scene = SmithPlotBuilder.BuildScene(design, dir, (Box, Box), window: null);
         var plot  = SmithPlotBuilder.NewChartPlot();
-        SmithPlotBuilder.Fill(plot, scene, design, autoscale: true, overlays: null);
+        SmithPlotBuilder.Fill(plot, scene, design, autoscale: true, overlays);
 
         var placed = RenderDataDisplay.Place(
             plot, left: 0, top: 0, width: Box, height: Box, FreqUnit.GHz,
