@@ -433,6 +433,16 @@ public sealed class WorkspaceHistoryService
     /// it is the exact shape R-rc3-3's silence exists to prevent: a designer who has opted out being
     /// told about the feature they opted out of, forever. The <b>off</b> report below still fires,
     /// because that one is about being off.</para>
+    ///
+    /// <para><b>With ONE exception, and it is the row that has no dialog</b> (owner-reported,
+    /// 2026-09-19). The workspace-root case is silent here because R-rc6-7a's question covers it —
+    /// and that question is itself suppressed while history is off, so the two silences compose into
+    /// a workspace that is held, permanently, with nothing anywhere saying why. It is not silent in
+    /// the way the paragraph above wants, either: <see cref="State"/> tests the hold BEFORE it tests
+    /// arming, so <i>History held</i> is on the foot of the window whatever the preference says. The
+    /// indicator is already speaking; this line is what finishes the sentence. <b>A clone is where
+    /// this lands</b>, because git does not clone configuration and a copied workspace therefore
+    /// arrives unmarked and held from its first open.</para>
     /// </summary>
     public RepositorySituation ReportStateOnOpen(string? workspaceRoot)
     {
@@ -440,9 +450,22 @@ public sealed class WorkspaceHistoryService
         if (_reportedOnOpen || workspaceRoot is not { Length: > 0 }) return situation;
         _reportedOnOpen = true;
 
-        if (KeepingHistoryHere(workspaceRoot) && EnclosingRepository.OpenReportFor(situation) is { } held)
+        if (KeepingHistoryHere(workspaceRoot))
         {
-            _messages.PostDiagnostic(held);
+            if (EnclosingRepository.OpenReportFor(situation) is { } held)
+            {
+                _messages.PostDiagnostic(held);
+                return situation;
+            }
+        }
+        else if (situation.NeedsAnAnswer)
+        {
+            // The one hold that says something while history is off, because it is the one whose
+            // explanation was left to a dialog that is not going to be shown. The remedy it names is
+            // operative — turning history on is what makes circuitRF ask — which is the test the
+            // paragraph above sets for a report of this kind.
+            _messages.PostDiagnostic(HoldMessages.HeldPendingAnAnswer(
+                RevisionSwitch.WorkspaceName(workspaceRoot)));
             return situation;
         }
 

@@ -1026,7 +1026,16 @@ public partial class WorkspaceViewModel
         // same complaint as the hold report one surface over, and louder: a designer who has said they
         // do not want a history is answering a modal about looking after one. The question keeps for
         // the open after they turn it back on — it is asked once, not once ever.
-        if (situation.NeedsAnAnswer && WorkspaceHistoryService.KeepingHistoryHere(WorkspaceRootDir))
+        //
+        // "Keeps for the open after they turn it back on" was NOT true, and this line is where the
+        // claim was made (owner-reported, 2026-09-19). Turning history on with the workspace already
+        // in front of you is the moment the question becomes askable, and this was the only place it
+        // was ever asked from — so the switch was thrown, the surfaces were correctly re-read, and
+        // they re-read a hold the preference has nothing to do with. See
+        // AskAboutExistingHistoryIfTheGateJustOpened, which is the other end of the same rule.
+        _armedAtLastGateCheck = WorkspaceHistoryService.KeepingHistoryHere(WorkspaceRootDir);
+
+        if (situation.NeedsAnAnswer && _armedAtLastGateCheck)
             _ = AskAboutExistingHistory();
 
         // R-rc5-12c. A restore over thousands of files on a share can be cut off by a crash or a
@@ -1207,7 +1216,16 @@ public partial class WorkspaceViewModel
     {
         foreach (var window in Views.WorkspaceLocator.AllWindows())
             if (window.DataContext is WorkspaceViewModel vm)
+            {
                 vm.RefreshRevisionSurfaces();
+
+                // AFTER the re-read, and per window for the same reason the re-read is: the switch
+                // above is per-USER, so a held workspace in any window may have just become one
+                // circuitRF can offer to look after. It asks only where the arming answer has just
+                // changed, so the other handlers that come through here — retention, reclaim, the git
+                // path — raise nothing.
+                vm.AskAboutExistingHistoryIfTheGateJustOpened();
+            }
     }
 
     /// <summary>Re-reads the recording state. Cheap, and called wherever it could have changed.</summary>
@@ -1240,7 +1258,21 @@ public partial class WorkspaceViewModel
         if (WorkspaceRootDir is not { } root) return;
         if (Views.WorkspaceLocator.WindowFor(this) is not { } owner) return;
 
-        var answer = await new AdoptExistingHistoryDialog(Path.GetFileName(root)).ShowDialog<AdoptionAnswer?>(owner);
+        // There are two ways in now — a workspace opening, and the gate opening under one that is
+        // already open — and the second arrives on a Settings handler that can fire more than once for
+        // one gesture. Without this, throwing the switch could put a second copy of the question on
+        // top of the first: two modals asking the same thing, of which only the last answer is kept.
+        if (_askingAboutExistingHistory) return;
+        _askingAboutExistingHistory = true;
+
+        AdoptionAnswer? answer;
+        try
+        {
+            answer = await new AdoptExistingHistoryDialog(Path.GetFileName(root))
+                .ShowDialog<AdoptionAnswer?>(owner);
+        }
+        finally { _askingAboutExistingHistory = false; }
+
         if (answer is not { } chosen) return;
 
         History.AnswerAdoption(root, chosen);
@@ -1249,6 +1281,60 @@ public partial class WorkspaceViewModel
         // both panels carry — the Versions panel included, which was left out and went on showing the
         // old one.
         RefreshRevisionSurfaces();
+    }
+
+    /// <summary>Whether the adoption dialog is on screen for this workspace right now.</summary>
+    private bool _askingAboutExistingHistory;
+
+    /// <summary>
+    /// Whether this workspace was armed the last time the gate was looked at. <b>The edge is the
+    /// trigger</b>, not the level — see
+    /// <see cref="AskAboutExistingHistoryIfTheGateJustOpened"/>.
+    /// </summary>
+    private bool _armedAtLastGateCheck;
+
+    /// <summary>
+    /// R-rc6-7a's question, asked at <b>the other moment it becomes askable</b>: the designer turning
+    /// history on with the workspace already open (owner-reported, 2026-09-19).
+    ///
+    /// <para><b>The open path was the only asker, and that made its own comment false.</b> A workspace
+    /// held at the workspace-root row is held until the question is answered; the question is
+    /// suppressed while history is off; so a workspace opened with the switch off could never be
+    /// un-held from inside that session. Turning the switch on re-read every surface faithfully and
+    /// they all re-read <i>held</i> — a hold the preference has nothing to do with — so the setting
+    /// looked inert and the remedy (close the workspace and open it again) was stated nowhere. <b>A
+    /// clone is the ordinary way into that state</b>, because git does not clone configuration and a
+    /// copy therefore arrives unmarked.</para>
+    ///
+    /// <para><b>The EDGE, not the level.</b> This runs off the Settings broadcast, which also fires for
+    /// retention, for a reclaim and for git becoming available — and a modal raised by a retention
+    /// change would be exactly the ambush R-rc3-3 and the 2026-09-17 decision are both written
+    /// against. Asking only where the arming answer has just gone from no to yes makes the trigger the
+    /// designer's own gesture, and it is why this keeps a remembered value rather than reading
+    /// <see cref="CanShowRevisionButtons"/>: that one is refreshed from every boundary, including the
+    /// workspace open that has just asked the question itself.</para>
+    ///
+    /// <para><b>A cancelled dialog is not re-raised</b>, because a cancel moves no edge. Throwing the
+    /// switch off and on again does ask again, which is right — that is the gesture, made twice.</para>
+    /// </summary>
+    public void AskAboutExistingHistoryIfTheGateJustOpened()
+    {
+        bool armedBefore = _armedAtLastGateCheck;
+        bool armedNow    = WorkspaceHistoryService.KeepingHistoryHere(WorkspaceRootDir);
+
+        // Recorded whatever the answer below is, or a gate that opened while there was nothing to ask
+        // would look like one that never opened at all the next time round.
+        _armedAtLastGateCheck = armedNow;
+
+        // The cheap half of the condition first: Situation runs git, and the overwhelmingly common
+        // case is a settings change that moved no edge.
+        if (!armedNow || armedBefore) return;
+
+        if (!RevisionArming.QuestionBecameAskable(
+                armedBefore, armedNow, WorkspaceHistoryService.Situation(WorkspaceRootDir).NeedsAnAnswer))
+            return;
+
+        _ = AskAboutExistingHistory();
     }
 
     /// <summary>

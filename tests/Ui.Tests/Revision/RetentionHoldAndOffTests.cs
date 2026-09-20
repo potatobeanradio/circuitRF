@@ -788,6 +788,84 @@ public class RetentionHoldAndOffTests
 
 
     /// <summary>
+    /// <b>The one hold that DOES speak while history is switched off</b> — the workspace-root row,
+    /// whose explanation was left to a dialog that is not going to be shown (owner-reported,
+    /// 2026-09-19).
+    ///
+    /// <para>The test above pins the rule; this pins its exception, and the pair is what stops either
+    /// being "fixed" into the other. The difference is which remedy is operative. An ancestor hold with
+    /// the switch off names a cause that is not why nothing is being kept and a remedy — move the
+    /// workspace — that would change nothing. This row's remedy is the switch itself: turning history
+    /// on is exactly what makes circuitRF ask, so the sentence is true at the moment it is said.</para>
+    ///
+    /// <para><b>And the indicator is speaking anyway.</b> <see cref="WorkspaceHistoryService.State"/>
+    /// tests the hold BEFORE it tests arming, so this workspace reads <i>History held</i> at the foot
+    /// of the window whatever the preference says. Silence here did not make the feature invisible; it
+    /// made a visible badge unexplained.</para>
+    ///
+    /// <para><b>A clone is how anyone reaches this state.</b> Git does not clone configuration, so a
+    /// copied workspace arrives with no management marker and is held from its first open — which is
+    /// exactly the fixture below.</para>
+    /// </summary>
+    [GitFact]
+    public void TheWorkspaceRootHoldSaysSoWhenItsQuestionIsSuppressed()
+    {
+        using var ws    = new GitWorkspace();
+        using var _     = Identity(ws);
+        using var prefs = new AppDataRootScope();
+        Assert.Equal(0, ws.Raw("init", "--quiet", ws.Root).Code);
+
+        // The fixture IS the row: a repository at the workspace root that circuitRF did not make.
+        Assert.True(EnclosingRepository.Detect(ws.Root).NeedsAnAnswer);
+
+        // Off: the question will not be asked, so this line carries the explanation and the remedy.
+        CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.RevisionKeepHistory = false);
+        var told = new RecordingSink();
+        new WorkspaceHistoryService(told).ReportStateOnOpen(ws.Root);
+        string said = Assert.Single(told.Texts);
+        Assert.Contains("already keeps a history of its own", said, StringComparison.Ordinal);
+        Assert.Contains("Settings", said, StringComparison.Ordinal);
+
+        // On: silent, exactly as before — R-rc6-7a's rule is untouched, because now there IS a dialog.
+        CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.RevisionKeepHistory = true);
+        var quiet = new RecordingSink();
+        new WorkspaceHistoryService(quiet).ReportStateOnOpen(ws.Root);
+        Assert.Empty(quiet.Texts);
+    }
+
+
+    /// <summary>
+    /// <b>Turning history on with the workspace already open is the other moment the question becomes
+    /// askable</b> — and it is the EDGE that asks, not the level (owner-reported, 2026-09-19).
+    ///
+    /// <para>The workspace open used to be the only asker, which made a workspace opened with the
+    /// switch off impossible to un-hold from inside that session: the switch was thrown, every surface
+    /// was re-read faithfully, and they all re-read a hold the preference has nothing to do with.</para>
+    ///
+    /// <para><b>Both halves have to hold or the remedy becomes the ambush.</b> The Settings broadcast
+    /// also fires for retention, for a reclaim and for git becoming available, so asking on a gate that
+    /// is merely OPEN would raise a modal on an unrelated settings change — which is the thing the
+    /// suppression exists to prevent, arriving by a different door. The truth table is the claim.</para>
+    /// </summary>
+    [Fact]
+    public void TheAdoptionQuestionIsPutOnTheEdgeAndNotOnTheLevel()
+    {
+        // The gate opening under an unanswered question — the case that was missing.
+        Assert.True(RevisionArming.QuestionBecameAskable(armedBefore: false, armedNow: true, needsAnAnswer: true));
+
+        // Already open, and stays open: every later settings change comes through the same broadcast.
+        Assert.False(RevisionArming.QuestionBecameAskable(armedBefore: true, armedNow: true, needsAnAnswer: true));
+
+        // The gate closing, and staying closed.
+        Assert.False(RevisionArming.QuestionBecameAskable(armedBefore: true,  armedNow: false, needsAnAnswer: true));
+        Assert.False(RevisionArming.QuestionBecameAskable(armedBefore: false, armedNow: false, needsAnAnswer: true));
+
+        // Nothing to ask: already answered, or a hold that is not this row. The edge alone never asks.
+        Assert.False(RevisionArming.QuestionBecameAskable(armedBefore: false, armedNow: true, needsAnAnswer: false));
+    }
+
+
+    /// <summary>
     /// <b>One message on open; a refusal per attempt with no remedy restated; no per-checkpoint
     /// messages.</b>
     ///

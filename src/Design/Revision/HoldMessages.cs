@@ -86,6 +86,34 @@ public static class HoldMessages
       + "workspace's own history was found. You can change that in Settings ▸ Revision Control.");
 
     /// <summary>
+    /// R-rc6-9, first cadence, for the workspace-root case <b>when the question is not going to be
+    /// asked</b> — because keeping a history is switched off here (owner-reported, 2026-09-19).
+    ///
+    /// <para><b>This row is silent in <see cref="EnclosingRepository.OpenReportFor"/> on purpose</b>:
+    /// it is a QUESTION (R-rc6-7a), and a report about it would be answered by a dialog the designer
+    /// is already looking at. Where that dialog is suppressed the reasoning inverts, and the one row
+    /// whose explanation was left to a dialog becomes the one row with no dialog — a workspace held,
+    /// permanently, behind an indicator that says so and names no way out. That is §1.4's false belief
+    /// reached from the far side: not a designer who thinks they are protected, but one who cannot
+    /// find out why they are not.</para>
+    ///
+    /// <para><b>It is the sentence a clone most often lands on.</b> Git does not clone configuration,
+    /// so a copied workspace arrives with no management marker and is held from its first open — and a
+    /// designer who had history switched off at the time is told nothing at all about it.</para>
+    ///
+    /// <para><b>A line, not a dialog.</b> The 2026-09-17 decision this respects was about a MODAL in
+    /// front of somebody who had opted out; a message explaining an indicator they can already see is
+    /// the opposite trade, and the indicator is visible whatever the preference says.</para>
+    /// </summary>
+    public static Diagnostic HeldPendingAnAnswer(string workspaceName) => Diagnostic.Create(
+        "revision.held.pending-an-answer",
+        DiagnosticSeverity.Info,
+        "'{workspace}' already keeps a history of its own, and circuitRF is not writing to it. "
+      + "Keeping a history is switched off, so you have not been asked what should happen to it — "
+      + "turn it on in Settings ▸ Revision Control and circuitRF will ask.",
+        ("workspace", workspaceName));
+
+    /// <summary>
     /// R-rc6-9, second cadence. <b>A refusal, saying why and NOT restating the remedy.</b>
     ///
     /// <para>One id for every hold reason, deliberately: the panel's own dedup keys on the id, and a

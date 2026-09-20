@@ -31532,3 +31532,70 @@ as a failure.
 has not filled yet and returns immediately once it has — it is not a rescan. A script author's loop
 is therefore edit the `.py`, reopen the workspace, which is what `docs/design/pcell-parameter-handles.md`
 §2.3 now says; it named the menu item before.
+
+## A cloned workspace could be held forever, and nothing said why (2026-09-19)
+
+Reported by the owner after cloning a workspace from a public git host with **Keep a history of my
+workspaces** switched off, then turning it on and finding the History panel unchanged.
+
+**A clone is held, by construction.** Git does not clone configuration, so
+`GitRepositoryConfig.MarkerManagedKey` does not travel — `WorkspaceClone` says so and is right to,
+since a marker that travelled would make one designer's management decision everybody's.
+`EnclosingRepository.Detect` therefore answers `UserRepositoryAtRoot`: held, `MayRecord` false,
+`NeedsAnAnswer` true. Verified against a real clone rather than inferred — `git config --get
+circuitrf.managed` is unset in a folder `history clone` has just written.
+
+**Two silences composed into a dead end.** R-rc6-7a's adoption question is the only thing that clears
+that hold, and the 2026-09-17 change suppressed it where history is off — rightly: a designer who has
+said they do not want a history should not be answering a modal about looking after one. But that
+question was asked from exactly one place, the workspace-open path, and its own comment claimed *the
+question keeps for the open after they turn it back on*. **It did not.** Turning the preference on
+with the workspace in front of you broadcasts correctly through
+`RefreshRevisionSurfacesEverywhere`, every surface re-reads — and they re-read a hold the preference
+has nothing to do with, because `WorkspaceHistoryService.State` tests the hold BEFORE it tests
+arming. The switch looked inert and the remedy (close the workspace and open it again) appeared
+nowhere.
+
+**And the explanation was suppressed by the same reasoning.**
+`EnclosingRepository.OpenReportFor` returns null for this one row on purpose — a report about it
+*would be answered by a dialog the user is already looking at*. Where the dialog is suppressed that
+inverts: the one row whose explanation was delegated to a dialog becomes the one row with no dialog.
+Meanwhile the foot of the window still says **History held**, with a sentence that names no remedy.
+Silence did not make the feature invisible; it made a visible badge unexplained.
+
+**The fix is both ends of the one rule.** `HoldMessages.HeldPendingAnAnswer` is posted on open when
+the row needs an answer and the question is suppressed — the only hold that speaks while history is
+off, because it is the only one whose remedy *is* the switch. And
+`WorkspaceViewModel.AskAboutExistingHistoryIfTheGateJustOpened`, called from the Settings broadcast,
+puts the question at the other moment it becomes askable.
+
+**The edge, not the level** (`RevisionArming.QuestionBecameAskable`). That broadcast also fires for
+retention, for a reclaim and for git becoming available, so asking whenever the gate is merely OPEN
+would raise a modal on an unrelated settings change — the same ambush the suppression exists to
+prevent, arriving by a different door. Asking on the false→true transition makes the trigger the
+designer's own gesture; a cancelled dialog moves no edge and is not re-raised, and switching off and
+on again asks again, which is the gesture made twice. The remembered value is deliberately *not*
+`CanShowRevisionButtons`, which is refreshed from every boundary including the open that has just
+asked the question itself. `AskAboutExistingHistory` also took a re-entrancy guard: it now has two
+callers, and the second arrives on a Settings handler that can fire more than once for one gesture.
+
+**Two plausible causes chased and refuted**, recorded so they are not re-investigated:
+
+- *Opening Settings writes the per-workspace flag as a side effect.* No. All three calls to
+  `LoadWorkspaceScopedControls` are inside the `_loading` guard, so assigning `IsChecked` cannot
+  reach `OnWorkspaceRevisionChanged`.
+- *A stale management marker kept the panel saying held after adoption.* No. `GitRepository.ReadMarker`
+  shells out to `git config` on every call; there is no cache to go stale.
+
+**A consequence of the workaround, worth knowing.** Ticking **Keep a history of this workspace** on a
+held workspace writes `"RevisionControl": true` into the `.cws` and reports success while arming
+separately refuses. That flag outranks the per-user preference *and* lives in a versioned file, so it
+travels: the owner's test commit carried it to the public repository, where anyone cloning would have
+got a workspace that records regardless of their own setting — the mirror of `ArrivedSwitchedOff`,
+and the direction that surprises somebody who deliberately opted out. Left as it is; the ordering in
+`RevisionSwitch` is deliberate (off is circuitRF declining to write, not a statement about what it
+*can* write), and the fix above removes the reason to reach for that checkbox at all.
+
+Gates: `RetentionHoldAndOffTests.TheWorkspaceRootHoldSaysSoWhenItsQuestionIsSuppressed` (the
+exception, pinned beside the rule it excepts, so neither can be "fixed" into the other) and
+`.TheAdoptionQuestionIsPutOnTheEdgeAndNotOnTheLevel`.
