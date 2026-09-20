@@ -174,6 +174,31 @@ schedule fact, not a design one, and one worth knowing before P0's gate rather t
 | [17 — docs, example, closeout](brief-railrf-17-docs-and-example.md) | — | The user chapter, the figures, an example workspace, and the design note's own status. | DocGen, reported |
 | [18 — six defects](brief-railrf-18-six-defects.md) | — | The six brief 17 found by driving the feature as a user: the zero minimum-feature width, the Fast model's false stackup sentence, the class map's paint order, the legend overlap, the BOM-only parts table, the inert results tab. | **each ships a test that fails at HEAD** |
 
+### Round two — the first outside user (2026-09-20)
+
+An experienced board designer ran railRF on the shipped `Power Rail` example and reported nineteen
+things. Briefs 19-25 are what came of that. **Every one of them is a defect or a gap nothing in the
+suite reported**, which is the same shape brief 18 records: a window can be green and still be
+unusable.
+
+| Brief | Delivers | Gate |
+|---|---|---|
+| [19 — unreachable states](brief-railrf-19-unreachable-states.md) | a rail can be removed (**one mis-click disables Run, Compare and Export permanently**); the pick list highlights what it selects; the breakdown list locates its copper | each fails at HEAD |
+| [20 — layer visibility](brief-railrf-20-layer-visibility.md) | railRF's own per-layer checkboxes, and a `.ctech` display edit that reaches every viewer **without a save** | the second toggle is the one that catches it |
+| [21 — two numbers, one name](brief-railrf-21-two-numbers-one-name.md) | the plane-pair map and the rail curve are named apart; the breakdown states its own total; the legend has a size floor | naming, not arithmetic — nothing numeric moves |
+| [22 — import](brief-railrf-22-import.md) | the folder asked first; no silent return from a visible control; a PDF BOM refused with the answer | one report in it is unreproduced and must be reproduced first |
+| [23 — mount and unmount](brief-railrf-23-mount-and-unmount.md) | depopulate without touching the `.clay`, and compare against the run you just did | cross-checked against Q2's own removal ranking |
+| [24 — the part library](brief-railrf-24-part-library-editor.md) | `.crlib` becomes a document that can be opened | it opens — which it does not today |
+| [25 — a series element](brief-railrf-25-series-element.md) | a ferrite in the middle of a rail: **a second rail node**, partitioned off the artwork | a closed-form oracle, and every existing answer unchanged bit for bit |
+
+**19-24 are window-level and independent of each other.** 25 is a model change and is the largest
+of the seven; it blocks
+[footprint brief 5](brief-footprint-5-power-rail-example.md)'s series-element requirement and
+nothing else.
+
+The [SMT footprint series](brief-footprint-0-overview.md) came out of the same report — its brief 5
+rebuilds this example on real footprints, and needs 23.
+
 ### Dependency order
 
 ```
