@@ -55,13 +55,14 @@ public sealed class SmithRoundFourTests
         => PlotRenderer.BuildTransforms(vm.ChartPlot, Canvas);
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  1. The design frequency is the generator table's median
+    //  1. The design frequency is a generator ROW — the one nearest the table's median
     // ═════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>There is no design-frequency field: it is the median of the generator table, and it moves
-    /// when the table does.</b> An odd table hands back its middle row; an even one averages the
-    /// middle two, so two rows means the frequency half-way between them.
+    /// <b>There is no design-frequency field: it is the generator row nearest the table's median,
+    /// and it moves when the table does.</b> An odd table hands back its middle row; an even one
+    /// ties between the two middle rows and the upper of them wins (owner instruction, 2026-09-19),
+    /// so the design frequency is always a frequency the table actually states.
     /// </summary>
     /// <remarks>
     /// <b>The silent failure this catches is a stale one.</b> It used to be a stored number typed
@@ -81,12 +82,22 @@ public sealed class SmithRoundFourTests
         var vm = new SmithChartViewModel(Design());
         Assert.Equal(2.0e9, vm.Design.DesignFrequencyHz);
 
-        // Even: the mean of the middle two. With two rows that is the owner's stated case — the
-        // frequency half-way between them — and with four it is the same rule rather than a second.
+        // Even: a ROW, not the mean of two. The midpoint of 2 and 3 GHz is equidistant from both, so
+        // the tie rule decides and it is the upper — 3 GHz, which the table states, rather than
+        // 2.5 GHz, which it does not and whose Z_gen would be interpolated.
         var two = new SmithDesign();
         two.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 50, 0));
         two.Generator.Rows.Add(new SmithGeneratorRow(3.0e9, 50, 0));
-        Assert.Equal(2.5e9, two.DesignFrequencyHz);
+        Assert.Equal(3.0e9, two.DesignFrequencyHz);
+
+        // THE POINT OF THE RULE: whatever the table is, the design frequency is one of its own rows,
+        // so the emphasised load point is one of the drawn ones. Asserted over an even table whose
+        // middle pair is not its outer pair, which is where an "average" would leave the span.
+        var four = new SmithDesign();
+        foreach (double f in new[] { 1.8e9, 2.0e9, 2.2e9, 3.0e9 })
+            four.Generator.Rows.Add(new SmithGeneratorRow(f, 50, 0));
+        Assert.Contains(four.Generator.Rows, r => r.FrequencyHz == four.DesignFrequencyHz);
+        Assert.Equal(2.2e9, four.DesignFrequencyHz);
 
         // …and it FOLLOWS the table. Retuning the middle row is what "retuning the chart" means now.
         vm.GeneratorRows[1].FrequencyEntry = "2.1 GHz";

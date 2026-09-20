@@ -42,7 +42,14 @@ look.
 {{ui: smith-window}}
 
 Open it from **Tools &rsaquo; Smith Chart** for a new scratch document, or by opening a `.csmith` in the
-project tree. It is an ordinary circuitRF **document**, not a separate application: it gets a tab, a
+project tree. **Tools &rsaquo; Smith Chart opens it in a window of its own**, the size of the workspace
+window and offset a little down and to the right of it &mdash; the tool is three panes and a docked tab
+in an ordinary workspace window leaves too little of any of them to work in. If your workspace window is
+large enough that a docked tab would still be a full window's worth of space, it opens as a tab instead;
+and a `.csmith` opened from the project tree always opens as a tab, because you asked for the file. Drag
+the tab wherever you prefer either way.
+
+It is an ordinary circuitRF **document**, not a separate application: it gets a tab, a
 `&bull;` dirty mark, Save and Save As &mdash; on the tab's menu, on the shell's File menu and on the
 chart's own top strip &mdash; Undo and Redo on the keys you already use, tear-off and
 floating, and it is restored when you reopen the workspace. It also needs no workspace at all &mdash; a
@@ -98,14 +105,18 @@ table and the number the tool uses disagreed, and there is no way to display tha
 eventually mislead somebody.
 
 <div class="callout note">
-<span class="label">The design frequency is the table's median &mdash; there is nothing to set</span>
+<span class="label">The design frequency is a row of the table &mdash; there is nothing to set</span>
 <p>The <b>design frequency</b> is what the trajectories are drawn at, what the reactances are computed
-at, and what the status strip reports. It is <b>the median of the generator table's frequencies</b>
-and there is no field for it: an odd number of rows gives you the middle row, and an even number
-gives you the mean of the middle two &mdash; so two rows means the frequency half-way between them.</p>
+at, and what the status strip reports. It is <b>the generator row nearest the table's median
+frequency</b> and there is no field for it. An odd number of rows gives you the middle row; an even
+number falls exactly between two of them, and the <b>higher</b> one wins &mdash; so a two-row table at
+1.8 and 2.2&nbsp;GHz is drawn at 2.2&nbsp;GHz.</p>
+<p>It is always one of the frequencies you typed, which is the point: the design frequency's load point
+is one of the labelled ones on the chart, and its generator impedance is a row you can read rather than
+a value interpolated between two.</p>
 <p>It used to be a field you typed into, which could be put outside the table's span, and that turned
-it red and refused the whole document. The median is inside the span by construction, so the rule,
-the red field and the refusal all went with it. To move the design frequency, move the table.</p>
+it red and refused the whole document. A row of the table is inside its own span, so the rule, the red
+field and the refusal all went with it. To move the design frequency, move the table.</p>
 </div>
 
 <div class="callout tip">
@@ -133,7 +144,7 @@ because a walk across a chart has to be a walk.
 | **Add &#9662;** | Appends at the end, nearest the load. |
 | **Insert &#9662;** | Places before the selected element. With nothing selected it appends, because *before nothing* and *at the end* are the same place in a list. |
 | **Delete** | Removes the selected element; the chain closes up. The **Delete** key does the same thing when no marker is selected on the chart. |
-| **&#8597;** / drag | Reorders. Dragging an element along the strip does the same thing. |
+| **&#8597;** / drag | Reorders. Dragging an element along the strip does the same thing &mdash; and the whole drawing follows the pointer as you go, with the other parts stepping aside and the wires re-drawn, so what you see while dragging is exactly what dropping will leave. |
 | **Zoom to Fit** (**F**) | Frames the whole drawing. The strip re-frames itself whenever the drawing changes size &mdash; adding, deleting or mirroring &mdash; and keeps your zoom when it does not. |
 | **Zoom Box** (**Z**) | Arms the next left-drag to draw a box, and frames that box. Esc cancels. It is the schematic and layout editors' own zoom box, because this strip is drawn by the schematic renderer. |
 | **enabled** | Unticking an element makes it contribute nothing and draw no curve &mdash; **without deleting it**. It keeps its values and its place. That is the difference between trying something and losing it. |
@@ -151,6 +162,17 @@ what makes the copied network ([below](#clipboard)) a circuit that really simula
 | **S2P** | **series only** | A two-port Touchstone file. A 2-port with its second port grounded is a different component than the one you placed, and a shunt one-port is what S1P and Z1P are for. |
 | **TLIN** | series | An ideal transmission line with its own Z<sub>0</sub> and electrical length. |
 | **Open stub**, **Shorted stub** | shunt | The same line as a stub, far end open or grounded. |
+
+<div class="callout tip">
+<span class="label">Click a component to see which curve is its</span>
+<p>Selecting an element in the strip draws <b>its</b> trajectory thicker on the chart and fades the
+other trajectories back, so a cascade of five parts stops being five curves of similar colour and
+starts being an answer to <i>which one is this</i>. Click the strip's empty background &mdash; or press
+<b>Esc</b> &mdash; and everything goes back; that also drops any selected markers, because this window
+has two selections and one key.</p>
+<p>Only the element curves move. The load points, the swept band, the constant-Q arcs and any overlays
+you have added are left exactly as they were: those are what you are matching <i>to</i>.</p>
+</div>
 
 Selecting an element shows its **sliders** underneath &mdash; one for an L, three for an SRLC, two for
 a line, and none at all for S1P or S2P, whose value is a file. Each row is a label, a slider and a
@@ -269,6 +291,15 @@ Every row of the generator table puts a **load point** on the chart, labelled wi
 design frequency's point is drawn emphasised and the others are secondary. Together they are the
 picture of the network coming apart at the band edges &mdash; which, on a narrowband match, is the
 thing you are actually deciding about.
+
+The **Load** panel, under the Generator table, is the same information as numbers: one row per
+generator frequency, in the same **f / R / X** columns, giving the impedance the cascade lands on
+there. The Generator table says where the design starts and this says where it ends, at the same
+frequencies, so the two read against each other row for row. It is not editable &mdash; there is no
+load component and nothing terminates the cascade, so the load is simply where the walk arrived
+&mdash; but the numbers are selectable and can be copied out. A row showing **&mdash;** is a frequency
+the cascade could not be evaluated at, which on a network containing a Touchstone element means that
+file does not cover it.
 
 Beside each one is a faint **&#8853; generator glyph**, at &Gamma;(Z<sub>gen</sub>) for that
 frequency &mdash; where the Generator table says the generator is.

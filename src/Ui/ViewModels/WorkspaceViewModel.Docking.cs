@@ -971,6 +971,46 @@ public partial class WorkspaceViewModel
     private Window? ShellWindow() => Views.WorkspaceLocator.WindowFor(this);
 
     /// <summary>
+    /// The size a workspace window opens at — <c>WorkspaceWindow.axaml</c>'s own declared
+    /// <c>Width</c>/<c>Height</c>, which is what "a standard workspace window" means.
+    /// </summary>
+    /// <remarks>
+    /// Restated here rather than read off the window, deliberately: the question this answers is
+    /// "would a docked tab be big enough to work in", and the yardstick for that has to be the
+    /// shipped default rather than whatever size the shell happens to have been dragged to. A shell
+    /// the user has made small would otherwise lower its own bar and dock a document into a region
+    /// too small to use.
+    /// </remarks>
+    internal const double StandardWorkspaceWidth  = 1200;
+
+    /// <inheritdoc cref="StandardWorkspaceWidth"/>
+    internal const double StandardWorkspaceHeight = 800;
+
+    /// <summary>
+    /// Would a document docked into this shell get at least a standard workspace window's worth of
+    /// room? <b>Measured off the real document region</b>, never inferred from the window size — the
+    /// panels either side of it take an arbitrary share and only the control itself knows what is
+    /// left.
+    /// </summary>
+    /// <remarks>
+    /// False when there is nothing to measure (no shell, no realized document region, a headless
+    /// factory). That is the useful answer rather than a cautious one: the caller's fallback is to
+    /// open in a window of its own, which is usable everywhere, where docking into a region whose
+    /// size is unknown is the outcome being avoided.
+    /// </remarks>
+    internal bool DockedDocumentRegionFitsStandardWindow()
+    {
+        if (ShellWindow() is not { } shell) return false;
+
+        var region = shell.GetVisualDescendants().OfType<DocumentControl>()
+                          .FirstOrDefault(c => c.Bounds is { Width: > 1.0, Height: > 1.0 });
+        if (region is null) return false;
+
+        return region.Bounds.Width  >= StandardWorkspaceWidth
+            && region.Bounds.Height >= StandardWorkspaceHeight;
+    }
+
+    /// <summary>
     /// Snapshots the live arrangement. Returns null only when there is no root dock to read.
     /// </summary>
     internal CwsDockLayout? CaptureDockLayout()

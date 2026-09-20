@@ -66,6 +66,62 @@ public static class PlotCanvasGeometry
     public static double StripLogicalWidth(double height) => Math.Max(height * 0.05, 10.0);
 
     /// <summary>
+    /// How far the chart disc's left edge sits INSIDE the canvas's left edge, in the same units as
+    /// <paramref name="canvasWidth"/>. The right edge is the mirror of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A Y-axis label belongs beside the axis, not beside the canvas</b> — and on a Smith or
+    /// Polar plot those are not the same place. The disc is square and CENTRED in the canvas
+    /// (<c>PlotRenderer.ComputeViewport</c>), so a canvas wider than it is tall leaves a band of
+    /// empty space on each side; a strip placed at the canvas edge is that band's width away from
+    /// the thing it names. On a roughly square container the band is about 1% of the width and the
+    /// difference is barely visible, which is why this went unnoticed for as long as every Smith plot
+    /// was one — but the Smith Chart tool's chart region is a wide rectangle, and there the label
+    /// landed far enough out to read as a stray piece of text (owner report, 2026-09-19: visible only
+    /// once the picture was pasted into another application, and placed "too far left" when it was).
+    ///
+    /// <para><b>The viewport is asked rather than re-derived.</b> Its fractions already carry the
+    /// side margins, the bearings a polar plot reserves and the room a title takes, and a second
+    /// arithmetic for the same rectangle is a second chance to disagree with the grid that is
+    /// actually drawn. Fractions are scale-free, so this answers in whatever units it is asked
+    /// in.</para>
+    ///
+    /// <para>Zero for a Rect plot, which has no disc and whose Y labels live inside the Skia
+    /// margin.</para>
+    /// </remarks>
+    public static double ChartInset(Plot plot, double canvasWidth, double canvasHeight)
+        // COMPLEX PLOTS ONLY, and the guard is not belt-and-braces. A Rect plot's viewport carries
+        // its own left MARGIN — the band the tick numbers and the Y label are drawn in — which is a
+        // perfectly real inset and the wrong answer to this question: that plot has no strips to
+        // shift, and a caller shifting anything by it would be moving chrome into the plot box.
+        => plot is not null && plot.PlotType.IsComplex()
+               ? ChartRect(plot, canvasWidth, canvasHeight).Left
+               : 0.0;
+
+    /// <summary>
+    /// The chart area's rectangle inside a canvas of <paramref name="canvasWidth"/> ×
+    /// <paramref name="canvasHeight"/>, in those same units — the disc's bounding box on a Smith or
+    /// Polar plot, the plot box on a Rect one.
+    /// </summary>
+    /// <remarks>
+    /// The four numbers a label strip is placed from, in one call: the top and height it spans, and
+    /// the left and right edges it sits against. <see cref="ChartInset"/> is this rectangle's Left
+    /// and carries the reason the edges matter.
+    /// </remarks>
+    public static (double Left, double Top, double Width, double Height) ChartRect(
+        Plot plot, double canvasWidth, double canvasHeight)
+    {
+        if (plot is null || !(canvasWidth > 0.0) || !(canvasHeight > 0.0))
+            return (0.0, 0.0, Math.Max(0.0, canvasWidth), Math.Max(0.0, canvasHeight));
+
+        var vp = PlotRenderer.BuildTransforms(plot, (canvasWidth, canvasHeight)).Viewport;
+        return (Math.Max(0.0, vp.X * canvasWidth),
+                Math.Max(0.0, vp.Y * canvasHeight),
+                Math.Max(0.0, vp.Width  * canvasWidth),
+                Math.Max(0.0, vp.Height * canvasHeight));
+    }
+
+    /// <summary>
     /// Extra logical height added below the chart to accommodate overflow
     /// X-axis label rows on Smith / Polar plots with multiple traces.
     ///

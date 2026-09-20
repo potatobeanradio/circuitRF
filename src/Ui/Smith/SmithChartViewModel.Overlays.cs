@@ -423,6 +423,12 @@ public sealed partial class SmithChartViewModel
     private IReadOnlyList<SmithTraceKey> _traceKeys = [];
 
     /// <summary>
+    /// <inheritdoc cref="_traceKeys"/> Exposed for the gate, which asserts the selection highlight
+    /// against the traces actually on the chart rather than against a second list of its own.
+    /// </summary>
+    internal IReadOnlyList<SmithTraceKey> ChartTraceKeys => _traceKeys;
+
+    /// <summary>
     /// Writes the markers now on the chart back into the document.
     /// </summary>
     /// <remarks>

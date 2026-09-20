@@ -203,6 +203,20 @@ public sealed partial class SmithChartViewModel : ObservableObject
     /// <summary>The table, one view model per document row, in the document's own order.</summary>
     public ObservableCollection<SmithGeneratorRowViewModel> GeneratorRows { get; } = [];
 
+    /// <summary>
+    /// The Load panel — one row per generator row, saying what the cascade lands on there (owner
+    /// instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>Kept in step with <see cref="GeneratorRows"/> by COUNT and refilled in place</b>, never
+    /// rebuilt. <see cref="RefreshDerived"/> runs on every pointer move of a gripper drag — twenty
+    /// times a second — and clearing an <c>ObservableCollection</c> bound to a <c>ListBox</c> at that
+    /// rate rebuilds the whole visual tree each time, which is the shape of stutter this window
+    /// spent brief 5 avoiding on the chart itself. So the row objects are stable and only their three
+    /// strings change, which is the generator table's own convention one step further on.
+    /// </remarks>
+    public ObservableCollection<SmithLoadRowViewModel> LoadRows { get; } = [];
+
     private SmithGeneratorRowViewModel? _selectedRow;
 
     /// <summary>Which row <c>[−]</c> removes. Null when the table is empty.</summary>
@@ -516,6 +530,42 @@ public sealed partial class SmithChartViewModel : ObservableObject
         OnPropertyChanged(nameof(ConstantQEntry));
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
         foreach (var row in GeneratorRows) row.NotifyAll();
+        RefreshLoadRows();
+    }
+
+    /// <summary>
+    /// Re-reads the Load panel: the impedance the cascade lands on at each of the generator table's
+    /// own frequencies.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every number is <see cref="SmithReadings"/>'</b>, exactly as the status strip's are — the
+    /// rule that type's own header states, and the reason there is no arithmetic in this method. The
+    /// strip reports the design frequency; this reports the rest of the table, in the same spelling,
+    /// so the one row they share reads identically in both places.
+    ///
+    /// <para><b>Per row, and a refusal is per row too.</b> A file element that does not span one of
+    /// the table's frequencies makes the cascade refuse AT THAT FREQUENCY and nowhere else — the
+    /// same condition <c>Scene.Note</c> reports for the chart's missing load point — so that row
+    /// shows a dash and its neighbours still show their impedances. Emptying the table because one
+    /// row could not be read would hide the four that could.</para>
+    /// </remarks>
+    private void RefreshLoadRows()
+    {
+        var rows = _design.Generator.Rows;
+
+        while (LoadRows.Count > rows.Count) LoadRows.RemoveAt(LoadRows.Count - 1);
+        while (LoadRows.Count < rows.Count) LoadRows.Add(new SmithLoadRowViewModel(0.0));
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            double f = rows[i].FrequencyHz;
+
+            System.Numerics.Complex? z;
+            try   { z = SmithReadings.At(_design, f, DocumentDirectory).LoadZ; }
+            catch { z = null; }
+
+            LoadRows[i].Set(f, z);
+        }
     }
 
     private string? ComputeRefusal()

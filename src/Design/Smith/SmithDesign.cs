@@ -661,21 +661,22 @@ public sealed class SmithDesign
 
     /// <summary>
     /// What the trajectories are drawn at, what the sliders' reactances are computed at, and what
-    /// the readout strip reports — <b>the MEDIAN of the generator table's frequencies, and never a
-    /// stored field</b>.
+    /// the readout strip reports — <b>the generator row NEAREST the table's median frequency, and
+    /// never a stored field</b>.
     /// </summary>
     /// <remarks>
     /// <b>It used to be a number of its own, typed into the panel and written into the file, and
     /// that is exactly one number too many.</b> The table is the set of frequencies the design is
     /// about; a second frequency beside it could be anywhere, had to be checked against the table's
     /// span on every edit, turned a field red when it was not, and refused the whole document when
-    /// it was saved that way. The median is inside the span by construction, so the rule, the red
-    /// field and the refusal all go with it.
+    /// it was saved that way. A row of the table is inside the span by construction, so the rule,
+    /// the red field and the refusal all go with it.
     ///
-    /// <para><b>The median, with the ordinary even-count averaging.</b> An odd table hands back its
-    /// own middle row, so the design frequency IS a row of the table and its load point is one of
-    /// the drawn ones. A two-row table averages its two rows, which is the owner's stated case; a
-    /// four-row table averages the middle two by the same rule rather than by a second one.</para>
+    /// <para><b>It is always a ROW</b> (owner instruction, 2026-09-19), which the first version was
+    /// not: an even-count table averaged its two middle rows, so a two-row {1.8, 2.2} GHz design was
+    /// drawn at 2.0 GHz — a frequency the table does not contain, whose Z_gen is interpolated, and
+    /// whose load point is not one of the drawn ones. Snapping to a row makes the design frequency's
+    /// load point one of the labelled load points, which is what makes the picture readable.</para>
     ///
     /// <para><b><see cref="DesignFrequencyOverrideHz"/> is the one way past it</b> and it exists for
     /// <c>circuitrf smith --at</c>, which asks what this document does at a frequency the table
@@ -696,23 +697,32 @@ public sealed class SmithDesign
     public double? DesignFrequencyOverrideHz { get; set; }
 
     /// <summary>
-    /// The generator table's median frequency, or 0 for an empty table (which is
+    /// The generator row nearest the table's median frequency, or 0 for an empty table (which is
     /// <see cref="SmithGenerator.Refusal"/>'s own case and is reported there).
     /// </summary>
     /// <remarks>
     /// The rows are kept sorted — <see cref="SmithGenerator.Refusal"/> says so and every surface
     /// that edits the table re-sorts it — so this is an index rather than a sort, and it reads the
     /// table exactly as <see cref="SmithGenerator.Span"/> does.
+    ///
+    /// <para><b>Why the rule collapses to one index.</b> An odd table's median IS its middle row, at
+    /// <c>n/2</c>. An even table's median is the midpoint of rows <c>n/2 - 1</c> and <c>n/2</c>: no
+    /// other row can be nearer to it, because every other row lies outside the interval those two
+    /// bracket — so the nearest row is always one of that pair, and the two are exactly equidistant.
+    /// The owner's tie rule is the UPPER of them, which is <c>n/2</c> again.</para>
+    ///
+    /// <para><b>Indexed rather than computed, and that is not a shortcut.</b> Evaluating
+    /// <c>0.5·(a + b)</c> and then comparing distances would decide that exact tie on whichever side
+    /// double rounding happened to fall — the same table could take either row depending on the
+    /// magnitude of its own frequencies, with nothing to see. The index is the rule, stated
+    /// exactly.</para>
     /// </remarks>
     public double MedianGeneratorFrequencyHz
     {
         get
         {
             int n = Generator.Rows.Count;
-            if (n == 0) return 0.0;
-            return (n % 2) == 1
-                ? Generator.Rows[n / 2].FrequencyHz
-                : 0.5 * (Generator.Rows[n / 2 - 1].FrequencyHz + Generator.Rows[n / 2].FrequencyHz);
+            return n == 0 ? 0.0 : Generator.Rows[n / 2].FrequencyHz;
         }
     }
 

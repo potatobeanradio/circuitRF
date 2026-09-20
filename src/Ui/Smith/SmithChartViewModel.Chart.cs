@@ -125,6 +125,11 @@ public sealed partial class SmithChartViewModel
             Scene      = SmithPlotBuilder.BuildScene(_design, DocumentDirectory, _chartCanvasSize, _lastWindow);
             _traceKeys = SmithPlotBuilder.Fill(ChartPlot, Scene, _design, autoscale: !dragging,
                                                ResolveOverlays());
+
+            // The selection survives a refill: the traces are new objects, so the highlight has to
+            // be put back onto them or clicking a component and then editing its value would drop
+            // the very emphasis that says which curve is being edited.
+            SmithPlotBuilder.ApplyElementHighlight(_traceKeys, SelectedElementIndex);
             _lastWindow = ChartPlot.Axes.Window;
 
             if (!dragging)

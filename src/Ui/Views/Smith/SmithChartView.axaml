@@ -113,6 +113,17 @@
             <Setter Property="HorizontalContentAlignment" Value="Right"/>
         </Style>
 
+        <!-- A READ-ONLY value in the same column as a settable one. Same size and same right
+             alignment as ctl|InlineEditText.val, so the Load table's numbers sit in the same places
+             the Generator table's do; the frequency column overrides the alignment exactly as the
+             row template above it does. Selectable, so a number can be copied out — and with no
+             cursor of its own, because a caret here would advertise an edit that is not on offer. -->
+        <Style Selector="SelectableTextBlock.ro">
+            <Setter Property="FontSize"            Value="10"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Cursor"              Value="Arrow"/>
+        </Style>
+
         <!-- A DISABLED settable value has to LOOK disabled, and nothing else in the stack makes it:
              an InlineEditText at rest is a bare TextBlock, and Avalonia's Fluent theme dims neither a
              disabled TextBlock nor a disabled Panel, so a field that is switched off reads exactly
@@ -409,6 +420,66 @@
                             </Grid>
                         </Border>
 
+                        <!-- ── The load panel (owner instruction, 2026-09-19) ──────────────────────
+                             WHERE THE DESIGN ENDS, in the same three columns as where it starts.
+                             The generator table above states Z_gen at each frequency; this states
+                             what the cascade LANDS on at those same frequencies, so the two are read
+                             against each other row for row. The status strip already reports the
+                             load — but at the design frequency only, which is one row of the table,
+                             and the question a matching network actually poses is what the OTHER
+                             rows are doing.
+
+                             READ-ONLY, and the one place in this window that is: every editable
+                             value here is an InlineEditText (R-smith4-5), and a load impedance is
+                             not editable because there is no load element and nothing terminates the
+                             cascade (§3.2) — it is where the walk arrived. SelectableTextBlock and
+                             not TextBlock, because the whole point of putting a number on screen is
+                             that it can be copied out.
+
+                             THE COLUMNS, THE HEADERS AND THE ALIGNMENTS ARE THE GENERATOR TABLE'S,
+                             copied cell for cell — 1.15* for the frequency and star for the two ohm
+                             values, headers right-aligned over the two numeric columns. Two tables
+                             of the same quantities whose columns do not line up are two tables that
+                             have to be read separately (R-smith11-4's own point). -->
+                        <TextBlock Classes="panelhdr" Text="Load"/>
+
+                        <Border Classes="card">
+                            <StackPanel>
+                                <Grid ColumnDefinitions="1.15*,*,*" Margin="0,0,0,2">
+                                    <TextBlock Grid.Column="0" Classes="gridhdr" Text="f"/>
+                                    <TextBlock Grid.Column="1" Classes="gridhdr" Text="R" Margin="4,0,0,0"
+                                               HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Classes="gridhdr" Text="X" Margin="4,0,0,0"
+                                               HorizontalAlignment="Right"/>
+                                </Grid>
+
+                                <!-- An ItemsControl and not a ListBox: there is nothing to select
+                                     here, and a ListBox would offer a row highlight that means
+                                     nothing and a keyboard focus that leads nowhere. MaxHeight
+                                     matches the generator table's so a long table scrolls in the
+                                     column's own ScrollViewer rather than pushing the Chart card
+                                     off the bottom. -->
+                                <ItemsControl ItemsSource="{Binding ViewModel.LoadRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="sm:SmithLoadRowViewModel">
+                                            <Grid ColumnDefinitions="1.15*,*,*" Margin="0,1">
+                                                <SelectableTextBlock Grid.Column="0" Classes="ro"
+                                                                     HorizontalAlignment="Left"
+                                                                     Text="{Binding FrequencyDisplay}"
+                                                                     ToolTip.Tip="A generator-table frequency. The load is read at each of them."/>
+                                                <SelectableTextBlock Grid.Column="1" Classes="ro" Margin="4,0,0,0"
+                                                                     Text="{Binding ResistanceDisplay}"
+                                                                     ToolTip.Tip="The resistance the cascade lands on at this frequency, looking toward the load."/>
+                                                <SelectableTextBlock Grid.Column="2" Classes="ro" Margin="4,0,0,0"
+                                                                     Text="{Binding ReactanceDisplay}"
+                                                                     ToolTip.Tip="The reactance the cascade lands on at this frequency. A dash means the cascade could not be evaluated there — a file element that does not span it."/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Label left, value right, in one right-aligned column. -->
                         <Border Classes="card">
                             <StackPanel Spacing="3">
@@ -462,6 +533,76 @@
                                      Plot="{Binding ViewModel.ChartPlot}"
                                      Library="{Binding ViewModel.PlotHost.Library}"
                                      CanDeletePlot="False" CanEditPlotProperties="True"/>
+
+                    <!-- ── The Y-axis label strips (owner report, 2026-09-19) ───────────────
+                         A TRACE ADDED THROUGH PLOT PROPERTIES HAD NO LABEL ON SCREEN AT ALL. A Rect
+                         plot draws its Y label inside the Skia canvas; a Smith or Polar one uses an
+                         EXTERNAL strip control, which the Data Display hosts in PlotContainerView —
+                         and this window hosts a bare PlotControl, so there was nowhere for one to
+                         appear. It showed up only in a COPIED picture, because the export composes
+                         from the container and the container had the strips all along.
+
+                         THE SAME TWO COLLECTIONS AND THE SAME CONTROL the Data Display binds, off
+                         the container this document already owns, so a label cannot say one thing
+                         here and another in the copy. Which traces get one is PlotLabelStrips' rule:
+                         the tool's OWN dozen traces are excluded by Trace.ExcludeFromAxisLabels, so
+                         what is left is exactly the reference data the user added — which is what
+                         the strips are for.
+
+                         PLACED IN CODE, against the disc rather than against the control: the chart
+                         region here is a wide rectangle and the disc is square and centred in it, so
+                         the canvas's left edge is a long way from the chart's. SyncPlotContainer
+                         computes both margins from PlotCanvasGeometry.ChartRect on every layout
+                         pass — see there. IsHitTestVisible=False because these are labels and the
+                         chart underneath them owns the pointer; the Data Display's own strips are
+                         double-tappable to rename, and that gesture belongs with the container that
+                         has a rename dialog to open. -->
+                    <ItemsControl Name="LeftStripHost"
+                                  HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  ItemsSource="{Binding ViewModel.ChartContainer.LeftLabelStrips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <!-- Index 0 innermost, exactly as PlotContainerView orders them. -->
+                                <StackPanel Orientation="Horizontal" FlowDirection="RightToLeft"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="ddv:LabelStripViewModel">
+                                <ddc:AxisLabelControl Trace="{Binding Trace}"
+                                                      IsRightSide="{Binding IsRightSide}"
+                                                      Width="{Binding StripWidth}"
+                                                      PlotTheme="{Binding Theme}"
+                                                      CustomLabel="{Binding CustomLabel}"
+                                                      AutoLabel="{Binding AutoLabel}"
+                                                      ShowFilePrefix="{Binding ShowFilePrefix}"
+                                                      AppearanceRevision="{Binding AppearanceRevision}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <ItemsControl Name="RightStripHost"
+                                  HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  ItemsSource="{Binding ViewModel.ChartContainer.RightLabelStrips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="ddv:LabelStripViewModel">
+                                <ddc:AxisLabelControl Trace="{Binding Trace}"
+                                                      IsRightSide="{Binding IsRightSide}"
+                                                      Width="{Binding StripWidth}"
+                                                      PlotTheme="{Binding Theme}"
+                                                      CustomLabel="{Binding CustomLabel}"
+                                                      AutoLabel="{Binding AutoLabel}"
+                                                      ShowFilePrefix="{Binding ShowFilePrefix}"
+                                                      AppearanceRevision="{Binding AppearanceRevision}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     <!-- ── The chart's own top strip ────────────────────────────────────────
                          ON THE CHART and not in the generator column, because everything here

@@ -31,9 +31,18 @@
             right-to-left StackPanel achieves this: items flow leftward,
             so index 0 ends up adjacent to the PlotControl.
         -->
+        <!--
+            RenderTransform, not Margin: the strips are DRAWN against the chart's own left edge
+            rather than against the canvas's, while the layout above still budgets them their full
+            width outside it. See PlotContainerViewModel.LeftLabelStripTransform and
+            PlotCanvasGeometry.ChartInset — on a Smith or Polar plot the disc is square and centred,
+            so a canvas wider than it is tall leaves an empty band the label would otherwise sit the
+            far side of.
+        -->
         <ItemsControl Grid.Column="0"
                       ItemsSource="{Binding LeftLabelStrips}"
                       VerticalAlignment="Stretch"
+                      RenderTransform="{Binding LeftLabelStripTransform}"
                       Margin="{Binding LabelStripMargin}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -119,6 +128,7 @@
         <ItemsControl Grid.Column="2"
                       ItemsSource="{Binding RightLabelStrips}"
                       VerticalAlignment="Stretch"
+                      RenderTransform="{Binding RightLabelStripTransform}"
                       Margin="{Binding LabelStripMargin}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>

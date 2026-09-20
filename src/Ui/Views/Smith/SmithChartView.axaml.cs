@@ -102,6 +102,38 @@ public partial class SmithChartView : UserControl
     private void OnZoomBoxArmedChanged(object? sender, EventArgs e)
         => ZoomBoxToolBtn.Classes.Set("ToolActive", NetworkCanvas.ZoomBoxArmed);
 
+    /// <summary>
+    /// <b>Escape disarms the zoom box wherever the focus is</b> (owner report, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// The network canvas already handled Escape for itself, and that only ever worked while the
+    /// canvas held the keyboard. Arming the box is a TOOLBAR click, and the very next thing a user
+    /// does with a tool they did not mean to arm is look away from it — click the chart, a generator
+    /// cell, a slider — and by then Escape reached the document's own <c>KeyBinding</c> instead,
+    /// which clears the selections and says nothing about the tool. So the box stayed armed, the
+    /// crosshair stayed on, and the next left-drag on the strip zoomed instead of selecting.
+    ///
+    /// <para><b>Before <c>base.OnKeyDown</c>, deliberately.</b> <c>InputElement.OnKeyDown</c> is what
+    /// runs this control's <c>KeyBindings</c>, so anything that must pre-empt the Escape binding has
+    /// to be said above that call. Marking it handled is the other half: disarming the tool AND
+    /// dropping both selections on one press would make Escape do two things at once, and the tool
+    /// is the more recent gesture — the strip's own Escape already reads it that way.</para>
+    ///
+    /// <para>A canvas that had the keyboard has already handled the key by the time it bubbles here,
+    /// so this never runs twice; <c>DisarmZoomBox</c> is idempotent either way.</para>
+    /// </remarks>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (!e.Handled && e.Key == Key.Escape && NetworkCanvas.ZoomBoxArmed)
+        {
+            NetworkCanvas.DisarmZoomBox();
+            e.Handled = true;
+            return;
+        }
+
+        base.OnKeyDown(e);
+    }
+
     /// <summary>The Smith Chart chapter, through the launcher every other Help button in the
     /// application uses.</summary>
     private void OnHelp(object? sender, RoutedEventArgs e)
@@ -358,6 +390,8 @@ public partial class SmithChartView : UserControl
 
         vm.ChartCanvasSize = (plot.Bounds.Width, plot.Bounds.Height);
 
+        PlaceLabelStrips(vm, plot.Bounds.Width, plot.Bounds.Height);
+
         var container = vm.ChartContainer;
         if (Math.Abs(container.Left   - origin.X)           < 0.5
          && Math.Abs(container.Top    - origin.Y)           < 0.5
@@ -370,6 +404,43 @@ public partial class SmithChartView : UserControl
         container.Width  = plot.Bounds.Width;
         container.Height = plot.Bounds.Height;
         container.NotifyViewProperties();
+    }
+
+    /// <summary>
+    /// Puts the two Y-axis label strips against the chart disc's own edges, spanning its height.
+    /// </summary>
+    /// <remarks>
+    /// <b>The disc, not the canvas.</b> A Smith chart's plotting area is square and centred in
+    /// whatever rectangle it is given (<c>PlotRenderer.ComputeViewport</c>), and this window's chart
+    /// region is a wide one — so the canvas's left edge can be a long empty band away from the chart,
+    /// and a label put there reads as a stray piece of text rather than as an axis name. That is the
+    /// owner's report of 2026-09-19, seen in a copied picture because on screen there was no strip at
+    /// all. <c>PlotCanvasGeometry.ChartRect</c> is where the rectangle comes from — the same
+    /// viewport the grid is drawn from, asked rather than re-derived — and
+    /// <c>PlotComposer</c> now places the exported strips from the same two edges.
+    ///
+    /// <para><b>Unconditional, and above <see cref="SyncPlotContainer"/>'s own early return.</b> That
+    /// return fires whenever the container's RECTANGLE is unchanged, which is exactly what happens
+    /// when a trace is added: the chart is the same size and the strip set is not. Placing below it
+    /// would leave a newly-added label at the last position, or at none.</para>
+    ///
+    /// <para>A left strip whose column is wider than the band available is clamped to the canvas edge
+    /// rather than pushed off it — it then overlaps the disc a little, which is legible, where half a
+    /// label outside the control is not.</para>
+    /// </remarks>
+    private void PlaceLabelStrips(SmithChartViewModel vm, double canvasW, double canvasH)
+    {
+        var container = vm.ChartContainer;
+        var chart     = PlotCanvasGeometry.ChartRect(vm.ChartPlot, canvasW, canvasH);
+
+        double stripW = container.LabelStripViewWidth;
+
+        LeftStripHost.Height  = chart.Height;
+        LeftStripHost.Margin  = new Thickness(
+            Math.Max(0.0, chart.Left - container.LeftLabelStrips.Count * stripW), chart.Top, 0, 0);
+
+        RightStripHost.Height = chart.Height;
+        RightStripHost.Margin = new Thickness(chart.Left + chart.Width, chart.Top, 0, 0);
     }
 
     /// <summary>
@@ -425,13 +496,45 @@ public partial class SmithChartView : UserControl
             foreach (var entry in SmithChartViewModel.ElementMenu)
                 flyout.Items.Add(new MenuItem
                 {
-                    Header           = entry.Header,
-                    Icon             = ElementGlyph(entry),
+                    Header           = ElementRow(entry),
                     Command          = command,
                     CommandParameter = entry,
                 });
             return flyout;
         }
+    }
+
+    /// <summary>
+    /// One row of the Add / Insert menus: <b>the part's picture and its name, as the row's own
+    /// Header</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The glyph is not the <c>MenuItem</c>'s <c>Icon</c>, and that is the whole point of this
+    /// method</b> (owner instruction, 2026-09-19: "almost twice as large"). Fluent's
+    /// <c>MenuItem</c> template hosts <c>Icon</c> inside a fixed-size presenter
+    /// (<c>PART_IconPresenter</c>, a <c>Viewbox</c> sized from the theme rather than from the
+    /// content), so a size asked for above the icon column's own is scaled back down to fit it and a
+    /// request for a bigger glyph can produce no visible change at all — silently. Putting the glyph
+    /// in the HEADER takes it out of that presenter entirely, so the size below is the size drawn
+    /// whatever the theme does with icons.
+    ///
+    /// <para>Every row carries one, so nothing is lost by giving up the icon column's alignment: the
+    /// glyphs are a fixed width and line up as a column of their own.</para>
+    /// </remarks>
+    private static Control ElementRow(SmithElementMenuEntry entry)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing     = 10,
+        };
+        row.Children.Add(ElementGlyph(entry));
+        row.Children.Add(new TextBlock
+        {
+            Text              = entry.Header,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        });
+        return row;
     }
 
     /// <summary>
@@ -455,11 +558,15 @@ public partial class SmithChartView : UserControl
             Kind      = binding.SymbolKind,
             PortCount = binding.NumPorts,
             Rotation  = SmithNetworkModel.RotationFor(entry.Kind, entry.Placement),
-            // HALF AGAIN AS LARGE (owner instruction, 2026-09-19). A menu row's job here is to be
-            // recognised at a glance — an R from an L from a shunt C — and at 22x18 the three
-            // two-terminal lumped glyphs were near-indistinguishable beside their own names.
-            Width     = 33,
-            Height    = 27,
+            // THREE QUARTERS OF 64x52 (owner instruction, 2026-09-19). A menu row's job here is
+            // to be recognised at a glance — an R from an L from a shunt C — which is why 22x18 was
+            // abandoned; 64x52 overshot, so the glyph is scaled back by 0.75 rather than back to the
+            // 33x27 that could not be told apart. ElementRow is what makes a number above the icon
+            // column's own size take effect at all.
+            Width     = 48,
+            Height    = 39,
+            // Centred against the name beside it rather than stretched to the row's height.
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         };
     }
 

@@ -9367,9 +9367,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Tools ▸ Smith Chart — a new scratch <c>.csmith</c> (<c>R-smith4-9</c>, smith-chart.md §5.8).
     /// </summary>
     /// <remarks>
-    /// <b>A docked tab, not a window of its own</b>, which is the whole of <c>R-smith4-1</c>:
-    /// harmonicaRF and wBond each open a window because each ships as a standalone binary, and
-    /// railRF because its centre panel is the layout editor's canvas. This has neither reason.
+    /// <b>A document, not an application</b> — <c>R-smith4-1</c>, and that is unchanged: there is no
+    /// standalone <c>smithRF</c> binary, a <c>.csmith</c> is an ordinary dockable, and it can be
+    /// dragged back into the tab strip like any other.
+    ///
+    /// <para><b>What changed is where it OPENS</b> (owner instruction, 2026-09-19). The window is
+    /// three regions — the generator column, the chart and the network strip — and at the room a
+    /// docked tab gets inside a standard 1200x800 shell there is not enough of any of them to work
+    /// in. So the test is the one the instruction states: <b>measure the region a docked tab would
+    /// actually get</b> (<see cref="DockedDocumentRegionFitsStandardWindow"/>), and dock only when it
+    /// is already a full standard workspace window or larger — which a maximized shell on a large
+    /// display is, and a default one is not. Otherwise it goes straight out into a window of its own,
+    /// sized like the shell and offset down-right from it, through the SAME tear-off path harmonicaRF
+    /// and a user's own drag both take.</para>
+    ///
+    /// <para><b>The measurement happens before the tab is opened</b>, and has to: adding a dockable
+    /// does not resize the document region, but the bounds of a control added in this turn are not
+    /// laid out until the next one — so measuring afterwards reads a rectangle that is either stale
+    /// or zero, and a zero reads as "too small" for every shell there is.</para>
     ///
     /// <para><b>No workspace is needed</b>, deliberately, for harmonicaRF's own reason — the tool
     /// starts from a generator impedance and a cascade, and none of that comes from a drawing. Save
@@ -9378,10 +9393,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private void NewSmithChart()
     {
+        bool docked = DockedDocumentRegionFitsStandardWindow();
+
         var doc = new SmithChartDocument(NextSmithChartTitle(), new SmithChartViewModel());
         WireSmithChartSources(doc);
         _scratchSmithCharts.Add(doc);
         _factory.OpenDocument(doc);
+
+        if (!docked) OpenDocumentInOwnWindow(doc);
     }
 
     /// <summary>
@@ -15897,6 +15916,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<EmSetupDocument>()
             .Where(d => d.IsDirty && Keep(d))
             .ToList();
+        // THE TWO TOOL DOCUMENTS, and their absence here was a silent discard (owner report,
+        // 2026-09-19: a dirty scratch `.csmith` let circuitRF quit with nothing asked).
+        // HasAnyDirtyWork has counted both kinds since each was built, so the close path DID stop and
+        // call this — and this then summed a `total` that named neither, read 0 and returned true,
+        // which the caller takes as "settled, safe to proceed". A document type added to one of these
+        // two methods and not the other loses work with no error anywhere: the dirty test says stop,
+        // the prompt says there is nothing to stop for. They are written side by side for that
+        // reason.
+        var dirtyScratchWBonds = _scratchWBonds.Where(d => d.IsDirty && Keep(d)).ToList();
+        var dirtyMatWBonds     = _openDocsByPath.Values
+            .OfType<WBondDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
+        var dirtyScratchSmith = _scratchSmithCharts.Where(d => d.IsDirty && Keep(d)).ToList();
+        var dirtyMatSmith     = _openDocsByPath.Values
+            .OfType<SmithChartDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
+
         var dirtyOrphanedSessions       = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
         var dirtyOrphanedLayoutSessions = _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced);
 
@@ -15905,6 +15943,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
                   + dirtyTechDocs.Count + dirtyEmDocs.Count
+                  + dirtyScratchWBonds.Count + dirtyMatWBonds.Count
+                  + dirtyScratchSmith.Count + dirtyMatSmith.Count
                   + dirtyOrphanedSessions.Count
                   + dirtyOrphanedLayoutSessions.Count;
         if (total == 0) return true;
@@ -15921,6 +15961,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : dirtyEmDocs.Count                > 0 ? dirtyEmDocs[0].Id
             : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
+            : dirtyScratchWBonds.Count         > 0 ? dirtyScratchWBonds[0].Id
+            : dirtyMatWBonds.Count             > 0 ? dirtyMatWBonds[0].Id
+            : dirtyScratchSmith.Count          > 0 ? dirtyScratchSmith[0].Id
+            : dirtyMatSmith.Count              > 0 ? dirtyMatSmith[0].Id
             : dirtyOrphanedSessions.Count       > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
             : dirtyOrphanedLayoutSessions.Count > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedLayoutSessions[0])
             : null;
@@ -16054,6 +16098,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     await SaveDataDisplayDoc(dd, owner);
                 foreach (var dd in dirtyScratchDisplays)
                     await SaveDataDisplayDoc(dd, owner);
+                // wBond and Smith Chart documents, through the ONE save each kind has. Both routes
+                // ask for a path when the document has none, which is what a scratch one needs and
+                // what nothing else here can supply.
+                foreach (var wb in dirtyMatWBonds.Concat(dirtyScratchWBonds))
+                    await SaveWBondDoc(wb, owner);
+                foreach (var sc in dirtyMatSmith.Concat(dirtyScratchSmith))
+                    await SaveSmithChartDoc(sc, owner);
                 return true;
 
             default: return false;

@@ -168,10 +168,21 @@ public static class PlotComposer
             int    nLeft  = c.LeftLabelStrips.Count;
             int    nRight = c.RightLabelStrips.Count;
 
-            bndL = Math.Min(bndL, c.ViewLeft - nLeft  * sw);
+            // THE STRIPS SIT AGAINST THE CHART, NOT AGAINST THE CANVAS — see
+            // PlotCanvasGeometry.ChartInset, and the loop below that draws them. Measured here too,
+            // or a wide Smith container would reserve page margin for strips that are drawn well
+            // inside it and the composed picture would sit off-centre.
+            double inset = PlotCanvasGeometry.ChartInset(c.Plot, c.ViewWidth, c.ViewHeight);
+
+            bndL = Math.Min(bndL, c.ViewLeft + inset - nLeft  * sw);
             bndT = Math.Min(bndT, c.ViewTop);
-            bndR = Math.Max(bndR, c.ViewLeft + c.ViewWidth + nRight * sw);
+            bndR = Math.Max(bndR, c.ViewLeft + c.ViewWidth - inset + nRight * sw);
             bndB = Math.Max(bndB, c.ViewTop  + c.ViewHeight);
+
+            // The canvas itself is content whatever the strips do: a plot with no strip at all, or
+            // one whose strips fit inside the inset, must still contribute its own rectangle.
+            bndL = Math.Min(bndL, c.ViewLeft);
+            bndR = Math.Max(bndR, c.ViewLeft + c.ViewWidth);
 
             foreach (var box in c.MarkerBoxes)
             {
@@ -218,17 +229,26 @@ public static class PlotComposer
                 float chartH   = vpBottom - vpTop;
                 float chartY   = plotY + vpTop;
 
+                // AGAINST THE DISC'S OWN EDGES. The strips already take their TOP and HEIGHT from the
+                // viewport — because a label taller than the chart it names reads as belonging to
+                // something else — and their left and right were the only two of the four still
+                // measured from the canvas. On a container much wider than it is tall that put the
+                // Y label a whole empty band away from the chart; PlotCanvasGeometry.ChartInset has
+                // the owner report it comes from.
+                float vpLeft  = (float)(tf.Viewport.X * plotW);
+                float vpRight = (float)((tf.Viewport.X + tf.Viewport.Width) * plotW);
+
                 for (int i = 0; i < nLeft; i++)
                 {
                     var s = c.LeftLabelStrips[i];
-                    DrawAxisLabelStrip(canvas, plotX - (i + 1) * stripW, chartY,
+                    DrawAxisLabelStrip(canvas, plotX + vpLeft - (i + 1) * stripW, chartY,
                         stripW, chartH, s.Trace, false, theme, s.CustomLabel, s.ShowFilePrefix,
                         s.AutoLabel);
                 }
                 for (int i = 0; i < nRight; i++)
                 {
                     var s = c.RightLabelStrips[i];
-                    DrawAxisLabelStrip(canvas, plotX + plotW + i * stripW, chartY,
+                    DrawAxisLabelStrip(canvas, plotX + vpRight + i * stripW, chartY,
                         stripW, chartH, s.Trace, true, theme, s.CustomLabel, s.ShowFilePrefix,
                         s.AutoLabel);
                 }

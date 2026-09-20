@@ -31930,3 +31930,144 @@ chart that is every trajectory, load point, generator glyph, band and constant-Q
 rebuilt from the design on each edit: re-pointing a marker at one is offering a reading of an object
 that will not exist after the next keystroke, and the menu was a dozen rows of them. On an ordinary
 Data Display nothing is fixed-readout, so the filter passes everything and the menu is unchanged.
+
+## Smith Chart round five (2026-09-19)
+
+Nine owner items over the finished tool. Six were faults; three were changes of rule. What is worth
+keeping is below — the rest is one expression in the AXAML each.
+
+### A dirty scratch `.csmith` let circuitRF quit with nothing asked — and so did a `.wbond`
+
+**The close path DID stop.** `WorkspaceViewModel.HasAnyDirtyWork` has counted wBond and Smith Chart
+documents since each was built, so `WorkspaceWindow.ConfirmCloseAsync` took the "there is unsaved work"
+branch and called `PromptSaveBeforeClose`. **That method never collected either kind.** It builds a
+dozen `dirtyX` lists, sums them into `total`, and opens with `if (total == 0) return true` — and `true`
+is what the caller reads as *settled, safe to proceed*. So the prompt was reached, summed a total that
+named neither document type, read zero, and reported success. Nothing was raised anywhere; the work was
+simply gone.
+
+**The two methods are one mechanism, and nothing held them together.** A document kind added to the
+dirty test and not to the prompt is a kind whose unsaved work vanishes silently — the dirty test says
+stop, the prompt says there is nothing to stop for. They are now written side by side with that note,
+and `SmithRoundFiveTests.EveryDocumentKindTheDirtyTestCountsIsAlsoOfferedBySaveBeforeClose` is a source
+scan holding every kind and both scratch lists present in both bodies. A behavioural test of either one
+alone cannot state this claim; the claim is that they agree.
+
+Both kinds are saved through the one route each already has (`SaveWBondDoc`, `SaveSmithChartDoc`), which
+asks for a path when the document has none — which is what a scratch document needs and what nothing
+else in that method could supply.
+
+### The network strip's reorder drag moved the dragged part and nothing else
+
+Two owner reports, one cause. A dragged component "moved into the centre of the adjacent component",
+and a shunt element's connection to the spine did not move with it.
+
+`SmithNetworkCanvas.BuildOverlay` filled `SchematicOverlay.ComponentDragPositions` with the dragged
+column's target x. That moves the dragged component and its Ground glyph **and nothing else**: the other
+elements stayed on their pre-drag columns (so the dragged one landed on top of whichever occupied the
+slot), and **the spine wires and junction dots are not components at all** — they have no entry in that
+map and no way to be in one, which is the whole of the second report.
+
+**The fix is that the drag draws a real projection of the reordered list.** `BuildReorderPreview`
+reorders the document's own element list, calls the ONE `SmithNetworkModel.Build`, and puts the list back
+under a `finally` — no undo entry, no dirty mark, no event. What the drag shows is therefore what the
+drop produces, by construction, and the gate's oracle is the committed `MoveElement` rather than a table
+of expected coordinates: a preview agreeing with a hand-written table and disagreeing with the drop is
+the defect itself.
+
+Two details the rebuild forced:
+
+- **Rebuilt per SLOT, not per pointer move.** The picture cannot differ between two positions inside one
+  slot, and a build per move is a build per frame for an answer that has not changed.
+- **`EditableComponent.Id` is a fresh GUID on every build**, so the view model's `SelectedComponentId` —
+  resolved against the committed projection — matches nothing in the preview. Left unmapped the selection
+  outline vanished for the duration of every drag, at the one moment the user most needs to see which
+  part they are holding. `SelectedIdIn` maps the index through the same move.
+
+### A Y-axis label sat beside the CANVAS, not beside the axis
+
+Owner report: a trace added through Plot Properties had **no y-label on screen at all**, and appeared
+only in a picture pasted into another application — placed far to the left of the chart.
+
+Two separate halves, both real:
+
+1. **A Rect plot draws its Y label inside the Skia canvas; a Smith or Polar one uses an EXTERNAL strip
+   control** (`AxisLabelControl`), which the Data Display hosts in `PlotContainerView`. The Smith Chart
+   tool hosts a bare `PlotControl`, so there was nowhere for a strip to appear. The export composes from
+   the `PlotContainerViewModel` the document has owned all along, which is why the copy had one.
+2. **`PlotComposer` placed the strips at the canvas edge.** A Smith disc is square and **centred** in
+   whatever rectangle it is given, so a canvas wider than it is tall leaves an empty band on each side.
+   On a roughly square Data Display container that band is about 1% of the width and nobody noticed; the
+   Smith Chart tool's chart region is a wide rectangle, and there the label landed a whole band away from
+   the thing it names.
+
+`PlotCanvasGeometry.ChartRect` / `ChartInset` is now the one answer to "where is the chart inside the
+canvas", **asked of the viewport rather than derived a second time** — the viewport already carries the
+side margins, a polar plot's bearings and the room a title takes, and a second arithmetic for the same
+rectangle is a second chance to disagree with the grid that is actually drawn. The composer places both
+edges from it, `PlotContainerView` shifts its two strip columns by it with a **`RenderTransform`** (so
+`ViewTotalWidth` and `ViewContainerLeft` keep budgeting the strips their full width and the graph region
+does not move), and `SmithChartView` hosts the same two collections and positions them from the same
+call. Screen and export therefore agree, which is what RND-4 exists to make true.
+
+**`ChartInset` is guarded to complex plots and that guard is not belt-and-braces.** A Rect plot's
+viewport carries its own left margin — the band its tick numbers and Y label are drawn in — which is a
+perfectly real inset and the wrong answer to this question.
+
+### Escape did not disarm the zoom box unless the canvas had the keyboard
+
+`SmithNetworkCanvas.OnKeyDown` handled Escape, and that only ever ran while the canvas was focused.
+**Arming the box is a toolbar click, and the very next thing a user does with a tool they did not mean to
+arm is look away from it** — click the chart, a generator cell, a slider. By then Escape reached the
+document's own `KeyBinding`, which clears the selections and says nothing about the tool, so the box
+stayed armed and the next left-drag on the strip zoomed instead of selecting.
+
+Handled in `SmithChartView.OnKeyDown` **above `base.OnKeyDown`**, because `InputElement.OnKeyDown` is
+what runs a control's `KeyBindings` — anything that must pre-empt the Escape binding has to be said
+before that call.
+
+### A press on the strip's background dropped nothing
+
+`SelectByComponentId` answers false for a press that hit nothing, and the handler simply returned. A part
+stayed outlined and a marker stayed selected while the user clicked elsewhere to say they were done with
+it. It now calls the same `ClearSelection` Escape does, so the two gestures cannot come to mean different
+things. "Nothing" means nothing **selectable** — the empty canvas, and equally the generator, a ground
+glyph or the load pin, none of which is an element.
+
+### The `MenuItem.Icon` size had no effect above the icon column's own
+
+The Add / Insert menu glyphs were raised from 22×18 to 33×27 earlier the same day and the owner asked for
+them "almost twice as large" again. Fluent's `MenuItem` template hosts `Icon` inside a fixed-size
+presenter (`PART_IconPresenter`, a `Viewbox` sized from the theme rather than from the content), so a
+number above the icon column's own size is scaled back down to fit it — **a request for a bigger glyph
+can produce no visible change at all, silently**. The glyph now goes in the row's **Header**, beside a
+`TextBlock`, which takes it out of that presenter entirely; the size written is the size drawn.
+
+### The design frequency was not a frequency the table states
+
+It was the median, which on an even-count table is the mean of the two middle rows — so a two-row
+{1.8, 2.2} GHz design was drawn at **2.0 GHz**, a frequency the table does not contain, whose `Z_gen` is
+interpolated and whose load point is not one of the labelled ones. The owner's rule is the **nearest
+row**, which makes the emphasised load point one of the drawn ones.
+
+**An even table is always an exact tie** — the median is the midpoint of the two middle rows, and no
+other row can be nearer, because every other row lies outside the interval those two bracket. The tie
+goes to the **upper** (owner decision), which collapses the whole rule to `Rows[n / 2]` for both
+parities. **Written as that index rather than computed**, deliberately: evaluating `0.5·(a + b)` and then
+comparing distances would decide an exact tie on whichever way double rounding happened to fall, so the
+same table could take either row depending on the magnitude of its own frequencies, with nothing to see.
+
+### Tools ▸ Smith Chart opens torn off
+
+The window is three regions, and a docked tab inside a standard 1200×800 shell gives too little of any of
+them. The command measures **the document region a docked tab would actually get**
+(`DockedDocumentRegionFitsStandardWindow`, off the real `DocumentControl`'s bounds — the panels either
+side take an arbitrary share and only the control knows what is left) and docks only when that is already
+a full standard workspace window or larger. Otherwise it goes out through `OpenDocumentInOwnWindow`, the
+tear-off path harmonicaRF and a user's own drag already take.
+
+**The measurement happens BEFORE the tab is opened**, and has to: adding a dockable does not resize the
+document region, but the bounds of a control added in this dispatcher turn are not laid out until the
+next one — so measuring afterwards reads a rectangle that is either stale or zero, and zero reads as "too
+small" for every shell there is. The yardstick is the **shipped** 1200×800 rather than the shell's
+current size; a shell the user has dragged small would otherwise lower its own bar.

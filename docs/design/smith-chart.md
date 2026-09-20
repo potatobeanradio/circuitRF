@@ -300,15 +300,25 @@ output, because two adjacent arcs sharing a gripper are otherwise ambiguous abou
 > statement of "the frequencies this design is about" the document ever had. What that removed is
 > recorded in `src/Ui/RESOLVED.md`; the original text of items 1 and 3 is below in its corrected form.
 
-1. **The design frequency.** One number, and it is **derived**: the **median** of the generator table's
-   frequencies — the middle row of an odd table, the mean of the middle two of an even one, so a
-   two-row table gives the frequency half-way between them. It is what the trajectories are drawn at,
-   what the sliders' reactances are computed at, and what the readout strip reports. `Z_gen` is
-   **linearly interpolated in R and X** between the two bracketing rows, and the median is inside the
-   table's span by construction — so the old refusal about a design frequency outside it survives for
-   exactly one caller, `circuitrf smith --at`, where it is still a refusal naming the span rather than
-   an extrapolation. (A single-row table is that rule's exception: one row means one impedance, flat,
-   and every frequency is legal against it.)
+1. **The design frequency.** One number, and it is **derived**: the generator **row nearest the
+   table's median** frequency. It is what the trajectories are drawn at, what the sliders' reactances
+   are computed at, and what the readout strip reports. `Z_gen` is **linearly interpolated in R and X**
+   between the two bracketing rows, and a row of the table is inside its own span by construction — so
+   the old refusal about a design frequency outside it survives for exactly one caller,
+   `circuitrf smith --at`, where it is still a refusal naming the span rather than an extrapolation.
+   (A single-row table is that rule's exception: one row means one impedance, flat, and every
+   frequency is legal against it.)
+
+   > **Revised again 2026-09-19 (owner instruction): it is always a ROW.** It was the median itself,
+   > which on an even-count table is the mean of the middle two — so a two-row {1.8, 2.2} GHz design
+   > was drawn at 2.0 GHz, a frequency the table does not state, whose `Z_gen` is interpolated and
+   > whose load point is not one of the labelled ones. Snapping to a row makes the emphasised load
+   > point one of the drawn ones, which is what makes the picture readable. **An even table is always
+   > an exact tie** — the median is the midpoint of the two middle rows, and no other row can be
+   > nearer — and the tie goes to the **upper** of them. That collapses the whole rule to
+   > `Rows[n / 2]` for both parities, which is how it is written: computing the mean and then
+   > comparing distances would decide an exact tie on whichever way double rounding happened to fall.
+   > `SmithDesign.MedianGeneratorFrequencyHz` carries the derivation.
 2. **The table frequencies.** Every generator-table row produces a **load point** on the chart, with a
    small label box naming the frequency — the same `ContourRenderer.DrawIsoLineLabel` box the loadpull
    iso-lines use, placed by the same anchor walk, so the two surfaces cannot drift apart in appearance.
@@ -517,6 +527,20 @@ inherits — rather than re-implements — the whole of what that means:
 
 There is no standalone `smithRF` binary and none is proposed. This is a document type.
 
+> **Revised 2026-09-19 (owner instruction): where Tools ▸ Smith Chart OPENS it.** Everything above is
+> unchanged — it is a dockable document, it can be dragged back into the tab strip, and nothing about
+> it is an application. What changed is the size it opens at. This window is three regions (§5.2), and
+> the room a docked tab gets inside a standard 1200×800 shell is not enough of any of them to work in;
+> testing on the shipped example bore that out. So the command **measures the document region a docked
+> tab would actually get** (`WorkspaceViewModel.DockedDocumentRegionFitsStandardWindow`) and docks only
+> when that region is already **a full standard workspace window (1200×800) or larger** — which a
+> maximized shell on a large display is, and a default one is not. Otherwise the document goes straight
+> out into a window of its own, sized like the shell and offset down-right from it, through
+> `OpenDocumentInOwnWindow` — **the same tear-off path harmonicaRF and a user's own drag take**, not a
+> hand-built window. The yardstick is the SHIPPED 1200×800 rather than the shell's current size: a
+> shell the user has dragged small would otherwise lower its own bar. Opening a `.csmith` from the tree
+> is untouched and still docks, because the user asked for that file rather than for the tool.
+
 ### 5.2 Layout
 
 ```
@@ -530,13 +554,13 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 │ 2.20G  10.9  -9.8 │               |         +      .------.        |                         │
 │          [+]  [-] │               |       ,2.00G --'      '-- ,     |                        │
 │                   │                \        ,1.80G               /                           │
-│ Chart Z0  [ 50 ] O│                 '--.                      .--'                           │
-│                   │                     '----------------------'                             │
-│                   │                                                                          │
-│                   │   ,  load point, labelled   + Z_gen  (shift-drag it to edit              │
-│                   │   -- element trajectory       that generator row)                        │
+│ LOAD              │                 '--.                      .--'                           │
+│  f      R      X  │                     '----------------------'                             │
+│ 1.80G  48.2   3.1 │                                                                          │
+│ 2.00G  50.1  -0.4 │   ,  load point, labelled   + Z_gen  (shift-drag it to edit              │
+│ 2.20G  51.6  -4.0 │   -- element trajectory       that generator row)                        │
 │                   │   o  gripper                                                             │
-│                   │                                                                          │
+│ Chart Z0  [ 50 ] O│                                                                          │
 │                   │   (overlays are added in Plot Properties... - 5.7 - and the              │
 │                   │    combo at the top left is what a new trace is seeded from)             │
 ├───────────────────┴──────────────────────────────────────────────────────────────────────────┤
@@ -610,6 +634,29 @@ window, and its three columns are **fixed-width by construction** (a frequency a
 it takes the in-place hosting. Nothing here needs the floating overlay, which is the more delicate of
 the two.
 
+### 5.3a The Load panel — owner instruction, 2026-09-19
+
+Below the generator table, in the same column and in the same three columns — **f / R / X** — a
+**read-only** table saying what the cascade **lands on** at each of the generator table's own
+frequencies. The generator table says where the design starts; this says where it ends, at the same
+frequencies, so the two are read against each other row for row.
+
+- **Every number is `SmithReadings`'**, handed in from the one evaluation that also produced the chart
+  and the status strip (§4.6's rule: a VSWR or a conjugate derived twice is two chances to be wrong in a
+  quantity whose wrong value looks entirely ordinary). The strip already reports the load — but at the
+  **design frequency only**, which is one row of the table, and the question a matching network poses is
+  what the *other* rows are doing.
+- **Read-only, and the one place in this window that is.** §5.3's rule is that every editable value is an
+  `InlineEditText`; a load impedance is not editable, because there is no load element and nothing
+  terminates the cascade (§3.2) — it is where the walk arrived. The cells are `SelectableTextBlock`s, so
+  a number can still be copied out.
+- **A refusal is per row.** A file element that does not span one of the table's frequencies makes the
+  cascade refuse *at that frequency* — the same condition the chart reports as a missing load point — so
+  that row shows an em dash and its neighbours still show their impedances.
+- The rows are **kept in step by count and refilled in place**, never rebuilt: `RefreshDerived` runs on
+  every pointer move of a gripper drag, and clearing an `ObservableCollection` bound to a list at that
+  rate rebuilds the visual tree twenty times a second.
+
 ### 5.4 The chart
 
 A `PlotControl` in `PlotType.Smith`, fed a `Plot` the view model rebuilds from the evaluator. Its traces
@@ -629,6 +676,18 @@ drift and the difference would be invisible until someone compared a screenshot 
 Gripper appearance is deliberately understated (the specification says *subtle*): a small hollow ring in
 the trajectory's own colour, brightening on hover, filled while dragging. They are drawn above the
 trajectories and **below** the markers, following harmonicaRF's own z-order rule.
+
+**The chart follows the strip's selection** (owner instruction, 2026-09-19). Selecting an element —
+by clicking its symbol in the network strip, or through any of the strip's own commands — draws that
+element's trajectory **thicker and at full opacity**, with the **other trajectories faded back**; that
+is the answer to *which of these curves is this part*. Deselecting restores every one of them, and so
+does clicking the strip's background, which drops both of this window's selections exactly as Escape
+does. It is `SmithPlotBuilder.ApplyElementHighlight`, and it **mutates the traces already on the plot
+rather than refilling them**: selecting is not an edit, so re-evaluating the cascade and rebuilding the
+trace collection — which would re-attach every marker and reload every trace card — to draw one line
+thicker is work with a side effect and no reason. The **load points, the band, the constant-Q arcs and
+the user's own overlays are untouched**: fading the reference data because a component was clicked
+would hide the very thing the cascade is being matched to.
 
 ### 5.5 The network strip
 

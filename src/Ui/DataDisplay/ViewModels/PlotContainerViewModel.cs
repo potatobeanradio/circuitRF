@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RfCore;
 using CircuitRF.Ui.DataDisplay;
@@ -141,6 +142,40 @@ public partial class PlotContainerViewModel : ViewModelBase
         new Thickness(0, TopLabelExtraLogical    * _parent.ZoomLevel,
                       0, BottomLabelExtraLogical * _parent.ZoomLevel);
 
+    /// <summary>
+    /// How far the chart disc's edge sits inside the canvas's, in screen pixels — what the label
+    /// strips are shifted INWARD by so they sit against the chart rather than against the canvas.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same number the export uses</b> (<c>PlotCanvasGeometry.ChartInset</c>, which carries
+    /// the reason), because a strip that is in one place on screen and another in a copied picture
+    /// is the class of difference RND-4 exists to make impossible. Zero on a Rect plot, which has no
+    /// strips, and about 1% of the width on a roughly square Smith or Polar container — it only
+    /// grows to something worth seeing when the container is much wider than it is tall.
+    /// </remarks>
+    public double ChartInsetView => PlotCanvasGeometry.ChartInset(PlotVM.Plot, ViewWidth, ViewHeight);
+
+    /// <summary>
+    /// <see cref="ChartInsetView"/> as a render transform for the left strip column — <b>render, not
+    /// layout</b>, so <see cref="ViewTotalWidth"/> and <see cref="ViewContainerLeft"/> keep budgeting
+    /// the strips their full width and the graph region stays exactly where it was. What moves is
+    /// where the strips are DRAWN.
+    /// </summary>
+    public ITransform LeftLabelStripTransform  => new TranslateTransform(ChartInsetView,  0);
+
+    /// <inheritdoc cref="LeftLabelStripTransform"/>
+    public ITransform RightLabelStripTransform => new TranslateTransform(-ChartInsetView, 0);
+
+    /// <summary>Republishes the two strip transforms. Called wherever
+    /// <see cref="LabelStripMargin"/> is: the inset moves with the very same things — the container's
+    /// size, the zoom, and anything that changes how tall the canvas is made for its labels.</summary>
+    private void NotifyStripTransforms()
+    {
+        OnPropertyChanged(nameof(ChartInsetView));
+        OnPropertyChanged(nameof(LeftLabelStripTransform));
+        OnPropertyChanged(nameof(RightLabelStripTransform));
+    }
+
     // When model coordinates change, screen coordinates change too.
     partial void OnLeftChanged(double value)
     {
@@ -155,6 +190,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewHeight));       // BottomLabelExtraLogical depends on Width
         OnPropertyChanged(nameof(ViewTop));          // TopLabelExtraLogical depends on Width
         OnPropertyChanged(nameof(LabelStripMargin)); // both extras depend on Width
+        NotifyStripTransforms();
     }
     partial void OnHeightChanged(double value)
     {
@@ -445,6 +481,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewContainerLeft));
         OnPropertyChanged(nameof(LabelStripViewWidth));
         OnPropertyChanged(nameof(LabelStripMargin));
+        NotifyStripTransforms();
         OnPropertyChanged(nameof(ZoomLevel));
         // Zoom changes LabelStripViewWidth, so push the new width to existing strip VMs.
         UpdateLabelStrips(widthAndThemeOnly: true);
@@ -597,6 +634,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewHeight));       // BottomLabelExtraLogical depends on trace count
         OnPropertyChanged(nameof(ViewTop));          // TopLabelExtraLogical depends on title / plot type
         OnPropertyChanged(nameof(LabelStripMargin)); // both extras change with traces and title
+        NotifyStripTransforms();
         OnPropertyChanged(nameof(ViewTotalWidth));
         OnPropertyChanged(nameof(ViewContainerLeft));
     }

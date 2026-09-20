@@ -89,6 +89,18 @@ public sealed class SmithNetworkCanvas : Control
     private Point  _dragOrigin;
     private bool   _dragging;
 
+    /// <summary>
+    /// The drawing as the drop would leave it, while a reorder drag is in flight — null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>A whole projection, not a set of moved positions</b>; see
+    /// <see cref="SmithChartViewModel.BuildReorderPreview"/> for the two reports that is the fix to.
+    /// Rebuilt only when the target SLOT changes, not on every pointer move: the picture cannot
+    /// differ between two positions inside one slot, and a build per move is a build per frame for
+    /// an answer that has not changed.
+    /// </remarks>
+    private SmithNetworkProjection? _dragPreview;
+
     public SmithNetworkCanvas()
     {
         ClipToBounds = true;
@@ -330,6 +342,22 @@ public sealed class SmithNetworkCanvas : Control
             _dragging      = false;
             e.Pointer.Capture(this);
         }
+        else
+        {
+            // A PRESS ON THE BACKGROUND DROPS BOTH SELECTIONS (owner instruction, 2026-09-19) — the
+            // strip's element AND the chart's markers, which is the same pair Escape drops and the
+            // same command, so the two gestures cannot come to mean different things.
+            //
+            // It used to drop neither: SelectByComponentId answers false for a press that hit
+            // nothing and simply returned, so a part stayed outlined and a marker stayed selected
+            // while the user clicked elsewhere to say they were done with it. Deselecting by
+            // clicking away is the gesture every canvas in this application already has.
+            //
+            // "Nothing" here means nothing SELECTABLE — the empty canvas, and equally the generator,
+            // a ground glyph or the load pin, none of which is an element and none of which this
+            // strip can select.
+            _vm.ClearSelection();
+        }
 
         e.Handled = true;
     }
@@ -365,8 +393,14 @@ public sealed class SmithNetworkCanvas : Control
          && Math.Abs(p.Y - _dragOrigin.Y) < DragThresholdPixels)
             return;
 
+        int slot = TargetIndexAt(p);
+        if (!_dragging || slot != _dragToIndex)
+        {
+            _dragToIndex = slot;
+            _dragPreview = _vm.BuildReorderPreview(_dragFromIndex, _dragToIndex);
+        }
+
         _dragging = true;
-        _dragToIndex = TargetIndexAt(p);
         InvalidateVisual();
     }
 
@@ -434,6 +468,7 @@ public sealed class SmithNetworkCanvas : Control
         _dragFromIndex = -1;
         _dragToIndex   = -1;
         _dragging      = false;
+        _dragPreview   = null;
         InvalidateVisual();
     }
 
@@ -472,25 +507,37 @@ public sealed class SmithNetworkCanvas : Control
 
         var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
 
+        // THE PREVIEW IS THE MODEL WHILE A DRAG IS IN FLIGHT, not an overlay on top of the committed
+        // one: every element sits where the drop would put it, the spine is drawn in the gaps the
+        // new order leaves, and each shunt tap's dot is on its own column. See
+        // SmithChartViewModel.BuildReorderPreview.
+        var drawn = (_dragging ? _dragPreview : null) ?? _projection;
+
         context.Custom(new Op(
-            new Rect(Bounds.Size), _projection.Model, BuildOverlay(),
+            new Rect(Bounds.Size), drawn.Model, BuildOverlay(drawn),
             _panX, _panY, _zoom, SchematicRenderTheme.FromTheme(_theme, variant)));
     }
 
     /// <summary>
-    /// The frame's transient chrome: the selection outline, and — while a reorder drag is in flight —
-    /// the dragged column's live position.
+    /// The frame's transient chrome: the selection outline, and the zoom box while one is being
+    /// dragged.
     /// </summary>
     /// <remarks>
     /// <b>Both are the renderer's own overlay features</b>, which is why this control draws nothing
-    /// itself. <c>ComponentDragPositions</c> exists so a live drag bypasses a full model rebuild, and it
-    /// is exactly what a reorder preview wants: the element follows the slot it would land in, and the
-    /// list is not touched until the pointer is released.
+    /// itself.
+    ///
+    /// <para><b>A reorder drag is NOT here any more.</b> It used to fill
+    /// <c>ComponentDragPositions</c> with the dragged column's target x — the dragged part moved and
+    /// nothing else did, so it slid on top of whatever already occupied that slot, and the spine
+    /// wires and junction dots (which are not components and have no entry in that map) stayed on
+    /// the pre-drag drawing. Both were owner-reported on 2026-09-19. The drag now draws a real
+    /// projection of the reordered list instead; see <c>Render</c> and
+    /// <see cref="SmithChartViewModel.BuildReorderPreview"/>.</para>
     /// </remarks>
-    private SchematicOverlay BuildOverlay()
+    private SchematicOverlay BuildOverlay(SmithNetworkProjection drawn)
     {
         var selected = new HashSet<string>(StringComparer.Ordinal);
-        if (_vm?.SelectedComponentId is { Length: > 0 } id) selected.Add(id);
+        if (SelectedIdIn(drawn) is { Length: > 0 } id) selected.Add(id);
 
         // THE ZOOM BOX IS THE RENDERER'S OWN RUBBER BAND, not a rectangle drawn here — the same
         // overlay field the schematic editor's zoom box fills, so the two look identical and this
@@ -509,36 +556,39 @@ public sealed class SmithNetworkCanvas : Control
             };
         }
 
-        if (!_dragging || _vm is null || _dragFromIndex < 0)
-            return new SchematicOverlay { SelectedComponentIds = selected };
+        return new SchematicOverlay { SelectedComponentIds = selected };
+    }
 
-        // The dragged COLUMN moves to the slot it would take; everything else stays where it is, so
-        // what the user sees is the gap the drop would leave.
-        //
-        // The column, not the component: a shunt arm carries its own Ground glyph, which is a separate
-        // component and would otherwise stay behind on the old x while the part it grounds slid away.
-        // It is found by NAME rather than by the element map, which deliberately holds only the parts
-        // that ARE elements.
-        double dir     = _vm.MirrorNetwork ? -1.0 : +1.0;
-        double targetX = dir * (_dragToIndex + 1) * SmithNetworkModel.Pitch;
+    /// <summary>
+    /// The id of the selected element's component <b>in the projection being drawn</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Component ids are fresh on every build</b> (<c>EditableComponent.Id</c> is a new GUID), so
+    /// the view model's <c>SelectedComponentId</c> — which is resolved against the COMMITTED
+    /// projection — matches nothing in a drag preview. Left unmapped, the selection outline simply
+    /// vanished for the duration of every drag: the one moment the user most needs to see which part
+    /// they are holding.
+    ///
+    /// <para>The preview's element order is the committed one with <c>from</c> lifted out and
+    /// re-inserted at <c>to</c>, so the index mapping is that move and nothing more.</para>
+    /// </remarks>
+    private string? SelectedIdIn(SmithNetworkProjection drawn)
+    {
+        if (_vm is null) return null;
+        if (ReferenceEquals(drawn, _projection)) return _vm.SelectedComponentId;
 
-        string? dragged = _projection.Model.Components
-            .FirstOrDefault(c => _projection.ElementIndexByComponentId.TryGetValue(c.Id, out int k)
-                              && k == _dragFromIndex)?.InstanceName;
-        if (dragged is null) return new SchematicOverlay { SelectedComponentIds = selected };
+        int index = _vm.SelectedElementIndex;
+        if (index < 0) return null;
 
-        string ground = dragged + SmithNetworkModel.GroundNameSuffix;
+        int from = _dragFromIndex, to = _dragToIndex;
+        int moved = index == from                   ? to
+                  : from < index && index <= to     ? index - 1
+                  : to   <= index && index < from   ? index + 1
+                  : index;
 
-        var positions = new Dictionary<string, (double X, double Y)>(StringComparer.Ordinal);
-        foreach (var c in _projection.Model.Components)
-            if (c.InstanceName == dragged || c.InstanceName == ground)
-                positions[c.Id] = (targetX, c.Y);
-
-        return new SchematicOverlay
-        {
-            SelectedComponentIds   = selected,
-            ComponentDragPositions = positions,
-        };
+        foreach (var (id, k) in drawn.ElementIndexByComponentId)
+            if (k == moved) return id;
+        return null;
     }
 
     private sealed class Op(

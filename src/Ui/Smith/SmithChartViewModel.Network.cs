@@ -39,6 +39,55 @@ public sealed partial class SmithChartViewModel
     public event Action? NetworkChanged;
 
     /// <summary>
+    /// The drawing as it would be if the element at <paramref name="from"/> were dropped at
+    /// <paramref name="to"/> — <b>the whole picture, not the dragged part of it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two owner-reported faults, one cause</b> (2026-09-19): a dragged component slid on top of
+    /// the one already in that slot, and a shunt element's tap on the spine stayed behind while the
+    /// part itself moved. The strip's drag preview moved the dragged COLUMN and nothing else, so
+    /// everything a reorder actually changes — where the other elements sit, where the spine is
+    /// drawn between them, which junctions carry a dot — was still the pre-drag drawing until the
+    /// pointer came up. Overlaying two components is what "moving into the centre of the adjacent
+    /// component" looks like, and a wire that is not a component is what the shunt's missing
+    /// connection was.
+    ///
+    /// <para><b>So the preview is a real projection of the reordered list</b>, built by the ONE
+    /// build. Nothing here can draw a drag differently from a drop, because what the drag shows IS
+    /// what the drop produces — and a second, partial preview drawing is exactly what produced both
+    /// reports.</para>
+    ///
+    /// <para><b>The document is not edited.</b> The list is put back before this returns, under a
+    /// <c>finally</c>: no undo entry, no dirty mark, no event. <see cref="MoveElement"/> is still the
+    /// only thing that reorders anything, and it runs once, on release. The reorder is done on the
+    /// live list rather than on a copy because <see cref="SmithNetworkModel.Build"/> reads the
+    /// elements' own objects — their values, names, enabled state and file references — and a
+    /// shallow copy of the design would have to reproduce every one of them to project identically.
+    /// </para>
+    /// </remarks>
+    public SmithNetworkProjection BuildReorderPreview(int from, int to)
+    {
+        int count = _design.Elements.Count;
+        if (from < 0 || from >= count) return Network;
+
+        int target = Math.Clamp(to, 0, count - 1);
+        if (target == from) return Network;
+
+        var moved = _design.Elements[from];
+        _design.Elements.RemoveAt(from);
+        _design.Elements.Insert(target, moved);
+        try
+        {
+            return SmithNetworkModel.Build(_design, DocumentDirectory);
+        }
+        finally
+        {
+            _design.Elements.RemoveAt(target);
+            _design.Elements.Insert(from, moved);
+        }
+    }
+
+    /// <summary>
     /// Re-projects the cascade. Called from <c>RefreshDerived</c>, so the picture, the chart and the
     /// status strip are always three views of ONE evaluation of one design.
     /// </summary>
@@ -105,6 +154,13 @@ public sealed partial class SmithChartViewModel
                   .FirstOrDefault(kv => kv.Value == _selectedElementIndex).Key;
 
     /// <summary>Selects element <paramref name="index"/>, or clears the selection with −1.</summary>
+    /// <remarks>
+    /// <b>The chart follows the strip</b> (owner instruction, 2026-09-19): the selected element's
+    /// trajectory is drawn thicker and the other trajectories fade back, so clicking a component
+    /// answers "which of these curves is this part" — and deselecting puts every one of them back.
+    /// <see cref="SmithPlotBuilder.ApplyElementHighlight"/> says why that is a mutation of the
+    /// traces on the plot rather than a rebuild of them.
+    /// </remarks>
     public void SelectElement(int index)
     {
         int next = index >= 0 && index < _design.Elements.Count ? index : -1;
@@ -113,6 +169,7 @@ public sealed partial class SmithChartViewModel
         _selectedElementIndex = next;
         _selectedElementName  = next >= 0 ? _design.Elements[next].Name : null;
 
+        HighlightSelectedTrace();
         RebuildSliderRows();
         NotifySelection();
         NetworkChanged?.Invoke();
@@ -134,6 +191,22 @@ public sealed partial class SmithChartViewModel
 
         SelectElement(index);
         return true;
+    }
+
+    /// <summary>
+    /// Puts the selection emphasis on the chart's trajectories and asks for a redraw.
+    /// </summary>
+    /// <remarks>
+    /// Null-guarded on the container because <see cref="SelectElement"/> is reachable during
+    /// construction — <c>RebuildRows</c> runs before the chart host exists — and a selection made
+    /// then is re-applied by the first <c>RebuildChart</c> anyway.
+    /// </remarks>
+    private void HighlightSelectedTrace()
+    {
+        if (ChartContainer is null) return;
+
+        SmithPlotBuilder.ApplyElementHighlight(_traceKeys, _selectedElementIndex);
+        ChartContainer.RequestPlotRedraw();
     }
 
     private void NotifySelection()

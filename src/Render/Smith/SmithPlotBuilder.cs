@@ -20,7 +20,17 @@ namespace CircuitRF.Render.Smith;
 /// down, and it is written as the trace's LABEL — an element's name, <c>load</c>, or an overlay's
 /// file and quantity — because an index moves when an element is deleted.
 /// </remarks>
-public readonly record struct SmithTraceKey(string Key, Trace Trace);
+/// <param name="Key">The label a marker is stored against — see <c>SmithPlotBuilder.Add</c>.</param>
+/// <param name="Trace">The trace itself.</param>
+/// <param name="ElementIndex">
+/// Which cascade element's trajectory this is, or −1 for everything that is not one — the arcs, the
+/// band, the load and generator points, the overlays.
+/// <b>Carried rather than recovered from the label</b>, because the label is the element's own NAME
+/// and a caller matching on it would be matching on something the user can type; and rather than
+/// from the position in the list, which moves with the arcs, the band and the overlay count. It is
+/// what lets a selection highlight find its curve (<c>ApplyElementHighlight</c>).
+/// </param>
+public readonly record struct SmithTraceKey(string Key, Trace Trace, int ElementIndex = -1);
 
 /// <summary>An overlay that resolved, ready to go on the plot.</summary>
 /// <remarks>
@@ -347,7 +357,7 @@ public static class SmithPlotBuilder
                       curve.IsChord ? LineType.Dashed : LineType.Solid, width: 1.0));
 
             SetGamma(trace, curve.Gamma);
-            Add(plot, keys, ElementLabel(element, curve.ElementIndex), trace);
+            Add(plot, keys, ElementLabel(element, curve.ElementIndex), trace, curve.ElementIndex);
         }
 
         // ── the swept band (R-smith9-4) ──────────────────────────────────────
@@ -483,13 +493,14 @@ public static class SmithPlotBuilder
     /// refused — two elements cannot share a name (<c>SmithDesign.Refusal</c> says so) but two
     /// overlays on the same file and quantity can, and that is not worth stopping a document over.
     /// </remarks>
-    private static void Add(Plot plot, List<SmithTraceKey> keys, string name, Trace trace)
+    private static void Add(Plot plot, List<SmithTraceKey> keys, string name, Trace trace,
+                            int elementIndex = -1)
     {
         string key = name;
         for (int n = 2; keys.Any(k => string.Equals(k.Key, key, StringComparison.Ordinal)); n++)
             key = $"{name} ({n})";
 
-        keys.Add(new SmithTraceKey(key, trace));
+        keys.Add(new SmithTraceKey(key, trace, elementIndex));
         plot.Traces.Add(trace);
     }
 
@@ -512,7 +523,7 @@ public static class SmithPlotBuilder
         // OVERLAY is now the SAME Trace object from one rebuild to the next (R-smith12-5a — the
         // inspector's cards and the trace's own markers hold it), so its markers survive the refill
         // and re-attaching the document's would add a second copy of each on every keystroke.
-        foreach (var (_, trace) in keys) trace.Markers.Clear();
+        foreach (var (_, trace, _) in keys) trace.Markers.Clear();
 
         foreach (var stored in design.Markers)
         {
@@ -532,7 +543,7 @@ public static class SmithPlotBuilder
     public static List<SmithMarker> HarvestMarkers(IReadOnlyList<SmithTraceKey> keys)
     {
         var markers = new List<SmithMarker>();
-        foreach (var (key, trace) in keys)
+        foreach (var (key, trace, _) in keys)
             foreach (var m in trace.Markers)
                 markers.Add(SmithMarkerBridge.FromMarker(m, key));
         return markers;
@@ -617,6 +628,56 @@ public static class SmithPlotBuilder
             // are the reference data the user chose, and they are what the axis labels are for.
             ExcludeFromAxisLabels = true,
         };
+
+    /// <summary>The trajectories' ordinary line width, and the width the SELECTED element's takes.
+    /// </summary>
+    public const double ElementLineWidth         = 1.0;
+
+    /// <inheritdoc cref="ElementLineWidth"/>
+    public const double ElementLineWidthSelected = 2.75;
+
+    /// <summary>What an UNSELECTED trajectory fades to while another one is selected.</summary>
+    public const double ElementLineOpacityFaded  = 0.35;
+
+    /// <summary>
+    /// Draws the selected element's trajectory as the one being looked at: thicker, at full opacity,
+    /// with the other trajectories faded back (owner instruction, 2026-09-19 — "clicking on a
+    /// component needs to highlight the corresponding trace so the user can see which component
+    /// contributes which trace").
+    /// </summary>
+    /// <remarks>
+    /// <b>A mutation of the traces already on the plot, not a refill.</b> Selecting is not an edit:
+    /// nothing about the design has changed, so re-evaluating the cascade and rebuilding the trace
+    /// collection would re-attach every marker and reload every trace card to draw one line thicker.
+    /// Only two properties move, and <c>−1</c> puts both of them back — which is what makes
+    /// deselecting exactly as cheap, and exactly as complete, as selecting.
+    ///
+    /// <para><b>Only the trajectories.</b> The load points, the band, the constant-Q arcs and above
+    /// all the user's own OVERLAYS are left alone: fading reference data because a component was
+    /// clicked would hide the very thing the cascade is being matched to.</para>
+    /// </remarks>
+    public static void ApplyElementHighlight(IReadOnlyList<SmithTraceKey>? keys, int selectedElementIndex)
+    {
+        if (keys is null) return;
+
+        bool anySelected = selectedElementIndex >= 0
+                        && keys.Any(k => k.ElementIndex == selectedElementIndex);
+
+        foreach (var k in keys)
+        {
+            if (k.ElementIndex < 0) continue;
+
+            bool selected = k.ElementIndex == selectedElementIndex;
+
+            k.Trace.Properties.LineWidth   = selected ? ElementLineWidthSelected : ElementLineWidth;
+            k.Trace.Properties.LineOpacity = anySelected && !selected ? ElementLineOpacityFaded : 1.0;
+
+            // LAST, for Style's own reason: every setter above raises Custom, and these traces are
+            // rebuilt from the design on every edit rather than being a user's own styling. A trace
+            // left marked Custom would have its palette colour frozen at whatever it happened to be.
+            k.Trace.Properties.Custom = false;
+        }
+    }
 
     private static TraceProperties Style(int colorIndex, LineType type, double width)
     {
