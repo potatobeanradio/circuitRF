@@ -62,7 +62,7 @@ public partial class RailRfWindow : Window
         // The four panel lamps' own arithmetic. Captured BEFORE anything can change it, because
         // the sizes below are the AXAML's and this file must not carry a second copy of them.
         _specificationColumn = PaneGrid.ColumnDefinitions[0].Width;
-        _resultsColumn       = PaneGrid.ColumnDefinitions[2].Width;
+        _resultsColumn       = PaneGrid.ColumnDefinitions[4].Width;
         _partsGridMaxHeight  = PartsGrid.MaxHeight;
         _partsListMaxHeight  = PartsList.MaxHeight;
         SyncPanes();
@@ -576,8 +576,49 @@ public partial class RailRfWindow : Window
     // ── The four panel lamps (owner, 2026-09-19) ─────────────────────────────────────
 
     /// <summary>The widths and caps the AXAML declares, read once so they are stated once.</summary>
+    /// <remarks>
+    /// <b>These are also where a drag of the grippers is remembered.</b> A <c>GridSplitter</c> writes
+    /// a concrete <see cref="GridLength"/> straight into the definition it resizes, so
+    /// <see cref="SyncPanes"/> reads the live width back into these fields before it overwrites one —
+    /// which is what makes a panel that is hidden and shown again come back the width the user left
+    /// it, rather than the 300 and 340 below. It is wBond's own idiom (<c>ApplyArrangement</c>) and
+    /// it needs no drag handler at all.
+    /// </remarks>
     private GridLength _specificationColumn = new(300);
     private GridLength _resultsColumn       = new(340);
+
+    /// <summary>
+    /// How narrow a gripper may take each column.
+    /// </summary>
+    /// <remarks>
+    /// <b>Applied in <see cref="SyncPanes"/> and not in the AXAML</b>, because a floor on a
+    /// definition is a floor on EVERY value it is given — including the <c>GridLength(0)</c> that
+    /// hides a panel, which a static <c>MinWidth</c> would silently turn back into 180 px. So the
+    /// floor goes on with the panel and comes off with it.
+    ///
+    /// <para>Without one, a gripper dragged to the edge leaves a panel a few pixels wide and its own
+    /// button cannot recover it — the width read back above is the few pixels, so toggling the panel
+    /// off and on restores exactly the state that is unusable.</para>
+    /// </remarks>
+    private const double SpecificationMinWidth = 180;
+    private const double ResultsMinWidth       = 240;
+
+    /// <summary>
+    /// The floor under the board column, which is the one that carries a table of FIXED columns.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is not the table's own width and cannot be.</b> The parts table wants 530 px before its
+    /// part-number column takes any, and a pane spends 30 on margin, border and padding — so a floor
+    /// that kept it whole would be 560, and 300 + 560 + 340 + 8 is 1208 against a window whose own
+    /// <c>MinWidth</c> is 1080. Floors that cannot all be honoured are worse than none: the grid hands
+    /// each column its minimum anyway and the surplus goes off the right edge of the window.
+    ///
+    /// <para>So this is the largest floor that still leaves slack at that 1080 — where the board
+    /// column is ~432 — and the residue is a clip rather than a bleed: below about 560 the parts
+    /// HEADER is cut at its card's edge, in the same place the rows have always been cut. See the
+    /// card's own note in the AXAML.</para>
+    /// </remarks>
+    private const double BoardMinWidth = 360;
     private double _partsGridMaxHeight = double.PositiveInfinity;
     private double _partsListMaxHeight = double.PositiveInfinity;
 
@@ -599,6 +640,12 @@ public partial class RailRfWindow : Window
     /// star row and the parts table sits under it at its own capped height, and with the board gone
     /// the parts table takes the star row and both caps come off — a table pinned at 170 px in an
     /// otherwise empty column is not what "give parts the space" means.</para>
+    ///
+    /// <para><b>It also owns the two grippers</b>, and this is the only place that can: a panel's
+    /// width is now either the AXAML's, the user's last drag or zero, and those three are decided
+    /// together. The read-back at the top is what makes a dragged width survive its panel being
+    /// hidden; the floors under it are what keep a drag from leaving a panel too narrow for its own
+    /// button to recover.</para>
     /// </remarks>
     private void SyncPanes()
     {
@@ -608,12 +655,34 @@ public partial class RailRfWindow : Window
         bool results       = Vm?.ShowResults       ?? true;
         bool centre        = board || parts;
 
-        PaneGrid.ColumnDefinitions[0].Width = specification ? _specificationColumn : new GridLength(0);
-        PaneGrid.ColumnDefinitions[1].Width = centre ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-        PaneGrid.ColumnDefinitions[2].Width =
+        var specificationColumn = PaneGrid.ColumnDefinitions[0];
+        var boardColumn         = PaneGrid.ColumnDefinitions[2];
+        var resultsColumn       = PaneGrid.ColumnDefinitions[4];
+
+        // Where the grippers were left, before anything below overwrites it. A star width is the
+        // results column standing in for a hidden board and is nobody's drag, so it is not a width
+        // to come back to.
+        if (!specificationColumn.Width.IsStar && specificationColumn.Width.Value > 0)
+            _specificationColumn = specificationColumn.Width;
+        if (!resultsColumn.Width.IsStar && resultsColumn.Width.Value > 0)
+            _resultsColumn = resultsColumn.Width;
+
+        specificationColumn.Width = specification ? _specificationColumn : new GridLength(0);
+        boardColumn.Width = centre ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        resultsColumn.Width =
             !results ? new GridLength(0)
             : centre ? _resultsColumn
                      : new GridLength(1, GridUnitType.Star);
+
+        specificationColumn.MinWidth = specification ? SpecificationMinWidth : 0;
+        boardColumn.MinWidth         = centre         ? BoardMinWidth        : 0;
+        resultsColumn.MinWidth       = results        ? ResultsMinWidth      : 0;
+
+        // A gripper is shown only where there are two panels for it to trade space between. With the
+        // centre column collapsed the results column is star and takes what the specification panel
+        // does not use, which is the same answer a drag would have given.
+        SpecificationSplitter.IsVisible = specification && centre;
+        ResultsSplitter.IsVisible       = centre && results;
 
         BoardPaneGrid.RowDefinitions[1].Height = board ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         BoardPaneGrid.RowDefinitions[2].Height = board ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
@@ -621,6 +690,33 @@ public partial class RailRfWindow : Window
         PartsGrid.RowDefinitions[2].Height = board ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
         PartsGrid.MaxHeight = board ? _partsGridMaxHeight : double.PositiveInfinity;
         PartsList.MaxHeight = board ? _partsListMaxHeight : double.PositiveInfinity;
+    }
+
+    /// <summary>
+    /// A gripper was released — restate the one rule a drag can rewrite.
+    /// </summary>
+    /// <remarks>
+    /// <b>The board column is this window's slack and must stay star.</b> A <c>GridSplitter</c>
+    /// rewrites BOTH definitions it sits between, and a star one coming back as a pixel width would
+    /// be invisible at the moment it happened and obvious later: the window would stop giving a
+    /// resize to the board, and every extra pixel of a widened window would go to the gap instead.
+    /// Restoring star here costs nothing when the drag already left it alone.
+    ///
+    /// <para>The layout is unchanged by this — the two outer columns are pinned at the widths they
+    /// were just dragged to, which is what they already measured — so nothing jumps on release.
+    /// <see cref="SyncPanes"/> reads those widths back the next time a panel is toggled.</para>
+    /// </remarks>
+    private void OnPaneSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        var specification = PaneGrid.ColumnDefinitions[0];
+        var board         = PaneGrid.ColumnDefinitions[2];
+        var results       = PaneGrid.ColumnDefinitions[4];
+
+        if (board.Width.IsStar) return;
+
+        if (!specification.Width.IsStar) specification.Width = new GridLength(specification.ActualWidth);
+        if (!results.Width.IsStar)       results.Width       = new GridLength(results.ActualWidth);
+        board.Width = new GridLength(1, GridUnitType.Star);
     }
 
     /// <summary>The share of the results pane the plot may take. The rest is the cards.</summary>

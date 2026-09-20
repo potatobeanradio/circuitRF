@@ -710,7 +710,16 @@
         </StackPanel>
 
         <!-- ── The three columns (§11.3) ──────────────────────────────────── -->
-        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="300,*,340">
+        <!-- THE TWO GAPS BETWEEN THEM ARE DRAGGABLE, and the grippers are invisible — the Smith
+             Chart's own arrangement (owner instruction), which is wBond's before it: an Auto column
+             holding nothing but a 4 px transparent GridSplitter. There is no line to draw because
+             the panes already have edges; what the strip adds is a cursor and a grab.
+
+             THE COLUMN INDICES MOVED and that is the whole cost of it: the board is column 2 and the
+             results column 4. RailRfWindow's SyncPanes owns every width in this grid — including
+             these two splitters' own visibility, because a gripper beside a hidden pane would trade
+             space with a column that is zero wide and simply stick. -->
+        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="300,Auto,*,Auto,340">
 
             <!-- ══ SPECIFICATION ══════════════════════════════════════════ -->
             <Border Grid.Column="0" Name="SpecificationPane" Classes="pane"
@@ -1041,7 +1050,11 @@
             <!-- THE BOARD AND THE PARTS TABLE SHARE THIS COLUMN, which is why hiding one of
                  them widens nothing and hiding BOTH is what collapses the column. RailRfWindow's
                  SyncPanes owns the arithmetic; what is here is which parts of it are drawn. -->
-            <Border Grid.Column="1" Name="BoardPane" Classes="pane"
+            <GridSplitter Grid.Column="1" Name="SpecificationSplitter" Width="4"
+                          ResizeDirection="Columns" Background="Transparent"
+                          DragCompleted="OnPaneSplitterDragCompleted"/>
+
+            <Border Grid.Column="2" Name="BoardPane" Classes="pane"
                     IsVisible="{Binding ShowBoardColumn}">
                 <Grid Name="BoardPaneGrid" RowDefinitions="Auto,*,Auto">
                     <Grid Name="BoardPaneHeader" ColumnDefinitions="Auto,*"
@@ -1313,7 +1326,22 @@
                     </Border>
 
                     <!-- ── The parts table (R-rail7-9) ─────────────────────────── -->
+                    <!-- IT CLIPS, and only the HEADER ever needed it to (owner report: parts text
+                         bleeding into the results column). The rows below are inside the ListBox's
+                         own ScrollViewer and were always cut at this card's edge; PartsHeader is a
+                         bare Grid, and a Grid does not clip — so with the column narrower than the
+                         table, its right-hand BUTTONS were laid out past the edge and drawn over
+                         whatever was beside them.
+
+                         Clipping HERE rather than on the pane is what makes the header cut at the
+                         same x the rows already cut at. Nothing about the overflow is new with the
+                         grippers: the fixed columns below total 530 px before the part-number column
+                         takes any, a pane spends 30 px of its column on margin, border and padding,
+                         and at the window's own 1080 px minimum the board column is ~432 — so the
+                         table already overflowed by ~130 px. The grippers only made it easy to
+                         reach, which is why SyncPanes now keeps a floor under the column too. -->
                     <Border Grid.Row="2" Name="PartsCard" Classes="card" Margin="0,5,0,0"
+                            ClipToBounds="True"
                             IsVisible="{Binding ShowParts}">
                         <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
                             <TextBlock Classes="cardhdr" Text="Parts"/>
@@ -1420,8 +1448,12 @@
                 </Grid>
             </Border>
 
+            <GridSplitter Grid.Column="3" Name="ResultsSplitter" Width="4"
+                          ResizeDirection="Columns" Background="Transparent"
+                          DragCompleted="OnPaneSplitterDragCompleted"/>
+
             <!-- ══ RESULTS ═══════════════════════════════════════════════ -->
-            <Border Grid.Column="2" Name="ResultsPane" Classes="pane"
+            <Border Grid.Column="4" Name="ResultsPane" Classes="pane"
                     IsVisible="{Binding ShowResults}">
                 <Grid RowDefinitions="Auto,Auto,*,Auto">
                     <Grid ColumnDefinitions="Auto,*">
