@@ -411,14 +411,6 @@ public sealed class SmithChartSettings
     /// </summary>
     public double Z0Ohm { get; set; } = 50.0;
 
-    /// <summary>
-    /// HERTZ. What the trajectories are drawn at, what the sliders' reactances are computed at, and
-    /// what the readout strip reports. <b>It is free</b> — it need not be a row of the generator
-    /// table — but it must lie inside the table's span, because Z_gen is interpolated and never
-    /// extrapolated (§3.6, and <see cref="SmithDesign.Refusal"/>).
-    /// </summary>
-    public double DesignFrequencyHz { get; set; }
-
     /// <summary>Where the chart is scrolled and zoomed to, or null for "fit".</summary>
     public SmithWindow? Window { get; set; }
 
@@ -445,35 +437,6 @@ public sealed class SmithChartSettings
     public bool ShowAdmittanceGrid { get; set; }
 }
 
-/// <summary>The optional swept band drawn through the load points (§3.6). Off by default: it is P2
-/// material and none of it is needed to match an impedance.</summary>
-public sealed class SmithSweep
-{
-    /// <summary>
-    /// The most points a band may be walked at.
-    /// </summary>
-    /// <remarks>
-    /// <b>There has to be one, and the reason is the DRAG rather than the sweep.</b> The band is one
-    /// full <see cref="SmithCascade.Evaluate"/> per point and it is re-walked inside every rebuild of
-    /// the chart — which is every pointer move of a gripper drag, twenty times a second. A point
-    /// count with no ceiling therefore has a value at which the window simply stops responding,
-    /// reached by typing a number into a field, with nothing said.
-    ///
-    /// <para><b>1,001 rather than a round million.</b> The band is a drawn locus on a chart a few
-    /// hundred pixels across, so a thousand points is already more than one per pixel — the cap costs
-    /// nothing anybody can see, and past it the picture stops improving while the drag gets worse.
-    /// A band that asks for more is <see cref="SmithDesign.Refusal"/>'s sentence naming the cap, and
-    /// <see cref="SmithBand"/> draws nothing rather than walking it, because a refusal the window
-    /// hangs before displaying is not a refusal.</para>
-    /// </remarks>
-    public const int MaxPoints = 1001;
-
-    public bool   Enabled { get; set; }
-    public double StartHz { get; set; }
-    public double StopHz  { get; set; }
-    public int    Points  { get; set; } = 51;
-}
-
 /// <summary>The constant-Q arc pair (§4.4). <c>Q</c> is |x|/r on the drawn samples.</summary>
 public sealed class SmithConstantQ
 {
@@ -489,8 +452,25 @@ public sealed class SmithView
     /// <summary>The chart / network splitter, as a fraction of the window.</summary>
     public double SplitterMain { get; set; } = 0.65;
 
-    /// <summary>The network / generator-panel splitter, same units.</summary>
-    public double SplitterSide { get; set; } = 0.5;
+    /// <summary>
+    /// The generator panel's share of the top region — <b>the chart takes the rest</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the number the panel's width actually comes from, and the AXAML's is not</b> (owner
+    /// instruction, 2026-09-19, twice). <c>SmithChartView.ApplySplitFractions</c> writes both column
+    /// definitions from this on every load, so the <c>ColumnDefinition</c>'s own <c>Width</c> is the
+    /// value the designer sees and nothing a user ever does — the first round's narrowing was set
+    /// there, took effect on no document at all, and was reported again as "further reduce it".
+    ///
+    /// <para>The default is small on purpose: the space it gives back is the chart's, and the chart
+    /// is where the marker info boxes are parked. What made that affordable is that three things
+    /// left the column — the Design f row (the generator table's median now), the whole Swept band
+    /// card (the table's own span now), and the two full-width generator buttons (square toolbar
+    /// buttons on the header row). The column's own <c>MinWidth</c> is what stops the three table
+    /// cells clipping on a narrow window, and a document that stored its own fraction keeps it: a
+    /// splitter position is the user's.</para>
+    /// </remarks>
+    public double SplitterSide { get; set; } = 0.08;
 
     public double NetworkScrollX { get; set; }
     public double NetworkScrollY { get; set; }
@@ -638,6 +618,11 @@ public sealed class SmithMarker
     /// (<c>Marker.FreePosition</c>). Every marker this tool places is one.</summary>
     public bool FreePosition { get; set; }
 
+    /// <summary>A free marker a shift-drag has landed ON a curve (<c>Marker.SnappedToCurve</c>) —
+    /// which is what makes it draw as a triangle rather than as a ring. Absent is floating, which is
+    /// what a marker stored before the two glyphs existed was.</summary>
+    public bool SnappedToCurve { get; set; }
+
     /// <summary>A <c>MarkerKind</c> member name.</summary>
     public string MarkerKind { get; set; } = "Polyline";
 
@@ -670,8 +655,66 @@ public sealed class SmithDesign
     /// <summary>The cascade, index 0 nearest the generator.</summary>
     public IList<SmithElement> Elements { get; } = new List<SmithElement>();
 
-    public SmithSweep     Sweep     { get; set; } = new();
     public SmithConstantQ ConstantQ { get; set; } = new();
+
+    // ── the design frequency, DERIVED (owner instruction, 2026-09-19) ────────
+
+    /// <summary>
+    /// What the trajectories are drawn at, what the sliders' reactances are computed at, and what
+    /// the readout strip reports — <b>the MEDIAN of the generator table's frequencies, and never a
+    /// stored field</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>It used to be a number of its own, typed into the panel and written into the file, and
+    /// that is exactly one number too many.</b> The table is the set of frequencies the design is
+    /// about; a second frequency beside it could be anywhere, had to be checked against the table's
+    /// span on every edit, turned a field red when it was not, and refused the whole document when
+    /// it was saved that way. The median is inside the span by construction, so the rule, the red
+    /// field and the refusal all go with it.
+    ///
+    /// <para><b>The median, with the ordinary even-count averaging.</b> An odd table hands back its
+    /// own middle row, so the design frequency IS a row of the table and its load point is one of
+    /// the drawn ones. A two-row table averages its two rows, which is the owner's stated case; a
+    /// four-row table averages the middle two by the same rule rather than by a second one.</para>
+    ///
+    /// <para><b><see cref="DesignFrequencyOverrideHz"/> is the one way past it</b> and it exists for
+    /// <c>circuitrf smith --at</c>, which asks what this document does at a frequency the table
+    /// merely spans. It is a transient of a run: nothing writes it to a `.csmith`, and no window
+    /// sets it.</para>
+    /// </remarks>
+    public double DesignFrequencyHz => DesignFrequencyOverrideHz ?? MedianGeneratorFrequencyHz;
+
+    /// <summary>
+    /// A one-shot replacement for <see cref="DesignFrequencyHz"/> — <c>circuitrf smith --at</c>'s,
+    /// and nothing else's. Never serialized.
+    /// </summary>
+    /// <remarks>
+    /// It is the only design frequency <see cref="Refusal"/> still has anything to say about: a
+    /// caller may ask about a frequency the table spans, and may not ask about one outside it,
+    /// because Z_gen is interpolated between rows and never extrapolated past them (§3.6).
+    /// </remarks>
+    public double? DesignFrequencyOverrideHz { get; set; }
+
+    /// <summary>
+    /// The generator table's median frequency, or 0 for an empty table (which is
+    /// <see cref="SmithGenerator.Refusal"/>'s own case and is reported there).
+    /// </summary>
+    /// <remarks>
+    /// The rows are kept sorted — <see cref="SmithGenerator.Refusal"/> says so and every surface
+    /// that edits the table re-sorts it — so this is an index rather than a sort, and it reads the
+    /// table exactly as <see cref="SmithGenerator.Span"/> does.
+    /// </remarks>
+    public double MedianGeneratorFrequencyHz
+    {
+        get
+        {
+            int n = Generator.Rows.Count;
+            if (n == 0) return 0.0;
+            return (n % 2) == 1
+                ? Generator.Rows[n / 2].FrequencyHz
+                : 0.5 * (Generator.Rows[n / 2 - 1].FrequencyHz + Generator.Rows[n / 2].FrequencyHz);
+        }
+    }
 
     /// <summary>
     /// The reference material drawn under the work — <b>one Data Display <c>TraceConfig</c> per
@@ -724,14 +767,16 @@ public sealed class SmithDesign
     {
         if (Generator.Refusal() is { } g) return g;
 
-        // The design frequency lies inside the table's span, because Z_gen is INTERPOLATED and never
-        // extrapolated (§3.6). One row is the stated exception: one row means one impedance, flat,
-        // and every design frequency is legal against it.
-        if (Generator.Rows.Count > 1)
+        // THE DESIGN FREQUENCY ITSELF CANNOT BE WRONG ANY MORE — it is the table's own median (see
+        // DesignFrequencyHz), which is inside the span by construction. What can still be wrong is
+        // an OVERRIDE somebody asked for: Z_gen is INTERPOLATED and never extrapolated (§3.6). One
+        // row is the stated exception: one row means one impedance, flat, and every frequency is
+        // legal against it.
+        if (DesignFrequencyOverrideHz is { } at && Generator.Rows.Count > 1)
         {
             var (startHz, stopHz) = Generator.Span!.Value;
-            if (!(Chart.DesignFrequencyHz >= startHz && Chart.DesignFrequencyHz <= stopHz))
-                return $"The design frequency {FmtHz(Chart.DesignFrequencyHz)} is outside the "
+            if (!(at >= startHz && at <= stopHz))
+                return $"The design frequency {FmtHz(at)} is outside the "
                      + $"generator table's span {FmtHz(startHz)} to {FmtHz(stopHz)} — the "
                      + "generator impedance is interpolated between rows, never extrapolated past "
                      + "them.";
@@ -751,25 +796,6 @@ public sealed class SmithDesign
                 return $"Two elements are both called '{e.Name}' — an element name is what every "
                      + "refusal, every slider and every undo entry says, so it has to name one of "
                      + "them.";
-        }
-
-        if (Sweep.Enabled)
-        {
-            if (!(Sweep.StartHz < Sweep.StopHz))
-                return $"The swept band starts at {FmtHz(Sweep.StartHz)} and stops at "
-                     + $"{FmtHz(Sweep.StopHz)} — a band has to go somewhere.";
-
-            if (Sweep.Points < 2)
-                return $"The swept band asks for {Sweep.Points} point(s); two is the fewest that "
-                     + "draws a band.";
-
-            // The other end of the same rule — see SmithSweep.MaxPoints, where the reason lives.
-            if (Sweep.Points > SmithSweep.MaxPoints)
-                return $"The swept band asks for {Sweep.Points} points; {SmithSweep.MaxPoints} is "
-                     + "the most it may have. The band is a whole walk of the cascade per point and "
-                     + "it is re-walked on every frame of a gripper drag, so a count past that stops "
-                     + "the window responding without improving a locus that is already finer than "
-                     + "the pixels it is drawn on.";
         }
 
         if (ConstantQ.Enabled && !(double.IsFinite(ConstantQ.Q) && ConstantQ.Q > 0))

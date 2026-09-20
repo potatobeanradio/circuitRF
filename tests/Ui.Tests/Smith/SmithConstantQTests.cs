@@ -29,7 +29,6 @@ public sealed class SmithConstantQTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(1.8e9, 12.0, -8.5));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 11.4, -9.1));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.2e9, 10.9, -9.8));
@@ -279,116 +278,37 @@ public sealed class SmithConstantQTests
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  7. The band clamps, and says so  (R-smith9-4)
+    //  7. The band IS the generator table's span  (owner instruction, 2026-09-19)
     // ═════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>A band wider than the generator table is CLAMPED with a note naming the span, never
-    /// refused; a band inside the span is not clamped and produces exactly <c>Points</c>
-    /// samples.</b>
+    /// <b>The band is always drawn, it spans the generator table's own first and last rows, and it
+    /// carries the frequency it took each sample at.</b> A single-row table draws none.
     /// </summary>
     /// <remarks>
-    /// The distinction the clamp rests on: <i>a band is a viewing choice, where a design frequency is
-    /// a design input</i>. It is the one caller allowed to clamp (<c>R-smith2-5</c>).
+    /// <b>One test because it is one claim</b>: there is nothing left to set. The band used to be a
+    /// checkbox with a start, a stop and a point count — three numbers to keep in step with the
+    /// table, which could ask for more than the table could answer for (clamped, with a note) or
+    /// for more points than the drag could survive (refused). All of that goes with the setting;
+    /// what is left is the locus through the load points, and its ends are the two rows the load
+    /// points at either end of the table are AT.
+    ///
+    /// <para>The frequency grid is asserted against the cascade rather than against a literal:
+    /// <c>circuitrf smith -o out.s1p</c> writes the band, and the only other way to know which Γ
+    /// belongs to which frequency is to rebuild the spacing from the two ends — a second copy of the
+    /// rule, which would agree until one of them changed and then differ silently in a file nobody
+    /// would re-check.</para>
     /// </remarks>
     [Fact]
-    public void TheBandClampsAndSaysSo()
+    public void TheBandIsTheGeneratorTablesSpan()
     {
-        // ── wider than the table (1.8…2.2 GHz) ───────────────────────────────
-        var wide = Design();
-        wide.Sweep.Enabled = true;
-        wide.Sweep.StartHz = 1.0e9;
-        wide.Sweep.StopHz  = 3.0e9;
-        wide.Sweep.Points  = 21;
-
-        Assert.Null(wide.Refusal());                    // clamped, NOT refused
-
-        var clamped = SmithBand.Evaluate(wide);
-        Assert.True(clamped.Clamped);
-        Assert.Equal(1.8e9, clamped.StartHz);
-        Assert.Equal(2.2e9, clamped.StopHz);
-        Assert.Equal(21, clamped.Gamma.Count);
-
-        var vmWide = new SmithChartViewModel(wide);
-        Assert.True(vmWide.HasStripNotice);
-        Assert.Contains("1.8", vmWide.StripNotice);
-        Assert.Contains("2.2", vmWide.StripNotice);
-        Assert.Contains("GHz", vmWide.StripNotice);
-
-        // ── inside the table ─────────────────────────────────────────────────
-        var inside = Design();
-        inside.Sweep.Enabled = true;
-        inside.Sweep.StartHz = 1.9e9;
-        inside.Sweep.StopHz  = 2.1e9;
-        inside.Sweep.Points  = 33;
-
-        var band = SmithBand.Evaluate(inside);
-        Assert.False(band.Clamped);
-        Assert.Equal(1.9e9, band.StartHz);
-        Assert.Equal(2.1e9, band.StopHz);
-        Assert.Equal(33, band.Gamma.Count);
-
-        var vmInside = new SmithChartViewModel(inside);
-        Assert.False(vmInside.HasStripNotice);
-
-        // The locus is on the chart as ONE trace, and it is the walk the evaluator produced.
-        var trace = vmInside.ChartPlot.Traces.Single(t => t.CubeName == "band");
-        Assert.Equal(33, trace.Points.Count);
-        Assert.Equal((float)band.Gamma[0].Real, trace.Points[0].X);
-    }
-
-    /// <summary>
-    /// <b>A band asking for more points than <see cref="SmithSweep.MaxPoints"/> is refused, and it
-    /// draws NOTHING rather than being walked anyway.</b>
-    /// </summary>
-    /// <remarks>
-    /// The cap is about the DRAG rather than the sweep: the band is one whole
-    /// <c>SmithCascade.Evaluate</c> per point and it is re-walked inside every rebuild of the chart,
-    /// which is every pointer move of a gripper drag. Without a ceiling there is a point count at
-    /// which the window simply stops responding, reached by typing a number into a field. Both
-    /// halves are the claim — a refusal the window hangs before displaying is not a refusal, so
-    /// <c>SmithBand</c> has to decline the walk as well as the document declining the count.
-    /// </remarks>
-    [Fact]
-    public void ABandPastThePointCapIsRefusedAndIsNotWalked()
-    {
-        var d = Design();
-        d.Sweep.Enabled = true;
-        d.Sweep.StartHz = 1.9e9;
-        d.Sweep.StopHz  = 2.1e9;
-        d.Sweep.Points  = SmithSweep.MaxPoints + 1;
-
-        string refusal = Assert.IsType<string>(d.Refusal());
-        Assert.Contains(SmithSweep.MaxPoints.ToString(CultureInfo.InvariantCulture), refusal);
-        Assert.Empty(SmithBand.Evaluate(d).Gamma);
-
-        // …and the cap itself is walked, so the refusal is off by nothing.
-        d.Sweep.Points = SmithSweep.MaxPoints;
-        Assert.Null(d.Refusal());
-        Assert.Equal(SmithSweep.MaxPoints, SmithBand.Evaluate(d).Gamma.Count);
-    }
-
-    /// <summary>
-    /// <b>The band reports the frequency it took each sample at, and it is the grid it walked.</b>
-    /// </summary>
-    /// <remarks>
-    /// <c>circuitrf smith -o out.s1p</c> writes the band, and the only other way to know what
-    /// frequency each Γ belongs to is to rebuild the spacing from the two ends — a second copy of the
-    /// rule, which would agree with <c>SmithBand</c> until one of them changed and then differ
-    /// silently in a file nobody would re-check.
-    /// </remarks>
-    [Fact]
-    public void TheBandCarriesItsOwnFrequencyGrid()
-    {
-        var d = Design();
-        d.Sweep.Enabled = true;
-        d.Sweep.StartHz = 1.9e9;
-        d.Sweep.StopHz  = 2.1e9;
-        d.Sweep.Points  = 5;
-
+        var d    = Design();                 // 1.8, 2.0, 2.2 GHz
         var band = SmithBand.Evaluate(d);
 
-        Assert.Equal(band.Gamma.Count, band.FrequencyHz.Count);
+        Assert.Equal(1.8e9, band.StartHz);
+        Assert.Equal(2.2e9, band.StopHz);
+        Assert.Equal(SmithBand.Points, band.Gamma.Count);
+        Assert.Equal(band.Gamma.Count,  band.FrequencyHz.Count);
         Assert.Equal(band.StartHz, band.FrequencyHz[0],  6);
         Assert.Equal(band.StopHz,  band.FrequencyHz[^1], 6);
 
@@ -399,6 +319,24 @@ public sealed class SmithConstantQTests
             var nodes = SmithCascade.Evaluate(d, band.FrequencyHz[i], null, SmithOutOfBand.Clamp);
             Assert.Equal(SmithCascade.Gamma(nodes[^1].Z, d.Chart.Z0Ohm), band.Gamma[i]);
         }
+
+        // It is on the chart as ONE trace, and it is the walk the evaluator produced. Nothing was
+        // switched on to get it there, and the document has nothing to refuse.
+        var vm = new SmithChartViewModel(d);
+        Assert.Null(d.Refusal());
+        Assert.False(vm.HasStripNotice);
+
+        var trace = vm.ChartPlot.Traces.Single(t => t.CubeName == "band");
+        Assert.Equal(SmithBand.Points, trace.Points.Count);
+        Assert.Equal((float)band.Gamma[0].Real, trace.Points[0].X);
+
+        // ONE ROW IS ONE IMPEDANCE, FLAT: the locus is a single point, which the load point already
+        // draws, so there is no band and no trace for one.
+        var single = new SmithDesign();
+        single.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 50.0, 0.0));
+        Assert.Empty(SmithBand.Evaluate(single).Gamma);
+        Assert.DoesNotContain(new SmithChartViewModel(single).ChartPlot.Traces,
+                              t => t.CubeName == "band");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -409,11 +347,10 @@ public sealed class SmithConstantQTests
     /// <b>Unchecking a box and checking it again hands back the same numbers.</b>
     /// </summary>
     /// <remarks>
-    /// Both blocks used to be written to the `.csmith` only while their feature was ENABLED, so a
-    /// disabled band carried no start, stop or point count — and because the undo stack is a round
-    /// trip through that same writer, the loss happened WITHIN the session as well as across a save.
-    /// The rule is now "absent means untouched" (<c>SmithDesignIo.IsDefault</c>); an untouched
-    /// document still writes nothing.
+    /// The block used to be written to the `.csmith` only while the arcs were ENABLED, so a disabled
+    /// pair carried no Q — and because the undo stack is a round trip through that same writer, the
+    /// loss happened WITHIN the session as well as across a save. The rule is now "absent means
+    /// untouched" (<c>SmithDesignIo.IsDefault</c>); an untouched document still writes nothing.
     /// </remarks>
     [Fact]
     public void TurningEitherOneOffKeepsItsSettings()
@@ -422,31 +359,21 @@ public sealed class SmithConstantQTests
 
         vm.ConstantQEnabled = true;
         vm.ConstantQEntry   = "3.5";
-        vm.SweepEnabled     = true;
-        vm.SweepStartEntry  = "1.95 GHz";
-        vm.SweepStopEntry   = "2.05 GHz";
-        vm.SweepPointsEntry = "17";
 
         // Captured after the typing rather than restated: what is claimed is that the toggle changes
         // nothing, and a literal here would be claiming something about the text parser instead.
-        double q     = vm.Design.ConstantQ.Q;
-        double start = vm.Design.Sweep.StartHz;
-        double stop  = vm.Design.Sweep.StopHz;
+        double q = vm.Design.ConstantQ.Q;
 
         vm.ConstantQEnabled = false;
-        vm.SweepEnabled     = false;
         vm.ConstantQEnabled = true;
-        vm.SweepEnabled     = true;
 
-        Assert.Equal(3.5,   q);
-        Assert.Equal(q,     vm.Design.ConstantQ.Q);
-        Assert.Equal(start, vm.Design.Sweep.StartHz);
-        Assert.Equal(stop,  vm.Design.Sweep.StopHz);
-        Assert.Equal(17,    vm.Design.Sweep.Points);
+        Assert.Equal(3.5, q);
+        Assert.Equal(q,   vm.Design.ConstantQ.Q);
 
-        // A document nobody has touched still writes neither block, so no existing file changes.
+        // A document nobody has touched still writes the block, so no existing file changes. The
+        // BAND is not written at all any more, in any state — it is the generator table's span.
         Assert.DoesNotContain("constantQ", SmithDesignIo.Serialize(Design()), StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("sweep",     SmithDesignIo.Serialize(Design()), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sweep",     SmithDesignIo.Serialize(vm.Design), StringComparison.OrdinalIgnoreCase);
     }
 
     // ═════════════════════════════════════════════════════════════════════════

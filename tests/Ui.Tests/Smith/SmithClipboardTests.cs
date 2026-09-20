@@ -59,7 +59,6 @@ public sealed class SmithClipboardTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 12.0, -8.5));
         foreach (var e in elements) d.Elements.Add(e);
         return d;

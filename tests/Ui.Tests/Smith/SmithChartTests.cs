@@ -77,7 +77,6 @@ public sealed class SmithChartTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(1.8e9, 12.0, -8.5));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 11.4, -9.1));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.2e9, 10.9, -9.8));
@@ -86,7 +85,7 @@ public sealed class SmithChartTests
     }
 
     private static Complex LoadGamma(SmithDesign d)
-        => SmithCascade.Gamma(SmithCascade.Evaluate(d, d.Chart.DesignFrequencyHz)[^1].Z, d.Chart.Z0Ohm);
+        => SmithCascade.Gamma(SmithCascade.Evaluate(d, d.DesignFrequencyHz)[^1].Z, d.Chart.Z0Ohm);
 
     /// <summary>The transform the chart's own frame is drawn with — what a hit test has to be
     /// measured in, because a gripper is found in CANVAS pixels.</summary>
@@ -96,7 +95,7 @@ public sealed class SmithChartTests
     /// <summary>Where node <paramref name="k"/> of the walk currently sits, in canvas pixels.</summary>
     private static (double X, double Y) NodeAt(SmithChartViewModel vm, int k)
     {
-        var nodes = SmithCascade.Evaluate(vm.Design, vm.Design.Chart.DesignFrequencyHz);
+        var nodes = SmithCascade.Evaluate(vm.Design, vm.Design.DesignFrequencyHz);
         var g     = SmithCascade.Gamma(nodes[k].Z, vm.Design.Chart.Z0Ohm);
         var p     = Tf(vm).PrimaryToCanvas(g.Real, g.Imaginary);
         return (p.X, p.Y);
@@ -169,7 +168,11 @@ public sealed class SmithChartTests
         // One generator glyph per generator-table row.
         Assert.Equal(3, byName["Zgen"].Points.Count);
 
-        Assert.Equal(6, vm.ChartPlot.Traces.Count);
+        // …and the swept band, which is always drawn across the table's own span (owner
+        // instruction, 2026-09-19) rather than being a setting that could be off.
+        Assert.Equal(SmithBand.Points, byName["band"].Points.Count);
+
+        Assert.Equal(7, vm.ChartPlot.Traces.Count);
 
         // …and the last trajectory ENDS where the walk does. This is the join between the two
         // halves: the traces and the status strip are one evaluation or they are two answers.
@@ -360,7 +363,7 @@ public sealed class SmithChartTests
         Assert.Null(vm.ChartOverlay.HitTest(x + 40, y + 40, Tf(vm)));
 
         string pressed = StripComments(ReadRepoFile("src/Ui/DataDisplay/Controls/PlotControl.cs"));
-        int overlay = pressed.IndexOf("OverlayHitTest(_dragStartScreen)", StringComparison.Ordinal);
+        int overlay = pressed.IndexOf("OverlayHitTest(_dragStartScreen,", StringComparison.Ordinal);
         int vswr    = pressed.IndexOf("HitTestVswrLocus(e.GetPosition(this))", StringComparison.Ordinal);
         int marker  = pressed.IndexOf("HitTestMarker(e.GetPosition(this))", StringComparison.Ordinal);
 
@@ -370,8 +373,12 @@ public sealed class SmithChartTests
 
         // And the branch is guarded on an overlay being present AND answering, which is what makes
         // Overlay = null the whole of the old behaviour.
-        Assert.Contains("if (Overlay is { } overlay && OverlayHitTest(_dragStartScreen) is { } handle)",
-                        pressed);
+        // THE SHIFT MODIFIER IS PASSED THROUGH (owner instruction, 2026-09-19): the generator
+        // glyphs are grabbable only while it is held, and a hit test that could not see it would
+        // make them grabbable always or never.
+        Assert.Contains("if (Overlay is { } overlay", pressed);
+        Assert.Contains("OverlayHitTest(_dragStartScreen,", pressed);
+        Assert.Contains("e.KeyModifiers.HasFlag(KeyModifiers.Shift)) is { } handle)", pressed);
     }
 
     // ═════════════════════════════════════════════════════════════════════════

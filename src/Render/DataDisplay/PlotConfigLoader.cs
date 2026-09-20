@@ -171,6 +171,7 @@ public static class PlotConfigLoader
                     InfoBoxPos             = new PlotPoint(mc.InfoBoxX, mc.InfoBoxY),
                     PositionStatic         = new System.Numerics.Vector2(mc.PositionStaticX, mc.PositionStaticY),
                     FreePosition           = mc.FreePosition,
+                    SnappedToCurve         = mc.SnappedToCurve,
                     MarkerKind             = mc.MarkerKind,
                     ShowInfoBox            = mc.ShowInfoBox,
                     ContourSnapped         = mc.ContourSnapped,

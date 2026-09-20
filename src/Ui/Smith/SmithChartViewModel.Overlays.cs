@@ -488,6 +488,33 @@ public sealed partial class SmithChartViewModel
     }
 
     /// <summary>
+    /// <b>Delete</b> reaching the DOCUMENT: the selected markers, or — when there are none — the
+    /// selected network element (owner report, 2026-09-19 — the key did nothing on a selected
+    /// element).
+    /// </summary>
+    /// <remarks>
+    /// <b>This window has two selections and one key, and the binding that carries it is on the
+    /// document ROOT.</b> The network canvas handles Delete itself while it has the keyboard, which
+    /// is the case the owner did not get: a press anywhere else in the document — the chart, the
+    /// generator table, the slider panel, or nothing in particular after the tab was activated —
+    /// bubbles up to the root binding instead, and that binding only ever deleted markers. So an
+    /// element selected by clicking it and then a Delete pressed without clicking the strip AGAIN
+    /// silently removed nothing.
+    ///
+    /// <para><b>Markers win when there are any</b>, because a marker selection is always deliberate:
+    /// you selected it in this gesture, where an element selection persists from whenever it was
+    /// last clicked. With no marker selected there is exactly one thing Delete can mean.</para>
+    /// </remarks>
+    [RelayCommand]
+    public void DeleteSelection()
+    {
+        var boxes = ChartContainer.GetMarkerInfoBoxes().Where(b => b.IsSelected).ToList();
+        if (boxes.Count > 0) { DeleteSelectedMarkers(); return; }
+
+        if (DeleteElementCommand.CanExecute(null)) DeleteElementCommand.Execute(null);
+    }
+
+    /// <summary>
     /// <b>Escape</b>: drops the marker selection and the network strip's element selection
     /// (owner instruction, 2026-09-19).
     /// </summary>

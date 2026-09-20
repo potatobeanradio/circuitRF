@@ -150,11 +150,22 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
             UseNormalizedImpedance = Marker.UseNormalizedImpedance,
             FormatString           = Marker.FormatString,
             InfoBoxPos             = Marker.InfoBoxPos,
+
+            // A FREELY-PLACED MARKER KEEPS ITS PLACE (owner instruction, 2026-09-19). Its position
+            // IS its position — nothing resolves it against the trace it is stored on — so
+            // re-pointing it at another curve must not move it, and the frequency snapping below
+            // has nothing to say about it. What DOES change is that it is no longer sitting on
+            // whatever a shift-drag had landed it on: the new trace runs somewhere else, so the
+            // marker is floating again and draws as the ring rather than the triangle.
+            FreePosition           = Marker.FreePosition,
+            PositionStatic         = Marker.PositionStatic,
+            SnappedToCurve         = false,
         };
         // Keep the marker's x-position as close as possible to where it was on the old trace,
         // so the user can track where it landed. For network (freq-swept) traces x == frequency,
         // so snap to the new trace's nearest available frequency to the old marker's Freq.
-        if (!newTrace.IsCubeBound && newTrace.Data?.Frequencies is { Length: > 0 } newFreqs)
+        if (!moved.FreePosition
+            && !newTrace.IsCubeBound && newTrace.Data?.Frequencies is { Length: > 0 } newFreqs)
         {
             double best = newFreqs[0], bestDiff = Math.Abs(Marker.Freq - newFreqs[0]);
             for (int i = 1; i < newFreqs.Length; i++)
@@ -165,7 +176,7 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
             moved.Freq = best;
         }
         newTrace.Markers.Add(moved);
-        if (newTrace.IsStabilityCircle)
+        if (!moved.FreePosition && newTrace.IsStabilityCircle)
         {
             // temporarily set the current PositionStatic to center so SnapMarkerToStabilityCircle will
             // put the marker glyph on the circle's point closest to center of Smith Chart

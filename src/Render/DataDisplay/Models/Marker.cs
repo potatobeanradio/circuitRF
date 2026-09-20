@@ -120,6 +120,28 @@ namespace CircuitRF.Render.DataDisplay
         /// </remarks>
         public bool FreePosition { get; set; }
 
+        /// <summary>
+        /// A free marker that is currently sitting ON a curve, because a shift-drag put it there
+        /// (owner instruction, 2026-09-19).
+        /// </summary>
+        /// <remarks>
+        /// <b>It changes the GLYPH and nothing else.</b> A free marker reads as a filled ring — the
+        /// loadpull contour marker's own glyph, which is the one this application already uses for
+        /// "a reading that is not a sample of a swept curve" — and a snapped one reads as the
+        /// ordinary triangle, which is what every marker that IS a reading of a trace looks like.
+        /// So the picture says which of the two a marker is, rather than the user having to
+        /// remember whether they were holding shift.
+        ///
+        /// <para><b>It is cleared by anything that takes the marker off the curve</b>: an
+        /// un-shifted drag, and re-pointing the marker at another trace from its context menu. Both
+        /// leave it where it is and neither can know that it is still on anything, so the honest
+        /// answer is "floating" and the glyph goes back to the ring.</para>
+        ///
+        /// <para>Meaningless unless <see cref="FreePosition"/> is set, and read nowhere else: a
+        /// marker that is a reading of its trace is already on its curve by construction.</para>
+        /// </remarks>
+        public bool SnappedToCurve { get; set; }
+
         // ---- Display strings (no Trace access needed) -------------------
 
         public string MarkerString => Name;
@@ -166,6 +188,7 @@ namespace CircuitRF.Render.DataDisplay
             InfoBoxPos             = src.InfoBoxPos;
             PositionStatic         = src.PositionStatic;
             FreePosition           = src.FreePosition;
+            SnappedToCurve         = src.SnappedToCurve;
             UseNormalizedImpedance = src.UseNormalizedImpedance;
             FormatString           = src.FormatString;
             Style                  = src.Style;

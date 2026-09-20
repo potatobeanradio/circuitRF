@@ -31864,3 +31864,69 @@ same reasoning `PlacedPlot.Overlay` already exists for. It hangs from the apex o
 **The typed-entry field went with the card.** Q is now set by dragging an arc (shift lands on an exact
 quarter); `ConstantQEntry` survives on the view model but has no surface. If an exact typed Q is wanted
 back, it belongs on the chart's own context menu or the button's, not in the panel that was removed.
+
+## Smith Chart round four (2026-09-19)
+
+### The design frequency is DERIVED, and that removed three things
+
+`SmithDesign.DesignFrequencyHz` is the **median of the generator table's frequencies** — an odd table
+hands back its middle row, an even one averages the middle two, so the two-row case is the frequency
+half-way between them. It is a computed property with no setter and **it is not in the `.csmith` at
+all**.
+
+What went with it: the `Design f` field, the red-field state that marked it out of the table's span,
+and the refusal that stopped the document being SAVED when it was. All three existed to police a
+second number beside a table that already implied it; the median is inside the span by construction.
+`SmithDesign.Refusal`'s design-frequency rule survives for exactly one caller —
+`DesignFrequencyOverrideHz`, which is `circuitrf smith --at` and is a transient of a run.
+
+**The one thing that moved rather than disappeared** is the stranded-F_ref notice
+(`NoteStrandedReferenceFrequencies`). It used to be raised from the design-frequency field's setter;
+the design frequency now moves when a generator ROW is added, removed or retuned, so it is raised
+from `Edit` — the one seam that sees all four — by comparing the design frequency before and after
+the mutation.
+
+### The swept band is the generator table's span, always
+
+`SmithSweep` is deleted: no checkbox, no start, no stop, no point count, nothing in the file and no
+`--sweep` on the verb. `SmithBand.Evaluate` walks the table's first row to its last at a constant
+`SmithBand.Points`. Three numbers the user had to keep in step with the table are gone, and with them
+the CLAMP (a band asking for more than the table could answer for) and two of the document's own
+refusals. A single-row table draws no band — one row is one impedance, flat.
+
+The one visible consequence outside the window: `circuitrf smith -o out.s1p` on a multi-row document
+now writes the whole band rather than one point, because there is always a band. The one-point answer
+is still there for a single-row table, which is the case it was always the right answer for.
+
+### Delete did nothing on a selected network element
+
+The document root's `Delete` KeyBinding was `DeleteSelectedMarkersCommand`, on the theory that the
+network canvas takes the key for itself first. It does — **while it has the keyboard**. Select an
+element by clicking it, touch anything else in the document, press Delete, and the root binding ran
+instead and removed nothing, silently. It is `DeleteSelectionCommand` now: the selected markers when
+there are any, the selected element otherwise. Markers win because a marker selection is always
+deliberate in the current gesture, where an element selection persists from whenever it was last
+clicked.
+
+### The generator glyphs are draggable, with shift
+
+Shift-press a `Zgen` glyph and the drag writes that generator row's R and X live — the table's two
+cells follow the pointer, and so does every trajectory, every load point and the band, because this
+is an edit to node 0 of the walk. The arithmetic is Γ's own inverse, `Z = Z₀(1+Γ)/(1−Γ)`, guarded at
+Γ = 1; the row's FREQUENCY is untouched, because the table is kept sorted by it and a drag that moved
+one sideways would re-sort the table under the hand holding it.
+
+**The modifier is the safety and it is read from the event, never latched** — `IPlotOverlay.HitTest`
+gained a `shift` overload for it, defaulted to the unmodified call. An unmodified press on a glyph
+still falls through to `PlotControl` and pans, exactly as a press on empty chart does. `SmithChartScene`
+carries each glyph's ROW index rather than its position in the drawn list, because a row whose cascade
+cannot be evaluated draws no glyph and the two stop being the same number.
+
+### Change to Trace… on a plot whose traces are DERIVED
+
+`MarkerInfoBoxView.ChangeToTraceCandidates` drops any trace carrying `ExcludeFromAxisLabels` on a
+`IsFixedReadout` plot — `PlotInspectorViewModel.IsOwnersTrace`'s own rule, not a second one. On this
+chart that is every trajectory, load point, generator glyph, band and constant-Q arc, all of which are
+rebuilt from the design on each edit: re-pointing a marker at one is offering a reading of an object
+that will not exist after the next keystroke, and the menu was a dozen rows of them. On an ordinary
+Data Display nothing is fixed-readout, so the filter passes everything and the menu is unchanged.

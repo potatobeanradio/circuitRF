@@ -371,7 +371,6 @@ public sealed class SmithInverseTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, ZIn.Real, ZIn.Imaginary));
         d.Elements.Add(e);
         return d;
@@ -386,7 +385,6 @@ public sealed class SmithInverseTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, zIn.Real, zIn.Imaginary));
         d.Elements.Add(e);
         return SmithCascade.Evaluate(d, DesignHz)[^1].Z;

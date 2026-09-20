@@ -94,19 +94,33 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, exit);
 
         // The same answer, in process, from the functions the window reads its status strip from.
-        var design  = SmithDesignIo.LoadFromFile(doc);
-        var reading = SmithReadings.At(design, DesignHz, Path.GetDirectoryName(doc));
+        var design = SmithDesignIo.LoadFromFile(doc);
+        var band   = SmithBand.Evaluate(design, Path.GetDirectoryName(doc));
 
-        var lines = File.ReadAllLines(outPath);
-        var data  = lines.First(l => !l.StartsWith('!') && !l.StartsWith('#'))
-                         .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var rows = File.ReadAllLines(outPath)
+                       .Where(l => !l.StartsWith('!') && !l.StartsWith('#'))
+                       .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                       .ToList();
+
+        // THE WHOLE BAND, because there is always one now (owner instruction, 2026-09-19): the band
+        // is the generator table's own span and this document's table has three rows. A caller who
+        // asked for the load got the load across the span the generator can answer for.
+        Assert.Equal(band.Gamma.Count, rows.Count);
 
         // TouchstoneIO writes at G10 — ten SIGNIFICANT digits, which is what the tolerances are for.
         // Tighter than the file's own precision would be a test of the writer's format string.
-        Assert.Equal(reading.Gamma.Magnitude,
-                     double.Parse(data[1], System.Globalization.CultureInfo.InvariantCulture), 8);
-        Assert.Equal(reading.Gamma.Phase * 180.0 / Math.PI,
-                     double.Parse(data[2], System.Globalization.CultureInfo.InvariantCulture), 6);
+        //
+        // AN ABSOLUTE TOLERANCE, not a decimal-places count: a phase near 143.5269385° is already at
+        // the last digit G10 carries, and xUnit's rounding overload turns that into a tie it breaks
+        // to even — so one row in fifty-one fails on a value that is correct to the precision the
+        // file has.
+        for (int i = 0; i < rows.Count; i++)
+        {
+            Assert.Equal(band.Gamma[i].Magnitude,
+                         double.Parse(rows[i][1], System.Globalization.CultureInfo.InvariantCulture), 1e-8);
+            Assert.Equal(band.Gamma[i].Phase * 180.0 / Math.PI,
+                         double.Parse(rows[i][2], System.Globalization.CultureInfo.InvariantCulture), 1e-6);
+        }
 
         // And the whole file is reproducible: a second run of the same document is the same bytes.
         string again = Path.Combine(_root, "cli-again.s1p");
@@ -277,6 +291,32 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("2.2 GHz", stderr, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <b>A single-row table writes the ONE point the report is about</b> — there is no band across
+    /// a table that states one frequency, so the file holds the reading and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the rule the multi-row case above pins: a caller who asked for a point must
+    /// not get a band, and one who asked for a band must not get a point.
+    /// </remarks>
+    [Fact]
+    public void AOneRowTable_WritesTheOnePointTheReportIsAbout()
+    {
+        var design = Demo();
+        design.Generator.Rows.Clear();
+        design.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 10.0, -10.0));
+
+        string doc     = WriteDesign("onepoint.csmith", design);
+        string outPath = Path.Combine(_root, "onepoint.s1p");
+
+        Assert.Equal(0, RunCli("smith", doc, "-o", outPath).ExitCode);
+
+        var rows = File.ReadAllLines(outPath)
+                       .Where(l => !l.StartsWith('!') && !l.StartsWith('#'))
+                       .ToList();
+        Assert.Single(rows);
+    }
+
     [Fact]
     public void AOneRowGeneratorTable_AcceptsAnyFrequency()
     {
@@ -405,7 +445,6 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
     {
         var d = new SmithDesign { Name = "L-match demo" };
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
 
         d.Generator.Rows.Add(new SmithGeneratorRow(1.8e9, 10.0, -12.0));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 10.0, -10.0));
@@ -422,13 +461,10 @@ public sealed class SmithCliVerbTests(ITestOutputHelper output) : IDisposable
             Values = new SmithElementValues { CFarad = 1.2e-12 },
         });
 
-        if (sweep)
-        {
-            d.Sweep.Enabled = true;
-            d.Sweep.StartHz = 1.8e9;
-            d.Sweep.StopHz  = 2.2e9;
-            d.Sweep.Points  = 21;
-        }
+        // THERE IS NO `sweep` SWITCH ANY MORE (owner instruction, 2026-09-19): the band is the
+        // generator table's own span and is always walked, so the three-row table above already
+        // produces one. The parameter stays so the call sites still read as "with a band".
+        _ = sweep;
         if (constantQ) { d.ConstantQ.Enabled = true; d.ConstantQ.Q = 1.5; }
 
         return d;

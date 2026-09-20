@@ -340,17 +340,26 @@ namespace CircuitRF.Render.DataDisplay
             // MarkerKind.Contour && !ContourSnapped) is sized/lettered like harmonicaRF's termination
             // marker (canvas-proportional radius, not derived from SymbolTextSize). Mode 2
             // (ContourSnapped) and every non-contour marker keep the original triangle glyph/sizing.
-            bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
+            //
+            // A FLOATING MARKER TAKES THE SAME RING (owner instruction, 2026-09-19). A free marker
+            // that is not sitting on anything is exactly the contour marker's own case — a reading
+            // at a POSITION rather than a sample of a swept curve — so it reads as the same glyph
+            // rather than as a second invention. Shift-dragging it onto a curve sets
+            // Marker.SnappedToCurve and it becomes the ordinary triangle, which is what every
+            // marker that IS a reading of a trace looks like; anything that takes it off the curve
+            // again clears the flag and the ring comes back. See Marker.SnappedToCurve.
+            bool isRingGlyph = (marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped)
+                            || (marker.FreePosition && !marker.SnappedToCurve);
 
             // The contour marker's NAME is the MXP/MXE letter size, for the same reason its disc is
             // their radius — see ContourMarkerRadius. It was radius × 1.15, which tracked the floored
             // radius and so drifted with it.
-            float ts = isContourMode1
+            float ts = isRingGlyph
                 ? ContourRenderer.OptimumMarkerFontSize(canvasSize)
                 : SymbolTextSize(marker, canvasSize);
 
             using var glyphPath = new SKPath();
-            if (isContourMode1)
+            if (isRingGlyph)
             {
                 // Ringed circle: filled disc + thin black stroked ring (design §9) —
                 // signals the reading is a 2-D interpolant, not a measured/grid value.
@@ -452,8 +461,9 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public static float SymbolHitRadius(Marker marker, (double W, double H) canvasSize)
         {
-            bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
-            return isContourMode1
+            bool isRingGlyph = (marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped)
+                            || (marker.FreePosition && !marker.SnappedToCurve);
+            return isRingGlyph
                 ? ContourMarkerRadius(canvasSize) * 1.5f
                 : SymbolTextSize(marker, canvasSize) * 1.5f;
         }

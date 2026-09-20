@@ -63,7 +63,7 @@ public static class SmithSchematicCopy
         ArgumentNullException.ThrowIfNull(design);
         if (design.Generator.Rows.Count <= 1) return null;
 
-        string f = SmithPlotBuilder.FrequencyLabel(design.Chart.DesignFrequencyHz);
+        string f = SmithPlotBuilder.FrequencyLabel(design.DesignFrequencyHz);
         return $"Copied at {f}. A Term carries ONE impedance and the generator table has "
              + $"{design.Generator.Rows.Count} rows, so the copied port is the generator as it is at "
              + $"{f} and nowhere else.";

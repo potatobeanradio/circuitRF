@@ -32,7 +32,6 @@ public sealed class SmithNetworkStripTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = 50.0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(1.8e9, 12.0, -8.5));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 11.4, -9.1));
         d.Generator.Rows.Add(new SmithGeneratorRow(2.2e9, 10.9, -9.8));
@@ -57,7 +56,7 @@ public sealed class SmithNetworkStripTests
         C(0.8e-12, SmithPlacement.Shunt,  "C2"));
 
     private static Complex[] Nodes(SmithDesign d)
-        => [.. SmithCascade.Evaluate(d, d.Chart.DesignFrequencyHz).Select(n => n.Z)];
+        => [.. SmithCascade.Evaluate(d, d.DesignFrequencyHz).Select(n => n.Z)];
 
     /// <summary>Undoes until there is nothing left, reporting how many entries there were — the stack
     /// exposes <c>CanUndo</c> rather than a count, and counting by emptying it is exactly what "one
@@ -544,7 +543,7 @@ public sealed class SmithNetworkStripTests
     public async System.Threading.Tasks.Task ATlinKeepsTheReferenceFrequencyItWasPlacedAt()
     {
         var vm = new SmithChartViewModel(Design());
-        Assert.Equal(2e9, vm.Design.Chart.DesignFrequencyHz);
+        Assert.Equal(2e9, vm.Design.DesignFrequencyHz);
 
         await vm.AddElementCommand.ExecuteAsync(Entry(SmithElementKind.Tline, SmithPlacement.Series));
 
@@ -560,11 +559,15 @@ public sealed class SmithNetworkStripTests
         Assert.Equal("TL1", Line(vm).Name);
 
         // ── retuning leaves it behind, and says so once ──────────────────────
+        //
+        //  RETUNING IS EDITING THE TABLE NOW (owner instruction, 2026-09-19): the design frequency
+        //  is the table's median and there is no field of its own to type into. Moving the middle
+        //  row of three moves the median, which is exactly what "retuned the chart" means here.
         Assert.Null(vm.StripNotice);
 
-        vm.DesignFrequencyEntry = "2.1 GHz";
+        vm.GeneratorRows[1].FrequencyEntry = "2.1 GHz";
 
-        Assert.Equal(2.1e9, vm.Design.Chart.DesignFrequencyHz, 3);
+        Assert.Equal(2.1e9, vm.Design.DesignFrequencyHz, 3);
         Assert.Equal(2e9,   Line(vm).Values.ReferenceFrequencyHz);
         Assert.NotNull(vm.StripNotice);
         Assert.Contains("TL1", vm.StripNotice);
@@ -572,7 +575,7 @@ public sealed class SmithNetworkStripTests
 
         // …and only once. The next committed edit clears it — a note that outlived its occasion
         // would hide the strip's reading indefinitely — and a second retune says nothing new.
-        vm.DesignFrequencyEntry = "2.2 GHz";
+        vm.GeneratorRows[1].FrequencyEntry = "2.15 GHz";
 
         Assert.Null(vm.StripNotice);
         Assert.True(vm.ShowStatusLine);

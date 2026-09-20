@@ -382,11 +382,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         /// <summary>The overlay's answer for a canvas position, or null when there is no overlay,
         /// no plot, or nothing of the overlay's under the cursor.</summary>
-        private object? OverlayHitTest(Point pos)
+        private object? OverlayHitTest(Point pos, bool shift = false)
         {
             if (Overlay is not { } ov || _plot is null) return null;
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
-            return ov.HitTest(pos.X, pos.Y, tf);
+            return ov.HitTest(pos.X, pos.Y, tf, shift);
         }
 
         // ============================================================
@@ -1267,7 +1267,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 //  marker is otherwise unreachable and the marker is the thing the user can move out
                 //  of the way. A null answer falls straight through and everything below runs exactly
                 //  as it did before this seam existed.
-                if (Overlay is { } overlay && OverlayHitTest(_dragStartScreen) is { } handle)
+                if (Overlay is { } overlay
+                    && OverlayHitTest(_dragStartScreen,
+                                      e.KeyModifiers.HasFlag(KeyModifiers.Shift)) is { } handle)
                 {
                     _overlayDragHandle = handle;
                     overlay.DragBegin(handle);
@@ -1400,7 +1402,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (Overlay is { } hoverOverlay && !_isDragging && !_isDraggingSecondary
                 && _draggingMarker is null && _draggingVswrMarker is null)
             {
-                var hovered = OverlayHitTest(current);
+                var hovered = OverlayHitTest(current, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 if (!ReferenceEquals(hovered, _overlayHoverHandle))
                 {
                     _overlayHoverHandle = hovered;
@@ -2646,14 +2648,26 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 var (fwx, fwy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
                 if (!double.IsFinite(fwx) || !double.IsFinite(fwy)) return;
 
-                var world = new System.Numerics.Vector2((float)fwx, (float)fwy);
-                if (shift && plot is not null && SnapToNearestCurve(plot, world, tf) is { } snapped)
-                    world = snapped;
+                var  world   = new System.Numerics.Vector2((float)fwx, (float)fwy);
+                bool snapped = false;
+                if (shift && plot is not null && SnapToNearestCurve(plot, world, tf) is { } onCurve)
+                {
+                    world   = onCurve;
+                    snapped = true;
+                }
 
                 var atPx = tf.ToCanvas(world.X, world.Y, false);
                 if (!clipRect.Contains(atPx.X, atPx.Y)) return;
 
                 marker.PositionStatic = world;
+
+                // WHICH GLYPH THIS MARKER DRAWS AS (owner instruction, 2026-09-19). A shift-drag
+                // that landed on a curve leaves the marker ON it, so it reads as the ordinary
+                // triangle; an un-shifted move takes it off again and it goes back to the ring. The
+                // flag is written on every move rather than only when it changes, because "am I on
+                // a curve" is a fact about where this drag just put it and not a mode the user
+                // turned on — see Marker.SnappedToCurve.
+                marker.SnappedToCurve = snapped;
                 return;
             }
 

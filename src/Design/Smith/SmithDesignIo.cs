@@ -118,7 +118,6 @@ public static class SmithDesignIo
         Chart = new CsmithChart
         {
             Z0Ohm             = d.Chart.Z0Ohm,
-            DesignFrequencyHz = d.Chart.DesignFrequencyHz,
             // Absent is "fit", which is what a document nobody has zoomed says and what every
             // document written before somebody did says too.
             Window = d.Chart.Window is { } w
@@ -142,15 +141,6 @@ public static class SmithDesignIo
                 : null,
         },
         Elements  = d.Elements.Count  > 0 ? [.. d.Elements.Select(ToFile)]  : null,
-        Sweep     = IsDefault(d.Sweep)
-                        ? null
-                        : new CsmithSweep
-                          {
-                              Enabled = d.Sweep.Enabled,
-                              StartHz = d.Sweep.StartHz,
-                              StopHz  = d.Sweep.StopHz,
-                              Points  = d.Sweep.Points,
-                          },
         ConstantQ = IsDefault(d.ConstantQ)
                         ? null
                         : new CsmithConstantQ { Enabled = d.ConstantQ.Enabled, Q = d.ConstantQ.Q },
@@ -224,6 +214,7 @@ public static class SmithDesignIo
         PositionStaticX        = m.PositionStaticX,
         PositionStaticY        = m.PositionStaticY,
         FreePosition           = m.FreePosition,
+        SnappedToCurve         = m.SnappedToCurve,
         MarkerKind             = m.MarkerKind,
         ShowInfoBox            = m.ShowInfoBox,
         ContourSnapped         = m.ContourSnapped,
@@ -241,7 +232,6 @@ public static class SmithDesignIo
             Chart = new SmithChartSettings
             {
                 Z0Ohm             = f.Chart?.Z0Ohm ?? 50.0,
-                DesignFrequencyHz = f.Chart?.DesignFrequencyHz ?? 0.0,
                 Window            = f.Chart?.Window is { } w
                                       ? new SmithWindow
                                         {
@@ -255,13 +245,6 @@ public static class SmithDesignIo
                 // Absent is OFF — a `.csmith` written before the admittance grid existed opens on
                 // the picture it was saved as.
                 ShowAdmittanceGrid = f.Chart?.ShowAdmittanceGrid ?? false,
-            },
-            Sweep = new SmithSweep
-            {
-                Enabled = f.Sweep?.Enabled ?? false,
-                StartHz = f.Sweep?.StartHz ?? 0.0,
-                StopHz  = f.Sweep?.StopHz  ?? 0.0,
-                Points  = f.Sweep?.Points  ?? 51,
             },
             ConstantQ = new SmithConstantQ
             {
@@ -369,6 +352,7 @@ public static class SmithDesignIo
         IsMulti                = m.IsMulti ?? false,
         IsDelta                = m.IsDelta ?? false,
         FreePosition           = m.FreePosition ?? false,
+        SnappedToCurve         = m.SnappedToCurve ?? false,
         PositionStaticX        = m.PositionStaticX ?? 0f,
         PositionStaticY        = m.PositionStaticY ?? 0f,
         MarkerKind             = m.MarkerKind  ?? "Polyline",
@@ -394,21 +378,17 @@ public static class SmithDesignIo
     // ── the serialised shape ──────────────────────────────────────────────────
 
     /// <summary>
-    /// True when nothing about the band has been touched — <b>which is the only state that goes
+    /// True when nothing about the arcs has been touched — <b>which is the only state that goes
     /// unwritten</b>.
     /// </summary>
     /// <remarks>
     /// <b>The rule is "absent means untouched", not "absent means off".</b> Writing the block only
-    /// while the feature was ENABLED lost a disabled band's start, stop and point count — and,
-    /// because the undo stack is a serialize/deserialize round trip of this same writer, it lost them
-    /// WITHIN the session too: unchecking the box and checking it again handed back the defaults,
-    /// silently, with the user's own numbers gone and nothing said. A document nobody has touched
-    /// still writes nothing, so no existing file changes.
+    /// while the feature was ENABLED lost a disabled pair's Q — and, because the undo stack is a
+    /// serialize/deserialize round trip of this same writer, it lost it WITHIN the session too:
+    /// turning the arcs off and on again handed back the default, silently, with the user's own
+    /// number gone and nothing said. A document nobody has touched still writes nothing, so no
+    /// existing file changes.
     /// </remarks>
-    private static bool IsDefault(SmithSweep s)
-        => !s.Enabled && s.StartHz == 0.0 && s.StopHz == 0.0 && s.Points == 51;
-
-    /// <inheritdoc cref="IsDefault(SmithSweep)"/>
     private static bool IsDefault(SmithConstantQ q) => !q.Enabled && q.Q == 1.0;
 
     private sealed class CsmithFile
@@ -419,13 +399,18 @@ public static class SmithDesignIo
         public CsmithGenerator?       Generator     { get; set; }
         public List<CsmithElement>?   Elements      { get; set; }
 
-        /// <summary>Written only when the band is not at its DEFAULTS — see
-        /// <see cref="IsDefault(SmithSweep)"/> for why that is not the same as "when it is on".
-        /// Absent is off with defaults, which is every document nobody has touched it in and every
-        /// one written before it existed.</summary>
-        public CsmithSweep?           Sweep         { get; set; }
-
-        /// <summary>Same rule as <see cref="Sweep"/>.</summary>
+        /// <summary>Written only when the arcs are not at their DEFAULTS — see
+        /// <see cref="IsDefault(SmithConstantQ)"/> for why that is not the same as "when they are
+        /// on". Absent is off with defaults, which is every document nobody has touched them in and
+        /// every one written before they existed.
+        ///
+        /// <para>There is deliberately no <c>Sweep</c> block beside this one any more (owner
+        /// instruction, 2026-09-19). The band is the generator table's own span, always, so there
+        /// is nothing about it to store — and a block read back from an older `.csmith` would only
+        /// be a second, stale statement of frequencies the table already gives. It is DROPPED on
+        /// read rather than migrated, which is what "no need to be backwards compatible" was
+        /// asked for: <c>JsonSerializerOptions</c> here ignores a member the model does not
+        /// declare, so an old file opens and the next save writes the new shape.</para></summary>
         public CsmithConstantQ?       ConstantQ     { get; set; }
 
         /// <summary>One Data Display <c>TraceConfig</c> per overlay, opaque here — see
@@ -439,7 +424,6 @@ public static class SmithDesignIo
     private sealed class CsmithChart
     {
         public double?       Z0Ohm             { get; set; }
-        public double?       DesignFrequencyHz { get; set; }
         public CsmithWindow? Window            { get; set; }
         public bool?         ShowGrippers      { get; set; }
         public bool?         ShowTargets       { get; set; }
@@ -506,14 +490,6 @@ public static class SmithDesignIo
         public double?        Max       { get; set; }
     }
 
-    private sealed class CsmithSweep
-    {
-        public bool?   Enabled { get; set; }
-        public double? StartHz { get; set; }
-        public double? StopHz  { get; set; }
-        public int?    Points  { get; set; }
-    }
-
     private sealed class CsmithConstantQ
     {
         public bool?   Enabled { get; set; }
@@ -560,6 +536,7 @@ public static class SmithDesignIo
         public float?  PositionStaticX        { get; set; }
         public float?  PositionStaticY        { get; set; }
         public bool?   FreePosition           { get; set; }
+        public bool?   SnappedToCurve         { get; set; }
         public string? MarkerKind             { get; set; }
         public bool?   ShowInfoBox            { get; set; }
         public bool?   ContourSnapped         { get; set; }

@@ -73,6 +73,16 @@ public sealed class SmithNetworkCanvas : Control
     private Point? _panFrom;
     private ColorTheme _theme = ColorTheme.BuiltIn;
 
+    // Zoom-box state (owner instruction, 2026-09-19).
+    private bool   _zoomBoxArmed;
+    private bool   _zoomBoxDragging;
+    private Point  _zoomBoxStart;
+    private Point  _zoomBoxCurrent;
+
+    /// <summary>How far the pointer must travel before an armed press counts as a box rather than a
+    /// click. Screen pixels — a stray click while armed should disarm, not zoom to a dot.</summary>
+    private const double ZoomBoxMinDragPixels = 4.0;
+
     // Reorder drag state.
     private int    _dragFromIndex = -1;
     private int    _dragToIndex   = -1;
@@ -173,6 +183,74 @@ public sealed class SmithNetworkCanvas : Control
 
     private (double X, double Y) ToWorld(Point p) => (p.X / _zoom + _panX, p.Y / _zoom + _panY);
 
+    // ── The zoom box (owner instruction, 2026-09-19) ─────────────────────────
+
+    /// <summary>
+    /// Raised whenever <see cref="ZoomBoxArmed"/> changes, so the toolbar button that armed it can
+    /// follow.
+    /// </summary>
+    /// <remarks>
+    /// <b>The button follows the canvas and not the other way round.</b> <c>Z</c> arms it and
+    /// Escape, a completed box and a lost capture all disarm it, none of which goes through the
+    /// button — a toolbar that only lit up when it was clicked would be wrong exactly when the
+    /// keyboard was used. The layout editor's own seam, name for name.
+    /// </remarks>
+    public event EventHandler? ZoomBoxArmedChanged;
+
+    /// <summary>True while the next left-drag will draw a zoom box rather than select an element.</summary>
+    public bool ZoomBoxArmed => _zoomBoxArmed;
+
+    /// <summary>Takes the left button for one box.</summary>
+    public void ArmZoomBox()
+    {
+        if (_zoomBoxArmed) return;
+        _zoomBoxArmed    = true;
+        _zoomBoxDragging = false;
+        Cursor           = new Cursor(StandardCursorType.Cross);
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
+    /// <summary>Gives it back. Idempotent, which is what lets every exit call it.</summary>
+    public void DisarmZoomBox()
+    {
+        if (!_zoomBoxArmed && !_zoomBoxDragging) return;
+        _zoomBoxArmed    = false;
+        _zoomBoxDragging = false;
+
+        // THE ORDINARY ARROW, which is this pane's own cursor (R-smith6-1): a crosshair advertises a
+        // placement gesture the strip does not have, so it belongs to the armed state only.
+        Cursor = new Cursor(StandardCursorType.Arrow);
+        ZoomBoxArmedChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Frames the world rectangle the box just drew.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is <see cref="Fit"/>'s arithmetic with a rectangle handed in</b> rather than the
+    /// drawing's own extent — one zoom rule, so a box and a fit cannot disagree about padding or
+    /// about the zoom clamp. A box smaller than a few pixels is a click and frames nothing.
+    /// </remarks>
+    private void ZoomToBox()
+    {
+        var box = new Rect(_zoomBoxStart, _zoomBoxCurrent);
+        if (box.Width < ZoomBoxMinDragPixels || box.Height < ZoomBoxMinDragPixels) return;
+        if (Bounds.Width < 1 || Bounds.Height < 1) return;
+
+        var (x0, y0) = ToWorld(box.TopLeft);
+        var (x1, y1) = ToWorld(box.BottomRight);
+
+        double worldW = Math.Max(x1 - x0, 1e-9);
+        double worldH = Math.Max(y1 - y0, 1e-9);
+
+        _zoom = Math.Clamp(Math.Min(Bounds.Width / worldW, Bounds.Height / worldH), MinZoom, MaxZoom);
+        _panX = x0 - (Bounds.Width  - worldW * _zoom) / (2 * _zoom);
+        _panY = y0 - (Bounds.Height - worldH * _zoom) / (2 * _zoom);
+        _fitted = true;
+    }
+
     // ── Gestures ─────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -210,9 +288,25 @@ public sealed class SmithNetworkCanvas : Control
             return;
         }
 
-        if (!props.IsLeftButtonPressed || _vm is null) return;
+        if (!props.IsLeftButtonPressed) return;
 
         Focus();
+
+        // THE ARMED BOX TAKES THE LEFT BUTTON, before the hit test — otherwise a press that landed
+        // on a symbol would select it and the box would never start, which is the one place the two
+        // gestures could collide.
+        if (_zoomBoxArmed)
+        {
+            _zoomBoxDragging = true;
+            _zoomBoxStart    = e.GetPosition(this);
+            _zoomBoxCurrent  = _zoomBoxStart;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        if (_vm is null) return;
 
         var point = e.GetPosition(this);
         var (wx, wy) = ToWorld(point);
@@ -244,6 +338,13 @@ public sealed class SmithNetworkCanvas : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+
+        if (_zoomBoxDragging)
+        {
+            _zoomBoxCurrent = e.GetPosition(this);
+            InvalidateVisual();
+            return;
+        }
 
         if (_panFrom is { } from)
         {
@@ -293,6 +394,19 @@ public sealed class SmithNetworkCanvas : Control
         base.OnPointerReleased(e);
         _panFrom = null;
 
+        if (_zoomBoxDragging)
+        {
+            _zoomBoxCurrent = e.GetPosition(this);
+            ZoomToBox();
+
+            // ONE BOX PER ARM, exactly as the schematic and layout editors do it: the tool goes back
+            // to Select afterwards rather than staying latched, because the common case is one
+            // zoom and a latched magnifier then swallows the next selection click.
+            DisarmZoomBox();
+            e.Pointer.Capture(null);
+            return;
+        }
+
         if (_dragging && _vm is not null && _dragToIndex != _dragFromIndex)
             _vm.MoveElement(_dragFromIndex, _dragToIndex);
 
@@ -305,6 +419,10 @@ public sealed class SmithNetworkCanvas : Control
     {
         base.OnPointerCaptureLost(e);
         _panFrom = null;
+
+        // A box whose capture was taken away never gets its release, so the latch would stay set and
+        // the next ordinary click would draw one. Same reason the pan latch is cleared above.
+        DisarmZoomBox();
 
         // A capture lost without a release — the window losing focus mid-drag — ABANDONS the reorder
         // rather than committing it. A move nobody finished asking for is not a move.
@@ -325,6 +443,7 @@ public sealed class SmithNetworkCanvas : Control
         base.OnKeyDown(e);
 
         if (e.Key == Key.F)                            { ZoomToFit();                   e.Handled = true; }
+        else if (e.Key == Key.Z)                       { if (_zoomBoxArmed) DisarmZoomBox(); else ArmZoomBox(); e.Handled = true; }
         else if (e.Key == Key.M)                       { _vm?.ToggleMirrorCommand.Execute(null); e.Handled = true; }
         else if (e.Key is Key.Delete or Key.Back)      { _vm?.DeleteElementCommand.Execute(null); e.Handled = true; }
 
@@ -332,7 +451,15 @@ public sealed class SmithNetworkCanvas : Control
         // the chart's markers — because the window has two selections and one key. Left UNHANDLED
         // so the document's own Escape binding still runs when the focus is anywhere else; the
         // command is the same one either way, and it is idempotent.
-        else if (e.Key == Key.Escape)                  { _vm?.ClearSelectionCommand.Execute(null); e.Handled = true; }
+        else if (e.Key == Key.Escape)
+        {
+            // ESCAPE CANCELS THE BOX FIRST, and only drops the selections when there is no box to
+            // cancel — a half-drawn marquee is the more recent gesture, and Escape means "undo what
+            // I am in the middle of" before it means anything else.
+            if (_zoomBoxArmed || _zoomBoxDragging) DisarmZoomBox();
+            else _vm?.ClearSelectionCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     // ── Render ───────────────────────────────────────────────────────────────
@@ -364,6 +491,23 @@ public sealed class SmithNetworkCanvas : Control
     {
         var selected = new HashSet<string>(StringComparer.Ordinal);
         if (_vm?.SelectedComponentId is { Length: > 0 } id) selected.Add(id);
+
+        // THE ZOOM BOX IS THE RENDERER'S OWN RUBBER BAND, not a rectangle drawn here — the same
+        // overlay field the schematic editor's zoom box fills, so the two look identical and this
+        // control still draws nothing itself. It is in WORLD coordinates, which is what makes it
+        // stay put under a wheel zoom mid-drag.
+        if (_zoomBoxDragging)
+        {
+            var box = new Rect(_zoomBoxStart, _zoomBoxCurrent);
+            var (bx0, by0) = ToWorld(box.TopLeft);
+            var (bx1, by1) = ToWorld(box.BottomRight);
+            return new SchematicOverlay
+            {
+                SelectedComponentIds = selected,
+                RubberBand           = (bx0, by0, bx1 - bx0, by1 - by0),
+                RubberBandCrossing   = false,
+            };
+        }
 
         if (!_dragging || _vm is null || _dragFromIndex < 0)
             return new SchematicOverlay { SelectedComponentIds = selected };

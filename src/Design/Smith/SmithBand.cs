@@ -1,7 +1,13 @@
-// The optional swept band (docs/design/smith-chart.md §3.6; brief-smith-9-q-and-sweep.md R-smith9-4).
+// The swept band (docs/design/smith-chart.md §3.6; brief-smith-9-q-and-sweep.md R-smith9-4).
 //
 // ONE Evaluate PER POINT and nothing else. The band is what makes bandwidth visible on a tool whose
-// premise is that bandwidth is not the question, and it is off by default for exactly that reason.
+// premise is that bandwidth is not the question.
+//
+// IT IS THE GENERATOR TABLE'S OWN SPAN, ALWAYS (owner instruction, 2026-09-19). It used to be a
+// start/stop/npts block with a checkbox, which is three numbers the user had to keep in step with
+// the table and one more thing for a document to be refused over — and every honest value of those
+// three was already written down one card higher up. The table states the frequencies this design is
+// about; the band is the locus through them.
 
 using System;
 using System.Collections.Generic;
@@ -18,35 +24,43 @@ namespace CircuitRF.Design.Smith;
 /// copy of the spacing rule, and two spacings that agree until one of them is changed is exactly
 /// the kind of pair this tool refuses to have anywhere else. Same length as
 /// <paramref name="Gamma"/>, and empty with it.</param>
-/// <param name="Gamma">Γ of the load at each of <paramref name="FrequencyHz"/>. Empty when the band
-/// is off, when the document refuses it, or when the cascade cannot be walked at all — in which case
-/// the strip's refusal half is already saying why.</param>
-/// <param name="StartHz">The band actually walked, AFTER any clamp.</param>
-/// <param name="StopHz">Likewise.</param>
-/// <param name="Clamped">True when the document asked for a wider band than the generator table can
-/// answer for. <b>A clamp, never a refusal</b> — the one caller allowed to (<c>R-smith2-5</c>).</param>
+/// <param name="Gamma">Γ of the load at each of <paramref name="FrequencyHz"/>. Empty when the
+/// generator table states a single frequency — a band needs two ends — or when the cascade cannot
+/// be walked at all, in which case the strip's refusal half is already saying why.</param>
+/// <param name="StartHz">The band walked, which is the table's first row.</param>
+/// <param name="StopHz">Likewise, its last.</param>
 public readonly record struct SmithBandResult(
     IReadOnlyList<double>  FrequencyHz,
     IReadOnlyList<Complex> Gamma,
-    double StartHz, double StopHz, bool Clamped);
+    double StartHz, double StopHz);
 
 /// <summary>
-/// §3.6's third kind of frequency: a start/stop/npts band drawn as a thin continuous locus through
-/// the load points.
+/// §3.6's second kind of frequency: the locus the load traces across the generator table's span,
+/// drawn as a thin continuous line through the load points.
 /// </summary>
 /// <remarks>
-/// <b>It is CLAMPED to the generator table's span, with a stated note, rather than refused.</b> That
-/// is the one place in this tool where an out-of-span frequency is not a refusal, and the reason is
-/// a distinction rather than a convenience: <i>a band is a viewing choice, where a design frequency
-/// is a design input</i>. Extrapolating the generator impedance past the table would be inventing
-/// data; narrowing the view to what the table can answer for costs the user nothing but the part of
-/// the picture that was never there.
+/// <b>There is nothing to set and nothing to get wrong.</b> The ends are the table's first and last
+/// rows, so the band is exactly the part of the picture the generator can be asked about — no
+/// clamp, no note about one, and no way to state a band the document then refuses.
 ///
-/// <para><b>A single-row table is not clamped</b>, on <see cref="SmithCascade.GeneratorImpedance"/>'s
-/// own exception: one row is one impedance, flat, and every frequency is legal against it.</para>
+/// <para><b>A single-row table draws no band.</b> One row is one impedance, flat: the locus is one
+/// point, which the load points already draw.</para>
 /// </remarks>
 public static class SmithBand
 {
+    /// <summary>
+    /// How many frequencies the band is walked at.
+    /// </summary>
+    /// <remarks>
+    /// <b>A constant rather than a setting, and the reason is the DRAG rather than the sweep.</b>
+    /// The band is one full <see cref="SmithCascade.Evaluate"/> per point and it is re-walked inside
+    /// every rebuild of the chart — which is every pointer move of a gripper drag, twenty times a
+    /// second. Fifty-one samples is already finer than the pixels a locus a few hundred wide is
+    /// drawn on, so a larger number buys a picture nobody can tell apart at a cost the hand holding
+    /// the gripper can feel.
+    /// </remarks>
+    public const int Points = 51;
+
     /// <summary>Walks <paramref name="design"/>'s band, or returns an empty one.</summary>
     /// <param name="documentDirectory">What an S1P/S2P element's relative <c>FileRef</c> resolves
     /// against — the document's own folder.</param>
@@ -54,32 +68,25 @@ public static class SmithBand
     {
         ArgumentNullException.ThrowIfNull(design);
 
-        var sweep = design.Sweep;
+        if (design.Generator.Rows.Count < 2 || design.Generator.Span is not { } span)
+            return new SmithBandResult([], [], 0.0, 0.0);
 
-        // A band the DOCUMENT refuses draws nothing rather than being walked anyway. The point cap
-        // is the one that matters here and not the floor: this runs inside every rebuild of the
-        // chart, which is every pointer move of a gripper drag, so walking a count the strip is
-        // already complaining about would hang the window before the complaint could be read.
-        if (!sweep.Enabled
-         || sweep.Points < 2 || sweep.Points > SmithSweep.MaxPoints
-         || !(sweep.StartHz < sweep.StopHz))
-            return new SmithBandResult([], [], sweep.StartHz, sweep.StopHz, Clamped: false);
-
-        var (start, stop, clamped) = ClampToTable(design, sweep.StartHz, sweep.StopHz);
+        var (start, stop) = span;
+        if (!(start < stop)) return new SmithBandResult([], [], start, stop);
 
         double z0 = design.Chart.Z0Ohm;
-        var freqs = new List<double>(sweep.Points);
-        var gamma = new List<Complex>(sweep.Points);
+        var freqs = new List<double>(Points);
+        var gamma = new List<Complex>(Points);
 
         try
         {
-            for (int i = 0; i < sweep.Points; i++)
+            for (int i = 0; i < Points; i++)
             {
-                double f = start + (stop - start) * i / (sweep.Points - 1);
+                double f = start + (stop - start) * i / (Points - 1);
 
-                // CLAMP, not Refuse — and it is belt and braces: the span clamp above has already
-                // brought every f inside the table, and this says so at the one call that is allowed
-                // to. A rounding step at either end of the band is not a reason to draw nothing.
+                // CLAMP, not Refuse, and it is belt and braces: every f above is a convex
+                // combination of the table's own two ends and is inside it already. A rounding step
+                // at either end of the band is not a reason to draw nothing.
                 var nodes = SmithCascade.Evaluate(design, f, documentDirectory, SmithOutOfBand.Clamp);
 
                 freqs.Add(f);
@@ -91,30 +98,9 @@ public static class SmithBand
             // A cascade that cannot be walked at one frequency cannot be walked at any of them — the
             // failures are a missing file or a malformed element, not a frequency. Drawing the part
             // that worked would invite the reader to trust it.
-            return new SmithBandResult([], [], start, stop, clamped);
+            return new SmithBandResult([], [], start, stop);
         }
 
-        return new SmithBandResult(freqs, gamma, start, stop, clamped);
-    }
-
-    /// <summary>
-    /// The band the table can answer for.
-    /// </summary>
-    /// <remarks>
-    /// <b>The ENDS are clamped and the points are then spread across what is left</b>, rather than
-    /// each sample being clamped on its own. Clamping per sample piles half the band up on one
-    /// frequency and draws a locus that stops moving without saying so; clamping the ends narrows
-    /// the view, which is what the note reports.
-    /// </remarks>
-    private static (double StartHz, double StopHz, bool Clamped) ClampToTable(
-        SmithDesign design, double startHz, double stopHz)
-    {
-        if (design.Generator.Rows.Count < 2 || design.Generator.Span is not { } span)
-            return (startHz, stopHz, false);
-
-        double start = Math.Clamp(startHz, span.StartHz, span.StopHz);
-        double stop  = Math.Clamp(stopHz,  span.StartHz, span.StopHz);
-
-        return (start, stop, start != startHz || stop != stopHz);
+        return new SmithBandResult(freqs, gamma, start, stop);
     }
 }

@@ -474,7 +474,7 @@ public static class SmithNetworkModel
     /// </remarks>
     private static Complex GeneratorImpedance(SmithDesign design)
     {
-        try   { return SmithCascade.GeneratorImpedance(design.Generator, design.Chart.DesignFrequencyHz); }
+        try   { return SmithCascade.GeneratorImpedance(design.Generator, design.DesignFrequencyHz); }
         catch { return new Complex(design.Chart.Z0Ohm, 0.0); }
     }
 
@@ -522,7 +522,7 @@ public static class SmithNetworkModel
     {
         try
         {
-            var z = SmithCascade.GeneratorImpedance(design.Generator, design.Chart.DesignFrequencyHz);
+            var z = SmithCascade.GeneratorImpedance(design.Generator, design.DesignFrequencyHz);
             string sign = z.Imaginary < 0 ? "−" : "+";
             return $"{MatchValueFormat.Significant(z.Real, 4)} {sign} j"
                  + $"{MatchValueFormat.Significant(Math.Abs(z.Imaginary), 4)}";

@@ -429,14 +429,19 @@ namespace RfCore.Export
         double[] Z,
         double[] Gamma);
 
-    /// <param name="Clamped">True when the document asked for a wider band than the generator table
-    /// can answer for. <b>Reported rather than silent</b>: the band was NARROWED, and a caller
-    /// reading Start/Stop without this would take them for what it asked for.</param>
+    /// <summary>
+    /// The swept band, which is the generator table's own span walked at a fixed point count.
+    /// </summary>
+    /// <remarks>
+    /// <b>There is no <c>Clamped</c> flag any more</b> (owner instruction, 2026-09-19). The band
+    /// used to be a start/stop/npts block of its own that could ask for more than the table could
+    /// answer for and be narrowed, which is what that flag reported. It is the table's span now, so
+    /// there is nothing to narrow and nothing to report.
+    /// </remarks>
     public sealed record SmithBandJson(
         double StartHz,
         double StopHz,
-        int    Points,
-        bool   Clamped);
+        int    Points);
 
     /// <summary>
     /// What <c>smith</c> answered (brief-smith-10-cli-verb.md R-smith10-2).

@@ -117,7 +117,7 @@ public sealed partial class SmithChartViewModel
         }
 
         var result = SmithPasteRecognizer.Recognize(
-            p.Components, p.Wires, MirrorNetwork, _design.Chart.DesignFrequencyHz);
+            p.Components, p.Wires, MirrorNetwork, _design.DesignFrequencyHz);
 
         if (result.Refusal is { Length: > 0 } refusal)
         {

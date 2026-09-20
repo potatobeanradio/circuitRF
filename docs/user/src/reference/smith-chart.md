@@ -43,14 +43,15 @@ look.
 
 Open it from **Tools &rsaquo; Smith Chart** for a new scratch document, or by opening a `.csmith` in the
 project tree. It is an ordinary circuitRF **document**, not a separate application: it gets a tab, a
-`&bull;` dirty mark, Save and Save As, Undo and Redo on the keys you already use, tear-off and
+`&bull;` dirty mark, Save and Save As &mdash; on the tab's menu, on the shell's File menu and on the
+chart's own top strip &mdash; Undo and Redo on the keys you already use, tear-off and
 floating, and it is restored when you reopen the workspace. It also needs no workspace at all &mdash; a
 scratch chart opens with nothing else loaded, and **Save As** gives it a home later.
 
 <div class="callout note">
 <span class="label">This tool and the Match Designer answer different questions</span>
 <p>Reaching for the wrong one wastes an afternoon, so it is worth being blunt about which is which.</p>
-<p><b>The Match Designer</b> (<a href="match.html">its chapter</a>) <i>computes</i> a network for you.
+<p><b>The Match Designer</b> (<a href="match.html">its chapter</a>) <i>designs and computes</i> a network for you.
 It is <b>broadband</b>: you give it two terminations and a band, and it synthesises a bandpass ladder
 from a Fano-optimum prototype, absorbs both terminations into it, and hands you a list of solutions to
 choose between. Use it when the band is wide enough that the answer is a filter problem.</p>
@@ -71,13 +72,15 @@ It is a table: one row per frequency, each carrying a resistance and a reactance
 
 | | |
 |---|---|
-| **One row** | The ordinary case &mdash; *"50 &#8486; at 2 GHz"*. The design frequency is then free to be anything. |
+| **One row** | The ordinary case &mdash; *"50 &#8486; at 2 GHz"*. That one frequency is then the design frequency, and there is no swept band to draw. |
 | **Several rows** | What makes the per-frequency load points interesting. Rows are kept **sorted by frequency**, and two rows at one frequency is a refusal naming the frequency rather than a silent last-wins. |
 
 Every cell is edited the way every other value in circuitRF is: **double-click to open**, type,
 **Return** to commit, **Escape** to revert, clicking away commits. Type a unit and it is honoured
 &mdash; `2`, `2 GHz` and `1800 MHz` all mean what they look like, and opening the editor pre-selects
 only the number so the unit is left alone.
+
+Two square buttons sit at the right of the **Generator** heading.
 
 **Import .s1p&hellip;** reads a one-port Touchstone file and replaces the table with **one row per file
 frequency**, converting S<sub>11</sub> to an impedance against the file's own stated reference. Two
@@ -95,13 +98,25 @@ table and the number the tool uses disagreed, and there is no way to display tha
 eventually mislead somebody.
 
 <div class="callout note">
-<span class="label">The design frequency is free, but it must be inside the table</span>
-<p><b>Design f</b> is what the trajectories are drawn at, what the reactances are computed at, and what
-the status strip reports. It need <i>not</i> be a row of the table &mdash; Z<sub>gen</sub> is
-interpolated linearly in R and X between the two rows that bracket it.</p>
-<p>A design frequency <b>outside</b> the table's span is a <b>refusal</b> with the span in the
-sentence, never an extrapolation. A single-row table is the stated exception: one row is one
-impedance, flat, and every frequency is legal against it.</p>
+<span class="label">The design frequency is the table's median &mdash; there is nothing to set</span>
+<p>The <b>design frequency</b> is what the trajectories are drawn at, what the reactances are computed
+at, and what the status strip reports. It is <b>the median of the generator table's frequencies</b>
+and there is no field for it: an odd number of rows gives you the middle row, and an even number
+gives you the mean of the middle two &mdash; so two rows means the frequency half-way between them.</p>
+<p>It used to be a field you typed into, which could be put outside the table's span, and that turned
+it red and refused the whole document. The median is inside the span by construction, so the rule,
+the red field and the refusal all went with it. To move the design frequency, move the table.</p>
+</div>
+
+<div class="callout tip">
+<span class="label">Shift-drag a generator glyph to change its impedance</span>
+<p>Each generator-table row is drawn on the chart as a faint <b>+</b>. Hold <b>Shift</b> and drag one
+and you are editing that row: the two cells in the table follow the pointer live, and so does every
+trajectory, every load point and the band &mdash; you are moving the impedance the whole cascade
+starts from. The row's <i>frequency</i> is untouched.</p>
+<p>The modifier is the point. An unmodified press on a glyph pans the chart exactly as a press on
+empty space does, so this is not something you can nudge by accident; and the whole drag is one undo
+entry, like every other drag on this chart.</p>
 </div>
 
 ## Building the cascade {#cascade}
@@ -117,8 +132,10 @@ because a walk across a chart has to be a walk.
 |---|---|
 | **Add &#9662;** | Appends at the end, nearest the load. |
 | **Insert &#9662;** | Places before the selected element. With nothing selected it appends, because *before nothing* and *at the end* are the same place in a list. |
-| **Delete** | Removes the selected element; the chain closes up. |
+| **Delete** | Removes the selected element; the chain closes up. The **Delete** key does the same thing when no marker is selected on the chart. |
 | **&#8597;** / drag | Reorders. Dragging an element along the strip does the same thing. |
+| **Zoom to Fit** (**F**) | Frames the whole drawing. The strip re-frames itself whenever the drawing changes size &mdash; adding, deleting or mirroring &mdash; and keeps your zoom when it does not. |
+| **Zoom Box** (**Z**) | Arms the next left-drag to draw a box, and frames that box. Esc cancels. It is the schematic and layout editors' own zoom box, because this strip is drawn by the schematic renderer. |
 | **enabled** | Unticking an element makes it contribute nothing and draw no curve &mdash; **without deleting it**. It keeps its values and its place. That is the difference between trying something and losing it. |
 
 These are the elements, and every one of them is a component circuitRF already has &mdash; which is
@@ -297,21 +314,24 @@ corner between the arcs is the one that sets the bandwidth, and its Q is exactly
 - A drag outside the passive region has no finite Q; it pins at the last valid value and the strip
   says so.
 
-**The swept band** is a thin continuous locus through the load points, over a start, stop and point
-count of your choosing. It is **off by default** &mdash; bandwidth is not the question this tool is
-built around, and none of it is needed to match an impedance &mdash; and it costs one closed-form
-evaluation per point.
+**The swept band** is a thin continuous locus through the load points, and it is **always drawn**.
+Its two ends are the generator table's first and last rows &mdash; it is exactly the part of the
+picture the generator can be asked about, because Z<sub>gen</sub> is interpolated between rows and
+never extrapolated past them. There is nothing to switch on and nothing to set.
 
-A band that reaches past the generator table's span is **clamped, with the span named in the strip**,
-not refused. A band is a viewing choice, where a design frequency is a design input, and the difference
-is why the two are treated differently.
+It used to be a checkbox with a start, a stop and a point count beside it, which is three numbers to
+keep in step with the table and one more thing for a document to be refused over &mdash; and every
+honest value of the three was already written in the table one card higher up.
+
+A **single-row** table draws no band: one row is one impedance, flat, so the locus is a single point
+and the load point already draws it.
 
 ## Overlays and markers {#overlays}
 
 **Overlays** put reference data under the work, and you add one **exactly as you would add a trace to a
 Smith chart on a Data Display**:
 
-1. pick the data in the **source combo** in the chart's top strip, beside the **Q** button;
+1. pick the data in the **source combo** at the left of the chart's top strip;
 2. right-click the chart &rsaquo; **Plot Properties&hellip;**;
 3. press **Add**, and edit the trace card that appears.
 
@@ -338,6 +358,22 @@ cube slice, and the trace's own markers. Remove one with the card's trash button
 menu and the editor all behave exactly as they do on a plot &mdash; including the constant-VSWR circle
 about a marker. A marker remembers which curve it is a reading *on*, by that curve's label, so deleting
 an element cannot silently move a reading onto the next one.
+
+**Markers here are placed freely**, because on a matching chart a marker is usually a *target* you are
+aiming the network at rather than a sample of a swept curve. **The glyph says which it is:**
+
+| | |
+|---|---|
+| **A ring** | The marker is floating &mdash; it is wherever you put it, and it is not sitting on anything. It is drawn the same way a marker on a loadpull contour is, for the same reason: it is a reading at a position. |
+| **A triangle** | The marker is **on** a curve. Hold **Shift** while dragging and it snaps onto the nearest curve on the chart &mdash; a trajectory, the band, an overlay, a stability circle &mdash; which is how you put one exactly on a locus rather than very nearly on one. |
+
+Dragging it again without Shift takes it off the curve and it goes back to a ring. So does
+**Change to Trace&hellip;**, which re-points it at another curve without moving it &mdash; the new
+curve runs somewhere else, so the marker is floating again and says so.
+
+**Change to Trace&hellip; lists only the traces you added.** The tool's own curves are rebuilt from
+your design on every keystroke, so re-pointing a reading at one of those would be a reading of
+something that is gone by the next edit.
 
 <div class="callout note">
 <span class="label">A VSWR circle is not centred on its marker</span>
@@ -424,7 +460,7 @@ Stated plainly, because each of these is a thing somebody reasonably expects.
 
 | | |
 |---|---|
-| **It will not compute a network for you.** | No synthesis, no optimiser, no goal, no error function. A network is judged by looking at it. That is the [Match Designer](match.html)'s job. |
+| **It will not design a network for you.** | No synthesis, no optimiser, no goal, no error function. A network is judged by looking at it. That is the [Match Designer](match.html)'s job. |
 | **It has no power, no dBm and no gain.** | The generator has an impedance and nothing else, and every quantity here is a linear immittance. A gain readout would be inventing a quantity the model does not have. |
 | **It has no branches and no hierarchy.** | One cascade, ground on the shunt side. This is not a simplification waiting to be relaxed &mdash; it is what makes a per-element curve mean something. |
 | **It has no layout and no physical length.** | A TLIN is an ideal line with an impedance and an electrical length. Microstrip and its family are a schematic's business. |

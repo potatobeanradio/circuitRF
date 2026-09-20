@@ -138,7 +138,11 @@ public sealed class SmithExampleTests(ITestOutputHelper output)
     public void AFrequencyRefusal_IsSpelledAsTheUserTypedIt_NotInScientificNotation()
     {
         var design = Example();
-        design.Chart.DesignFrequencyHz = 2.9e9;
+
+        // THE ONE DESIGN FREQUENCY THAT CAN STILL BE WRONG (owner instruction, 2026-09-19): the
+        // document's own is the generator table's median and is inside the span by construction,
+        // so the rule survives only for `circuitrf smith --at`, which is what this override is.
+        design.DesignFrequencyOverrideHz = 2.9e9;
 
         string refusal = design.Refusal()
             ?? throw new Xunit.Sdk.XunitException("2.9 GHz is outside 2.3-2.6 GHz and was not refused.");

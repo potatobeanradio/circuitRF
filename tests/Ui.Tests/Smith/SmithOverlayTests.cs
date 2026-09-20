@@ -81,7 +81,6 @@ public sealed class SmithOverlayTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 50.0, 0.0));
         d.Elements.Add(new SmithElement
         {
@@ -145,7 +144,7 @@ public sealed class SmithOverlayTests
         vm.HarvestMarkers();
 
         // An ordinary committed edit, which replaces the whole design through a snapshot.
-        vm.DesignFrequencyEntry = "2.1 GHz";
+        vm.ChartZ0Entry = "75 Ω";
 
         var after = vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels);
         Assert.Equal(3.5, after.Properties.LineWidth);
@@ -175,7 +174,7 @@ public sealed class SmithOverlayTests
         var vm    = await WindowWithSource(Design(), dir, abs);
         var trace = AddedTrace(vm);
 
-        vm.DesignFrequencyEntry = "2.1 GHz";
+        vm.ChartZ0Entry = "75 Ω";
 
         Assert.Same(trace, vm.ChartPlot.Traces.Single(t => !t.ExcludeFromAxisLabels));
     }

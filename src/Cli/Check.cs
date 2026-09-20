@@ -679,7 +679,7 @@ internal static class Check
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
         f.Add(CliDiagnostics.CheckSmithSummary(
-            path, design.Elements.Count, design.Generator.Rows.Count, design.Chart.DesignFrequencyHz));
+            path, design.Elements.Count, design.Generator.Rows.Count, design.DesignFrequencyHz));
     }
 
     private static void CheckDataDisplay(string path, Findings f)

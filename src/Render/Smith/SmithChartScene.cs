@@ -15,6 +15,16 @@ namespace CircuitRF.Render.Smith;
 public readonly record struct SmithLoadPoint(Complex Gamma, string Label, bool IsDesignFrequency);
 
 /// <summary>
+/// One generator glyph: Γ of the generator impedance at one table row, and <b>which row</b>.
+/// </summary>
+/// <param name="RowIndex">The index into <c>SmithGenerator.Rows</c>. It is carried because the
+/// glyphs are DRAGGABLE (owner instruction, 2026-09-19) and a drag has to write back to the row it
+/// grabbed — and because a row whose cascade cannot be evaluated produces no glyph, so position in
+/// this list is not the same thing as position in the table.</param>
+/// <param name="Gamma">Γ(Z_gen) at that row, against the chart's Z₀.</param>
+public readonly record struct SmithGeneratorPoint(int RowIndex, Complex Gamma);
+
+/// <summary>
 /// Everything one frame of the chart is drawn from, evaluated once (<c>brief-smith-5-chart.md</c>
 /// <c>R-smith5-2</c>).
 /// </summary>
@@ -52,10 +62,10 @@ public sealed class SmithChartScene
     /// them.</summary>
     public IReadOnlyList<SmithLoadPoint> LoadPoints { get; init; } = [];
 
-    /// <summary>Γ(Z_gen(f)) per generator-table row — the faint, un-selectable generator glyphs.
-    /// <b>The generator as the table states it</b>, not its conjugate (owner report,
-    /// 2026-09-19).</summary>
-    public IReadOnlyList<Complex> GeneratorPoints { get; init; } = [];
+    /// <summary>Γ(Z_gen(f)) per generator-table row — the faint generator glyphs. <b>The generator
+    /// as the table states it</b>, not its conjugate (owner report, 2026-09-19), and each carrying
+    /// the row it came from so a shift-drag can write back to it.</summary>
+    public IReadOnlyList<SmithGeneratorPoint> GeneratorPoints { get; init; } = [];
 
     /// <summary>The constant-Q arcs' two branches, inside the unit disc, or empty when the pair is
     /// off (<c>brief-smith-9-q-and-sweep.md</c> <c>R-smith9-1</c>). <b>Chrome</b>: drawn beneath the
@@ -65,14 +75,14 @@ public sealed class SmithChartScene
     /// <inheritdoc cref="QArcInductive"/>
     public IReadOnlyList<Complex> QArcCapacitive { get; init; } = [];
 
-    /// <summary>The swept band's locus through the load points, or empty when the band is off
-    /// (<c>R-smith9-4</c>).</summary>
+    /// <summary>The swept band's locus through the load points, across the generator table's own
+    /// span — empty when the table states a single frequency (<c>R-smith9-4</c>).</summary>
     public IReadOnlyList<Complex> Band { get; init; } = [];
 
-    /// <summary>What the strip says when the band asked for more than the generator table can answer
-    /// for — the span it was narrowed to, in the strip's own spelling of a frequency. Null when the
-    /// band is off or fits.</summary>
-    public string? BandClampNote { get; init; }
+    /// <summary>What the strip says about this evaluation — today, that a generator-table row could
+    /// not be drawn, with the frequency in the strip's own spelling. Null when there is nothing to
+    /// say, which is the ordinary case.</summary>
+    public string? Note { get; init; }
 
     /// <summary>True when the evaluation produced something to draw.</summary>
     public bool HasContent => NodeGamma.Count > 0;

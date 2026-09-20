@@ -488,6 +488,11 @@ public sealed class MarkerConfig
     /// trace exactly as it was.</summary>
     public bool FreePosition { get; set; }
 
+    /// <summary>A free marker a shift-drag has landed ON a curve (<c>Marker.SnappedToCurve</c>) —
+    /// which is what makes it draw as a triangle rather than as a ring. <b>False by default</b>, so
+    /// a marker written before the two glyphs existed reads back floating, which is what it was.</summary>
+    public bool SnappedToCurve { get; set; }
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerKind MarkerKind { get; set; } = MarkerKind.Polyline;
 

@@ -47,9 +47,6 @@ internal static class Smith
         /// frequency field uses, so "2 GHz" means here what it means there.</summary>
         public string? At;
 
-        /// <summary>Force the document's swept band on.</summary>
-        public bool Sweep;
-
         /// <summary>Repeatable, and refused — see <see cref="CliDiagnostics.SmithSetNotApplicable"/>.</summary>
         public readonly List<string> Sets = [];
 
@@ -116,7 +113,7 @@ internal static class Smith
     private static int Usage()
     {
         Console.Error.WriteLine(
-            "Usage: circuitrf smith <path.csmith> [--at <freq>] [--sweep]\n" +
+            "Usage: circuitrf smith <path.csmith> [--at <freq>]\n" +
             "                       [-o out.{s1p,svg,pdf,png}] [--size WxH] [--scale N | --dpi N]\n" +
             "                       [--background opaque|transparent] [--dark]");
         return 1;
@@ -131,7 +128,6 @@ internal static class Smith
             {
                 case "-o" or "--output" when i + 1 < args.Length: o.Output = args[++i]; continue;
                 case "--at" when i + 1 < args.Length:             o.At     = args[++i]; continue;
-                case "--sweep":                                   o.Sweep  = true;      continue;
                 case "--dark":                                    o.Dark   = true;      continue;
 
                 case "--set" when i + 1 < args.Length:
@@ -278,13 +274,13 @@ internal static class Smith
                 || !(atHz > 0))
                 return JsonRun.Fail(CliDiagnostics.SmithAtMalformed(atText));
 
-            design.Chart.DesignFrequencyHz = atHz;
+            design.DesignFrequencyOverrideHz = atHz;
         }
 
-        // R-smith10-2: --sweep turns the document's band ON; it does not invent one. A document with
-        // no band then refuses in SmithDesign.Refusal's own words ("a band has to go somewhere"),
-        // which is the right sentence and is already written.
-        if (o.Sweep) design.Sweep.Enabled = true;
+        // THERE IS NO `--sweep` ANY MORE (owner instruction, 2026-09-19). It turned the document's
+        // band ON; the band is always drawn now, across the generator table's own span, so the flag
+        // had nothing left to turn on. A document with a single-row table still has no band, because
+        // one row is one impedance and a band needs two ends.
 
         // ── step 3: is the document sound ────────────────────────────────────
         //
@@ -303,8 +299,8 @@ internal static class Smith
         SmithReading reading;
         try
         {
-            nodes   = SmithCascade.Evaluate(design, design.Chart.DesignFrequencyHz, dir);
-            reading = SmithReadings.Of(design.Chart.Z0Ohm, design.Chart.DesignFrequencyHz,
+            nodes   = SmithCascade.Evaluate(design, design.DesignFrequencyHz, dir);
+            reading = SmithReadings.Of(design.Chart.Z0Ohm, design.DesignFrequencyHz,
                                        nodes[0].Z, nodes[^1].Z);
         }
         catch (Exception ex)
@@ -315,13 +311,6 @@ internal static class Smith
         }
 
         var band = SmithBand.Evaluate(design, dir);
-        if (band.Clamped)
-        {
-            var note = CliDiagnostics.SmithBandClamped(
-                Freq(band.StartHz), Freq(band.StopHz));
-            Console.Error.WriteLine("note: " + note.Render());
-            JsonRun.Note(note);
-        }
 
         // ── step 5: report, then write ───────────────────────────────────────
 
@@ -384,8 +373,7 @@ internal static class Smith
 
         if (band.Gamma.Count > 0)
             Console.WriteLine($"  swept band         {Freq(band.StartHz)} to {Freq(band.StopHz)}, "
-                            + $"{band.Gamma.Count} point(s)"
-                            + (band.Clamped ? "  (clamped to the generator table)" : ""));
+                            + $"{band.Gamma.Count} point(s)");
 
         Console.WriteLine();
         Console.WriteLine("  node  element                          Z (Ω)                    Γ");
@@ -602,7 +590,7 @@ internal static class Smith
             double.IsFinite(reading.MismatchDb) ? reading.MismatchDb : null,
             walk,
             band.Gamma.Count > 0
-                ? new SmithBandJson(band.StartHz, band.StopHz, band.Gamma.Count, band.Clamped)
+                ? new SmithBandJson(band.StartHz, band.StopHz, band.Gamma.Count)
                 : null);
     }
 }

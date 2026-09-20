@@ -1736,6 +1736,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 PositionStaticX       = Finite(m.PositionStatic.X),
                 PositionStaticY       = Finite(m.PositionStatic.Y),
                 FreePosition          = m.FreePosition,
+                SnappedToCurve        = m.SnappedToCurve,
                 MarkerKind            = m.MarkerKind,
                 ShowInfoBox           = m.ShowInfoBox,
                 ContourSnapped        = m.ContourSnapped,

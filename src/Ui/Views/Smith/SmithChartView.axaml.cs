@@ -80,6 +80,14 @@ public partial class SmithChartView : UserControl
         BindClipboard(_doc.ViewModel);
 
         // The picker is the view's; the refusal that follows a cancelled one is the view model's.
+        // THE BUTTON FOLLOWS THE CANVAS, not the other way round: Z on the canvas and Esc both
+        // change the armed state without going through the button, and a toolbar that only lit up
+        // when it was clicked would be wrong exactly when the keyboard was used. The layout
+        // editor's own wiring.
+        NetworkCanvas.ZoomBoxArmedChanged -= OnZoomBoxArmedChanged;
+        NetworkCanvas.ZoomBoxArmedChanged += OnZoomBoxArmedChanged;
+        OnZoomBoxArmedChanged(null, EventArgs.Empty);
+
         _doc.ViewModel.TouchstoneFileChooser = PickTouchstoneFile;
         _doc.ViewModel.OverlayFileChooser    = PickOverlayFile;
 
@@ -90,6 +98,9 @@ public partial class SmithChartView : UserControl
     }
 
     private void OnActivationFocusRequested() => FocusSelf();
+
+    private void OnZoomBoxArmedChanged(object? sender, EventArgs e)
+        => ZoomBoxToolBtn.Classes.Set("ToolActive", NetworkCanvas.ZoomBoxArmed);
 
     /// <summary>The Smith Chart chapter, through the launcher every other Help button in the
     /// application uses.</summary>
@@ -195,6 +206,44 @@ public partial class SmithChartView : UserControl
 
         string? error = _doc.ViewModel.ImportGeneratorFrom(files[0].Path.LocalPath);
         _doc.ViewModel.ImportFailed = error;
+    }
+
+    // ── Save / Save As (owner instruction, 2026-09-19) ───────────────────────
+
+    /// <summary>
+    /// The chart strip's <b>Save</b> and <b>Save As</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Both go through <see cref="SmithChartDocumentSave"/>, which is the ONE implementation of
+    /// "a <c>.csmith</c> is written like this"</b> — the shell's own tab menu calls the same static,
+    /// and so does the gate, with no display. A second route from the view would be a second answer
+    /// to what a save does, and the one that drifts is always the one nobody is looking at.
+    ///
+    /// <para><b>The workspace is OPTIONAL and is looked up rather than required.</b> A scratch
+    /// <c>.csmith</c> opens with no workspace at all (<c>R-smith4-1</c>); what a workspace supplies
+    /// is the project-tree node a newly-saved file appears in and a starting folder for the picker,
+    /// so a null one costs the save nothing.</para>
+    ///
+    /// <para><b>A refusal goes to the Messages panel, not to a dialog</b> — the document's own rule:
+    /// <see cref="SmithDesign.Refusal"/>'s sentence is about the design, and it is raised BEFORE
+    /// anything reaches the disk. With no workspace to report into there is nowhere for it to go and
+    /// the strip's own notice carries it instead.</para>
+    /// </remarks>
+    private void OnSave(object? sender, RoutedEventArgs e)   => _ = SaveAsync(saveAs: false);
+
+    /// <inheritdoc cref="OnSave"/>
+    private void OnSaveAs(object? sender, RoutedEventArgs e) => _ = SaveAsync(saveAs: true);
+
+    private async Task SaveAsync(bool saveAs)
+    {
+        if (_doc is null || TopLevel.GetTopLevel(this) is not { } top) return;
+
+        var workspace = WorkspaceLocator.For(this);
+        if (await SmithChartDocumentSave.RunAsync(_doc, top, workspace, saveAs) is not { } error)
+            return;
+
+        if (workspace is not null) workspace.Messages.Error(error);
+        else                       _doc.ViewModel.StripNotice = error;
     }
 
     // ── the chart (brief-smith-5-chart.md R-smith5-5) ────────────────────────
@@ -501,6 +550,25 @@ public partial class SmithChartView : UserControl
     /// <summary>Zoom to Fit on the strip — the button, and the F key the canvas handles itself.</summary>
     private void OnNetworkZoomToFit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => NetworkCanvas.ZoomToFit();
+
+    /// <summary>
+    /// The network strip's <b>Zoom Box</b> — arms the canvas for one marquee.
+    /// </summary>
+    /// <remarks>
+    /// <b>It ARMS; it does not zoom</b> (the layout editor's own wording, and its own behaviour):
+    /// the click takes the left button for one drag, and the box that drag draws is what gets
+    /// framed. Pressing it again disarms, which is what makes a mis-click recoverable without
+    /// having to draw a box somewhere harmless.
+    /// </remarks>
+    private void OnNetworkZoomBox(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (NetworkCanvas.ZoomBoxArmed) NetworkCanvas.DisarmZoomBox();
+        else                            NetworkCanvas.ArmZoomBox();
+
+        // The canvas takes the keyboard so Esc and Z reach it without a preliminary click on the
+        // drawing — which would itself be a press the armed box would swallow.
+        NetworkCanvas.Focus();
+    }
 
     /// <summary>
     /// A slider row's parameter label was clicked — make it the element's active parameter.

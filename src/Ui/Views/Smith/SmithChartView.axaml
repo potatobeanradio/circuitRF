@@ -229,19 +229,24 @@
     </UserControl.Styles>
 
     <!-- ── The two document-wide keys (owner instruction, 2026-09-19) ─────────────────────────────
-         DELETE removes the selected MARKERS and nothing else — deliberately not the Data Display's
-         own DeleteSelectedCommand, which also removes selected plot containers and this document's
-         one chart is not deletable. ESCAPE drops both selections, the marker's and the network
-         strip's element.
+         DELETE removes the selected MARKERS, or — when none are selected — the selected network
+         ELEMENT. This window has two selections and one key, and the binding here is the one that
+         runs whenever the focus is NOT inside the network canvas, which is most of the time: an
+         element clicked in the strip and a Delete pressed after touching anything else used to
+         delete nothing at all (owner report, 2026-09-19). It is deliberately not the Data Display's
+         own DeleteSelectedCommand, which also removes selected plot containers — this document's
+         one chart is not deletable.
+
+         ESCAPE drops both selections, the marker's and the network strip's element.
 
          On the ROOT, so they work wherever the focus is inside the document — and the two surfaces
-         that want either key for themselves already take it before it gets here: the network canvas
-         handles Delete as "delete the selected element", and PlotControl consumes Escape while an
-         overlay drag is in flight (R-smith5-8). A KeyBinding only ever sees the keys neither of them
-         marked handled. -->
+         that want either key for themselves still take it before it gets here: the network canvas
+         handles Delete as "delete the selected element" while it has the keyboard, and PlotControl
+         consumes Escape while an overlay drag is in flight (R-smith5-8). A KeyBinding only ever sees
+         the keys neither of them marked handled. -->
     <UserControl.KeyBindings>
-        <KeyBinding Gesture="Delete" Command="{Binding ViewModel.DeleteSelectedMarkersCommand}"/>
-        <KeyBinding Gesture="Back"   Command="{Binding ViewModel.DeleteSelectedMarkersCommand}"/>
+        <KeyBinding Gesture="Delete" Command="{Binding ViewModel.DeleteSelectionCommand}"/>
+        <KeyBinding Gesture="Back"   Command="{Binding ViewModel.DeleteSelectionCommand}"/>
         <KeyBinding Gesture="Escape" Command="{Binding ViewModel.ClearSelectionCommand}"/>
     </UserControl.KeyBindings>
 
@@ -265,25 +270,70 @@
         <!-- ══ Top region: the generator column and the chart ═══════════════════════════════════ -->
         <Grid Grid.Row="0" Name="TopRegion">
             <Grid.ColumnDefinitions>
-                <!-- NARROWER THAN §5.2's SKETCH (owner instruction, 2026-09-19): the space it
-                     gives back is the chart's, and the chart is where marker info boxes are parked.
-                     The minimum is what the three fixed-width table columns plus their padding
-                     actually need — below it the frequency cells start to clip, which the in-place
-                     inline editor has no way to report. -->
-                <ColumnDefinition Width="0.16*" MinWidth="176"/>
+                <!-- HALF AGAIN NARROWER THAN THE FIRST REVISION (owner instruction, 2026-09-19,
+                     twice): the space it gives back is the chart's, and the chart is where marker
+                     info boxes are parked. What made the second halving affordable is that three
+                     things left this column — the Design f row (the median of the table now), the
+                     whole Swept band card (the table's own span now), and the two full-width
+                     Conjugate / Import buttons, which are square toolbar buttons on the header row.
+                     What is left is the table and one Z₀ row.
+
+                     THE TABLE'S THREE COLUMNS ARE ALL STAR NOW, for the same reason: a fixed 86 px
+                     frequency column cannot fit beside two ohm values at this width, and a cell that
+                     clips is a wrong impedance read off a table that looks entirely ordinary. The
+                     MinWidth is what the three cells actually need at this font — below it the
+                     frequency and reactance cells start to trim, which the in-place inline editor
+                     has no way to report, and a clipped reactance is a wrong impedance. So on a
+                     narrow window the minimum governs and the panel is simply as small as it can
+                     be read at; on a wide one the fraction does.
+
+                     THE STAR VALUE HERE IS WHAT THE DESIGNER SHOWS AND NOTHING ELSE. Every document
+                     carries its own generator/chart split and ApplySplitFractions writes BOTH column
+                     definitions from it on load, so the real default is SmithView.SplitterSide —
+                     which is where the first round's narrowing should have gone, and did not. -->
+                <ColumnDefinition Width="0.08*" MinWidth="176"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="0.84*" MinWidth="200"/>
+                <ColumnDefinition Width="0.92*" MinWidth="200"/>
             </Grid.ColumnDefinitions>
 
             <!-- ── The generator panel (R-smith4-7) ────────────────────────────────────────────── -->
             <Border Grid.Column="0" Classes="pane">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Classes="panelhdr" Text="Generator"/>
+                        <!-- THE TWO GENERATOR VERBS, AS TOOLBAR BUTTONS ON THE HEADER ROW (owner
+                             instruction, 2026-09-19). They were full-width text buttons in a card of
+                             their own below the table, which in a column this narrow is two rows of
+                             chrome for two actions; square SelectionBtns with 16x16 Material glyphs
+                             are the schematic and layout toolbars' own control, and they cost one
+                             line beside the word "Generator" instead.
 
-                        <!-- The table. THREE FIXED-WIDTH COLUMNS, which is what makes R-smith4-6's
+                             CONJUGATE IS FlipVertical because that is what it does: it negates every
+                             row's reactance, which mirrors the whole table about the real axis of
+                             the chart. It is one undo entry and not a persistent flag, so pressing
+                             it twice puts the table back. -->
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBlock Classes="panelhdr" Text="Generator" VerticalAlignment="Center"/>
+
+                            <Button Grid.Column="1" Classes="SelectionBtn" Padding="4,2" Margin="0,0,4,0"
+                                    Command="{Binding ViewModel.ConjugateCommand}"
+                                    ToolTip.Tip="Conjugate — negate every row's reactance, once. One undo entry, and not a persistent flag: pressing it twice puts the table back.">
+                                <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
+                            </Button>
+                            <Button Grid.Column="2" Classes="SelectionBtn" Padding="4,2"
+                                    Name="ImportS1pButton" Click="OnImportS1pClick"
+                                    ToolTip.Tip="Import .s1p… — read a one-port Touchstone file. Its rows REPLACE the table, and the path is recorded as provenance only: the numbers are copied in, so this document stays portable if the file moves.">
+                                <mi:MaterialIcon Kind="FileImportOutline" Width="16" Height="16"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- The table. THREE EQUAL STAR COLUMNS, which is what makes R-smith4-6's
                              in-place hosting the right one: a frequency and two ohm values, and no
-                             column here is width-shared with anything. -->
+                             column here is width-shared with anything outside it. They were fixed at
+                             86 px for the frequency and star for the other two until the column was
+                             halved (owner instruction, 2026-09-19) — a fixed 86 leaves nothing for
+                             the two ohm values at the width this panel now opens at. The frequency
+                             takes a slightly larger share because it is the longest of the three:
+                             "2.45 GHz" against "-12.8 Ω". -->
                         <Border Classes="card">
                             <StackPanel>
                                 <!-- A HEADER SITS OVER ITS OWN COLUMN, which means it takes that
@@ -294,7 +344,7 @@
                                      impedance read off a table that looks entirely ordinary
                                      (R-smith11-4). The three Margin/alignment pairs below are the
                                      row template's, copied cell for cell. -->
-                                <Grid ColumnDefinitions="86,*,*" Margin="0,0,0,2">
+                                <Grid ColumnDefinitions="1.15*,*,*" Margin="0,0,0,2">
                                     <TextBlock Grid.Column="0" Classes="gridhdr" Text="f"/>
                                     <TextBlock Grid.Column="1" Classes="gridhdr" Text="R" Margin="4,0,0,0"
                                                HorizontalAlignment="Right"/>
@@ -307,7 +357,7 @@
                                          SelectedItem="{Binding ViewModel.SelectedRow, Mode=TwoWay}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate x:DataType="sm:SmithGeneratorRowViewModel">
-                                            <Grid ColumnDefinitions="86,*,*" Margin="0,1">
+                                            <Grid ColumnDefinitions="1.15*,*,*" Margin="0,1">
                                                 <ctl:InlineEditText Grid.Column="0" Classes="val"
                                                                     HorizontalContentAlignment="Left"
                                                                     Text="{Binding FrequencyEntry, Mode=TwoWay}"
@@ -338,37 +388,25 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Conjugate / Import / Re-import.
+                        <!-- WHERE THE TABLE CAME FROM, and the one button that repeats the read.
+                             The two verbs that ACT on the table are on the header row above (owner
+                             instruction, 2026-09-19); what is left here is provenance, and the whole
+                             card is hidden when the table was typed rather than imported.
 
-                             CONJUGATE FIRST (owner instruction, 2026-09-19). It acts on the table
-                             that is directly above it, so it sits next to it; the import is what
-                             REPLACES that table, and it belongs below with the path it read from
-                             rather than between the table and the one button that edits it. -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="4">
-                                <Button Classes="panel" Content="Conjugate"
-                                        Command="{Binding ViewModel.ConjugateCommand}"
-                                        ToolTip.Tip="Negate every row's reactance, once. One undo entry, and not a persistent flag — pressing it twice puts the table back."/>
-
-                                <Button Classes="panel" Name="ImportS1pButton" Content="Import .s1p…"
-                                        Click="OnImportS1pClick"
-                                        ToolTip.Tip="Read a one-port Touchstone file. Its rows REPLACE the table, and the path is recorded as provenance only — the numbers are copied in, so this document stays portable if the file moves."/>
-
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <!-- Provenance, not a reference. Nothing resolves this at load, which
-                                         is why a moved file cannot stop a document opening. -->
-                                    <TextBlock Classes="note" Grid.Column="0" TextTrimming="CharacterEllipsis"
-                                               TextWrapping="NoWrap" VerticalAlignment="Center"
-                                               Text="{Binding ViewModel.SourcePathDisplay}"
-                                               IsVisible="{Binding ViewModel.HasSourcePath}"
-                                               ToolTip.Tip="{Binding ViewModel.SourcePathDisplay}"/>
-                                    <Button Grid.Column="1" Classes="panel" Content="Re-import"
-                                            Margin="4,0,0,0"
-                                            IsVisible="{Binding ViewModel.HasSourcePath}"
-                                            Command="{Binding ViewModel.ReimportGeneratorCommand}"
-                                            ToolTip.Tip="Repeat the read from the file above."/>
-                                </Grid>
-                            </StackPanel>
+                             Nothing resolves this path at load, which is why a moved file cannot
+                             stop a document opening. -->
+                        <Border Classes="card" IsVisible="{Binding ViewModel.HasSourcePath}">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="note" Grid.Column="0" TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap" VerticalAlignment="Center"
+                                           Text="{Binding ViewModel.SourcePathDisplay}"
+                                           ToolTip.Tip="{Binding ViewModel.SourcePathDisplay}"/>
+                                <Button Grid.Column="1" Classes="SelectionBtn" Padding="4,2" Margin="4,0,0,0"
+                                        Command="{Binding ViewModel.ReimportGeneratorCommand}"
+                                        ToolTip.Tip="Re-import — repeat the read from the file named beside this button.">
+                                    <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                                </Button>
+                            </Grid>
                         </Border>
 
                         <!-- Label left, value right, in one right-aligned column. -->
@@ -383,63 +421,9 @@
                                                         ToolTip.Tip="One real, document-wide reference impedance. Γ is taken against it and every overlay is renormalized to it. Double-click to edit."/>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Design f"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                        Classes.bad="{Binding ViewModel.IsDesignFrequencyInvalid}"
-                                                        Text="{Binding ViewModel.DesignFrequencyEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="What the trajectories are drawn at and what the strip reports. It need not be a row of the table, but it must lie inside the table's span — the generator impedance is interpolated between rows, never extrapolated past them."/>
-                                </Grid>
                             </StackPanel>
                         </Border>
 
-                        <!-- ── The swept band (brief 9) ─────────────────────────────────────
-                             R-smith9-4; docs/design/smith-chart.md §3.6.
-
-                             OPTIONAL AND OFF BY DEFAULT (owner decision). This tool's premise is
-                             that bandwidth is not the question; the band is what makes it visible
-                             when somebody wants to ask it anyway, and it costs one evaluation per
-                             point.
-
-                             IT IS CLAMPED TO THE GENERATOR TABLE'S SPAN WITH A STATED NOTE, never
-                             refused — the ONE caller allowed to clamp. A band is a viewing choice,
-                             where a design frequency is a design input: extrapolating the generator
-                             impedance past the table would be inventing data, and narrowing the
-                             view costs the user only the part of the picture that was never
-                             there. -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Swept band"/>
-
-                                <CheckBox MinHeight="0" FontSize="11" Content="Draw band"
-                                          IsChecked="{Binding ViewModel.SweepEnabled, Mode=TwoWay}"
-                                          ToolTip.Tip="A thin locus through the load points across a band. Clamped to the generator table's span, with the span named in the strip — never refused."/>
-
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Start"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
-                                                        Text="{Binding ViewModel.SweepStartEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="The band's low end. Double-click to edit."/>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Stop"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
-                                                        Text="{Binding ViewModel.SweepStopEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="The band's high end. Double-click to edit."/>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Points"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
-                                                        IsEnabled="{Binding ViewModel.SweepEnabled}"
-                                                        Text="{Binding ViewModel.SweepPointsEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="How many frequencies the band is walked at. Two is the fewest that draws one."/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -480,34 +464,17 @@
                                      CanDeletePlot="False" CanEditPlotProperties="True"/>
 
                     <!-- ── The chart's own top strip ────────────────────────────────────────
-                         ON THE CHART and not in the generator column, because both controls here
-                         belong to the picture: the arcs are a ruler laid over it, and the data
-                         source is what the next trace added to it is seeded from. -->
-                    <StackPanel Orientation="Horizontal" Spacing="4"
-                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4">
+                         ON THE CHART and not in the generator column, because everything here
+                         belongs to the picture: the data source is what the next trace added to it
+                         is seeded from, the arcs are a ruler laid over it, and Save writes the
+                         document the picture IS.
 
-                        <!-- ── The constant-Q toggle (owner instruction, 2026-09-19) ────────────
-                             A square toolbar button with a Q glyph, the schematic editor's own
-                             SelectionBtn/ToolActive pair, so "on" reads the way every other latched
-                             tool in circuitRF reads.
-
-                             THE VALUE IS NOT HERE. It is drawn on the chart itself, below the apex
-                             of the inductive arc, by SmithChartChrome — which is below the firewall,
-                             so it travels with every copy, export and headless render of the picture
-                             rather than living in a panel that no exported chart carries. Dragging
-                             either arc is how it is set; the text follows the arc as it moves. -->
-                        <Button Classes="SelectionBtn" Padding="6,3"
-                                Classes.ToolActive="{Binding ViewModel.ConstantQEnabled}"
-                                Command="{Binding ViewModel.ToggleConstantQCommand}"
-                                ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
-                            <!-- THE LETTER, not the glyph (owner instruction, 2026-09-19).
-                                 Material's AlphaQ is a Q inside a rounded box, which at 16 px on a
-                                 toolbar reads as an O with a tick rather than as a Q. A TextBlock
-                                 sized and centred to the same 16x16 box keeps the button square. -->
-                            <TextBlock Text="Q" Width="16" Height="16" FontSize="14" FontWeight="SemiBold"
-                                       TextAlignment="Center" HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" LineHeight="16"/>
-                        </Button>
+                         TWO ENDS, NOT ONE ROW (owner instruction, 2026-09-19). The source combo is
+                         an INPUT to the chart and sits at the left where the eye starts; Save, Save
+                         As and the constant-Q toggle are things you DO to it and sit at the right,
+                         with Q outermost. A Grid rather than two StackPanels in one, because the two
+                         groups have to be able to ignore each other's width. -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Top" Margin="4">
 
                         <!-- ── The data source (brief 12, R-smith12-3) ──────────────────────────
                              THE DATA DISPLAY'S OWN COMBO, bound exactly as DataDisplayView.axaml
@@ -519,8 +486,11 @@
                              then empty — which has to keep working, because it is what makes this a
                              real document rather than a workspace feature. The combo's own "Add from
                              file…" path is wired to the picker the Overlays panel used, so a
-                             Touchstone can be loaded and drawn with nothing else open. -->
-                        <ComboBox Width="180" Padding="6,3"
+                             Touchstone can be loaded and drawn with nothing else open.
+
+                             162 RATHER THAN 180 (owner instruction, 2026-09-19): it sits over the
+                             chart, and the eighteen pixels are the picture's. -->
+                        <ComboBox Grid.Column="0" Width="162" Padding="6,3"
                                   ItemsSource="{Binding ViewModel.AvailableDataSources}"
                                   SelectedItem="{Binding ViewModel.SelectedDataSourceItem, Mode=TwoWay}"
                                   ToolTip.Tip="{Binding ViewModel.SelectedDataSourceAbs}">
@@ -530,7 +500,60 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                    </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+
+                            <!-- ── Save / Save As (owner instruction, 2026-09-19) ───────────────
+                                 A docked document has no title bar of its own to hang these on, and
+                                 the tab's context menu is a place you have to already know about —
+                                 so the one toolbar this document has carries them, exactly as the
+                                 Help button is here for the same reason.
+
+                                 BOTH GO THROUGH SmithChartDocumentSave, which is the ONE
+                                 implementation of "a .csmith is written like this": the shell's own
+                                 tab menu calls it, the gate drives it with no display, and it
+                                 validates on the way out — a document that cannot be read back is a
+                                 document that was never written. A scratch document's Save asks for
+                                 a path, which is Save As by another name and is what makes the two
+                                 buttons honest rather than redundant. -->
+                            <Button Name="SaveButton" Classes="SelectionBtn" Padding="6,3"
+                                    Click="OnSave"
+                                    ToolTip.Tip="Save — writes this .csmith. A document that has never been saved is asked where to go.">
+                                <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                            </Button>
+                            <Button Name="SaveAsButton" Classes="SelectionBtn" Padding="6,3"
+                                    Click="OnSaveAs"
+                                    ToolTip.Tip="Save As… — writes this .csmith somewhere else and follows it from then on. Relative references inside it move with it.">
+                                <mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/>
+                            </Button>
+
+                            <!-- ── The constant-Q toggle (owner instruction, 2026-09-19) ────────
+                                 A square toolbar button with a Q glyph, the schematic editor's own
+                                 SelectionBtn/ToolActive pair, so "on" reads the way every other
+                                 latched tool in circuitRF reads. FAR RIGHT (owner instruction): it
+                                 is the one control here that changes what is DRAWN.
+
+                                 THE VALUE IS NOT HERE. It is drawn on the chart itself, below the
+                                 apex of the inductive arc, by SmithChartChrome — which is below the
+                                 firewall, so it travels with every copy, export and headless render
+                                 of the picture rather than living in a panel that no exported chart
+                                 carries. Dragging either arc is how it is set; the text follows the
+                                 arc as it moves. -->
+                            <Button Classes="SelectionBtn" Padding="6,3"
+                                    Classes.ToolActive="{Binding ViewModel.ConstantQEnabled}"
+                                    Command="{Binding ViewModel.ToggleConstantQCommand}"
+                                    ToolTip.Tip="Constant Q — draws the pair of constant-Q arcs. Both branches are one setting: drag either one to change Q, and hold shift to land on an exact quarter. The value is printed under the upper arc.">
+                                <!-- THE LETTER, not the glyph (owner instruction, 2026-09-19).
+                                     Material's AlphaQ is a Q inside a rounded box, which at 16 px on
+                                     a toolbar reads as an O with a tick rather than as a Q. A
+                                     TextBlock sized and centred to the same 16x16 box keeps the
+                                     button square. -->
+                                <TextBlock Text="Q" Width="16" Height="16" FontSize="14" FontWeight="SemiBold"
+                                           TextAlignment="Center" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" LineHeight="16"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
@@ -570,6 +593,32 @@
                              16x16 MaterialIcon and no text. The three of them sat beside four that
                              already looked like that, so the row read as two toolbars. Each menu row
                              underneath carries the PART'S OWN GLYPH — see BuildElementMenus. -->
+                        <!-- ── FRAMING FIRST (owner instruction, 2026-09-19) ───────────────
+                             Fit and the zoom box are what you do to the VIEW; everything after the
+                             separator is what you do to the CIRCUIT. They led the row in the
+                             schematic and layout editors' toolbars for the same reason, and this
+                             strip is drawn by the schematic renderer — so the two glyphs, the two
+                             keys and the arm-then-drag behaviour are all taken from there rather
+                             than invented here. -->
+                        <Button Classes="SelectionBtn" Padding="6,3"
+                                Click="OnNetworkZoomToFit"
+                                ToolTip.Tip="Zoom to Fit  (F). The strip re-frames itself whenever the drawing changes size — adding, deleting or mirroring — and keeps your zoom when it does not.">
+                            <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- The magnifier ARMS; it does not zoom. Clicking it takes the left button
+                             for one drag, and the box that drag draws is what gets framed. Same
+                             icon, same key and same behaviour as the schematic and layout editors'
+                             Zoom Box; Esc cancels. -->
+                        <Button Name="ZoomBoxToolBtn" Classes="SelectionBtn" Padding="6,3"
+                                Click="OnNetworkZoomBox"
+                                ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom the strip to it. Esc cancels.">
+                            <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                         <Button Name="AddElementButton" Classes="SelectionBtn" Padding="6,3"
                                 ToolTip.Tip="Add — an element at the end of the cascade, nearest the load.">
                             <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
@@ -611,12 +660,6 @@
                                 Command="{Binding ViewModel.ToggleMirrorCommand}"
                                 ToolTip.Tip="Mirror Network  (M) — flips the drawing so the generator is on the right and the cascade grows leftward. The circuit, the element order and the chart are unchanged.">
                             <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
-                        </Button>
-
-                        <Button Classes="SelectionBtn" Padding="6,3"
-                                Click="OnNetworkZoomToFit"
-                                ToolTip.Tip="Zoom to Fit  (F). The strip re-frames itself whenever the drawing changes size — adding, deleting or mirroring — and keeps your zoom when it does not.">
-                            <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
                         </Button>
 
                         <!-- HELP (R-smith11-4). railRF, harmonicaRF, wBond and the Match Designer

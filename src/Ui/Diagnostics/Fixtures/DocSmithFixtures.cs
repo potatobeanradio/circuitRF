@@ -189,8 +189,10 @@ public static class DocSmithFixtures
     private static SmithDesign ThreeElements(bool q)
     {
         var d = new SmithDesign { Name = "Three elements" };
-        d.Chart.Z0Ohm             = 50.0;
-        d.Chart.DesignFrequencyHz = 2.0e9;
+        d.Chart.Z0Ohm = 50.0;
+
+        // ONE ROW, so the design frequency — the table's median — is 2 GHz, which is what the L,
+        // the C and the line below are all quoted at. See SmithDesign.DesignFrequencyHz.
         d.Generator.Rows.Add(new SmithGeneratorRow(2.0e9, 15.0, -25.0));
 
         d.Elements.Add(new SmithElement

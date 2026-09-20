@@ -295,24 +295,33 @@ output, because two adjacent arcs sharing a gripper are otherwise ambiguous abou
 
 ### 3.6 Frequency: three different things, kept apart
 
-1. **The design frequency.** One number. It is what the trajectories are drawn at, what the sliders'
-   reactances are computed at, and what the readout strip reports. It is **free** — it need not be a row
-   of the generator table. `Z_gen` is **linearly interpolated in R and X** between the two bracketing
-   rows; a design frequency **outside** the table's span is a **refusal**, not an extrapolation, and the
-   sentence names the table's span. (A single-row table is the exception: one row means one impedance,
-   flat, and the design frequency is free.)
+> **Revised 2026-09-19 (owner instruction).** The design frequency is no longer a number of its own and
+> the swept band is no longer a setting. Both are now read off the generator table, which is the only
+> statement of "the frequencies this design is about" the document ever had. What that removed is
+> recorded in `src/Ui/RESOLVED.md`; the original text of items 1 and 3 is below in its corrected form.
+
+1. **The design frequency.** One number, and it is **derived**: the **median** of the generator table's
+   frequencies — the middle row of an odd table, the mean of the middle two of an even one, so a
+   two-row table gives the frequency half-way between them. It is what the trajectories are drawn at,
+   what the sliders' reactances are computed at, and what the readout strip reports. `Z_gen` is
+   **linearly interpolated in R and X** between the two bracketing rows, and the median is inside the
+   table's span by construction — so the old refusal about a design frequency outside it survives for
+   exactly one caller, `circuitrf smith --at`, where it is still a refusal naming the span rather than
+   an extrapolation. (A single-row table is that rule's exception: one row means one impedance, flat,
+   and every frequency is legal against it.)
 2. **The table frequencies.** Every generator-table row produces a **load point** on the chart, with a
    small label box naming the frequency — the same `ContourRenderer.DrawIsoLineLabel` box the loadpull
    iso-lines use, placed by the same anchor walk, so the two surfaces cannot drift apart in appearance.
    The design frequency's point is drawn emphasised; the others are secondary. Beside each sits that
    frequency's GENERATOR glyph (§3.4). The label boxes are placed vertically, away from the cluster
    (§9.3).
-3. **The swept band — optional, off by default (owner decision).** A start/stop/npts band, drawn as a
-   thin continuous locus through the load points. This is what makes bandwidth visible on a tool whose
-   premise is that bandwidth is not the question, and it costs one evaluation per point of arithmetic
-   that is already measured in nanoseconds. `Z_gen` across the band is interpolated from the table by the
-   rule above, and the band is **clamped to the table's span with a stated note** rather than refused —
-   a band is a viewing choice, where a design frequency is a design input.
+3. **The swept band — always drawn, and it IS the table's span.** A thin continuous locus through the
+   load points, from the table's first row to its last, walked at a fixed `SmithBand.Points`. This is
+   what makes bandwidth visible on a tool whose premise is that bandwidth is not the question, and it
+   costs one evaluation per point of arithmetic that is already measured in nanoseconds. `Z_gen` across
+   it is interpolated from the table by the rule above, so there is nothing to clamp and nothing to
+   refuse. A **single-row** table draws no band: one row is one impedance, flat, and the locus is the
+   load point that is already there.
 
 ---
 
@@ -512,40 +521,36 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│ • lna_input_match.csmith                                                        (document tab)│
-├───────────────────────┬──────────────────────────────────────────────────────────────────────┤
-│ GENERATOR             │ [Q] [ lna_s2p          ▾ ]                                           │
-│  f        R      X    │                     ╭────────────────────────╮                       │
-│  1.80 G  12.0  −8.5   │                   ╭─┤                        ├─╮                     │
-│  2.00 G  11.4  −9.1   │                  │     ·2.20G                  │                    │
-│  2.20 G  10.9  −9.8   │                  │        ⊕      ╭──────╮      │                    │
-│             [+]  [−]  │                  │      ·2.00G ──╯      ╰── ·  │                    │
-│                       │                   ╰─┤        ·1.80G          ├─╯                     │
-│  [ Import .s1p… ]     │                     ╰────────────────────────╯                       │
-│  [ Conjugate ]        │                                                                      │
-│                       │      · load point, labelled     ⊕ conj(Z_gen) target                 │
-│  Chart Z₀  [ 50  ] Ω  │      ─── element trajectory     ○ gripper                            │
-│  Design f  [ 2.0 ] GHz│                                                                      │
-│                       │                                                                      │
-│  [x] Sweep            │                                                                      │
-│      1.8 … 2.2 GHz    │                                                                      │
-│      201 pts          │                                                                      │
-│  [x] Constant Q  1.75 │                                                                      │
-│                       │                                                                      │
-│                       │   (overlays are added in Plot Properties… — §5.7 — and the strip's    │
-│                       │    combo at the top left is what a new trace is seeded from)          │
-├───────────────────────┴──────────────────────────────────────────────────────────────────────┤
-│ NETWORK                                      [ Add ▾ ] [ Insert ▾ ] [ Delete ] [ ⇅ ] [ ⇄ ]   │
+│ • lna_input_match.csmith                                                     (document tab)  │
+├───────────────────┬──────────────────────────────────────────────────────────────────────────┤
+│ GEN.       [~] [v]│ [ lna_s2p        v ]                        [S] [S+] [Q]                 │
+│  f      R      X  │                    .----------------------.                              │
+│ 1.80G  12.0  -8.5 │                 .--'                      '--.                           │
+│ 2.00G  11.4  -9.1 │                /      ,2.20G                  \                          │
+│ 2.20G  10.9  -9.8 │               |         +      .------.        |                         │
+│          [+]  [-] │               |       ,2.00G --'      '-- ,     |                        │
+│                   │                \        ,1.80G               /                           │
+│ Chart Z0  [ 50 ] O│                 '--.                      .--'                           │
+│                   │                     '----------------------'                             │
+│                   │                                                                          │
+│                   │   ,  load point, labelled   + Z_gen  (shift-drag it to edit              │
+│                   │   -- element trajectory       that generator row)                        │
+│                   │   o  gripper                                                             │
+│                   │                                                                          │
+│                   │   (overlays are added in Plot Properties... - 5.7 - and the              │
+│                   │    combo at the top left is what a new trace is seeded from)             │
+├───────────────────┴──────────────────────────────────────────────────────────────────────────┤
+│ NETWORK                  [Fit] [Zoom box] | [ Add v ] [ Insert v ] [ Del ] [ <> ] [ M ]      │
 │                                                                                              │
-│         ┌───┐        ┌────┐         ┌────┐                                                   │
-│    G ───┤   ├────┬───┤ L2 ├─────┬───┤ TL1├──────● load                                       │
-│         └───┘   ═╪═  └────┘    ═╪═  └────┘                                                   │
+│         +---+        +----+         +----+                                                   │
+│    G ---|   |----+---| L2 |-----+---| TL1|------* load                                       │
+│         +---+   ===  +----+    ===  +----+                                                   │
 │          L1      C1             C2                                                           │
-│                  ⏚              ⏚                                                            │
+│                  gnd            gnd                                                          │
 │                                                                                              │
-│  L2   L  [═══════════●═════════]   3.90 nH        [x] enabled                                │
+│  L2   L  [===========o=========]   3.90 nH        [x] enabled                                │
 ├──────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 2.000 GHz · load 49.1 + j1.8 Ω · Γ 0.019 ∠61° · VSWR 1.04 · mismatch 0.00 dB                 │
+│ 2.000 GHz - load 49.1 + j1.8 O - G 0.019 /61deg - VSWR 1.04 - mismatch 0.00 dB               │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -573,7 +578,7 @@ rounds of owner review, and this tool takes them rather than re-deciding them:
 
 Not "most", and not "the ones in the specification pane". **Every** number, name and expression the user
 can change in this window is an `InlineEditText`: the generator table's f, R and X cells; the chart Z₀;
-the design frequency; the sweep's start, stop and point count; the constant-Q value; every parameter
+every parameter
 value beside every slider; a TLIN's F_ref; each element's instance name; each slider's range endpoints;
 and a TLIN's F_ref. (An overlay's own fields are the Data Display trace card's — §5.7 — and that card
 is the Data Display's, unchanged.)
@@ -609,7 +614,7 @@ the two.
 
 A `PlotControl` in `PlotType.Smith`, fed a `Plot` the view model rebuilds from the evaluator. Its traces
 are: one per enabled element (the trajectories), one for the load points, one for the generator points,
-one for the optional swept band, and one per overlay. Pan, zoom, the marker context menu, the plot
+one for the swept band, and one per overlay. Pan, zoom, the marker context menu, the plot
 inspector, axis limits and **copy the plot to the clipboard** are the control's own and are not
 re-implemented.
 
@@ -887,13 +892,12 @@ textbook, at four conversion sites.
 ```
 SmithDesign
   FormatVersion, Name
-  Chart        : Z0Ohm, DesignFrequencyHz, Window (Γ extents), ShowGrippers/Targets/Labels
+  Chart        : Z0Ohm, Window (Γ extents), ShowGrippers/Targets/Labels/AdmittanceGrid
   Generator    : Rows[ { FrequencyHz, ResistanceOhm, ReactanceOhm } ], SourcePath (provenance only)
   Elements[]   : Kind, Placement, Name, Enabled, ActiveParameter,
                  Values{ ROhm, LHenry, CFarad, Z0Ohm, ElectricalLengthDeg, ReferenceFrequencyHz,
                          ImpedanceOhm{Re,Im} },   FileRef (relative, S1P/S2P only),
                  SliderRange{ Min, Max } per parameter
-  Sweep        : Enabled, StartHz, StopHz, Points
   ConstantQ    : Enabled, Q
   Overlays[]   : the Data Display TraceConfig shape, verbatim — one per overlay, opaque JSON
   Markers[]    : the Data Display Marker shape, verbatim
@@ -997,7 +1001,7 @@ briefs 1–3, `src/Ui` for 4–9 and 11, `src/Cli` for 10 — and never here.
 | **6 — the network strip** | the projection onto `SchematicRenderer`, selection, add / insert / delete / reorder, the sliders, the active-parameter rule and the mirror |
 | **7 — the clipboard** | the network out as a runnable two-port, the chart out as PDF/SVG/JSON/bitmap, a `.csch` selection in, the topology recognizer and its five refusals, and the mirror-aware end rule |
 | **8 — overlays and markers** | Touchstone and cube sources, renormalization to Z₀_chart, derived stability circles, markers and their VSWR circles |
-| **9 — constant Q and the band** | the arc pair and its closed-form in-disc range, its drag inverse and the shift quarter-step, the swept band and its clamp |
+| **9 — constant Q and the band** | the arc pair and its closed-form in-disc range, its drag inverse and the shift quarter-step, the swept band (whose own start/stop/npts and clamp were withdrawn in the fourth round — §3.6) |
 | **10 — the verb** | `circuitrf smith`, the reading, the per-node walk, `-o .s1p` and the picture — and the plot half moved to `CircuitRF.Render` so the picture is the window's |
 | **11 — docs and example** | `docs/user/reference/smith-chart.*` with six generated figures, the `Smith Chart` example workspace, and this record |
 
@@ -1253,7 +1257,8 @@ written and are recorded closed, with the reasoning, in the sections named.
   glyph (§3.4; the glyph was the conjugate-match target until §9.3). Worth re-raising only if review
   wants the generator-referenced grid; the code difference is one function and the cost is a grid that
   moves under the user.
-- **Q-3 — the swept band.** *Closed:* optional, off by default (§3.6).
+- **Q-3 — the swept band.** *Closed, then reopened and closed again (owner instruction, 2026-09-19):*
+  it is always drawn, across the generator table's own span, and is no longer a setting at all (§3.6).
 - **Q-4 — how far beyond the window.** *Closed:* window first, CLI verb as P3, arithmetic below the
   firewall from day one (§9).
 

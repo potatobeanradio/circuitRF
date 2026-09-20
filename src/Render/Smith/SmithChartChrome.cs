@@ -87,10 +87,24 @@ public static class SmithChartChrome
     /// naming, when a box has to be pushed further out to clear one.</summary>
     private const float LabelBoxGap = 2f;
 
-    /// <summary>How many times a box may be pushed one row further out before it is drawn where it
-    /// is. A bound rather than a loop: a chart zoomed until every point is one pixel apart has no
-    /// placement that clears, and marching off the canvas is worse than a slight overlap.</summary>
+    /// <summary>How far, in box heights, a label may be pushed out from its glyph before it is
+    /// drawn where it is. A bound rather than an open search: a chart zoomed until every point is
+    /// one pixel apart has no placement that clears, and a label marching off the canvas is worse
+    /// than a slight overlap.</summary>
     private const int LabelPushLimit = 6;
+
+    /// <summary>
+    /// The band, in canvas pixels at the nominal line width, over which an obstacle's claim on a
+    /// label FADES IN as the two come into horizontal range.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is what keeps the placement continuous</b> (owner report, 2026-09-19 — labels flicking
+    /// between two positions during a drag). Without it the obstacle either counts or does not, so
+    /// a sub-pixel move of a load point can add or remove a whole box height of offset, and a drag
+    /// that wanders across that threshold makes the label jump back and forth. See
+    /// <see cref="DrawLoadLabels"/>.
+    /// </remarks>
+    private const float LabelApproachBand = 6f;
 
     /// <summary>
     /// Handed to <c>ContourRenderer.ComputeLabelAnchors</c> as the world-unit spacing. The stub
@@ -134,7 +148,15 @@ public static class SmithChartChrome
         DrawQValue(canvas, tf, theme, design);
         if (design.Chart.ShowLabels)   DrawLoadLabels(canvas, tf, theme, scene);
         if (design.Chart.ShowGrippers) DrawGrippers(canvas, tf, theme, scene, design, state);
-        DrawQHandle(canvas, tf, theme, state);
+
+        // THERE IS NO CONSTANT-Q GRAB RING (owner report, 2026-09-19 — "a circle rendered around
+        // the cursor during a shift-drag of a constant-Q line"). The ring was drawn at the point of
+        // the arc NEAREST THE POINTER, which during a drag is within a pixel or two of the pointer
+        // itself, so what it actually looked like was a circle stuck to the mouse cursor. Its
+        // earlier hover form had already been withdrawn for the same complaint one revision before,
+        // which is the tell: the handle has nowhere to sit that is not under the cursor. The arcs
+        // are still grabbed and dragged exactly as before — SmithGripperOverlay's hit test is
+        // untouched — and what says the drag is working is that both arcs and the Q= readout move.
     }
 
     /// <summary>
@@ -237,36 +259,6 @@ public static class SmithChartChrome
     }
 
     /// <summary>
-    /// The constant-Q pair's grab ring, under the cursor and <b>on the arc</b>.
-    /// </summary>
-    /// <remarks>
-    /// <b>The ARCS are traces and are drawn beneath the trajectories</b> (<c>R-smith9-3</c>); this is
-    /// the HANDLE, which is chrome like every other handle here and belongs over the top with them.
-    /// Nothing is drawn until the cursor is on an arc, so the pair reads as a ruler until the moment
-    /// it is something to hold — which is also why an export draws none of it.
-    /// </remarks>
-    private static void DrawQHandle(SKCanvas canvas, TransformSet tf, RenderTheme theme,
-                                    SmithChromeState state)
-    {
-        // ON THE DRAG ONLY (owner instruction, 2026-09-19). The hover ring appeared whenever the
-        // pointer came within eight pixels of either arc and then glided along it, which over a
-        // chart crossed by two arcs reads as a circle chasing the cursor rather than as a handle.
-        // The arcs are still grabbed exactly as before — SmithGripperOverlay's hit test is
-        // untouched — and once a drag is under way the ring is drawn, so what is held is visible.
-        if (state.DragQ is not { } handle) return;
-
-        var at = tf.PrimaryToCanvas(handle.At.Real, handle.At.Imaginary);
-
-        using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
-                                       Color = ReadingColorOpaque };
-        using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
-                                         StrokeWidth = 1.6f, Color = ReadingColorOpaque };
-
-        canvas.DrawCircle(at.X, at.Y, RingRadius, fill);
-        canvas.DrawCircle(at.X, at.Y, RingRadius, stroke);
-    }
-
-    /// <summary>
     /// One arrowhead per curve, at the midpoint the sampler reported.
     /// </summary>
     /// <remarks>
@@ -328,11 +320,22 @@ public static class SmithChartChrome
     /// above the cluster, the highest frequency's below it, which is the owner's own rule and
     /// generalises to any number of rows through the mean.</para>
     ///
-    /// <para><b>Then the boxes are pushed out until they clear.</b> Every glyph and every box already
-    /// placed is an obstacle; a box that overlaps one is moved one row further along its own
-    /// direction and tried again. It is bounded — see <see cref="LabelPushLimit"/> — because a chart
-    /// zoomed until the points are a pixel apart has no placement that clears, and a label marching
-    /// off the canvas is worse than a slight overlap.</para>
+    /// <para><b>Then each box is pushed out just far enough to clear what is in its way, and the
+    /// distance is a CONTINUOUS function of where everything is</b> (owner report, 2026-09-19 — the
+    /// labels flicked between two positions during a drag). Every glyph and every box already
+    /// placed is an obstacle; the offset is the largest any of them demands, and each demand fades
+    /// in over <see cref="LabelApproachBand"/> pixels as the obstacle comes into horizontal range.
+    /// It is bounded — see <see cref="LabelPushLimit"/> — because a chart zoomed until the points
+    /// are a pixel apart has no placement that clears, and a label marching off the canvas is worse
+    /// than a slight overlap.</para>
+    ///
+    /// <para><b>The continuity is the fix and it is not a refinement of the old rule.</b> This used
+    /// to try the box one whole row further out at a time and stop at the first row that did not
+    /// intersect anything, which is a DISCRETE decision taken from scratch on every frame of a drag:
+    /// a load point moving half a pixel could flip the answer from row 1 to row 2 and back, moving
+    /// the label a whole box height each way, twenty times a second. A maximum of continuous
+    /// demands has no such threshold — the box slides out as an obstacle approaches and slides back
+    /// as it leaves.</para>
     /// </remarks>
     private static void DrawLoadLabels(SKCanvas canvas, TransformSet tf, RenderTheme theme,
                                        SmithChartScene scene)
@@ -384,6 +387,9 @@ public static class SmithChartChrome
         var   taken     = at.Select(p => new SKRect(p.X - glyphHalf, p.Y - glyphHalf,
                                                     p.X + glyphHalf, p.Y + glyphHalf)).ToList();
 
+        float   limit = first + LabelPushLimit * step;
+        float[] ys    = [.. at.Select(p => p.Y)];
+
         for (int k = 0; k < at.Count; k++)
         {
             string text = scene.LoadPoints[index[k]].Label;
@@ -392,29 +398,80 @@ public static class SmithChartChrome
             float halfW = tw / 2f + padX;
             float halfH = boxH / 2f;
 
-            float dir = LabelDirection([.. at.Select(p => p.Y)], k);
+            float dir = LabelDirection(ys, k);
 
-            SKRect box = default;
-            for (int push = 0; push <= LabelPushLimit; push++)
-            {
-                float cy = at[k].Y + dir * (first + push * step);
-                box = new SKRect(at[k].X - halfW, cy - halfH, at[k].X + halfW, cy + halfH);
-                if (!taken.Any(r => r.IntersectsWith(box))) break;
-            }
+            float offset = LabelOffset(at[k], halfW, halfH, dir, taken, first, limit, scale);
+            float cy     = at[k].Y + dir * offset;
+            var   box    = new SKRect(at[k].X - halfW, cy - halfH, at[k].X + halfW, cy + halfH);
 
             taken.Add(box);
 
             // The box is the shared placer's. The stub is two pixels long about the box's centre and
             // the projection is the identity, so ComputeLabelAnchors' single anchor lands exactly
             // where the arithmetic above put it — see LabelSpacing.
-            float cx = box.MidX, cyFinal = box.MidY;
-            (double X, double Y)[] stub = [(cx, cyFinal - 1.0), (cx, cyFinal + 1.0)];
+            (double X, double Y)[] stub = [(box.MidX, box.MidY - 1.0), (box.MidX, box.MidY + 1.0)];
 
             ContourRenderer.DrawIsoLineLabel(
                 canvas, stub, static (x, y) => new SKPoint((float)x, (float)y),
                 text, LabelSpacing, ringIndex: 1,
                 font, labelPaint, bgPaint, bgStroke, padX, padY);
         }
+    }
+
+    /// <summary>
+    /// How far along <paramref name="dir"/> one label box has to sit so that it clears everything
+    /// already on the canvas — <b>a continuous function of where those things are</b>.
+    /// </summary>
+    /// <param name="glyph">The load point the label names, in canvas pixels.</param>
+    /// <param name="halfW">Half the box's width, padding included.</param>
+    /// <param name="halfH">Half its height.</param>
+    /// <param name="dir">−1 for above the glyph, +1 for below — <see cref="LabelDirection"/>'s.</param>
+    /// <param name="taken">Every glyph square and every box already placed.</param>
+    /// <param name="first">The offset a label with nothing in its way takes.</param>
+    /// <param name="limit">The furthest it may be pushed; past that the overlap is accepted.</param>
+    /// <param name="scale">Canvas pixels per nominal line width, for <see cref="LabelApproachBand"/>.</param>
+    /// <remarks>
+    /// <b>The answer is the largest demand any obstacle makes, and each demand FADES IN.</b> An
+    /// obstacle that is far away horizontally asks for nothing; one directly under the box asks for
+    /// exactly enough to clear it; in between, the ask ramps over <see cref="LabelApproachBand"/>
+    /// pixels. A maximum of continuous functions is continuous, which is the whole point — the
+    /// previous rule tried whole rows and stopped at the first that did not intersect, so a
+    /// sub-pixel move could change the answer by a box height and a drag made the label flicker
+    /// between the two (owner report, 2026-09-19).
+    ///
+    /// <para>An obstacle on the far side of the glyph, or one the box already clears at
+    /// <paramref name="first"/>, demands nothing: this only ever pushes a label further out, never
+    /// pulls it in past its own clearance.</para>
+    /// </remarks>
+    internal static float LabelOffset(
+        SKPoint glyph, float halfW, float halfH, float dir,
+        IReadOnlyList<SKRect> taken, float first, float limit, float scale)
+    {
+        float band   = LabelApproachBand * scale;
+        float offset = first;
+
+        foreach (var r in taken)
+        {
+            // How far the box would have to be from the glyph for its NEAR edge to sit
+            // LabelBoxGap clear of this obstacle, measured along dir.
+            float need = dir < 0
+                ? (glyph.Y - r.Top)    + halfH + LabelBoxGap
+                : (r.Bottom - glyph.Y) + halfH + LabelBoxGap;
+
+            if (!(need > offset) || need > limit) continue;
+
+            // The horizontal ramp. Centre-to-centre separation at which the two just touch, plus
+            // the band over which the claim fades in.
+            float sep   = Math.Abs(glyph.X - (r.Left + r.Right) / 2f);
+            float touch = halfW + (r.Right - r.Left) / 2f;
+            float t     = Math.Clamp((touch + band - sep) / band, 0f, 1f);
+            if (t <= 0f) continue;
+
+            float asked = first + t * (need - first);
+            if (asked > offset) offset = asked;
+        }
+
+        return Math.Min(offset, limit);
     }
 
     /// <summary>

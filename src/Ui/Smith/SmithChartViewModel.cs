@@ -80,7 +80,6 @@ public sealed partial class SmithChartViewModel : ObservableObject
     {
         var d = new SmithDesign();
         d.Generator.Rows.Add(new SmithGeneratorRow(2e9, 50.0, 0.0));
-        d.Chart.DesignFrequencyHz = 2e9;
         return d;
     }
 
@@ -147,9 +146,18 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // which is emitted after the edit lands) survives it.
         StripNotice = null;
 
-        string before = SmithDesignIo.SerializeUnvalidated(_design);
+        string before   = SmithDesignIo.SerializeUnvalidated(_design);
+        double beforeHz = _design.DesignFrequencyHz;
         mutate();
         string after = SmithDesignIo.SerializeUnvalidated(_design);
+
+        // A LINE'S F_ref STAYS WHERE IT WAS PLACED, on purpose (R-smith2-3) — and the ONE time that
+        // is worth saying out loud is the first time the design frequency moves away from one
+        // (R-smith6-3). The design frequency is the generator table's median now, so what moves it
+        // is a row being added, removed or retuned rather than a field of its own being typed into:
+        // this is the one place that can see all four. After the mutation, so the note is about
+        // where the design now is, and before the push, so it is not cleared by it.
+        if (_design.DesignFrequencyHz != beforeHz) NoteStrandedReferenceFrequencies();
 
         if (string.Equals(before, after, StringComparison.Ordinal))
         {
@@ -422,40 +430,19 @@ public sealed partial class SmithChartViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The design frequency — what the trajectories are drawn at and what the strip reports (§3.6).
+    /// The design frequency — <b>the generator table's median, derived and never typed</b> (owner
+    /// instruction, 2026-09-19).
     /// </summary>
     /// <remarks>
-    /// <b>It is free, but it must lie inside the generator table's span</b>, because Z_gen is
-    /// interpolated and never extrapolated. One outside it turns this field red and puts
-    /// <see cref="SmithDesign.Refusal"/>'s sentence — which names the span, with its numbers in it — in
-    /// the status strip. <b>That refusal is brief 2's, surfaced rather than re-derived</b>: a second
-    /// copy of the rule here would be a second answer about which frequencies are legal.
+    /// <b>There is no field for it any more and there is nothing here to set.</b> It used to be an
+    /// <c>InlineEditText</c> that could be put outside the generator table's span, which turned the
+    /// field red, put a refusal in the status strip and stopped the document being saved — all
+    /// about a number the table already implied. <see cref="SmithDesign.DesignFrequencyHz"/> is
+    /// where the rule lives; this is the strip's spelling of its answer.
     /// </remarks>
-    public string DesignFrequencyEntry
-    {
-        get => MatchValueFormat.FormatWithUnit(_design.Chart.DesignFrequencyHz, MatchQuantity.Frequency,
-                                               MatchValueFormat.AutoUnit, 6);
-        set
-        {
-            bool ok = MatchValueFormat.TryParseWithUnit(value, MatchQuantity.Frequency, "GHz",
-                                                        out double f, out _) && f > 0;
-            if (ok)
-            {
-                Edit("Edit design frequency", () => _design.Chart.DesignFrequencyHz = f);
-
-                // A line's F_ref stays where it was placed, on purpose (R-smith2-3) — and the ONE time
-                // that is worth saying out loud is the first time a frequency edit leaves one behind
-                // (R-smith6-3). After the edit, so the note is about where the design now is.
-                NoteStrandedReferenceFrequencies();
-            }
-            OnPropertyChanged();
-            if (!ok) RefreshDerived();
-        }
-    }
-
-    /// <summary>True when the design frequency is outside the table's span — what turns the field red
-    /// (§5.3's "the offending input turning red").</summary>
-    public bool IsDesignFrequencyInvalid { get; private set; }
+    public string DesignFrequencyDisplay
+        => MatchValueFormat.FormatWithUnit(_design.DesignFrequencyHz, MatchQuantity.Frequency,
+                                           MatchValueFormat.AutoUnit, 6);
 
     // ── the status strip (R-smith4-8) ────────────────────────────────────────
 
@@ -497,13 +484,13 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // rather than three that happen to agree. See SmithChartViewModel.Network.cs.
         RebuildNetwork();
 
-        // A CLAMPED BAND is a STANDING CONDITION rather than an occasion (R-smith9-4), so it is
-        // re-raised on every refresh and not once: it stays true for as long as the band asks for
-        // more than the generator table can answer for, and a note that appeared once and then went
+        // A DROPPED GENERATOR ROW is a STANDING CONDITION rather than an occasion (R-smith9-4), so
+        // it is re-raised on every refresh and not once: it stays true for as long as a file element
+        // fails to span one of the table's frequencies, and a note that appeared once and then went
         // away would leave the picture unexplained. It never displaces a note somebody else just
         // raised about the edit that is landing — the strip is ONE line, and the newer sentence is
         // the one about what just happened.
-        if (Scene.BandClampNote is { } clamped && _stripNotice is null) StripNotice = clamped;
+        if (Scene.Note is { } note && _stripNotice is null) StripNotice = note;
 
         // AND SO IS A REFERENCE THAT DOES NOT RESOLVE (R-smith8-2). With the Overlays panel gone
         // there is no row to mark, and the sentence still has to be said: the document opened, the
@@ -512,31 +499,21 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // the newer sentence is the one about what just happened.
         if (UnresolvedOverlayNote is { } missing && _stripNotice is null) StripNotice = missing;
 
-        IsDesignFrequencyInvalid = _design.Generator.Rows.Count > 1
-            && _design.Generator.Span is { } span
-            && !(_design.Chart.DesignFrequencyHz >= span.StartHz
-                 && _design.Chart.DesignFrequencyHz <= span.StopHz);
-
         OnPropertyChanged(nameof(Refusal));
         OnPropertyChanged(nameof(HasRefusal));
         OnPropertyChanged(nameof(HasStripNotice));
         OnPropertyChanged(nameof(ShowStatusLine));
         OnPropertyChanged(nameof(StatusLine));
         OnPropertyChanged(nameof(MirrorNetwork));
-        OnPropertyChanged(nameof(IsDesignFrequencyInvalid));
         OnPropertyChanged(nameof(ChartZ0Entry));
-        OnPropertyChanged(nameof(DesignFrequencyEntry));
+        OnPropertyChanged(nameof(DesignFrequencyDisplay));
         OnPropertyChanged(nameof(SourcePathDisplay));
         OnPropertyChanged(nameof(HasSourcePath));
 
-        // Brief 9's two cards. They are refreshed on the same channel as everything else, which is
-        // what makes an UNDO of a Q drag move the number in the panel as well as the arcs.
+        // Brief 9's arcs. Refreshed on the same channel as everything else, which is what makes an
+        // UNDO of a Q drag move the button's latched state as well as the arcs.
         OnPropertyChanged(nameof(ConstantQEnabled));
         OnPropertyChanged(nameof(ConstantQEntry));
-        OnPropertyChanged(nameof(SweepEnabled));
-        OnPropertyChanged(nameof(SweepStartEntry));
-        OnPropertyChanged(nameof(SweepStopEntry));
-        OnPropertyChanged(nameof(SweepPointsEntry));
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
         foreach (var row in GeneratorRows) row.NotifyAll();
     }
@@ -556,7 +533,7 @@ public sealed partial class SmithChartViewModel : ObservableObject
 
     private string ComputeStatusLine()
     {
-        double f = _design.Chart.DesignFrequencyHz;
+        double f = _design.DesignFrequencyHz;
 
         // EVERY NUMBER BELOW IS SmithReadings' (R-smith10-1). The strip formats; it does not
         // compute — `circuitrf smith` prints the same five quantities about the same document, and a

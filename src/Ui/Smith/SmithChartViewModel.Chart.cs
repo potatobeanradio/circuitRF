@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using CircuitRF.Design.Smith;
+using CircuitRF.Render.Smith;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -270,7 +271,7 @@ public sealed partial class SmithChartViewModel
         try
         {
             result = SmithInverse.Solve(_design, _dragElement, _dragParameter, _dragZIn, gamma,
-                                        _design.Chart.DesignFrequencyHz, _design.Chart.Z0Ohm);
+                                        _design.DesignFrequencyHz, _design.Chart.Z0Ohm);
         }
         catch (Exception)
         {
@@ -308,10 +309,11 @@ public sealed partial class SmithChartViewModel
         if (_dragBefore is not { } before) return;
 
         _dragBefore    = null;
-        _dragNode      = -1;
-        _dragElement   = -1;
-        _dragParameter = SmithParameter.None;
-        DragPin        = null;
+        _dragNode         = -1;
+        _dragElement      = -1;
+        _dragParameter    = SmithParameter.None;
+        _dragGeneratorRow = -1;
+        DragPin           = null;
 
         // THE Q FLAG IS CLEARED HERE and not only in EndQDrag, because this is the single exit both
         // gestures leave by. BeginGripperDrag and BeginQDrag each force-cancel an in-flight drag
@@ -335,6 +337,74 @@ public sealed partial class SmithChartViewModel
         }
 
         UndoRedo.Execute(new SmithSnapshotCommand(this, before, after, _dragDescription));
+    }
+
+    // ── the generator drag (owner instruction, 2026-09-19) ───────────────────
+
+    /// <summary>The generator-table row a shift-drag is moving, or −1.</summary>
+    private int _dragGeneratorRow = -1;
+
+    /// <summary>
+    /// A generator glyph was shift-pressed. <b>One gesture is one undo entry</b>, exactly as a
+    /// gripper drag is: the before-state is captured here and pushed on release.
+    /// </summary>
+    /// <returns>False when the row is out of range, which is what the overlay refuses to offer a
+    /// handle for.</returns>
+    /// <remarks>
+    /// <b>This is an edit to node 0 of the walk</b>, which is why it is a modified gesture rather
+    /// than an ordinary one. Every other handle on this chart moves a COMPONENT; this one moves the
+    /// impedance the whole cascade starts from, so every trajectory, every load point and the band
+    /// move with it. An unmodified press there still pans the chart, exactly as it did — the glyph
+    /// is deliberately not a thing you can nudge by accident.
+    /// </remarks>
+    internal bool BeginGeneratorDrag(int rowIndex)
+    {
+        if (_dragBefore is not null) EndGripperDrag(cancelled: true);
+
+        if (rowIndex < 0 || rowIndex >= _design.Generator.Rows.Count) return false;
+
+        _dragGeneratorRow = rowIndex;
+        _dragBefore       = SmithDesignIo.SerializeUnvalidated(_design);
+        _dragDescription  = $"Drag generator at {SmithPlotBuilder.FrequencyLabel(_design.Generator.Rows[rowIndex].FrequencyHz)}";
+        DragPin           = null;
+        return true;
+    }
+
+    /// <summary>
+    /// The pointer moved to <paramref name="gamma"/>. Writes the row's R and X and redraws —
+    /// <b>and pushes nothing</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Z = Z₀·(1+Γ)/(1−Γ), which is <see cref="SmithCascade.Gamma"/>'s own inverse</b> and is the
+    /// only arithmetic in the gesture: there is nothing to solve, because the handle IS the
+    /// quantity. Γ at or outside the unit circle is left alone rather than written — 1 − Γ is zero
+    /// at Γ = 1, and a table row set to infinity is a document that refuses on the next keystroke
+    /// with the pointer still down.
+    ///
+    /// <para><b>The FREQUENCY is untouched.</b> The glyphs sit at one frequency each and the table
+    /// is kept sorted by frequency; a drag that moved one sideways in frequency would re-sort the
+    /// table under the hand holding it.</para>
+    /// </remarks>
+    internal void DragGeneratorTo(Complex gamma)
+    {
+        if (_dragBefore is null || _dragGeneratorRow < 0) return;
+        if (!double.IsFinite(gamma.Real) || !double.IsFinite(gamma.Imaginary)) return;
+
+        var denom = Complex.One - gamma;
+        if (denom.Magnitude < 1e-9) return;
+
+        var z = _design.Chart.Z0Ohm * (Complex.One + gamma) / denom;
+        if (!double.IsFinite(z.Real) || !double.IsFinite(z.Imaginary)) return;
+
+        var row = _design.Generator.Rows[_dragGeneratorRow];
+        row.ResistanceOhm = z.Real;
+        row.ReactanceOhm  = z.Imaginary;
+
+        // THE TABLE IS A LIVE READOUT DURING THIS DRAG (owner instruction): the row's two cells
+        // show the impedance under the pointer as it moves. RefreshDerived re-reads every row view
+        // model, which is what puts the numbers there, and rebuilds the chart from the same
+        // evaluation — so the glyph, the trajectories and the two cells are one answer.
+        RefreshDerived();
     }
 
     // ── the constant-Q drag (R-smith9-2) ─────────────────────────────────────

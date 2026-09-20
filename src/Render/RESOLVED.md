@@ -3493,3 +3493,39 @@ and a second set mirrored into the same disc would collide with them by construc
 It is a `Plot` property rather than an `Axes` one, for `ShowPolarAngleLabels`' reason: a plot keeps one
 `Axes` per plot type and **swaps the whole object** when the type changes, so a per-type setting
 silently reverts on a trip through another type and back.
+
+## A free marker's glyph, and the load label that flickered (2026-09-19)
+
+Two owner items over the Smith Chart tool, both in `src/Render` because both are what the picture
+SAYS rather than what the document holds.
+
+**A freely-placed marker draws the loadpull contour marker's ring, and a snapped one draws the
+triangle.** `Marker.SnappedToCurve` is the new flag and it is set by the DRAG, in
+`PlotControl.MoveMarkerToCanvasPoint`, on every pointer move rather than only when it changes: "am I
+on a curve" is a fact about where this drag just put the marker, not a mode anybody turned on. An
+un-shifted move clears it, and so does `MarkerInfoBoxViewModel.ChangeToTrace`, which now also carries
+`FreePosition` and `PositionStatic` across — re-pointing a free marker at another curve used to
+rebuild it as an ordinary trace-bound marker and resolve it by frequency, which MOVED it somewhere
+arbitrary. `MarkerRenderer.DrawSymbol` reads the two flags through one predicate shared with
+`SymbolHitRadius`, so the target and the glyph cannot disagree about which one is drawn.
+
+**The load-point labels flicked between two positions during a gripper drag**, which is the second
+complaint about the same placement pass (the first was a label landing on a glyph). The cause is
+structural: the pass tried the box one whole box-height further out at a time and stopped at the
+first row that intersected nothing — a DISCRETE decision recomputed from scratch on every frame. A
+load point moving half a pixel could flip the answer between two rows, so the label jumped about
+fourteen pixels each way, twenty times a second, while the drag wandered across the threshold.
+
+`SmithChartChrome.LabelOffset` replaces it with the **maximum of continuous demands**: each obstacle
+asks for exactly enough clearance to be cleared, and each ask FADES IN over `LabelApproachBand`
+pixels as the obstacle comes into horizontal range. A maximum of continuous functions is continuous,
+so the box slides out as an obstacle approaches and slides back as it leaves. The bound is still
+there — a chart zoomed until the points are a pixel apart has no placement that clears, and a label
+marching off the canvas is worse than a slight overlap.
+
+**And the constant-Q grab ring is gone.** It was drawn at the point of the arc NEAREST THE POINTER,
+which during a drag is within a pixel or two of the pointer itself — so what it looked like was a
+circle stuck to the mouse cursor. Its earlier HOVER form had already been withdrawn for the same
+complaint one revision before, which is the tell: the handle has nowhere to sit that is not under
+the cursor. The arcs are still grabbed and dragged exactly as before; what says the drag is working
+is that both arcs and the `Q=` readout move.

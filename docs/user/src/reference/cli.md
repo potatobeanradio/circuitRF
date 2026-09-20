@@ -661,7 +661,7 @@ height **indicative** rather than measured.
 
 ## `smith` — a matching network, headless {#smith}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [--sweep] [-o out.{s1p,svg,pdf,png}]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 
 `smith` evaluates a **`.csmith`** — the document the Smith Chart window edits. It
 walks the cascade from the generator to the load at the design frequency, prints what the window's
@@ -695,15 +695,15 @@ impedance is interpolated between the table's rows and never extrapolated past t
 the table cannot answer for has no answer at all. The one exception is a **single-row table**: one row
 is one impedance, flat, and every frequency is legal against it.
 
-`--sweep` turns the document's swept band on. A band is the one thing that is **clamped** to the
-table's span rather than refused — a band is a viewing choice, where a design frequency is a design
-input — and the clamp is reported, with the span it was narrowed to.
+There is **no `--sweep`**. The swept band is always walked, across the generator table's own span,
+so there is nothing to switch on — and a single-row table has no band, because one row is one
+impedance and a band needs two ends.
 
 ### What it writes {#smith-output}
 
 | `-o` | You get |
 |---|---|
-| `out.s1p` | The load reflection coefficient as Touchstone: **one point** at the design frequency, or the whole band when one is on. Referenced to the chart's own Z₀. |
+| `out.s1p` | The load reflection coefficient as Touchstone: **the whole band**, or **one point** at the design frequency when the generator table states a single frequency and there is no band. Referenced to the chart's own Z₀. |
 | `out.svg`, `out.pdf`, `out.png` | The chart — the trajectories, the constant-Q arcs, the swept band, the load points and their frequency labels, the conjugate-match targets, your overlays and your markers. The same picture the window's **Copy chart** puts on the clipboard. |
 
 `.s2p` and the rest are **refused**: what this verb has is the load, which is one reflection

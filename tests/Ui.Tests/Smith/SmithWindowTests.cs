@@ -112,8 +112,8 @@ public sealed class SmithWindowTests
         var reopened = SmithChartDocument.Open(path);
         Assert.False(reopened.IsDirty);
         Assert.Equal(12.5, reopened.ViewModel.Design.Generator.Rows[0].ReactanceOhm, 12);
-        Assert.Equal(doc.ViewModel.Design.Chart.DesignFrequencyHz,
-                     reopened.ViewModel.Design.Chart.DesignFrequencyHz, 12);
+        Assert.Equal(doc.ViewModel.Design.DesignFrequencyHz,
+                     reopened.ViewModel.Design.DesignFrequencyHz, 12);
     }
 
     /// <summary>

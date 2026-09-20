@@ -2064,7 +2064,7 @@ command that evaluates a `.csmith`, reports the reading and the walk, and answer
 ```
 circuitrf smith match/Lmatch.csmith                      # the reading and the per-node table
 circuitrf smith match/Lmatch.csmith --at 1.9GHz          # somewhere else in the band
-circuitrf smith match/Lmatch.csmith --sweep -o load.s1p  # the load Γ across the band
+circuitrf smith match/Lmatch.csmith -o load.s1p          # the load Γ across the band
 circuitrf smith match/Lmatch.csmith -o chart.svg --json  # the picture AND the document
 ```
 
@@ -2107,7 +2107,6 @@ unreadable file, because the caller very likely meant a run verb.
 | Option | Meaning |
 |---|---|
 | `--at <freq>` | Evaluate here instead of the document's design frequency. Parsed by `MatchValueFormat.TryParseWithUnit`, the window's own frequency field's parser, so `2.4 GHz`, `2.4e9` and `900 MHz` all mean what they look like and a bare number is hertz. **Outside the generator table's span it is a refusal with the span in the sentence** (`R-smith2-5`) — the document's own rule, including its one-row exception: one row is one impedance, flat, and every frequency is legal against it. |
-| `--sweep` | Force the document's swept band on. It does not INVENT one: a document with no band refuses in `SmithDesign.Refusal`'s own words. A band is the one caller allowed to CLAMP to the generator table rather than refuse — a band is a viewing choice where a design frequency is a design input — and a clamp is reported as a warning naming the span it was narrowed to. |
 | `--set var=expr` | **Refused.** A `.csmith` states every quantity as a number in base SI and holds no expression scope, so there is nothing for an override to land on; `rail`'s own `--set` refusal is the precedent and §3.3's accepted-and-dropped defect is the reason. The remedy named is the standing one — once a document exists, the way to change it is to WRITE it. |
 | `-o out.s1p` | The load Γ as Touchstone — §18.4. |
 | `-o out.{svg,pdf,png}` | The chart — §18.3. |
@@ -2145,10 +2144,11 @@ that is missing must not take the work down with it, and the chart still draws e
 write, and both blocks are present when it does — `result.render` for what was written and
 `result.smith` for what was evaluated.
 
-### 18.4 `-o out.s1p` — one point, or the band's
+### 18.4 `-o out.s1p` — the band, or one point
 
-With no swept band the file holds the one frequency the report is about; with the band on (the
-document's own, or `--sweep`'s) it holds exactly the locus the picture draws. That is the only pair of
+The band is the generator table's own span and is always walked (owner instruction, 2026-09-19), so
+the file holds exactly the locus the picture draws. A **single-row** table has no band — one row is
+one impedance, flat — and the file then holds the one frequency the report is about. That is the only pair of
 answers that cannot surprise anyone: a caller who asked for a band and got one point, or the reverse,
 would have a file that plots as something they did not run.
 

@@ -10,7 +10,7 @@
   GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
       dotnet run [project tools/DocGen] [flag out] docs/user
   (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
-  Source: docs/user/src/reference/cli.md
+  Source: /private/tmp/claude-502/-Users-damonholmes-claude-circuitRF/ce7d2149-8ae6-45b2-b911-86b4800b76b1/scratchpad/docsout/src/reference/cli.md
 -->
 </head>
 <body>
@@ -948,7 +948,7 @@ Accuracy), the reference extent, the copper temperature, how many parts are mode
 many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
 height <strong>indicative</strong> rather than measured.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [--sweep] [-o out.{s1p,svg,pdf,png}]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It
 walks the cascade from the generator to the load at the design frequency, prints what the window's
 status strip states, and then prints the walk <strong>one node at a time</strong>.</p>
@@ -975,9 +975,9 @@ it is honoured (<code>2.4 GHz</code>, <code>900 MHz</code>, <code>1.9e9</code>);
 impedance is interpolated between the table's rows and never extrapolated past them, so a frequency
 the table cannot answer for has no answer at all. The one exception is a <strong>single-row table</strong>: one row
 is one impedance, flat, and every frequency is legal against it.</p>
-<p><code>--sweep</code> turns the document's swept band on. A band is the one thing that is <strong>clamped</strong> to the
-table's span rather than refused — a band is a viewing choice, where a design frequency is a design
-input — and the clamp is reported, with the span it was narrowed to.</p>
+<p>There is <strong>no <code>--sweep</code></strong>. The swept band is always walked, across the generator table's own span,
+so there is nothing to switch on — and a single-row table has no band, because one row is one
+impedance and a band needs two ends.</p>
 <h3 id="smith-output">What it writes</h3>
 <table>
 <thead>
@@ -989,7 +989,7 @@ input — and the clamp is reported, with the span it was narrowed to.</p>
 <tbody>
 <tr>
 <td><code>out.s1p</code></td>
-<td>The load reflection coefficient as Touchstone: <strong>one point</strong> at the design frequency, or the whole band when one is on. Referenced to the chart's own Z₀.</td>
+<td>The load reflection coefficient as Touchstone: <strong>the whole band</strong>, or <strong>one point</strong> at the design frequency when the generator table states a single frequency and there is no band. Referenced to the chart's own Z₀.</td>
 </tr>
 <tr>
 <td><code>out.svg</code>, <code>out.pdf</code>, <code>out.png</code></td>

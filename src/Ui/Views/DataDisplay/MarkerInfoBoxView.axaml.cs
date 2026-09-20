@@ -99,6 +99,29 @@ public partial class MarkerInfoBoxView : UserControl
     }
 
     /// <summary>
+    /// The traces <b>Change to Trace…</b> offers: every other trace on the plot, minus the ones the
+    /// plot DERIVED (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>On a plot whose trace set is rebuilt from something else</b> — the Smith Chart tool's,
+    /// where every trajectory, load point, generator glyph, band and constant-Q arc is made again
+    /// from the design on each edit — re-pointing a marker at one of those offers a reading of
+    /// something that will be a different object by the next keystroke, and the menu was a dozen
+    /// rows of them.
+    ///
+    /// <para><b>The rule is <c>PlotInspectorViewModel.IsOwnersTrace</c>'s and is not a second
+    /// one</b>: a fixed-readout plot's derived traces are exactly those carrying
+    /// <see cref="Trace.ExcludeFromAxisLabels"/>, which that tool sets on everything it makes and
+    /// never on the reference data a user adds through Plot Properties ▸ Add. On an ordinary Data
+    /// Display nothing is fixed-readout, so this passes everything through and the menu is
+    /// unchanged.</para>
+    /// </remarks>
+    internal static List<Trace> ChangeToTraceCandidates(
+        System.Collections.Generic.IList<Trace> allTraces, Trace current, Plot hostPlot)
+        => [.. allTraces.Where(t => t != current)
+                        .Where(t => !(hostPlot.IsFixedReadout && t.ExcludeFromAxisLabels))];
+
+    /// <summary>
     /// Fills <paramref name="menu"/> with the standard marker context-menu items.
     /// Called by both <see cref="RebuildContextMenu"/> and
     /// <see cref="CircuitRF.Ui.DataDisplay.Controls.PlotControl.ShowMarkerContextMenu"/>
@@ -133,7 +156,7 @@ public partial class MarkerInfoBoxView : UserControl
             Header = "Change to Trace…",
             Icon   = new MaterialIcon { Kind = MaterialIconKind.SwapHorizontalBold },
         };
-        var otherTraces = allTraces.Where(t => t != trace).ToList();
+        var otherTraces = ChangeToTraceCandidates(allTraces, trace, hostPlot);
         foreach (var t in otherTraces)
         {
             var captured = t;

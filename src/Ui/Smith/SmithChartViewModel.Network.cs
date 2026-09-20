@@ -264,7 +264,7 @@ public sealed partial class SmithChartViewModel
         }
 
         var element = SmithElementFactory.Create(
-            entry.Kind, entry.Placement, _design.Chart.DesignFrequencyHz,
+            entry.Kind, entry.Placement, _design.DesignFrequencyHz,
             _design.Elements.Select(e => e.Name));
         element.FileRef = file;
 
@@ -678,7 +678,7 @@ public sealed partial class SmithChartViewModel
     {
         if (_fRefNoticeShown) return;
 
-        double f = _design.Chart.DesignFrequencyHz;
+        double f = _design.DesignFrequencyHz;
         var stranded = _design.Elements
             .Where(e => SmithComponentMap.IsLine(e.Kind)
                      && e.Values.ReferenceFrequencyHz > 0

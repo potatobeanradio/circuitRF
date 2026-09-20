@@ -129,7 +129,8 @@ public sealed class SmithDocumentTests
     [InlineData("generator-empty",      "generator table")]
     [InlineData("generator-duplicate",  "2 GHz")]
     [InlineData("generator-unsorted",   "1 GHz")]
-    // the design frequency against the table's span
+    // the design-frequency OVERRIDE against the table's span — `circuitrf smith --at`'s rule, and
+    // the only design frequency that can still be outside it
     [InlineData("design-freq-outside",  "5 GHz")]
     // elements
     [InlineData("element-unnamed",      "no name")]
@@ -145,10 +146,8 @@ public sealed class SmithDocumentTests
     [InlineData("tline-zero-zed",       "'TL1'")]
     [InlineData("tline-negative-length","'TL1'")]
     [InlineData("tline-no-fref",        "'TL1'")]
-    // the two document-wide settings
-    [InlineData("sweep-backwards",      "band")]
-    [InlineData("sweep-one-point",      "1 point")]
-    [InlineData("sweep-too-many-points","1001")]
+    // the one document-wide setting left — the swept band is the generator table's span now and
+    // has nothing about it to be wrong (owner instruction, 2026-09-19)
     [InlineData("q-negative",           "Q")]
     public void EachWellFormednessRule_FiresAndNamesItsObject(string which, string mustName)
     {
@@ -345,13 +344,11 @@ public sealed class SmithDocumentTests
             Chart = new SmithChartSettings
             {
                 Z0Ohm             = 75.0,
-                DesignFrequencyHz = 2.0e9,
                 Window            = new SmithWindow { MinX = -0.5, MinY = -0.4, MaxX = 0.6, MaxY = 0.7 },
                 ShowGrippers      = false,
                 ShowTargets       = false,
                 ShowLabels        = false,
             },
-            Sweep     = new SmithSweep { Enabled = true, StartHz = 1.8e9, StopHz = 2.2e9, Points = 21 },
             ConstantQ = new SmithConstantQ { Enabled = true, Q = 3.5 },
             View = new SmithView
             {
@@ -466,7 +463,8 @@ public sealed class SmithDocumentTests
     /// <see cref="Broken"/> is one edit away from.</summary>
     private static SmithDesign MinimalDesign()
     {
-        var d = new SmithDesign { Chart = { DesignFrequencyHz = 2.0e9 } };
+        // Two rows, so the design frequency — their median, which is their mean — is 2 GHz.
+        var d = new SmithDesign();
         d.Generator.Rows.Add(new SmithGeneratorRow(1.0e9, 50.0, 0.0));
         d.Generator.Rows.Add(new SmithGeneratorRow(3.0e9, 50.0, 0.0));
         return d;
@@ -495,7 +493,12 @@ public sealed class SmithDocumentTests
                 break;
 
             case "design-freq-outside":
-                d.Chart.DesignFrequencyHz = 5.0e9;
+                // THE ONLY WAY A DESIGN FREQUENCY CAN STILL BE WRONG (owner instruction,
+                // 2026-09-19). It is the generator table's median now and is inside the span by
+                // construction; what a caller can still ask for is `circuitrf smith --at`, and
+                // asking about a frequency the table does not span is still an extrapolation the
+                // generator cannot answer.
+                d.DesignFrequencyOverrideHz = 5.0e9;
                 break;
 
             case "element-unnamed":
@@ -551,22 +554,6 @@ public sealed class SmithDocumentTests
                 d.Elements.Add(Tline("TL1", z0: 50, lengthDeg: 45, fRefHz: 0));
                 break;
 
-            case "sweep-backwards":
-                d.Sweep = new SmithSweep { Enabled = true, StartHz = 3e9, StopHz = 1e9, Points = 21 };
-                break;
-
-            case "sweep-too-many-points":
-                d.Sweep = new SmithSweep
-                {
-                    Enabled = true, StartHz = 1e9, StopHz = 3e9,
-                    Points  = SmithSweep.MaxPoints + 1,
-                };
-                break;
-
-            case "sweep-one-point":
-                d.Sweep = new SmithSweep { Enabled = true, StartHz = 1e9, StopHz = 3e9, Points = 1 };
-                break;
-
             case "q-negative":
                 d.ConstantQ = new SmithConstantQ { Enabled = true, Q = -2.0 };
                 break;
@@ -600,7 +587,7 @@ public sealed class SmithDocumentTests
         Assert.Equal(a.Name, b.Name);
 
         Assert.Equal(a.Chart.Z0Ohm,             b.Chart.Z0Ohm);
-        Assert.Equal(a.Chart.DesignFrequencyHz, b.Chart.DesignFrequencyHz);
+        Assert.Equal(a.DesignFrequencyHz, b.DesignFrequencyHz);
         Assert.Equal(a.Chart.ShowGrippers,      b.Chart.ShowGrippers);
         Assert.Equal(a.Chart.ShowTargets,       b.Chart.ShowTargets);
         Assert.Equal(a.Chart.ShowLabels,        b.Chart.ShowLabels);
@@ -644,11 +631,6 @@ public sealed class SmithDocumentTests
                 Assert.Equal(range.Max, got.Max);
             }
         }
-
-        Assert.Equal(a.Sweep.Enabled, b.Sweep.Enabled);
-        Assert.Equal(a.Sweep.StartHz, b.Sweep.StartHz);
-        Assert.Equal(a.Sweep.StopHz,  b.Sweep.StopHz);
-        Assert.Equal(a.Sweep.Points,  b.Sweep.Points);
 
         Assert.Equal(a.ConstantQ.Enabled, b.ConstantQ.Enabled);
         Assert.Equal(a.ConstantQ.Q,       b.ConstantQ.Q);

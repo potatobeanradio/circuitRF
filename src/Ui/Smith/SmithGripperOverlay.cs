@@ -18,6 +18,19 @@ namespace CircuitRF.Ui.Smith;
 public sealed record SmithGripperHandle(int NodeIndex);
 
 /// <summary>
+/// One generator glyph — <b>grabbed only with SHIFT held</b> (owner instruction, 2026-09-19).
+/// </summary>
+/// <param name="RowIndex">Which generator-table row it states, so the drag writes back to the row it
+/// grabbed rather than to whichever one happens to be at that position in the drawn list.</param>
+/// <remarks>
+/// <b>The modifier is the whole safety of this gesture.</b> Dragging one of these edits node 0 of
+/// the walk — the impedance the entire cascade starts from — so every trajectory, every load point
+/// and the band move with it. Unmodified, a press on a glyph still pans the chart exactly as it did,
+/// which is what keeps it something you cannot nudge by accident.
+/// </remarks>
+public sealed record SmithGeneratorHandle(int RowIndex);
+
+/// <summary>
 /// The grippers' GESTURE — hit-tested, pressed and dragged on the chart (<c>brief-smith-5-chart.md</c>
 /// <c>R-smith5-6</c>, <c>R-smith5-7</c>; <c>docs/design/smith-chart.md</c> §5.4, §4.3).
 /// </summary>
@@ -52,6 +65,9 @@ public sealed class SmithGripperOverlay : IPlotOverlay
     private int _hoverNode = -1;
     private int _dragNode  = -1;
 
+    /// <summary>The generator-table row being dragged, or −1 — see <see cref="SmithGeneratorHandle"/>.</summary>
+    private int _dragGeneratorRow = -1;
+
     /// <summary>The Q handle under the cursor, and the one being dragged — null when neither.</summary>
     private SmithQHandle? _hoverQ;
     private SmithQHandle? _dragQ;
@@ -65,9 +81,20 @@ public sealed class SmithGripperOverlay : IPlotOverlay
 
     /// <inheritdoc/>
     public object? HitTest(double canvasX, double canvasY, TransformSet tf)
+        => HitTest(canvasX, canvasY, tf, shift: false);
+
+    /// <inheritdoc/>
+    public object? HitTest(double canvasX, double canvasY, TransformSet tf, bool shift)
     {
         var scene = _vm.Scene;
         if (!scene.HasContent) return null;
+
+        // THE GENERATOR GLYPHS, FIRST AND ONLY WITH SHIFT (owner instruction, 2026-09-19). They are
+        // drawn under everything else and they are the one handle that edits the START of the walk,
+        // so they are reachable only on the modified gesture — which also means the unmodified
+        // press on one still falls through to the control and pans, as it always did.
+        if (shift && _vm.Design.Chart.ShowTargets
+            && HitTestGenerators(canvasX, canvasY, tf) is { } g) return g;
 
         int    best     = -1;
         double bestDist = double.MaxValue;
@@ -96,6 +123,30 @@ public sealed class SmithGripperOverlay : IPlotOverlay
         // is the work and the arcs are the ruler laid over it; an arc that could steal a joint
         // sitting on it would make the one handle the user came for unreachable.
         return HitTestQ(canvasX, canvasY, tf);
+    }
+
+    /// <summary>The generator glyph under a canvas point, or null.</summary>
+    /// <remarks>
+    /// <b>Measured in canvas pixels against the same radius the grippers use</b>, so a glyph is as
+    /// easy to catch as a joint is. The scene carries each glyph's ROW, because a row whose cascade
+    /// cannot be evaluated draws no glyph and position in the drawn list is therefore not position
+    /// in the table.
+    /// </remarks>
+    private SmithGeneratorHandle? HitTestGenerators(double canvasX, double canvasY, TransformSet tf)
+    {
+        int    best     = -1;
+        double bestDist = double.MaxValue;
+
+        foreach (var point in _vm.Scene.GeneratorPoints)
+        {
+            var p  = tf.PrimaryToCanvas(point.Gamma.Real, point.Gamma.Imaginary);
+            double dx = p.X - canvasX, dy = p.Y - canvasY;
+            double d  = Math.Sqrt(dx * dx + dy * dy);
+
+            if (d <= HitRadius && d <= bestDist) { bestDist = d; best = point.RowIndex; }
+        }
+
+        return best >= 0 ? new SmithGeneratorHandle(best) : null;
     }
 
     /// <summary>
@@ -159,6 +210,10 @@ public sealed class SmithGripperOverlay : IPlotOverlay
             case SmithQHandle q when _vm.BeginQDrag():
                 _dragQ = q;
                 break;
+
+            case SmithGeneratorHandle g when _vm.BeginGeneratorDrag(g.RowIndex):
+                _dragGeneratorRow = g.RowIndex;
+                break;
         }
     }
 
@@ -178,6 +233,12 @@ public sealed class SmithGripperOverlay : IPlotOverlay
             return;
         }
 
+        if (_dragGeneratorRow >= 0)
+        {
+            _vm.DragGeneratorTo(gammaWorld);
+            return;
+        }
+
         if (_dragNode < 0) return;
         _vm.DragGripperTo(gammaWorld);
     }
@@ -189,6 +250,13 @@ public sealed class SmithGripperOverlay : IPlotOverlay
         {
             _dragQ = null;
             _vm.EndQDrag(cancelled);
+            return;
+        }
+
+        if (_dragGeneratorRow >= 0)
+        {
+            _dragGeneratorRow = -1;
+            _vm.EndGripperDrag(cancelled);   // …the one exit both other gestures leave by, too.
             return;
         }
 

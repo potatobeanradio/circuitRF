@@ -638,7 +638,6 @@ public sealed class SmithCascadeTests : IDisposable
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm            = ChartZ0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 30.0, 15.0));
         foreach (var e in elements) d.Elements.Add(e);
         return d;

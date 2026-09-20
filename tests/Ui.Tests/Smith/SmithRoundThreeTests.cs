@@ -46,7 +46,6 @@ public sealed class SmithRoundThreeTests
     {
         var d = new SmithDesign();
         d.Chart.Z0Ohm             = 50.0;
-        d.Chart.DesignFrequencyHz = DesignHz;
         d.Generator.Rows.Add(new SmithGeneratorRow(DesignHz, 12.0, -8.5));
         d.Elements.Add(new SmithElement
         {
@@ -78,7 +77,13 @@ public sealed class SmithRoundThreeTests
         var design = Design();
         var scene  = SmithPlotBuilder.BuildScene(design, null, (600.0, 600.0), null);
 
-        var g = Assert.Single(scene.GeneratorPoints);
+        var point = Assert.Single(scene.GeneratorPoints);
+        var g     = point.Gamma;
+
+        // …and it names the ROW it came from, which is what a shift-drag writes back to (owner
+        // instruction, 2026-09-19). A row that cannot be evaluated draws no glyph, so position in
+        // this list is not position in the table.
+        Assert.Equal(0, point.RowIndex);
 
         var zGen     = new Complex(12.0, -8.5);
         var expected = SmithCascade.Gamma(zGen, 50.0);

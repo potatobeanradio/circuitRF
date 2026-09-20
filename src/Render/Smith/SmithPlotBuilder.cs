@@ -109,7 +109,7 @@ public static class SmithPlotBuilder
         ArgumentNullException.ThrowIfNull(design);
 
         double z0 = design.Chart.Z0Ohm;
-        double f  = design.Chart.DesignFrequencyHz;
+        double f  = design.DesignFrequencyHz;
 
         // The sampler's world→canvas map, built from the window the last frame used. A Plot with no
         // traces on it autoscales to the unit disc, which is exactly the fallback wanted here.
@@ -139,15 +139,16 @@ public static class SmithPlotBuilder
         }
 
         var loads   = new List<SmithLoadPoint>();
-        var targets = new List<Complex>();
+        var targets = new List<SmithGeneratorPoint>();
         var dropped = new List<double>();
 
         // EVERY GENERATOR-TABLE ROW GETS A LOAD POINT (owner instruction, 2026-09-19). The table is
         // the set of frequencies this design is about, so the chart shows where the load lands at
         // each of them; the swept band is the OPTIONAL extra, and it adds frequencies rather than
         // replacing these.
-        foreach (var row in design.Generator.Rows)
+        for (int rowIndex = 0; rowIndex < design.Generator.Rows.Count; rowIndex++)
         {
+            var row = design.Generator.Rows[rowIndex];
             try
             {
                 var rowNodes = SmithCascade.Evaluate(design, row.FrequencyHz, documentDirectory);
@@ -162,7 +163,7 @@ public static class SmithPlotBuilder
                 // this point about the real axis and is therefore indistinguishable from it on a
                 // real generator — so the one glyph the table can be checked against was the one
                 // place the table's own numbers were not.
-                targets.Add(SmithCascade.Gamma(rowNodes[0].Z, z0));
+                targets.Add(new SmithGeneratorPoint(rowIndex, SmithCascade.Gamma(rowNodes[0].Z, z0)));
             }
             catch (Exception)
             {
@@ -207,27 +208,9 @@ public static class SmithPlotBuilder
             QArcInductive    = qInd,
             QArcCapacitive   = qCap,
             Band             = band.Gamma,
-            BandClampNote    = band.Clamped ? BandClampNote(band)
-                             : dropped.Count > 0 ? DroppedRowNote(dropped)
-                             : null,
+            Note             = dropped.Count > 0 ? DroppedRowNote(dropped) : null,
         };
     }
-
-    /// <summary>
-    /// The sentence a clamped band puts in the status strip, <b>naming the span it was clamped
-    /// to</b> (<c>R-smith9-4</c>).
-    /// </summary>
-    /// <remarks>
-    /// The frequencies are spelled by <see cref="FrequencyLabel"/> — the strip's own spelling — which
-    /// is why the sentence is composed here rather than in <see cref="SmithBand"/>: that file is
-    /// below the firewall and <c>MatchValueFormat</c> is not, and a second spelling of a frequency is
-    /// a second answer nobody can tell apart from the first.
-    /// </remarks>
-    private static string BandClampNote(SmithBandResult band)
-        => $"The swept band was clamped to the generator table's span, "
-         + $"{FrequencyLabel(band.StartHz)} to {FrequencyLabel(band.StopHz)} — a band is a viewing "
-         + "choice, so it is narrowed to what the table can answer for rather than refused. The "
-         + "generator impedance is interpolated between rows, never extrapolated past them.";
 
     /// <summary>
     /// The sentence a generator row with no load point puts in the status strip, <b>naming the
@@ -238,7 +221,7 @@ public static class SmithPlotBuilder
     /// supposed to carry a load point; the only thing that can stop one is a file element whose
     /// Touchstone does not span that frequency, and a chart quietly a point short looks exactly like
     /// a chart of a shorter table. The frequencies are spelled by <see cref="FrequencyLabel"/> — the
-    /// strip's own spelling — for <see cref="BandClampNote"/>'s reason.
+    /// strip's own spelling — so the sentence and the chart cannot disagree about a frequency.
     /// </remarks>
     private static string DroppedRowNote(IReadOnlyList<double> hz)
         => $"No load point could be drawn at {string.Join(", ", hz.Select(FrequencyLabel))} — a file "
@@ -408,7 +391,8 @@ public static class SmithPlotBuilder
         //  frequencies a few percent apart, so these land almost on top of one another, and at 3.0
         //  the cluster read as one blob.
         if (design.Chart.ShowTargets)
-            AddPoints(plot, keys, "Zgen", scene.GeneratorPoints, ColorLUTGrey, size: 1.5,
+            AddPoints(plot, keys, "Zgen", scene.GeneratorPoints.Select(g => g.Gamma),
+                      ColorLUTGrey, size: 1.5,
                       annotation: true, excludeFromAutoscale: true, opacity: 0.45,
                       markerType: MarkerType.Plus);
 

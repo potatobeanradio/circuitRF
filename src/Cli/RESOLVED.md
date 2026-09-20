@@ -2467,3 +2467,19 @@ nothing in it is an override's to replace. `rail`'s own `--set` refusal is the p
 accepted-and-dropped defect is the reason: a run that took the flag and answered a different question
 than the one asked. The sentence names `--at` — the one thing that IS overridable — and the standing
 rule for everything else: once a document exists, the way to change it is to write it.
+
+## `smith --sweep` is gone, and `-o out.s1p` usually writes a band now (2026-09-19)
+
+The swept band stopped being a setting (owner instruction — see `src/Ui/RESOLVED.md`): it is the
+generator table's own span, always walked. So the flag that turned it on had nothing left to turn on
+and is removed rather than accepted-and-ignored, which is §3.3's own rule.
+
+**The visible consequence is the Touchstone.** §18.4's pair of answers is unchanged in shape — a
+caller who asked for a band must not get a point, and the reverse — but which one you get is now
+decided by the TABLE rather than by a flag: a multi-row table writes the whole band, and a
+single-row table writes the one frequency the report is about, because one row is one impedance and
+a band needs two ends. `SmithBandJson` lost its `Clamped` field with the clamp it reported.
+
+`--at` is untouched and is now the ONLY thing that can put a design frequency outside the table's
+span — the document's own is the table's median, which is inside it by construction. That is why
+`SmithDesign.DesignFrequencyOverrideHz` exists and why `SmithDesign.Refusal` still carries the rule.

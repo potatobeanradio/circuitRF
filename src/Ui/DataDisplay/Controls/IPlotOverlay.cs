@@ -58,6 +58,23 @@ public interface IPlotOverlay
     /// </summary>
     object? HitTest(double canvasX, double canvasY, TransformSet tf);
 
+    /// <summary>
+    /// The same, with the shift modifier as the pointer event reported it — the Smith Chart's
+    /// generator glyphs, which are grabbable only while it is held (owner instruction, 2026-09-19).
+    /// </summary>
+    /// <remarks>
+    /// <b>READ FROM THE EVENT, never latched</b>, for the reason
+    /// <see cref="DragTo(System.Numerics.Complex, bool)"/> gives at length: a held-key flag that is
+    /// never cleared because the key-up went to whatever took focus is a defect this repository has
+    /// already shipped once (<c>src/Ui/RESOLVED.md</c>, the layout view's marquee). The flag arrives
+    /// with the event it applies to, so there is nothing to release.
+    ///
+    /// <para>Defaulted to the unmodified call, so an overlay with no modifier of its own says
+    /// nothing and <c>PlotControl</c> has one call site rather than two.</para>
+    /// </remarks>
+    object? HitTest(double canvasX, double canvasY, TransformSet tf, bool shift)
+        => HitTest(canvasX, canvasY, tf);
+
     /// <summary>A press landed on <paramref name="handle"/>. The before-state for the gesture's
     /// single undo entry is captured here (<c>R-smith5-8</c>).</summary>
     void DragBegin(object handle);
