@@ -298,6 +298,89 @@
             <Setter Property="Opacity" Value="0.55"/>
         </Style>
 
+        <!-- An UNMOUNTED parts row: a part that is on the board and is not fitted (R-rail23-1b).
+             Greyed, and its checkbox is clear — which is what keeps it distinct from the dimmed
+             row above it. The two are NOT the same state and the table may not collapse them
+             (R-rail23-1d): unresolved is a data problem and every column of it reads "unresolved";
+             unmounted resolves perfectly well, keeps every number it had, and is deliberately
+             absent from the answer. A row can be either, both, or neither. -->
+        <Style Selector="Grid.unmounted">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+
+        <!-- A CHECKBOX SIZED FOR A TABLE ROW, and it brings its own TEMPLATE (owner, 2026-09-20:
+             the checkbox dominates the row height; then, sized down, it sat half in the row below).
+
+             Fluent's CheckBox is built for a form. `CheckBoxMinHeight` is 24 even under this
+             application's Compact density, the visible square is a hard-coded 20 px, and the
+             square is positioned for a control whose CONTENT may be several lines of wrapped text
+             — so it is aligned near the top of that 24, not to the middle of it. The rows beside
+             it are `detailLabel` text at FontSize 10, about 14 px tall. One control was setting
+             the height of every row in the table; capping the control's height then moved the
+             square down out of the row, because the offset inside the template is not something a
+             size setter can reach.
+
+             SO THE TEMPLATE IS REPLACED RATHER THAN ADJUSTED. Thirteen pixels of border and a
+             tick, with no margin and no minimum, which makes the geometry fully determined by
+             what is written here — there is nothing left to be surprised by. A /template/ selector
+             that matches nothing is SILENT in Avalonia, and the theme's own XAML is compiled, so
+             a style that reaches into it is a guess that cannot fail loudly. This does not reach.
+
+             What it keeps is the theme's BRUSHES, by their own resource keys, so the box is the
+             application's accent colour in both variants and follows a theme change like every
+             other control. Note there is no `…StrokeChecked`: a checked Fluent box is filled and
+             has no separate stroke, which is why the checked border takes the fill brush.
+
+             What it gives up is the focus adorner and the three-state glyph. Neither is reachable
+             here — the row is a mouse target in a table and the box is two-state. -->
+        <Style Selector="CheckBox.rowcheck">
+            <Setter Property="Width"       Value="13"/>
+            <Setter Property="Height"      Value="13"/>
+            <Setter Property="MinWidth"    Value="0"/>
+            <Setter Property="MinHeight"   Value="0"/>
+            <Setter Property="Padding"     Value="0"/>
+            <Setter Property="Background"  Value="{DynamicResource CheckBoxCheckBackgroundFillUnchecked}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CheckBoxCheckBackgroundStrokeUnchecked}"/>
+            <Setter Property="Template">
+                <ControlTemplate TargetType="CheckBox">
+                    <Border Name="Box"
+                            Width="13" Height="13"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="2">
+                        <!-- Absolute coordinates, centred by its own geometry bounds inside the
+                             11 px the border leaves. No Stretch: a stretched Path scales its
+                             geometry and not its stroke, so the tick would thin as the box did. -->
+                        <Path Name="Tick"
+                              Data="M 0,3.2 L 2.5,5.8 L 7.1,0.5"
+                              Stroke="{DynamicResource CheckBoxCheckGlyphForegroundChecked}"
+                              StrokeThickness="1.5"
+                              StrokeLineCap="Round"
+                              StrokeJoin="Round"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              IsVisible="False"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="CheckBox.rowcheck:checked /template/ Border#Box">
+            <Setter Property="Background"  Value="{DynamicResource CheckBoxCheckBackgroundFillChecked}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CheckBoxCheckBackgroundFillChecked}"/>
+        </Style>
+        <Style Selector="CheckBox.rowcheck:checked /template/ Path#Tick">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="CheckBox.rowcheck:pointerover /template/ Border#Box">
+            <Setter Property="Background"  Value="{DynamicResource CheckBoxCheckBackgroundFillUncheckedPointerOver}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CheckBoxCheckBackgroundStrokeUncheckedPointerOver}"/>
+        </Style>
+        <Style Selector="CheckBox.rowcheck:checked:pointerover /template/ Border#Box">
+            <Setter Property="Background"  Value="{DynamicResource CheckBoxCheckBackgroundFillCheckedPointerOver}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CheckBoxCheckBackgroundFillCheckedPointerOver}"/>
+        </Style>
+
         <!-- An INDICATIVE number: one computed from a dissipation-factor default for the part's
              dielectric class rather than from a measurement or a stated value. Q-15 calls that
              marking load-bearing rather than temporary, and the reason is that a mask margin in dB
@@ -1490,21 +1573,31 @@
                                  mounting inductances are the two terms of one sum ("0.5 + 0.85 nH")
                                  — both of which say MORE per pixel than the two-column form did,
                                  and neither of which hides a number. -->
+                            <!-- THE FIRST COLUMN IS THE MOUNT CHECKBOX (R-rail23-2a). That is
+                                 where the designer was looking when they asked how to take a part off
+                                 the board, and the answer until now was "edit the layout file" —
+                                 which is destructive, is not what they meant, and loses the mounting
+                                 loop the artwork gave the part so it cannot be put back the way it
+                                 was. Unlabelled: the header cell over a checkbox column has
+                                 nothing to say that the checkbox and its tooltip do not. 20 px is
+                                 the 13 px box of the .rowcheck style plus the 7 px margin it
+                                 keeps on its right, so it does not sit flush against the refdes
+                                 beside it — the column is those two numbers and no slack. -->
                             <Grid Grid.Row="1" Name="PartsHeader"
-                                  ColumnDefinitions="52,*,96,62,64,92,78,86">
-                                <Button Classes="gridhdr" Content="refdes"/>
-                                <Button Grid.Column="1" Classes="gridhdr" Content="part number"/>
-                                <Button Grid.Column="2" Classes="gridhdr" Content="C"/>
-                                <Button Grid.Column="3" Classes="gridhdr" Content="ESR"/>
-                                <Button Grid.Column="4" Classes="gridhdr" Content="f₀"/>
-                                <Button Grid.Column="5" Classes="gridhdr" Content="L pkg + mount"/>
-                                <Button Grid.Column="6" Classes="gridhdr" Content="model source"/>
+                                  ColumnDefinitions="20,52,*,96,62,64,92,78,86">
+                                <Button Grid.Column="1" Classes="gridhdr" Content="refdes"/>
+                                <Button Grid.Column="2" Classes="gridhdr" Content="part number"/>
+                                <Button Grid.Column="3" Classes="gridhdr" Content="C"/>
+                                <Button Grid.Column="4" Classes="gridhdr" Content="ESR"/>
+                                <Button Grid.Column="5" Classes="gridhdr" Content="f₀"/>
+                                <Button Grid.Column="6" Classes="gridhdr" Content="L pkg + mount"/>
+                                <Button Grid.Column="7" Classes="gridhdr" Content="model source"/>
                                 <!-- WHERE IT IS, or that nothing says. Without this column the table
                                      was a list of parts with no visible relationship to the artwork
                                      beside it, and a reader looking for C1 on the board had nothing
                                      to tell them that railRF does not know where C1 is either
                                      (owner, 2026-09-19). -->
-                                <Button Grid.Column="7" Classes="gridhdr" Content="where"/>
+                                <Button Grid.Column="8" Classes="gridhdr" Content="where"/>
                             </Grid>
                             <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
                                  MaxHeight constrains the MEASURE and does not clip, so a list taller
@@ -1513,7 +1606,13 @@
                             <!-- SELECTION IS THE LINK TO THE BOARD (owner, 2026-09-19). Picking a
                                  row outlines that part on the artwork beside it; Escape clears both.
                                  The row's own highlight is the ListBoxItem:selected style above. -->
+                            <!-- MULTIPLE, because "unmount these four and re-run" is the real
+                                 gesture (R-rail23-2c) and four clicks would be four re-solves.
+                                 SelectedItem is still the PRIMARY row and still what marks the
+                                 board — a board can only mark one thing, so the mark follows the
+                                 row the user touched last and the batch follows the selection. -->
                             <ListBox Grid.Row="2" Name="PartsList" Classes="rows" MaxHeight="128"
+                                     SelectionMode="Multiple"
                                      ItemsSource="{Binding Parts}"
                                      SelectedItem="{Binding SelectedPart, Mode=TwoWay}">
                                 <ListBox.ItemTemplate>
@@ -1522,20 +1621,33 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="52,*,96,62,64,92,78,86" Margin="0,1"
+                                        <Grid ColumnDefinitions="20,52,*,96,62,64,92,78,86" Margin="0,1"
                                               Classes.unresolved="{Binding IsUnresolved}"
+                                              Classes.unmounted="{Binding IsUnmounted}"
                                               ToolTip.Tip="{Binding RowTooltip}">
+                                            <!-- FITTED, OR NOT. Bound one way and written by the
+                                                 handler, because clearing it is an EDIT that goes
+                                                 through the Fast loop like every other committed
+                                                 row edit (R-rail23-2d) and acts on the whole
+                                                 selection at once, not on this row alone. -->
+                                            <CheckBox Name="MountBox" Classes="rowcheck"
+                                                      Margin="0,0,7,0"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      IsChecked="{Binding IsMounted, Mode=OneWay}"
+                                                      Click="OnPartMountToggled"
+                                                      ToolTip.Tip="{Binding MountTooltip}"/>
                                             <!-- WHERE THE ROW CAME FROM, on the row's own face
                                                  (R-rail18-5a) — typed on the rail, or pre-filled
                                                  from the bill of materials. A pre-filled number
                                                  nobody checked is the one that will be wrong. -->
-                                            <TextBlock Classes="detailLabel" Text="{Binding Refdes}"
+                                            <TextBlock Grid.Column="1" Classes="detailLabel" Text="{Binding Refdes}"
                                                        HorizontalAlignment="Left"
                                                        ToolTip.Tip="{Binding OriginText}"/>
-                                            <TextBlock Grid.Column="1" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="2" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding PartNumber}"
                                                        ToolTip.Tip="{Binding PartNumberTooltip}"/>
-                                            <TextBlock Grid.Column="2" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="3" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding CapacitanceText}"
                                                        ToolTip.Tip="{Binding CapacitanceTooltip}"/>
                                             <!-- ITALIC where the ESR is a dissipation-factor default
@@ -1546,19 +1658,19 @@
                                                  and the number in this cell is what sizes that peak.
                                                  The tooltip says it in words; the slant is what a
                                                  reader sees without hovering. -->
-                                            <TextBlock Grid.Column="3" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding EsrText}"
                                                        Classes.indicative="{Binding IsEsrIndicative}"
                                                        ToolTip.Tip="{Binding EsrTooltip}"/>
-                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding SelfResonanceText}"
                                                        ToolTip.Tip="{Binding SelfResonanceTooltip}"/>
-                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding InductanceText}"
                                                        ToolTip.Tip="{Binding InductanceTooltip}"/>
-                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="7" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
-                                            <TextBlock Grid.Column="7" Classes="detailLabel"
+                                            <TextBlock Grid.Column="8" Classes="detailLabel"
                                                        HorizontalAlignment="Left" Text="{Binding PositionText}"
                                                        ToolTip.Tip="{Binding PositionTooltip}"/>
                                         </Grid>

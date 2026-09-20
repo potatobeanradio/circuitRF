@@ -325,6 +325,22 @@ public sealed record RailComparisonReport(
     IReadOnlyList<RailComparisonSection> Sections)
 {
     /// <summary>
+    /// <b>R-rail23-3c — what differed in the INPUTS.</b> "C10 unmounted", at the top of the report.
+    /// </summary>
+    /// <remarks>
+    /// <b>A comparison of two runs of one document must name what changed between them</b>, or the
+    /// reader is left diffing curves to infer it. That is the whole point of comparing against the
+    /// previous run: the loop is <i>save the result, change one thing, re-run, compare</i>, and the
+    /// one thing that changed is the finding. It costs nothing, because the match already pairs the
+    /// two documents' own part rows.
+    ///
+    /// <para>It is equally true of two DIFFERENT designs — a reference board with its bulk
+    /// capacitor fitted against a candidate without one is exactly the same statement — so this is
+    /// computed from the match rather than from anything the previous-run path supplies.</para>
+    /// </remarks>
+    public IReadOnlyList<string> InputChanges { get; init; } = [];
+
+    /// <summary>
     /// How much a mounting loop has to grow before the report names the part, as a fraction of the
     /// reference's own loop.
     ///
@@ -375,7 +391,10 @@ public sealed record RailComparisonReport(
         var breakdown  = CompareBreakdown(reference, target);
 
         var report = new RailComparisonReport(
-            null, match, [], ports, mounting, removal, breakdown, []);
+            null, match, [], ports, mounting, removal, breakdown, [])
+        {
+            InputChanges = CompareInputs(match),
+        };
 
         var findings = ThreeSentences(report);
 
@@ -615,11 +634,59 @@ public sealed record RailComparisonReport(
         static string Key(PdnBreakdownRow row) => row.GroupKey.Length > 0 ? row.GroupKey : row.Label;
     }
 
+    // ── R-rail23-3c: what changed in the INPUTS ──────────────────────────────
+
+    /// <summary>
+    /// The differences between the two sides' own part rows that nothing else on the page reports:
+    /// what is fitted, and what part it is.
+    /// </summary>
+    /// <remarks>
+    /// <b>Rows only, never results.</b> Everything else on this report is a difference between two
+    /// ANSWERS; this is the difference between two QUESTIONS, which is why it is computed from
+    /// <see cref="RailComparison.Parts"/> alone and needs neither side's run.
+    /// </remarks>
+    private static IReadOnlyList<string> CompareInputs(RailComparison match)
+    {
+        var lines = new List<string>();
+
+        foreach (var pair in match.Parts)
+        {
+            if (pair.Reference.Mounted && !pair.Target.Mounted)
+                lines.Add($"{pair.Name} unmounted — it is fitted on " +
+                          $"{match.ReferenceName} and is not in this answer.");
+            else if (!pair.Reference.Mounted && pair.Target.Mounted)
+                lines.Add($"{pair.Name} mounted — it is not fitted on " +
+                          $"{match.ReferenceName} and is in this answer.");
+        }
+
+        foreach (var pair in match.Parts)
+            if (!string.Equals(pair.Reference.PartNumber, pair.Target.PartNumber,
+                               StringComparison.OrdinalIgnoreCase))
+                lines.Add($"{pair.Name} is a different part: " +
+                          $"{Spell(pair.Reference.PartNumber)} → {Spell(pair.Target.PartNumber)}.");
+
+        // A CHANGED MOUNTING LOOP IS DELIBERATELY NOT HERE. It is already the subject of the
+        // per-part table and of the first of R-rail16-6's three sentences — "these three parts
+        // got worse mounting" — so naming it again at the top would be the same finding twice,
+        // and this block is for the inputs nothing else on the page reports.
+
+        return lines;
+
+        static string Spell(string partNumber) =>
+            partNumber is { Length: > 0 } p ? $"'{p}'" : "(no part number)";
+    }
+
     // ── R-rail16-6: what changed, what it cost, what it broke ────────────────
 
     private static IReadOnlyList<string> ThreeSentences(RailComparisonReport report)
     {
         var lines = new List<string>();
+
+        // FIRST, and before the equivalence shortcut below (R-rail23-3c). What changed in the
+        // inputs is the finding when the two sides are two runs of one document, and a report that
+        // led with "the two designs are equivalent" over a board one capacitor lighter would be
+        // saying the one thing the reader must not conclude.
+        lines.AddRange(report.InputChanges);
 
         if (report.Equivalent)
         {

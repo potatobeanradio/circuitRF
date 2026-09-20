@@ -687,6 +687,10 @@ public sealed partial class RailRfViewModel
         ByModel[view.Kind] = view;
         Current = view;
         AcceptSweep(view.Kind, view.Sweep);
+
+        // R-rail23-3a. AFTER the assignment above, because the baseline is built from what is on
+        // screen — and the run that WAS on screen is what becomes the thing to compare against.
+        CaptureBaseline(view.Kind);
     }
 
     private void CancelInFlight()

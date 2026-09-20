@@ -125,6 +125,7 @@ public sealed partial class RailRfViewModel
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(RecognisedAggressors));
             OnPropertyChanged(nameof(HasRecognisedAggressors));
+            OnPropertyChanged(nameof(UnmountedPartCount));
         }
 
         if (SelectedRail is not { } rail)
@@ -213,6 +214,80 @@ public sealed partial class RailRfViewModel
 
     /// <summary>True while there is something to offer — the button appears only when there is.</summary>
     public bool HasRecognisedAggressors => RecognisedAggressors.Count > 0;
+
+    // ══ MOUNT AND UNMOUNT (brief 23) ══════════════════════════════════════════════════════════
+    //
+    // Depopulating a board is the commonest what-if in power integrity, and until this existed it
+    // cost an edit to the ARTWORK — destructive, not what the designer means, and it throws away
+    // the mounting loop the geometry gave the part so it cannot be put back the way it was.
+    //
+    // NOTHING HERE TOUCHES THE .clay (R-rail23-1c). railRF SHOWS the board; the way to change the
+    // geometry is to open the layout and edit it there, and depopulating is not a change to the
+    // geometry — it is a statement about what is FITTED to it. The board still draws the part.
+
+    /// <summary>
+    /// Mounts or unmounts every named part on the selected rail, and re-solves ONCE.
+    /// </summary>
+    /// <remarks>
+    /// <b>A BATCH, and that is R-rail23-2c</b> — <i>"unmount these four and re-run"</i> is the real
+    /// gesture, and four separate calls would be four re-solves of a board the user is not looking
+    /// at three of. So the rows are all rewritten, the table is rebuilt once, and
+    /// <see cref="QueueResolve"/> runs once at the end.
+    ///
+    /// <para><b>Unmounting is an EDIT</b> (R-rail23-2d), so it goes through the same Fast loop every
+    /// other committed row edit does rather than being a separate "apply" step — the numbers follow
+    /// it exactly as they follow a typed ESR.</para>
+    ///
+    /// <para><b>A row already in the asked-for state is not rewritten</b>, so a menu row pressed on
+    /// a mixed selection does not re-solve for the half that did not move, and pressing it twice is
+    /// not two runs.</para>
+    /// </remarks>
+    /// <param name="refdeses">The instances to act on. Unknown names are ignored — the caller's
+    /// list is a selection and a selection can outlive a rebuild.</param>
+    /// <param name="mounted">True to fit, false to depopulate.</param>
+    /// <returns>How many rows actually changed.</returns>
+    public int SetPartsMounted(IEnumerable<string> refdeses, bool mounted)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        if (SelectedRail is not { } rail) return 0;
+
+        var wanted = new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0) return 0;
+
+        int changed = 0;
+        for (int i = 0; i < rail.Parts.Count; i++)
+        {
+            var part = rail.Parts[i];
+            if (part.Refdes is not { Length: > 0 } refdes || !wanted.Contains(refdes)) continue;
+            if (part.Mounted == mounted) continue;
+
+            // A RECORD `with`, so the refdes, the part number, the origin and — the number that
+            // matters — the typed mounting inductance are carried across untouched. That is what
+            // makes re-mounting give the answer it gave before, bit for bit (R-rail23-1b).
+            rail.Parts[i] = part with { Mounted = mounted };
+            changed++;
+        }
+
+        if (changed == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return changed;
+    }
+
+    /// <summary>One part, by refdes — the row's own checkbox and the board's context menu.</summary>
+    public bool SetPartMounted(string refdes, bool mounted) =>
+        SetPartsMounted([refdes], mounted) > 0;
+
+    /// <summary>Whether the named part is fitted, or null where this rail has no such row.</summary>
+    public bool? IsPartMounted(string refdes) =>
+        SelectedRail?.Parts.FirstOrDefault(
+            p => string.Equals(p.Refdes, refdes, StringComparison.OrdinalIgnoreCase))?.Mounted;
+
+    /// <summary>How many of the selected rail's parts are not fitted. Zero on an ordinary
+    /// document, which is why nothing is said about it until it is not.</summary>
+    public int UnmountedPartCount =>
+        SelectedRail is { } rail ? rail.Parts.Count(p => !p.Mounted) : 0;
 
     /// <summary>Adds every recognised aggressor the selected rail does not already carry.</summary>
     [CommunityToolkit.Mvvm.Input.RelayCommand]

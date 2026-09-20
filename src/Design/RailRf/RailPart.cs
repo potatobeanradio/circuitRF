@@ -60,6 +60,26 @@ public sealed record RailPart
     /// <summary>Where this row came from — recognised from the BOM, or typed.</summary>
     public RailPartOrigin Origin { get; init; } = RailPartOrigin.Typed;
 
+    /// <summary>
+    /// Whether this part is FITTED. <b>True by default, and absent from the <c>.crail</c> means
+    /// true</b>, so every document written before this existed reads exactly as it did
+    /// (brief-railrf-23-mount-and-unmount.md R-rail23-1a).
+    ///
+    /// <para><b>False is not deletion and it is not a data problem.</b> Depopulating a board is the
+    /// commonest what-if in power integrity, and until this flag existed it cost an edit to the
+    /// ARTWORK — which is destructive, is not what the designer means, and throws away the mounting
+    /// loop the geometry gave the part so it cannot be put back the way it was. An unmounted row
+    /// keeps its refdes, its part number, its position and its computed mounting inductance; it is
+    /// simply not in the frequency model, exactly as a deleted row would not be (R-rail23-1b). The
+    /// <c>.clay</c> is never touched — railRF SHOWS the board, and depopulating is a statement about
+    /// what is fitted to the geometry rather than a change to it (R-rail23-1c).</para>
+    ///
+    /// <para><b>It is a different state from unresolved</b> (R-rail23-1d). A row whose part number
+    /// does not resolve is a data problem; an unmounted row resolves perfectly well and is
+    /// deliberately absent. Two states, two spellings, and nothing may collapse them.</para>
+    /// </summary>
+    public bool Mounted { get; init; } = true;
+
     /// <summary>Null when this row is usable, or the sentence saying why not.</summary>
     public string? Refusal(string where)
     {

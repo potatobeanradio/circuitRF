@@ -55,7 +55,12 @@ public sealed class PdnSweepRequest
     public required RailSpec Rail { get; init; }
 
     /// <summary>The parts, already resolved against the library at the rail's voltage
-    /// (<see cref="RailPartResolver.ResolveAll(IEnumerable{RailPart}, double?)"/>).</summary>
+    /// (<see cref="RailPartResolver.ResolveAll(IEnumerable{RailPart}, double?)"/>).
+    ///
+    /// <para><b>Every part row, mounted or not</b> — this run reads
+    /// <see cref="RailPartModelSet.Mounted"/> and names the rest (R-rail23-1b). Filtering on the way
+    /// IN would leave the result unable to say which parts were left off, which is the one thing a
+    /// depopulated run has to state.</para></summary>
     public required RailPartModelSet Parts { get; init; }
 
     /// <summary>The sources as elements over frequency (<see cref="RailSourceLife.Of"/>). Empty is
@@ -479,7 +484,11 @@ public static class PdnSweep
 
         int unmodelled = 0;
 
-        foreach (var part in request.Parts.Models)
+        // R-rail23-1b: THE MOUNTED SET. An unmounted part is excluded exactly as a deleted row
+        // would be — it is not a part with no model, it is a part that is not fitted — and it is
+        // NAMED in the notes below rather than silently subtracted, because a curve that has
+        // quietly lost a bulk capacitor looks entirely normal.
+        foreach (var part in request.Parts.Mounted)
         {
             if (!part.IsResolved ||
                 !(part.CapacitanceFarads > 0) ||
@@ -531,6 +540,13 @@ public static class PdnSweep
                 "capacitance, no inductance, or no ESR basis at all. An unstated value is never a " +
                 "defaulted one, and a part stamped with no loss would make every peak it takes part " +
                 "in unbounded. " + request.Parts.Summary);
+
+        if (request.Parts.Unmounted is { Count: > 0 } off)
+            notes.Add(
+                $"{off.Count} part(s) on this rail are UNMOUNTED and are not in this answer: " +
+                $"{request.Parts.UnmountedNames}. Their rows, their positions and their mounting " +
+                "loops are kept, so mounting them again gives the answer they gave before — this " +
+                "is a depopulated board, not a missing model.");
 
         return branches;
 

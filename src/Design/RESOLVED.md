@@ -1,5 +1,75 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## railRF brief 23 — mount and unmount, and comparing against the run you just did (2026-09-20)
+
+A first-time designer asked how to take a placed part off the layout in order to depopulate and
+re-simulate, and was told to go and delete it from the artwork. That answer is wrong three ways: it
+is destructive, it is not what was meant, and it throws away the mounting loop the geometry gave the
+part, so the part cannot be put back the way it was. `RailPart.Mounted` is the fix — a bool
+defaulting to true, written into the `.crail` only when it is false.
+
+### Absent means mounted, and that is the whole of the format change
+
+`CrailPart.Mounted` is `bool?` and `ToFile` writes `p.Mounted ? null : false`. With
+`JsonIgnoreCondition.WhenWritingNull` already set on the reader/writer, an ordinary document gains
+no line at all and every `.crail` written before this flag existed reads exactly as it did. A
+non-nullable `bool` with a `true` default would have written `"Mounted": true` onto all thirteen
+rows of the shipped example for no reader's benefit, and — worse — a plain `bool` field would have
+defaulted an OLD document's parts to `false` had anyone ever flipped the default.
+
+### The exclusion has exactly one site, and the counts moved with it
+
+`PdnSweep` builds its branch list from `request.Parts.Mounted` instead of `.Models`.
+`RailPartModelSet.Models` still carries every row, because the parts table lists an unmounted part
+— greyed, with its part number, its position and its computed mounting loop intact, which is the
+whole difference between unmounting and deleting. Everything on that set that describes THE ANSWER
+moved to the mounted view with it: `Unresolved`, `ModelledFromFile`, `WithoutBiasCurve`,
+`WithoutEsrBasis`, `Indicative`, `AnyIndicative`, `Warnings`, `Summary`, and `Annotate`'s four
+metadata cubes. A `part` axis naming a part the curve does not contain would be the same defect as
+the curve losing one silently.
+
+**And the unmounted set is NAMED**, on `Summary` and in the result's notes. A curve that has quietly
+lost a bulk capacitor looks entirely normal — the shipped example without `C10` is 16.3 dB worse and
+nothing about the picture says why.
+
+**The removal ranking needed no change at all** (R-rail23-4a). `PdnSweep.Rank` ranks the BRANCHES,
+and an unmounted part contributes none — so it is absent from the ranking rather than ranked at
+zero, which is what it would have read as, and which is indistinguishable from a part that is not
+earning its place.
+
+### Two independent paths to one number, and they agree to three decimals
+
+The gate is the cross-check rather than a hard-coded figure. Q2's ranking re-solves the sweep once
+per part with a branch dropped from a list it already built; unmounting goes through the document
+row, the resolver and a whole fresh run. On the shipped Power Rail example both put the worst margin
+at **−15.567 dB** (the README publishes 16.3 dB → −15.6 dB), so a change that broke either would
+move one and not the other. Measured, not asserted from the README.
+
+### `RailComparisonReport.InputChanges` — and what was deliberately left out of it
+
+R-rail23-3c: a comparison of two runs of one document must name what changed between them, or the
+reader is left diffing curves to infer it. It is computed from `RailComparison.Parts` alone — the
+match already pairs the two documents' own rows — so it costs nothing and works for two different
+designs as well as for two runs of one.
+
+**A changed mounting inductance is NOT on that list**, and the first draft's was what caught it:
+brief 16's own gate asserts the findings block is three sentences, and its fixture changes `C3`'s
+mounting loop, so the fourth line broke it. The right reading is that the loop is already the
+subject of the per-part table AND of the first of R-rail16-6's three sentences — *"these three parts
+got worse mounting"* — so naming it at the top is the same finding twice. The block is for the
+inputs nothing else on the page reports: what is fitted, and what part it is.
+
+### The DC half needed nothing, and that is a fact about today's code
+
+R-rail23-1e says a decoupling capacitor carries no DC current, so unmounting one changes no drop and
+railRF should say nothing about it rather than print an unchanged number as a finding. It already
+does: `PdnDcRequest.ShuntParts` is never populated by the window at all, so the DC path does not read
+part rows. `RailDcRun.WithSourceLevel` copies `rail.Parts` into its working copy purely so the copy
+does not silently hold less than the rail it copies — its own comment says so — and nothing
+downstream reads them. **Brief 25's series element is the case that will need a refusal here**, since
+unmounting one opens the rail rather than removing a shunt branch; nothing in the document can
+express one yet.
+
 ## railRF brief 21 — two numbers with one name, and where the breakdown's extra millivolts are (2026-09-20)
 
 A first-time designer's pass produced three reports, and the first two were the same failure: one

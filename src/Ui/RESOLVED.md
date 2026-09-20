@@ -1,5 +1,107 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 23 — the mount gesture, and the baseline that makes Compare useful in one document (2026-09-20)
+
+The design-layer half — the flag, the format, the exclusion and the cross-check against Q2's own
+ranking — is in `src/Design/RESOLVED.md`. What is here is the three window-side decisions.
+
+### The baseline is taken when a run is ACCEPTED, not when one is started
+
+The brief says *"taken automatically when a new run starts"*, and the two would be the same baseline
+— but only one of them can be taken correctly. `QueueResolve` fires from a committed edit, so by the
+time a run STARTS the document already carries the change; a document snapshot taken there would
+record the NEW inputs against the OLD result, and R-rail23-3c would then report that nothing changed
+— which is the one sentence this feature exists to produce. So the snapshot travels with the result
+it produced (`_lastCompleted`), and the previous one is promoted the moment a new result is accepted
+in `Finish`. Nothing is visible any earlier either way: a baseline is only reachable through Compare,
+which already refuses until something has been solved.
+
+The snapshot itself is `RailDocumentIo.DeserializeUnvalidated(SerializeUnvalidated(...))` — the same
+route `RailClipboard` takes. A hand-written clone would be a second list of every field to keep in
+step with the format, and it would lose exactly the field somebody adds next.
+
+### The checkbox is bound ONE WAY, and the handler is what moves the state
+
+A two-way bind writes `RailPartRowViewModel` before the view model sees the gesture — and every row
+object is replaced by the rebuild that follows, so the tick lands on an object nobody holds any more
+and the table refreshes straight back to where it started. `OnPartMountToggled` puts the box back
+under its binding and calls `SetPartsMounted`, which rewrites the rows, rebuilds the table and
+re-solves once.
+
+### One call, however many rows — and a row already in the asked-for state is not an edit
+
+R-rail23-2c's *"unmount these four and re-run"* is one `SetPartsMounted(refdeses, mounted)` and
+therefore one `QueueResolve`; four separate calls would be four re-solves of a board the user never
+wanted to see three of. Rows already in the wanted state are skipped, so a menu row pressed on a
+mixed selection does not re-solve for the half that did not move, and pressing it twice is not two
+runs. Both gestures — the row's checkbox and the board's context menu — act on the parts-table
+selection when the clicked row is in it and on that row alone otherwise, which is what every list in
+every application does and is what makes the batch discoverable with no second "apply to selection"
+control.
+
+### Fluent's CheckBox is a form control, and a table row is not a form
+
+Owner, same day, twice: the checkbox dominated the row height; and then, once it had been sized
+down, it sat half in the row below. Both are the same fact about the theme.
+
+`CheckBoxMinHeight` is **24 even under this application's `DensityStyle="Compact"`**, the visible
+square is a **hard-coded 20 px** on the template's `NormalRectangle`, and — this is the half that
+caused the second report — the square is positioned for a control whose CONTENT may be several lines
+of wrapped text, so it sits near the TOP of that 24 rather than in the middle of it. Against
+`detailLabel` rows at FontSize 10, roughly 14 px tall, one control was setting the height of every
+row in the table; capping the control's height then moved the square down out of its row, because an
+offset inside a template is not something a size setter on the outside can reach.
+
+**The first attempt reached into the template** — `/template/ Border#NormalRectangle` plus
+`/template/ Viewbox` — and that is what produced the second bug. The fix is to **replace the
+template rather than adjust it**: `CheckBox.rowcheck` carries its own `ControlTemplate`, 13 px of
+border and a tick, with no margin and no minimum, so the geometry is fully determined by what is
+written in this repo. It keeps the theme's BRUSHES by their own resource keys, so the box is the
+application's accent in both variants and follows a theme change like every other control.
+
+**A `/template/` selector that matches nothing is SILENT in Avalonia**, and the Fluent theme's XAML
+is compiled — the strings are UTF-16LE in `Avalonia.Themes.Fluent.dll` and `strings(1)` finds
+nothing, so confirming a part name means a byte search for its UTF-16 encoding. That is how
+`NormalRectangle` was confirmed to exist at all. A style written against a theme one cannot read is a
+guess that cannot fail loudly, which is the whole argument for owning the template instead.
+
+One detail worth keeping: **a checked Fluent box has no separate stroke brush.** There is a
+`CheckBoxCheckBackgroundStrokeUnchecked` and no `…StrokeChecked` — the checked square is filled — so
+the checked border takes the fill brush. What the replacement gives up is the focus adorner and the
+three-state glyph; the box is two-state and the row is a mouse target in a table.
+
+### A forced autoscale undoes a pinned axis, and it ran on every edit
+
+Owner: toggling a part moved the plot's Y-axis scaling although the Y limits had been fixed; the
+ask was to toggle a part and watch the trace with the axis not moving at all.
+
+`RebuildImpedancePlot` ended in `plot.Autoscale(force: true)`, and it runs on EVERY solve, which is
+every committed edit. `force` is defined as *ignore the per-axis flags* — and `Plot.AutoscaleY` is
+exactly the flag the Plot Inspector's axis-limits panel clears when a user pins a window
+(`AxesLimitsViewModel.OnYAutoscaleChanged`). So the one gesture that exists to hold the frame still
+was undone by the next re-solve, and the thing being compared moved under the comparison.
+
+**All four flags default to `true`, so plain `Autoscale()` is identical in the ordinary case** — the
+force only ever changed behaviour for a user who had pinned something, which is to say it only ever
+did harm here. Nothing else needed touching: `Plot.OnTracesChanged` already autoscales UNFORCED when
+the trace list is replaced, so the wholesale rebuild has always respected the pin.
+
+**`ApplyImpedanceUnit` still forces, and must.** A pinned window is a pair of numbers in the old
+unit — 0.1 to 1 in ohms is −20 to 0 in dBΩ — so carrying it across a unit change leaves the reader
+staring at an empty axis with no indication why.
+
+The gate asserts BOTH halves: the window did not move, and the curve did. A test that only checked
+the window would pass just as well against a plot that had stopped updating — and it was checked by
+restoring `force: true`, which turns it red.
+
+### Known rough edge, recorded rather than papered over
+
+R-rail16-6's three sentences are worded for two DESIGNS — *"the re-layout left the decoupling mounted
+about as well as the reference has it"* — and they read oddly under a previous-run comparison, where
+there was no re-layout and the mounting loops are identical by construction. The `InputChanges` line
+above them carries the actual finding. Rewording those three would be editing brief 16's own
+specified text, so it was left alone.
+
 ## Match Designer: the termination pictogram is a library part, and four lamps replaced two arrows (2026-09-20)
 
 Owner, three asks in one round: use the new two-element RLC glyphs for Termination 1 and 2 because

@@ -30,6 +30,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Ui.RailRf;
@@ -39,7 +40,85 @@ namespace CircuitRF.Ui.Views.RailRf;
 public partial class RailRfWindow
 {
     private void WireCompareButton() =>
-        CompareButton.Click += async (_, _) => await CompareAsync();
+        CompareButton.Click += (_, _) => OnCompareClicked();
+
+    /// <summary>
+    /// <b>R-rail23-3b — Compare now has two sides to offer, so it asks which.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>With no baseline it goes straight to the file picker</b>, exactly as it always did: an
+    /// extra menu with one row on it is a click spent saying what the ellipsis already said. The
+    /// menu appears the moment there is a previous run to point at, which is the second run of any
+    /// session.
+    ///
+    /// <para>The pin lives here too (R-rail23-3d). It is a statement about which result is worth
+    /// measuring against, so it belongs beside the thing that measures against it rather than on a
+    /// toolbar of its own — and it is the only control in this feature that is not a comparison.</para>
+    /// </remarks>
+    private async void OnCompareClicked()
+    {
+        if (Vm is not { HasBaseline: true } vm)
+        {
+            await CompareAsync();
+            return;
+        }
+
+        var previous = new MenuItem { Header = vm.BaselineText };
+        previous.Click += (_, _) => ComparePrevious();
+
+        var other = new MenuItem { Header = "Another .crail…" };
+        other.Click += async (_, _) => await CompareAsync();
+
+        var pin = new MenuItem
+        {
+            Header = vm.IsBaselinePinned ? "Unpin this result" : "Pin this result",
+            IsEnabled = vm.CanPinBaseline,
+        };
+        ToolTip.SetTip(pin,
+            "Hold the run on screen as the thing to compare against, across further runs — so "
+          + "\"unmount, run, unmount another, run\" measures each cut against the fitted board "
+          + "rather than against the previous cut.");
+        pin.Click += (_, _) => vm.PinBaselineCommand.Execute(null);
+
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(previous);
+        flyout.Items.Add(other);
+        flyout.Items.Add(new Separator());
+        flyout.Items.Add(pin);
+        flyout.ShowAt(CompareButton);
+    }
+
+    /// <summary>
+    /// The comparison the designer's own loop asks for: this run against the last one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is re-solved and nothing is read from disk.</b> Both sides are answers this window
+    /// already produced, so this is the one comparison that costs no time at all — which is the
+    /// whole reason the loop <i>change one thing, re-run, compare</i> is worth having.
+    /// </remarks>
+    private void ComparePrevious()
+    {
+        if (Vm is not { } vm) return;
+
+        if (vm.CompareAgainstBaseline() is not { } report)
+        {
+            vm.Refusal = new RailRefusal(
+                "There is no previous run of this rail to compare against. Run it, change "
+              + "something — unmount a part, retype a mounting loop — and run it again; "
+              + "the run before the change is what this compares with.",
+                RailRefusalControl.None);
+            return;
+        }
+
+        var dialog = new RailCompareDialog(
+            report,
+            vm.BoardLayout?.Model,
+            vm.Board?.Technology,
+            vm.BoardOverlayLayer.Scene,
+            vm.ExportProvenance()?.Lines ?? []);
+
+        _ = dialog.ShowDialog(this);
+    }
 
     private async Task CompareAsync()
     {

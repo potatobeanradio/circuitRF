@@ -491,6 +491,11 @@ public sealed partial class RailRfViewModel
         plot.CustomYLabelOn = true;
         plot.CustomYLabel   = ImpedanceYLabel;
         plot.SetAxesViewport();
+
+        // FORCED HERE, and only here. A pinned window is a pair of numbers in the OLD unit — 0.1
+        // to 1 in ohms is −20 to 0 in dBΩ — so keeping it across a unit change would leave the
+        // user staring at an empty axis with no indication why. The re-solve path deliberately
+        // does not force; see RebuildImpedancePlot.
         plot.Autoscale(force: true);
 
         RespanAggressors();
@@ -617,7 +622,23 @@ public sealed partial class RailRfViewModel
         // margin keeps the width it was given while the label column stack was still thirteen deep.
         plot.SetAxesViewport();
 
-        plot.Autoscale(force: true);
+        // ── NOT force: true (owner, 2026-09-20) ───────────────────────────────────────────────
+        //
+        // The ask: toggle a part, watch what it was doing to the trace, and have the axis not move
+        // at all. It was moving, and `force` is why: this method runs on EVERY
+        // solve, which is every committed edit, and a forced autoscale ignores `Plot.AutoscaleY`
+        // — the flag the Plot Inspector's own axis-limits panel clears when a user pins a window.
+        // So the one gesture that exists to hold the axis still was undone by the next re-solve,
+        // and the thing being compared moved under the comparison.
+        //
+        // Plain Autoscale() re-frames exactly the axes that are still on autoscale, which is the
+        // default state and therefore the ordinary case; a pinned axis keeps its window. Nothing
+        // else was needed — `Plot.OnTracesChanged` already autoscales unforced when the trace list
+        // is replaced, so it has always respected the pin.
+        //
+        // ApplyImpedanceUnit still forces, and must: changing the Y UNIT changes what the numbers
+        // ARE, so a window pinned in ohms is not a window in dBΩ.
+        plot.Autoscale();
 
         // AFTER the autoscale, because each line is cut TO the window. They are also excluded from
         // it (Trace.ExcludeFromAutoscale) so that a later autoscale — the Plot Inspector performs

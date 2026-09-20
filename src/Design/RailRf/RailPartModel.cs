@@ -202,6 +202,17 @@ public sealed class RailPartModel
     /// <summary>True where this model carries numbers at all.</summary>
     public bool IsResolved => UnresolvedReason is null;
 
+    /// <summary>
+    /// <see cref="RailPart.Mounted"/>, carried through so the one thing that builds the frequency
+    /// model can leave an unfitted part out of it (R-rail23-1b).
+    ///
+    /// <para><b>An unmounted part is still RESOLVED</b> — every number on it is the number the
+    /// board and the library gave it, which is exactly why putting it back costs one click and
+    /// gives the same answer as before. <see cref="IsResolved"/> and this are two different
+    /// questions and no reader may collapse them (R-rail23-1d).</para>
+    /// </summary>
+    public bool Mounted { get; init; } = true;
+
     // ── capacitance: all three of §9's numbers ────────────────────────────────────────────────
 
     /// <summary>Q-12's triple — marked, derated, and which was used. <b>Never reduced to one
@@ -339,7 +350,10 @@ public sealed class RailPartModel
     /// loud.</summary>
     public string Describe()
     {
-        if (UnresolvedReason is { } why) return $"{Name}: unresolved — {why}";
+        if (UnresolvedReason is { } why)
+            return $"{Name}: unresolved — {why}" +
+                   (Mounted ? "" : " It is also unmounted, which is a separate state: unresolved " +
+                                   "is a data problem and unmounted is a design question.");
 
         string esr = EsrBasis switch
         {
@@ -361,7 +375,12 @@ public sealed class RailPartModel
 
         string f0 = SelfResonanceHz is { } f ? $", resonant at {Hertz(f)}" : "";
 
-        return $"{Name}: {Capacitance.Describe()}; {l}; {esr}{f0}.";
+        string fitted = Mounted
+            ? ""
+            : " NOT FITTED — unmounted, so it is not in this answer; its numbers are kept so " +
+              "mounting it again gives the answer it gave before.";
+
+        return $"{Name}: {Capacitance.Describe()}; {l}; {esr}{f0}.{fitted}";
     }
 
     /// <summary>What a report calls this part — its refdes where there is one, and its part number

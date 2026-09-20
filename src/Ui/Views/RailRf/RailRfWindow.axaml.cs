@@ -447,6 +447,12 @@ public partial class RailRfWindow : Window
         place.Add(PlaceRow("Place Source" + at, () => vm.PlaceSource(anchor)));
         place.Add(PlaceRow("Place Load" + at, () => vm.PlaceLoad(anchor)));
 
+        // R-rail23-2b: Unmount / Mount, for the part under the click. THE ROW THE DESIGNER ASKED
+        // FOR — they were looking at the layout when they asked how to take a part off the board, and
+        // the answer was "go to the layout file and delete it". The .clay is not touched: this
+        // says what is FITTED to the geometry, not what the geometry is (R-rail23-1c).
+        place.AddRange(MountRowsFor(pad?.Refdes));
+
         // The class tab's three copper rows act on the region under the click, so they belong in
         // this group and not beside the clipboard rows.
         place.AddRange(vm.BoardOverlayLayer.BuildContextMenuItems(t.Wx, t.Wy, tol, null, BoardCanvas));

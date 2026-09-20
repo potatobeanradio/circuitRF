@@ -440,10 +440,45 @@ public sealed class RailPartRowViewModel
     /// (R-rail7-9's own test). A half-filled row is the shape a defaulted one takes, and the whole
     /// point of listing it is that it is not one.
     /// </remarks>
+    /// <remarks>
+    /// <b>And it is NOT <see cref="IsUnmounted"/></b> (R-rail23-1d). An unmounted row resolves
+    /// perfectly well and is deliberately absent; an unresolved one is a data problem. Two states,
+    /// two spellings, and the table must not collapse them — a row can be either, both or neither.
+    /// </remarks>
     public bool IsUnresolved =>
         PartNumber == UnresolvedText || _model is null || _model.Row is null;
 
     /// <summary>What the dielectric class was parsed as, or empty — shown beside the description it
     /// came from, for correction (brief 2's R-rail2-5).</summary>
     public string DielectricClassText => _bom?.Parsed.DielectricClass ?? "";
+
+    // ══ MOUNTED, AND IT IS NOT "UNRESOLVED" (brief 23) ════════════════════════════════════════
+
+    /// <summary>
+    /// Whether this part is FITTED — the row's own checkbox (R-rail23-2a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Read-only here on purpose.</b> Every other column of this row is read-only because the
+    /// number belongs to the part library and a second place to type it would be a second place it
+    /// could be wrong; this one is not a number at all, it is a statement about the board, so the
+    /// checkbox writes it — through <c>RailRfViewModel.SetPartsMounted</c>, which is what makes an
+    /// unmount an ordinary committed edit and re-solves once for however many rows moved.
+    /// </remarks>
+    public bool IsMounted => _part.Mounted;
+
+    /// <summary>True where this row is in the table but not in the answer — what greys it.</summary>
+    public bool IsUnmounted => !_part.Mounted;
+
+    /// <summary>
+    /// The sentence behind the checkbox. <b>It says what SURVIVES</b>, because that is the whole
+    /// difference between unmounting a part and deleting it.
+    /// </summary>
+    public string MountTooltip => _part.Mounted
+        ? "Fitted. Clear this to depopulate it: the row stays, with its part number, its position "
+        + "and its computed mounting loop, and the rail re-solves without it. The layout is not "
+        + "touched — this says what is fitted to the board, not what the board is."
+        : "NOT FITTED. This part is in the table and not in the answer: its part number, its "
+        + "position and its mounting loop are all kept, so ticking this again gives the answer it "
+        + "gave before. This is a different state from UNRESOLVED — unresolved is a data "
+        + "problem, and this is a design question.";
 }

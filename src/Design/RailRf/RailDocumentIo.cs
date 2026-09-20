@@ -238,6 +238,11 @@ public static class RailDocumentIo
         PartNumber                = NullIfEmpty(p.PartNumber),
         MountingInductanceHenries = p.MountingInductanceHenries,
         Origin                    = p.Origin,
+
+        // R-rail23-1a: ABSENT MEANS MOUNTED. Written only when the part is unmounted, which is
+        // what makes every .crail written before this flag existed read exactly as it did — and
+        // what keeps the ordinary document free of a line saying nothing.
+        Mounted                   = p.Mounted ? null : false,
     };
 
     private static CrailTarget? ToFile(RailTarget? t) => t is null ? null : new CrailTarget
@@ -373,6 +378,7 @@ public static class RailDocumentIo
         PartNumber                = p.PartNumber ?? "",
         MountingInductanceHenries = p.MountingInductanceHenries,
         Origin                    = p.Origin,
+        Mounted                   = p.Mounted ?? true,
     };
 
     private static RailTarget? FromFile(CrailTarget? t) => t is null ? null : new RailTarget
@@ -545,6 +551,9 @@ public static class RailDocumentIo
         public string?         PartNumber                { get; set; }
         public double?         MountingInductanceHenries { get; set; }
         public RailPartOrigin  Origin                    { get; set; } = RailPartOrigin.Typed;
+
+        /// <summary>Null — the ordinary case — means MOUNTED. See <see cref="RailPart.Mounted"/>.</summary>
+        public bool?           Mounted                   { get; set; }
     }
 
     /// <summary>One target of any of the four kinds. <see cref="Kind"/> says which, and exactly the

@@ -188,6 +188,24 @@ rule `BoardNetlistFile` states and these follow.
 > mapping each refdes to a part number and a coordinate. A model is entered once and used twenty-two
 > times. The same rule holds at DC — one on-resistance for every instance of the same FET.
 
+> **A part is MOUNTED or it is not, and unmounting one is not deleting it.** Depopulating a board is
+> the commonest what-if here, and the way to ask it is a checkbox on the part's row or **Unmount** on
+> the board's own context menu — never an edit to the artwork. An unmounted part leaves the frequency
+> model exactly as a deleted row would, and **stays in the parts table**, greyed, with its part
+> number, its position and its computed mounting loop intact: that surviving number is the whole
+> difference, because it is what makes putting the part back give the answer it gave before. The
+> `.clay` is never touched — railRF shows the board, and this says what is FITTED to the geometry
+> rather than changing it. It is a different state from *unresolved*: unresolved is a data problem,
+> unmounted is a design question, and the table says both. The capacitor ranking below is computed on
+> the mounted set, because ranking an absent part reports what removing nothing would cost.
+
+> **And Compare takes the previous run as a side.** The loop is *save the result, change one thing,
+> re-run, compare*, which needs no second `.crail` at all — railRF keeps the last completed result for
+> the selected rail, one deep, and **Pin this result** holds one across further runs so *"unmount,
+> run, unmount another, run"* measures each cut against the fitted board rather than against the
+> previous cut. The report names what differed in the INPUTS at the top — *"C10 unmounted"* — because
+> otherwise the reader is left diffing two curves to work out what they did.
+
 ### The stackup — mandatory
 
 Layer order, copper thicknesses (**0.5 oz inner copper is normal, not an edge case**), dielectric
