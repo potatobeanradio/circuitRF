@@ -515,6 +515,125 @@ public sealed class RelaunchTests : IDisposable
         Assert.Contains("Cursor=\"Arrow\"", button);
     }
 
+    /// <summary>
+    /// The quit that a relaunch rides on ends the process ON ITS OWN PASS, rather than leaving the
+    /// exit to the <c>NotifyWindowCountChanged</c> that <c>WorkspaceWindow.OnClosed</c> posts.
+    ///
+    /// <para><b>Owner report, Windows.</b> After an automatic update, Relaunch closed circuitRF and
+    /// started nothing — the new version was installed, but only the user's own next launch ever
+    /// showed it. <c>ExitProcess</c> is the one place that starts the successor, and with a workspace
+    /// window open it was reachable only through that posted callback, which runs at
+    /// <c>DispatcherPriority.Background</c> — a dispatcher pass later. macOS sets
+    /// <c>ShutdownMode.OnExplicitShutdown</c>, so the loop is still running with no windows and that
+    /// pass always comes. Windows and Linux keep Avalonia's default <c>OnLastWindowClose</c>: closing
+    /// the last window ends the lifetime synchronously, the main loop is told to stop while
+    /// <c>QuitAsync</c> is still on the stack, and the queued callback is abandoned. The process left
+    /// by returning out of <c>Main</c> with the relaunch never attempted.</para>
+    ///
+    /// <para><b>It was invisible everywhere else</b>, which is why a scan is worth having: everything
+    /// <c>ExitProcess</c> does beyond exiting IS the relaunch, so a quit that skipped it looked
+    /// completely normal on both platforms.</para>
+    ///
+    /// <para>Scanned rather than run, for the reason the cursor gate above gives — this project has
+    /// no headless Avalonia, so there is no lifetime to close a window against. What can be checked
+    /// without a display is that the call is unconditional and in the method, not queued from it.</para>
+    /// </summary>
+    [Fact]
+    public void TheQuitPathExitsOnItsOwnPass_RatherThanThroughADispatcherPost()
+    {
+        string body = MethodBody(StripCsharpComments(ReadRepoFile("src/Ui/App.axaml.cs")),
+                                 "private async Task QuitAsync(");
+
+        Assert.Contains("ExitProcess();", body);
+
+        // Not queued: a Post here is the defect, whatever priority it carries.
+        Assert.DoesNotContain("Dispatcher", body);
+
+        // Unconditional: the exit used to be guarded by `if (windows.Count == 0)`, which is false on
+        // every launch that has a workspace open — that is, on every relaunch anyone would press.
+        // So the call must sit at the method's own nesting level, not inside a branch.
+        int call  = body.LastIndexOf("ExitProcess();", StringComparison.Ordinal);
+        int depth = 0;
+        for (int i = 0; i < call; i++)
+        {
+            if (body[i] == '{') depth++;
+            else if (body[i] == '}') depth--;
+        }
+
+        Assert.True(depth == 1,
+            $"ExitProcess() sits {depth - 1} block(s) deep in QuitAsync — it must run on every quit.");
+    }
+
+    /// <summary>The body of <paramref name="signature"/>'s method, brace-matched from its first
+    /// <c>{</c>. Comments are the caller's to strip first: a rule stated in one would otherwise
+    /// satisfy a scan the code itself failed, which is H8's own recorded trap.</summary>
+    private static string MethodBody(string source, string signature)
+    {
+        int at = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(at >= 0, $"'{signature}' was not found in the source.");
+
+        int open = source.IndexOf('{', at);
+        Assert.True(open > at, $"'{signature}' has no body.");
+
+        int depth = 0;
+        for (int i = open; i < source.Length; i++)
+        {
+            if (source[i] == '{') depth++;
+            else if (source[i] == '}' && --depth == 0) return source[open..(i + 1)];
+        }
+
+        Assert.Fail($"'{signature}' body is unterminated.");
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Line and block comments out, string and char literals left alone — so a <c>"{"</c> in a
+    /// message cannot unbalance the brace match above, and a comment describing the exit cannot
+    /// stand in for it.
+    /// </summary>
+    private static string StripCsharpComments(string source)
+    {
+        var sb = new System.Text.StringBuilder(source.Length);
+
+        for (int i = 0; i < source.Length; i++)
+        {
+            char c = source[i];
+
+            if (c == '"' || c == '\'')
+            {
+                char quote = c;
+                bool verbatim = quote == '"' && i > 0 && source[i - 1] == '@';
+                sb.Append(c);
+                for (i++; i < source.Length; i++)
+                {
+                    if (!verbatim && source[i] == '\\' && i + 1 < source.Length) { sb.Append(source[i]).Append(source[i + 1]); i++; continue; }
+                    sb.Append(source[i]);
+                    if (source[i] == quote) break;
+                }
+                continue;
+            }
+
+            if (c == '/' && i + 1 < source.Length && source[i + 1] == '/')
+            {
+                while (i < source.Length && source[i] != '\n') i++;
+                sb.Append('\n');
+                continue;
+            }
+
+            if (c == '/' && i + 1 < source.Length && source[i + 1] == '*')
+            {
+                int close = source.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (close < 0) break;
+                i = close + 1;
+                continue;
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
+    }
+
     private static string RepoRoot([CallerFilePath] string here = "")
     {
         string? dir = Path.GetDirectoryName(here);

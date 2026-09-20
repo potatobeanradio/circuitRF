@@ -1176,10 +1176,28 @@ public partial class App : Application
 
         foreach (var w in windows) w.Close();
 
-        // No workspace window means nothing will close and so nothing will call
-        // NotifyWindowCountChanged — the exit this method's own prompts were guarding has to be made
-        // here. (A standalone document window can outlive the last workspace window on macOS.)
-        if (windows.Count == 0) { CloseAllFloatingWindows(); ExitProcess(); }
+        // HERE, on this pass, unconditionally — not left to the NotifyWindowCountChanged that
+        // WorkspaceWindow.OnClosed posts.
+        //
+        // Owner report, Windows: after an automatic update, Relaunch closed circuitRF and started
+        // nothing; the version was installed, but only the user's own next launch ever showed it.
+        // ExitProcess is the ONLY thing that starts the successor (see the Relaunch note below), and
+        // with a workspace window open it was reachable only through that posted callback — which
+        // runs at DispatcherPriority.Background, a pass later. On macOS that pass always comes,
+        // because the lifetime there is ShutdownMode.OnExplicitShutdown and the loop keeps running
+        // with no windows. Windows and Linux keep Avalonia's default OnLastWindowClose, so the
+        // `w.Close()` above ends the lifetime synchronously, the main loop is told to stop while
+        // this method is still on the stack, and the queued callback is simply abandoned. The
+        // process then exited by returning out of Main with the relaunch never attempted — and
+        // because ExitProcess does nothing else that a plain exit does not, quitting looked
+        // completely normal on both platforms and only the relaunch showed it.
+        //
+        // Every window that could refuse has already been asked, and ConfirmCloseAsync marked each
+        // one clear to close, so the loop above really has closed them: there is nothing left for a
+        // later pass to settle. (The posted callback stays as it is — it is what ends a quit whose
+        // windows close one at a time through their own close boxes.)
+        CloseAllFloatingWindows();
+        ExitProcess();
     }
 
     /// <summary>

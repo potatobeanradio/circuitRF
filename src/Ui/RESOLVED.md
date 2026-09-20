@@ -32071,3 +32071,38 @@ document region, but the bounds of a control added in this dispatcher turn are n
 next one — so measuring afterwards reads a rectangle that is either stale or zero, and zero reads as "too
 small" for every shell there is. The yardstick is the **shipped** 1200×800 rather than the shell's
 current size; a shell the user has dragged small would otherwise lower its own bar.
+
+### Windows: Relaunch after an update closed circuitRF and started nothing
+
+Owner report, 2026-09-19. After an automatic update on Windows, pressing the Messages panel's
+Relaunch button quit circuitRF and no new process appeared; launching it by hand afterwards ran the
+new version. macOS was unaffected.
+
+**`App.ExitProcess` is the only thing that starts the successor** (`AppRelaunch.StartSuccessor`), and
+with a workspace window open it was reachable only through the `NotifyWindowCountChanged` that
+`WorkspaceWindow.OnClosed` **posts at `DispatcherPriority.Background`** — a dispatcher pass later.
+`App.OnFrameworkInitializationCompleted` sets `ShutdownMode.OnExplicitShutdown` **inside the macOS
+branch only**, so:
+
+- **macOS** keeps its loop running with no windows, the queued callback lands, `ExitProcess` runs and
+  the successor starts.
+- **Windows and Linux** keep Avalonia's default `OnLastWindowClose`. `QuitAsync`'s
+  `foreach (var w in windows) w.Close()` ends the lifetime *synchronously* — the main loop is told to
+  stop while `QuitAsync` is still on the stack — and the queued callback is abandoned. The process
+  then left by returning out of `Main`, with the relaunch never attempted.
+
+**It was invisible everywhere else, which is why it survived.** `ExitProcess` does nothing a plain
+exit does not except start the successor, so a quit that skipped it looked completely normal; and the
+staged update still applied, because the user's own next launch is the one that flips the pointer.
+That also means "it updated after I relaunched manually" is not evidence the successor ever ran.
+
+**Fix:** `QuitAsync` now calls `CloseAllFloatingWindows()` and `ExitProcess()` unconditionally, on its
+own pass, instead of leaving the exit to the post. Every window that could refuse has already been
+asked and `ConfirmCloseAsync` marked each one clear to close, so the loop above really has closed
+them and there is nothing for a later pass to settle. The posted callback stays — it is what ends a
+quit whose windows close one at a time through their own close boxes.
+
+**Gate:** `RelaunchTests.TheQuitPathExitsOnItsOwnPass_RatherThanThroughADispatcherPost` — a
+comment-stripped source scan (this project has no headless Avalonia, so there is no lifetime to close
+a window against) asserting the call is in `QuitAsync` at the method's own nesting level and that
+nothing in that body queues it. Verified to fail on the old shape, not merely to pass on the new one.
