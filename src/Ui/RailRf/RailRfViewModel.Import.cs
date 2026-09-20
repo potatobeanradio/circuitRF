@@ -96,10 +96,33 @@ public sealed partial class RailRfViewModel
                     ? RailRefusals.Classify(why)
                     : null;
 
+        // R-rail22-3b: what the BOM actually gave up, stated at the import rather than left to be
+        // inferred from an odd answer later. Set unconditionally so a second import over the first
+        // does not leave the previous board's counts standing.
+        ImportSummary = RailImportReport.BomSummary(bom);
+
         RebuildAvailableNets();
         RebuildRegulatorOffers();
         RefreshRunGate();
     }
+
+    /// <summary>
+    /// What the last import read out of its companion tables — the BOM's three counts (R-rail22-3b).
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a refusal, and deliberately not on <see cref="PendingImportRefusal"/></b>, which gates
+    /// the Run button: a board whose BOM has two unexpandable reference cells is a board that still
+    /// solves, and blocking a run over a report would be worse than the silence it replaces. It sits
+    /// on its own row of the status strip, under whatever the strip is otherwise saying.
+    /// </remarks>
+    [ObservableProperty]
+    private string _importSummary = "";
+
+    partial void OnImportSummaryChanged(string value) => OnPropertyChanged(nameof(HasImportSummary));
+
+    /// <summary>True while the import has something to report. Bound rather than a length, because
+    /// an empty row still takes a line of the strip.</summary>
+    public bool HasImportSummary => ImportSummary.Length > 0;
 
     /// <summary>The board netlist this document was imported with, or opened with.</summary>
     /// <remarks>

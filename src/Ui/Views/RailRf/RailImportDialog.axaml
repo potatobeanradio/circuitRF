@@ -9,7 +9,13 @@
      The Excellon question is NOT asked here: it is asked by GerberDrillFormatPromptDialog, during
      the import, which is the dialog `convert`'s own rule already routes through. R-rail7-7 says to
      reuse its wording rather than invent a second sentence for the same refusal, and reusing the
-     DIALOG is the strongest form of that. -->
+     DIALOG is the strongest form of that.
+
+     ── AND THIS DIALOG IS NOW THE FIRST THING IMPORT BOARD OPENS (R-rail22-1a) ──────────────────
+     It used to open a FILE picker first and ask about the enclosing folder much later, from inside
+     the import — so the first thing a user did was pick one of twelve files that belong together.
+     A Gerber set is a FOLDER, so the folder question comes first and it is asked here, on the same
+     dialog as the three companion files: those four rows are one question. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.RailRf.RailImportDialog"
@@ -46,8 +52,6 @@
 
     <StackPanel Margin="20,16" Spacing="12">
 
-        <TextBlock x:Name="ArtworkText" FontSize="12" TextWrapping="Wrap"/>
-
         <!-- ── The checkbox, and it is ON by default (§2.3 step 1, owner rev 3) ──────────────── -->
         <StackPanel Spacing="4">
             <CheckBox x:Name="LandInWorkspaceBox" IsChecked="True" FontSize="11"
@@ -55,33 +59,56 @@
             <!-- Someone will eventually wonder why the default is not the cheap path, so the
                  consequences are on the dialog rather than left to be rediscovered. -->
             <TextBlock Classes="note"
-                       Text="On: the artwork lands as an ordinary circuitRF cell with a layout view — saved with the design rather than re-imported every session, it opens in the layout editor, DRC runs on it, circuitrf render draws it headlessly, revision control keeps it, and this document holds a reference to that cell rather than a private copy of the geometry.  Off: a throwaway copy, for a quick look."/>
+                       Text="On: the artwork lands as an ordinary circuitRF cell with a layout view — saved with the design rather than re-imported every session, it opens in the layout editor, DRC runs on it, circuitrf render draws it headlessly, revision control keeps it, and this document holds a reference to that cell rather than a private copy of the geometry.  Off: a throwaway copy in a temporary folder, for a quick look — and the technology imported with it is temporary too, so the stackup this board is priced against cannot be edited."/>
             <TextBlock x:Name="NoWorkspaceText" Classes="note" IsVisible="False"
                        Text="No workspace is open. railRF will create one rather than silently falling back to the throwaway path — the same New Workspace the application's own command runs."/>
         </StackPanel>
 
-        <!-- ── The three companion files ─────────────────────────────────────────────────────── -->
+        <!-- ── The artwork, and then the three companion files: FOUR ROWS, ONE QUESTION ──────
+             The artwork row carries TWO buttons because there are two shapes of answer and neither
+             is a default: Folder… for a Gerber set, which is a folder of files that belong
+             together, and File… for a single Gerber, a drill file or a .kicad_pcb. NOTHING IS
+             PRE-SELECTED in either — R-rail22-1c: what a file IS is still settled by its CONTENT
+             through the import's own classifier, and a button cannot admit or exclude anything.
+
+             One Grid holds all five rows so the boxes line up; the companion pickers sit in the
+             same column as File… for the same reason. -->
         <StackPanel Spacing="4">
-            <TextBlock Classes="hdr" Text="Companion files"/>
+            <TextBlock Classes="hdr" Text="Artwork"/>
             <TextBlock Classes="note"
-                       Text="Evidence about the artwork, never geometry. A row naming a reference the board does not have is reported with a count in it, never turned into a footprint."/>
+                       Text="A Gerber set is a folder of files that belong together — the outline, every copper layer and the drill data — so Folder… is the usual answer, and naming the folder here is also what stops railRF asking about the enclosing folder later. File… is for a single Gerber, a drill file, or a .kicad_pcb, which is one file and a whole board."/>
 
-            <Grid ColumnDefinitions="90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" >
-                <TextBlock Text="Placement" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
-                <TextBox Grid.Column="1" x:Name="PlacementBox" FontSize="11" Margin="4,3"/>
-                <Button Grid.Column="2" x:Name="PlacementPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+            <Grid ColumnDefinitions="90,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Text="Artwork" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Column="1" x:Name="ArtworkBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Column="2" x:Name="ArtworkFilePick" Content="File…" FontSize="11"
+                        Padding="10,1" Margin="0,3"
+                        ToolTip.Tip="One Gerber, one drill file, or a .kicad_pcb."/>
+                <Button Grid.Column="3" x:Name="ArtworkFolderPick" Content="Folder…" FontSize="11"
+                        Padding="10,1" Margin="4,3,0,3"
+                        ToolTip.Tip="The folder holding the whole Gerber set — every layer and its drill data."/>
 
-                <TextBlock Grid.Row="1" Text="BOM" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
-                <TextBox Grid.Row="1" Grid.Column="1" x:Name="BomBox" FontSize="11" Margin="4,3"/>
-                <Button Grid.Row="1" Grid.Column="2" x:Name="BomPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Spacing="4" Margin="0,12,0,0">
+                    <TextBlock Classes="hdr" Text="Companion files"/>
+                    <TextBlock Classes="note"
+                               Text="Evidence about the artwork, never geometry. A row naming a reference the board does not have is reported with a count in it, never turned into a footprint."/>
+                </StackPanel>
 
-                <TextBlock Grid.Row="2" Text="Netlist" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
-                <TextBox Grid.Row="2" Grid.Column="1" x:Name="NetlistBox" FontSize="11" Margin="4,3"/>
-                <Button Grid.Row="2" Grid.Column="2" x:Name="NetlistPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+                <TextBlock Grid.Row="2" Text="Placement" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="PlacementBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="2" Grid.Column="2" x:Name="PlacementPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
 
-                <TextBlock Grid.Row="3" Text="Part library" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
-                <TextBox Grid.Row="3" Grid.Column="1" x:Name="PartLibraryBox" FontSize="11" Margin="4,3"/>
-                <Button Grid.Row="3" Grid.Column="2" x:Name="PartLibraryPick" Content="…" FontSize="11" Padding="10,1" Margin="0,3"/>
+                <TextBlock Grid.Row="3" Text="BOM" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="BomBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="3" Grid.Column="2" x:Name="BomPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
+
+                <TextBlock Grid.Row="4" Text="Netlist" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="NetlistBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="4" Grid.Column="2" x:Name="NetlistPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
+
+                <TextBlock Grid.Row="5" Text="Part library" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="5" Grid.Column="1" x:Name="PartLibraryBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="5" Grid.Column="2" x:Name="PartLibraryPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
             </Grid>
         </StackPanel>
 

@@ -1851,7 +1851,7 @@
              NUMBERS IN IT, and turns the control that answers it red — the two are one mechanism, not
              a sentence plus a separate hunt. -->
         <Border Grid.Row="2" Classes="pane" Margin="4,0,4,0" Padding="10,4">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                 <SelectableTextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusLine}"
                                      IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center"/>
                 <SelectableTextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
@@ -1859,6 +1859,18 @@
                 <TextBlock Grid.Column="1" Classes="note" Text="both models in hand"
                            IsVisible="{Binding HasBothModels}" VerticalAlignment="Center"
                            ToolTip.Tip="The fast curve stays on the plot beside the accurate one, so the error is measured on this design rather than promised in a document."/>
+
+                <!-- ── WHAT THE IMPORT READ (R-rail22-3b) ────────────────────────────────────
+                     A ROW OF ITS OWN, below whatever the strip is otherwise saying, because it is
+                     not a refusal and must not displace one: a BOM that expanded 13 rows into 31
+                     references — or failed to expand two of them — is a report about the board's
+                     evidence, and the board still solves either way. It was computed all along and
+                     shown nowhere, so a BOM that read nine parts of thirteen could only be inferred
+                     from an odd answer much later. -->
+                <SelectableTextBlock Name="ImportSummaryStrip" Grid.Row="1" Grid.ColumnSpan="2"
+                                     Classes="note" TextWrapping="Wrap" Margin="0,2,0,0"
+                                     Text="{Binding ImportSummary}"
+                                     IsVisible="{Binding HasImportSummary}"/>
             </Grid>
         </Border>
 

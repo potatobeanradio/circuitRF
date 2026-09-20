@@ -69,6 +69,55 @@ public sealed record RailImportOptions
     public bool NeedsPlacementOrigin => PlacementPath is { Length: > 0 } && PlacementOrigin is null;
 
     /// <summary>
+    /// True when nothing has been named for the artwork yet (R-rail22-1a). <b>Nothing is
+    /// pre-selected</b>, because neither answer is the common one: a Gerber set is a FOLDER of files
+    /// that belong together, and a <c>.kicad_pcb</c> is one file.
+    /// </summary>
+    public bool NeedsArtwork => ArtworkPath is not { Length: > 0 };
+
+    /// <summary>The sentence for <see cref="NeedsArtwork"/>, naming both buttons that answer it.</summary>
+    public const string ArtworkRefusal =
+        "Nothing is chosen for the artwork. A Gerber set is a folder of files that belong together, "
+      + "so Folder… is the usual answer; File… is for a single Gerber, a drill file or a "
+      + ".kicad_pcb. railRF does not pre-select one — what a file IS is settled by its content, not "
+      + "by which button opened it.";
+
+    /// <summary>
+    /// Why a <c>.pdf</c> is not a bill of materials railRF will read, or null for anything else.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refusal rather than a reader, and the same class of decision as the Excellon suppression
+    /// question</b> (R-rail22-3). A PDF bill of materials is a RENDERING of a table rather than a
+    /// table: column boundaries would have to be inferred from glyph positions, a wrapped cell is
+    /// indistinguishable from two rows, and a reference list that spans a line break silently loses
+    /// members. The failure is quiet and plausible — a BOM read with nine of thirteen parts produces
+    /// a completely believable railRF answer for the wrong board — so railRF does not guess, exactly
+    /// as <c>convert</c> does not guess leading versus trailing suppression.
+    ///
+    /// <para><b>The sentence names the file the user already has.</b> The same tool that printed the
+    /// PDF exports the table itself, and someone reaching for the PDF usually has the CSV beside it
+    /// and does not know it is the one to point at. <c>XLSX is deliberately NOT offered</c>: this
+    /// reader parses delimited text (<c>DelimitedTables.Parse</c>) and nothing in circuitRF opens a
+    /// workbook, so naming it would be a second wrong file to try.</para>
+    /// </remarks>
+    public static string? BomRefusal(string? bomPath)
+    {
+        if (bomPath is not { Length: > 0 }) return null;
+        if (!bomPath.EndsWith(".pdf", System.StringComparison.OrdinalIgnoreCase)) return null;
+
+        return $"\u201c{System.IO.Path.GetFileName(bomPath)}\u201d is a PDF, which is a PICTURE of a "
+             + "bill of materials rather than the table itself: its columns would have to be guessed "
+             + "from where the glyphs landed, and a reference list that wraps across a line break "
+             + "would lose members silently — nine parts of thirteen reads as a perfectly believable "
+             + "board. railRF does not guess it. Supply the CSV or tab-separated export the same tool "
+             + "produces; grouped cells such as \u201cC3, C5, C7\u201d and \u201cC1-C9\u201d are "
+             + "expanded, and what could not be is reported.";
+    }
+
+    /// <summary>True when the bill of materials named here is one railRF refuses to read.</summary>
+    public bool NeedsReadableBom => BomRefusal(BomPath) is not null;
+
+    /// <summary>
     /// The sentence R-rail7-4 puts in the status strip, <b>with the row count in it</b> — the one
     /// number an import dialog has before it can ask the question at all, which is why
     /// <see cref="PlacementTable.ParsedRowCount"/> is filled even on a refusal.

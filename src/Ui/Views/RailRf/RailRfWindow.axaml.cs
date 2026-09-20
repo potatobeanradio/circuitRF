@@ -537,10 +537,37 @@ public partial class RailRfWindow : Window
     /// </remarks>
     private void OnBoardEditTechnology(object? sender, RoutedEventArgs e)
     {
-        if (Vm?.TechnologyPath is not { Length: > 0 } tech) return;
-        if (WorkspaceLocator.Any() is not { } workspace) return;
+        if (Vm is not { } vm) return;
 
-        workspace.OpenTechnologyDocument(tech);
+        // ── R-rail22-2a: NO SILENT RETURN FROM A VISIBLE CONTROL ──────────────────────────────
+        //
+        // This had two bare `return`s in it and the second is reachable in ordinary use — railRF is
+        // an unowned window that outlives the workspace behind it, so WorkspaceLocator.Any() comes
+        // back null the moment that workspace is closed and the button was then visible, enabled,
+        // and did nothing at all. A control that is live and silent is indistinguishable from a
+        // control that is broken, which is the rule CanPickSelectedNet already states. The
+        // sentences are in RailTechnologyEdit, framework-free, so they are gated without a host.
+        //
+        // Set on Refusal rather than PendingImportRefusal deliberately: PendingImportRefusal gates
+        // RUN, and a board whose technology cannot be opened for editing is still a board that
+        // solves. This is PickSelectedNet's own idiom for a refusal raised by a press.
+        string? why =
+            vm.TechnologyPath is not { Length: > 0 } tech
+                ? RailTechnologyEdit.NoTechnologyRefusal
+            : RailTechnologyEdit.IsTemporary(tech)
+                ? RailTechnologyEdit.TemporaryRefusal(tech)
+            : WorkspaceLocator.Any() is null
+                ? RailTechnologyEdit.NoWorkspaceRefusal(tech)
+                : null;
+
+        if (why is not null)
+        {
+            vm.Refusal = new RailRefusal(why, RailRefusalControl.None);
+            return;
+        }
+
+        var workspace = WorkspaceLocator.Any()!;
+        workspace.OpenTechnologyDocument(vm.TechnologyPath!);
         WorkspaceLocator.WindowFor(workspace)?.Activate();
     }
 

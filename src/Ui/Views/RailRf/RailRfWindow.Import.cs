@@ -2,9 +2,10 @@
 //
 // ── NOTHING HERE IMPORTS ANYTHING ────────────────────────────────────────────────────────────────
 //
-// The artwork goes through GerberImportEntry.Run — the same funnel File ▸ Import ▸ Gerber goes
-// through, including its enclosing-folder prompt, its layer-mapping dialog and its drill-format
-// prompt. The three companion files go through brief 2's readers. The workspace, where one has to be
+// The artwork goes through GerberImportEntry — the same funnel File ▸ Import ▸ Gerber goes through,
+// including its enclosing-folder prompt, its layer-mapping dialog and its drill-format prompt. Which
+// of its two doors (Run for a file, RunFolder for a folder chosen outright) is RailArtworkEntry's one
+// `if`, and both doors are that funnel's own. The three companion files go through brief 2's readers. The workspace, where one has to be
 // made, goes through WorkspaceCreate.Create — the same function the GUI's own New Workspace command
 // calls. What is HERE is the dialog, the ordering, and the reporting: `Authoring.cs`' rule, on the
 // window side of the firewall. An operation that exists twice diverges silently.
@@ -32,42 +33,31 @@ public partial class RailRfWindow
     private void WireImportButton() => ImportButton.Click += async (_, _) => await ImportBoardAsync();
 
     /// <summary>
-    /// Picks a board, asks the two things that must not be guessed, imports it, and points the
+    /// Asks for the board and the things that must not be guessed, imports it, and points the
     /// document at the cell it landed in.
     /// </summary>
+    /// <remarks>
+    /// <b>THE DIALOG COMES FIRST, AND THE ARTWORK IS ONE OF ITS ROWS</b> (R-rail22-1a). This used to
+    /// open a FILE picker as its first act, so the first thing a user did was pick one of twelve
+    /// files that belong together — and the question that actually mattered, whether the enclosing
+    /// FOLDER was the real intent, arrived much later, from inside the import. A Gerber set is a
+    /// folder, so the folder is offered up front, beside the three companion files: those four rows
+    /// are one question and they are asked in one place.
+    /// </remarks>
     private async Task ImportBoardAsync()
     {
         if (Vm is not { } vm) return;
 
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "railRF — Import Board",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                // A CONVENIENCE, never a decision: what a file IS is settled by CONTENT through the
-                // import's own classifier, so nothing here can admit or exclude a file. The list is
-                // the Gerber import's own, because it is the same import.
-                new FilePickerFileType("Board artwork")
-                {
-                    Patterns = ["*.gbr", "*.gbrjob", "*.gdo", "*.gtl", "*.gbl", "*.gts", "*.gbs",
-                                "*.gto", "*.gbo", "*.gtp", "*.gbp", "*.gko", "*.gm1",
-                                "*.drl", "*.ncd", "*.xln", "*.txt", "*.kicad_pcb"],
-                },
-                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
-            ],
-        });
-        if (files.Count == 0) return;
-
-        string chosen = files[0].Path.LocalPath;
         var workspace = WorkspaceLocator.Any();
         string? workspaceDir = workspace?.CurrentWorkspacePath is { } cws
             ? Path.GetDirectoryName(Path.GetFullPath(cws))
             : null;
 
-        if (await new RailImportDialog(chosen, workspaceDir).ShowDialog<RailImportOptions?>(this)
+        if (await new RailImportDialog(workspaceDir).ShowDialog<RailImportOptions?>(this)
             is not { } options)
             return;   // Cancel aborts the whole import and leaves nothing behind.
+
+        string chosen = options.ArtworkPath;
 
         // ── R-rail7-6: with no workspace open, railRF OFFERS to create one ────────────────────
         //
@@ -97,8 +87,16 @@ public partial class RailRfWindow
         GerberImport.ImportResult result;
         try
         {
-            result = await Task.Run(() => GerberImportEntry.Run(
-                chosen, parentDir, null, LayoutUnits.DefaultDbuPerMicron,
+            // ── R-rail22-1b: the later prompt STAYS, and has nothing to ask on the folder route ──
+            //
+            // RailArtworkEntry is the one `if` — a folder goes to GerberImportEntry.RunFolder, the
+            // door that already exists for a folder chosen outright, and a file goes to
+            // GerberImportEntry.Run with both of its prompts intact. Removing pickFolder would be a
+            // second import path, which this file's own header forbids in its first line; sending a
+            // folder to Run would be worse than leaving it, because Run surveys the folder holding
+            // the chosen FILE and would ask about the parent of the folder just chosen.
+            result = await Task.Run(() => RailArtworkEntry.Import(
+                chosen, parentDir, LayoutUnits.DefaultDbuPerMicron,
                 promptForScope: survey => Dispatcher.UIThread
                     .InvokeAsync(() => new GerberImportScopeDialog(survey)
                         .ShowDialog<GerberImportScope?>(this))

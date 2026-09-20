@@ -32530,3 +32530,120 @@ Gates: `tests/Ui.Tests/RailRf/RailLayerVisibilityTests.cs` and
 `tests/Ui.Tests/Layout/TechnologyLiveDisplayEditTests.cs`. The second mirrors `AdoptLiveTechnology`
 because `WorkspaceViewModel` cannot be constructed headlessly, so it also SCANS the window's own file
 for the by-path route — a mirror alone would go on passing after the production method lost it.
+
+## brief-railrf-22-import.md — the folder asked first, a button that did nothing, and the BOM
+
+A first-time designer's second pass over railRF, 2026-09-20. Four reports; three fixed, the fourth
+investigated and left open. Gate: `tests/Ui.Tests/RailRf/RailImportDialogTests.cs` (7 tests, 0.12 s).
+
+### R-rail22-1 — the artwork picker offered a FILE, and asked about the folder much later
+
+`ImportBoardAsync` opened `StorageProvider.OpenFilePickerAsync` as its first act, with a filter
+listing eleven extensions that arrive as a SET. So the first thing a user did was pick one of twelve
+files that belong together, and the question that actually decided the import — whether the
+enclosing folder was the real intent — arrived later, from inside `GerberImportEntry.Run`'s
+`pickFolder`, and only when the classifier decided to ask.
+
+**The dialog is now the first thing Import Board opens**, and the artwork is its first row, with a
+`File…` button and a `Folder…` button writing one box and nothing pre-selected. That also puts the
+artwork beside the three companion files, which is where a reader looks for it: those four rows are
+one question, and they are now one grid so the boxes line up.
+
+**The later prompt was NOT removed, and the folder route does not reach it** — two statements that
+have to both be true, because removing it would be the second import path the Import file's own
+header forbids in its first line. `RailArtworkEntry` is the one `if`: a folder goes to
+`GerberImportEntry.RunFolder`, which already exists for a folder chosen outright and takes no
+`pickFolder` at all; a file goes to `GerberImportEntry.Run` with both prompts intact.
+
+**And sending a folder to `Run` would have been worse than leaving the old order alone.** `Run`
+opens with `Survey(chosenFilePath)`, which takes `Path.GetDirectoryName` of what it is given — so a
+folder handed to it is surveyed against its PARENT, and the user who had just chosen a folder would
+be asked whether they meant *that folder's* enclosing folder. The dispatch is not a convenience.
+
+### R-rail22-2 — a visible button with two silent returns
+
+`OnBoardEditTechnology` was two guards and no sentence:
+
+```csharp
+if (Vm?.TechnologyPath is not { Length: > 0 } tech) return;
+if (WorkspaceLocator.Any() is not { } workspace) return;
+```
+
+The first cannot normally fire — the button is hidden on `HasTechnologyFile`. **The second is
+reachable in ordinary use**: railRF is an unowned window that outlives the workspace behind it, so
+`WorkspaceLocator.Any()` returns null the moment that workspace is closed, and the button is then
+visible, enabled, and does nothing at all. There is a second route to the same symptom: with the
+"keep the artwork in this workspace" checkbox off, the import mints its `.ctech` into
+`Path.GetTempPath()/circuitrf-rail-xxxxxxxx`, which no workspace owns and
+`OpenTechnologyDocument` has nowhere to put.
+
+Three states, three sentences, in `RailTechnologyEdit` — framework-free, so they are gated with no
+application host. They go on `Refusal` rather than `PendingImportRefusal` deliberately:
+`PendingImportRefusal` feeds `RefreshRunGate` and would BLOCK RUN, and a board whose technology
+cannot be opened for editing is still a board that solves. That is `PickSelectedNet`'s own idiom for
+a refusal raised by a press.
+
+**Which of the two the designer hit was not established, and the brief asked for it.** The button
+landed in `602dd8cd` on 2026-09-19 and the report is dated 2026-09-20, so an earlier beta would not
+have had the button at all; the shipped `VERSION` is `1.0.0-beta.26`. The change is correct
+regardless — the no-workspace branch is reachable in the code as it stands — but if he was on a
+build older than 2026-09-19 the honest answer to his report is "it now does", and nobody has asked
+him which build he ran.
+
+### R-rail22-3 — no PDF reader, and the counts that were computed and shown nowhere
+
+**A PDF bill of materials is refused, by name.** It is a rendering of a table rather than a table:
+column boundaries would have to be inferred from glyph positions, a wrapped cell is
+indistinguishable from two rows, and a reference list spanning a line break loses members silently —
+nine parts of thirteen reads as a completely believable board. Same class as the Excellon suppression
+question, which `convert` refuses outright rather than guessing.
+
+**The refusal names the file the user already has**, because he supplied both forms and said so
+himself: the CSV is the same BOM, and it reads today including grouped cells. **XLSX is deliberately
+NOT offered, against the brief's own wording** — `BomFile.Read` parses delimited text through
+`DelimitedTables.Parse` and nothing in circuitRF opens a workbook, so naming it would hand the user a
+second wrong file to try.
+
+**`BomFile` had counted all three numbers since brief 2 and exposed two.** `SourceRowCount` and
+`Rows.Count` were on `BomTable`; the count of reference cells that look like a range and could NOT be
+expanded lived only inside a `Diagnostics` sentence. It is `BomTable.UnexpandedCells` now (an
+init-only property, so the positional record's callers are untouched), and `RailImportReport.BomSummary`
+turns the three into the line the window shows after an import — on its own row of the status strip,
+below the refusal row and never in place of it.
+
+### R-rail22-4 — closing the technology document "closes everything": UNREPRODUCED, and still open
+
+Not fixed, and no fix was written against a guess. **The GUI could not be driven from the session
+that did this work** (Avalonia dies at the RenderTimer here), so this is what the code says about the
+brief's three hypotheses rather than a reproduction:
+
+1. **The `.ctech` is the workspace default and closing it re-resolves dependents.** No. All
+   `OnDockableClosed` does for a `TechDocument` is clear the dirty mark and call
+   `_techCache.ClearLive`, which makes open layouts fall back to the on-disk technology. Nothing
+   closes a document.
+2. **A dirty-document prompt answered for the whole window.** `ConfirmCloseDockable` takes one
+   dockable and returns one bool; the `TechDocument` branch cancels, clears the override, or saves.
+   Nothing there reaches a second document.
+3. **The dock disposing a branch rather than a tab.** Half true and benign. The PRIMARY document
+   dock is `IsCollapsable = false` precisely so its last tab closing does not collapse it
+   (`CircuitRfDockFactory`, line ~242). A pane created by a SPLIT is `IsCollapsable = true` and does
+   collapse when emptied — but that is the pane giving its space back, it is the design, and railRF
+   does not use that entry point: it calls `OpenTechnologyDocument`, which opens into the primary
+   dock, not `OpenTechnologyDocumentBesideLayout`.
+
+**What was found instead is a naming trap, and it fits the report exactly.** The macOS File menu
+carries three adjacent close items:
+
+| item | gesture | what it actually does |
+|---|---|---|
+| Close Window | ⌘W | closes the **active document**, not a window |
+| Close Workspace | *none* | tears the whole workspace down |
+| Close Workspace Window | ⇧⌘W | closes this shell window |
+
+Someone wanting to close a technology TAB has no item that names a document. "Close Window" reads
+like it closes the window, so the natural next guess is "Close Workspace" — and that one closes
+everything. The report is one sentence and does not say which route was taken, so this is a
+candidate and not a finding.
+
+**Ask the designer two things before anyone writes a fix**: which build he was on, and whether he
+closed the technology from the tab's ✕ or from the File menu.

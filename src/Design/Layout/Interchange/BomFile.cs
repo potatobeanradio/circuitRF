@@ -95,6 +95,18 @@ public sealed record BomTable(
     public string FileName => System.IO.Path.GetFileName(Path);
 
     /// <summary>
+    /// Every reference cell that looked like a range and could NOT be expanded, taken as written.
+    /// </summary>
+    /// <remarks>
+    /// <b>A COUNT a caller can report, not only a sentence in <see cref="Diagnostics"/></b>
+    /// (R-rail22-3b). The three numbers that say what a bill of materials actually gave up —
+    /// <see cref="SourceRowCount"/>, <c>Rows.Count</c> and this — were all computed and only the
+    /// first two were reachable, so a BOM that read nine parts out of thirteen could only be
+    /// inferred from an odd answer later.
+    /// </remarks>
+    public IReadOnlyList<string> UnexpandedCells { get; init; } = [];
+
+    /// <summary>
     /// Every row for one reference. <b>A LIST, and that is R-rail2-14 item 1</b>: one internal part
     /// number sits in front of a list of approved manufacturers, so more than one row per reference
     /// is ordinary and taking the first silently is what produces a plausible model from the wrong
@@ -322,7 +334,10 @@ public static class BomFile
                             "them if they excite this rail.");
 
         return new BomTable(full, null, table.Delimiter, rows, sourceRows, unreadable, aggressors,
-                            diagnostics);
+                            diagnostics)
+        {
+            UnexpandedCells = unexpanded,
+        };
     }
 
     /// <summary>Reads a bill of materials from disk. A companion file that cannot be read is not a
