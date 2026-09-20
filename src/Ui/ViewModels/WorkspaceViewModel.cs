@@ -34,6 +34,7 @@ using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Harmonica;
+using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
@@ -2046,6 +2047,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     LayoutDocument alad                     => alad.FilePath,
                     TechDocument atech                      => atech.FilePath,
                     EmSetupDocument aem                  => aem.FilePath,
+                    PartLibraryDocument alib                => alib.FilePath,
                     _                                       => null,
                 };
 
@@ -2635,6 +2637,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         LayoutDocument       { FilePath: { } p }                      => (p, "layout"),
         TechDocument         techDoc                                  => (techDoc.FilePath, "tech"),
         EmSetupDocument      emDoc                                    => (emDoc.FilePath, "emsetup"),
+        PartLibraryDocument  libDoc                                   => (libDoc.FilePath, "partlibrary"),
         MarkdownDocument     mdDoc                                    => (mdDoc.FilePath, "markdown"),
         _                                                             => (null, null),
     };
@@ -2736,6 +2739,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "emsetup" when File.Exists(absPath):
                     OpenOrActivateEmSetup(absPath);
+                    break;
+                case "partlibrary" when File.Exists(absPath):
+                    OpenOrActivatePartLibrary(absPath);
                     break;
                 case "markdown" when File.Exists(absPath):
                     OpenOrActivateMarkdown(absPath);
@@ -3114,6 +3120,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 SmithChartDocument smd           => smd.FilePath,
                 TechDocument td                  => td.FilePath,
                 EmSetupDocument emd           => emd.FilePath,
+                PartLibraryDocument plibd        => plibd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
                 _ => null,
@@ -7117,6 +7124,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         OpenOrActivateTech(files[0].Path.LocalPath);
     }
 
+    /// <summary>
+    /// File ▸ Open ▸ Open Part Library… — R-rail24-1a's "a Part Library row on the same menu the
+    /// other document types are on". Mirrors <see cref="OpenTechnologyFile"/>, which is the closest
+    /// analogue: a file that opens on its own, with or without a workspace.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenPartLibraryFile(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open Part Library",
+            AllowMultiple = false,
+            FileTypeFilter =
+                [new FilePickerFileType("Part Library") { Patterns = ["*" + PartLibraryIo.Extension] }],
+        });
+        if (files.Count == 0) return;
+
+        OpenOrActivatePartLibrary(files[0].Path.LocalPath);
+    }
+
     [RelayCommand]
     private async Task ImportTechnology(Window? owner)
     {
@@ -7629,6 +7659,104 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Failed to open EM setup: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Opens (or focuses) a <c>.crlib</c> part library as an ordinary editor document
+    /// (brief-railrf-24-part-library-editor.md R-rail24-1a).
+    ///
+    /// <para><b>Mirrors <see cref="OpenOrActivateEmSetup"/> exactly, and the mirroring IS the
+    /// feature.</b> Routing the part library through the same open-or-activate path as every other
+    /// document type is what gives it one session per path, a dirty mark, Save, Save As, undo/redo
+    /// and revision control by construction. A bespoke window would have been four partial
+    /// reimplementations of them.</para>
+    ///
+    /// <para><b>Read UNVALIDATED</b> (R-rail24-3a). A run reads a library validated and refuses a
+    /// malformed one by name, which is right: a run must not answer from a table it cannot trust. An
+    /// EDITOR that refused to open it would leave the user with the one tool that cannot fix the
+    /// problem — so the file opens, the refusal is stated in the strip and on the offending row, and
+    /// the row is where it gets corrected.</para>
+    /// </summary>
+    public void OpenOrActivatePartLibrary(string absolutePath)
+    {
+        if (ActivateIfOpen(absolutePath)) return;
+
+        try
+        {
+            var library = PartLibraryIo.LoadFromFile(absolutePath, validate: false);
+            if (library.Name.Length == 0) library.Name = Path.GetFileNameWithoutExtension(absolutePath);
+
+            var vm = new PartLibraryEditorViewModel(absolutePath, library);
+            vm.SaveError        += m => Messages.Error(m);
+            vm.PartLibrarySaved += p => Messages.Success("Saved", p);
+
+            // R-rail24-2c: what this library covers of the design that names it. Asked HERE because
+            // the workspace is the only thing that can find that design — the editor is handed part
+            // numbers, and counts nothing itself.
+            ApplyPartLibraryCoverage(vm, absolutePath);
+
+            var doc = new PartLibraryDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+
+            // The toolbar's Save As… — the picker is the shell's, the write is the view model's.
+            // Routed through the SAME method the tab context menu's Save As uses, so there is one
+            // answer to "where does a .crlib get written" rather than two.
+            vm.SaveAsRequested = () =>
+            {
+                if (HostWindowOf(doc) is { } window) _ = SavePartLibraryAs(doc, window);
+            };
+
+            // Save As follows the new file, so the open-document map has to follow with it —
+            // otherwise reopening the .crlib from the tree would mint a SECOND live view of one file.
+            vm.PartLibrarySavedAs += newPath =>
+            {
+                _openDocsByPath.Remove(absolutePath);
+                _openDocsByPath[newPath] = doc;
+                // The coverage was against whatever design names the ORIGINAL file; after a Save As
+                // this document is a different file, which that design does not reference.
+                ApplyPartLibraryCoverage(vm, newPath);
+                _factory.ProjectTreeTool?.Refresh();
+                Messages.Success("Saved", newPath);
+            };
+
+            _factory.OpenDocument(doc);
+            _openDocsByPath[absolutePath] = doc;
+            HookPartLibraryDirty(doc);
+            Messages.Info("Opened", absolutePath);
+
+            if (vm.Refusal is { } refusal) Messages.Warning(refusal);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to open part library: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Hands the editor the part numbers the design that references this library actually asks about
+    /// (R-rail24-2c). The walk itself is <see cref="PartLibraryCoverageContext"/>'s — it is a question
+    /// about files and belongs beside the library, not in the shell.
+    /// </summary>
+    private void ApplyPartLibraryCoverage(PartLibraryEditorViewModel vm, string crlibPath)
+    {
+        string? root = CurrentWorkspacePath is { } cws
+            ? Path.GetDirectoryName(Path.GetFullPath(cws))
+            : null;
+        var context = PartLibraryCoverageContext.For(root, crlibPath);
+        vm.SetCoverageContext(context?.Subject, context?.PartNumbers);
+    }
+
+    /// <summary>Reflects a <c>.crlib</c> editor's dirty state onto its own tree node's dirty dot —
+    /// the exact mirror of <see cref="HookEmSetupDirty"/>, including the File-menu re-ask, which is
+    /// not cosmetic: a part library editor is a FORM, so none of the canvas-driven enablement
+    /// fan-outs ever fires while the user types into it.</summary>
+    private void HookPartLibraryDirty(PartLibraryDocument doc)
+    {
+        doc.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is not nameof(PartLibraryEditorViewModel.IsDirty)) return;
+            _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+            RaiseFileMenuEnablementChanged();
+        };
     }
 
     /// <summary>
@@ -10216,6 +10344,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case ".wbond": OpenWBondPath(abs);             return true;
             case ".crail": OpenRailPath(abs);              return true;
             case ".csmith": OpenSmithPath(abs);           return true;
+            // R-rail24-1a — the part library. Deliberately ABSENT from App.OpenFiles' own switch,
+            // which is held shut against the three operating systems' type registrations: a `.crlib`
+            // is opened from the design that references it, not from a file manager, and claiming the
+            // extension there would mean claiming it in the plist, the .wxs and the mime file too.
+            case PartLibraryIo.Extension: OpenOrActivatePartLibrary(abs); return true;
             // RC-2: a cell's PARAMETERS are a document like any other here, and the edit routed to
             // the workspace that owns a cell (R-rc2-7) can be an edit to them. Deliberately absent
             // from App.OpenFiles' switch, which is held shut against the three operating systems'
@@ -10288,6 +10421,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // R-smith1-8 — a .csmith, likewise. Brief 4 is the window.
             case NodeKind.SmithFile:
                 OpenSmithPath(node.AbsolutePath);
+                return;
+
+            // R-rail24-1a — a .crlib opens like any other document type. Until this row existed the
+            // extension classified as OtherFile, so a double-click did nothing at all.
+            case NodeKind.PartLibraryFile:
+                OpenOrActivatePartLibrary(node.AbsolutePath);
                 return;
 
             case NodeKind.TechFile:
@@ -12212,6 +12351,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d =>
                     d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), emKey, StringComparison.OrdinalIgnoreCase));
             }
+            case NodeKind.PartLibraryFile:
+            {
+                var libKey = Path.GetFullPath(node.AbsolutePath);
+                return _openDocsByPath.Values.OfType<PartLibraryDocument>().Any(d =>
+                    d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), libKey, StringComparison.OrdinalIgnoreCase));
+            }
             default:
                 return false;
         }
@@ -12245,6 +12390,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case NodeKind.EmSetupFile:
                 SaveEmSetupByPath(node.AbsolutePath);
                 break;
+            case NodeKind.PartLibraryFile:
+                SavePartLibraryByPath(node.AbsolutePath);
+                break;
         }
 
         if (CurrentWorkspacePath is not null)
@@ -12263,6 +12411,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var key = Path.GetFullPath(absPath);
         var doc = _openDocsByPath.Values.OfType<EmSetupDocument>().FirstOrDefault(d =>
+            string.Equals(Path.GetFullPath(d.FilePath), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is { IsDirty: true }) doc.ViewModel.SaveCommand.Execute(null);
+    }
+
+    private void SavePartLibraryByPath(string absPath)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<PartLibraryDocument>().FirstOrDefault(d =>
             string.Equals(Path.GetFullPath(d.FilePath), key, StringComparison.OrdinalIgnoreCase));
         if (doc is { IsDirty: true }) doc.ViewModel.SaveCommand.Execute(null);
     }
@@ -15289,6 +15445,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // A part library, like an EM setup, is always materialized — R-rail24-1a routes it through
+        // the same open path precisely so that it gets this without a second implementation.
+        if (dockable is PartLibraryDocument libCloseDoc && libCloseDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{libCloseDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:   return false;
+                case SaveChangesResult.DontSave: return true;
+                case SaveChangesResult.Save:
+                    libCloseDoc.ViewModel.SaveCommand.Execute(null);
+                    return !libCloseDoc.IsDirty;
+            }
+        }
+
         // Technology editor document — always materialized, never scratch, so Save is a direct
         // write (no offer-target dialog like Layout/Symbol).
         if (dockable is TechDocument techDoc && techDoc.IsDirty)
@@ -15398,6 +15573,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             DataDisplayDocument d => d.FilePath,
             TechDocument d        => d.FilePath,
             EmSetupDocument d     => d.FilePath,
+            PartLibraryDocument d => d.FilePath,
             _                     => null,
         };
         if (closedFilePath is not null)
@@ -15488,6 +15664,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             LayoutDocument ld        => ld.IsDirty,
             TechDocument td          => td.IsDirty,
             EmSetupDocument emd   => emd.IsDirty,
+            PartLibraryDocument plb  => plb.IsDirty,
             _                        => HasAnyDirtyWork(),
         };
     }
@@ -15617,6 +15794,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
+            // SingleDoc scope for an active part library — R-rail24-1a: never scratch, so a direct
+            // write, exactly like the two editors above.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                ResolveActiveDocumentForCommands() is PartLibraryDocument singleLibDoc)
+            {
+                if (!singleLibDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                singleLibDoc.ViewModel.SaveCommand.Execute(null);
+                return;
+            }
+
             // AllDocs scope: save every dirty document.
             //
             // SL2 R-sl2-7/-8: a READ-ONLY document is excluded from every list below and reported
@@ -15654,6 +15845,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var dirtyEmDocs = Writable(_openDocsByPath.Values
                 .OfType<EmSetupDocument>()
                 .Where(d => d.IsDirty));
+            var dirtyPartLibraries = Writable(_openDocsByPath.Values
+                .OfType<PartLibraryDocument>()
+                .Where(d => d.IsDirty));
 
             foreach (var skipped in readOnlyDirty)
                 ReportReadOnlySaveAsRoute(skipped, sweep: true);
@@ -15661,7 +15855,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
                          || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
                          || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
-                         || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0;
+                         || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0
+                         || dirtyPartLibraries.Count > 0;
             if (!anyDirty)
             {
                 // "Nothing to save" would be a lie when the only dirty work was read-only — the
@@ -15883,6 +16078,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<PartLibraryDocument>().Any(d => d.IsDirty && Keep(d))
             || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
             || _scratchWBonds.Any(d => d.IsDirty && Keep(d))
@@ -15935,6 +16131,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<EmSetupDocument>()
             .Where(d => d.IsDirty && Keep(d))
             .ToList();
+        // R-rail24-1a. Present in BOTH this method and HasAnyDirtyWork above, which is the rule the
+        // block below states: a document type added to one and not the other loses work with no
+        // error anywhere.
+        var dirtyPartLibraries = _openDocsByPath.Values
+            .OfType<PartLibraryDocument>()
+            .Where(d => d.IsDirty && Keep(d))
+            .ToList();
         // THE TWO TOOL DOCUMENTS, and their absence here was a silent discard (owner report,
         // 2026-09-19: a dirty scratch `.csmith` let circuitRF quit with nothing asked).
         // HasAnyDirtyWork has counted both kinds since each was built, so the close path DID stop and
@@ -15961,7 +16164,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
-                  + dirtyTechDocs.Count + dirtyEmDocs.Count
+                  + dirtyTechDocs.Count + dirtyEmDocs.Count + dirtyPartLibraries.Count
                   + dirtyScratchWBonds.Count + dirtyMatWBonds.Count
                   + dirtyScratchSmith.Count + dirtyMatSmith.Count
                   + dirtyOrphanedSessions.Count
@@ -15978,6 +16181,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : dirtyMatLayouts.Count            > 0 ? dirtyMatLayouts[0].Id
             : dirtyTechDocs.Count              > 0 ? dirtyTechDocs[0].Id
             : dirtyEmDocs.Count                > 0 ? dirtyEmDocs[0].Id
+            : dirtyPartLibraries.Count         > 0 ? dirtyPartLibraries[0].Id
             : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
             : dirtyScratchWBonds.Count         > 0 ? dirtyScratchWBonds[0].Id
@@ -16112,6 +16316,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     techDoc.ViewModel.SaveCommand.Execute(null);
                 foreach (var emDoc in dirtyEmDocs)
                     emDoc.ViewModel.SaveCommand.Execute(null);
+                foreach (var libDoc in dirtyPartLibraries)
+                    libDoc.ViewModel.SaveCommand.Execute(null);
                 // Dirty data displays → save in place (materialized) or via picker (scratch).
                 foreach (var dd in dirtyMatDisplays)
                     await SaveDataDisplayDoc(dd, owner);

@@ -4,6 +4,7 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.WBond;
+using CircuitRF.Ui.RailRf;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -69,6 +70,7 @@ public partial class WorkspaceViewModel
         TechDocument d                => d.FilePath,
         EmSetupDocument d             => d.FilePath,
         WBondDocument d               => d.FilePath,
+        PartLibraryDocument d         => d.FilePath,
         _                             => null,
     };
 

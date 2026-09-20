@@ -9047,3 +9047,27 @@ whose ideal value is zero: the perfect match came out `0.000004551 dB` beside a 
 `MatchValueFormat.Decibels` is two fixed places — a decibel has already had its decades taken out of
 it — and both the strip and the verb spell it that way, which is why the helper is below the firewall
 rather than in either of them.
+
+## `PartLibraryIo` can now write and read WITHOUT its own refusal gate (2026-09-20)
+
+`brief-railrf-24-part-library-editor.md` R-rail24-3a asks for an editor that saves a library with a
+refused row in it, and the format's own reader and writer both refused one. Both grew a
+`validate` parameter, defaulted to `true`, so every existing caller is unchanged.
+
+**The reason the gate exists is still right and is unchanged for a RUN.** A library that cannot be
+read back is a library that was never written, and `RailArtwork.ResolvePartLibrary` — the one door
+every rail run reads a library through — still reads validated and still reports the refusal
+sentence by name.
+
+**What was wrong was applying it to the EDITOR.** The commonest refusal a real table produces is a
+row added a second before its part number, which is a state a person passes through rather than one
+they are in. Refusing the write there means the user cannot save; refusing the READ means they
+cannot reopen what they were allowed to save; and the one tool that could fix the problem is the one
+that will not show it to them. So the refusal travels with the file instead: stated on the row and
+in the editor's strip, refused by name at the next run, repaired where it was made.
+
+**The bytes are identical either way.** The flag gates the check and never the shape, so there is no
+second spelling of `.crlib` and nothing to keep in step. Gate:
+`tests/Ui.Tests/RailRf/PartLibraryEditorTests.cs` — the same file saved unedited is byte for byte
+what it was, and a saved refused row comes back through the validated read as the sentence the
+editor showed.

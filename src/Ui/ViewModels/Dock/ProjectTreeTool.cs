@@ -643,7 +643,8 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     /// an editor. A kind absent here is one nothing can make dirty yet.</summary>
     private static bool IsDirtyableFile(NodeKind kind) => kind is
         NodeKind.ViewFile or NodeKind.DataDisplayFile or NodeKind.TechFile
-        or NodeKind.EmSetupFile or NodeKind.HarmonicaFile or NodeKind.WBondFile;
+        or NodeKind.EmSetupFile or NodeKind.HarmonicaFile or NodeKind.WBondFile
+        or NodeKind.PartLibraryFile;
 
     private static ProjectTreeNodeViewModel? FindNodeByPath(
         ProjectTreeNodeViewModel root, string absPath)

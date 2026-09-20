@@ -401,6 +401,7 @@ public static class WorkspaceScanner
             ".wbond"  => NodeKind.WBondFile,
             ".crail"  => NodeKind.RailFile,
             ".csmith" => NodeKind.SmithFile,
+            ".crlib"  => NodeKind.PartLibraryFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
             ".cem"    => NodeKind.EmSetupFile,

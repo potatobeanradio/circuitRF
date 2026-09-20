@@ -19,6 +19,8 @@
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
              xmlns:harm="using:CircuitRF.Ui.Harmonica"
              xmlns:harmv="using:CircuitRF.Ui.Views.Harmonica"
+             xmlns:railrf="using:CircuitRF.Ui.RailRf"
+             xmlns:railv="using:CircuitRF.Ui.Views.RailRf"
              xmlns:sm="using:CircuitRF.Ui.Smith"
              xmlns:smv="using:CircuitRF.Ui.Views.Smith"
              xmlns:wb="using:CircuitRF.Ui.WBond"
@@ -126,6 +128,12 @@
              appears here beside the other document kinds rather than owning a window of its own. -->
         <DataTemplate DataType="{x:Type sm:SmithChartDocument}">
             <smv:SmithChartView/>
+        </DataTemplate>
+
+        <!-- R-rail24-1a — the part library is a DOCUMENT, so it appears here beside the other
+             document kinds. railRF's own window is a different thing and stays one. -->
+        <DataTemplate DataType="{x:Type railrf:PartLibraryDocument}">
+            <railv:PartLibraryEditorView/>
         </DataTemplate>
     </Application.DataTemplates>
 

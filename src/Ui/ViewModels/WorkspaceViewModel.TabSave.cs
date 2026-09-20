@@ -13,6 +13,8 @@ using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.WBond;
+using CircuitRF.Ui.RailRf;
+using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -124,7 +126,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument;
+        SmithChartDocument or PartLibraryDocument;
 
     /// <summary>
     /// True when this document kind can be written to a DIFFERENT file and followed there afterwards.
@@ -142,7 +144,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveAsRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument;
+        SmithChartDocument or PartLibraryDocument;
 
     /// <summary>Unsaved work in THIS document — the same per-kind test <c>CanSaveAllDocuments</c>
     /// applies to the active one. A never-saved wBond or harmonicaRF document counts even when clean:
@@ -154,6 +156,7 @@ public partial class WorkspaceViewModel
         LayoutDocument d        => d.IsDirty,
         TechDocument d          => d.IsDirty,
         EmSetupDocument d       => d.IsDirty,
+        PartLibraryDocument d   => d.IsDirty,
         DataDisplayDocument d   => d.ViewModel.Window.HasUnsavedChanges(),
         WBondDocument d         => d.IsDirty || d.FilePath is null,
         HarmonicaDocument d     => d.IsDirty || d.FilePath is null,
@@ -203,6 +206,7 @@ public partial class WorkspaceViewModel
                 case SmithChartDocument d:   await SaveSmithChartDoc(d, window, saveAs: false);   break;
                 case TechDocument d:         d.ViewModel.SaveCommand.Execute(null);               break;
                 case EmSetupDocument d:      d.ViewModel.SaveCommand.Execute(null);               break;
+                case PartLibraryDocument d:  d.ViewModel.SaveCommand.Execute(null);               break;
             }
         }
         finally
@@ -234,6 +238,7 @@ public partial class WorkspaceViewModel
                 case SmithChartDocument d:   await SaveSmithChartDoc(d, window, saveAs: true);    break;
                 case TechDocument d:         await SaveTechAs(d, window);                         break;
                 case EmSetupDocument d:      await SaveEmSetupAs(d, window);                      break;
+                case PartLibraryDocument d:  await SavePartLibraryAs(d, window);                  break;
             }
         }
         finally
@@ -303,6 +308,32 @@ public partial class WorkspaceViewModel
             DefaultExtension    = "cem",
             ShowOverwritePrompt = true,
             FileTypeChoices     = [new FilePickerFileType("circuitRF EM Setup") { Patterns = ["*.cem"] }],
+        });
+
+        if (file?.TryGetLocalPath() is { Length: > 0 } path) doc.ViewModel.SaveAs(path);
+    }
+
+    /// <summary>
+    /// Writes a part library to a different <c>.crlib</c> and follows it from then on. Same shape as
+    /// <see cref="SaveEmSetupAs"/> and for the same reason — the railRF view models are
+    /// framework-free, so the picker is here and the VM takes a resolved path — and its
+    /// <c>PartLibrarySavedAs</c> event is what re-keys the open-document map and re-asks the coverage.
+    /// </summary>
+    internal async Task SavePartLibraryAs(PartLibraryDocument doc, Window owner)
+    {
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title               = "Save Part Library As",
+            // WITHOUT the extension (owner, 2026-09-20). A suggested name that already ends in
+            // `.crlib` beside a DefaultExtension of `crlib` is offered as `decoupling.crlib.crlib` —
+            // the picker appends its default to whatever it was handed rather than noticing the name
+            // already carries one.
+            SuggestedFileName   = Path.GetFileNameWithoutExtension(doc.ViewModel.FilePath),
+            DefaultExtension    = PartLibraryIo.Extension.TrimStart('.'),
+            ShowOverwritePrompt = true,
+            FileTypeChoices     =
+                [new FilePickerFileType("circuitRF Part Library")
+                 { Patterns = ["*" + PartLibraryIo.Extension] }],
         });
 
         if (file?.TryGetLocalPath() is { Length: > 0 } path) doc.ViewModel.SaveAs(path);

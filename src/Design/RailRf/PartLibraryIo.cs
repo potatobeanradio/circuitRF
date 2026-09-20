@@ -43,20 +43,39 @@ public static class PartLibraryIo
     /// library that was never written, and the alternative is a file on the user's disk whose only
     /// symptom is that it refuses to open next week.</para>
     /// </summary>
+    /// <param name="validate">
+    /// Leave it true — that is the rule this header states, and every caller that is writing a
+    /// FINISHED library takes it.
+    ///
+    /// <para><b>False is the EDITOR's case and only the editor's</b>
+    /// (docs/sonnet-briefs/brief-railrf-24-part-library-editor.md R-rail24-3a): a library being
+    /// typed passes through states it would be refused in — the commonest is a row added a second
+    /// before its part number — and an editor that will not let you save work in progress is an
+    /// editor people work around, by editing the JSON in something else. So the refusal TRAVELS
+    /// WITH THE FILE instead of stopping the write: the editor states it on the row and in its
+    /// status strip, a validated read (the one every run takes) still refuses it by name, and
+    /// nothing anywhere silently repairs it. <b>The BYTES are identical either way</b> — this flag
+    /// gates the check, never the shape, so there is no second spelling of the format.</para>
+    /// </param>
     /// <exception cref="InvalidDataException">The library is not well formed — the sentence names the
     /// part.</exception>
-    public static string Serialize(PartLibrary library)
+    public static string Serialize(PartLibrary library, bool validate = true)
     {
-        if (library.Refusal() is { } r) throw new InvalidDataException(r);
+        if (validate && library.Refusal() is { } r) throw new InvalidDataException(r);
         return JsonSerializer.Serialize(ToFileModel(library), JsonOpts);
     }
 
-    public static void SaveToFile(string path, PartLibrary library)
-        => AtomicFile.WriteAllText(path, Serialize(library));
+    /// <inheritdoc cref="Serialize(PartLibrary, bool)"/>
+    public static void SaveToFile(string path, PartLibrary library, bool validate = true)
+        => AtomicFile.WriteAllText(path, Serialize(library, validate));
 
+    /// <param name="validate">See <see cref="Serialize(PartLibrary, bool)"/>. False is the editor's
+    /// case: it has to be able to OPEN the work-in-progress file it was allowed to write, and then
+    /// SAY what is wrong with it. A malformed JSON document or a newer format version is refused
+    /// either way — those are not conditions a row can be edited out of.</param>
     /// <exception cref="InvalidDataException">The file is empty, is from a newer circuitRF, or is not
     /// well formed.</exception>
-    public static PartLibrary Deserialize(string json, string baseDirectory = "")
+    public static PartLibrary Deserialize(string json, string baseDirectory = "", bool validate = true)
     {
         var file = JsonSerializer.Deserialize<CrlibFile>(json, JsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .crlib file.");
@@ -67,13 +86,15 @@ public static class PartLibraryIo
                 $"{CurrentFormatVersion}. Update the application.");
 
         var library = FromFileModel(file, baseDirectory);
-        if (library.Refusal() is { } r) throw new InvalidDataException(r);
+        if (validate && library.Refusal() is { } r) throw new InvalidDataException(r);
         return library;
     }
 
-    public static PartLibrary LoadFromFile(string path)
+    /// <inheritdoc cref="Deserialize(string, string, bool)"/>
+    public static PartLibrary LoadFromFile(string path, bool validate = true)
         => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path),
-                       System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) ?? "");
+                       System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) ?? "",
+                       validate);
 
     // ── convert ───────────────────────────────────────────────────────────────
 

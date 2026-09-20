@@ -209,15 +209,17 @@ public class FileMenuRestructureTests
     }
 
     // ── Gate 4 — Open submenu: exactly its document types (five since Open wBond… was withdrawn for
-    //    v1 — see the entry-point test below); Open Workspace…/Open Recent NOT in it; no separator
-    //    among the three top-level items ─────────────────────────────────────────────────────────
+    //    v1 — see the entry-point test below, and SIX since the part library became a document that
+    //    can be opened, brief-railrf-24 R-rail24-1a); Open Workspace…/Open Recent NOT in it; no
+    //    separator among the three top-level items ────────────────────────────────────────────────
 
     [Fact]
     public void InWindowOpenSubmenu_ExactItemsInOrder()
     {
         var openItem = FindTopLevel(InWindowFileChildren(), "_Open");
         Assert.Equal(
-            ["Open Sc_hematic…", "Open _Technology…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…"],
+            ["Open Sc_hematic…", "Open _Technology…", "Open S_ymbol…", "Open _Layout…", "Open Data _Display…",
+             "Open _Part Library…"],
             openItem.Children.Select(c => c.Header).ToArray());
         Assert.All(openItem.Children, c => Assert.False(c.IsSeparator));
     }
@@ -227,7 +229,8 @@ public class FileMenuRestructureTests
     {
         var openItem = FindTopLevel(NativeFileChildren(), "Open");
         Assert.Equal(
-            ["Open Schematic…", "Open Technology…", "Open Symbol…", "Open Layout…", "Open Data Display…"],
+            ["Open Schematic…", "Open Technology…", "Open Symbol…", "Open Layout…", "Open Data Display…",
+             "Open Part Library…"],
             openItem.Children.Select(c => c.Header).ToArray());
     }
 

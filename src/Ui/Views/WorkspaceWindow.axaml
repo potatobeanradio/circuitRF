@@ -57,6 +57,11 @@
                                     <NativeMenuItem Header="Open Symbol…"       Command="{Binding OpenSymbolFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Layout…"       Command="{Binding OpenLayoutFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+                                    <!-- R-rail24-1a — the part library is a document like the others, so
+                                         it is on the menu the others are on. Mirrored in the in-window
+                                         File menu below; the two surfaces are hand-maintained and must
+                                         not drift. -->
+                                    <NativeMenuItem Header="Open Part Library…" Command="{Binding OpenPartLibraryFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <!-- Open wBond…: WITHDRAWN FOR v1 (owner, 2026-08-17), for the same
                                          reason Tools ▸ wBond is — it opens the standalone wirebond
                                          WINDOW, which is a v2 feature. This was the second entry point
@@ -428,6 +433,13 @@
                               Command="{Binding OpenDataDisplayFileCommand}"
                               CommandParameter="{Binding $parent[Window]}">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- R-rail24-1a. Mirrors the NativeMenu row above; the two must not drift. -->
+                    <MenuItem Header="Open _Part Library…"
+                              Command="{Binding OpenPartLibraryFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="A .crlib opens on its own — no workspace needed.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulletedType" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <!-- Open wBond…: WITHDRAWN FOR v1 (owner, 2026-08-17) — see the NativeMenu's own
                          note above for why. Mirrored there; the two surfaces must not drift.

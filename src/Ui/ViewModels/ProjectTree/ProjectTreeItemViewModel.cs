@@ -131,6 +131,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         // R-smith1-8 — a .csmith. The chart IS the document, and a scatter of points on axes is
         // what reads as one at 16 px.
         (NodeKind.SmithFile, _)          => MaterialIconKind.ChartScatterPlot,
+        // R-rail24-1a — a .crlib. It is a TABLE of parts, and a list glyph is what reads as one at
+        // 16 px; the capacitor-ish glyphs all claim more about the contents than the file does.
+        (NodeKind.PartLibraryFile, _)    => MaterialIconKind.FormatListBulletedType,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
@@ -191,6 +194,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>brief-smith-1-document.md R-smith1-8 — a <c>.csmith</c> Smith Chart document.</summary>
     public bool IsSmithFile => Kind == NodeKind.SmithFile;
+
+    /// <summary>brief-railrf-24-part-library-editor.md R-rail24-1a — a <c>.crlib</c> part library.</summary>
+    public bool IsPartLibraryFile => Kind == NodeKind.PartLibraryFile;
 
     /// <summary>True when this .ctech node is the workspace's current default technology.
     /// Resolved through the host so it reflects the live .cws state when the menu opens.</summary>
@@ -1046,6 +1052,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             // A .csmith is a design document about one matching network; it rides the Cells toggle
             // for the .wBond's and .crail's reason rather than earning a checkbox of its own.
             NodeKind.SmithFile       => f.Cells,
+            // A .crlib is the model half of a design document — it rides the Cells toggle for the
+            // .wBond's, .crail's and .csmith's reason rather than earning a checkbox of its own.
+            NodeKind.PartLibraryFile => f.Cells,
             NodeKind.ColorThemeFile  => f.ColorThemes,
             NodeKind.TechFile        => f.TechFiles,
             // An EM setup is process/analysis configuration alongside the technology it reads, so it

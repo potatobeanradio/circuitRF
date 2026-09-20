@@ -61,6 +61,16 @@ public enum NodeKind
     /// cascade of two-pin elements (smith-chart.md §7). <c>SmithDesignIo</c> reads it.</summary>
     SmithFile,
 
+    /// <summary>
+    /// A part library (<c>.crlib</c>) — the models a board's part numbers resolve to
+    /// (brief-railrf-24-part-library-editor.md R-rail24-1a). <c>PartLibraryIo</c> reads it.
+    ///
+    /// <para>It had no kind at all until 2026-09-20, which is exactly why nothing could open it: a
+    /// file the tree classifies as <see cref="OtherFile"/> has no double-click route, so the shipped
+    /// example's own library was a JSON file and a text editor.</para>
+    /// </summary>
+    PartLibraryFile,
+
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 

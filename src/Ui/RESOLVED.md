@@ -32749,3 +32749,94 @@ candidate and not a finding.
 
 **Ask the designer two things before anyone writes a fix**: which build he was on, and whether he
 closed the technology from the tab's ✕ or from the File menu.
+
+## The part library became a document, and four things only a GRID runs into (2026-09-20)
+
+`brief-railrf-24-part-library-editor.md`: `.crlib` had a reader, a model, a resolver and a shipped
+example, and nothing in the application could open it. Adding the document type is the ordinary
+list — a `NodeKind`, a row in `WorkspaceScanner.ClassifyFile`, an `OpenOrActivate*`, a `Document`, a
+DataTemplate, and the same dozen switches in `WorkspaceViewModel` every other document kind appears
+in. What follows is the part that was not ordinary, because this is the first editor here whose
+content is a grid of text boxes rather than a form or a canvas.
+
+### 1. A snapshot undo command re-applies its own edit when it is PUSHED
+
+`UndoRedoStack.Execute` runs a command as it pushes it. `EmSetupSnapshotCommand` therefore re-reads
+the whole `EmSetup` from JSON on every committed edit, and gets away with it: that panel is a flat
+form whose every property re-reads `Working`, so a replaced model is invisible.
+
+**A grid does not get away with it.** Re-reading the library replaces every `PartLibraryRow` and
+therefore every row view model — including the one whose text box has focus, while the user is
+typing in it. It also silently invalidates any reference a caller holds to a row, which is how it
+was found: a test edited a row through the editor and then read the row back, and got the state as
+it had been two edits earlier.
+
+`PartLibrarySnapshotCommand`'s first `Execute` is a no-op for that reason; the edit has already
+happened by the time the entry is pushed. A redo — the second and later `Execute` — genuinely has to
+apply it, and does.
+
+### 2. A row of text boxes never selects
+
+Owner report: *"it's hard to select a row because there are so many text edit boxes."* A
+`ListBoxItem` selects on a pointer press it RECEIVES, and a `TextBox` handles its own press — so on
+a row that is editable cells edge to edge, the press never arrives unhandled and the item never
+selects. The only pixels that worked were the gutters between two boxes.
+
+That is not cosmetic here: the bias-curve sub-editor acts on the selected row, so the feature was
+unreachable by clicking the row it is about.
+
+**Focus is the right signal, not the press** — it covers tabbing into a cell and a programmatic
+focus as well as a click, so the row the caret is in and the row the panel below is about can never
+be two different rows. One `GotFocus` handler on each list, `handledEventsToo` because the TextBox
+marks the event handled on its way out, walking up to the `ListBoxItem`.
+
+**And the selection was invisible even once it worked**, for the same reason: a `ListBoxItem` draws
+its highlight behind its content, and the content covers the row. The row carries a 3 px accent bar
+of its own in a leading column, which is what actually says which row is selected.
+
+Escape clears the selection and puts the bias-curve panel away (owner request). Focus is moved to
+the list AFTER the selection is cleared — focusing a list that still has a selected item can forward
+focus back into it, and leaving the caret in a cell of the row just unselected means the next focus
+event selects it again.
+
+### 3. A commit-on-LostFocus editor looks clean while it is dirty
+
+Owner report: an edit did not light the dirty indicators up. It could not — the cells bound with
+`UpdateSourceTrigger=LostFocus`, and clicking the tab strip, the project tree or any non-focusable
+chrome does not take focus out of a text box, so the document was dirty in the user's hands and
+clean in its own.
+
+They commit per keystroke now. Two things make that affordable:
+
+- **A run of keystrokes in one field is ONE undo entry.** `PartLibrarySnapshotCommand.Amend` extends
+  the entry in flight rather than pushing a second one, keeping the `before` snapshot from when the
+  run started, so one Ctrl+Z puts the field back the way the user found it. The run ends at every
+  boundary and missing one is how this goes wrong: a different field, a structural edit, an
+  undo/redo (the entry is no longer the top of the stack) and a SAVE (the stack has just recorded
+  that entry as the clean baseline — amending it afterwards leaves the document looking saved while
+  it is not).
+- **The field being typed into is not re-notified.** Every other property on the row is, so a
+  refused value snaps back; raising the edited one mid-word would push the formatter's spelling back
+  into the box under the caret — type `100` and the field becomes `100 F` with the caret at the end,
+  before the `nF` is typed. It still snaps back when focus leaves, because the binding re-reads then.
+
+### 4. A hand-written `InitializeComponent` leaves every `x:Name` field null
+
+Crashed on launch, `NullReferenceException` with nothing but `PartLibraryEditorView..ctor()` in its
+stack, raised during a layout pass when the DataTemplate first built the view. The code-behind wrote
+its own `private void InitializeComponent() => AvaloniaXamlLoader.Load(this);` — which HIDES the
+generated one, and the generated one is what loads the XAML *and* assigns every named field. The
+constructor then threw on the first named control it touched.
+
+**The repo already had a guard for exactly this** —
+`tests/Ui.Tests/InitializeComponentShadowingTests.cs`, which names both halves of it — and it was
+simply not in the set of test classes run while the view was being written. Re-introducing the shadow
+turns both of its tests red by name, so it catches this rather than merely describing it.
+
+### 5. A Save As picker doubles the extension it was given
+
+`SuggestedFileName = Path.GetFileName(...)` beside a `DefaultExtension` is offered as
+`decoupling.crlib.crlib`: the picker appends its default rather than noticing the name already
+carries one. The suggested name is the stem only.
+
+**The same shape is still in `SaveEmSetupAs` and `SaveTechAs`**, which were not touched here.

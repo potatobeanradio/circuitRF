@@ -1,0 +1,357 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rail="using:CircuitRF.Ui.RailRf"
+             xmlns:railv="using:CircuitRF.Ui.Views.RailRf"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.RailRf.PartLibraryEditorView"
+             x:DataType="rail:PartLibraryDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- Ctrl/Meta+S is bound HERE, on the control, for the reason EmSetupEditorView's own header
+         gives: a torn-off document lives in its own host window, which carries no window-level Save
+         binding at all, so a detached editor would have no Save gesture. While docked the
+         window-level binding wins and routes through SaveAllDocumentsCommand, whose SingleDoc branch
+         dispatches a PartLibraryDocument to this same command. -->
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding ViewModel.SaveCommand}"/>
+        <KeyBinding Gesture="Meta+S" Command="{Binding ViewModel.SaveCommand}"/>
+    </UserControl.KeyBindings>
+
+    <UserControl.Styles>
+        <!-- Margin 8 and not 4: a cell's own text starts at its Margin (2) plus its Padding (6), so
+             a header inset by anything else sits visibly off its column. -->
+        <Style Selector="TextBlock.colhdr">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+            <Setter Property="Margin" Value="8,0"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.sect">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <!-- R-rail7-4's shape: the offending control turns red and the sentence shows in the strip —
+             rather than the refusal hiding behind a disabled button. -->
+        <Style Selector="TextBox.cell.flagged">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+
+        <!-- Owner report, 2026-09-20: "it's hard to select a row because there are so many text edit
+             boxes." Two halves, and they are separate problems.
+
+             This half is that the SELECTION IS INVISIBLE: a ListBoxItem's own highlight is drawn
+             behind its content, and this row is content edge to edge, so the only pixels that could
+             show it are the few between the boxes. The accent BAR is drawn beside them instead, and
+             it is what says which row the bias-curve editor below is about. (The other half — that a
+             click in a text box never reached the ListBoxItem at all — is in the code-behind.) -->
+        <Style Selector="ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem Border.rowmark">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected Border.rowmark">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource CrfSelectedRowBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+
+        <!-- ── Toolbar ──────────────────────────────────────────────────────────────────────
+             Same shape as the Layout Editor's (owner, 2026-09-20): a full-bleed bottom-ruled
+             Border padded 4,2, holding icon-only 16 px buttons at Padding 6,3 with a 1 px rule
+             between groups. It is OUTSIDE the panel's own 12 px margin because a toolbar that stops
+             short of the window edge reads as a floating box rather than as the document's chrome —
+             which is why the content below it is a separate, padded Grid. -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <!-- WrapPanel and not a StackPanel, for the reason the Layout Editor's own toolbar
+                 records: an unbounded horizontal measure can leave non-wrapping content painted at a
+                 degenerate size until something forces a relayout. -->
+            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                <Button Command="{Binding ViewModel.SaveCommand}"
+                        ToolTip.Tip="Save part library  (Ctrl+S)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ViewModel.SaveAsCommand}"
+                        ToolTip.Tip="Save Part Library As… — writes a copy and follows it from then on; the original file is left as it is on disk."
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ContentSaveEditOutline" Width="16" Height="16"/>
+                </Button>
+
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <TextBlock Text="Library name"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           Margin="2,0,6,0"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <TextBox Width="220"
+                         Classes="cell"
+                         Margin="0"
+                         VerticalAlignment="Center"
+                         Text="{Binding ViewModel.Name, Mode=TwoWay}"
+                         PlaceholderText="(the file name serves)"/>
+            </WrapPanel>
+        </Border>
+
+        <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12">
+
+            <!-- ── what this library covers of the design that references it (R-rail24-2c) ─────── -->
+            <TextBlock Grid.Row="0"
+                       Margin="0,0,0,10"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       Text="{Binding ViewModel.CoverageText}"
+                       IsVisible="{Binding ViewModel.HasCoverage}"/>
+
+            <!-- ── the status strip (R-rail24-3) ─────────────────────────────────────────────── -->
+            <StackPanel Grid.Row="1" Spacing="6" Margin="0,0,0,10">
+                <Border IsVisible="{Binding ViewModel.IsRefused}"
+                        BorderBrush="{DynamicResource CrfWarningBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Padding="10,7">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <mi:MaterialIcon Kind="AlertCircleOutline" Width="14" Height="14"
+                                         VerticalAlignment="Top" Margin="0,1,0,0"
+                                         Foreground="{DynamicResource CrfWarningBrush}"/>
+                        <SelectableTextBlock Text="{Binding ViewModel.Refusal}"
+                                             FontSize="11" TextWrapping="Wrap"
+                                             Foreground="{DynamicResource CrfWarningBrush}"/>
+                    </StackPanel>
+                </Border>
+                <!-- R-rail24-2a — the disagreement, on the FILE as well as on the row, because a table
+                     of twenty parts is where one row's warning is easiest to miss. -->
+                <ItemsControl ItemsSource="{Binding ViewModel.Disagreements}"
+                              IsVisible="{Binding ViewModel.HasDisagreements}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <SelectableTextBlock Text="{Binding}"
+                                                 FontSize="11"
+                                                 TextWrapping="Wrap"
+                                                 Margin="0,2"
+                                                 Foreground="{DynamicResource CrfWarningBrush}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- ── the grid (R-rail24-1b) ────────────────────────────────────────────────────── -->
+            <Border Grid.Row="2"
+                    BorderBrush="{DynamicResource SystemBaseLowColor}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="8">
+                <Grid RowDefinitions="*,Auto">
+                    <!-- ONE horizontal scroller over the header and the rows together, so a column and
+                         its heading can never be scrolled apart. The vertical scrolling is the ListBox's
+                         own — a ListBox wrapped in a second ScrollViewer is measured at infinite height
+                         and realizes every row, which is the Match Designer's own finding and the reason
+                         this list is a ListBox at all. -->
+                    <ScrollViewer Grid.Row="0"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <Grid RowDefinitions="Auto,*" MinWidth="1180">
+                            <!-- THE TWO COLUMN STRINGS BELOW MUST STAY IDENTICAL. A header that divides a
+                                 different star pool from its rows lands every boundary somewhere else,
+                                 which is a report this codebase has already had once. -->
+                            <Grid Grid.Row="0"
+                                  ColumnDefinitions="3,1.5*,1.6*,0.7*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*"
+                                  Margin="0,0,0,6">
+                                <TextBlock Grid.Column="1"  Classes="colhdr" Text="Part number"/>
+                                <TextBlock Grid.Column="2"  Classes="colhdr" Text="Description"/>
+                                <TextBlock Grid.Column="3"  Classes="colhdr" Text="Footprint"/>
+                                <TextBlock Grid.Column="4"  Classes="colhdr" Text="Class"/>
+                                <TextBlock Grid.Column="5"  Classes="colhdr" Text="V rating"/>
+                                <TextBlock Grid.Column="6"  Classes="colhdr" Text="C"/>
+                                <TextBlock Grid.Column="7"  Classes="colhdr" Text="f₀"/>
+                                <TextBlock Grid.Column="8"  Classes="colhdr" Text="L stated"/>
+                                <TextBlock Grid.Column="9"  Classes="colhdr" Text="L derived"
+                                           ToolTip.Tip="1/((2·π·f₀)²·C) — this is the value used."/>
+                                <TextBlock Grid.Column="10"  Classes="colhdr" Text="ESR"/>
+                                <TextBlock Grid.Column="11" Classes="colhdr" Text="ESR basis"/>
+                                <TextBlock Grid.Column="12" Classes="colhdr" Text="Model reference"/>
+                            </Grid>
+
+                            <ListBox Grid.Row="1"
+                                     x:Name="PartsList"
+                                     ItemsSource="{Binding ViewModel.Rows}"
+                                     SelectedItem="{Binding ViewModel.SelectedRow, Mode=TwoWay}"
+                                     Background="Transparent"
+                                     BorderThickness="0">
+                                <ListBox.Styles>
+                                    <Style Selector="ListBoxItem">
+                                        <Setter Property="Padding" Value="4,3"/>
+                                        <Setter Property="MinHeight" Value="0"/>
+                                    </Style>
+                                </ListBox.Styles>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="rail:PartLibraryRowViewModel">
+                                        <Grid ColumnDefinitions="3,1.5*,1.6*,0.7*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*">
+                                            <!-- The selection mark. See the ListBoxItem styles above for
+                                                 why the row carries one of its own. -->
+                                            <Border Classes="rowmark" CornerRadius="1.5" Margin="0,1"/>
+                                            <TextBox Grid.Column="1" Classes="cell"
+                                                     Classes.flagged="{Binding IsFlagged}"
+                                                     Text="{Binding PartNumber, Mode=TwoWay}"
+                                                     PlaceholderText="(no part number)"
+                                                     ToolTip.Tip="{Binding Refusal}"/>
+                                            <TextBox Grid.Column="2" Classes="cell"
+                                                     Text="{Binding Description, Mode=TwoWay}"/>
+                                            <TextBox Grid.Column="3" Classes="cell"
+                                                     Text="{Binding Footprint, Mode=TwoWay}"/>
+                                            <TextBox Grid.Column="4" Classes="cell"
+                                                     Text="{Binding DielectricClass, Mode=TwoWay}"
+                                                     ToolTip.Tip="X7R, X5R, C0G/NP0, … Blank means the ESR resolves from no class at all, rather than quietly taking X7R's."/>
+                                            <TextBox Grid.Column="5" Classes="cell"
+                                                     Text="{Binding VoltageRatingEntry, Mode=TwoWay}"/>
+                                            <TextBox Grid.Column="6" Classes="cell"
+                                                     Text="{Binding CapacitanceEntry, Mode=TwoWay}"/>
+                                            <TextBox Grid.Column="7" Classes="cell"
+                                                     Text="{Binding SelfResonantFrequencyEntry, Mode=TwoWay}"/>
+                                            <TextBox Grid.Column="8" Classes="cell"
+                                                     Text="{Binding StatedInductanceEntry, Mode=TwoWay}"
+                                                     ToolTip.Tip="{Binding DisagreementSentence}"/>
+                                            <!-- R-rail24-2a: derived, and therefore read-only. A stored
+                                                 third copy is a field that will be edited on one side. -->
+                                            <TextBlock Grid.Column="9" Classes="cell"
+                                                       Text="{Binding DerivedInductanceText}"/>
+                                            <TextBox Grid.Column="10" Classes="cell"
+                                                     Text="{Binding EsrEntry, Mode=TwoWay}"/>
+                                            <!-- R-rail24-2b — the difference between a number somebody
+                                                 measured and a number railRF assumed. -->
+                                            <TextBlock Grid.Column="11" Classes="cell"
+                                                       Text="{Binding EsrBasisText}"
+                                                       ToolTip.Tip="{Binding ModelSourceText}"/>
+                                            <TextBox Grid.Column="12" Classes="cell"
+                                                     Text="{Binding ModelRef, Mode=TwoWay}"
+                                                     ToolTip.Tip="A Touchstone or SPICE model beside the library file. It OVERRIDES the row, and it is the only route to a measured ESR."/>
+                                        </Grid>
+                                    </DataTemplate>
+                            </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                        <Button Padding="10,5" Command="{Binding ViewModel.AddRowCommand}"
+                                ToolTip.Tip="Add a part. It has no part number yet, so the library is momentarily refused — the file still saves.">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                <TextBlock Text="Add part" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Padding="10,5" Command="{Binding ViewModel.RemoveRowCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="Minus" Width="13" Height="13"/>
+                                <TextBlock Text="Remove part" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ── the bias-curve sub-editor (R-rail24-1c) ───────────────────────────────────── -->
+            <Border Grid.Row="3"
+                    Margin="0,12,0,0"
+                    BorderBrush="{DynamicResource SystemBaseLowColor}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="12"
+                    IsVisible="{Binding ViewModel.HasSelectedRow}">
+                <Grid RowDefinitions="Auto,*" ColumnDefinitions="360,*">
+                    <TextBlock Grid.Row="0" Grid.ColumnSpan="2"
+                               Classes="sect"
+                               Text="{Binding ViewModel.SelectedRowTitle}"
+                               ToolTip.Tip="Capacitance versus applied bias. It is the reason a ceramic's derating is honest rather than a rule of thumb."/>
+
+                    <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="0,0,14,0">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,*,0.8*" Margin="0,0,0,4">
+                            <TextBlock Classes="colhdr" Text="Bias"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Capacitance"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Retained"/>
+                        </Grid>
+                        <ListBox Grid.Row="1"
+                                 x:Name="BiasPointList"
+                                 Height="150"
+                                 ItemsSource="{Binding ViewModel.BiasPoints}"
+                                 SelectedIndex="{Binding ViewModel.SelectedBiasPointIndex, Mode=TwoWay}"
+                                 Background="Transparent"
+                                 BorderBrush="{DynamicResource SystemBaseLowColor}"
+                                 BorderThickness="1">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="Padding" Value="4,3"/>
+                                    <Setter Property="MinHeight" Value="0"/>
+                                </Style>
+                            </ListBox.Styles>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="rail:PartBiasPointViewModel">
+                                    <Grid ColumnDefinitions="*,*,0.8*">
+                                        <TextBox Classes="cell"
+                                                 Text="{Binding BiasEntry, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="1" Classes="cell"
+                                                 Text="{Binding CapacitanceEntry, Mode=TwoWay}"/>
+                                        <TextBlock Grid.Column="2" Classes="cell"
+                                                   Text="{Binding RetainedText}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                            <Button Padding="10,5" Command="{Binding ViewModel.AddBiasPointCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <mi:MaterialIcon Kind="Plus" Width="13" Height="13"/>
+                                    <TextBlock Text="Add point" FontSize="11" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Padding="10,5" Command="{Binding ViewModel.RemoveBiasPointCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <mi:MaterialIcon Kind="Minus" Width="13" Height="13"/>
+                                    <TextBlock Text="Remove point" FontSize="11" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- …and the PLOT, because a monotonic curve with one transposed point is invisible
+                         in a grid and obvious on a chart (R-rail24-1c). -->
+                    <Border Grid.Row="1" Grid.Column="1"
+                            Height="190"
+                            Padding="10"
+                            BorderBrush="{DynamicResource SystemBaseLowColor}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                        <railv:BiasCurvePlot Curve="{Binding ViewModel.SelectedBiasCurve}"
+                                             MarkedCapacitance="{Binding ViewModel.SelectedMarkedCapacitanceFarads}"/>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>
