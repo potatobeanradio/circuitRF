@@ -124,6 +124,9 @@
                                     <NativeMenuItem Header="DXF"    Command="{Binding ExportDxfCommand}"/>
                                     <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ExportBoardCommand}"/>
+                                    <NativeMenuItem Header="Board netlist (IPC-D-356)…" Command="{Binding ExportBoardNetlistCommand}"/>
+                                    <NativeMenuItem Header="Placement…" Command="{Binding ExportPlacementCommand}"/>
+                                    <NativeMenuItem Header="Bill of materials…" Command="{Binding ExportBomCommand}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -635,6 +638,15 @@
                     <MenuItem Header="_Board…"
                               Command="{Binding ExportBoardCommand}"
                               ToolTip.Tip="Write this layout as a .kicad_pcb board: stackup, nets, tracks, vias, copper zones and footprints. Design rules are never written — set them on the receiving side. Requires an active layout document."/>
+                    <MenuItem Header="Board _netlist (IPC-D-356)…"
+                              Command="{Binding ExportBoardNetlistCommand}"
+                              ToolTip.Tip="Write the net at every pad and via this board draws, as IPC-D-356. Projected from the artwork itself — railRF never needs it. Requires an active layout document."/>
+                    <MenuItem Header="_Placement…"
+                              Command="{Binding ExportPlacementCommand}"
+                              ToolTip.Tip="Write a pick-and-place table: one row per placement, stating its units and its coordinate origin so nothing has to be asked on the way back in. Requires an active layout document."/>
+                    <MenuItem Header="Bill of _materials…"
+                              Command="{Binding ExportBomCommand}"
+                              ToolTip.Tip="Write one row per placement: reference, value, footprint and type. No part numbers — a part number is a purchasing decision circuitRF does not hold. Requires an active layout document."/>
                 </MenuItem>
                 <MenuItem Header="_Manage PDKs…"
                           Command="{Binding ManagePdksCommand}"

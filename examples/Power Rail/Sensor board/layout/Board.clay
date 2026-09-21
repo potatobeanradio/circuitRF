@@ -36,7 +36,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -47,7 +48,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -58,7 +60,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -69,7 +72,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -80,7 +84,8 @@
       "Layer": {
         "Layer": 4,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -91,7 +96,8 @@
       "Layer": {
         "Layer": 4,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -102,7 +108,8 @@
       "Layer": {
         "Layer": 4,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -113,7 +120,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Rect",
@@ -124,7 +132,8 @@
       "Layer": {
         "Layer": 1,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Via",
@@ -986,7 +995,8 @@
       "Layer": {
         "Layer": 3,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Poly",
@@ -1004,7 +1014,8 @@
       "Layer": {
         "Layer": 3,
         "Datatype": 0
-      }
+      },
+      "Net": "+3V3"
     },
     {
       "$type": "Poly",
@@ -1329,7 +1340,8 @@
       "Layer": {
         "Layer": 2,
         "Datatype": 0
-      }
+      },
+      "Net": "GND"
     }
   ],
   "Instances": [
@@ -1514,6 +1526,45 @@
       "PitchX": 0,
       "PitchY": 0,
       "RefDes": "C13"
+    },
+    {
+      "CellRef": "../../footprints/TERM-OUT",
+      "X": 1100000,
+      "Y": 10300000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "RefDes": "U2"
+    },
+    {
+      "CellRef": "../../footprints/TERM-VDD",
+      "X": 24900000,
+      "Y": 14300000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "RefDes": "U1"
+    },
+    {
+      "CellRef": "../../footprints/TERM-VDD",
+      "X": 24900000,
+      "Y": 5000000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "RefDes": "U3"
     }
   ]
 }

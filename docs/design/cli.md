@@ -1702,6 +1702,61 @@ A `.cnl` input is refused rather than re-emitted: passing it through the reader 
 hand back a file that is not the one given — comments gone, directives reordered — and call it an
 extraction.
 
+### 14.1 The same verb, over a BOARD
+
+`brief-authored-board-3-companion-writers.md` R-ab3-2.
+
+A board netlist, a placement table and a bill of materials are *the extraction a layout performs*.
+That is the same sentence about a different document, so it is the same verb — **not a fourth noun,
+and certainly not a `convert` pair**: `convert` is artwork to artwork and every one of its readers
+lands on a cell folder plus a technology, where these are derived tables and neither is that.
+
+```
+circuitrf netlist board.clay --ipc out.ipc --placement out.csv --bom out.csv
+circuitrf netlist ./MyCell   --placement out.csv          # a cell folder's layout view
+```
+
+**`-o` alone on a `.clay` is a refusal naming all three flags.** Two of the three tables are `.csv`
+and the extension cannot say which — and "which table" is exactly what a dialog would ask. The same
+refusal covers a `.clay` with no destination at all: there is no table on stdout, because three of
+them cannot share one stream. A `.csch` behaves exactly as §14 describes; the board flags on one are
+a refusal BY KIND.
+
+**More than one in a run is ordinary and encouraged.** Footprint 5 R-fp5-2's reason is the governing
+one: *they have to agree, and hand-editing three files is how that goes wrong silently.* One
+invocation is ONE projection — `BoardCompanions.Project`, off briefs 1 and 2's pads, the root's own
+vias and the schematic beside the artwork — and three files that cannot disagree.
+
+**It owns no projection and no writer.** `BoardCompanions` is what the layout editor's File ▸ Export
+▸ Board netlist / Placement / Bill of materials rows call, and byte identity between the CLI as a
+process and that in-process call is the gate — the two drifting is invisible, because a board
+exported from the window and one exported on a build machine both look like board netlists.
+
+**Nothing is written on a refusal, and a partial table is never written.** `BoardNetlist` and
+`PlacementTable` both state on the way IN that a non-null refusal means nothing was read and nothing
+may be used; that contract applies symmetrically on the way out. Over the flatten ceiling the pads
+were never read, so no table is written; a connected piece of copper carrying two different net
+names is either a short or a wrong label, and nothing is written for that board either. A part whose
+footprint pins cannot be joined to its component's ports contributes no records and is NAMED — brief
+1's per-part rule, unchanged.
+
+**A board that resolves no schematic still writes all three**, thin and honest about being thin: the
+netlist and the placement off the artwork, the bill of materials off nothing but the reference
+designator and the footprint each placement carries. The verb says so on stderr before it writes, and
+the dialog says so before it writes; neither refuses, because a placement file with no nets in it is
+a perfectly useful placement file.
+
+Three things the writers declare that their readers would otherwise have to infer — and the middle
+one is the payoff: the netlist's units, the placement's units, and **the placement's coordinate
+ORIGIN**, which is a refusal in the import dialog when a file does not state it (*three quarters of a
+millimetre on an 0402 is the difference between landing on the part's own pad and landing on its
+neighbour's*). A file circuitRF wrote must never provoke that question, and `SymbolOrigin` is the
+honest answer because that is what an instance's origin is. Conversely, **a field the artwork does
+not state is OMITTED rather than defaulted**: a surface land writes no drill and no access code, and
+a plausible `A01` there would make a through feature read as a surface one.
+
+Gate: `tests/Ui.Tests/Cli/NetlistBoardVerbTests.cs` and `tests/Ui.Tests/RailRf/CompanionWriterTests.cs`.
+
 ---
 
 ## 15. `plot` — one picture, without authoring a display first

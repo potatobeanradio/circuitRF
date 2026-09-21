@@ -9626,3 +9626,57 @@ would have made whichever walk ran second silently authoritative.
 console banner — so a run of a board that already worked answers with the same numbers and one more
 line of provenance. That is R-ab1-2c's whole point and it is worth knowing before comparing two
 exports byte for byte.
+
+---
+
+## The three companion WRITERS — brief-authored-board-3 (2026-09-20)
+
+`BoardNetlistWriter`, `PlacementWriter` and `BomWriter` sit beside their readers in
+`Layout/Interchange/`, and `BoardCompanions` is the fourth file that projects a board ONCE and hands
+each of them a slice of it. Seven things came out of building them that are not obvious from either
+side.
+
+**A fourth file was unavoidable, and it is not a second projection.** Each writer serialises what
+briefs 1 and 2 produce; something has to produce it, and it cannot be any of the three (a run
+writing all three tables would otherwise project the board once per table) nor the CLI verb (the
+layout editor's File ▸ Export rows call the same functions, and byte identity between them is the
+gate). `BoardCompanions.Project` is that one place.
+
+**`RailPadResolution` grew `Stamped` and `Schematic`, and the reason is the same both times.** A via
+with no stamp of its own takes the name of the piece it belongs to — R-ab2-2e — and the WRITER has
+to ask the same partition the pads were named against, not a second `PdnCopperPieces.Build` over the
+same board. A bill of materials wants each part's value, footprint and type off the same `.csch` the
+nets came from, and a second `PdnSchematicNets.Resolve` is a second answer to "which schematic is
+this board's" the first time somebody moves one. Both are carried rather than rebuilt.
+
+**`PdnSchematicPart` grew `Value`, `Footprint` and `TypeName` for that reason** — the extraction's
+`Instance` carries bindings and overrides, and what a bill of materials wants is what the schematic
+DRAWS. The value is the first *drawn* parameter (`LabelParameters()`), not the first parameter: a
+component's drawn parameters are the ones its author chose to show, and the first of those is `C` on
+a capacitor and `R` on a resistor, where the first of ALL of them could be a temperature coefficient
+somebody typed.
+
+**An absent field is written as absent, and the reader is what makes that observable.**
+`BoardNetlistRecord` models `Access`, `Plated` and `DrillDbu` as nullable precisely so "the file did
+not say" and "the file said" are different. A surface land states no span, so it gets no access code
+— the brief names `A01` as exactly the plausible value not to write, because it makes a through
+feature read as a surface one. A `ViaShape` carries no plating flag at all, so no via record states
+one either.
+
+**Identical via records are de-duplicated, and that is not the writer hiding a shape.** A barrel
+drawn as two `ViaShape`s at one coordinate — a pad on the top surface and one on the bottom, same
+drill layer, same span — is one hole said twice. `NetlistHoleIndex` unions the facts at a coordinate
+on the way back in, so the duplicate carries no information; what it is NOT is a second barrel, and
+a count of vias taken off the file must not read it as one. The Power Rail example's three
+transitions are exactly this shape.
+
+**A long net name goes into the header as an alias, and truncating it would be worse than dropping
+it.** The record's net field is fourteen columns. A name written short is a net name that is WRONG
+rather than missing, and nothing downstream would question it — so `NNAME<n>` entries are emitted
+first, before any record, and the record carries the alias.
+
+**`PlacementOrigin.SymbolOrigin` is the honest answer and not a convenient one.** A placement row
+here IS an instance's own origin, which is the footprint cell's frame origin. Declaring "body
+centre" because the shipped land patterns happen to be centred on their bodies would be true of
+those cells and false of the first imported one — and the whole reason the writer declares an origin
+at all is that an unstated one is a refusal in the import dialog.

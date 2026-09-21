@@ -82,7 +82,24 @@ public sealed record PdnDivergence(string Refdes, string? Pin, string Sentence);
 /// declares none — and an empty LIST means nothing named them at all.</param>
 /// <param name="Nets">The nets those ports bind, in the same order. <see cref="Instance.NetBindings"/>
 /// verbatim.</param>
-public sealed record PdnSchematicPart(IReadOnlyList<string> PortNames, IReadOnlyList<string> Nets);
+/// <param name="Value">What the schematic DRAWS as this component's value — its first drawn
+/// parameter, expression and unit, exactly as the label reads. Null where it draws none.</param>
+/// <param name="Footprint">The stored <c>Footprint</c> reference (footprint brief 2), never
+/// normalised or re-derived.</param>
+/// <param name="TypeName">What the schematic draws as this component's TYPE — the cell folder name
+/// for a cell reference, the registry name for a built-in.</param>
+/// <remarks>
+/// <b>The last three are here so the schematic is read ONCE</b> (R-ab3-1a). A bill of materials
+/// wants a value, a footprint and a type; the net resolution wants ports and bindings; both come
+/// off the same <c>.csch</c> beside the same artwork, and a second reader for the second question
+/// is a second answer to "which schematic is this board's" the first time somebody moves one.
+/// </remarks>
+public sealed record PdnSchematicPart(
+    IReadOnlyList<string> PortNames,
+    IReadOnlyList<string> Nets,
+    string? Value = null,
+    string? Footprint = null,
+    string? TypeName = null);
 
 /// <summary>
 /// The schematic beside a <c>.clay</c>, extracted — R-ab2-1.
@@ -192,6 +209,13 @@ public sealed record PdnSchematicNets(
             return new PdnSchematicNets(schPath, None.ByInstance, notes);
         }
 
+        // The EDIT model's own components, by name — where the value, the footprint and the type
+        // label live (R-ab3-1e). The extraction's Instance carries overrides and bindings; what a
+        // bill of materials wants is what the schematic DRAWS, and that is this side of it.
+        var drawn = new Dictionary<string, EditableComponent>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in model.Components)
+            if (c.InstanceName is { Length: > 0 } cname) drawn.TryAdd(cname, c);
+
         var byInstance = new Dictionary<string, PdnSchematicPart>(StringComparer.OrdinalIgnoreCase);
         foreach (var inst in extracted.TestBench.Instances)
         {
@@ -201,12 +225,37 @@ public sealed record PdnSchematicNets(
             // the far end (R-ab1-4b), so an empty name list is an answer and not a failure: what
             // matters is that PortNames and Nets are the same length and in the same order.
             var ports = extracted.Library.Find(inst.Reference)?.Ports;
+            drawn.TryGetValue(who, out var component);
             byInstance[who] = new PdnSchematicPart(
                 ports is { Count: > 0 } p && p.Count == inst.NetBindings.Count ? [.. p] : [],
-                inst.NetBindings);
+                inst.NetBindings,
+                ValueOf(component),
+                component?.Footprint,
+                component?.TypeLabelText());
         }
 
         return new PdnSchematicNets(schPath, byInstance, []);
+    }
+
+    /// <summary>
+    /// What one component's value LABEL reads — its first drawn parameter, expression and unit, in
+    /// the schematic's own spelling (<c>EditableComponent.ToRenderComponent</c>'s own format, minus
+    /// the <c>Name =</c> prefix a bill of materials has no column for).
+    ///
+    /// <para><b>The first DRAWN one, not the first one.</b> A component's drawn parameters are the
+    /// ones its author chose to show, and the first of those is the value on every built-in family
+    /// — <c>C</c> on a capacitor, <c>R</c> on a resistor. Taking the first of ALL of them would put
+    /// a temperature coefficient in the value column of a part somebody typed one on.</para>
+    /// </summary>
+    private static string? ValueOf(EditableComponent? component)
+    {
+        if (component is null) return null;
+        foreach (var p in component.LabelParameters())
+        {
+            if (p.Expression is not { Length: > 0 } expression) continue;
+            return p.Unit is { Length: > 0 } unit ? $"{expression} {unit}" : expression;
+        }
+        return null;
     }
 }
 

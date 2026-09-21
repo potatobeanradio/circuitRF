@@ -8987,6 +8987,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportBoard() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportBoard();
 
+    /// <summary>
+    /// File ▸ Export ▸ Board netlist / Placement / Bill of materials
+    /// (brief-authored-board-3-companion-writers.md R-ab3-3a) — the three tables a board PROJECTS,
+    /// beside the three artwork formats it converts to.
+    ///
+    /// <para><b>They call the same functions <c>circuitrf netlist</c> calls</b>
+    /// (<c>BoardCompanions</c>), and byte identity between the two is the gate — that test exists
+    /// because the two drifting is invisible. Gated exactly like GDSII/DXF/Gerber/Board, and like
+    /// those this command only decides WHICH document is being exported; the picker and the write
+    /// live in the layout view's own code-behind.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportBoardNetlist() =>
+        (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportBoardNetlist();
+
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportPlacement() =>
+        (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportPlacement();
+
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportBom() =>
+        (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportBom();
+
     [RelayCommand]
     private void NewDataDisplay()
     {
@@ -14915,6 +14938,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // out permanently — the exact failure the comment above warns about, found while adding Board.
         ExportGerberCommand.NotifyCanExecuteChanged();
         ExportBoardCommand.NotifyCanExecuteChanged();
+        // The three companion tables, in BOTH fan-outs for the reason stated above them — Gerber's
+        // own scar is two lines up, and it is the whole reason this comment is here twice.
+        ExportBoardNetlistCommand.NotifyCanExecuteChanged();
+        ExportPlacementCommand.NotifyCanExecuteChanged();
+        ExportBomCommand.NotifyCanExecuteChanged();
 
         // Save Schematic As… / Save Layout As… are each enabled only when their own document type
         // is the active dockable.
@@ -15211,6 +15239,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // out permanently — the exact failure the comment above warns about, found while adding Board.
         ExportGerberCommand.NotifyCanExecuteChanged();
         ExportBoardCommand.NotifyCanExecuteChanged();
+        // The three companion tables, in BOTH fan-outs for the reason stated above them — Gerber's
+        // own scar is two lines up, and it is the whole reason this comment is here twice.
+        ExportBoardNetlistCommand.NotifyCanExecuteChanged();
+        ExportPlacementCommand.NotifyCanExecuteChanged();
+        ExportBomCommand.NotifyCanExecuteChanged();
         SaveLooseSchematicCommand.NotifyCanExecuteChanged();
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();

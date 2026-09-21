@@ -1,0 +1,22 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Nm",
+  "SnapDbu": 0,
+  "AngleMode": "AnyAngle",
+  "Pins": [
+    {
+      "Name": "VDD",
+      "X": 0,
+      "Y": 0,
+      "WidthDbu": 300000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [],
+  "Instances": []
+}

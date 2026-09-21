@@ -484,7 +484,12 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
 
         Assert.Equal(before, after.Pads);
         Assert.Equal(0, after.FromArtwork);
-        Assert.Equal(PdnBoardPads.NetPointsOf(netlist), after.NetPoints);
+        // DISTINCT, and the difference is PadsFor's own documented one rather than a change here:
+        // it de-duplicates, because both sources legitimately describe the same stitching via and
+        // two identical seeds are redundant rather than wrong. The example's netlist states a via
+        // IN each land, so a pad's point and its via's point are the same point said twice — what
+        // this asserts is that the ARTWORK contributed no point the netlist had not already named.
+        Assert.Equal(PdnBoardPads.NetPointsOf(netlist).Distinct(), after.NetPoints);
         Assert.Equal($"{before.Count} pads, from the board netlist", PdnPadSummary.Describe(after.Pads));
 
         output.WriteLine($"{before.Count} pads, all from the netlist; artwork contributed {after.FromArtwork}");

@@ -170,6 +170,15 @@
                 <MenuItem Header="_Board…"
                           Command="{Binding ExportBoardCommand}"
                           ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="Board _netlist (IPC-D-356)…"
+                          Command="{Binding ExportBoardNetlistCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="_Placement…"
+                          Command="{Binding ExportPlacementCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="Bill of _materials…"
+                          Command="{Binding ExportBomCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
             </MenuItem>
             <MenuItem Header="_Manage PDKs…"
                       Command="{Binding ManagePdksCommand}"

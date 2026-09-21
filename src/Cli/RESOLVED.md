@@ -2513,3 +2513,41 @@ Three things about the shape of the answers that are worth knowing.
   for the same reason the GUI's refusal names both: two numbers in two places is how a mismatch
   goes unread. The one that bites is an `SnP` with `RefNode` set, which has one more port than its
   file has — `EffectivePortCount`, not `PortCount`.
+
+---
+
+## `netlist` over a BOARD — brief-authored-board-3 (2026-09-20)
+
+**`netlist` grew a second document kind rather than a fourth verb.** A board netlist, a placement
+table and a bill of materials are the extraction a LAYOUT performs, which is the same sentence
+`netlist` already makes about a schematic. `src/Cli/NetlistBoard.cs` holds the argument parsing, the
+target resolution and the refusals; every byte comes from `BoardCompanions` in `src/Design`, which is
+what the layout editor's File ▸ Export rows call.
+
+**Which extraction runs is decided by the document kind, and by the flags for a cell folder.** A
+`.clay` is always the board path. A cell folder holding both views is the ordinary case, so the
+presence of any of `--ipc` / `--placement` / `--bom` is what says which view is meant — asking for a
+placement table out of a cell is unambiguous, and defaulting to the schematic there would silently
+extract the wrong document.
+
+**Two disagreeing sentences in the brief, resolved in favour of the explicit one.** R-ab3-2e says a
+part whose pins cannot be joined "writes no records for that part and is named"; gate 8's summary
+lists the same case among the ones where "the output files do not exist". The per-part reading is
+what is implemented, because it is brief 1's own behaviour (`PdnLayoutPads.JoinPinsToPorts` returns
+null, the instance contributes nothing and a note names it) and because refusing to write a whole
+board over one 2-pin part whose footprint pins are named inconsistently would make the verb unusable
+mid-design — which is the same argument R-ab2-5c makes for reporting a divergence rather than
+refusing on it. The two whole-board refusals — over the flatten ceiling, and a piece of copper
+carrying two names — write nothing at all, and the gate asserts the files' absence.
+
+**The three UI rows are one method.** `LayoutEditorView.OnExportCompanionAsync` takes which table it
+is writing; three pickers differing only in an extension is how one of them comes to write a
+slightly different file, which is the drift the Gerber/GDSII/DXF handlers beside it already warn
+about. The refusal is checked BEFORE the picker is shown — asking where to put a file that will not
+be written is the wrong order to ask it in.
+
+**`ExportBoardNetlistCommand` / `ExportPlacementCommand` / `ExportBomCommand` are in BOTH
+`NotifyCanExecuteChanged` fan-outs.** That is this file's standing gotcha and Gerber's own scar is
+two lines above them in `WorkspaceViewModel`: a `[RelayCommand(CanExecute=…)]` gated on the active
+document is not re-evaluated on its own, and one missed from a fan-out is a menu row greyed out
+permanently with nothing to say so.

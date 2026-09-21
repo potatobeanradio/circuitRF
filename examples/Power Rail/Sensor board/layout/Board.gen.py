@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Regenerates the Power Rail example's board, its IPC-D-356 netlist and its placement table.
+"""Regenerates the Power Rail example's board.
 
-Kept as the source of the artwork because the three files MUST agree: a pad in the netlist that is
-not under a land in the .clay is a part railRF cannot locate, and a land with no anti-pad under it
-is a decoupling capacitor shorting the rail to its reference.  Hand-editing three files to stay in
-step is how that goes wrong silently.
+IT WRITES THE ARTWORK AND NOTHING ELSE (brief-authored-board-3 R-ab3-4).  It used to write the
+IPC-D-356 netlist and the placement table beside it, because the three files MUST agree and
+hand-editing three files to stay in step is how that goes wrong silently.  Those two are now
+PROJECTED from this `.clay` by circuitRF itself:
+
+    dotnet run --project src/Cli -- netlist "examples/Power Rail/Sensor board/layout/Board.clay" \
+        --ipc      "examples/Power Rail/Sensor board/layout/Board.ipc" \
+        --placement "examples/Power Rail/Sensor board/layout/Board.placement.csv"
+
+One invocation, one projection, two files that cannot disagree — and half of the audit this file
+used to perform became STRUCTURALLY IMPOSSIBLE with it: a netlist projected from the lands cannot
+name a pad that is not under one.  The other half is a real geometric check about the artwork and
+stays right here, where the artwork is written.
 
 THE LANDS ARE NOT DRAWN HERE.  Every part is an INSTANCE of a footprint cell under
 `examples/Power Rail/footprints/`, and this script READS those cells for its pad rectangles rather
@@ -28,13 +37,15 @@ BOARD_W, BOARD_H = 30.0, 20.0
 root = sys.argv[1]
 FOOTPRINTS = os.path.join(root, "footprints")
 
-# ── THE TWO DELIBERATE FAULTS ──────────────────────────────────────────────────────────────────
+# ── THE DELIBERATE FAULT ───────────────────────────────────────────────────────────────────────
 # The audit's whole value is that it REFUSES, and a refusal nobody has ever seen fire is a refusal
-# nobody knows still works.  These two environment variables introduce, on purpose, the exact two
-# defects this file's docstring names — a netlist pad that is not under a land, and a power via with
-# no anti-pad under it — so the gate can run this generator and assert it wrote nothing.  Off, and
-# absent from every ordinary run.
-BREAK_PAD     = os.environ.get("CRF_BREAK_PAD") == "1"
+# nobody knows still works.  This environment variable introduces, on purpose, the defect this
+# file's docstring names — a power via with no anti-pad under it — so the gate can run this
+# generator and assert it wrote nothing.  Off, and absent from every ordinary run.
+#
+# There used to be a second one, CRF_BREAK_PAD, which moved a netlist pad off its land.  It is gone
+# because the defect is: the netlist is projected from the lands now, so a pad that is not under
+# one is not a thing this generator can write.
 BREAK_ANTIPAD = os.environ.get("CRF_BREAK_ANTIPAD") == "1"
 
 # ── the footprint cells ────────────────────────────────────────────────────────────────────────
@@ -54,6 +65,37 @@ def read_footprint(cell):
 
 CELLS = {c: read_footprint(c) for c in ("C0402", "C0603", "C0805", "C7343-31")}
 
+# ── THE THREE PARTS THE BOARD DOES NOT DRAW ────────────────────────────────────────────────────
+# The regulator and the two loads are not on this board as artwork: what the board has is the bare
+# copper their terminals land on.  Until brief-authored-board-3 that was said only in the `.ipc`,
+# which is exactly the gap that series closes — a board circuitRF drew must STATE everything the
+# netlist would state, or the netlist cannot be projected from it and the anchors `U1.VDD`,
+# `U2.OUT` and `U3.VDD` resolve to nothing.
+#
+# So each is a PLACEMENT of a cell holding ONE PIN AND NO COPPER.  No copper on purpose: the rail's
+# own run already covers that point, and a land drawn here would be a second shape over the same
+# metal, which changes what the fast model decomposes into sections and therefore changes the
+# answer.  A pin says "this part's terminal is here" and draws nothing, which is precisely the
+# claim the netlist record used to make on its own.
+
+def terminal_cell(name, pin):
+    """A one-pin, no-copper footprint cell — see the note above."""
+    cell = os.path.join(FOOTPRINTS, name)
+    os.makedirs(os.path.join(cell, "layout"), exist_ok=True)
+    with open(os.path.join(cell, ".ccell"), "w") as f:
+        json.dump({"FormatVersion": 1, "Parameters": [], "IsTestBench": False, "NumPorts": 0},
+                  f, indent=2)
+    with open(os.path.join(cell, "layout", name + ".clay"), "w") as f:
+        json.dump({"FormatVersion": 1, "DbuPerMicron": 1000, "DisplayUnit": "Nm", "SnapDbu": 0,
+                   "AngleMode": "AnyAngle",
+                   "Pins": [{"Name": pin, "X": 0, "Y": 0, "WidthDbu": mm(0.30),
+                             "OutwardDeg": 0, "Layer": {"Layer": L_TOP, "Datatype": 0}}],
+                   "Shapes": [], "Instances": []}, f, indent=2)
+        f.write("\n")
+
+terminal_cell("TERM-OUT", "OUT")
+terminal_cell("TERM-VDD", "VDD")
+
 def placed(cell, cx, cy, rot, pin):
     """One pad of a placed instance, in board coordinates: (centre x, centre y, w, h)."""
     x1, y1, x2, y2 = CELLS[cell][pin]
@@ -65,9 +107,23 @@ def placed(cell, cx, cy, rot, pin):
 
 shapes, instances = [], []
 
-def rect(x1, y1, x2, y2, layer):
-    shapes.append({"$type": "Rect", "X1": mm(x1), "Y1": mm(y1), "X2": mm(x2), "Y2": mm(y2),
-                   "Layer": {"Layer": layer, "Datatype": 0}})
+# THE NET IS STAMPED ON THE ROOT'S OWN COPPER, AND THAT IS AN AUTHORING ACT (brief-authored-board-2).
+# Nothing in circuitRF writes `Net` automatically — Update Layout does not stamp it — because a
+# re-derived name cannot go stale and a stamped one is what a board with no schematic behind it
+# needs.  This board has none, so the stamps below are how it says what its copper is, exactly as
+# LayoutShapePropertiesViewModel's Net field would for a board drawn by hand.
+#
+# ONLY THE ROOT'S OWN SHAPES, NEVER A FOOTPRINT CELL'S: a land pattern is one cell shared by every
+# placement of it, and a Net stamped inside C0402 would put nine capacitors on one net.  A stated
+# name reaches its whole connected piece, so naming the pour names every land that reaches it.
+RAIL, GND = "+3V3", "GND"
+
+def rect(x1, y1, x2, y2, layer, net=None):
+    shape = {"$type": "Rect", "X1": mm(x1), "Y1": mm(y1), "X2": mm(x2), "Y2": mm(y2),
+             "Layer": {"Layer": layer, "Datatype": 0}}
+    if net:
+        shape["Net"] = net
+    shapes.append(shape)
 
 def via(x, y, landing=L_TOP):
     shapes.append({"$type": "Via", "X": mm(x), "Y": mm(y),
@@ -85,11 +141,14 @@ def octagon(cx, cy, a):
         out += [mm(px), mm(py)]
     return out
 
-def poly(x1, y1, x2, y2, layer, holes):
-    shapes.append({"$type": "Poly",
-                   "Xy": [mm(x1), mm(y1), mm(x2), mm(y1), mm(x2), mm(y2), mm(x1), mm(y2)],
-                   "Holes": holes,
-                   "Layer": {"Layer": layer, "Datatype": 0}})
+def poly(x1, y1, x2, y2, layer, holes, net=None):
+    shape = {"$type": "Poly",
+             "Xy": [mm(x1), mm(y1), mm(x2), mm(y1), mm(x2), mm(y2), mm(x1), mm(y2)],
+             "Holes": holes,
+             "Layer": {"Layer": layer, "Datatype": 0}}
+    if net:
+        shape["Net"] = net
+    shapes.append(shape)
 
 def instance(ref, cell, cx, cy, rot=0):
     """A placed part.  The DESIGNATOR is the placement's, and only its PLACEMENT is stored —
@@ -118,7 +177,7 @@ shapes.append({"$type": "Path",
 RAIL_RUNS = []                                 # the rail's own bare TOP copper, for the audit
 
 def rail_run(x1, y1, x2, y2):
-    rect(x1, y1, x2, y2, L_TOP)
+    rect(x1, y1, x2, y2, L_TOP, RAIL)
     RAIL_RUNS.append((x1, y1, x2, y2))
 
 rail_run(0.80, 10.15,  1.40, 10.45)            # U2's output land
@@ -131,9 +190,9 @@ rail_run(5.20, 10.15, 7.30, 10.45)             # out of FB1's downstream land, t
 rail_run(6.15,  8.45, 6.45, 10.45)             # the stub that ties the regulator's IN3 island on
 
 # ── the supply's long way round the connector cut-out ──────────────────────────────────────────
-rect(6.90, 10.20, 7.10, 17.10, L_BOT)          # down the left side
-rect(6.90, 16.90, 24.10, 17.10, L_BOT)         # across the top, 0.20 mm wide
-rect(23.90, 4.90, 24.10, 17.10, L_BOT)         # down the right side
+rect(6.90, 10.20, 7.10, 17.10, L_BOT, RAIL)    # down the left side
+rect(6.90, 16.90, 24.10, 17.10, L_BOT, RAIL)   # across the top, 0.20 mm wide
+rect(23.90, 4.90, 24.10, 17.10, L_BOT, RAIL)   # down the right side
 
 rail_run(21.00, 14.15, 25.40, 14.45)           # U1's land
 rail_run(21.00,  4.85, 25.40,  5.15)           # U3's land
@@ -190,8 +249,6 @@ lands = []
 def land(ref, pin, cell, cx, cy, rot, net):
     px, py, w, h = placed(cell, cx, cy, rot, pin)
     lands.append((ref, pin, px - w / 2, py - h / 2, px + w / 2, py + h / 2, net))
-    if BREAK_PAD and ref == "C7" and pin == "1":
-        px += 2.0                                   # a pad the netlist states and no land covers
     pads.append((ref, pin, net, px, py, w, h))
     return px, py, w, h
 
@@ -217,6 +274,13 @@ for ref, pn, cell, cx, cy, rot, stub in PARTS:
     power_vias.append((pvx, py))
     return_vias.append((rvx, ry))
 
+# The regulator's output and the two loads' supply pins — see `terminal_cell` above.  Placed LAST,
+# so the projected placement table lists them after the parts, which is the order a reader expects.
+for ref, cell, tx, ty in [("U2", "TERM-OUT", 1.10, 10.30),
+                          ("U1", "TERM-VDD", 24.90, 14.30),
+                          ("U3", "TERM-VDD", 24.90, 5.00)]:
+    instance(ref, cell, tx, ty)
+
 # ── the rail's plane, on IN3 ───────────────────────────────────────────────────────────────────
 # TWO islands, and neither bridges the board.  A single pour spanning both ends would put a second
 # path in parallel with the 0.20 mm BOT run and delete the finding this example exists for; each of
@@ -232,7 +296,7 @@ def inside(box, x, y):
 
 for box in (LOAD_POUR, REG_POUR):
     holes = [octagon(x, y, ANTI) for x, y in return_vias if inside(box, x, y)]
-    poly(box[0], box[1], box[2], box[3], L_IN3, holes)
+    poly(box[0], box[1], box[2], box[3], L_IN3, holes, RAIL)
 
 # ── the reference, on GND ──────────────────────────────────────────────────────────────────────
 # One hole per barrel on the rail — the three transitions, every capacitor's power via, and the
@@ -241,7 +305,7 @@ anti_pad_vias = RAIL_VIAS + power_vias
 if BREAK_ANTIPAD:
     anti_pad_vias = anti_pad_vias[:-1]              # one power via left shorting the rail to GND
 gnd_holes = [octagon(x, y, ANTI) for x, y in anti_pad_vias]
-poly(0, 0, BOARD_W, BOARD_H, L_GND, gnd_holes)
+poly(0, 0, BOARD_W, BOARD_H, L_GND, gnd_holes, GND)
 
 # ── THE AUDIT ──────────────────────────────────────────────────────────────────────────────────
 # Every check here is one this board has already failed.  The artwork is the input to a DC solve
@@ -284,28 +348,11 @@ for x, y in return_vias:
     if barrel_reaches(L_IN3, x, y) or barrel_reaches(L_BOT, x, y):
         problems.append(f"return via at ({x}, {y}) reaches the rail: it shorts the supply")
 
-# Every pad in the netlist has to be UNDER a land in the .clay, which is the invariant this whole
-# file exists for.  IT IS RE-DERIVED FROM THE INSTANCE LIST, not from the loop that produced the
-# netlist row: what goes in the `.clay` is a cell reference, an origin and a rotation, and the
-# question is whether the copper THAT resolves to lands under the coordinate the netlist states.
-# Re-using the same tuple would make this check true by construction and worth nothing.
-placed_copper = []
-for inst in instances:
-    cell = inst["CellRef"].rsplit("/", 1)[-1]
-    rot = {"R0": 0, "R90": 90, "R180": 180, "R270": 270}[inst["Rot"]]
-    for pin in ("1", "2"):
-        px, py, w, h = placed(cell, inst["X"] / MM, inst["Y"] / MM, rot, pin)
-        placed_copper.append((px - w / 2, py - h / 2, px + w / 2, py + h / 2))
-
-def land_under(x, y):
-    for x1, y1, x2, y2 in placed_copper:
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            return True
-    return barrel_reaches(L_TOP, x, y, r=0.0)     # U1/U2/U3 are bare lands, not placed parts
-
-for ref, pin, net, x, y, w, h in pads:
-    if not land_under(x, y):
-        problems.append(f"{ref}.{pin} is at ({x:.3f}, {y:.3f}) and there is no land there")
+# THE PAD-UNDER-A-LAND CHECK IS GONE AND IT IS NOT AN OVERSIGHT (brief-authored-board-3 R-ab3-4c).
+# It existed because the netlist and the artwork were written independently here.  The netlist is
+# now PROJECTED from the lands themselves, so a pad it does not stand on is not a thing that can be
+# written — the invariant became structural instead of checked.  What remains below is the half
+# that is a real statement about geometry, which no writer could make on its own.
 
 # Two lands of different parts that touch are one piece of copper, whatever the netlist says.
 for i in range(len(lands)):
@@ -370,50 +417,11 @@ with open(os.path.join(root, "Sensor board/layout/Board.clay"), "w") as f:
     json.dump(clay, f, indent=2)
     f.write("\n")
 
-# ── the board netlist ──────────────────────────────────────────────────────────────────────────
-# IPC-D-356A, metric, one count = 0.001 mm.  Columns: the three-digit code, a fourteen-wide net
-# field from column 3, the reference-and-pin span from column 19, and the letter-tagged tail from
-# column 30.
-def record(net, ref, pin, x, y, w, h, access=1):
-    head = "317" + net.ljust(14) + "  " + f"{ref}-{pin}".ljust(11)
-    tail = ("A%02d" % access
-            + "X%07d" % int(round(x * 1000))
-            + "Y%07d" % int(round(y * 1000))
-            + "X%06d" % int(round(w * 1000))
-            + "Y%06d" % int(round(h * 1000)))
-    return head + tail
-
-lines = ["C  Sensor board - power rail integrity example",
-         "C  Written by hand for the circuitRF Power Rail example; no board tool produced it.",
-         "P  JOB SENSOR BOARD",
-         "P  UNITS CUST 1",
-         "P  DIM MM"]
-
-for ref, pin, net, x, y, w, h in pads:
-    lines.append(record(net, ref, pin, x, y, w, h))
-
-# The regulator and the two loads, so their anchors can be a REFDES rather than a coordinate.
-for ref, pin, net, x, y, w, h in [("U2", "OUT", "+3V3", 1.10, 10.30, 0.40, 0.30),
-                                  ("U1", "VDD", "+3V3", 24.90, 14.30, 0.40, 0.30),
-                                  ("U3", "VDD", "+3V3", 24.90,  5.00, 0.40, 0.30)]:
-    lines.append(record(net, ref, pin, x, y, w, h))
-
-lines.append("999")
-with open(os.path.join(root, "Sensor board/layout/Board.ipc"), "w") as f:
-    f.write("\n".join(lines) + "\n")
-
-# ── the placement table ────────────────────────────────────────────────────────────────────────
-place = ["# Sensor board placement",
-         "# Units: mm",
-         "# Origin: body centre",
-         "Refdes,X,Y,Rotation,Side"]
-for ref, _, _, cx, cy, rot, _ in PARTS:
-    place.append(f"{ref},{cx:.3f},{cy:.3f},{rot},top")
-place.append(f"{FB1[0]},{FB1[2]:.3f},{FB1[3]:.3f},{FB1[4]},top")
-for ref, cx, cy in [("U2", 1.10, 10.30), ("U1", 24.90, 14.30), ("U3", 24.90, 5.00)]:
-    place.append(f"{ref},{cx:.3f},{cy:.3f},0,top")
-with open(os.path.join(root, "Sensor board/layout/Board.placement.csv"), "w") as f:
-    f.write("\n".join(place) + "\n")
+# ── WHAT THIS FILE NO LONGER WRITES ────────────────────────────────────────────────────────────
+# The IPC-D-356 netlist and the placement table used to be written here, by hand, in this file's
+# own idea of the two formats.  They are projected from the `.clay` above by circuitRF's own
+# writers now — see this file's docstring for the one command, which is what the README records
+# and what regenerates the two committed files.
 
 print(f"{len(shapes)} shapes, {len(instances)} instances, {len(pads)} pads, "
       f"{len(gnd_holes)} anti-pads on GND")

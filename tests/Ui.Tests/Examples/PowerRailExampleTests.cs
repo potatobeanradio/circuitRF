@@ -142,9 +142,16 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
     // ══ 3 & 4. The board is made of parts, and every part is named ══════════════════════════════
 
     /// <summary>
-    /// <b>R-fp5-2a / gate 3 and 4.</b> Fourteen placements, each resolving to a cell with two pads;
-    /// every one carries a designator, every designator is drawn on the technology's silkscreen
-    /// role, and every refdes the board netlist names has a placement.
+    /// <b>R-fp5-2a / gate 3 and 4.</b> Seventeen placements; every one carries a designator, every
+    /// designator is drawn on the technology's silkscreen role, and every refdes the board netlist
+    /// names has a placement.
+    ///
+    /// <para><b>Seventeen rather than fourteen since brief-authored-board-3.</b> The regulator and
+    /// the two loads are now placements of a ONE-PIN, NO-COPPER cell rather than facts stated only
+    /// in the companion `.ipc` — which is that series' governing rule applied to this board: a
+    /// board circuitRF drew must state everything the netlist would state, or the netlist cannot be
+    /// projected from it and `U1.VDD` resolves to nothing. They draw no copper, so the artwork the
+    /// solver sees is unchanged; what they add is the placement and the designator.</para>
     /// </summary>
     [Fact]
     public void EveryPartIsAnInstanceWithADesignatorDrawnOnSilk()
@@ -153,21 +160,28 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
         var view = LayoutPersistence.LoadFromFile(clay);
         var tech = PowerRailFootprintCells.ExampleTechnology();
 
-        Assert.Equal(14, view.Instances.Count);
+        Assert.Equal(17, view.Instances.Count);
 
         string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clay))!;
         foreach (var inst in view.Instances)
         {
             var res = CellLayoutResolver.Resolve(inst.CellRef, layoutDir);
             Assert.Equal(CellLayoutState.Resolved, res.State);
-            Assert.Equal(2, res.View!.Pins.Count);
-            Assert.Equal(2, res.View.Shapes.Count(s => s.Layer == new LayerKey(1, 0) && s.Pin is "1" or "2"));
             Assert.False(string.IsNullOrWhiteSpace(inst.DisplayRefDes));
+
+            // A terminal states one pin and draws nothing; a part states two and draws a land under
+            // each, which is what makes it a land pattern rather than a list of coordinates.
+            bool terminal = inst.DisplayRefDes!.StartsWith('U');
+            Assert.Equal(terminal ? 1 : 2, res.View!.Pins.Count);
+            Assert.Equal(terminal ? 0 : 2,
+                res.View.Shapes.Count(s => s.Layer == new LayerKey(1, 0) && s.Pin is "1" or "2"));
+            if (terminal) Assert.Empty(res.View.Shapes);
         }
 
-        // Thirteen capacitors and one ferrite, named as the .crail names them.
+        // Thirteen capacitors, one ferrite, and the three terminals — named as the .crail names them.
         Assert.Equal(
-            ["C1", "C10", "C11", "C12", "C13", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "FB1"],
+            ["C1", "C10", "C11", "C12", "C13", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9",
+             "FB1", "U1", "U2", "U3"],
             view.Instances.Select(i => i.DisplayRefDes!).Order(StringComparer.Ordinal));
 
         // The designators are ARTWORK on the silkscreen role, which is what the flatten emits and
@@ -175,7 +189,7 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
         var silk = new LayerKey(6, 0);
         var flat = RailArtwork.FlattenedShapes(view, clay, tech);
         int labels = flat.Count(s => s is LabelShape { IsPort: false } && s.Layer == silk);
-        Assert.Equal(14, labels);
+        Assert.Equal(17, labels);
 
         // Every refdes the netlist names is placed, and every placement is in the netlist.
         var document = RailDocumentIo.LoadFromFile(CrailPath());
@@ -185,25 +199,26 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
         var placed = view.Instances.Select(i => i.DisplayRefDes!).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (string refdes in pads.Select(p => p.Refdes!).Distinct())
-        {
-            if (refdes.StartsWith('U')) continue;   // the regulator and the two loads are not placed parts
             Assert.Contains(refdes, placed);
-        }
         foreach (string refdes in placed)
             Assert.Contains(pads, p => string.Equals(p.Refdes, refdes, StringComparison.OrdinalIgnoreCase));
 
         output.WriteLine($"{view.Instances.Count} placements, {labels} designators on silk, {pads.Count} pads");
     }
 
-    // ══ 5. The generator's own two refusals still fire ══════════════════════════════════════════
+    // ══ 5. The generator's own refusal still fires ══════════════════════════════════════════════
 
     /// <summary>
-    /// <b>R-fp5-2d / gate 5.</b> Break a pad's position, and break an anti-pad, and assert the
-    /// generator writes nothing in each case. Run on a COPY, so the shipped workspace is untouched
-    /// whatever happens here.
+    /// <b>R-fp5-2d / gate 5.</b> Break an anti-pad and assert the generator writes nothing. Run on
+    /// a COPY, so the shipped workspace is untouched whatever happens here.
+    ///
+    /// <para><b>There used to be a second row here, <c>CRF_BREAK_PAD</c></b>, which moved a netlist
+    /// pad off its land. It is gone because the defect is (brief-authored-board-3 R-ab3-4c): the
+    /// netlist is PROJECTED from the lands now, so a pad that stands on no land is not a thing the
+    /// generator can write. The invariant became structural instead of checked. The anti-pad half
+    /// is a real statement about geometry that no writer could make, and it stays.</para>
     /// </summary>
     [Theory]
-    [InlineData("CRF_BREAK_PAD", "there is no land there")]
     [InlineData("CRF_BREAK_ANTIPAD", "its anti-pad is missing")]
     public void TheBoardGeneratorRefusesAndWritesNothing(string fault, string expected)
     {
@@ -225,7 +240,13 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
         finally { try { Directory.Delete(tmp, true); } catch { /* best effort */ } }
     }
 
-    /// <summary>And with no fault it writes the board that is committed, byte for byte.</summary>
+    /// <summary>
+    /// And with no fault it writes the board that is committed, byte for byte.
+    ///
+    /// <para><b>The `.clay` is now the ONLY file it writes</b> (R-ab3-4a/b): the netlist and the
+    /// placement table beside it are projected from that `.clay` by <c>circuitrf netlist</c>, which
+    /// <c>NetlistBoardVerbTests</c> holds.</para>
+    /// </summary>
     [Fact]
     public void TheCommittedBoardIsWhatTheGeneratorWrites()
     {
@@ -238,10 +259,19 @@ public sealed class PowerRailExampleTests(ITestOutputHelper output)
             output.WriteLine(stdout.Trim());
 
             foreach (string relative in new[]
-                     { "Sensor board/layout/Board.clay", "Sensor board/layout/Board.ipc",
-                       "Sensor board/layout/Board.placement.csv" })
+                     { "Sensor board/layout/Board.clay",
+                       "footprints/TERM-OUT/layout/TERM-OUT.clay",
+                       "footprints/TERM-VDD/layout/TERM-VDD.clay" })
                 Assert.Equal(File.ReadAllText(Path.Combine(Root(), relative)),
                              File.ReadAllText(Path.Combine(tmp, relative)));
+
+            // R-ab3-4b. It writes the artwork and NOTHING else now; the two companion files are
+            // the verb's, and a generator that still wrote them would be the second projection
+            // this series exists to prevent.
+            string generator = File.ReadAllText(
+                Path.Combine(Root(), "Sensor board", "layout", "Board.gen.py"));
+            Assert.DoesNotContain("Board.ipc\"), \"w\"", generator, StringComparison.Ordinal);
+            Assert.DoesNotContain("Board.placement.csv\"), \"w\"", generator, StringComparison.Ordinal);
         }
         finally { try { Directory.Delete(tmp, true); } catch { /* best effort */ } }
     }

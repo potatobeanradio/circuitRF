@@ -624,6 +624,15 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "netlist.args.multiple-paths",
         "netlist.args.path-required",
         "netlist.args.unknown-option",
+        // brief-authored-board-3 R-ab3-2: the same verb over a BOARD — the three companion tables
+        // a layout projects, which is the extraction Simulate performs said about artwork.
+        "netlist.board.not-a-board",
+        "netlist.board.note",
+        "netlist.board.refused",
+        "netlist.board.thin",
+        "netlist.board.unreadable",
+        "netlist.board.which-table",
+        "netlist.cell.no-layout",
         "netlist.cell.no-primary",
         "netlist.cell.no-schematic",
         "netlist.extract.failed",

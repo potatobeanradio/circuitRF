@@ -310,6 +310,16 @@ public static class RailArtwork
     /// differently (R-ab2-5). <b>Reported, never resolved</b>: the run proceeds on R-ab1-3a's
     /// precedence, because a stale export is an ordinary mid-design state and a tool that refused to
     /// solve on one would be a tool nobody runs mid-design.</param>
+    /// <param name="Stamped">The copper partition this resolution named its pads against — empty
+    /// where the board states no net on any shape. <b>Carried rather than rebuilt</b> (R-ab3-1a):
+    /// the companion writers need the same answer for a VIA that the pads already took, and a
+    /// second <c>PdnCopperPieces.Build</c> over one board is a second partition that nothing
+    /// compares. Its <c>Refusals</c> are also the writers' own refusal (R-ab3-2e) — a piece of
+    /// copper carrying two names is a board nothing may be written for.</param>
+    /// <param name="Schematic">The schematic beside the artwork, as this resolution read it —
+    /// carried for <see cref="Stamped"/>'s reason. A bill of materials wants each part's value,
+    /// footprint and type off the same <c>.csch</c> the nets came from, and resolving it a second
+    /// time is a second answer to "which schematic is this board's".</param>
     public sealed record RailPadResolution(
         System.Collections.Generic.IReadOnlyList<PdnPad>      Pads,
         System.Collections.Generic.IReadOnlyList<PdnNetPoint> NetPoints,
@@ -318,7 +328,9 @@ public static class RailArtwork
         System.Collections.Generic.IReadOnlyList<string>      Notes,
         System.Collections.Generic.IReadOnlyList<string>      Nets,
         PdnNetOrigin                                          NetOrigin,
-        System.Collections.Generic.IReadOnlyList<PdnDivergence> Divergences);
+        System.Collections.Generic.IReadOnlyList<PdnDivergence> Divergences,
+        PdnCopperPieces                                       Stamped,
+        PdnSchematicNets                                      Schematic);
 
     /// <summary>
     /// The board's pads and their nets: the netlist's where it speaks, the artwork's everywhere
@@ -451,7 +463,8 @@ public static class RailArtwork
         }
 
         return new RailPadResolution(
-            pads, points, fromNetlist.Count, fromArtwork.Count, notes, [.. nets], origin, divergences);
+            pads, points, fromNetlist.Count, fromArtwork.Count, notes, [.. nets], origin, divergences,
+            stamped, schematic);
     }
 
     /// <summary>The primary layout view of a cell folder, or null where it holds none.</summary>

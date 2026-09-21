@@ -631,6 +631,9 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
             _subscribedDoc.ExportBoardRequested       -= OnExportBoardRequestedFromMenu;
+            _subscribedDoc.ExportBoardNetlistRequested -= OnExportBoardNetlistRequestedFromMenu;
+            _subscribedDoc.ExportPlacementRequested   -= OnExportPlacementRequestedFromMenu;
+            _subscribedDoc.ExportBomRequested         -= OnExportBomRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         -= OnZoomToFitRequestedFromMenu;
             _subscribedDoc.PlaceCellInstanceRequested -= OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc.CutRequested                -= OnCutRequestedFromMenu;
@@ -647,6 +650,9 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
             _subscribedDoc.ExportBoardRequested       += OnExportBoardRequestedFromMenu;
+            _subscribedDoc.ExportBoardNetlistRequested += OnExportBoardNetlistRequestedFromMenu;
+            _subscribedDoc.ExportPlacementRequested   += OnExportPlacementRequestedFromMenu;
+            _subscribedDoc.ExportBomRequested         += OnExportBomRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         += OnZoomToFitRequestedFromMenu;
             _subscribedDoc.PlaceCellInstanceRequested += OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc.CutRequested                += OnCutRequestedFromMenu;
@@ -893,6 +899,100 @@ public partial class LayoutEditorView : UserControl
         catch (Exception ex)
         {
             vm.ReportError($"Export Board: {ex.Message}");
+        }
+    }
+
+    private void OnExportBoardNetlistRequestedFromMenu() =>
+        _ = OnExportCompanionAsync(CompanionTable.BoardNetlist);
+    private void OnExportPlacementRequestedFromMenu() =>
+        _ = OnExportCompanionAsync(CompanionTable.Placement);
+    private void OnExportBomRequestedFromMenu() =>
+        _ = OnExportCompanionAsync(CompanionTable.Bom);
+
+    /// <summary>Which of the three tables one File ▸ Export row writes.</summary>
+    private enum CompanionTable { BoardNetlist, Placement, Bom }
+
+    /// <summary>
+    /// File ▸ Export ▸ Board netlist / Placement / Bill of materials
+    /// (brief-authored-board-3-companion-writers.md R-ab3-3).
+    ///
+    /// <para><b>ONE method for the three rows, and it owns no projection and no writer.</b> Every
+    /// byte comes from <see cref="BoardCompanions"/> — the same call <c>circuitrf netlist</c>
+    /// makes, with byte identity between the two as the gate (R-ab3-3b). Three copies of a picker
+    /// differing only in an extension is how one of them would come to write a slightly different
+    /// file, which is the shape the Gerber/GDSII/DXF handlers above already warn about.</para>
+    ///
+    /// <para><b>Where the export is THIN it says so before writing, and does not refuse</b>
+    /// (R-ab3-3c): a placement file with no nets in it is a perfectly useful placement file.</para>
+    /// </summary>
+    private async Task OnExportCompanionAsync(CompanionTable table)
+    {
+        if (Vm is not { } vm) return;
+        if (TopLevel.GetTopLevel(this) as Window is not { } owner) return;
+
+        string noun = table switch
+        {
+            CompanionTable.BoardNetlist => "Board netlist",
+            CompanionTable.Placement    => "Placement",
+            _                           => "Bill of materials",
+        };
+
+        // Every reference on this board — its footprint cells, the schematic beside it — is relative
+        // to the `.clay`'s own folder, so an unsaved layout is not a thing a projection can be asked
+        // for. Said rather than silently producing an empty table.
+        if (vm.CurrentLayoutPath is not { Length: > 0 } clay)
+        {
+            vm.ReportError($"Export {noun}: save this layout to a cell before exporting — its "
+                         + "footprint cells and its schematic are resolved relative to the file.");
+            return;
+        }
+
+        BoardProjection projection;
+        try { projection = BoardCompanions.Project(vm.Model, clay, vm.Technology); }
+        catch (Exception ex) { vm.ReportError($"Export {noun}: {ex.Message}"); return; }
+
+        foreach (string note in projection.Notes) vm.ReportWarning($"Export {noun} — {note}");
+
+        // R-ab3-2e. Nothing is written on a refusal, and the picker is not even shown: asking where
+        // to put a file that will not be written is the wrong order to ask it in.
+        if (projection.Refusal is { Length: > 0 } why)
+        {
+            vm.ReportError($"Export {noun}: {why}");
+            return;
+        }
+
+        if (projection.ThinnessSummary is { Length: > 0 } thin)
+            vm.ReportMessage($"Export {noun} — {thin}");
+
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export " + noun,
+            SuggestedFileName = table switch
+            {
+                CompanionTable.BoardNetlist => projection.BoardName + ".ipc",
+                CompanionTable.Placement    => projection.BoardName + ".placement.csv",
+                _                           => projection.BoardName + ".bom.csv",
+            },
+            DefaultExtension = table == CompanionTable.BoardNetlist ? "ipc" : "csv",
+            FileTypeChoices = [table == CompanionTable.BoardNetlist
+                ? new FilePickerFileType("Board netlist") { Patterns = ["*.ipc", "*.net"] }
+                : new FilePickerFileType("Comma-separated table") { Patterns = ["*.csv"] }],
+        });
+        if (file is null) return;
+
+        try
+        {
+            string path = file.Path.LocalPath;
+            BoardCompanions.Write(
+                projection,
+                table == CompanionTable.BoardNetlist ? path : null,
+                table == CompanionTable.Placement ? path : null,
+                table == CompanionTable.Bom ? path : null);
+            vm.ReportMessage("Exported " + noun, path);
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export {noun}: {ex.Message}");
         }
     }
 

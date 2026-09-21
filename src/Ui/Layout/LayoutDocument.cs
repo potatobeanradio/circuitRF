@@ -67,6 +67,17 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     public void RequestExportGerber() => ExportGerberRequested?.Invoke();
     public void RequestExportBoard() => ExportBoardRequested?.Invoke();
 
+    // The three COMPANION tables a board projects (brief-authored-board-3-companion-writers.md
+    // R-ab3-3a) — same shape as the four above, and one row each rather than one row with a choice
+    // in it, because each names a destination file and a dialog asking "which of these three, and
+    // where" is two questions in one box.
+    public event Action? ExportBoardNetlistRequested;
+    public event Action? ExportPlacementRequested;
+    public event Action? ExportBomRequested;
+    public void RequestExportBoardNetlist() => ExportBoardNetlistRequested?.Invoke();
+    public void RequestExportPlacement()    => ExportPlacementRequested?.Invoke();
+    public void RequestExportBom()          => ExportBomRequested?.Invoke();
+
     // ── Zoom To Fit request (View->Zoom to Fit) — same shape as the export requests above: this VM
     // layer has no canvas reference, so it raises the request for the already-subscribed view to run.
     public event Action? ZoomToFitRequested;

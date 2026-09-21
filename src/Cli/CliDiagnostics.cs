@@ -2074,6 +2074,49 @@ internal static class CliDiagnostics
         "netlist.output.write-failed", DiagnosticSeverity.Error,
         "Could not write '{path}': {why}", ("path", path), ("why", why));
 
+    // ── netlist, the BOARD half (brief-authored-board-3-companion-writers.md R-ab3-2) ─────────
+
+    /// <summary>R-ab3-2b. Two of the three tables are `.csv` and the extension cannot say which, so
+    /// "which table" is the one question a dialog would ask and a flag has to answer. Naming all
+    /// three is the whole point of the refusal — and more than one in a run is ordinary, because one
+    /// invocation is one projection and three files that cannot disagree.</summary>
+    public static Diagnostic NetlistBoardWhichTable(string path, string? output) => Diagnostic.Create(
+        "netlist.board.which-table", DiagnosticSeverity.Error,
+        "'{path}' is a board, and a board projects THREE tables: a netlist, a placement and a bill "
+      + "of materials. Two of them are .csv, so {said} cannot say which you want. Name them: "
+      + "--ipc out.ipc --placement out.csv --bom out.csv. More than one in a run is encouraged — "
+      + "they come from one projection and cannot disagree.",
+        ("path", path),
+        ("said", output is { Length: > 0 } ? $"'-o {output}'" : "the command line"));
+
+    public static Diagnostic NetlistBoardFlagsOnNonBoard(string path, string kind) => Diagnostic.Create(
+        "netlist.board.not-a-board", DiagnosticSeverity.Error,
+        "--ipc / --placement / --bom project a BOARD, and '{path}' is {kind}. Give the .clay, or "
+      + "the cell folder holding it.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic NetlistNoLayoutView(string path) => Diagnostic.Create(
+        "netlist.cell.no-layout", DiagnosticSeverity.Error,
+        "'{path}' has no layout view, and a board netlist comes out of artwork.", ("path", path));
+
+    public static Diagnostic NetlistBoardUnreadable(string path, string why) => Diagnostic.Create(
+        "netlist.board.unreadable", DiagnosticSeverity.Error,
+        "'{path}' did not read: {why}", ("path", path), ("why", why));
+
+    /// <summary>R-ab3-2e. The projection's OWN sentence, unchanged — collapsing it into "the board
+    /// was not projected" throws away the only part a caller can act on. Nothing was written.</summary>
+    public static Diagnostic NetlistBoardRefused(string path, string why) => Diagnostic.Create(
+        "netlist.board.refused", DiagnosticSeverity.Error,
+        "'{path}': {why} Nothing was written.", ("path", path), ("why", why));
+
+    public static Diagnostic NetlistBoardNote(string note) => Diagnostic.Create(
+        "netlist.board.note", DiagnosticSeverity.Warning, "{note}", ("note", note));
+
+    /// <summary>R-ab3-3c, headless. A thin table is written and SAID to be thin — it does not
+    /// refuse, because a placement file with no nets in it is a perfectly useful placement file.</summary>
+    public static Diagnostic NetlistBoardThin(string note) => Diagnostic.Create(
+        "netlist.board.thin", DiagnosticSeverity.Warning, "{note}", ("note", note));
+
     /// <summary>
     /// R-aut11-1's refusal BY KIND. A run verb takes a netlist or a schematic; anything else used to
     /// be handed to <c>CnlReader</c>, which parsed a JSON layout as netlist text and reported its

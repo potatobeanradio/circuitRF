@@ -1,4 +1,6 @@
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Cli;
 
@@ -23,6 +25,16 @@ namespace CircuitRF.Cli;
 /// argument parsing, target resolution, refusals and reporting, on <c>src/Cli/Authoring.cs</c>'
 /// terms.</para>
 ///
+/// <para><b>A BOARD is the same sentence about a different document</b>
+/// (brief-authored-board-3-companion-writers.md R-ab3-2). <c>netlist</c> writes the extraction
+/// Simulate performs; a board netlist, a placement table and a bill of materials are the extraction
+/// a LAYOUT performs, so they are this verb and not a fourth noun — and certainly not a
+/// <c>convert</c> pair, since <c>convert</c> is artwork to artwork and every one of its readers
+/// lands on a cell folder plus a technology. <b><c>-o</c> alone on a <c>.clay</c> is a refusal
+/// naming the three flags</b>: two of the three tables are <c>.csv</c> and the extension cannot say
+/// which, and "which table" is exactly what a dialog would ask. More than one in a run is ordinary
+/// and encouraged — one invocation, ONE projection, three files that cannot disagree.</para>
+///
 /// <para><b>A cell folder and a workspace resolve as <c>render</c> resolves them</b> — through
 /// <see cref="CellLookup"/> and <c>CellFolder.ResolvePrimary</c>, the same two functions, so the cell
 /// this extracts is the cell that verb would have drawn. There is no <c>--view</c>: a netlist comes
@@ -33,13 +45,17 @@ internal static class Netlist
     public static int Run(string[] args)
     {
         string? path = null, output = null, cell = null;
+        string? ipc = null, placement = null, bom = null;
 
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
-                case "-o" or "--output" when i + 1 < args.Length: output = args[++i]; continue;
-                case "--cell" when i + 1 < args.Length:           cell   = args[++i]; continue;
+                case "-o" or "--output" when i + 1 < args.Length: output    = args[++i]; continue;
+                case "--cell" when i + 1 < args.Length:           cell      = args[++i]; continue;
+                case "--ipc" when i + 1 < args.Length:            ipc       = args[++i]; continue;
+                case "--placement" when i + 1 < args.Length:      placement = args[++i]; continue;
+                case "--bom" when i + 1 < args.Length:            bom       = args[++i]; continue;
                 default:
                     if (args[i].StartsWith('-'))
                     { JsonRun.Report(CliDiagnostics.NetlistUnknownOption(args[i])); return Usage(); }
@@ -56,6 +72,18 @@ internal static class Netlist
         if (!File.Exists(path) && !Directory.Exists(path))
             return JsonRun.Fail(CliDiagnostics.NetlistPathNotFound(path));
 
+        // R-ab3-2. WHICH DOCUMENT this is decides which of the two extractions runs, and the board
+        // flags decide it for a cell folder that holds both views — a cell with a schematic and a
+        // layout is the ordinary case, and asking for a placement table out of it is unambiguous.
+        bool board = ipc is not null || placement is not null || bom is not null;
+        var kind = DocumentKinds.Classify(path);
+        if (kind == DocumentKind.Layout || (board && kind == DocumentKind.Cell))
+            return Board.Run(path, kind, ipc, placement, bom, output);
+
+        if (board)
+            return JsonRun.Fail(CliDiagnostics.NetlistBoardFlagsOnNonBoard(
+                path, DocumentKinds.Name(kind)));
+
         // The extension decides the format everywhere else on this surface, so it decides here too:
         // `-o plot.svg` is a caller that meant a different verb, and writing netlist text into it
         // would be obeyed silently.
@@ -64,7 +92,7 @@ internal static class Netlist
             return JsonRun.Fail(CliDiagnostics.NetlistOutputNotCnl(
                 output, Path.GetExtension(output) is { Length: > 0 } e ? e : "(none)"));
 
-        var (csch, refusal) = Resolve(path, cell);
+        var (csch, refusal) = Resolve(path, cell, kind);
         if (refusal is { } r) return r;
 
         string cnl;
@@ -102,6 +130,9 @@ internal static class Netlist
     {
         Console.Error.WriteLine(
             "Usage: circuitrf netlist <path.csch | cell-folder | workspace --cell N> [-o out.cnl]");
+        Console.Error.WriteLine(
+            "       circuitrf netlist <path.clay | cell-folder> "
+          + "[--ipc out.ipc] [--placement out.csv] [--bom out.csv]");
         return 1;
     }
 
@@ -109,10 +140,8 @@ internal static class Netlist
     /// Which schematic this run extracts. The kind comes from <see cref="DocumentKinds.Classify"/>,
     /// exactly as <c>check</c> and <c>render</c> infer it.
     /// </summary>
-    private static (string? Csch, int? Refusal) Resolve(string path, string? cell)
+    private static (string? Csch, int? Refusal) Resolve(string path, string? cell, DocumentKind kind)
     {
-        var kind = DocumentKinds.Classify(path);
-
         switch (kind)
         {
             case DocumentKind.Schematic:
