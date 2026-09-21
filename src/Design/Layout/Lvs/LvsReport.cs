@@ -291,6 +291,21 @@ internal static class LvsReport
                     return LvsMarker.Of(diagnostic, objects, BoundsOfDevice(device));
                 }
 
+                // R-lvs9-3b. The CONTACT itself, at the coordinate the extraction measured — not
+                // the module's pads, which are the one part of it that is declared and correct.
+                // The box is the contact's own extent where it has one, and a small square where
+                // the graze is a hair's width, so there is always a ring to click on.
+                case "lvs.hierarchy.undeclared-contact":
+                {
+                    int device = Layout(Text(diagnostic, "path"));
+                    long half = Math.Max(Number(diagnostic, "widthDbu"), PadFloor) / 2;
+                    long cx = Number(diagnostic, "x"), cy = Number(diagnostic, "y");
+                    return LvsMarker.Of(
+                        diagnostic,
+                        device < 0 ? [Text(diagnostic, "path")] : Group(layout, device),
+                        new Bbox(cx - half, cy - half, cx + half, cy + half));
+                }
+
                 // Every placement claiming the designator, because which one is meant is the
                 // question the finding is about.
                 case "lvs.device.duplicate-designator":
@@ -431,5 +446,9 @@ internal static class LvsReport
 
         private static string Text(Diagnostic diagnostic, string argument)
             => diagnostic.Arguments.TryGetValue(argument, out object? value) ? value?.ToString() ?? "" : "";
+
+        /// <summary>A DBU-valued typed argument, or zero — the coordinate half of <see cref="Text"/>.</summary>
+        private static long Number(Diagnostic diagnostic, string argument)
+            => diagnostic.Arguments.TryGetValue(argument, out object? value) && value is long n ? n : 0;
     }
 }

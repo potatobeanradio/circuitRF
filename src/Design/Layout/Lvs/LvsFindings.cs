@@ -141,6 +141,10 @@ public static class LvsFindingIds
         // cells
         "lvs.cell.unclassified",
 
+        // hierarchy (brief 9)
+        "lvs.hierarchy.undeclared-contact",
+        "lvs.hierarchy.flattened",
+
         // reduction (brief 6)
         "lvs.reduce.mode",
         "lvs.reduce.parallel",
@@ -149,6 +153,7 @@ public static class LvsFindingIds
 
         // what the run could not do
         "lvs.layout.over-flatten-ceiling",
+        "lvs.layout.over-device-ceiling",
         "lvs.layout.unresolved-instance",
         "lvs.layout.pending-layer-mapping",
         "lvs.schematic.elaboration-failed",
@@ -187,6 +192,7 @@ public static class LvsFindingIds
     public static readonly IReadOnlySet<string> Incomplete = new HashSet<string>(
     [
         "lvs.layout.over-flatten-ceiling",
+        "lvs.layout.over-device-ceiling",
         "lvs.layout.unresolved-instance",
         "lvs.layout.pending-layer-mapping",
         "lvs.schematic.elaboration-failed",

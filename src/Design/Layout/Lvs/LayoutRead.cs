@@ -61,8 +61,9 @@ public static class LayoutRead
     public static LvsNetlist Read(
         LayoutView view, string clayPath, string cellDir, Technology? tech,
         Func<string?, string, TechResolution>? resolveTechAt = null,
-        IReadOnlySet<string>? schematicComponents = null)
-        => Read(view, clayPath, cellDir, tech, out _, resolveTechAt, schematicComponents);
+        IReadOnlySet<string>? schematicComponents = null,
+        LvsHierarchyContext? hierarchy = null)
+        => Read(view, clayPath, cellDir, tech, out _, resolveTechAt, schematicComponents, hierarchy);
 
     /// <summary>
     /// The same read, and <b>where everything it found IS</b> — <c>brief-lvs-8-findings.md</c>
@@ -74,11 +75,19 @@ public static class LayoutRead
     /// DBU to fill it with, which is R-lvs3-1a's whole point. See <see cref="LvsGeometry"/>.
     /// </param>
     /// <inheritdoc cref="Read(LayoutView, string, string, Technology, Func{string, string, TechResolution}, IReadOnlySet{string})"/>
+    /// <param name="hierarchy">
+    /// What a HIERARCHICAL run carries — <c>brief-lvs-9-hierarchy.md</c>. <b>Null is the flat
+    /// reading, exactly as it has always been</b>: every sub-cell's copper in one partition, every
+    /// placement a leaf, no descent and no ceiling of its own. Supplied, the placements that are
+    /// cells in their own right are read as such, their internals leave this level's partition
+    /// (R-lvs9-2d), and what it cost is counted.
+    /// </param>
     public static LvsNetlist Read(
         LayoutView view, string clayPath, string cellDir, Technology? tech,
         out LvsGeometry geometry,
         Func<string?, string, TechResolution>? resolveTechAt = null,
-        IReadOnlySet<string>? schematicComponents = null)
+        IReadOnlySet<string>? schematicComponents = null,
+        LvsHierarchyContext? hierarchy = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
@@ -98,6 +107,13 @@ public static class LayoutRead
                      .OrderBy(g => g.Key, StringComparer.Ordinal))
             notes.Add(LvsDiagnostics.DuplicateDesignator(dup.Key, dup.Count()));
 
+        // How a coordinate and a layer are SPELLED, needed before the geometry side channel exists
+        // — a contact reported in bare DBU on a board drawn in millimetres is a number nobody can
+        // place.
+        var layerNames = new Dictionary<LayerKey, string>();
+        foreach (var layer in tech?.Layers ?? []) layerNames[layer.Key] = layer.Name;
+        var naming = new LvsGeometryNaming(RailRf.RailLengthFormat.For(view), layerNames);
+
         // ── The copper ─────────────────────────────────────────────────────────────────────────
         var flat = LayoutDesignFlatten.FlattenTagged(view, cellDir, tech, resolveTechAt, null);
 
@@ -113,24 +129,61 @@ public static class LayoutRead
         foreach (string pending in flat.PendingCrossTechMappings.Keys.OrderBy(k => k, StringComparer.Ordinal))
             notes.Add(LvsDiagnostics.PendingCrossTechMapping(pending));
 
+        string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "";
+
+        // Every placement resolved ONCE and read three times — to classify it, to decide whether
+        // its copper joins this partition, and to type its device. CellLayoutResolver caches, so a
+        // second Resolve would be cheap; what three separate walks would cost is three chances for
+        // the three answers to disagree about what a placement IS.
+        var placed = new PlacedCell[view.Instances.Count];
+        for (int i = 0; i < view.Instances.Count; i++)
+        {
+            var r = CellLayoutResolver.Resolve(view.Instances[i].CellRef, layoutDir);
+            placed[i] = r.State == CellLayoutState.Resolved
+                ? new PlacedCell(r.View, r.ResolvedCellDir)
+                : new PlacedCell(null, null);
+        }
+
+        // ── R-lvs9-2c: which placements are cells of their own ─────────────────────────────────
+        var modules = LayoutReadHierarchy.Classify(view, placed, hierarchy, notes);
+
         // The stamps are the ROOT's own shapes and never a sub-cell's (R-ab2-2a): a land pattern is
         // one cell shared by every placement of it, so a Net stamped inside a C0402's `.clay` would
         // put thirteen capacitors on one net.
-        var pieces = CopperPieces.Build([.. flat.Shapes.Select(t => t.Shape)], tech, view.Shapes);
+        //
+        // ── The pins (R-lvs3-5) ────────────────────────────────────────────────────────────────
+        //
+        // BEFORE the partition, which is R-lvs9-2a's doing: which of a module's copper is a
+        // boundary PAD is answered by where its declared pins landed, and the projection that
+        // answers it is this one. It takes no `stamped` argument for that reason and needs none —
+        // LVS reads a pad's POSITION and never the net name PlacedPins would have put on it, and
+        // asking for a name here would be one lookup per pad that nothing goes on to read.
+        var origins = new List<PlacedPinOrigin>();
+        var padNotes = new List<string>();
+        var pads = PlacedPins.Of(
+            view, clayPath, tech, PinNaming.ArtworkOnly,
+            notes: padNotes, origins: origins, scope: PlacementScope.EveryPlacement);
+
+        foreach (string note in padNotes) notes.Add(LvsDiagnostics.UnresolvedInstance(note));
+
+        // R-lvs9-2d: a module read as a cell keeps its internals, and only its declared boundary
+        // pads join this level's copper. With no hierarchy this is every shape the flatten made,
+        // byte for byte as before.
+        var copper = LayoutReadHierarchy.CopperFor(flat.Shapes, view, modules, pads, origins);
+        var pieces = CopperPieces.Build(copper, tech, view.Shapes);
+
+        // R-lvs9-5a2's third counter. CopperPieces unions once per call, by LayerRegions.Build's
+        // own construction, so counting the calls IS counting the unions — and what the brief
+        // guarantees is that there is one per distinct CELL rather than one per placement.
+        if (tech is not null && copper.Count > 0 && hierarchy is not null) hierarchy.Counters.LayerUnions++;
         foreach (string refusal in pieces.Refusals)
             notes.Add(LvsDiagnostics.ContestedNetName(refusal));
 
         ReportGround(tech, pieces, notes);
 
-        // ── The pins (R-lvs3-5b) ───────────────────────────────────────────────────────────────
-        var origins = new List<PlacedPinOrigin>();
-        var padNotes = new List<string>();
-        var pads = PlacedPins.Of(
-            view, clayPath, tech, PinNaming.ArtworkOnly,
-            notes: padNotes, stamped: pieces,
-            origins: origins, scope: PlacementScope.EveryPlacement);
-
-        foreach (string note in padNotes) notes.Add(LvsDiagnostics.UnresolvedInstance(note));
+        // ── R-lvs9-3: undeclared contact is reported, never absorbed ───────────────────────────
+        LayoutReadHierarchy.ReportUndeclaredContact(
+            view, flat.Shapes, pads, origins, modules, pieces, tech, hierarchy, notes, naming);
 
         // (instance, row, col, pin key) -> the pads that key names. A LIST because one terminal may
         // legitimately be several pads of one name — a bonded ground, a FET's two sources.
@@ -149,14 +202,11 @@ public static class LayoutRead
         var saidOnce = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var unclassified = new Dictionary<string, (string Name, int Count)>(StringComparer.OrdinalIgnoreCase);
 
-        string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "";
-
         for (int instIndex = 0; instIndex < view.Instances.Count; instIndex++)
         {
             var inst = view.Instances[instIndex];
-            var res = CellLayoutResolver.Resolve(inst.CellRef, layoutDir);
-            var subView = res.State == CellLayoutState.Resolved ? res.View : null;
-            string? resolvedDir = res.State == CellLayoutState.Resolved ? res.ResolvedCellDir : null;
+            var subView = placed[instIndex].View;
+            string? resolvedDir = placed[instIndex].CellDir;
 
             if (!IsDevice(inst, resolvedDir, subView))
             {
@@ -224,11 +274,18 @@ public static class LayoutRead
                     int net = ResolveTerminal(
                         terminal, instIndex, r, c, path,
                         padsByPin, pads, origins, pieces, tech, nets, notes,
-                        deviceIndex, terminals.Count, padGeometry);
+                        deviceIndex, terminals.Count, padGeometry, hierarchy);
 
                     terminals.Add(new LvsTerminal(terminal.Port, terminal.Name, net));
                     nets.Attach(net, deviceIndex, terminals.Count - 1);
                 }
+
+                // R-lvs9-2b. A module placement is ONE device whose terminals are its boundary
+                // pins, and the descent that compares its INSIDE is the caller's — recorded here
+                // because this is the walk that knows which placement is which.
+                if (modules.TryGetValue(instIndex, out string? moduleDir))
+                    hierarchy!.Modules.Add(new LvsModulePlacement(
+                        path, moduleDir, LvsCellKey.Of(moduleDir, subView, tech), deviceIndex));
 
                 devices.Add(new LvsDevice(
                     path, inst.DisplayRefDes ?? "", type, terminals, parameters,
@@ -245,8 +302,19 @@ public static class LayoutRead
         foreach (var (_, entry) in unclassified.OrderBy(e => e.Key, StringComparer.Ordinal))
             notes.Add(LvsDiagnostics.UnclassifiedCell(entry.Name, entry.Count));
 
+        // ── R-lvs9-5d: a pathological design costs a message, not a hang ───────────────────────
+        //
+        // DrcEngine's bargain, reused rather than re-derived — and it comes back with NO netlist,
+        // for the same reason the flatten ceiling does: a confident half-comparison over a design
+        // the run never finished reading is worse than a refusal that says the number.
+        if (hierarchy is { } gate && devices.Count > gate.MaxDevices)
+        {
+            notes.Add(LvsDiagnostics.OverDeviceCeiling(document, devices.Count, gate.MaxDevices));
+            return LvsNetlist.Nothing(notes);
+        }
+
         // ── The boundary: this cell's own ports, in port order ─────────────────────────────────
-        var boundary = BoundaryNetsOf(view, cellDir, tech, pieces, nets);
+        var boundary = BoundaryNetsOf(view, cellDir, tech, pieces, nets, hierarchy);
 
         nets.ReportLabelDisagreements(notes);
 
@@ -254,11 +322,8 @@ public static class LayoutRead
         var netOfPiece = new int[pieces.Count];
         for (int p = 0; p < pieces.Count; p++) netOfPiece[p] = nets.Existing(pieces.NetOfPiece(p));
 
-        var layerNames = new Dictionary<LayerKey, string>();
-        foreach (var layer in tech?.Layers ?? []) layerNames[layer.Key] = layer.Name;
-
         geometry = new LvsGeometry(
-            pieces, padGeometry, netOfPiece, RailRf.RailLengthFormat.For(view), layerNames);
+            pieces, padGeometry, netOfPiece, naming.Format, naming.LayerNames);
 
         return new LvsNetlist(devices, nets.Build(), boundary, notes);
     }
@@ -293,7 +358,8 @@ public static class LayoutRead
         Dictionary<(int, int, int, string), List<int>> padsByPin,
         IReadOnlyList<PlacedPin> pads, IReadOnlyList<PlacedPinOrigin> origins,
         CopperPieces pieces, Technology? tech, NetTable nets, List<Diagnostic> notes,
-        int deviceIndex, int terminalIndex, List<LvsPadGeometry> padGeometry)
+        int deviceIndex, int terminalIndex, List<LvsPadGeometry> padGeometry,
+        LvsHierarchyContext? hierarchy)
     {
         var reached = new List<int>();
 
@@ -306,6 +372,8 @@ public static class LayoutRead
                 // R-ab2-2d: ON THE PIN'S OWN LAYER. A pad takes the name — and the identity — of
                 // the piece it lands on, and asking any-layer would have a top pad answer with the
                 // net of whatever sits under it on the bottom.
+                // R-lvs9-5a: ONE query per pin, and here it is.
+                if (hierarchy is not null) hierarchy.Counters.PinQueries++;
                 int index = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
                 int piece = index < 0 ? -1 : pieces.NetOfPiece(index);
 
@@ -349,7 +417,8 @@ public static class LayoutRead
     /// transform: they are already in the root's frame, which is the frame the partition is in.
     /// </remarks>
     private static IReadOnlyList<int> BoundaryNetsOf(
-        LayoutView view, string cellDir, Technology? tech, CopperPieces pieces, NetTable nets)
+        LayoutView view, string cellDir, Technology? tech, CopperPieces pieces, NetTable nets,
+        LvsHierarchyContext? hierarchy = null)
     {
         var map = TerminalMap.ResolveCell(cellDir);
         if (map.Origin == TerminalMapOrigin.None || map.Terminals.Count == 0) return [];
@@ -365,6 +434,7 @@ public static class LayoutRead
             foreach (string pinKey in terminal.LayoutPins)
             {
                 if (!byKey.TryGetValue(pinKey, out int i)) continue;
+                if (hierarchy is not null) hierarchy.Counters.PinQueries++;
                 int piece = pieces.PieceAt(pins[i].X, pins[i].Y, pins[i].Layer);
                 if (piece >= 0) { net = nets.Of(piece); break; }
             }
@@ -386,7 +456,7 @@ public static class LayoutRead
     /// cell folder is. There is no device table to maintain per kit and nothing for a kit author
     /// to get wrong.
     /// </remarks>
-    private static bool IsDevice(LayoutInstance inst, string? resolvedCellDir, LayoutView? resolvedView)
+    internal static bool IsDevice(LayoutInstance inst, string? resolvedCellDir, LayoutView? resolvedView)
     {
         if (inst.SchematicId is { Length: > 0 }) return true;
         if (inst.DisplayRefDes is { Length: > 0 }) return true;

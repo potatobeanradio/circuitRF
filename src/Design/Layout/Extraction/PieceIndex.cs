@@ -117,6 +117,19 @@ internal sealed class PieceIndex
     /// <summary>What the most recent query cost.</summary>
     public PieceLookupCounters Counters { get; private set; }
 
+    /// <summary>
+    /// How many lookups this index has answered since it was built — <c>brief-lvs-9-hierarchy.md</c>
+    /// R-lvs9-5a, whose structural property is <i>one point-in-piece query per pin</i>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cumulative, where <see cref="Counters"/> is the last query alone.</b> The two answer
+    /// different questions: that one says whether the broad phase is narrowing candidates, this one
+    /// says how many times the partition was asked at all. A run that asked once per SHAPE rather
+    /// than once per pin is the O(n) regression the hierarchy exists to prevent, and only a running
+    /// total can see it.
+    /// </remarks>
+    public int Queries { get; private set; }
+
     /// <summary>How many pieces span so much of the board that every query tests them — the
     /// handful of pours R-lvs2-3b is about, exposed so a gate can assert it stays a handful.</summary>
     public int SpanningPieces => _spanning.Count;
@@ -177,6 +190,7 @@ internal sealed class PieceIndex
         }
 
         Counters = new PieceLookupCounters(_pieces.Count, candidates, exact);
+        Queries++;
         return answer;
     }
 

@@ -189,6 +189,25 @@ public sealed class CcellFile
     public bool IsTestBench { get; set; }
 
     /// <summary>
+    /// <b>Compare this cell FLAT, never as a cell of its own</b> — <c>brief-lvs-9-hierarchy.md</c>
+    /// R-lvs9-3d's per-cell escape hatch, for a cell that is permanently joined to whatever it is
+    /// placed in: a shield frame, a module whose ground is genuinely continuous with the board's.
+    /// </summary>
+    /// <remarks>
+    /// Such a cell has no hierarchical reading — its copper meets the parent's away from every pin
+    /// it declares — and the only two honest answers are to report that (R-lvs9-3b) or to flatten
+    /// it. This field is the designer saying, once and in the cell rather than on every command
+    /// line, which of the two they want. <b>Using it is still reported</b>, at info, so a design
+    /// that quietly flattens everything is visible.
+    ///
+    /// <para><c>WhenWritingDefault</c>, so every existing <c>.ccell</c> re-serializes byte for
+    /// byte — the same treatment <see cref="ExternalProvider"/> and the rest of the later fields
+    /// get, and unlike <see cref="IsTestBench"/>, which predates the convention.</para>
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FlattenForLvs { get; set; }
+
+    /// <summary>
     /// Names the registered external device provider that supplies this cell's behaviour, when the
     /// cell is a LEAF backed by a provider rather than a hierarchy of its own.
     ///

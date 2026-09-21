@@ -460,4 +460,58 @@ public static class LvsDiagnostics
         "'{cellDir}' is drawn on a different technology and its layer mapping has not been "
         + "confirmed, so none of its copper was read. Anything that connects through it is open.",
         ("cellDir", cellDir));
+
+    // ── Hierarchy (brief 9) ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// R-lvs9-3b. A placed cell reaches the design around it through metal it does not declare a
+    /// pin for.
+    /// </summary>
+    /// <remarks>
+    /// <b>An ERROR, and never absorbed</b> (R-lvs9-3c). Reading it as an ordinary connection would
+    /// mean the hierarchy says one thing and the copper another — which is the whole class of
+    /// defect this tool exists to find, reintroduced by the tool itself. The two honest answers are
+    /// to declare a pin there or to flatten this one cell, and the sentence names both.
+    /// </remarks>
+    public static Diagnostic UndeclaredContact(
+        string path, string cellName, LayerKey layer, string layerName, string where,
+        long widthDbu, long x, long y)
+        => Diagnostic.Create(
+            "lvs.hierarchy.undeclared-contact", DiagnosticSeverity.Error,
+            "{path} places '{cellName}', whose copper meets this design's own on {layerName} "
+            + "({layer}) at {where}, away from every pin it declares. A cell joined to its parent "
+            + "by undeclared metal has no hierarchical reading: declare a pin there, or flatten "
+            + "'{cellName}' for LVS.",
+            ("path", path), ("cellName", cellName), ("layerName", layerName),
+            ("layer", $"{layer.Layer}/{layer.Datatype}"), ("where", where),
+            ("widthDbu", widthDbu), ("x", x), ("y", y));
+
+    /// <summary>
+    /// R-lvs9-3d and R-lvs9-6b. A cell that could have been compared on its own account was read
+    /// flat instead, and WHY.
+    /// </summary>
+    /// <remarks>
+    /// <b>Info, and unconditional</b> — using the escape hatch is reported so a design that quietly
+    /// flattens everything is visible. Once per cell TYPE, for <c>UnclassifiedCell</c>'s reason: a
+    /// module placed forty times is one decision, not forty.
+    /// </remarks>
+    public static Diagnostic CellFlattened(string cellName, int placements, string reason)
+        => Diagnostic.Create(
+            "lvs.hierarchy.flattened", DiagnosticSeverity.Info,
+            "'{cellName}' ({placements} placement(s)) was read flat rather than compared as a cell "
+            + "of its own, because {reason}. Its copper joined this design's partition and its "
+            + "contents were not compared.",
+            ("cellName", cellName), ("placements", placements), ("reason", reason));
+
+    /// <summary>
+    /// R-lvs9-5d, which is <c>DrcEngine</c>'s bargain reused: a pathological design costs a
+    /// message, not a hang — and the message says what it would have needed.
+    /// </summary>
+    public static Diagnostic OverDeviceCeiling(string document, int devices, long ceiling)
+        => Diagnostic.Create(
+            "lvs.layout.over-device-ceiling", DiagnosticSeverity.Error,
+            "'{document}' reads as {devices} device(s), above the {ceiling} this comparison will "
+            + "attempt, so nothing was compared. Compare a cell of it rather than the whole "
+            + "design, or raise the ceiling if the machine can carry it.",
+            ("document", document), ("devices", devices), ("ceiling", ceiling));
 }

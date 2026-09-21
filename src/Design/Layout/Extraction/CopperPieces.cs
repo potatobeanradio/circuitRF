@@ -107,6 +107,25 @@ public sealed class CopperPieces
     public int Count { get; }
 
     /// <summary>
+    /// How many point-in-piece lookups this partition has answered — <c>brief-lvs-9-hierarchy.md</c>
+    /// R-lvs9-5a, and <c>PieceIndex.Queries</c> exposed so a gate can read it.
+    /// </summary>
+    /// <remarks>
+    /// <b>It counts every lookup, not only a pin's.</b> The build itself locates each shape and each
+    /// stamp, so this is always larger than the pin count; what it is for is the shape of the growth,
+    /// which is what an accidental per-shape probe would change.
+    /// </remarks>
+    public int Lookups => _index.Queries;
+
+    /// <summary>Every piece on one drawing layer, ascending — the narrow phase
+    /// <c>SubCellContact</c> intersects against, so it never unions the parent's copper a second
+    /// time.</summary>
+    internal IEnumerable<int> PiecesOn(LayerKey layer)
+    {
+        for (int i = 0; i < _pieces.Count; i++) if (_pieces[i].Layer == layer) yield return i;
+    }
+
+    /// <summary>
     /// <b>Two names on one piece of metal, named and located</b> (R-ab2-2c). Either the artwork
     /// shorts two nets or one of the labels is wrong, and both readings are things a user must see —
     /// so that piece contributes NO name at all. Picking one (first, longest, most frequent) produces

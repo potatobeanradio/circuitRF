@@ -10693,3 +10693,105 @@ Copper with no pin on it is found by asking which partition nets no terminal eve
 The clause that is easy to miss: a piece of an **undrawn ground reference's** own network that no
 terminal happened to touch is still net 0, so `NetTable.Existing` answers with the ground net rather
 than with -1. Without it every stitching via of a correct MMIC reports a warning.
+
+## LVS brief 9 — hierarchy, and the gate whose premise had to be narrowed (2026-09-21)
+
+`brief-lvs-9-hierarchy.md`. Each distinct cell is now extracted ONCE, cached by content key for the
+life of one run; a placement of a cell that has a drawing of its own is one device whose terminals
+are its boundary pins; and a cell whose copper reaches the parent anywhere else is reported rather
+than absorbed. Five things came out of building it that the brief did not say.
+
+### R-lvs9-4b's oracle cannot see what it is supposed to be the oracle for
+
+The brief calls the flat reading the reference the hierarchical one is gated against, and says
+"a hierarchical run and a flat run over the same documents produce the SAME findings, in the same
+order. **That is the gate on the whole brief.**"
+
+Brief 3's flat reading walks **the root's own placements and no deeper** — R-ab1-1a, which
+`PlacedPins` states and `LayoutDesignFlatten.TaggedShape` repeats in its own doc comment: *"Brief 9
+is where a path gains a second segment, and it gains it by extracting each cell in its OWN frame
+rather than by threading a string through this walk."* So a flat run emits no device at all for
+anything inside a module; its copper is in the partition and nothing else about it is. It therefore
+cannot be an oracle for what is inside one, and a literal reading of R-lvs9-4b would require
+building a second, device-flattening reader whose whole purpose is to be compared against — the
+thing the series exists not to do.
+
+**What the two runs are gated on is what they can both answer: the parent's own report.** That is
+still a substantial claim, and it is the one that matters, because a hierarchical run builds its
+partition with every module's internals REMOVED (R-lvs9-2d) and stitches the boundary back through
+the declared pins alone. The gate is that removing them changed nothing — no net moved, no pin came
+back open, no finding appeared or disappeared. A run that merely agreed on the device COUNT would
+not say that.
+
+The sub-cells' own findings are re-reported in the parent under the placement that put them there,
+so a caller reading only `Findings` still sees everything; `LvsRunResult.Cells` carries each
+sub-comparison whole.
+
+### `--flat` had to stop announcing itself, or the gate could never pass
+
+`lvs.hierarchy.flattened` exists so that a design quietly flattening the cells it could have
+compared is visible (R-lvs9-3d). Emitted under `--flat` as well, it makes the flat report differ
+from the hierarchical one by one info line per cell — **by construction**, on every design, so
+R-lvs9-4b's gate could never hold. `--flat` is the caller asking for one flat graph in so many
+words; repeating that back per cell is a report echoing the command line. The line is now emitted
+only for a cell that a hierarchical run declined to descend into: named for flattening, declaring
+`FlattenForLvs`, placed inside itself, or one the drawing has no cell instance for.
+
+### A boundary pad cannot be found by its pin NAME, and the collision is the common case
+
+The first cut kept a module's declared boundary pads in the parent's partition by matching
+`TaggedShape.SubCellPin` against the module cell's own `LayoutPin` names. `SubCellPin` is the
+shape's `Pin` at **every depth** — a land pattern three levels inside a module contributes pads
+named `A` and `B` exactly as the module's own boundary does. The fixture's own module places a
+two-pin resistor whose pins are `A` and `B`, so the resistor's pads stayed in the parent partition,
+came back as floating copper, and were then reported as two undeclared contacts against the parent's
+own traces. Every one of those findings was wrong and all of them looked plausible.
+
+**A shape is a boundary pad when it COVERS one of that placement's declared pins, on that pin's own
+layer** — no names anywhere. The points come from `PlacedPins`, which already projects them through
+`LayoutInstanceTransform`, so `PlacedPins.Of` now runs BEFORE the partition is built rather than
+after it. It needed no `stamped` argument to do so: LVS reads a pad's POSITION and never the net
+name that argument would have put on it, so dropping it also drops one lookup per pad that nothing
+read.
+
+The test is the shape's bounding box, which is generous for a polygon — a module-wide pour whose box
+spans a pin is kept. That direction is the safe one: the shape stays in the partition exactly as a
+flat reading would have it, so the worst case is a contact this brief does not report, never a net
+it invents.
+
+### `LvsRunOptions.Default` read a static field that had not been initialised yet
+
+`FlattenCells` defaults to a shared empty set. Written below `public static readonly LvsRunOptions
+Default = new()`, that set is still null when `Default`'s initialiser runs — static field
+initialisers run in **textual order** — so `LvsRunOptions.Default.FlattenCells` was null and every
+run that did not pass explicit options faulted on the first cell it classified. The empty set is now
+declared above `Default`, with a comment saying why the order is load-bearing. It is the same class
+of trap as a readonly struct's field ordering and it produces a `NullReferenceException` from a line
+that plainly cannot throw one.
+
+### The cache key is the application's SHAPE, not its function
+
+R-lvs9-1b asks for the key `GeneratedCellStore.BuildCellName` and `CellLayoutResolver` already use,
+"reused, not re-derived". `GeneratedCellStore` lives in `src/Ui` and `src/Design` may not reference
+it — the firewall runs the other way — so `LvsCellKey` states the recipe rather than calling it, and
+says so in its own header. The two are not required to produce the same string: one names a folder
+on disk and one names an entry in a dictionary that lives for one run. Only the inputs have to
+agree, and they do — cell directory, primary `.clay` mtime, resolved technology identity, resolved
+PCell parameters.
+
+The technology half is hashed as `TechPersistence.Serialize`'s output rather than field by field,
+which is `GeneratedCellStore.TechnologyContentKey`'s own choice and for its reason (circuitRF ships
+the editor that edits a `.ctech`, and the PATH does not change when the process behind it does). It
+also keeps `Lvs/` clear of the stackup's span fields, which the source scan forbids because the via
+walk is `DrcConnectivity`'s alone.
+
+### What is where
+
+`SubCellContact` is in `Extraction`, not in `Lvs/`, because it calls Clipper — geometry belongs to
+Extraction and Drc, which `LayoutRead`'s header states and `NothingUnderLvsUnionsGeometry…` holds.
+It intersects the placement's own unioned copper against the parent's **already-unioned pieces** and
+never re-unions the parent, which is what makes R-lvs9-3e's "one extra boolean per instance per
+layer" true rather than aspirational. The components of the INTERSECTION are what carry a pin or do
+not — a module whose pad overlaps a trace and whose ground ring also grazes it meets the parent
+twice on one piece of metal, and asking whether the PIECE holds a pin would answer yes and report
+nothing.

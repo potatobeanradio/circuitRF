@@ -93,6 +93,22 @@ public sealed record LvsRunResult(
     string? TechnologyName)
 {
     /// <summary>
+    /// Every sub-cell this design places, compared on its own account — <b>one entry per distinct
+    /// cell, not per placement</b> (<c>brief-lvs-9-hierarchy.md</c> R-lvs9-1a).
+    /// </summary>
+    /// <remarks>
+    /// Empty for a flat run and for a design that places no cell with a drawing of its own, which
+    /// is most of them. Each entry's own <see cref="LvsCellComparison.Result"/> is a full result in
+    /// its turn, so the tree is as deep as the design is — and each level's findings are also
+    /// re-reported in <see cref="Findings"/> under the placement that put the cell there, so a
+    /// caller that only reads the report still sees everything.
+    /// </remarks>
+    public IReadOnlyList<LvsCellComparison> Cells { get; init; } = [];
+
+    /// <summary>What the hierarchical reading cost — <b>counters, never clocks</b> (R-lvs9-5).</summary>
+    public LvsHierarchyCounters Hierarchy { get; init; } = new();
+
+    /// <summary>
     /// Every correspondence the run established, devices then nets — what brief 12 cross-probes
     /// with, and the answer to "what DID match".
     /// </summary>
