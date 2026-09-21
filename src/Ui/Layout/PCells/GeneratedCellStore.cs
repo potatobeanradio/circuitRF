@@ -348,6 +348,32 @@ public static class GeneratedCellStore
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         string hex  = Convert.ToHexString(hash)[..12].ToLowerInvariant();
-        return $"{generatorId}_{hex}";
+        return $"{FolderSafe(generatorId)}_{hex}";
+    }
+
+    /// <summary>
+    /// <paramref name="generatorId"/> with every character a cell folder may not carry replaced.
+    ///
+    /// <para><b>Why this is not a no-op, and why it does not break the compatibility surface above.</b>
+    /// A built-in's id is letters (<c>MLIN</c>, <c>MKLOPF</c>) and passes through UNCHANGED, so every
+    /// instance already placed in every existing workspace keeps resolving to the folder it names —
+    /// which is the property <see cref="BuildCellName"/>'s own comment is protecting. But a footprint
+    /// id is <c>smt:0402@N</c>, and <c>:</c> is in <c>NameValidator</c>'s disallowed set (it is not a
+    /// path character on Windows and is a foot-gun on the others). Without this,
+    /// <c>CellFolder.CreateCellFolder</c> refuses and the whole placement fails with a sentence about
+    /// a folder name, which is not what the user did.</para>
+    ///
+    /// <para>The IDENTITY is the hash, which is computed from the raw id above — so two ids that
+    /// sanitize to the same prefix still produce two different folders, and nothing collides.</para>
+    /// </summary>
+    private static string FolderSafe(string generatorId)
+    {
+        if (NameValidator.IsValid(generatorId)) return generatorId;
+
+        var sb = new StringBuilder(generatorId.Length);
+        foreach (char c in generatorId)
+            sb.Append(c <= 0x1F || c is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' ? '-' : c);
+        string safe = sb.ToString().TrimEnd(' ', '.');
+        return safe.Length == 0 ? "pcell" : safe;
     }
 }

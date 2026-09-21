@@ -32840,3 +32840,60 @@ turns both of its tests red by name, so it catches this rather than merely descr
 carries one. The suggested name is the stem only.
 
 **The same shape is still in `SaveEmSetupAs` and `SaveTechAs`**, which were not touched here.
+
+## SMT footprints — brief 3, Update Layout places footprints (2026-09-20)
+
+### 1. A generated cell's FOLDER NAME is the generator id, and `smt:0402@N` is not a legal one
+
+Every footprint placed — schematic-driven and by hand — failed with *"footprint 'smt:0402@N' could
+not be generated"*, a sentence that blames the land pattern for a filesystem rule.
+`GeneratedCellStore.BuildCellName` returns `$"{generatorId}_{hash}"`, and `NameValidator` disallows
+`:` (not a path character on Windows, a foot-gun on the others) — so `CellFolder.CreateCellFolder`
+refused before any artwork was generated at all.
+
+**Sanitised in the folder NAME only, never in the hash.** The identity is the SHA of the raw id, so
+two ids that sanitise alike still produce two folders. And every built-in id is letters, so
+`FolderSafe` is the identity for all of them and no instance already placed in an existing workspace
+is orphaned — which is the compatibility surface `BuildCellName`'s own comment exists to protect.
+
+**The general shape, worth knowing before the next generator arrives:** a generator id is a
+FILESYSTEM name here. A kit or a script contributing an id with a slash, a colon or a trailing dot
+would have hit the same wall, with the same misleading sentence.
+
+### 2. A footprint can name a `.clay` FILE, and an instance can only name a cell FOLDER
+
+R-fp3-1c asks for a Custom `.clay` path to be accepted directly — "Custom means this file". But
+`LayoutInstance.CellRef` names a cell folder and draws that folder's PRIMARY layout view; there is no
+per-view reference in this format. So a `.clay` that is not its cell's primary cannot be honoured,
+and the two available answers were *place the primary instead* (different artwork on the board from
+the one that was pointed at, silently) and *say so*.
+
+It says so, naming the primary that would have been drawn instead. Pointing at the primary works and
+resolves to its cell.
+
+### 3. The technology-divergence warning had one trigger and needed two
+
+`ReportTechnologyDivergence` fired only when the schematic held a microstrip component, because until
+now that was the only thing whose artwork depended on the technology. A land pattern resolves its
+copper, mask and silkscreen BY ROLE, so a schematic of thirteen capacitors laid into a layout on
+another technology places its lands on that technology's keys — with nothing in the design to make
+the old check fire.
+
+The rule and its wording moved to `TechnologyDivergenceReport` (framework-free, so it is testable
+without a `WorkspaceViewModel`); the command keeps only the decision to say it and the two
+resolutions it needs. The two triggers get two different consequence sentences — a microstrip
+diverges in its SUBSTRATE, a footprint in its LAYERS.
+
+### 4. A delete in a generated command chain has to go LAST
+
+R-fp3-4b removes the instance of a component whose footprint went back to None. The chain is built in
+schematic order and executed in that order, and every `AddInstanceCommand` appends while every
+`ReplaceInstanceCommand` edits in place — so indices captured while building stay correct only as
+long as nothing REMOVES. A delete chained in component order would shift every later index by one and
+the chain would then replace the wrong instance. All deletions are collected and appended as one
+`DeleteInstancesCommand` after the last add.
+
+**Scoped rather than general.** The removal fires only for a component with no `CellRef` of its own
+that resolves to no layout at all. A kit part whose kit is not loaded, or a `CellRef` that stopped
+resolving, keeps its artwork: those are transient conditions, and deleting board artwork over one is
+the destructive reading of the same evidence.

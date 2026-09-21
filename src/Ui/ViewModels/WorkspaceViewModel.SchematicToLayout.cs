@@ -23,59 +23,18 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public partial class WorkspaceViewModel
 {
-    /// <summary>
-    /// Says so when the artwork about to be generated and the electrical model already being
-    /// simulated are on two different technologies.
-    ///
-    /// <para><b>This divergence is real, live, and was silent.</b> The generator is handed
-    /// <c>layoutVm.Technology</c> — the LAYOUT's resolution, which is its own <c>TechRef</c> first and
-    /// the workspace default only as a fallback. A microstrip component's substrate comes from
-    /// <c>MicrostripSubstrateInjection</c>, which resolves the WORKSPACE DEFAULT and nothing else,
-    /// because a schematic has no technology reference of its own. So the moment a layout carries its
-    /// own <c>TechRef</c>, the line is drawn on one substrate and computed on another: the widths look
-    /// right, the artwork looks right, and only a simulation shows it.</para>
-    ///
-    /// <para><b>Reported, not refused.</b> A layout with its own <c>TechRef</c> is a deliberate act
-    /// (<c>TechnologyResolver</c>'s own header: "a .clay only stores a TechRef when it deliberately
-    /// deviates"), so the answer is to name both technologies and what differs — not to block a
-    /// gesture the user meant. Silent when the schematic has no microstrip component in it, because
-    /// then the difference has no electrical consequence to warn about.</para>
-    /// </summary>
+    /// <summary>Posts <see cref="TechnologyDivergenceReport"/>'s sentence, when it has one. The RULE
+    /// and the wording live there, framework-free and therefore testable; what stays here is the
+    /// decision to say it at this moment, and the two resolutions it needs — the schematic's
+    /// technology is always the workspace default, the layout's is its own <c>TechRef</c> first.</summary>
     private void ReportTechnologyDivergence(
         SchematicEditModel schematic, string schematicDir, LayoutEditorViewModel layoutVm)
     {
-        if (!schematic.Components.Any(c => MicrostripSubstrateInjection.IsMicrostripKind(c.Symbol)))
-            return;
-
-        string? schematicTech = MicrostripSubstrateInjection.ResolveWorkspaceTechnologyPath(schematicDir);
-        string? layoutTech    = layoutVm.ResolvedTechPath;
-
-        // Same file — the ordinary case, and nothing to say.
-        if (schematicTech is not null && layoutTech is not null
-            && string.Equals(Path.GetFullPath(schematicTech), Path.GetFullPath(layoutTech),
-                             StringComparison.OrdinalIgnoreCase))
-            return;
-
-        // Two copies of one table are the same technology (R47a's own rule), so comparing the TABLES
-        // rather than the paths is what keeps this from firing on a workspace that simply holds the
-        // process twice.
-        string? difference = ExternalWorkspaceGate.CompareTechnologies(schematicTech, layoutTech);
-        if (difference is null && schematicTech is not null && layoutTech is not null) return;
-
-        string schematicName = schematicTech is null
-            ? "no technology (the workspace has no default)"
-            : $"'{Path.GetFileNameWithoutExtension(schematicTech)}'";
-        string layoutName = layoutTech is null
-            ? "no technology"
-            : $"'{Path.GetFileNameWithoutExtension(layoutTech)}'";
-
-        Messages.Warning(
-            $"This cell's microstrip components are simulated on {schematicName} — a schematic always "
-          + $"takes its substrate from the workspace default — while this layout is drawn with "
-          + $"{layoutName}. The artwork and the electrical model do not agree."
-          + (difference is null ? "" : $" {difference}")
-          + " Set the workspace default to the layout's technology, or point the layout back at the "
-          + "default with Change Technology….");
+        if (TechnologyDivergenceReport.Describe(
+                schematic,
+                MicrostripSubstrateInjection.ResolveWorkspaceTechnologyPath(schematicDir),
+                layoutVm.ResolvedTechPath) is { } warning)
+            Messages.Warning(warning);
     }
 
     // ── Update Layout from Schematic (§2/§2.1) ───────────────────────────────────────────────────
@@ -198,7 +157,8 @@ public partial class WorkspaceViewModel
 
             ReportGenerationResult(result.Command, result.Lines, result.NoLayoutWarnings,
                 result.AddedCount, result.UpdatedCount, result.UnchangedCount, result.RemovedCount,
-                result.OverwrittenParameterCount, "Update Layout from Schematic");
+                result.OverwrittenParameterCount, "Update Layout from Schematic",
+                deleted: result.DeletedCount);
 
             addedRegion = result.AddedRegion;
         }
@@ -489,7 +449,7 @@ public partial class WorkspaceViewModel
         IReadOnlyList<SchematicToLayoutGenerator.ReportLine> lines,
         IReadOnlyList<string> extraWarnings,
         int addedOrCreated, int updated, int unchanged, int removed, int overwrittenParamCount,
-        string commandLabel, int cap = 20, string overwrittenNoun = "layout edits")
+        string commandLabel, int cap = 20, string overwrittenNoun = "layout edits", int deleted = 0)
     {
         foreach (var w in extraWarnings) Messages.Warning(w);
 
@@ -513,6 +473,10 @@ public partial class WorkspaceViewModel
         }
 
         string removedSuffix = removed > 0 ? $", {removed} no longer in the schematic" : "";
-        Messages.Success($"{commandLabel}: {addedOrCreated} added, {updated} updated, {unchanged} unchanged{removedSuffix}.");
+        // R-fp3-4b's own count. Separate from `removed`, which means "the schematic component is gone
+        // and the artwork was LEFT IN PLACE" — the opposite outcome, and reporting the two as one
+        // number would make a deletion read like something that was preserved.
+        string deletedSuffix = deleted > 0 ? $", {deleted} removed (footprint set to None)" : "";
+        Messages.Success($"{commandLabel}: {addedOrCreated} added, {updated} updated, {unchanged} unchanged{removedSuffix}{deletedSuffix}.");
     }
 }

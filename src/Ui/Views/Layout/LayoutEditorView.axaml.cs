@@ -1458,6 +1458,26 @@ public partial class LayoutEditorView : UserControl
 
     private async void OnInstanceTool(object? sender, RoutedEventArgs e) => await BeginInstancePlacementAsync();
 
+    // ── brief-footprint-3 R-fp3-6b — place a land pattern by hand ────────────────────────────────
+
+    private async void OnFootprintTool(object? sender, RoutedEventArgs e) => await BeginFootprintPlacementAsync();
+
+    /// <summary>Picks a built-in land pattern and arms the ordinary instance-placement ghost with it —
+    /// the same ghost-follows-cursor, click-to-commit flow every other placement uses, so what lands
+    /// is an ordinary instance (carrying no <c>SchematicId</c>, R-fp3-6c).</summary>
+    private async Task BeginFootprintPlacementAsync()
+    {
+        if (Vm is not { } vm) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var chosen = await new FootprintPickerDialog().ShowDialog<FootprintRef?>(owner);
+        if (chosen is null) return;
+
+        if (!vm.BeginFootprintPlacement(chosen)) return;   // refused — the VM has already said why
+        LayoutCanvasCtrl.InvalidateVisual();
+        LayoutCanvasCtrl.Focus();
+    }
+
     /// <summary>
     /// The ONE cell-picker-then-arm path for this editor — the Instance toolbar button and
     /// <c>Design ▸ Place Cell Instance…</c> both land here (the menu through

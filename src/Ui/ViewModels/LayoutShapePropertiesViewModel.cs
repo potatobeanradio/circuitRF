@@ -1067,6 +1067,97 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public bool HasInstanceArrayCount => InstanceArrayCountText.Length > 0;
     partial void OnInstanceArrayCountTextChanged(string value) => OnPropertyChanged(nameof(HasInstanceArrayCount));
 
+    // ── The selected instance's footprint (brief-footprint-3 R-fp3-6a) ──────────────────────────
+    //
+    // Beside rotation, mirror, mag and array, and it re-points the instance through the SAME
+    // ReplaceSelectedInstance path all four of those use — so it is one undoable command, like every
+    // other instance edit. The row content is brief 2's combobox content: every case reading its
+    // metric twin and its millimetres, because 0201 imperial and 0201 metric are two real case sizes
+    // differing by 2.4x and a row reading only "0402" is the defect.
+    //
+    // There is deliberately no None row. This is a RE-POINT: an instance must reference something,
+    // and "no cell" is not a state a placed instance can be in. Removing it is Delete, which is one
+    // keystroke away; pointing it at a hand-drawn or imported cell is the Re-target… button directly
+    // above, which already exists and already opens the right picker.
+
+    /// <summary>The rows of the instance footprint combobox. When the instance is NOT drawing a
+    /// built-in land pattern, row 0 names the cell it IS drawing and selecting it changes nothing —
+    /// the picker never claims a case size for artwork that is not one.</summary>
+    public ObservableCollection<string> InstanceFootprintOptions { get; } = [];
+
+    /// <summary>IPC-7351B density levels, in the order a picker reads them — the same list and the
+    /// same order the schematic's own footprint row uses.</summary>
+    public static string[] InstanceFootprintDensityOptions => ParameterEditorViewModel.FootprintDensityOptions;
+
+    [ObservableProperty] private int _instanceFootprintIndex;
+    [ObservableProperty] private int _instanceFootprintDensityIndex;
+
+    /// <summary>True when row 0 is the "this is not a built-in" row, i.e. when the case rows start at
+    /// index 1. Kept rather than re-derived so the two handlers below cannot disagree about it.</summary>
+    private bool _instanceFootprintHasCurrentRow;
+
+    partial void OnInstanceFootprintIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _vm is null) return;
+        ApplyInstanceFootprint(newValue, InstanceFootprintDensityIndex);
+    }
+
+    partial void OnInstanceFootprintDensityIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _vm is null) return;
+        ApplyInstanceFootprint(InstanceFootprintIndex, newValue);
+    }
+
+    private void ApplyInstanceFootprint(int rowIndex, int densityIndex)
+    {
+        int caseIndex = _instanceFootprintHasCurrentRow ? rowIndex - 1 : rowIndex;
+        if ((uint)caseIndex >= (uint)LayoutEditorViewModel.FootprintCases.Count) return;
+
+        var reference = FootprintRef.For(
+            LayoutEditorViewModel.FootprintCases[caseIndex],
+            densityIndex switch { 1 => DensityLevel.Most, 2 => DensityLevel.Least, _ => DensityLevel.Nominal });
+
+        _vm!.RetargetSelectedInstanceToFootprint(reference);
+        RefreshFromVm();
+    }
+
+    /// <summary>Rebuilds the rows and THEN sets the selection, in that order — the wBond round-6
+    /// defect is exactly this control shape, and a selection assigned before the collection is
+    /// populated is silently dropped and reads blank.</summary>
+    private void RefreshInstanceFootprint()
+    {
+        var current = _vm?.SelectedInstanceFootprint;
+
+        InstanceFootprintOptions.Clear();
+        _instanceFootprintHasCurrentRow = current is null;
+
+        if (_instanceFootprintHasCurrentRow)
+        {
+            var inst = SingleSelectedInstance;
+            string name = inst?.CellRef is { Length: > 0 } r
+                ? System.IO.Path.GetFileName(r.TrimEnd('/', '\\'))
+                : "(no cell)";
+            InstanceFootprintOptions.Add(name);
+        }
+
+        foreach (var c in LayoutEditorViewModel.FootprintCases) InstanceFootprintOptions.Add(c.Display);
+
+        int index = 0;
+        if (current is not null)
+            for (int i = 0; i < LayoutEditorViewModel.FootprintCases.Count; i++)
+                if (string.Equals(LayoutEditorViewModel.FootprintCases[i].Code, current.Case.Code,
+                                  System.StringComparison.OrdinalIgnoreCase))
+                { index = i; break; }
+
+        InstanceFootprintIndex = index;
+        InstanceFootprintDensityIndex = current?.Density switch
+        {
+            DensityLevel.Most  => 1,
+            DensityLevel.Least => 2,
+            _ => 0,
+        };
+    }
+
     private LayoutInstance? SingleSelectedInstance => _vm?.SingleSelectedInstance;
 
     /// <summary>Free-text CellRef edit (LostFocus/Enter) — the companion "Re-target…" button in the
@@ -1212,6 +1303,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
             if (ShowPCellParameterList) RebuildOrRefreshPCellParamRows(inst);
             else { PCellParamRows = null; _pcellParamGeneratedCellDir = null; }
+
+            // Set from the ROWS, after building them, not from "is this a PCell" before. A built-in
+            // land pattern is a generated cell that declares no parameters at all — its case and its
+            // density are its IDENTITY (R-fp1-4c) — so the list would otherwise be a "Parameters"
+            // header over 60px of nothing. Read off the rows rather than off the generator so this
+            // can never hide a list that would have had something in it.
+            ShowPCellParameterList = IsSelectedInstancePCell && PCellParamRows is { Count: > 0 };
             SetTextIfNotFocused("InstanceCellRef", inst.CellRef ?? "", () => InstanceCellRefText, v => InstanceCellRefText = v);
             SetTextIfNotFocused("InstanceX", LayoutUnits.Format(inst.X, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceXText, v => InstanceXText = v);
             SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
@@ -1226,6 +1324,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             int rows = System.Math.Max(1, inst.Rows), cols = System.Math.Max(1, inst.Cols);
             long count = (long)rows * cols;
             InstanceArrayCountText = count > 1 ? $"{rows} × {cols} = {count:N0} placements" : "";
+
+            RefreshInstanceFootprint();
         }
         else
         {
@@ -1243,6 +1343,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             InstanceRotationText = ""; InstanceMirrorXValue = null;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
             InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
+            InstanceFootprintOptions.Clear(); _instanceFootprintHasCurrentRow = false;
         }
 
         _isRefreshing = false;

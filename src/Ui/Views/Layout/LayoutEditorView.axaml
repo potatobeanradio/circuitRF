@@ -245,6 +245,14 @@
                                 Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
                         </Button>
+                        <!-- brief-footprint-3 R-fp3-6b — place an SMT land pattern with no schematic
+                             anywhere. Beside the Instance button because it arms the same placement
+                             ghost; a separate button because there is nothing selected to re-point,
+                             which is the OTHER footprint gesture (the Properties Inspector's
+                             Footprint row). -->
+                        <Button Click="OnFootprintTool" ToolTip.Tip="Footprint… (place an SMT land pattern)" Padding="6,3">
+                            <mi:MaterialIcon Kind="IntegratedCircuitChip" Width="16" Height="16"/>
+                        </Button>
                         <!-- The "Parametric Cell…" toolbar button that used to sit here (a picker
                              listing every registered generator) was removed by owner request —
                              PCells are placed by dragging one out of the palette. The picker dialog

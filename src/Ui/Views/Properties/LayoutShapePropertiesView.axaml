@@ -502,6 +502,24 @@
                                 <CheckBox Grid.Column="4" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
                             </Grid>
 
+                            <!-- brief-footprint-3 R-fp3-6a: re-point this instance at a built-in land
+                                 pattern. ItemsSource is declared BEFORE SelectedIndex, deliberately —
+                                 a ComboBox whose selection is assigned before its items binding
+                                 attaches silently drops it and reads blank (the wBond round-6
+                                 defect). Every row reads its metric twin and its millimetres. -->
+                            <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Footprint" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                                          ItemsSource="{Binding InstanceFootprintOptions}"
+                                          SelectedIndex="{Binding InstanceFootprintIndex, Mode=TwoWay}"
+                                          ToolTip.Tip="Re-point this instance at a built-in SMT land pattern. The schematic is not changed."/>
+                                <ComboBox Grid.Column="2" FontSize="11" Padding="4,2"
+                                          ItemsSource="{Binding InstanceFootprintDensityOptions}"
+                                          SelectedIndex="{Binding InstanceFootprintDensityIndex, Mode=TwoWay}"
+                                          ToolTip.Tip="IPC-7351B density level — Most, Nominal or Least land protrusion."/>
+                            </Grid>
+
                             <Grid ColumnDefinitions="56,*">
                                 <TextBlock Grid.Column="0" Text="Mag" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>

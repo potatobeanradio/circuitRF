@@ -48,7 +48,8 @@ public static class SchematicToLayoutGenerator
         int RemovedCount,
         int OverwrittenParameterCount,
         IReadOnlyList<string> NoLayoutWarnings,
-        Bbox AddedRegion = default)
+        Bbox AddedRegion = default,
+        int DeletedCount = 0)
     {
         public bool NothingChanged => Command is null && NoLayoutWarnings.Count == 0;
     }
@@ -151,6 +152,7 @@ public static class SchematicToLayoutGenerator
 
         var seenSchematicIds = new HashSet<string>(StringComparer.Ordinal);
         var newInstances = new List<(int Slot, LayoutInstance Instance)>();
+        var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
         var noLayoutWarnings = new List<string>();
         IUiCommand? chain = null;
@@ -165,13 +167,36 @@ public static class SchematicToLayoutGenerator
 
             string? resolvedCellRef = ResolveComponentLayout(
                 comp, model, schematicDir, workspaceRootDir, targetLayoutBaseDir, target, technology, techIdentity,
-                scope, evaluator, out var pcellParams, out var generatorId, out var resolveWarning, out var pcellDiagnostics);
+                scope, evaluator, out var pcellParams, out var generatorId, out var resolveWarning, out var pcellDiagnostics,
+                out var footprintRefusal);
 
             if (resolvedCellRef is null)
             {
-                string label = ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
-                string reason = resolveWarning ?? "no layout view";
-                noLayoutWarnings.Add($"{comp.InstanceName} ({label}): {reason} — skipped.");
+                // R-fp3-5c: a pad-count refusal is a COMPLETE sentence naming both numbers, not a
+                // fragment to wrap in the "(type): reason — skipped." shape the resolution failures
+                // use. Both land in NoLayoutWarnings, which is reported unconditionally.
+                if (footprintRefusal is not null) noLayoutWarnings.Add(footprintRefusal);
+                else
+                {
+                    string label = ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
+                    string reason = resolveWarning ?? "no layout view";
+                    noLayoutWarnings.Add($"{comp.InstanceName} ({label}): {reason} — skipped.");
+                }
+
+                // R-fp3-4b: a footprint set back to None takes its artwork with it. Scoped to a
+                // component that has NO cell reference of its own and resolves to nothing at all —
+                // the only way such a component came to hold an instance is a footprint, so there is
+                // nothing else this could be deleting. A kit part whose kit is not loaded, or a
+                // CellRef that stopped resolving, keeps its artwork: those are transient conditions
+                // and deleting board artwork over one would be the destructive reading.
+                if (comp.Footprint is null && comp.CellRef is null
+                    && existingBySchematicId.TryGetValue(schematicId, out var orphaned))
+                {
+                    deleteIndices.Add(orphaned.Index);
+                    lines.Add(new ReportLine(schematicId,
+                        $"{schematicId} — footprint set to None; its artwork was removed",
+                        ReportSeverity.Warning));
+                }
                 continue;
             }
 
@@ -289,11 +314,19 @@ public static class SchematicToLayoutGenerator
                 ReportSeverity.Warning));
         }
 
+        // LAST in the chain, deliberately. Every AddInstanceCommand APPENDS and every
+        // ReplaceInstanceCommand edits in place, so the indices captured above are still correct at
+        // this point; a delete run earlier would shift every later index by one and the chain would
+        // replace the wrong instance. DeleteInstancesCommand removes in descending order and restores
+        // at the original indices on undo, so the whole re-run stays one undoable action (R-L5-12).
+        if (deleteIndices.Count > 0)
+            chain = Chain(chain, new DeleteInstancesCommand(target, deleteIndices));
+
         var addedRegion = PlaceNewInstances(newInstances, targetLayoutBaseDir);
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
 
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
-                                    noLayoutWarnings, addedRegion);
+                                    noLayoutWarnings, addedRegion, deleteIndices.Count);
     }
 
     /// <summary>
@@ -516,12 +549,29 @@ public static class SchematicToLayoutGenerator
         Technology? technology, string? techIdentity,
         Scope scope, Evaluator evaluator,
         out IReadOnlyDictionary<string, PCellValue>? pcellParams, out string? generatorId,
-        out string? resolveWarning, out IReadOnlyList<string>? pcellDiagnostics)
+        out string? resolveWarning, out IReadOnlyList<string>? pcellDiagnostics,
+        out string? footprintRefusal)
     {
         pcellParams = null;
         generatorId = null;
         resolveWarning = null;
         pcellDiagnostics = null;
+        footprintRefusal = null;
+
+        // R-fp3-1: a STATED footprint is consulted FIRST, ahead of the kit / CellRef / PCell chain.
+        // First and not last because a stated footprint is an explicit choice somebody made and the
+        // other three are inferences. The one case this reorders in practice is a component carrying
+        // BOTH a CellRef and a Footprint, which R-fp2-3c never produces by default — it can only
+        // arise from a deliberate act, and honouring the deliberate act is right.
+        //
+        // R-fp3-1d: None (no Footprint parameter at all) does not enter here, so a component with no
+        // footprint resolves exactly as it did before this brief.
+        if (comp.Footprint is { Length: > 0 } footprint)
+            return ResolveFootprintLayout(
+                comp, footprint, schematicDir, workspaceRootDir, targetLayoutBaseDir, target,
+                technology, techIdentity,
+                out pcellParams, out generatorId, out resolveWarning, out pcellDiagnostics,
+                out footprintRefusal);
 
         // An imported kit's part is a VIRTUAL reference, and treating it as a path is what made this
         // report "referenced cell not found" for every one of them — which is false and sends the
@@ -661,6 +711,186 @@ public static class SchematicToLayoutGenerator
         pcellParams = resolved;
         generatorId = reference;
         return ToRelative(targetLayoutBaseDir, cellDir);
+    }
+
+    /// <summary>
+    /// The footprint branch of <see cref="ResolveComponentLayout"/> — brief-footprint-3 R-fp3-1.
+    ///
+    /// <para><b>Two forms, one discriminator.</b> A reference that parses as <c>smt:</c> is one of
+    /// circuitRF's built-in land patterns and resolves through <c>ChipLandPatternGenerator</c> into
+    /// the content-addressed <see cref="GeneratedCellStore"/>, exactly as a microstrip PCell does —
+    /// one generated cell per (case, density, technology) triple, nothing new invented for storage
+    /// (R-fp3-1b). ANYTHING else is a path, resolved through <c>ExternalCellRef.ResolveCellDir</c>
+    /// and <c>CellFolder.ResolvePrimary</c> with the same refusals and the same sentences a
+    /// <c>CellRef</c> gets (R-fp3-1c).</para>
+    ///
+    /// <para><b>The technology is the LAYOUT's</b> (R-fp3-2) — the same <paramref name="technology"/>
+    /// every other branch is handed, which is the layout's own <c>TechRef</c> first and the workspace
+    /// default only as a fallback. Which is exactly why the divergence report gained a second trigger:
+    /// a schematic of thirteen capacitors laid into a layout on another technology would otherwise
+    /// place its lands on the wrong layers in silence.</para>
+    /// </summary>
+    private static string? ResolveFootprintLayout(
+        EditableComponent comp, string footprint, string schematicDir, string workspaceRootDir,
+        string targetLayoutBaseDir, LayoutView target, Technology? technology, string? techIdentity,
+        out IReadOnlyDictionary<string, PCellValue>? pcellParams, out string? generatorId,
+        out string? resolveWarning, out IReadOnlyList<string>? pcellDiagnostics,
+        out string? footprintRefusal)
+    {
+        pcellParams = null;
+        generatorId = null;
+        resolveWarning = null;
+        pcellDiagnostics = null;
+        footprintRefusal = null;
+
+        string cellRef;
+        string cellAbsDir;
+
+        if (FootprintRef.IsBuiltInReference(footprint))
+        {
+            if (!FootprintRef.TryParse(footprint, out var reference, out string? refusal))
+            {
+                // The parser's own sentence, which already lists the case sizes circuitRF knows —
+                // re-wording it here would give the same mistake two different answers depending on
+                // whether it was made in the picker or read off a file.
+                resolveWarning = refusal;
+                return null;
+            }
+
+            // The canonical spelling IS the generator id (R-fp1-2b), so two densities of one case are
+            // two generated cells rather than one that silently serves both. The parameter set is
+            // empty by construction: a land pattern's case and density are its IDENTITY, not its
+            // parameters (FootprintGeneratorResolver.DeclaredDefaults).
+            string generator = reference!.ToString();
+            var parameters = new Dictionary<string, PCellValue>(StringComparer.Ordinal);
+
+            string generatedDir;
+            try
+            {
+                generatedDir = GeneratedCellStore.GetOrCreate(
+                    workspaceRootDir, generator, parameters, technology, techIdentity,
+                    PCellLayerSelection.Default, out pcellDiagnostics);
+                GeneratedCellStore.RecordSnapshot(
+                    target, generatedDir, generator, parameters, techIdentity, PCellLayerSelection.Default);
+            }
+            catch (Exception ex)
+            {
+                resolveWarning = $"footprint '{footprint}' could not be generated: {ex.Message}";
+                return null;
+            }
+
+            generatorId = generator;
+            pcellParams = parameters;
+            cellAbsDir  = generatedDir;
+            cellRef     = ToRelative(targetLayoutBaseDir, generatedDir);
+        }
+        else
+        {
+            if (ResolveFootprintPath(footprint, schematicDir, out cellAbsDir, out string? pathRefusal) is false)
+            {
+                resolveWarning = pathRefusal;
+                return null;
+            }
+            cellRef = ToRelative(targetLayoutBaseDir, cellAbsDir);
+        }
+
+        // R-fp3-5b: the pad count is the RESOLVED view's pin count — a generated pattern's declared
+        // pins and an imported cell's own pins land in the same place, so nothing here needs to know
+        // which produced them.
+        var resolution = CellLayoutResolver.Resolve(cellRef, targetLayoutBaseDir);
+        if (resolution is not { State: CellLayoutState.Resolved, View: { } view })
+        {
+            resolveWarning = $"footprint '{footprint}' has no layout view";
+            return null;
+        }
+
+        int pads = view.Pins.Count;
+
+        // A generator that refused (R-fp1-3b: a technology with no copper role has no land pattern to
+        // draw) produces an empty result carrying one sentence, and its OWN sentence is the useful
+        // one — reported as "0 pads" it would name a symptom and hide the cause.
+        if (pads == 0 && pcellDiagnostics is { Count: > 0 })
+        {
+            resolveWarning = string.Join(" ", pcellDiagnostics);
+            return null;
+        }
+
+        int ports = comp.EffectivePortCount;
+        if (pads != ports)
+        {
+            // R-fp3-5d: reported and skipped, never placed-and-flagged. Artwork on the board with the
+            // wrong pad count is artwork somebody routes to.
+            footprintRefusal =
+                $"{comp.InstanceName} states footprint {EditableComponent.FootprintDisplayName(footprint)}, " +
+                $"which has {pads} pad{(pads == 1 ? "" : "s")}, and the component has " +
+                $"{ports} port{(ports == 1 ? "" : "s")}. Nothing was placed.";
+            return null;
+        }
+
+        return cellRef;
+    }
+
+    /// <summary>
+    /// A footprint stated as a PATH — R-fp3-1c. A cell folder resolves exactly as a <c>CellRef</c>
+    /// does, with the same refusals.
+    ///
+    /// <para><b>A <c>.clay</c> FILE is accepted, and is the reason this is not simply the
+    /// <c>CellRef</c> branch called twice.</b> Custom means "this file". But a
+    /// <see cref="LayoutInstance"/> names a cell FOLDER and draws that folder's PRIMARY layout view —
+    /// there is no per-view reference in this format — so the only honest answer for a file that is
+    /// not the primary is to say so and name what the primary actually is. Quietly placing the
+    /// primary instead would put different artwork on the board than the one the user pointed at,
+    /// which is precisely the silent substitution the density suffix exists to make visible.</para>
+    /// </summary>
+    private static bool ResolveFootprintPath(
+        string footprint, string schematicDir, out string cellAbsDir, out string? refusal)
+    {
+        cellAbsDir = "";
+        refusal = null;
+
+        if (ExternalCellRef.ResolveCellDir(footprint, schematicDir) is not { } resolved)
+        { refusal = $"footprint '{footprint}' could not be resolved"; return false; }
+
+        if (footprint.EndsWith(CellFolder.ViewExtension(ViewType.Layout), StringComparison.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(resolved)) { refusal = $"footprint '{footprint}' not found"; return false; }
+
+            // <cell>/layout/<name>.clay — the cell folder is two levels up.
+            string layoutDir = Path.GetDirectoryName(resolved) ?? "";
+            string owningCell = Path.GetDirectoryName(layoutDir) ?? "";
+            if (owningCell.Length == 0 || !Directory.Exists(owningCell))
+            {
+                refusal = $"footprint '{footprint}' is a layout file that does not belong to a cell";
+                return false;
+            }
+
+            var filePrimary = CellFolder.ResolvePrimary(owningCell, ViewType.Layout);
+            if (filePrimary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+            {
+                refusal = $"footprint '{footprint}' is a layout file that does not belong to a cell";
+                return false;
+            }
+
+            if (!string.Equals(filePrimary.ResolvedName, Path.GetFileName(resolved), StringComparison.OrdinalIgnoreCase))
+            {
+                refusal = $"footprint '{footprint}' is not its cell's primary layout view — " +
+                          $"'{filePrimary.ResolvedName}' is, and an instance draws the primary. " +
+                          "Make it primary, or point the footprint at a cell of its own";
+                return false;
+            }
+
+            cellAbsDir = owningCell;
+            return true;
+        }
+
+        if (!Directory.Exists(resolved)) { refusal = $"footprint '{footprint}' not found"; return false; }
+
+        var primary = CellFolder.ResolvePrimary(resolved, ViewType.Layout);
+        if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+        { refusal = $"footprint '{footprint}' has no layout view"; return false; }
+
+        cellAbsDir = resolved;
+        return true;
     }
 
     /// <summary>Ground/Pin/Var/Meas (and Open/Short-disabled components) are never physical — mirrors

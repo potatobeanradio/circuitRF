@@ -755,6 +755,22 @@ public sealed class EditableComponent
         return SchematicGeometry.LocalToWorld(lx, ly, X, Y, Rotation, MirrorX);
     }
 
+    /// <summary>
+    /// The number of terminals this component actually presents on the schematic — what a land
+    /// pattern's pad count has to equal (brief-footprint-3 R-fp3-5a).
+    ///
+    /// <para><b>Not <see cref="PortCount"/>, and the difference is the one that bites.</b> An
+    /// <c>SnP</c> with <c>RefNode</c> set generates a reference pin of its own
+    /// (<see cref="GetEffectiveSnpPortDefs"/>), so a 2-port S2P is THREE terminals and does not fit a
+    /// two-pad chip land. <c>PortCount</c> answers "how many ports does the file have", which is a
+    /// different question and the wrong one here.</para>
+    ///
+    /// <para>Stated once, here, rather than at each caller: a second copy of the <c>+ RefNode</c> rule
+    /// is a copy that disagrees the first time the pin generation changes.</para>
+    /// </summary>
+    public int EffectivePortCount =>
+        Symbol == SymbolKind.Snp ? GetEffectiveSnpPortDefs().Length : PortCount;
+
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
         bool refNode = GetBoolParam("RefNode");
