@@ -199,6 +199,17 @@ nothing else.
 The [SMT footprint series](brief-footprint-0-overview.md) came out of the same report — its brief 5
 rebuilds this example on real footprints, and needs 23.
 
+### Round three — a board the user drew (2026-09-20)
+
+The owner asked whether a user can author a `.clay` and then analyse its PDN. They can open one —
+and railRF then finds no parts on it, because `RailBoardInputs.Pads` and `.NetPoints` come only from
+`PdnBoardPads.PadsOf(BoardNetlist)`, i.e. only from an `.ipc`, which **nothing in circuitRF can
+write**. The [authored board series](brief-authored-board-0-overview.md) closes that by deriving the
+pads from the artwork's own instances rather than asking for the file: four briefs, of which brief 1
+alone makes a drawn board work end to end. It depends on this series for nothing and touches
+`PdnBoardPads`' behaviour not at all — a board that ships an `.ipc` must answer identically, which is
+its own last gate.
+
 ### Dependency order
 
 ```
