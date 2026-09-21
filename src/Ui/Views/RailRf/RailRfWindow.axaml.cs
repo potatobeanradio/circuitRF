@@ -952,8 +952,22 @@ public partial class RailRfWindow : Window
     /// <summary>The result a railRF window currently shows for that document, or null when none is
     /// open. What the Properties panel's summary reads — it runs nothing of its own.</summary>
     public static RailResultView? ResultFor(string path) =>
+        ViewModelFor(path)?.Current;
+
+    /// <summary>
+    /// The live view model for one <c>.crail</c>, or null when no window has it open.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="ResultFor"/>'s own lookup, widened.</b> Two things outside this window need the
+    /// SESSION rather than the file: the bill of materials a design was imported with, which no
+    /// <c>.crail</c> carries a reference to and which therefore exists nowhere else
+    /// (brief-authored-board-4 R-ab4-3a), and the working copy of the document itself, so that
+    /// creating a part library for a design that is open on screen does not write the file behind
+    /// the window that is editing it (R-ab4-4b).
+    /// </remarks>
+    public static RailRfViewModel? ViewModelFor(string path) =>
         Open.TryGetValue(Path.GetFullPath(path), out var window)
-            ? (window.DataContext as RailRfViewModel)?.Current
+            ? window.DataContext as RailRfViewModel
             : null;
 
     /// <summary>

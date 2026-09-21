@@ -352,4 +352,11 @@ public interface ITreeActions
     /// <summary>New Technology… — prompts for a name and starting point (PCB / MMIC / Empty),
     /// writes tech/&lt;name&gt;.ctech, optionally sets it as the workspace default, opens it.</summary>
     Task NewTechnologyAsync(ProjectTreeNodeViewModel node);
+
+    /// <summary>
+    /// New Part Library… over a <c>.crail</c> that names none — prompts for a name, writes a
+    /// <c>.crlib</c> in the workspace SEEDED with every part number that design asks about, points
+    /// the document at it and opens it (brief-authored-board-4 R-ab4-4b).
+    /// </summary>
+    Task NewPartLibraryForRailDocumentAsync(ProjectTreeNodeViewModel node);
 }

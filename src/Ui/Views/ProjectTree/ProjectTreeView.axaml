@@ -483,6 +483,20 @@
                                         </MenuItem>
                                         <Separator IsVisible="{Binding IsWBondFile}"/>
 
+                                        <!-- railRF (.crail) node action — brief-authored-board-4
+                                             R-ab4-4b. Seeding needs a library to seed into, and a
+                                             design that has never had one is where a first import
+                                             lands. Shown on every .crail; a document that already
+                                             names one refuses by name rather than being hidden, so
+                                             the answer is readable. -->
+                                        <MenuItem Header="New Part Library…"
+                                                  Command="{Binding NewPartLibraryForRailDocumentCommand}"
+                                                  IsVisible="{Binding IsRailFile}"
+                                                  ToolTip.Tip="Create a part library in this workspace holding one row per part number this design asks about, and point the document at it. Each row states the part number and nothing else — except where a bill of materials read in its railRF window already said more.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulletedType" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator IsVisible="{Binding IsRailFile}"/>
+
                                         <!-- Known File actions -->
                                         <MenuItem Header="Open External…"
                                                   Command="{Binding OpenExternalCommand}"

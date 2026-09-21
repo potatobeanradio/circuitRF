@@ -1,5 +1,60 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Authored board brief 4 — the library already knew which rows were missing (2026-09-20)
+
+`AddRow` added one empty row while `PartLibraryCoverageContext` already knew, by resolved path,
+exactly which part numbers the design asked about and did not find. The command that closes that gap
+is small; four things around it are not obvious.
+
+### A `.crail` carries NO bill-of-materials reference, and cannot be made to
+
+It names its artwork, its technology, its part library, its board netlist and its placement file — and
+not its BOM, because the BOM is an **import input** rather than something the document names. It is
+read once by the import dialog into `RailRfViewModel.Bom` and exists nowhere else afterwards: not on
+disk beside the `.crail`, not in the `.cws`, not in the file. So R-ab4-3a's "where the design was
+imported with a BOM" is literally a statement about the SESSION, and the only thing that can answer it
+is the open railRF window. `RailRfWindow.ViewModelFor` is `ResultFor`'s own lookup widened for exactly
+that; the workspace fills `PartLibraryCoverageContext.Bom` in from it, and null — a library opened with
+no railRF window up — is the ordinary case and means an honestly empty row.
+
+Guessing a path (`<design>.bom.csv` beside the `.crail`) was considered and rejected: a file the user
+never named, read as authoritative, is the same surprise `clone` refuses to cause, one direction
+reversed.
+
+### `RailValueFormat.TryParse` reads a BARE NUMBER as the ladder's base unit
+
+`TryParse("100", Capacitance, out c)` succeeds and returns **100 farads**. That is correct for a live
+editor — a field whose unit is implied by the column — and catastrophic for a BOM value column, where
+"100" means 100 nF on one board and 100 pF on another. `PartLibrarySeed.Capacitance` therefore requires
+the trailing farad before it will read the column at all, which also leaves a ferrite's `600R` and a
+resistor's `10k` null rather than nonsense. This is the "mark read without its scale" failure that once
+produced a run at 2 Hz looking entirely normal, in a new column.
+
+### `BomFile.ParseDescription` wants the unit letter ON the number
+
+`16V` parses; `16 V` does not — the tokenizer splits on whitespace and `Volts` requires the suffix on
+the same token. That is the parser's own deliberate rule (a bare token in free text is a quantity, a
+length or part of a code as often as it is a rating), and it is worth knowing because **the shipped
+Power Rail library's own descriptions are spelled `100 nF 0402 X7R 16 V`** — so a BOM written in that
+style yields a class and no voltage. The gate's fixture spells it the way a description that parses
+spells it, with the reason on the line.
+
+### Seeding ALWAYS improves `Known`, and that is not the count to watch
+
+`PartLibrary.Coverage` counts a part as known the moment a row exists for it, so nine seeded rows move
+nine parts out of `Unknown` by construction — there is no implementation in which they do not. The
+honest numbers are the other two: the nine land in `WithoutBiasCurve` and in `WithoutEsrBasis`, and
+`WithBiasCurve` does not move at all. The gate asserts all three, because the failure mode is an
+implementation that fills a plausible capacitance in and makes every number rise together.
+
+`PartLibraryRowViewModel.IsIncomplete` says the same thing on the row. It is a property of the MODEL —
+no capacitance, no self-resonance, no attached file — and not a memory of how the row arrived, so a row
+somebody typed a part number into reads the same and a seeded row stops reading incomplete the moment a
+number is entered. The BOM provenance is the opposite: session state, held by part number on the editor
+(`_seededFromBom`) rather than on `PartLibraryRow`, because it must survive an undo — which replaces
+every row object in the grid — and must not reach the file, which would be a format change §6 puts out
+of scope.
+
 ## Authored board brief 2 — the window half of net identity (2026-09-20)
 
 The design-layer half — `PdnLayoutNets`, the partition and the pin/port join — is in

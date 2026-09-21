@@ -15,6 +15,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Ui.RailRf;
@@ -25,6 +26,24 @@ namespace CircuitRF.Ui.RailRf;
 /// including repeats — <see cref="PartLibrary.Coverage"/> distinguishes them itself.</param>
 public sealed record PartLibraryCoverageContext(string Subject, IReadOnlyList<string> PartNumbers)
 {
+    /// <summary>The <c>.crail</c> this context is about, absolute. <see cref="Subject"/> is its file
+    /// name and is what a report shows; this is what a caller that has to go BACK to the design
+    /// needs — the bill of materials it was imported with, and the reference it would name a new
+    /// part library by (brief-authored-board-4 R-ab4-3a, R-ab4-4b).</summary>
+    public string? DesignPath { get; init; }
+
+    /// <summary>
+    /// The bill of materials the design was imported with, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not found by this walk, and it could not be.</b> A <c>.crail</c> carries no BOM reference —
+    /// the bill of materials is an IMPORT input, read once into the railRF session — so the only
+    /// thing that can supply one is whatever holds that session. The workspace fills it in from the
+    /// open railRF window, exactly as it fills the coverage in from here; null is the ordinary state
+    /// and means a seeded row is honestly empty (R-ab4-3c).
+    /// </remarks>
+    public BomTable? Bom { get; init; }
+
     /// <summary>
     /// The first <c>.crail</c> under <paramref name="workspaceRoot"/> whose part-library reference
     /// lands on <paramref name="crlibPath"/>, or null where none does.
@@ -72,7 +91,10 @@ public sealed record PartLibraryCoverageContext(string Subject, IReadOnlyList<st
 
             return new PartLibraryCoverageContext(
                 Path.GetFileName(crail),
-                [.. document.Rails.SelectMany(r => r.Parts).Select(part => part.PartNumber)]);
+                [.. document.Rails.SelectMany(r => r.Parts).Select(part => part.PartNumber)])
+            {
+                DesignPath = Path.GetFullPath(crail),
+            };
         }
 
         return null;

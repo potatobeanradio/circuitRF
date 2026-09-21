@@ -30,6 +30,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using CircuitRF.Design.Layout.Footprints;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Ui.Commands;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -440,6 +441,45 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
 
     public bool IsFlagged => Refusal is not null;
 
+    // ── seeding (brief-authored-board-4 R-ab4-2b, R-ab4-3b) ───────────────────────────────────
+
+    /// <summary>
+    /// True where this row states a part number and <b>nothing that models the part</b> — no
+    /// capacitance, no self-resonance, no attached file.
+    /// </summary>
+    /// <remarks>
+    /// <b>R-ab4-2b, and it is the thing the obvious implementation gets wrong.</b>
+    /// <see cref="PartLibrary.Coverage"/> counts a part as KNOWN the moment a row for it exists, so
+    /// seeding nine missing part numbers moves nine parts out of the uncovered count while
+    /// contributing nothing at all to the answer. The counts stay honest by themselves — the nine
+    /// land in <c>WithoutBiasCurve</c> and in <c>WithoutEsrBasis</c> — and this is what says so on
+    /// the row itself, where it gets fixed.
+    ///
+    /// <para>It is a property of the MODEL, not a memory of how the row arrived: a row somebody
+    /// typed a part number into is in exactly the same state, and it stops reading incomplete the
+    /// moment a number is entered.</para>
+    /// </remarks>
+    public bool IsIncomplete =>
+        Model.PartNumber.Length > 0
+        && Model.CapacitanceFarads is null
+        && Model.SelfResonantFrequencyHz is null
+        && Model.ModelRef is not { Length: > 0 };
+
+    /// <summary>Where this row came from, or empty — <b>the parts table's own sentence</b>
+    /// (<c>RailPartRowViewModel.OriginText</c>), because a pre-filled number nobody checked is the
+    /// one that will be wrong and this is the second place it can happen.</summary>
+    public string OriginText => owner.OriginOf(Model);
+
+    /// <summary>The part-number cell's tooltip: the refusal where there is one, otherwise what is
+    /// still missing. One tip, because a cell has one.</summary>
+    public string? PartNumberTip =>
+        Refusal
+        ?? (IsIncomplete
+            ? "This row names the part and states no model for it — no capacitance, no self-resonant "
+            + "frequency and no attached file. It counts as a part with no bias curve and no ESR "
+            + "basis until one is entered."
+            : null);
+
     // ── plumbing ──────────────────────────────────────────────────────────────────────────────
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
@@ -516,6 +556,9 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         if (except != nameof(HasBiasCurve)) OnPropertyChanged(nameof(HasBiasCurve));
         if (except != nameof(Refusal)) OnPropertyChanged(nameof(Refusal));
         if (except != nameof(IsFlagged)) OnPropertyChanged(nameof(IsFlagged));
+        if (except != nameof(IsIncomplete)) OnPropertyChanged(nameof(IsIncomplete));
+        if (except != nameof(OriginText)) OnPropertyChanged(nameof(OriginText));
+        if (except != nameof(PartNumberTip)) OnPropertyChanged(nameof(PartNumberTip));
     }
 }
 
@@ -682,7 +725,10 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     /// <b>Re-askable</b> — the workspace calls it again after a Save As, when the library the design
     /// names may no longer be this file.
     /// </summary>
-    public void SetCoverageContext(string? subject, IEnumerable<string>? referencedPartNumbers)
+    /// <param name="bom">The bill of materials the design was imported with, or null. Read only when
+    /// a row is SEEDED (R-ab4-3a) — nothing here counts it and no column shows it.</param>
+    public void SetCoverageContext(
+        string? subject, IEnumerable<string>? referencedPartNumbers, BomTable? bom = null)
     {
         if (subject is not { Length: > 0 } || referencedPartNumbers is null)
         {
@@ -695,13 +741,20 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
             Coverage = Working.Coverage(referencedPartNumbers);
         }
         _referenced = Coverage is null ? null : [.. referencedPartNumbers ?? []];
+        _bom = Coverage is null ? null : bom;
         OnPropertyChanged(nameof(Coverage));
         OnPropertyChanged(nameof(CoverageSubject));
         OnPropertyChanged(nameof(HasCoverage));
         OnPropertyChanged(nameof(CoverageText));
+        RefreshSeeding();
     }
 
+    /// <summary>The same, from the walk's own answer — what the workspace hands over.</summary>
+    public void SetCoverageContext(PartLibraryCoverageContext? context) =>
+        SetCoverageContext(context?.Subject, context?.PartNumbers, context?.Bom);
+
     private List<string>? _referenced;
+    private BomTable? _bom;
 
     // ── row commands (R-rail24-1b) ────────────────────────────────────────────────────────────
 
@@ -734,6 +787,111 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         CommitEdit(before, "Remove a part");
         RebuildRows();
         SelectedRow = Rows.Count == 0 ? null : Rows[Math.Clamp(index, 0, Rows.Count - 1)];
+    }
+
+    // ══ SEEDING THE ROWS THE DESIGN ASKED FOR (brief-authored-board-4, R-ab4-1) ════════════════
+    //
+    // `AddRow` adds one empty row, and until this command a user who had just imported a thirteen-part
+    // board typed thirteen part numbers the application already held. `PartLibraryCoverageContext`
+    // resolves which `.crail` names this file — by resolved PATH, not by string comparison — and
+    // `PartLibrary.Coverage` already distinguishes which of that design's part numbers have no row.
+    // Neither of those is re-derived here: this command adds a row per `Coverage.Unknown` entry and
+    // counts nothing of its own, which is the same rule that keeps the coverage strip honest.
+
+    /// <summary>The part numbers the design asks for and this library has no row for — document
+    /// order, repeats collapsed. <see cref="PartLibraryCoverage.Unknown"/>'s own list.</summary>
+    public IReadOnlyList<string> MissingPartNumbers => Coverage?.Unknown ?? [];
+
+    public int MissingPartCount => MissingPartNumbers.Count;
+
+    /// <summary>
+    /// <b>R-ab4-1d.</b> Whether there is a design behind this library at all. False makes the command
+    /// ABSENT rather than disabled — a shared library being edited on its own is an ordinary state
+    /// and there is nothing to seed FROM, which is a different thing from nothing to seed.
+    /// </summary>
+    public bool HasSeedSource => Coverage is not null;
+
+    /// <summary><b>R-ab4-1b.</b> The button's own words — the count AND the design, because a user
+    /// with two boards in a workspace cannot otherwise tell which one they are about to seed
+    /// from.</summary>
+    public string SeedMissingPartsText =>
+        Coverage is null ? "Add the parts this design asks for"
+        : MissingPartCount == 0 ? $"Add the parts {CoverageSubject} asks for"
+        : MissingPartCount == 1 ? $"Add the 1 part {CoverageSubject} asks for"
+        : $"Add the {MissingPartCount} parts {CoverageSubject} asks for";
+
+    /// <summary><b>R-ab4-1c.</b> Why the button is disabled, where it is — a library that covers its
+    /// design is the GOOD state, and a control that vanished on success would read as one that
+    /// broke.</summary>
+    public string SeedMissingPartsTooltip =>
+        Coverage is null
+            ? "No design in this workspace references this library."
+            : MissingPartCount == 0
+                ? $"Every part number {CoverageSubject} asks for is already in this library."
+                : $"Adds one row per part number {CoverageSubject} asks for and this library has no "
+                + "row for, in the design's own order. Each row states the part number and nothing "
+                + "else, so it still counts as a part with no bias curve until you fill it in"
+                + (_bom is null
+                    ? "."
+                    : $" — except where {_bom.FileName} already says something, which is carried "
+                    + "across and marked as coming from there.");
+
+    /// <summary>
+    /// Adds a row per missing part number, as ONE undo entry.
+    /// </summary>
+    /// <remarks>
+    /// <b>R-ab4-4a.</b> Nine rows that take nine undos to remove is the Match Designer's slider
+    /// defect in a new place, so the whole batch is one <see cref="PartLibrarySnapshotCommand"/> —
+    /// which costs nothing here, because the snapshot is the whole library either way.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanSeedMissingParts))]
+    private void SeedMissingParts()
+    {
+        var missing = MissingPartNumbers;
+        if (missing.Count == 0) return;
+
+        string before = SnapshotJson();
+        foreach (string partNumber in missing)
+        {
+            Working.Rows.Add(PartLibrarySeed.Row(partNumber, _bom, out bool fromBom));
+            if (fromBom) _seededFromBom.Add(partNumber);
+        }
+
+        CommitEdit(before, missing.Count == 1 ? "Add the part the design asks for"
+                                              : $"Add the {missing.Count} parts the design asks for");
+        RebuildRows();
+        SelectedRow = Rows.Count == 0 ? null : Rows[^missing.Count];
+    }
+
+    private bool CanSeedMissingParts() => MissingPartCount > 0;
+
+    /// <summary>
+    /// Which part numbers were seeded from the bill of materials in this session.
+    /// </summary>
+    /// <remarks>
+    /// <b>By PART NUMBER, and not on the row</b> (R-ab4-3b, and §6's "no change to the format").
+    /// Provenance is session knowledge: it must survive an undo — which replaces every row object in
+    /// the grid — and it must not reach the file, because a <c>.crlib</c> written with a field
+    /// nothing reads is a format change. Renaming a seeded row's part number drops it, which is
+    /// right: it is no longer the row the bill of materials described.
+    /// </remarks>
+    private readonly HashSet<string> _seededFromBom = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The sentence a row shows for where it came from, or empty. <b>The parts table's
+    /// own</b> — see <c>RailPartRowViewModel.OriginText</c>.</summary>
+    internal string OriginOf(PartLibraryRow row) =>
+        row.PartNumber is { Length: > 0 } p && _seededFromBom.Contains(p)
+            ? "pre-filled from the bill of materials"
+            : "";
+
+    private void RefreshSeeding()
+    {
+        OnPropertyChanged(nameof(MissingPartNumbers));
+        OnPropertyChanged(nameof(MissingPartCount));
+        OnPropertyChanged(nameof(HasSeedSource));
+        OnPropertyChanged(nameof(SeedMissingPartsText));
+        OnPropertyChanged(nameof(SeedMissingPartsTooltip));
+        SeedMissingPartsCommand.NotifyCanExecuteChanged();
     }
 
     // ── bias-curve commands (R-rail24-1c) ─────────────────────────────────────────────────────
@@ -980,5 +1138,6 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(CoverageText));
         OnPropertyChanged(nameof(SelectedBiasCurve));
         OnPropertyChanged(nameof(SelectedMarkedCapacitanceFarads));
+        RefreshSeeding();
     }
 }

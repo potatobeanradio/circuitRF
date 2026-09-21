@@ -565,6 +565,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>wbond.md §9.2 route 3 — add this .wBond's wires AND its embedded geometry as a new cell.</summary>
     public IAsyncRelayCommand AddWBondAsCellCommand { get; }
 
+    /// <summary>brief-authored-board-4 R-ab4-4b — create a part library for this <c>.crail</c>,
+    /// seeded with the part numbers it asks about.</summary>
+    public IAsyncRelayCommand NewPartLibraryForRailDocumentCommand { get; }
+
     // ── Primary-view availability (computed once at construction for cell nodes) ──
 
     public bool CanOpenSchematic { get; }
@@ -834,6 +838,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         AddWBondAsCellCommand = new AsyncRelayCommand(
             () => _actions?.AddWBondAsCellAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsWBondFile);
+
+        NewPartLibraryForRailDocumentCommand = new AsyncRelayCommand(
+            () => _actions?.NewPartLibraryForRailDocumentAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsRailFile);
     }
 
     /// <summary>

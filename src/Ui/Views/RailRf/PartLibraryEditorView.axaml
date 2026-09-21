@@ -51,6 +51,13 @@
             <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
         </Style>
+        <!-- R-ab4-2b: a row that names a part and states no model for it. NOT the refusal colour — it
+             is not a refusal, the file saves and the library is well formed; it is the state a seeded
+             row is in, and the one the coverage counts keep counting. -->
+        <Style Selector="TextBox.cell.incomplete">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseMediumColor}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
         <!-- The footprint picker sits in the same column string as the text cells, so it takes the
              same metrics: a control an em taller would set the row height for every row in the grid.
              Padding is smaller on the right because a combo box spends that space on its arrow. -->
@@ -191,12 +198,12 @@
                     <ScrollViewer Grid.Row="0"
                                   HorizontalScrollBarVisibility="Auto"
                                   VerticalScrollBarVisibility="Disabled">
-                        <Grid RowDefinitions="Auto,*" MinWidth="1180">
+                        <Grid RowDefinitions="Auto,*" MinWidth="1280">
                             <!-- THE TWO COLUMN STRINGS BELOW MUST STAY IDENTICAL. A header that divides a
                                  different star pool from its rows lands every boundary somewhere else,
                                  which is a report this codebase has already had once. -->
                             <Grid Grid.Row="0"
-                                  ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*"
+                                  ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*,1.1*"
                                   Margin="0,0,0,6">
                                 <TextBlock Grid.Column="1"  Classes="colhdr" Text="Part number"/>
                                 <TextBlock Grid.Column="2"  Classes="colhdr" Text="Description"/>
@@ -211,6 +218,8 @@
                                 <TextBlock Grid.Column="10"  Classes="colhdr" Text="ESR"/>
                                 <TextBlock Grid.Column="11" Classes="colhdr" Text="ESR basis"/>
                                 <TextBlock Grid.Column="12" Classes="colhdr" Text="Model reference"/>
+                                <TextBlock Grid.Column="13" Classes="colhdr" Text="Source"
+                                           ToolTip.Tip="Where this row's fields came from. The parts table's own column — a pre-filled number nobody checked is the one that will be wrong."/>
                             </Grid>
 
                             <ListBox Grid.Row="1"
@@ -227,15 +236,16 @@
                                 </ListBox.Styles>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="rail:PartLibraryRowViewModel">
-                                        <Grid ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*">
+                                        <Grid ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*,1.1*">
                                             <!-- The selection mark. See the ListBoxItem styles above for
                                                  why the row carries one of its own. -->
                                             <Border Classes="rowmark" CornerRadius="1.5" Margin="0,1"/>
                                             <TextBox Grid.Column="1" Classes="cell"
                                                      Classes.flagged="{Binding IsFlagged}"
+                                                     Classes.incomplete="{Binding IsIncomplete}"
                                                      Text="{Binding PartNumber, Mode=TwoWay}"
                                                      PlaceholderText="(no part number)"
-                                                     ToolTip.Tip="{Binding Refusal}"/>
+                                                     ToolTip.Tip="{Binding PartNumberTip}"/>
                                             <TextBox Grid.Column="2" Classes="cell"
                                                      Text="{Binding Description, Mode=TwoWay}"/>
                                             <!-- R-rail24-4a: a picker over the case sizes, editable,
@@ -283,6 +293,13 @@
                                             <TextBox Grid.Column="12" Classes="cell"
                                                      Text="{Binding ModelRef, Mode=TwoWay}"
                                                      ToolTip.Tip="A Touchstone or SPICE model beside the library file. It OVERRIDES the row, and it is the only route to a measured ESR."/>
+                                            <!-- R-ab4-3b: a field filled from a bill of materials
+                                                 reads as filled from one, so a wrong parse is
+                                                 correctable rather than mysterious. Empty on a row
+                                                 somebody maintained, which is most of them. -->
+                                            <TextBlock Grid.Column="13" Classes="cell"
+                                                       Text="{Binding OriginText}"
+                                                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
                                         </Grid>
                                     </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -302,6 +319,21 @@
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <mi:MaterialIcon Kind="Minus" Width="13" Height="13"/>
                                 <TextBlock Text="Remove part" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <!-- R-ab4-1. ABSENT where no design in the workspace references this library
+                             (R-ab4-1d) — that is an ordinary state for a shared library. DISABLED,
+                             not hidden, where the library already covers its design (R-ab4-1c): a
+                             control that vanishes on success reads as a control that broke. -->
+                        <Button Padding="10,5"
+                                Command="{Binding ViewModel.SeedMissingPartsCommand}"
+                                IsVisible="{Binding ViewModel.HasSeedSource}"
+                                ToolTip.Tip="{Binding ViewModel.SeedMissingPartsTooltip}"
+                                ToolTip.ShowOnDisabled="True">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="PlaylistPlus" Width="13" Height="13"/>
+                                <TextBlock Text="{Binding ViewModel.SeedMissingPartsText}"
+                                           FontSize="11" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>

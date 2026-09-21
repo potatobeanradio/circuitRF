@@ -289,6 +289,38 @@ public sealed partial class RailRfViewModel
     public int UnmountedPartCount =>
         SelectedRail is { } rail ? rail.Parts.Count(p => !p.Mounted) : 0;
 
+    /// <summary>
+    /// Points this document at a part library that has just been created for it, and reads it
+    /// (brief-authored-board-4 R-ab4-4b).
+    /// </summary>
+    /// <remarks>
+    /// <b>The reference is written document-relative</b>, like every other one a <c>.crail</c>
+    /// carries, so an archived or moved workspace still resolves it. The library is read through
+    /// <c>PartLibraryIo</c> straight away rather than on the next open, because the parts table's
+    /// every electrical column is resolved against it and a window that had to be closed and
+    /// reopened to see the rows it just created would be the same "nothing happened" report the
+    /// editor itself came from.
+    ///
+    /// <para>The document is left in whatever saved state the caller puts it in — this method writes
+    /// no file. The workspace writes the <c>.crail</c> and calls <see cref="NoteSaved"/>, because it
+    /// is the half that knows where the file is.</para>
+    /// </remarks>
+    public void AdoptPartLibrary(string crlibPath)
+    {
+        ArgumentNullException.ThrowIfNull(crlibPath);
+        if (DocumentPath is not { Length: > 0 } path) return;
+
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!;
+        Document.PartLibraryRef =
+            CircuitRF.Core.RefPath.ToStored(System.IO.Path.GetRelativePath(dir, crlibPath));
+
+        PartLibraryPath = crlibPath;
+        try   { PartLibrary = PartLibraryIo.LoadFromFile(crlibPath); }
+        catch { PartLibrary = null; }
+
+        RefreshDirty();
+    }
+
     /// <summary>Adds every recognised aggressor the selected rail does not already carry.</summary>
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     public void AcceptRecognisedAggressors()

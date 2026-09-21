@@ -7742,7 +7742,157 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? Path.GetDirectoryName(Path.GetFullPath(cws))
             : null;
         var context = PartLibraryCoverageContext.For(root, crlibPath);
-        vm.SetCoverageContext(context?.Subject, context?.PartNumbers);
+
+        // R-ab4-3a: the bill of materials the design was imported with, where a railRF window still
+        // holds it. NOTHING ELSE CAN SUPPLY ONE — a `.crail` carries no BOM reference, because the
+        // BOM is an import INPUT rather than something the document names, so it exists only for as
+        // long as the session that read it. Null is the ordinary case and means a seeded row is
+        // honestly empty rather than guessed at.
+        if (context is { DesignPath: { Length: > 0 } design })
+            context = context with { Bom = Views.RailRf.RailRfWindow.ViewModelFor(design)?.Bom };
+
+        vm.SetCoverageContext(context);
+    }
+
+    // ══ A `.crail` THAT NAMES NO PART LIBRARY (brief-authored-board-4 R-ab4-4b) ═══════════════
+    //
+    // Seeding needs a library to seed INTO, and a design that has never had one is exactly the case
+    // a first import lands in. So the offer is "create one, seeded in the same act" rather than
+    // "create an empty one and then press the other button".
+    //
+    // WHERE IT LANDS IS THE NEW CELL DIALOG'S OWN DEFAULT — the workspace root, under a name the user
+    // types — because a file appearing somewhere the caller did not name is the surprise `clone`
+    // refuses to cause, and because this is the one place in the feature that writes a file at all.
+    //
+    // NOTHING IS FETCHED (R-ab4-4c). circuitRF holds no parts database and this does not start one:
+    // the rows are the part numbers the `.crail` already carries, and their fields are whatever a
+    // bill of materials the user handed over already said.
+
+    /// <summary>
+    /// Creates a part library for one <c>.crail</c>, seeded with every part number it asks about,
+    /// and points the document at it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Headless and synchronous.</b> The picker is the caller's — this takes a NAME, exactly as
+    /// <c>PartLibraryEditorViewModel.SaveAs</c> takes a resolved path, which is what lets the gate
+    /// drive the whole act with no window.
+    ///
+    /// <para><b>A railRF window that has the document open is written THROUGH, not around.</b> The
+    /// live view model is the working copy; writing the file under it would be overwritten by the
+    /// window's next save, silently. An open document with unsaved edits is refused instead of
+    /// merged — merging two writers of one file is what <c>RailRfWindow.Show</c>'s own
+    /// deduplication exists to prevent.</para>
+    /// </remarks>
+    /// <param name="crailPath">The design. Absolute, or relative to the process.</param>
+    /// <param name="name">The library's file name, without the extension.</param>
+    /// <param name="error">Why nothing was created, where nothing was.</param>
+    /// <returns>The absolute <c>.crlib</c> path, or null.</returns>
+    public string? CreatePartLibraryForRailDocument(string crailPath, string name, out string? error)
+    {
+        error = null;
+        if (CurrentWorkspacePath is not { Length: > 0 } cws)
+        {
+            error = "There is no open workspace to create a part library in.";
+            return null;
+        }
+
+        if (NameValidator.Validate(name) is { } reason)
+        {
+            error = $"Invalid part library name: {reason}";
+            return null;
+        }
+
+        string crail = Path.GetFullPath(crailPath);
+        string dir   = Path.GetDirectoryName(Path.GetFullPath(cws))!;
+        string crlib = Path.Combine(dir, name + ".crlib");
+        if (File.Exists(crlib) || Directory.Exists(crlib))
+        {
+            error = $"'{Path.GetFileName(crlib)}' already exists in this workspace.";
+            return null;
+        }
+
+        var live = Views.RailRf.RailRfWindow.ViewModelFor(crail);
+        if (live is { IsDirty: true })
+        {
+            error = $"'{Path.GetFileName(crail)}' has unsaved changes in its railRF window. Save it "
+                  + "first — a part library created for it has to be written into the document, and "
+                  + "that would overwrite what is on screen.";
+            return null;
+        }
+
+        RailDocument document;
+        if (live is not null) document = live.Document;
+        else
+        {
+            try   { document = RailDocumentIo.LoadFromFile(crail); }
+            catch (Exception ex) { error = $"'{Path.GetFileName(crail)}' did not read: {ex.Message}"; return null; }
+        }
+
+        if (document.PartLibraryRef is { Length: > 0 } existing)
+        {
+            error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
+            return null;
+        }
+
+        // The BOM only ever exists in the session, so it is read from the window or not at all.
+        var library = new PartLibrary { Name = name };
+        foreach (string partNumber in PartLibrarySeed.Distinct(
+                     document.Rails.SelectMany(r => r.Parts).Select(part => part.PartNumber)))
+            library.Rows.Add(PartLibrarySeed.Row(partNumber, live?.Bom));
+
+        try
+        {
+            PartLibraryIo.SaveToFile(crlib, library, validate: false);
+        }
+        catch (Exception ex)
+        {
+            error = $"Couldn't write '{crlib}': {ex.Message}";
+            return null;
+        }
+
+        // The reference, and the document it goes in. Document-relative, like every other reference a
+        // `.crail` carries.
+        string reference = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(
+            Path.GetDirectoryName(crail)!, crlib));
+        try
+        {
+            document.PartLibraryRef = reference;
+            RailDocumentIo.SaveToFile(crail, document);
+        }
+        catch (Exception ex)
+        {
+            document.PartLibraryRef = null;
+            error = $"'{Path.GetFileName(crlib)}' was written, but '{Path.GetFileName(crail)}' could "
+                  + $"not be updated to name it: {ex.Message}";
+            return crlib;
+        }
+
+        // The window is now looking at what is on disk — and at the library, which its parts table
+        // resolves every electrical column against.
+        live?.AdoptPartLibrary(crlib);
+        live?.NoteSaved(crail);
+
+        _factory.ProjectTreeTool?.Refresh();
+        return crlib;
+    }
+
+    /// <inheritdoc/>
+    public async Task NewPartLibraryForRailDocumentAsync(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return;
+        if (ResolveOwner(null) is not { } mainWindow) return;
+
+        string crail = node.AbsolutePath;
+        var dialog = new InputNameDialog(
+            "New Part Library", "Part library name:", Path.GetFileNameWithoutExtension(crail));
+        if (await dialog.ShowDialog<string?>(mainWindow) is not { } name) return;
+
+        string? crlib = CreatePartLibraryForRailDocument(crail, name, out string? error);
+        if (error is { Length: > 0 }) Messages.Error(error);
+        if (crlib is null) return;
+
+        Messages.Success("Created", crlib);
+        OpenOrActivatePartLibrary(crlib);
     }
 
     /// <summary>Reflects a <c>.crlib</c> editor's dirty state onto its own tree node's dirty dot —
