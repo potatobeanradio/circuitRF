@@ -165,8 +165,8 @@ public static class FootprintCatalog
         rows.Add(new FootprintChoice(FootprintSection.None, null, NoneRow, -1));
 
         // Built-ins: one row per case, at the density the caller's own density control carries. Two
-        // pads on every one of them — SmtCaseTable holds two-terminal chips and moulded tantalums
-        // only, which is brief 1 §8's scope.
+        // pads on every one of them — SmtCaseTable holds two-terminal parts only (chips, moulded
+        // tantalums, two-pad crystals and the wire jumper), which is brief 1 §8's scope.
         if (portCount <= 0 || portCount == BuiltInPadCount)
             foreach (var c in SmtCaseTable.All)
                 rows.Add(new FootprintChoice(
@@ -202,8 +202,8 @@ public static class FootprintCatalog
         return new FootprintCatalogResult(rows, stoppedShort, note);
     }
 
-    /// <summary>Every built-in land pattern has two pads: <see cref="SmtCaseTable"/> is two-terminal
-    /// chips and moulded tantalums, and <see cref="ChipLandPatternGenerator"/> emits pin "1" and pin
+    /// <summary>Every built-in land pattern has two pads: <see cref="SmtCaseTable"/> holds
+    /// two-terminal parts only, and <see cref="ChipLandPatternGenerator"/> emits pin "1" and pin
     /// "2". Named rather than written as <c>2</c> in three places.</summary>
     public const int BuiltInPadCount = 2;
 

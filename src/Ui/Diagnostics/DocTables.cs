@@ -228,8 +228,12 @@ public static class DocTables
             // thing on the row that is not one.
             // The height is stated only where the CODE states it — a tantalum's trailing group —
             // so the column is "L x W" on most rows and "L x W x H" on those.
-            string body = $"{Mm(c.BodyLengthMm)} x {Mm(c.BodyWidthMm)}"
-                        + (c.BodyHeightMm is { } h ? $" x {Mm(h)}" : "") + " mm";
+            // A wire jumper has no body at all, and its "L" column is the LAND PITCH — printing it
+            // as a body would put a dimension in the table that no part has.
+            string body = c.Family == SmtCaseFamily.WireJumper
+                ? $"{Mm(c.BodyLengthMm)} mm pitch"
+                : $"{Mm(c.BodyLengthMm)} x {Mm(c.BodyWidthMm)}"
+                    + (c.BodyHeightMm is { } h ? $" x {Mm(h)}" : "") + " mm";
             string twin = c.CodeIsMetric ? $"{c.MetricTwin} (EIA)" : c.MetricTwin;
 
             sb.AppendLine($"<tr><td class=\"nowrap\"><b>{E(c.Code)}</b></td>"
@@ -255,6 +259,8 @@ public static class DocTables
         SmtCaseFamily.ReverseGeometry => "reverse geometry",
         SmtCaseFamily.Mlcc            => "MLCC body",
         SmtCaseFamily.MouldedTantalum => "moulded tantalum",
+        SmtCaseFamily.Crystal         => "crystal",
+        SmtCaseFamily.WireJumper      => "wire jumper",
         _ => family.ToString(),
     };
 

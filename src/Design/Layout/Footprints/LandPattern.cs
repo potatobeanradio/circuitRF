@@ -1,8 +1,15 @@
 // IPC-7351B land geometry from a case plus a density level — R-fp1-2.
 //
-// COMPUTED, never tabulated. 23 cases x 3 levels is 69 sets of numbers nobody will ever re-check,
+// COMPUTED, never tabulated. 26 cases x 3 levels is 78 sets of numbers nobody will ever re-check,
 // where the formula is one function with a test per level. What IS tabulated is the thing IPC
 // tabulates: the three fillet goals per density level.
+//
+// TWO ARITHMETICS, NOT ONE, and the split is by how the part is terminated rather than by what it is
+// called. A chip's band wraps up the short faces, so a toe fillet forms there and IPC's Z/G/X
+// construction is about how far the land reaches past the part. A crystal's electrodes and a wire
+// jumper's lands are on the UNDERSIDE only: nothing forms a toe, the land is the electrode plus a
+// paste-and-inspection margin, and for a jumper there is no part at all — only a pitch, which is the
+// one number the density level must NOT move.
 //
 // Everything is decimal millimetres until the last step, which converts to DBU through
 // LayoutUnits.ToDbu — the one rounding rule in the codebase (round-half-away-from-zero, computed in
@@ -76,6 +83,8 @@ public sealed record LandPattern(
 
         var goals = FilletGoals.For(c, density);
 
+        if (c.Family == SmtCaseFamily.WireJumper) return Jumper(c, density, goals, dbuPerMicron);
+
         // Worst-case material condition, which is what the fillet goals are stated against.
         decimal lMax = c.BodyLengthMm + c.BodyToleranceMm;
         decimal lMin = c.BodyLengthMm - c.BodyToleranceMm;
@@ -119,6 +128,41 @@ public sealed record LandPattern(
             dbuPerMicron, clamped);
     }
 
+    /// <summary>
+    /// A wire jumper's two lands: <b>the pitch is held exactly and the land grows around it</b>.
+    /// </summary>
+    /// <remarks>
+    /// The chip construction above computes the pitch from the span and the gap, which are in turn
+    /// computed from the body at worst-case material condition. A jumper has no body and no material
+    /// condition — <c>JUMPER2.6</c> IS a 2.6 mm pitch, that is the whole of what the part is, and a
+    /// density level that moved it would quietly produce a land pattern the link no longer spans.
+    /// So the density level changes only how much copper there is around each centre: the toe goal
+    /// grows the land along the axis and the side goal across it, symmetrically, exactly as they do
+    /// for a chip — it is the pitch that is an input here rather than an output.
+    /// </remarks>
+    private static LandPattern Jumper(SmtCase c, DensityLevel density, FilletGoals goals, int dbuPerMicron)
+    {
+        decimal pitchMm = c.BodyLengthMm;                                  // the "L" column IS the pitch
+        decimal padWMm  = c.TerminationLengthMm + 2m * goals.ToeMm;        // along the axis
+        decimal padHMm  = c.EffectiveTerminationWidthMm + 2m * goals.SideMm;
+
+        bool clamped = false;
+        if (padWMm >= pitchMm) { padWMm = pitchMm; clamped = true; }       // the two lands would meet
+        if (padHMm < 0m) padHMm = 0m;
+
+        long pitch = Mm(pitchMm, dbuPerMicron);
+        long padW  = Mm(padWMm, dbuPerMicron);
+        long padH  = Mm(padHMm, dbuPerMicron);
+
+        decimal courtX = pitchMm + padWMm + 2m * goals.CourtyardMm;
+        decimal courtY = Math.Max(padHMm, c.BodyWidthMm) + 2m * goals.CourtyardMm;
+
+        return new LandPattern(
+            c, density, padW, padH, pitch, pitch + padW, pitch - padW,
+            Mm(courtX, dbuPerMicron), Mm(courtY, dbuPerMicron),
+            dbuPerMicron, clamped);
+    }
+
     internal static long Mm(decimal mm, int dbuPerMicron) => LayoutUnits.ToDbu(mm, LayoutUnit.Mm, dbuPerMicron);
 }
 
@@ -140,6 +184,8 @@ internal readonly record struct FilletGoals(decimal ToeMm, decimal HeelMm, decim
     /// </summary>
     public static FilletGoals For(SmtCase c, DensityLevel density)
     {
+        if (c.TerminationsAreBottomOnly) return BottomTerminated(density);
+
         bool small = c.BodyLengthMm < 1.6m;
         return (small, density) switch
         {
@@ -165,4 +211,34 @@ internal readonly record struct FilletGoals(decimal ToeMm, decimal HeelMm, decim
             _ => throw new ArgumentOutOfRangeException(nameof(density), density, null),
         };
     }
+
+    /// <summary>
+    /// A crystal's electrodes and a wire jumper's lands, where <b>the metallization is on the
+    /// underside and does not wrap</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>These are not IPC's chip goals and must not be.</b> A chip's toe goal buys the solder a
+    /// side face to climb, and both the toe and the heel of a chip land are stated against a fillet
+    /// that can actually form there. Neither can on a part whose terminations face downwards: the
+    /// joint is the electrode area itself, so what the land needs past the electrode is enough to
+    /// take the paste and to leave something an inspector can see — a few tenths, not IPC's 0.35 mm.
+    /// Handing a 3.2 x 1.6 mm crystal the chip set would put a 0.35 mm toe on each end of a sealed
+    /// ceramic package and a 0.5 mm courtyard around it, which is a land pattern for a part that is
+    /// not this one.
+    ///
+    /// <para><b>The heel is zero at every level, and that is the load-bearing one.</b> A crystal's
+    /// underside between the two electrodes is bare ceramic on a sealed can; copper reaching in
+    /// under it buys no joint and has somewhere to wick. Zero heel makes the gap exactly the
+    /// electrode separation at worst-case material condition, so the land never encroaches. It also
+    /// makes the gap the same at all three levels, which is correct: density is about how much land
+    /// there is OUTSIDE the part, and there is nothing to gain inside it.</para>
+    /// </remarks>
+    private static FilletGoals BottomTerminated(DensityLevel density) => density switch
+    {
+        //                                toe     heel    side   courtyard
+        DensityLevel.Most    => new(0.20m,  0.00m,  0.15m,  0.25m),
+        DensityLevel.Nominal => new(0.10m,  0.00m,  0.10m,  0.15m),
+        DensityLevel.Least   => new(0.05m,  0.00m,  0.05m,  0.10m),
+        _ => throw new ArgumentOutOfRangeException(nameof(density), density, null),
+    };
 }

@@ -4,7 +4,7 @@ slug: reference/footprints.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Footprints
 lede: How a part on the schematic gets real artwork: SMT case sizes, IPC-7351B density levels, the land pattern circuitRF generates for each, and what reaches the board.
-keywords: footprint, land pattern, SMT, surface mount, case size, package, pad, pads, land, 0402, 0603, 0805, 1206, 0201, chip resistor, chip capacitor, tantalum, reverse geometry, IPC, IPC-7351, IPC-7351B, density level, courtyard, soldermask, silkscreen, refdes, reference designator, decal, metric twin, imperial
+keywords: footprint, land pattern, SMT, surface mount, case size, package, pad, pads, land, 0402, 0603, 0805, 1206, 0201, chip resistor, chip capacitor, tantalum, reverse geometry, crystal, xtal, quartz, 3216, 2016, jumper, wire link, 0 ohm, IPC, IPC-7351, IPC-7351B, density level, courtyard, soldermask, silkscreen, refdes, reference designator, decal, metric twin, imperial
 ---
 
 <nav class="toc">
@@ -95,10 +95,15 @@ ignores it.
 
 ## The case sizes circuitRF generates {#cases}
 
-Two-terminal chips, reverse-geometry chips, larger MLCC bodies and moulded tantalums. The body
-dimensions read **along the termination axis first** — the direction the two lands are separated in
-— so a reverse-geometry row's first number is its short side, which is exactly how the generator
-uses it.
+Two-terminal chips, reverse-geometry chips, larger MLCC bodies, moulded tantalums, two-pad SMD
+crystals and a wire jumper. The body dimensions read **along the termination axis first** — the
+direction the two lands are separated in — so a reverse-geometry row's first number is its short
+side, which is exactly how the generator uses it.
+
+A crystal's code carries an `XTAL` prefix (`XTAL3216`, `XTAL2016`) because 3.2 &times; 1.6 mm is
+also imperial `1206` — the same body, two land patterns that are not alike. A wire jumper has no
+body at all: `JUMPER2.6` names the **pad pitch**, and that pitch is what the row's first dimension
+column reads.
 
 {{table: footprints}}
 
@@ -269,9 +274,9 @@ footprint that no longer resolves and a pad/port disagreement as warnings, on th
   **Custom…** means *point at one*, never *draw one here*.
 - **Not a parts database.** The picker lists case sizes and the cells already in your workspace. It
   knows nothing about part numbers, manufacturers, stock, or a vendor's recommended pattern.
-- **Not multi-pin packages.** The generator draws two-terminal chips and moulded tantalums. A QFN or
-  a SOIC is a different land-pattern problem; import one, or draw it, and it is a first-class choice
-  in the same picker.
+- **Not multi-pin packages.** Every built-in is two-pad. A QFN, a SOIC or a four-pad crystal is a
+  different land-pattern problem; import one, or draw it, and it is a first-class choice in the same
+  picker.
 - **No parameter handles.** A case size is a discrete choice from a table, not a dimension to drag —
   a grip would let you pull an 0402 into a shape no case code names, and the stored reference would
   then lie about what the artwork is.

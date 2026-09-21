@@ -144,10 +144,14 @@ expression, and it is dropped before parameters are resolved, for every componen
 <em>is</em> written into the <code>.cnl</code> — so a headless Update Layout can still read it — and the engine
 ignores it.</p>
 <h2 id="cases">The case sizes circuitRF generates</h2>
-<p>Two-terminal chips, reverse-geometry chips, larger MLCC bodies and moulded tantalums. The body
-dimensions read <strong>along the termination axis first</strong> — the direction the two lands are separated in
-— so a reverse-geometry row's first number is its short side, which is exactly how the generator
-uses it.</p>
+<p>Two-terminal chips, reverse-geometry chips, larger MLCC bodies, moulded tantalums, two-pad SMD
+crystals and a wire jumper. The body dimensions read <strong>along the termination axis first</strong> — the
+direction the two lands are separated in — so a reverse-geometry row's first number is its short
+side, which is exactly how the generator uses it.</p>
+<p>A crystal's code carries an <code>XTAL</code> prefix (<code>XTAL3216</code>, <code>XTAL2016</code>) because 3.2 × 1.6 mm is
+also imperial <code>1206</code> — the same body, two land patterns that are not alike. A wire jumper has no
+body at all: <code>JUMPER2.6</code> names the <strong>pad pitch</strong>, and that pitch is what the row's first dimension
+column reads.</p>
 <table class="param-table">
 <thead><tr><th>Case</th><th>Metric twin</th><th>Body</th><th>Termination</th><th>Family</th></tr></thead><tbody>
 <tr><td class="nowrap"><b>008004</b></td><td class="nowrap">0201</td><td class="nowrap">0.25 x 0.125 mm</td><td class="nowrap">0.06 mm</td><td>chip</td></tr>
@@ -173,6 +177,9 @@ uses it.</p>
 <tr><td class="nowrap"><b>6032-28</b></td><td class="nowrap">C (EIA)</td><td class="nowrap">6.00 x 3.20 x 2.80 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
 <tr><td class="nowrap"><b>7343-31</b></td><td class="nowrap">D (EIA)</td><td class="nowrap">7.30 x 4.30 x 3.10 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
 <tr><td class="nowrap"><b>7343-43</b></td><td class="nowrap">X (EIA)</td><td class="nowrap">7.30 x 4.30 x 4.30 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
+<tr><td class="nowrap"><b>XTAL3216</b></td><td class="nowrap">3216</td><td class="nowrap">3.20 x 1.60 mm</td><td class="nowrap">1.10 mm</td><td>crystal</td></tr>
+<tr><td class="nowrap"><b>XTAL2016</b></td><td class="nowrap">2016</td><td class="nowrap">2.00 x 1.60 mm</td><td class="nowrap">0.70 mm</td><td>crystal</td></tr>
+<tr><td class="nowrap"><b>JUMPER2.6</b></td><td class="nowrap">wire link</td><td class="nowrap">2.60 mm pitch</td><td class="nowrap">1.00 mm</td><td>wire jumper</td></tr>
 </tbody></table>
 <div class="callout warn">
 <span class="label">0201 imperial and 0201 metric are two different parts</span>
@@ -397,9 +404,9 @@ footprint that no longer resolves and a pad/port disagreement as warnings, on th
 <strong>Custom…</strong> means <em>point at one</em>, never <em>draw one here</em>.</li>
 <li><strong>Not a parts database.</strong> The picker lists case sizes and the cells already in your workspace. It
 knows nothing about part numbers, manufacturers, stock, or a vendor's recommended pattern.</li>
-<li><strong>Not multi-pin packages.</strong> The generator draws two-terminal chips and moulded tantalums. A QFN or
-a SOIC is a different land-pattern problem; import one, or draw it, and it is a first-class choice
-in the same picker.</li>
+<li><strong>Not multi-pin packages.</strong> Every built-in is two-pad. A QFN, a SOIC or a four-pad crystal is a
+different land-pattern problem; import one, or draw it, and it is a first-class choice in the same
+picker.</li>
 <li><strong>No parameter handles.</strong> A case size is a discrete choice from a table, not a dimension to drag —
 a grip would let you pull an 0402 into a shape no case code names, and the stored reference would
 then lie about what the artwork is.</li>

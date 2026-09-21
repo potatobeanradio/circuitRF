@@ -28,6 +28,28 @@ public sealed class ChipLandPatternTests
     {
         foreach (var c in SmtCaseTable.All)
         {
+            if (c.Family == SmtCaseFamily.Crystal)
+            {
+                // A crystal's code is the metric body behind an XTAL prefix, and the twin column is
+                // that body on its own — so the column is still derivable and still catches the
+                // transposed digit this test exists for. The prefix is the load-bearing part: a
+                // crystal coded `3216` would collide with imperial 1206, which is the same body.
+                Assert.Equal($"{Tenths(c.BodyLengthMm):00}{Tenths(c.BodyWidthMm):00}", c.MetricTwin);
+                Assert.Equal($"XTAL{c.MetricTwin}", c.Code);
+                continue;
+            }
+
+            if (c.Family == SmtCaseFamily.WireJumper)
+            {
+                // A jumper has no body and no second naming scheme, so the twin column carries what
+                // the part IS. What the code has to encode is the PITCH, because that is the whole
+                // of its identity — and the "L" column is that pitch, not a body.
+                Assert.Equal("wire link", c.MetricTwin);
+                Assert.Equal(
+                    "JUMPER" + c.BodyLengthMm.ToString("0.0", CultureInfo.InvariantCulture), c.Code);
+                continue;
+            }
+
             if (c.CodeIsMetric)
             {
                 // R-fp1-1b: a tantalum code is ALREADY metric, so its twin column reads the LETTER.
@@ -103,6 +125,65 @@ public sealed class ChipLandPatternTests
                 Assert.False(p.GapWasClamped, $"{kase.Code}@{FootprintRef.CodeOf(d)} leaves no gap between its lands.");
                 Assert.True(p.PadWidthDbu > 0 && p.PadHeightDbu > 0, $"{kase.Code}@{FootprintRef.CodeOf(d)} has an empty land.");
             }
+    }
+
+    // ══ 2b. The two families whose terminations face DOWNWARDS ═════════════════════════════════
+    //
+    // A crystal's electrodes and a jumper's lands do not wrap up a side face, so they take
+    // FilletGoals' own second set. Each assertion below is a claim that set exists to make, and
+    // neither of them holds for a chip — which is the point of testing them here rather than
+    // assuming the one arithmetic covers both.
+
+    [Fact]
+    public void ACrystalsGapIsItsElectrodeSeparationAndTheDensityLevelNeverMovesIt()
+    {
+        foreach (string code in new[] { "XTAL3216", "XTAL2016" })
+        {
+            var c = SmtCaseTable.Find(code)!;
+
+            // Worst-case material condition, which is what the gap is stated against — the same
+            // construction LandPattern uses, written out so the number is checkable rather than
+            // re-derived from the code under test's own helper.
+            decimal separationMm =
+                (c.BodyLengthMm - c.BodyToleranceMm) - 2m * (c.TerminationLengthMm + c.TerminationToleranceMm);
+            long expected = LayoutUnits.ToDbu(separationMm, LayoutUnit.Mm, LayoutUnits.DefaultDbuPerMicron);
+
+            foreach (var d in new[] { DensityLevel.Most, DensityLevel.Nominal, DensityLevel.Least })
+            {
+                var p = LandPattern.For(c, d, LayoutUnits.DefaultDbuPerMicron);
+
+                // Zero heel at every level: the underside between a sealed can's two electrodes is
+                // bare ceramic, so copper reaching in under it buys no joint. Density is about how
+                // much land there is OUTSIDE the part.
+                Assert.Equal(expected, p.GapDbu);
+                Assert.False(p.GapWasClamped);
+            }
+
+            // And the land still grows outward with density, or the level would mean nothing.
+            long most = LandPattern.For(c, DensityLevel.Most,  LayoutUnits.DefaultDbuPerMicron).SpanDbu;
+            long nom  = LandPattern.For(c, DensityLevel.Nominal, LayoutUnits.DefaultDbuPerMicron).SpanDbu;
+            long least = LandPattern.For(c, DensityLevel.Least, LayoutUnits.DefaultDbuPerMicron).SpanDbu;
+            Assert.True(most > nom && nom > least, $"{code}: span must grow with density.");
+        }
+    }
+
+    [Fact]
+    public void AJumpersPitchIsExactlyItsCodeAndNoDensityLevelMovesIt()
+    {
+        var c = SmtCaseTable.Find("JUMPER2.6")!;
+        long expected = LayoutUnits.ToDbu(2.6m, LayoutUnit.Mm, LayoutUnits.DefaultDbuPerMicron);
+
+        foreach (var d in new[] { DensityLevel.Most, DensityLevel.Nominal, DensityLevel.Least })
+        {
+            var p = LandPattern.For(c, d, LayoutUnits.DefaultDbuPerMicron);
+
+            // The pitch IS the part. A density level that moved it would quietly produce a land
+            // pattern the link no longer spans — which is the one failure the fixed-pitch branch in
+            // LandPattern exists to prevent, and it is invisible on a drawing.
+            Assert.Equal(expected, p.PadPitchDbu);
+            Assert.Equal(-p.Pad1CentreXDbu, p.Pad2CentreXDbu);
+            Assert.True(p.GapDbu > 0, $"density {d}: the two lands meet.");
+        }
     }
 
     // ══ 3. Layers resolve by ROLE on three technologies ═════════════════════════════════════════

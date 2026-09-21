@@ -29,6 +29,25 @@ public enum SmtCaseFamily
     /// <summary>A moulded tantalum/polymer body. The code is ALREADY metric
     /// (<c>3216-18</c> = 3.2 x 1.6 x 1.8 mm) and its twin column is the EIA letter — R-fp1-1b.</summary>
     MouldedTantalum,
+
+    /// <summary>
+    /// A two-pad SMD quartz crystal in a sealed ceramic package. The code is metric and carries an
+    /// <c>XTAL</c> prefix so it cannot collide with the CHIP code of the same body: 3.2 x 1.6 mm is
+    /// both a crystal package and imperial <c>1206</c>, and <c>FootprintTokens</c> already reports a
+    /// bare <c>3216</c> as ambiguous for exactly that reason.
+    ///
+    /// <para><b>Its terminations do not wrap.</b> The electrodes are metallized on the UNDERSIDE
+    /// only, so no toe fillet forms up a side face and no side fillet forms at all — which is why
+    /// this family has its own goals in <c>FilletGoals</c> rather than the chip set.</para>
+    /// </summary>
+    Crystal,
+
+    /// <summary>
+    /// A two-land wire jumper — a bare link or a 0 ohm part bridging two nets. <b>It has no case and
+    /// no body</b>: what identifies it is the PAD PITCH, which is what its code states, so for this
+    /// family alone <see cref="SmtCase.BodyLengthMm"/> reads as that pitch. See its remarks.
+    /// </summary>
+    WireJumper,
 }
 
 /// <summary>
@@ -37,23 +56,33 @@ public enum SmtCaseFamily
 /// </summary>
 /// <param name="Code">The case code as a designer writes it: <c>0402</c>, <c>0306</c>,
 /// <c>3216-18</c>.</param>
-/// <param name="MetricTwin">The metric code for an imperial case (<c>0402</c> -> <c>1005</c>), or
-/// the EIA LETTER for a tantalum, whose code is already metric (R-fp1-1b). Carried on every row
+/// <param name="MetricTwin">The OTHER name this case is known by: the metric code for an imperial
+/// case (<c>0402</c> -> <c>1005</c>), the EIA LETTER for a tantalum, whose code is already metric
+/// (R-fp1-1b), the plain metric body code for a crystal (<c>XTAL3216</c> -> <c>3216</c>), and, for a
+/// wire jumper — which has no second naming scheme at all — what the part IS. Carried on every row
 /// because the imperial/metric collision is a silent 2.4x error — see the series overview §1e.</param>
 /// <param name="BodyLengthMm">Along the TERMINATION axis: the direction the two lands are separated
 /// in. For a reverse-geometry case this is the SHORT body dimension, which is exactly why reverse
-/// geometry needs no special case anywhere.</param>
+/// geometry needs no special case anywhere.
+///
+/// <para><b>For <see cref="SmtCaseFamily.WireJumper"/> this column is the LAND PITCH.</b> A wire
+/// jumper has no body to measure — the link that sits across it spans exactly pad centre to pad
+/// centre, so the two numbers are one number, and a second column carrying it is a column that can
+/// drift out of step with the code. <c>LandPattern</c> holds it EXACTLY: a jumper's pitch is its
+/// name, so unlike a chip's it must not move with the density level.</para></param>
 /// <param name="BodyWidthMm">Across the termination axis.</param>
 /// <param name="BodyToleranceMm">One symmetric tolerance for both body dimensions. A deliberate
 /// simplification of the part drawing's separate L and W tolerances: the two are equal or within a
 /// hair of it on every row here, and one column that is right is better than two that are
 /// hand-maintained.</param>
 /// <param name="TerminationLengthMm">The metallized band's extent ALONG the termination axis — what
-/// sets the inner (heel) edge of the land, and the number a land pattern is most sensitive to.</param>
+/// sets the inner (heel) edge of the land, and the number a land pattern is most sensitive to. On a
+/// crystal it is the underside ELECTRODE, which does not wrap; on a wire jumper, which has no part to
+/// measure, it is the nominal land length the density level then grows or shrinks.</param>
 /// <param name="TerminationToleranceMm">Symmetric tolerance on <paramref name="TerminationLengthMm"/>.</param>
 /// <param name="TerminationWidthMm">The band's extent ACROSS the termination axis, when it is
-/// narrower than the body — a moulded tantalum's is. Null means the band wraps the full body width,
-/// which is true of every chip.</param>
+/// narrower than the body — a moulded tantalum's is, and so is a crystal's electrode and a wire
+/// jumper's land. Null means the band wraps the full body width, which is true of every chip.</param>
 /// <param name="BodyHeightMm">Stated only where the CODE states it — a tantalum's <c>-18</c>. Null
 /// elsewhere: a chip's height is a part property, not a case property, and inventing one would put a
 /// number in the table that no code backs.</param>
@@ -70,8 +99,16 @@ public sealed record SmtCase(
     decimal? BodyHeightMm = null)
 {
     /// <summary>True when <see cref="Code"/> is itself a metric code and <see cref="MetricTwin"/> is
-    /// therefore a letter rather than a second number (R-fp1-1b).</summary>
+    /// therefore a letter rather than a second number (R-fp1-1b). A crystal's code is metric too, but
+    /// it says so in the code itself (<c>XTAL3216</c>) and its twin column is still a number, so it is
+    /// NOT one of these — this property is about the twin column's reading, not about the units.</summary>
     public bool CodeIsMetric => Family == SmtCaseFamily.MouldedTantalum;
+
+    /// <summary>True where the two lands are metallized on the part's UNDERSIDE and do not wrap up a
+    /// side face, so no toe or side fillet can form — a crystal, and a wire jumper, which has no part
+    /// at all. What <c>FilletGoals</c> branches on.</summary>
+    public bool TerminationsAreBottomOnly
+        => Family is SmtCaseFamily.Crystal or SmtCaseFamily.WireJumper;
 
     /// <summary>The termination band's width across the axis — the body width for a wrapped chip
     /// termination, which is what a null <see cref="TerminationWidthMm"/> means.</summary>
@@ -82,9 +119,25 @@ public sealed record SmtCase(
     /// twin and the millimetres on every mention, because <c>0201</c> alone is ambiguous between two
     /// real case sizes that differ by 2.4x.
     /// </summary>
-    public string Display => CodeIsMetric
-        ? $"{Code} ({MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} x {Mm(BodyHeightMm ?? 0m)} mm"
-        : $"{Code} (metric {MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} mm";
+    public string Display => Family switch
+    {
+        // A tantalum's code is already metric, so the twin column is the EIA letter (R-fp1-1b), and
+        // the code's trailing group states a height the other families do not have.
+        SmtCaseFamily.MouldedTantalum =>
+            $"{Code} ({MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} x {Mm(BodyHeightMm ?? 0m)} mm",
+
+        // A crystal's code carries its own metric body, so printing "metric 3216" beside XTAL3216
+        // would say the same thing twice; what a reader needs instead is the part KIND, because the
+        // same 3.2 x 1.6 mm body is also imperial 1206 and the two land patterns are not alike.
+        SmtCaseFamily.Crystal =>
+            $"{Code} (2-pad crystal)   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} mm",
+
+        // A jumper has no body, so there is no "L x W" to print — the pitch IS the part.
+        SmtCaseFamily.WireJumper =>
+            $"{Code} ({MetricTwin})   {Mm(BodyLengthMm)} mm pad pitch",
+
+        _ => $"{Code} (metric {MetricTwin})   {Mm(BodyLengthMm)} x {Mm(BodyWidthMm)} mm",
+    };
 
     // Two decimals is the reading of a case size everywhere else in the industry ("1.00 x 0.50 mm");
     // three only where a third one is real, which on this table is 008004's 0.125 mm alone. Formatting
@@ -96,9 +149,10 @@ public sealed record SmtCase(
 }
 
 /// <summary>
-/// Every case size circuitRF generates a land pattern for (R-fp1-1). Two-terminal chips and moulded
-/// tantalums only — §8 of the brief: a multi-pin package is a different land-pattern problem, and
-/// Component Import already covers it for anyone who has the data.
+/// Every case size circuitRF generates a land pattern for (R-fp1-1). <b>Two lands on every row</b> —
+/// §8 of the brief: a multi-pin package is a different land-pattern problem, and Component Import
+/// already covers it for anyone who has the data. <c>FootprintCatalog.BuiltInPadCount</c> is the one
+/// place that number is written down.
 /// </summary>
 public static class SmtCaseTable
 {
@@ -145,6 +199,30 @@ public static class SmtCaseTable
         new SmtCase("6032-28", "C", SmtCaseFamily.MouldedTantalum, 6.00m, 3.20m, 0.300m, 1.300m, 0.300m, 2.20m, 2.80m),
         new SmtCase("7343-31", "D", SmtCaseFamily.MouldedTantalum, 7.30m, 4.30m, 0.300m, 1.300m, 0.300m, 2.40m, 3.10m),
         new SmtCase("7343-43", "X", SmtCaseFamily.MouldedTantalum, 7.30m, 4.30m, 0.300m, 1.300m, 0.300m, 2.40m, 4.30m),
+
+        // ── Two-pad SMD quartz crystals, metric codes behind an XTAL prefix ─────────────────────
+        // The prefix is not decoration: 3.2 x 1.6 mm is ALSO imperial 1206, and FootprintTokens
+        // already reports a bare `3216` as ambiguous between the two readings. A crystal row coded
+        // `3216` would have made that ambiguity three-way and silent, since the chip and the crystal
+        // are the same size and only their LAND PATTERNS differ.
+        //
+        // The termination columns are the underside ELECTRODE, not a wrapped band — these parts are
+        // a sealed ceramic package with metallization on the bottom face only, which is what
+        // FilletGoals branches on. The dimensions are the generic ones for each package size rather
+        // than any one part's; a specific crystal's drawing may differ by a tenth, and that is what
+        // the density levels are for.
+        //                Code        twin    family                  L       W      tol      T       Ttol    Tw
+        new SmtCase("XTAL3216", "3216", SmtCaseFamily.Crystal,      3.20m,  1.60m, 0.100m, 1.100m, 0.100m, 1.20m),
+        new SmtCase("XTAL2016", "2016", SmtCaseFamily.Crystal,      2.00m,  1.60m, 0.100m, 0.700m, 0.100m, 1.10m),
+
+        // ── Wire jumper ────────────────────────────────────────────────────────────────────────
+        // Two lands for a bare link or a 0 ohm part. There is no case and no body, so the "L" column
+        // is the PAD PITCH — see SmtCase.BodyLengthMm — and LandPattern holds it exactly rather than
+        // deriving it, because the pitch is the part's name and a density level that moved it would
+        // produce a land pattern the link no longer reaches across. The termination columns are the
+        // nominal land, which IS what the density level grows and shrinks.
+        //                Code        twin            family                pitch   W      tol      T       Ttol    Tw
+        new SmtCase("JUMPER2.6", "wire link", SmtCaseFamily.WireJumper, 2.60m, 1.20m, 0.000m, 1.000m, 0.000m, 1.20m),
     ];
 
     /// <summary>Every case, in table order — which is by family and then by size, and is the order a

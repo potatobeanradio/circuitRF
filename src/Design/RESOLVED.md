@@ -9755,3 +9755,72 @@ is then a property of the KEY rather than of a subscription somebody can forget 
 in the other window and a file rewritten by another process both move the stamp. The stat is one
 call per placement; the parse is what the cache exists to avoid, and `SiblingDesignatorCache.Reads`
 counts parses so the gate can assert a counter rather than a clock.
+
+## Two new built-in families — a two-pad crystal and a wire jumper (2026-09-21)
+
+Asked for directly: `3216`/`2016` SMD crystal land patterns, which are common in RF work, and a
+wire jumper on a 2.6 mm pad pitch. Three rows in `SmtCaseTable`, and two decisions in them that are
+not obvious from the table.
+
+**`XTAL3216`, not `3216`.** 3.2 x 1.6 mm is *both* a crystal package and imperial `1206`, and
+`FootprintTokens` already reports a bare `3216` as ambiguous between its imperial and metric
+readings for exactly that kind of reason. A crystal row coded `3216` would have made that ambiguity
+three-way *and* silent, because unlike the imperial/metric collision the two parts are the SAME
+SIZE — only the land patterns differ, so nothing about picking the wrong one looks wrong on a
+drawing. The prefix keeps the code space disjoint; bare `3216` still reports Ambiguous, unchanged.
+
+**A jumper's pitch is an INPUT, and `LandPattern` has a second branch for it.** The chip
+construction derives the pitch from the span and the gap, which come in turn from the body at
+worst-case material condition. A jumper has no body and no material condition: `JUMPER2.6` *is* a
+2.6 mm pitch, that is the whole of what the part is, and a density level that moved it would quietly
+produce a land pattern the link no longer spans. So `LandPattern.Jumper` holds the pitch exactly and
+lets only the land grow around each centre. `SmtCase.BodyLengthMm` carries that pitch rather than a
+second column, because a separate column is a column that can drift out of step with the code.
+
+**Neither family takes IPC's chip fillet goals, and the heel is the load-bearing part.** A chip's
+band wraps up its short faces, so a toe fillet forms there and IPC's goals are stated against it. A
+crystal's electrodes and a jumper's lands are metallized on the UNDERSIDE only — nothing forms a toe
+and nothing forms a side fillet, so `FilletGoals.BottomTerminated` gives them a few tenths of paste
+and inspection margin instead of IPC's 0.35 mm toe and 0.5 mm courtyard. Its heel is **zero at every
+density level**: the underside between a sealed can's two electrodes is bare ceramic, copper reaching
+in under it buys no joint, and the consequence — that the gap is the electrode separation at every
+level — is what the new test asserts. Density is about how much land there is OUTSIDE the part.
+
+Generated, at nominal density: `XTAL3216` 1.40 x 1.50 mm lands on a 2.10 mm pitch, gap 0.70;
+`XTAL2016` 1.00 x 1.40 on 1.30, gap 0.30; `JUMPER2.6` 1.20 x 1.40 on 2.60 exactly, gap 1.40.
+
+The dimensions in the table are the generic ones for each package size rather than any one part's.
+`ChipLandPatternGenerator.AlgorithmVersion` is NOT bumped: no input that already worked produces
+different geometry, which is the only thing that version guards.
+
+## Why a generated 0402 does not sit on an imported board's 0402 pads (2026-09-21)
+
+A designer sent in a workspace holding a Gerber import with built-in footprints dropped onto it, and
+reported that some of the 0402 placements looked misaligned while others did not — his own reading
+was that vendors do not all use the same pattern. **Measured across all 50 of that board's 0402
+sites, the board is perfectly uniform**: 0.5588 x 0.5588 mm pads (22 x 22 mil) on a 1.0668 mm pitch
+(42 mil), every one. There is no per-instance variation and nothing rotation-dependent. The
+placements themselves are 3-155 um off their pad pairs, which is hand placement, not a defect.
+
+**What differs is one number: the toe.** Reduced to the fillet the pattern implies from the nominal
+body, that board's library uses a CONSTANT toe of about 0.32 mm at every case size. circuitRF's does
+not — `FilletGoals` splits at a 1.6 mm body length and hands anything below it a much smaller set,
+so the toe steps from 0.15 mm (nominal) to 0.35 mm across that boundary. The board's constant 0.32
+straddles the step, which is the whole of the "some but not others":
+
+| case | board pitch | circuitRF `@N` pitch | apart |
+|---|---|---|---|
+| 0603 | 1.4224 mm | 1.450 mm | 28 um — reads as correct |
+| 0402 | 1.0668 mm | 0.800 mm | 267 um — reads as wrong |
+
+The pad SIZE is not the problem and never was: 0.550 mm generated against 0.5588 measured, 9 um
+apart. The pads are the right size and sit too close together, which is exactly what a misaligned
+footprint looks like.
+
+**Neither pattern is wrong.** circuitRF's is the IPC-7351B construction at worst-case material
+condition; the board's is a house library on round imperial numbers (22 mil pads, 42 mil pitch, 20
+mil gap) that a dimension from a standard would never land on. `@M` does not close it either — the
+widest level circuitRF generates for an 0402 is a 1.45 mm span against the board's 1.6256 mm. **What
+is missing is any way to state a land pattern directly, or to take one off a board being imported**,
+and that is a feature rather than a bug fix. Recorded here so the next person measuring the same
+thing does not re-derive it.
