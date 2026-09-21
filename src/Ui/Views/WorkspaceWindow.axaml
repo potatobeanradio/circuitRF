@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CircuitRF.Ui.ViewModels"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -794,7 +795,13 @@
                 <MenuItem Header="_Smith Chart"
                           Command="{Binding NewSmithChartCommand}"
                           ToolTip.Tip="Match an impedance by hand on a Smith chart — a generator impedance, a cascade of elements, and a curve per element showing where it takes you. Opens as a document, with or without a workspace.">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="ChartDonut" Width="16" Height="16"/></MenuItem.Icon>
+                    <!-- The drawn Smith glyph, not a Material icon: brief-7.1d-1 rejected
+                         ChartArc/ChartDonut for exactly this and PlotTypeGlyphControl is what
+                         replaced them everywhere a Smith chart is offered. -->
+                    <MenuItem.Icon>
+                        <ctl:PlotTypeGlyphControl Kind="Smith" Width="16" Height="16"
+                            Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                    </MenuItem.Icon>
                 </MenuItem>
                 <Separator IsVisible="{Binding HasExamples}"/>
                 <!-- Examples — hand-mirrored with the macOS NativeMenu above. The rows come from the
