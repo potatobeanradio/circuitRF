@@ -34,6 +34,22 @@ public static class PCellRegistry
     // generator through TryGet and none of them needed changing. It is the same arrangement
     // ExternalDeviceRegistry already has for devices, and for the same reason.
 
+    /// <summary>
+    /// R-fp1-6/6a: the built-in SMT land patterns, reached through the resolver seam rather than by
+    /// adding 69 rows to the closed dictionary above — those rows would be a second copy of
+    /// <c>ChipLandPatternGenerator.GeneratorIds</c> that could disagree with the first.
+    ///
+    /// <para><b>It is BUILT IN, and the rest of this file treats it that way.</b> The case table is
+    /// a constant: it belongs to no workspace, nothing owns a process to dispose, and there is no
+    /// event at which footprints should stop resolving. So it is registered once here and is
+    /// exempted from <see cref="RemoveResolver"/> and <see cref="ClearResolvers"/> — unlike a kit's
+    /// resolver, which IS workspace-scoped (MW1's R-mw1-4) precisely because a kit belongs to a
+    /// workspace.</para>
+    /// </summary>
+    private static readonly FootprintGeneratorResolver _builtInFootprints = new();
+
+    static PCellRegistry() => AddResolver(_builtInFootprints);
+
     private static readonly List<Wire.IPCellGeneratorResolver> _resolvers = [];
     private static readonly Dictionary<string, PCellGenerator> _resolved = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lock _resolverGate = new();
@@ -72,7 +88,7 @@ public static class PCellRegistry
     /// </summary>
     public static void RemoveResolver(Wire.IPCellGeneratorResolver? resolver)
     {
-        if (resolver is null) return;
+        if (resolver is null || ReferenceEquals(resolver, _builtInFootprints)) return;
         lock (_resolverGate)
         {
             _resolvers.Remove(resolver);
@@ -81,8 +97,9 @@ public static class PCellRegistry
     }
 
     /// <summary>
-    /// Drops EVERY resolver. Process exit only — and the standalone shells' own exit handlers, which
-    /// have no workspace to scope it to.
+    /// Drops every REGISTERED resolver — the built-in land patterns stay, because nothing here owns
+    /// them (see <c>_builtInFootprints</c>). Process exit only, and the standalone shells' own exit
+    /// handlers, which have no workspace to scope it to.
     ///
     /// <para><b>Never on a workspace open or close</b> (MW1 R-mw1-4): with two windows that unmounts
     /// the other workspace's generators. Use <see cref="RemoveResolver"/>, which the workspace can
@@ -94,6 +111,10 @@ public static class PCellRegistry
         {
             _resolvers.Clear();
             _resolved.Clear();
+            // The built-in land patterns are not something a workspace, a kit or an exit handler
+            // owns — see _builtInFootprints. Dropping them here would make smt: ids stop resolving
+            // for the rest of the process, silently.
+            _resolvers.Add(_builtInFootprints);
         }
     }
 

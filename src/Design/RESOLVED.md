@@ -1,5 +1,70 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## SMT footprints brief 1 — the land-pattern generator (2026-09-20)
+
+`src/Design/Layout/Footprints/` — the case table, the IPC-7351B density arithmetic, layers by role,
+the reference grammar. Five findings that are not in the brief.
+
+### The brief's own mechanism does not refuse a MMIC technology, and something had to
+
+R-fp1-3b says a chip land pattern on `mmic-GaAs_2LM_100um` is a category error and must be refused
+by name, and it names `SubstrateResolver.ResolveSignalLayerKey` as the copper role's resolver. That
+function never fails: on the MMIC it returns Metal2's drawing layer and a land pattern would have
+been generated on a GaAs die. The series overview's own §1b table says the same thing the other way
+round, listing that technology's Top Copper as Metal1 — so the brief and its overview disagree, and
+neither spelling refuses anything.
+
+The discriminator used instead is physical: a part is soldered to copper bonded to a LAMINATE, so
+the candidate top conductor must sit directly on a solid dielectric. The MMIC's topmost metal sits
+on `Air` — it is an air-bridge level — and is refused; every PCB technology's top copper sits on its
+prepreg or core and is not, **including the Power Rail example's, whose layers carry no interchange
+aliases at all**. That last case is why the obvious alternatives do not work: `F.Cu` by alias, the
+presence of a soldermask, silkscreen or `Edge.Cuts` layer, and `PcbLayerNaming.Assign`'s own
+stack-position derivation each either admit the MMIC or reject the Power Rail technology, and the
+gate requires both answers at once. An explicit `F.Cu` alias is still taken at its word and skips
+the test — an author who wrote it has stated the layer is a board's mounting surface.
+
+### IPC's large-chip fillet goals do not survive the arithmetic below metric 1608
+
+The 0.05 mm HEEL goal at density M eats the whole 0.075 mm separation an 008004's termination bands
+leave at worst-case material condition, and the two lands merge into one — a short, not a dense land
+pattern. The -0.05 mm SIDE reduction at density L leaves a 40 um land on a body 0.125 mm wide, and a
+0.5 mm courtyard excess around a 0.25 mm part is four times the part. IPC splits chip components at
+metric 1608 for this reason; the sub-1608 set here keeps IPC's toe goals and scales the other three
+with them, so the toe alone carries the density difference at that size. A test walks all 23 cases
+at all 3 levels and asserts the gap clamp never fires — it exists so a future table row cannot
+reintroduce the merge silently.
+
+The split is on the body's TERMINATION-AXIS length alone, not its area: the toe and heel are
+distances along that axis, and a reverse-geometry 0306 is a physically large part that is only
+0.8 mm long and needs the short-axis goals for exactly the reason the split exists.
+
+### No shipped technology declares a courtyard layer, so no courtyard is ever drawn
+
+R-fp1-3c forbids putting one on `Edge.Cuts`, and the roles resolver looks for `F.CrtYd` then
+`F.Fab`. None of the five shipped technologies nor the Power Rail example declares either, so every
+generated pattern today omits the courtyard with a diagnostic. That is the rule working, not a
+defect — but it does mean gate 5 ("no shape on Edge.Cuts") is currently satisfied by there being no
+courtyard shape at all, and the rule will first be exercised by whoever adds `F.CrtYd` to a
+technology.
+
+### The origin is the pattern's centre, not pin 1
+
+A deliberate departure from the microstrip generators' R-pc-3. Every board format places a footprint
+by its body centre, so that is where an imported cell's origin already is, and brief 4's picker
+lists built-in patterns and imported cells in ONE list. Two origin conventions in one list is a part
+that jumps when its footprint is changed.
+
+### The built-in resolver is exempt from `ClearResolvers`
+
+R-fp1-6a asks for one registration, process-wide, never removed. `PCellRegistry.ClearResolvers()`
+would have dropped it — and `MultiWorkspaceRegistryScopeTests` calls that in its own setup, so
+`smt:` ids would have stopped resolving for the rest of the test process, silently. The built-in
+resolver is now held in a field, skipped by `RemoveResolver` and re-added by `ClearResolvers`. It is
+not a kit: nothing owns a process to dispose, and there is no event at which footprints should stop
+resolving.
+
+
 ## railRF brief 23 — mount and unmount, and comparing against the run you just did (2026-09-20)
 
 A first-time designer asked how to take a placed part off the layout in order to depopulate and
