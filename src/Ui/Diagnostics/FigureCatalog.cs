@@ -393,6 +393,21 @@ public static class FigureCatalog
         new("snap-glyphs", DocLayoutFixtures.SnapGlyphs, 1010, 190, null,
             "The six geometry-snap glyphs, each drawn by the editor's own renderer from a real query."),
 
+        // ── The land patterns the case table generates ────────────────────────────
+        // Both are one layout view rather than a row of canvases, so the four sizes share a scale —
+        // see DocFootprintFixtures for why that is the whole point of the first one.
+
+        new("footprint-case-sizes", DocFootprintFixtures.CaseSizes, 704, 146, null,
+            "Four generated land patterns at the nominal density, all at one scale: 0402, 0805, "
+          + "1206 and the 3216-18 moulded tantalum. Copper lands, their soldermask openings and the "
+          + "two silkscreen lines, on the shipped 2-layer PCB technology — which declares no "
+          + "courtyard layer, so no courtyard is drawn and Messages says so."),
+
+        new("footprint-densities", DocFootprintFixtures.Densities, 482, 132, null,
+            "One case, 0805, at the three IPC-7351B density levels. The part is the same in all "
+          + "three; what the level sets is how far the land reaches past it — 0.55 mm of toe at M, "
+          + "0.35 mm at N and 0.15 mm at L."),
+
         new("data-display", DocFixtures.DataDisplay, 820, 600,
             WindowFrame.Titled("circuitRF — Data Display"),
             "The Data Display document."),

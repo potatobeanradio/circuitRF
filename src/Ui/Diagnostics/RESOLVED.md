@@ -456,3 +456,45 @@ the same anchor its arrow points at, and the renderer knocks the name out of the
 reads on top; a numeral much larger than the arrowhead takes the head with it. On the 114 mil bend
 the barb is at most 0.22 of the width — 25 mil — so `DocMomBendFixtures.PortLabelHeight` is 22 mil,
 a little over one barb.
+
+### The footprint figures: a shared scale has to be constructed, and silkscreen is invisible in a light figure (2026-09-21)
+
+Two figures for the new Footprints chapter (`footprint-case-sizes`, `footprint-densities`), both
+drawn by `ChipLandPatternGenerator` itself against the PCB starter technology. Three things came out
+of building them.
+
+**A row of canvases does not compare sizes — it hides the comparison.** `LayoutCanvas` fits its own
+content on the first layout pass, so four land patterns in four canvases all come out the same size
+on the page, and the first figure's entire subject is that an 0402 and a 1206 differ by a factor of
+three. The scale is therefore *constructed* rather than fitted: `LayoutViewport.ZoomToFit` takes
+`min(W/worldW, H/worldH) * 0.8`, so a panel whose pixel width is its own world width times a shared
+constant — and whose height is the TALLEST pattern's, so height never binds — lands at exactly that
+constant. Measured out of the emitted SVG afterwards: every panel at 42.0 px/mm, to within the
+0.3 % that rounding a panel width to whole pixels costs. The first attempt drew all four patterns
+into one `LayoutView` at offsets instead, which also shares a scale but needs a shape-translating
+helper and puts the captions inside the artwork — see below for why that was worse.
+
+**A `LabelShape` on the silkscreen role is invisible in the light variant of a figure.** Silk Top is
+`#F2F2F2` at 0.349 opacity and a light figure's canvas background is `#F6F6F4`: the case codes and
+the two silk body lines are both there and neither can be seen. Every figure is emitted in both
+variants from one scene, so there is no per-variant escape — the case code is an ordinary
+`TextBlock` caption under each panel now, which the docs' own paint handling renders off-black on
+light and white on dark. Worth knowing beyond this figure: **the application has the same property**
+on the light theme, since a layer's colour comes from the technology and not from the theme.
+
+**No shipped technology declares a courtyard layer**, so both figures show copper, mask openings and
+silk and no courtyard, which is what a user gets. `LandPatternLayers` says so in the run's
+diagnostics rather than relocating the outline — the chapter states it as a limit instead of the
+figure quietly implying courtyards do not exist.
+
+**The layout toolbar figure had never included the `Footprint…` button.** Regenerating produced a
+34th button capture (`toolbar-layout-btn-34`) and a new row in the Layout Editor chapter's own
+button table: the button shipped with brief-footprint-3 and the docs were never re-run. Nothing
+reports that — the manifest table is generated from the live toolbar, so it is only ever as current
+as the last regeneration.
+
+**And the live "n HB solves" counter drifted again**, exactly as the 2026-08-31 entry above records
+(40 → 889 → 40 across runs here). Two runs at HEAD in a worktree read 40 both times, which is what
+made it look at first like this change had caused it; a third run in the working tree read 40 again.
+The figure is not deterministic and is not evidence of anything — classify it before reporting a
+regeneration, and put the file back if it moved.

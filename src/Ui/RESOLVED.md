@@ -33475,3 +33475,39 @@ rather than deleted: its claim was the 2026-09-19 one this supersedes.
 **Not done, and it is visible:** `docs/user/assets/figures/railrf-window{,-dark}.svg` render the drop
 map with its legend, so they are now stale by a legend's worth of pixels. Regenerating is a DocGen
 run over every figure and that is the owner's call, not a side effect of this fix.
+
+## Component Parameters — the Footprint row became an ordinary parameter row, and the docs gained a chapter (2026-09-21)
+
+Owner: move the Footprint parameter to the bottom row, bring its "display on schematic" checkbox
+down with it, drop the word "Footprint" beside that checkbox, and make the whole thing look and sit
+like any other parameter. Then a second report: searching the user docs for **SMT** returns nothing.
+
+**The row.** It was the FIRST child of the parameter list, drawn on its own four-column grid
+(`60,*,Auto,Auto`) with a literal "Density" label, while its display flag lived far away as a
+labelled checkbox in the header's label-visibility strip. It is now the LAST child, on the same six
+`SharedSizeGroup` columns the generic rows and the microstrip Technology row already declare — name
+in `ParamName`, the picker filling the value column, the density picker in `ParamUnit` where every
+other row has a unit combo, and the display checkbox in `ParamDisplay` where every other row's
+checkbox is. The density label is gone: the combo reads *Nominal / Most / Least* and its tooltip
+carries the IPC meaning, which is the same deal the unit column already offers.
+
+Two things that were deliberately NOT changed. The `ItemsSource`-before-`SelectedIndex` ordering
+(R-fp2-4d, the wBond round-6 defect) is preserved in the moved XAML. And the flag is still
+`ShowFootprintLabel` on the component rather than the parameter's own `ShowOnSchematic`: the label
+convention is index 0 = type, 1 = name, 2+ = params, so a footprint joining the params would shift
+every stored parameter-label offset in every existing `.csch` (R-fp2-5c). The checkbox moved; what
+it writes did not.
+
+**The chapter.** `docs/user/src/reference/footprints.md`, in the Layout & EM section between the
+Layout Editor and PCells, with the SMT vocabulary in its `keywords` — which is what the docs search
+indexes, and why the owner's search had no hits despite five shipped briefs of the feature. It
+covers the one rule (a footprint IS a layout view of a cell), the picker and the 0201 default, the
+case table (generated from `SmtCaseTable` through a new `{{table: footprints}}`, so the 23 rows
+cannot drift), the three density levels, layers by role and what a missing role does, Update Layout
+and the pad-vs-port contract, the two layout-editor gestures, BOM/part-library tokens, and
+`explain --footprints` / `check`. Two figures come out of the real generator —
+`src/Ui/Diagnostics/Fixtures/DocFootprintFixtures.cs`; the three things building them turned up are
+in `src/Ui/Diagnostics/RESOLVED.md`.
+
+One thing the regeneration fixed for free: the Layout Editor chapter's toolbar table had never
+listed the `Footprint…` button, which shipped with brief-footprint-3.

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Footprints</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/footprints.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Footprints</p>
+
+  <h1>Footprints</h1>
+  <p class="lede">How a part on the schematic gets real artwork: SMT case sizes, IPC-7351B density levels, the land pattern circuitRF generates for each, and what reaches the board.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">A footprint is a layout view of a cell</a></li>
+<li><a href="#choose">Choosing one on a component</a></li>
+<li><a href="#cases">The case sizes circuitRF generates</a></li>
+<li><a href="#density">The three density levels</a></li>
+<li><a href="#drawn">What gets drawn, and on which layers</a></li>
+<li><a href="#board">Onto the board</a></li>
+<li><a href="#layout">In the layout editor</a></li>
+<li><a href="#imported">Imported parts, BOMs and part libraries</a></li>
+<li><a href="#headless">Asking about footprints headless</a></li>
+<li><a href="#limits">What this is not</a></li>
+</ol>
+</nav>
+<h2 id="what">A footprint is a layout view of a cell</h2>
+<p>There is no second kind of artifact here, no footprint library file and no registry to keep in step.
+<strong>A footprint is a layout view of a cell</strong> — the same <code>.clay</code> the <a href="layout-editor.html">Layout Editor</a>
+edits and the same view an instance of any other cell resolves to. That one rule is why an imported
+part shows up beside a built-in case size in the same picker with no extra step, and why a footprint
+you drew by hand is a first-class choice rather than a workaround.</p>
+<p>A component's <code>Footprint</code> parameter names one of three things:</p>
+<table>
+<thead>
+<tr>
+<th>What you point at</th>
+<th>Written as</th>
+<th>Where the artwork comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A <strong>built-in case size</strong></td>
+<td><code>smt:0402@N</code></td>
+<td>Generated on demand from the case table — it is not a file, and nothing ships a <code>.clay</code> per case</td>
+</tr>
+<tr>
+<td>A <strong>cell in this workspace</strong></td>
+<td>a relative path, e.g. <code>parts/Widget9</code></td>
+<td>That cell's own layout view, including every part <a href="cli.html#import"><code>import part</code></a> has ever written here</td>
+</tr>
+<tr>
+<td><strong>Your own <code>.clay</code></strong></td>
+<td>a relative path to the file</td>
+<td>Exactly the artwork in it</td>
+</tr>
+</tbody>
+</table>
+<p>Anything that does not begin with <code>smt:</code> is a path, resolved against the document's own folder the
+same way a cell reference is. There is no third case to learn.</p>
+<div class="callout note">
+<span class="label">A built-in pattern is generated, not shipped</span>
+<p>A stored <code>.clay</code> carries absolute layer keys, and the shipped technologies disagree
+about every one of them — the same key that is Silk Top on the 2-layer stackup is Soldermask Top on
+the 4-layer one. A shipped 0402 file would therefore put its silkscreen into a mask opening on the
+wrong board and <em>nothing would say so</em>. A generated pattern resolves its layers by
+<strong>role</strong> against whichever technology is in force, which is the only form that survives
+contact with more than one board.</p>
+</div>
+<h2 id="choose">Choosing one on a component</h2>
+<p>Open a component's <strong>parameter editor</strong> (double-click its body on the schematic). The <strong>Footprint</strong>
+row is the last row, laid out like any other parameter: the picker in the value column, the density
+beside it where a unit would go, and the checkbox in the display column.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Footprint</strong> picker</td>
+<td><strong>None</strong>, then every built-in case size, then every layout view of every cell in this workspace, then <strong>Custom…</strong> — which opens a file picker over <code>.clay</code>. One list; there is no separate place to look for an imported part.</td>
+</tr>
+<tr>
+<td><strong>Density</strong></td>
+<td><code>M</code> / <code>N</code> / <code>L</code> for a built-in case, greyed out for anything else — an imported cell's density is whatever its author drew. See <a href="#density">below</a>.</td>
+</tr>
+<tr>
+<td>The checkbox</td>
+<td>Draws the footprint's case code on the schematic as a third label, after the parameters. Off by default, and nothing is drawn when the footprint is None whatever it says.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The label reads <code>0402</code>, not <code>smt:0402@N</code>.</strong> The reference is machine spelling; a drawing gets the
+case code, or a cell's folder name, or a custom file's name without its extension.</p>
+<div class="callout note">
+<span class="label">The list is filtered by port count</span>
+<p>A row is offered only when its pad count <em>equals</em> the component's port count, so the
+built-in case sizes — which are all two-pad — do not appear at all on a four-port part, and a
+nine-pad cell you imported appears only on a nine-port one. Offering the rest would be offering a
+<a href="#board">refusal</a>: the pad-count contract would report it at Update Layout and place
+nothing, which is a worse way to learn it.</p>
+</div>
+<div class="callout note">
+<span class="label">A freshly placed R, C or L already has one</span>
+<p>Place a resistor, capacitor, inductor or one of the two-element RL/RC/LC parts on a design whose
+technology is a <strong>board</strong>, and it lands carrying <code>smt:0201@N</code> — the smallest
+size a person still places by hand. Everything else lands with <strong>None</strong>: a three-element
+branch, a PCell, an SnP, a source, a port and a placed cell are all things where guessing artwork
+would be putting a package on a model.</p>
+<p>It is applied <strong>at placement and never again</strong>. Change the workspace technology later
+and your parts keep the footprints they were authored with — a default that followed the technology
+around would be a design that changes when you open it somewhere else.</p>
+</div>
+<p><strong>The simulator never sees it.</strong> <code>Footprint</code> is artwork, not a value: <code>smt:0402@N</code> is not an
+expression, and it is dropped before parameters are resolved, for every component kind alike. It
+<em>is</em> written into the <code>.cnl</code> — so a headless Update Layout can still read it — and the engine
+ignores it.</p>
+<h2 id="cases">The case sizes circuitRF generates</h2>
+<p>Two-terminal chips, reverse-geometry chips, larger MLCC bodies and moulded tantalums. The body
+dimensions read <strong>along the termination axis first</strong> — the direction the two lands are separated in
+— so a reverse-geometry row's first number is its short side, which is exactly how the generator
+uses it.</p>
+<table class="param-table">
+<thead><tr><th>Case</th><th>Metric twin</th><th>Body</th><th>Termination</th><th>Family</th></tr></thead><tbody>
+<tr><td class="nowrap"><b>008004</b></td><td class="nowrap">0201</td><td class="nowrap">0.25 x 0.125 mm</td><td class="nowrap">0.06 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>01005</b></td><td class="nowrap">0402</td><td class="nowrap">0.40 x 0.20 mm</td><td class="nowrap">0.10 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>0201</b></td><td class="nowrap">0603</td><td class="nowrap">0.60 x 0.30 mm</td><td class="nowrap">0.15 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>0402</b></td><td class="nowrap">1005</td><td class="nowrap">1.00 x 0.50 mm</td><td class="nowrap">0.25 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>0603</b></td><td class="nowrap">1608</td><td class="nowrap">1.60 x 0.80 mm</td><td class="nowrap">0.35 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>0805</b></td><td class="nowrap">2012</td><td class="nowrap">2.00 x 1.25 mm</td><td class="nowrap">0.40 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>1206</b></td><td class="nowrap">3216</td><td class="nowrap">3.20 x 1.60 mm</td><td class="nowrap">0.50 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>1210</b></td><td class="nowrap">3225</td><td class="nowrap">3.20 x 2.50 mm</td><td class="nowrap">0.50 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>1812</b></td><td class="nowrap">4532</td><td class="nowrap">4.50 x 3.20 mm</td><td class="nowrap">0.60 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>1825</b></td><td class="nowrap">4564</td><td class="nowrap">4.50 x 6.40 mm</td><td class="nowrap">0.60 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>2010</b></td><td class="nowrap">5025</td><td class="nowrap">5.00 x 2.50 mm</td><td class="nowrap">0.60 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>2512</b></td><td class="nowrap">6332</td><td class="nowrap">6.30 x 3.20 mm</td><td class="nowrap">0.60 mm</td><td>chip</td></tr>
+<tr><td class="nowrap"><b>0306</b></td><td class="nowrap">0816</td><td class="nowrap">0.80 x 1.60 mm</td><td class="nowrap">0.20 mm</td><td>reverse geometry</td></tr>
+<tr><td class="nowrap"><b>0508</b></td><td class="nowrap">1220</td><td class="nowrap">1.25 x 2.00 mm</td><td class="nowrap">0.30 mm</td><td>reverse geometry</td></tr>
+<tr><td class="nowrap"><b>0612</b></td><td class="nowrap">1632</td><td class="nowrap">1.60 x 3.20 mm</td><td class="nowrap">0.35 mm</td><td>reverse geometry</td></tr>
+<tr><td class="nowrap"><b>1808</b></td><td class="nowrap">4520</td><td class="nowrap">4.50 x 2.00 mm</td><td class="nowrap">0.60 mm</td><td>MLCC body</td></tr>
+<tr><td class="nowrap"><b>2220</b></td><td class="nowrap">5750</td><td class="nowrap">5.70 x 5.00 mm</td><td class="nowrap">0.65 mm</td><td>MLCC body</td></tr>
+<tr><td class="nowrap"><b>2225</b></td><td class="nowrap">5763</td><td class="nowrap">5.70 x 6.30 mm</td><td class="nowrap">0.65 mm</td><td>MLCC body</td></tr>
+<tr><td class="nowrap"><b>3216-18</b></td><td class="nowrap">A (EIA)</td><td class="nowrap">3.20 x 1.60 x 1.80 mm</td><td class="nowrap">0.80 mm</td><td>moulded tantalum</td></tr>
+<tr><td class="nowrap"><b>3528-21</b></td><td class="nowrap">B (EIA)</td><td class="nowrap">3.50 x 2.80 x 2.10 mm</td><td class="nowrap">0.80 mm</td><td>moulded tantalum</td></tr>
+<tr><td class="nowrap"><b>6032-28</b></td><td class="nowrap">C (EIA)</td><td class="nowrap">6.00 x 3.20 x 2.80 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
+<tr><td class="nowrap"><b>7343-31</b></td><td class="nowrap">D (EIA)</td><td class="nowrap">7.30 x 4.30 x 3.10 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
+<tr><td class="nowrap"><b>7343-43</b></td><td class="nowrap">X (EIA)</td><td class="nowrap">7.30 x 4.30 x 4.30 mm</td><td class="nowrap">1.30 mm</td><td>moulded tantalum</td></tr>
+</tbody></table>
+<div class="callout warn">
+<span class="label">0201 imperial and 0201 metric are two different parts</span>
+<p>Imperial <code>0201</code> is 0.60 &times; 0.30 mm. <em>Metric</em> <code>0201</code> is
+0.25 &times; 0.125 mm, which is imperial <code>008004</code> — a factor of 2.4, and both codes are
+real. Nothing about the mistake announces itself: it places, it renders, it exports, and the first
+sign of trouble is a board. That is why every case row in every picker, tooltip and message reads
+its metric twin and its millimetres, and why a bare four-digit token arriving from a BOM is
+<a href="#imported">reported as ambiguous rather than guessed</a>.</p>
+</div>
+<h2 id="density">The three density levels</h2>
+<p>IPC-7351B states the same land pattern at three land protrusions, and the density picker chooses
+between them. The part is identical in all three; what changes is how far the copper reaches past
+it.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="482" height="132" viewBox="0 0 482 132"><defs><path id="footprint-densities_d0" d="M0 -120L2000 -120L2000 0L0 0L0 -120Z" /><path id="footprint-densities_d1" d="M0 -1550L1400 -1550L1400 0L0 0L0 -1550Z" /><path id="footprint-densities_d2" d="M0 -1450L1300 -1450L1300 0L0 0L0 -1450Z" /><path id="footprint-densities_d3" d="M0 -1450L1150 -1450L1150 0L0 0L0 -1450Z" /><path id="footprint-densities_d4" d="M0 -1350L1050 -1350L1050 0L0 0L0 -1350Z" /><path id="footprint-densities_d5" d="M0 -1350L950 -1350L950 0L0 0L0 -1350Z" /><path id="footprint-densities_d6" d="M0 -1250L850 -1250L850 0L0 0L0 -1250Z" /></defs><rect fill="white" width="482" height="132" /><rect fill="#F6F8FA" width="482" height="132" /><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(0 6)" x="0.5" y="0.5" width="174" height="105" /><clipPath id="footprint-densities_cl_0"><rect x="1" y="7" width="173" height="104" /></clipPath><g clip-path="url(#footprint-densities_cl_0)"><rect fill="#F6F6F4" transform="translate(1 7)" width="173" height="104" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(1 7)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(1 7)" d="" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 45.69 22.42)" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 45.69 100.6)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1000 -995L1000 -995L1000 -875L-1000 -875L-1000 -995ZM-1000 875L1000 875L1000 995L-1000 995L-1000 875Z" /><use xlink:href="#footprint-densities_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 18.52 91.4)" /><use xlink:href="#footprint-densities_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 97.95 91.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1650 -775L-250 -775L-250 775L-1650 775L-1650 -775ZM250 -775L1650 -775L1650 775L250 775L250 -775Z" /><use xlink:href="#footprint-densities_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 20.61 89.31)" /><use xlink:href="#footprint-densities_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 100.04 89.31)" /><path fill="none" stroke="#C87A3E" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1600 -725L-300 -725L-300 725L-1600 725L-1600 -725ZM300 -725L1600 -725L1600 725L300 725L300 -725Z" /></g><clipPath id="footprint-densities_cl_1"><rect y="118" width="173" height="14" /></clipPath><g clip-path="url(#footprint-densities_cl_1)"><text fill="#010101" transform="translate(60.08 118)" font-size="11" font-family="Inter" x="0, 9.78, 12.88, 23.88, 26.97, 36.53, 43.09, 48.84" y="10.66">
+						M — most
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(187 6)" x="0.5" y="0.5" width="153" height="105" /><clipPath id="footprint-densities_cl_2"><rect x="188" y="7" width="152" height="104" /></clipPath><g clip-path="url(#footprint-densities_cl_2)"><rect fill="#F6F6F4" transform="translate(188 7)" width="152" height="104" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(188 7)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(188 7)" d="" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 222.07 24.41)" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 222.07 98.62)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1000 -945L1000 -945L1000 -825L-1000 -825L-1000 -945ZM-1000 825L1000 825L1000 945L-1000 945L-1000 825Z" /><use xlink:href="#footprint-densities_d3" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 203.2 89.4)" /><use xlink:href="#footprint-densities_d3" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 276.58 89.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1450 -725L-300 -725L-300 725L-1450 725L-1450 -725ZM300 -725L1450 -725L1450 725L300 725L300 -725Z" /><use xlink:href="#footprint-densities_d4" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 205.3 87.3)" /><use xlink:href="#footprint-densities_d4" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 278.68 87.3)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1400 -675L-350 -675L-350 675L-1400 675L-1400 -675ZM350 -675L1400 -675L1400 675L350 675L350 -675Z" /></g><clipPath id="footprint-densities_cl_3"><rect x="187" y="118" width="152" height="14" /></clipPath><g clip-path="url(#footprint-densities_cl_3)"><text fill="#010101" transform="translate(230.06 118)" font-size="11" font-family="Inter" x="0, 8.28, 11.38, 22.38, 25.47, 31.91, 38.47, 48.03, 50.64, 57.08, 63.28" y="10.66">
+						N — nominal
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(353 6)" x="0.5" y="0.5" width="132" height="105" /><clipPath id="footprint-densities_cl_4"><rect x="354" y="7" width="131" height="104" /></clipPath><g clip-path="url(#footprint-densities_cl_4)"><rect fill="#F6F6F4" transform="translate(354 7)" width="131" height="104" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(354 7)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(354 7)" d="" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 377.58 26.51)" /><use xlink:href="#footprint-densities_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 377.58 96.52)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1000 -895L1000 -895L1000 -775L-1000 -775L-1000 -895ZM-1000 775L1000 775L1000 895L-1000 895L-1000 775Z" /><use xlink:href="#footprint-densities_d5" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 367.1 87.3)" /><use xlink:href="#footprint-densities_d5" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 432.08 87.3)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1250 -675L-300 -675L-300 675L-1250 675L-1250 -675ZM300 -675L1250 -675L1250 675L300 675L300 -675Z" /><use xlink:href="#footprint-densities_d6" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 369.2 85.2)" /><use xlink:href="#footprint-densities_d6" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 434.17 85.2)" /><path fill="none" stroke="#C87A3E" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1200 -625L-350 -625L-350 625L-1200 625L-1200 -625ZM350 -625L1200 -625L1200 625L350 625L350 -625Z" /></g><clipPath id="footprint-densities_cl_5"><rect x="353" y="118" width="131" height="14" /></clipPath><g clip-path="url(#footprint-densities_cl_5)"><text fill="#010101" transform="translate(394.33 118)" font-size="11" font-family="Inter" x="0, 6.19, 9.28, 20.28, 23.38, 25.98, 32.39, 38.59, 44.34" y="10.66">
+						L — least
+				</text></g></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="482" height="132" viewBox="0 0 482 132"><defs><path id="footprint-densities-dark_d0" d="M0 -120L2000 -120L2000 0L0 0L0 -120Z" /><path id="footprint-densities-dark_d1" d="M0 -1550L1400 -1550L1400 0L0 0L0 -1550Z" /><path id="footprint-densities-dark_d2" d="M0 -1450L1300 -1450L1300 0L0 0L0 -1450Z" /><path id="footprint-densities-dark_d3" d="M0 -1450L1150 -1450L1150 0L0 0L0 -1450Z" /><path id="footprint-densities-dark_d4" d="M0 -1350L1050 -1350L1050 0L0 0L0 -1350Z" /><path id="footprint-densities-dark_d5" d="M0 -1350L950 -1350L950 0L0 0L0 -1350Z" /><path id="footprint-densities-dark_d6" d="M0 -1250L850 -1250L850 0L0 0L0 -1250Z" /></defs><rect fill="#010101" width="482" height="132" /><rect fill="#15222D" width="482" height="132" /><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(0 6)" x="0.5" y="0.5" width="174" height="105" /><clipPath id="footprint-densities-dark_cl_0"><rect x="1" y="7" width="173" height="104" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_0)"><rect fill="#202022" transform="translate(1 7)" width="173" height="104" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(1 7)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(1 7)" d="" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 45.69 22.42)" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 45.69 100.6)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1000 -995L1000 -995L1000 -875L-1000 -875L-1000 -995ZM-1000 875L1000 875L1000 995L-1000 995L-1000 875Z" /><use xlink:href="#footprint-densities-dark_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 18.52 91.4)" /><use xlink:href="#footprint-densities-dark_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 97.95 91.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1650 -775L-250 -775L-250 775L-1650 775L-1650 -775ZM250 -775L1650 -775L1650 775L250 775L250 -775Z" /><use xlink:href="#footprint-densities-dark_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 20.61 89.31)" /><use xlink:href="#footprint-densities-dark_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04181 0 0 0.04181 100.04 89.31)" /><path fill="none" stroke="#C87A3E" stroke-width="47.84" stroke-miterlimit="4" transform="matrix(0.04181 0 0 0.04181 87.5 59)" d="M-1600 -725L-300 -725L-300 725L-1600 725L-1600 -725ZM300 -725L1600 -725L1600 725L300 725L300 -725Z" /></g><clipPath id="footprint-densities-dark_cl_1"><rect y="118" width="173" height="14" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_1)"><text fill="white" transform="translate(60.08 118)" font-size="11" font-family="Inter" x="0, 9.78, 12.88, 23.88, 26.97, 36.53, 43.09, 48.84" y="10.66">
+						M — most
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(187 6)" x="0.5" y="0.5" width="153" height="105" /><clipPath id="footprint-densities-dark_cl_2"><rect x="188" y="7" width="152" height="104" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_2)"><rect fill="#202022" transform="translate(188 7)" width="152" height="104" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(188 7)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(188 7)" d="" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 222.07 24.41)" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 222.07 98.62)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1000 -945L1000 -945L1000 -825L-1000 -825L-1000 -945ZM-1000 825L1000 825L1000 945L-1000 945L-1000 825Z" /><use xlink:href="#footprint-densities-dark_d3" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 203.2 89.4)" /><use xlink:href="#footprint-densities-dark_d3" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 276.58 89.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1450 -725L-300 -725L-300 725L-1450 725L-1450 -725ZM300 -725L1450 -725L1450 725L300 725L300 -725Z" /><use xlink:href="#footprint-densities-dark_d4" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 205.3 87.3)" /><use xlink:href="#footprint-densities-dark_d4" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 278.68 87.3)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 264 59)" d="M-1400 -675L-350 -675L-350 675L-1400 675L-1400 -675ZM350 -675L1400 -675L1400 675L350 675L350 -675Z" /></g><clipPath id="footprint-densities-dark_cl_3"><rect x="187" y="118" width="152" height="14" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_3)"><text fill="white" transform="translate(230.06 118)" font-size="11" font-family="Inter" x="0, 8.28, 11.38, 22.38, 25.47, 31.91, 38.47, 48.03, 50.64, 57.08, 63.28" y="10.66">
+						N — nominal
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(353 6)" x="0.5" y="0.5" width="132" height="105" /><clipPath id="footprint-densities-dark_cl_4"><rect x="354" y="7" width="131" height="104" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_4)"><rect fill="#202022" transform="translate(354 7)" width="131" height="104" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(354 7)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(354 7)" d="" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 377.58 26.51)" /><use xlink:href="#footprint-densities-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 377.58 96.52)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1000 -895L1000 -895L1000 -775L-1000 -775L-1000 -895ZM-1000 775L1000 775L1000 895L-1000 895L-1000 775Z" /><use xlink:href="#footprint-densities-dark_d5" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 367.1 87.3)" /><use xlink:href="#footprint-densities-dark_d5" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 432.08 87.3)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1250 -675L-300 -675L-300 675L-1250 675L-1250 -675ZM300 -675L1250 -675L1250 675L300 675L300 -675Z" /><use xlink:href="#footprint-densities-dark_d6" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 369.2 85.2)" /><use xlink:href="#footprint-densities-dark_d6" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 434.17 85.2)" /><path fill="none" stroke="#C87A3E" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 419.5 59)" d="M-1200 -625L-350 -625L-350 625L-1200 625L-1200 -625ZM350 -625L1200 -625L1200 625L350 625L350 -625Z" /></g><clipPath id="footprint-densities-dark_cl_5"><rect x="353" y="118" width="131" height="14" /></clipPath><g clip-path="url(#footprint-densities-dark_cl_5)"><text fill="white" transform="translate(394.33 118)" font-size="11" font-family="Inter" x="0, 6.19, 9.28, 20.28, 23.38, 25.98, 32.39, 38.59, 44.34" y="10.66">
+						L — least
+				</text></g></svg></span>
+</span><figcaption>One case, 0805, at the three IPC-7351B density levels. The part is the same in all three; what the level sets is how far the land reaches past it — 0.55 mm of toe at M, 0.35 mm at N and 0.15 mm at L.</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Written</th>
+<th>For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>M</strong> — most</td>
+<td><code>smt:0805@M</code></td>
+<td>Wave solder, hand rework, high reliability. The largest fillet, the largest courtyard.</td>
+</tr>
+<tr>
+<td><strong>N</strong> — nominal</td>
+<td><code>smt:0805@N</code>, or <code>smt:0805</code></td>
+<td>General commercial reflow. <strong>The default</strong>, and what an omitted <code>@</code> means.</td>
+</tr>
+<tr>
+<td><strong>L</strong> — least</td>
+<td><code>smt:0805@L</code></td>
+<td>High density, fine pitch. The land barely clears the termination.</td>
+</tr>
+</tbody>
+</table>
+<p>One case at two densities is <strong>two different cells</strong>, not one cell with a setting — which is why a
+stored reference spells the density out, and why re-pointing a part from <code>@N</code> to <code>@L</code> is the same
+kind of edit as re-pointing it from 0402 to 0603.</p>
+<p><strong>Chips below 1.6 mm get their own goals.</strong> IPC splits the table at metric 1608 (imperial 0603) and
+gives the smaller bodies much reduced fillet goals; circuitRF follows that split, and scales the
+heel, side and courtyard figures with the toe at that size. Without it an 008004 would be handed a
+0.35 mm toe on a 0.25 mm body — a land pattern almost four times the part, which places, renders,
+exports and is wrong.</p>
+<h2 id="drawn">What gets drawn, and on which layers</h2>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="704" height="146" viewBox="0 0 704 146"><defs><path id="footprint-case-sizes_d0" d="M0 -120L1000 -120L1000 0L0 0L0 -120Z" /><path id="footprint-case-sizes_d1" d="M0 -650L650 -650L650 0L0 0L0 -650Z" /><path id="footprint-case-sizes_d2" d="M0 -550L550 -550L550 0L0 0L0 -550Z" /><path id="footprint-case-sizes_d3" d="M0 -120L2000 -120L2000 0L0 0L0 -120Z" /><path id="footprint-case-sizes_d4" d="M0 -1450L1150 -1450L1150 0L0 0L0 -1450Z" /><path id="footprint-case-sizes_d5" d="M0 -1350L1050 -1350L1050 0L0 0L0 -1350Z" /><path id="footprint-case-sizes_d6" d="M0 -120L3200 -120L3200 0L0 0L0 -120Z" /><path id="footprint-case-sizes_d7" d="M0 -1850L1350 -1850L1350 0L0 0L0 -1850Z" /><path id="footprint-case-sizes_d8" d="M0 -1750L1250 -1750L1250 0L0 0L0 -1750Z" /><path id="footprint-case-sizes_d9" d="M0 -1500L1750 -1500L1750 0L0 0L0 -1500Z" /><path id="footprint-case-sizes_d10" d="M0 -1400L1650 -1400L1650 0L0 0L0 -1400Z" /></defs><rect fill="white" width="704" height="146" /><rect fill="#F6F8FA" width="704" height="146" /><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(0 4)" x="0.5" y="0.5" width="77" height="121" /><clipPath id="footprint-case-sizes_cl_0"><rect x="1" y="5" width="76" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_0)"><rect fill="#F6F6F4" transform="translate(1 5)" width="76" height="120" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(1 5)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(1 5)" d="" /><use xlink:href="#footprint-case-sizes_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 18.03 47.18)" /><use xlink:href="#footprint-case-sizes_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 18.03 87.85)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-500 -545L500 -545L500 -425L-500 -425L-500 -545ZM-500 425L500 425L500 545L-500 545L-500 425Z" /><use xlink:href="#footprint-case-sizes_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 8.6 78.63)" /><use xlink:href="#footprint-case-sizes_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 42.14 78.63)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-725 -325L-75 -325L-75 325L-725 325L-725 -325ZM75 -325L725 -325L725 325L75 325L75 -325Z" /><use xlink:href="#footprint-case-sizes_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 10.7 76.53)" /><use xlink:href="#footprint-case-sizes_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 44.24 76.53)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-675 -275L-125 -275L-125 275L-675 275L-675 -275ZM125 -275L675 -275L675 275L125 275L125 -275Z" /></g><clipPath id="footprint-case-sizes_cl_1"><rect y="132" width="76" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_1)"><text fill="#010101" transform="translate(24.27 132)" font-size="11" font-family="Inter" x="0, 6.88, 13.94, 20.81" y="10.66">
+						0402
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(90 4)" x="0.5" y="0.5" width="153" height="121" /><clipPath id="footprint-case-sizes_cl_2"><rect x="91" y="5" width="152" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_2)"><rect fill="#F6F6F4" transform="translate(91 5)" width="152" height="120" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(91 5)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(91 5)" d="" /><use xlink:href="#footprint-case-sizes_d3" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 125.07 30.41)" /><use xlink:href="#footprint-case-sizes_d3" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 125.07 104.63)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1000 -945L1000 -945L1000 -825L-1000 -825L-1000 -945ZM-1000 825L1000 825L1000 945L-1000 945L-1000 825Z" /><use xlink:href="#footprint-case-sizes_d4" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 106.2 95.4)" /><use xlink:href="#footprint-case-sizes_d4" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 179.58 95.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1450 -725L-300 -725L-300 725L-1450 725L-1450 -725ZM300 -725L1450 -725L1450 725L300 725L300 -725Z" /><use xlink:href="#footprint-case-sizes_d5" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 108.3 93.3)" /><use xlink:href="#footprint-case-sizes_d5" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 181.68 93.3)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1400 -675L-350 -675L-350 675L-1400 675L-1400 -675ZM350 -675L1400 -675L1400 675L350 675L350 -675Z" /></g><clipPath id="footprint-case-sizes_cl_3"><rect x="90" y="132" width="152" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_3)"><text fill="#010101" transform="translate(152.39 132)" font-size="11" font-family="Inter" x="0, 6.88, 13.66, 20.53" y="10.66">
+						0805
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(256 4)" x="0.5" y="0.5" width="219" height="121" /><clipPath id="footprint-case-sizes_cl_4"><rect x="257" y="5" width="218" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_4)"><rect fill="#F6F6F4" transform="translate(257 5)" width="218" height="120" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(257 5)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(257 5)" d="" /><use xlink:href="#footprint-case-sizes_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 298.93 22.03)" /><use xlink:href="#footprint-case-sizes_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 298.93 113)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-1600 -1145L1600 -1145L1600 -1025L-1600 -1025L-1600 -1145ZM-1600 1025L1600 1025L1600 1145L-1600 1145L-1600 1025Z" /><use xlink:href="#footprint-case-sizes_d7" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 279.01 103.78)" /><use xlink:href="#footprint-case-sizes_d7" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 396.39 103.78)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-2075 -925L-725 -925L-725 925L-2075 925L-2075 -925ZM725 -925L2075 -925L2075 925L725 925L725 -925Z" /><use xlink:href="#footprint-case-sizes_d8" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 281.11 101.68)" /><use xlink:href="#footprint-case-sizes_d8" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 398.49 101.68)" /><path fill="none" stroke="#C87A3E" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-2025 -875L-775 -875L-775 875L-2025 875L-2025 -875ZM775 -875L2025 -875L2025 875L775 875L775 -875Z" /></g><clipPath id="footprint-case-sizes_cl_5"><rect x="256" y="132" width="218" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_5)"><text fill="#010101" transform="translate(352.25 132)" font-size="11" font-family="Inter" x="0, 5.11, 11.77, 18.64" y="10.66">
+						1206
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(488 4)" x="0.5" y="0.5" width="221" height="121" /><clipPath id="footprint-case-sizes_cl_6"><rect x="489" y="5" width="220" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_6)"><rect fill="#F6F6F4" transform="translate(489 5)" width="220" height="120" /><path fill="none" stroke="#787878" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2353" transform="translate(489 5)" d="" /><path fill="none" stroke="#5A5A5A" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.4314" transform="translate(489 5)" d="" /><use xlink:href="#footprint-case-sizes_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 531.95 27.29)" /><use xlink:href="#footprint-case-sizes_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 531.95 107.74)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-1600 -1020L1600 -1020L1600 -900L-1600 -900L-1600 -1020ZM-1600 900L1600 900L1600 1020L-1600 1020L-1600 900Z" /><use xlink:href="#footprint-case-sizes_d9" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 511 96.43)" /><use xlink:href="#footprint-case-sizes_d9" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 613.67 96.43)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-2100 -750L-350 -750L-350 750L-2100 750L-2100 -750ZM350 -750L2100 -750L2100 750L350 750L350 -750Z" /><use xlink:href="#footprint-case-sizes_d10" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 513.1 94.33)" /><use xlink:href="#footprint-case-sizes_d10" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 615.76 94.33)" /><path fill="none" stroke="#C87A3E" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-2050 -700L-400 -700L-400 700L-2050 700L-2050 -700ZM400 -700L2050 -700L2050 700L400 700L400 -700Z" /></g><clipPath id="footprint-case-sizes_cl_7"><rect x="488" y="132" width="220" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes_cl_7)"><text fill="#010101" transform="translate(576.71 132)" font-size="11" font-family="Inter" x="0, 7, 13.66, 18.77, 25.63, 30.69, 35.8" y="10.66">
+						3216-18
+				</text></g></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="704" height="146" viewBox="0 0 704 146"><defs><path id="footprint-case-sizes-dark_d0" d="M0 -120L1000 -120L1000 0L0 0L0 -120Z" /><path id="footprint-case-sizes-dark_d1" d="M0 -650L650 -650L650 0L0 0L0 -650Z" /><path id="footprint-case-sizes-dark_d2" d="M0 -550L550 -550L550 0L0 0L0 -550Z" /><path id="footprint-case-sizes-dark_d3" d="M0 -120L2000 -120L2000 0L0 0L0 -120Z" /><path id="footprint-case-sizes-dark_d4" d="M0 -1450L1150 -1450L1150 0L0 0L0 -1450Z" /><path id="footprint-case-sizes-dark_d5" d="M0 -1350L1050 -1350L1050 0L0 0L0 -1350Z" /><path id="footprint-case-sizes-dark_d6" d="M0 -120L3200 -120L3200 0L0 0L0 -120Z" /><path id="footprint-case-sizes-dark_d7" d="M0 -1850L1350 -1850L1350 0L0 0L0 -1850Z" /><path id="footprint-case-sizes-dark_d8" d="M0 -1750L1250 -1750L1250 0L0 0L0 -1750Z" /><path id="footprint-case-sizes-dark_d9" d="M0 -1500L1750 -1500L1750 0L0 0L0 -1500Z" /><path id="footprint-case-sizes-dark_d10" d="M0 -1400L1650 -1400L1650 0L0 0L0 -1400Z" /></defs><rect fill="#010101" width="704" height="146" /><rect fill="#15222D" width="704" height="146" /><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(0 4)" x="0.5" y="0.5" width="77" height="121" /><clipPath id="footprint-case-sizes-dark_cl_0"><rect x="1" y="5" width="76" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_0)"><rect fill="#202022" transform="translate(1 5)" width="76" height="120" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(1 5)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(1 5)" d="" /><use xlink:href="#footprint-case-sizes-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 18.03 47.18)" /><use xlink:href="#footprint-case-sizes-dark_d0" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 18.03 87.85)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-500 -545L500 -545L500 -425L-500 -425L-500 -545ZM-500 425L500 425L500 545L-500 545L-500 425Z" /><use xlink:href="#footprint-case-sizes-dark_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 8.6 78.63)" /><use xlink:href="#footprint-case-sizes-dark_d1" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 42.14 78.63)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-725 -325L-75 -325L-75 325L-725 325L-725 -325ZM75 -325L725 -325L725 325L75 325L75 -325Z" /><use xlink:href="#footprint-case-sizes-dark_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 10.7 76.53)" /><use xlink:href="#footprint-case-sizes-dark_d2" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 44.24 76.53)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 39 65)" d="M-675 -275L-125 -275L-125 275L-675 275L-675 -275ZM125 -275L675 -275L675 275L125 275L125 -275Z" /></g><clipPath id="footprint-case-sizes-dark_cl_1"><rect y="132" width="76" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_1)"><text fill="white" transform="translate(24.27 132)" font-size="11" font-family="Inter" x="0, 6.88, 13.94, 20.81" y="10.66">
+						0402
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(90 4)" x="0.5" y="0.5" width="153" height="121" /><clipPath id="footprint-case-sizes-dark_cl_2"><rect x="91" y="5" width="152" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_2)"><rect fill="#202022" transform="translate(91 5)" width="152" height="120" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(91 5)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(91 5)" d="" /><use xlink:href="#footprint-case-sizes-dark_d3" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 125.07 30.41)" /><use xlink:href="#footprint-case-sizes-dark_d3" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 125.07 104.63)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1000 -945L1000 -945L1000 -825L-1000 -825L-1000 -945ZM-1000 825L1000 825L1000 945L-1000 945L-1000 825Z" /><use xlink:href="#footprint-case-sizes-dark_d4" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 106.2 95.4)" /><use xlink:href="#footprint-case-sizes-dark_d4" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 179.58 95.4)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1450 -725L-300 -725L-300 725L-1450 725L-1450 -725ZM300 -725L1450 -725L1450 725L300 725L300 -725Z" /><use xlink:href="#footprint-case-sizes-dark_d5" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 108.3 93.3)" /><use xlink:href="#footprint-case-sizes-dark_d5" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04193 0 0 0.04193 181.68 93.3)" /><path fill="none" stroke="#C87A3E" stroke-width="47.7" stroke-miterlimit="4" transform="matrix(0.04193 0 0 0.04193 167 65)" d="M-1400 -675L-350 -675L-350 675L-1400 675L-1400 -675ZM350 -675L1400 -675L1400 675L350 675L350 -675Z" /></g><clipPath id="footprint-case-sizes-dark_cl_3"><rect x="90" y="132" width="152" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_3)"><text fill="white" transform="translate(152.39 132)" font-size="11" font-family="Inter" x="0, 6.88, 13.66, 20.53" y="10.66">
+						0805
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(256 4)" x="0.5" y="0.5" width="219" height="121" /><clipPath id="footprint-case-sizes-dark_cl_4"><rect x="257" y="5" width="218" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_4)"><rect fill="#202022" transform="translate(257 5)" width="218" height="120" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(257 5)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(257 5)" d="" /><use xlink:href="#footprint-case-sizes-dark_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 298.93 22.03)" /><use xlink:href="#footprint-case-sizes-dark_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 298.93 113)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-1600 -1145L1600 -1145L1600 -1025L-1600 -1025L-1600 -1145ZM-1600 1025L1600 1025L1600 1145L-1600 1145L-1600 1025Z" /><use xlink:href="#footprint-case-sizes-dark_d7" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 279.01 103.78)" /><use xlink:href="#footprint-case-sizes-dark_d7" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 396.39 103.78)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-2075 -925L-725 -925L-725 925L-2075 925L-2075 -925ZM725 -925L2075 -925L2075 925L725 925L725 -925Z" /><use xlink:href="#footprint-case-sizes-dark_d8" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 281.11 101.68)" /><use xlink:href="#footprint-case-sizes-dark_d8" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.04192 0 0 0.04192 398.49 101.68)" /><path fill="none" stroke="#C87A3E" stroke-width="47.71" stroke-miterlimit="4" transform="matrix(0.04192 0 0 0.04192 366 65)" d="M-2025 -875L-775 -875L-775 875L-2025 875L-2025 -875ZM775 -875L2025 -875L2025 875L775 875L775 -875Z" /></g><clipPath id="footprint-case-sizes-dark_cl_5"><rect x="256" y="132" width="218" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_5)"><text fill="white" transform="translate(352.25 132)" font-size="11" font-family="Inter" x="0, 5.11, 11.77, 18.64" y="10.66">
+						1206
+				</text></g><rect fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2353" transform="translate(488 4)" x="0.5" y="0.5" width="221" height="121" /><clipPath id="footprint-case-sizes-dark_cl_6"><rect x="489" y="5" width="220" height="120" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_6)"><rect fill="#202022" transform="translate(489 5)" width="220" height="120" /><path fill="none" stroke="#9696A0" stroke-width="1.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.2157" transform="translate(489 5)" d="" /><path fill="none" stroke="#BEBEC8" stroke-width="2.5" stroke-linecap="round" stroke-miterlimit="4" stroke-opacity="0.3922" transform="translate(489 5)" d="" /><use xlink:href="#footprint-case-sizes-dark_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 531.95 27.29)" /><use xlink:href="#footprint-case-sizes-dark_d6" fill="#F2F2F2" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 531.95 107.74)" /><path fill="none" stroke="#F2F2F2" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-1600 -1020L1600 -1020L1600 -900L-1600 -900L-1600 -1020ZM-1600 900L1600 900L1600 1020L-1600 1020L-1600 900Z" /><use xlink:href="#footprint-case-sizes-dark_d9" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 511 96.43)" /><use xlink:href="#footprint-case-sizes-dark_d9" fill="#1E6B3C" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 613.67 96.43)" /><path fill="none" stroke="#1E6B3C" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-2100 -750L-350 -750L-350 750L-2100 750L-2100 -750ZM350 -750L2100 -750L2100 750L350 750L350 -750Z" /><use xlink:href="#footprint-case-sizes-dark_d10" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 513.1 94.33)" /><use xlink:href="#footprint-case-sizes-dark_d10" fill="#C87A3E" fill-opacity="0.349" transform="matrix(0.0419 0 0 0.0419 615.76 94.33)" /><path fill="none" stroke="#C87A3E" stroke-width="47.73" stroke-miterlimit="4" transform="matrix(0.0419 0 0 0.0419 599 65)" d="M-2050 -700L-400 -700L-400 700L-2050 700L-2050 -700ZM400 -700L2050 -700L2050 700L400 700L400 -700Z" /></g><clipPath id="footprint-case-sizes-dark_cl_7"><rect x="488" y="132" width="220" height="14" /></clipPath><g clip-path="url(#footprint-case-sizes-dark_cl_7)"><text fill="white" transform="translate(576.71 132)" font-size="11" font-family="Inter" x="0, 7, 13.66, 18.77, 25.63, 30.69, 35.8" y="10.66">
+						3216-18
+				</text></g></svg></span>
+</span><figcaption>Four generated land patterns at the nominal density, all at one scale: 0402, 0805, 1206 and the 3216-18 moulded tantalum. Copper lands, their soldermask openings and the two silkscreen lines, on the shipped 2-layer PCB technology — which declares no courtyard layer, so no courtyard is drawn and Messages says so.</figcaption></figure>
+<p>A generated pattern is four things, each resolved to a layer <strong>by role</strong> — the technology's
+<code>F.Cu</code> / <code>F.Mask</code> / <code>F.SilkS</code> / <code>F.CrtYd</code> interchange alias first, then a layer's stated purpose,
+then its name:</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>What is drawn</th>
+<th>If the technology declares no such layer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Copper</strong></td>
+<td>Two lands, each carrying its pin (<code>1</code>, <code>2</code>)</td>
+<td><strong>Refused.</strong> There is no land pattern without lands, and the reason is reported by name.</td>
+</tr>
+<tr>
+<td><strong>Soldermask</strong></td>
+<td>One opening per land, grown 50 µm per side</td>
+<td>Omitted, with a note</td>
+</tr>
+<tr>
+<td><strong>Silkscreen</strong></td>
+<td>Two lines running the length of the body, clear of the mask openings</td>
+<td>Omitted, with a note</td>
+</tr>
+<tr>
+<td><strong>Courtyard / assembly</strong></td>
+<td>The keepout rectangle around the lands <em>or</em> the body, whichever is larger</td>
+<td>Omitted, with a note</td>
+</tr>
+</tbody>
+</table>
+<div class="callout warn">
+<span class="label">A missing layer is never replaced by a different one</span>
+<p>A silkscreen outline drawn on Soldermask Top because the technology has no silk is worse than no
+outline at all: the mask layer is manufacturing data, and a stray rectangle in it is a defect nobody
+sees until fabrication. The same goes for the courtyard, which is <strong>never</strong> drawn on the
+board outline — a courtyard rectangle on <code>Edge.Cuts</code> is a routed slot. <strong>No shipped
+technology declares a courtyard layer</strong>, so courtyards are omitted unless you add one; that is
+the note you will see in Messages the first time you generate a pattern.</p>
+</div>
+<p><strong>A pattern is centred on its body, not on pin 1.</strong> That is the opposite of the convention the
+microstrip PCells follow, and it is deliberate: every board format places a part by its body centre,
+so an imported cell's origin is already there, and one picker listing both would otherwise make a
+part jump when you changed its footprint.</p>
+<p><strong>The origin of the numbers.</strong> Spans and gaps are computed from the case's worst-case material
+condition plus the level's fillet goals, in exact decimal millimetres, and converted to DBU once —
+so the same case lands on the same DBU on every machine. IPC's statistical fabrication-and-placement
+allowance is <strong>not</strong> applied: it needs the board's fabrication tolerance and the assembler's
+placement accuracy, and a technology declares neither. What you get is the geometric land pattern.</p>
+<div class="callout note">
+<span class="label">A chip land pattern needs a board</span>
+<p>The copper role must be a surface a part can be soldered to — a conductor sitting directly on a
+solid dielectric. A MMIC technology whose topmost metal is an air-bridge level is refused by name
+rather than quietly given an 0402 on a GaAs die. This is also the test behind the 0201 default: a
+default is offered exactly where a land pattern can be generated.</p>
+</div>
+<h2 id="board">Onto the board</h2>
+<p><strong>Design ▸ Update Layout from Schematic</strong> (<kbd>⌘U</kbd>) is what turns the stated footprint into
+placed artwork. A stated footprint is consulted <strong>first</strong>, ahead of the kit / cell-reference / PCell
+chain, because it is an explicit choice somebody made.</p>
+<ul>
+<li><strong>Re-pointing updates in place.</strong> Change a part from 0402 to 0603, run it again, and the existing
+instance moves to the new cell and is reported. It does not add a second one.</li>
+<li><strong>Setting a footprint back to None removes the artwork</strong>, and says so. Leaving it behind would mean
+the layout says a part is there and the schematic says it is not.</li>
+<li><strong>Pads must equal ports.</strong> A footprint with two pads under a four-port part is reported and
+<strong>nothing is placed</strong> — <code>S4P1 states footprint 0402, which has 2 pads, and the component has 4 ports.</code> Artwork on the board with the wrong pad count is artwork somebody routes to.</li>
+<li><strong>Each placement draws its reference designator</strong> on silkscreen, taken from the schematic instance
+name. It is derived, not stored, so a rename in the schematic arrives with the next update and a
+board can never disagree with the drawing about what a part is called.</li>
+</ul>
+<div class="callout warn">
+<span class="label">An SnP with a reference pin has one more port than its file</span>
+<p>A 2-port S2P with <strong>External reference pin</strong> ticked is a <em>three</em>-port
+component, and it does not fit a two-pad chip land. This is the pad-count refusal people meet first,
+and the message names both numbers.</p>
+</div>
+<p>Everything else about Update Layout — packing, the ratsnest, what is skipped and what is reported —
+is unchanged and is described in
+<a href="layout-editor.html#schematic-flow">Schematic ⇄ layout</a>.</p>
+<h2 id="layout">In the layout editor</h2>
+<p>Two gestures, and they are different things:</p>
+<table>
+<thead>
+<tr>
+<th>Gesture</th>
+<th>Where</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Place one by hand</strong></td>
+<td>The <strong>Footprint…</strong> button on the toolbar, beside <strong>Instance…</strong></td>
+<td>Arms the placement ghost with a land pattern, so you can drop an 0402 onto existing copper with no schematic anywhere.</td>
+</tr>
+<tr>
+<td><strong>Re-point what is selected</strong></td>
+<td>The <strong>Footprint</strong> row in the Properties inspector, with its own density picker</td>
+<td>Swaps the selected instance's artwork, as one undoable command like any other instance edit.</td>
+</tr>
+</tbody>
+</table>
+<p>A part placed by hand corresponds to no schematic component, so it carries no schematic id — and it
+is given no invented one. It takes its designator from <strong>Designator</strong> in the same inspector, where
+you can also hide it, drag its label and <strong>Reset</strong> the label back to its automatic position above the
+body.</p>
+<p><strong>Neither gesture writes back to the schematic.</strong> Re-pointing artwork in the layout makes the two
+views disagree, which is what Update Layout exists to reconcile and what its change report exists to
+say. A silent write-back would make an artwork edit change a simulation.</p>
+<h2 id="imported">Imported parts, BOMs and part libraries</h2>
+<ul>
+<li><strong>An imported part is already in the picker.</strong> <a href="cli.html#import"><code>import part</code></a> — and <strong>File ▸ Import ▸
+Component…</strong> — writes a cell folder holding a symbol plus one or more land patterns as
+sibling layout views. Because a footprint <em>is</em> a layout view of a cell, that part appears in the
+workspace section of every footprint picker with no second import and no registration. Density
+variants an import wrote (<code>-M</code>, <code>-L</code>) are listed as what they are, and a view that is not its
+cell's <strong>primary</strong> is listed as that — an instance draws the primary, so choosing one says so in
+its tooltip and Update Layout repeats it rather than placing the wrong artwork.</li>
+<li><strong>A BOM's footprint column is read and reported, never applied.</strong> <code>SM/C_0402</code>, <code>C0402</code>,
+<code>CAP-0402-X7R</code> and <code>0402</code> all reduce to the same case; a token that reduces to nothing is shown
+<strong>exactly as written</strong> rather than snapped to the nearest code, and a bare token that names a real
+case in <em>both</em> schemes is reported as ambiguous with both readings named. A column that silently
+set artwork would be the same class of error as the ambiguity itself.</li>
+<li><strong>A railRF part library</strong> (<code>.crlib</code>) has a footprint column that is a picker over the same case
+table, and it stores the scheme (<code>smt:0402</code>) because a bare token is ambiguous. It stores no
+density: an IPC level belongs to a land pattern, not to a package.</li>
+<li><strong>Exports carry it.</strong> <strong>File ▸ Export ▸ Bill of materials…</strong> writes one row per placement with its
+reference, value and footprint; a board export writes each placement's designator as its
+reference.</li>
+</ul>
+<h2 id="headless">Asking about footprints headless</h2>
+<p>Two verbs answer without opening anything —
+see the <a href="cli.html#explain-footprints">CLI chapter</a> for the full output:</p>
+<pre><code>circuitrf explain Board1/schematic/Board1.csch --footprints
+circuitrf check Board1
+</code></pre>
+<p><code>explain --footprints</code> prints, per component, what it states, what that resolved to, how it got
+there, and <strong>pads against ports on one line</strong> with <code>MISMATCH</code> where they differ. <code>check</code> reports a
+footprint that no longer resolves and a pad/port disagreement as warnings, on the design as a whole.</p>
+<h2 id="limits">What this is not</h2>
+<ul>
+<li><strong>Not a footprint editor.</strong> A land pattern is a <code>.clay</code>, and the layout editor already edits those.
+<strong>Custom…</strong> means <em>point at one</em>, never <em>draw one here</em>.</li>
+<li><strong>Not a parts database.</strong> The picker lists case sizes and the cells already in your workspace. It
+knows nothing about part numbers, manufacturers, stock, or a vendor's recommended pattern.</li>
+<li><strong>Not multi-pin packages.</strong> The generator draws two-terminal chips and moulded tantalums. A QFN or
+a SOIC is a different land-pattern problem; import one, or draw it, and it is a first-class choice
+in the same picker.</li>
+<li><strong>No parameter handles.</strong> A case size is a discrete choice from a table, not a dimension to drag —
+a grip would let you pull an 0402 into a shape no case code names, and the stored reference would
+then lie about what the artwork is.</li>
+<li><strong>Not LVS, and not a router.</strong> Nothing here checks connectivity, and Update Layout places parts
+without routing them.</li>
+</ul>
+
+<nav class="page-nav">
+  <a class="prev" href="layout-editor.html"><span class="dir">Previous</span><span class="name">The Layout Editor</span></a>
+  <a class="next" href="pcells.html"><span class="dir">Next</span><span class="name">PCells</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

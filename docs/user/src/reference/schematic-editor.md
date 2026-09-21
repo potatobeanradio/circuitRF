@@ -247,6 +247,10 @@ Two commands under the **Design** menu move work between the schematic and the l
 (<kbd>⇧⌘U</kbd>). Neither ever runs by itself; both are described in
 [Schematic ⇄ layout](layout-editor.html#schematic-flow).
 
+A part that has no layout view of its own still reaches the board: its **Footprint** parameter — the
+last row of its parameter editor — names an SMT case size, an imported part or a `.clay` you drew,
+and that is what Update Layout places. See [Footprints](footprints.html).
+
 ## Simulating: an Analysis {#analyses}
 
 **A simulation in circuitRF is called an *Analysis*, and it is configured before it is run.** An

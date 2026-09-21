@@ -196,14 +196,23 @@
       "Index": 21,
       "Slot": 21,
       "Id": "",
+      "Tooltip": "Footprint\u2026 (place an SMT land pattern)",
+      "Icon": "IntegratedCircuitChip",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 22,
+      "Slot": 22,
+      "Id": "",
       "Tooltip": "Show PCell pins",
       "Icon": "PinOutline",
       "Command": null,
       "Kind": "toggle"
     },
     {
-      "Index": 22,
-      "Slot": 22,
+      "Index": 23,
+      "Slot": 23,
       "Id": "",
       "Tooltip": "Geometry snap  (F3 / S)",
       "Icon": "Magnet",
@@ -211,8 +220,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 23,
-      "Slot": 23,
+      "Index": 24,
+      "Slot": 24,
       "Id": "",
       "Tooltip": "Snap to intersections",
       "Icon": "VectorIntersection",
@@ -221,25 +230,7 @@
     },
     {
       "Index": 0,
-      "Slot": 24,
-      "Id": "",
-      "Tooltip": "",
-      "Icon": "separator",
-      "Command": null,
-      "Kind": "separator"
-    },
-    {
-      "Index": 24,
       "Slot": 25,
-      "Id": "",
-      "Tooltip": "Save layout  (Ctrl\u002BS)",
-      "Icon": "FloppyDisc",
-      "Command": null,
-      "Kind": "button"
-    },
-    {
-      "Index": 0,
-      "Slot": 26,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -248,7 +239,25 @@
     },
     {
       "Index": 25,
+      "Slot": 26,
+      "Id": "",
+      "Tooltip": "Save layout  (Ctrl\u002BS)",
+      "Icon": "FloppyDisc",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
       "Slot": 27,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 26,
+      "Slot": 28,
       "Id": "PushInBtn",
       "Tooltip": "Push Into Cell  (Ctrl\u002B])",
       "Icon": "ArrowDownward",
@@ -256,8 +265,8 @@
       "Kind": "button"
     },
     {
-      "Index": 26,
-      "Slot": 28,
+      "Index": 27,
+      "Slot": 29,
       "Id": "PopOutBtn",
       "Tooltip": "Pop Out  (Ctrl\u002B[)",
       "Icon": "ArrowTop",
@@ -266,7 +275,7 @@
     },
     {
       "Index": 0,
-      "Slot": 37,
+      "Slot": 38,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -274,8 +283,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 27,
-      "Slot": 38,
+      "Index": 28,
+      "Slot": 39,
       "Id": "",
       "Tooltip": "Check Design Rules (Ctrl/\u2318\u002BShift\u002BK)",
       "Icon": "ShieldTickOutline",
@@ -283,8 +292,8 @@
       "Kind": "button"
     },
     {
-      "Index": 28,
-      "Slot": 39,
+      "Index": 29,
+      "Slot": 40,
       "Id": "",
       "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
       "Icon": "none",
@@ -292,8 +301,8 @@
       "Kind": "button"
     },
     {
-      "Index": 29,
-      "Slot": 40,
+      "Index": 30,
+      "Slot": 41,
       "Id": "",
       "Tooltip": "Show EM cross-section mesh",
       "Icon": "GridLarge",
@@ -301,8 +310,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 30,
-      "Slot": 41,
+      "Index": 31,
+      "Slot": 42,
       "Id": "",
       "Tooltip": "Show full-wave surface mesh",
       "Icon": "Grid",
@@ -311,7 +320,7 @@
     },
     {
       "Index": 0,
-      "Slot": 42,
+      "Slot": 43,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -319,8 +328,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 31,
-      "Slot": 43,
+      "Index": 32,
+      "Slot": 44,
       "Id": "",
       "Tooltip": "Export GDSII\u2026",
       "Icon": "IosShare",
@@ -328,8 +337,8 @@
       "Kind": "button"
     },
     {
-      "Index": 32,
-      "Slot": 44,
+      "Index": 33,
+      "Slot": 45,
       "Id": "",
       "Tooltip": "Export DXF\u2026",
       "Icon": "FileExportOutline",
@@ -337,8 +346,8 @@
       "Kind": "button"
     },
     {
-      "Index": 33,
-      "Slot": 45,
+      "Index": 34,
+      "Slot": 46,
       "Id": "",
       "Tooltip": "Export Gerber\u2026",
       "Icon": "FileChartOutline",
@@ -347,7 +356,7 @@
     },
     {
       "Index": 0,
-      "Slot": 46,
+      "Slot": 47,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -355,8 +364,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 34,
-      "Slot": 47,
+      "Index": 35,
+      "Slot": 48,
       "Id": "",
       "Tooltip": "Layer:",
       "Icon": "text",
@@ -364,8 +373,8 @@
       "Kind": "text"
     },
     {
-      "Index": 35,
-      "Slot": 48,
+      "Index": 36,
+      "Slot": 49,
       "Id": "",
       "Tooltip": "",
       "Icon": "combo",
@@ -374,7 +383,7 @@
     },
     {
       "Index": 0,
-      "Slot": 49,
+      "Slot": 50,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",

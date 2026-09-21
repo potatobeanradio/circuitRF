@@ -223,7 +223,9 @@ when you invoke them and at no other time.
 <kbd>⌘U</kbd>. Walks the schematic's instances, resolves each cell's layout view, and emits a starting
 layout:
 
-1. Each component instance resolves its layout view. A **PCell resolves too** — its layout is generated
+1. Each component instance resolves its layout view. A **stated footprint is consulted first** — an
+   SMT case size, an imported part or your own `.clay` (see [Footprints](footprints.html)) — then a
+   kit reference, then a cell reference, then a registered PCell generator, whose layout is generated
    rather than stored (see [PCells](pcells.html)).
 2. Components with no layout view at all — VAR, MEAS, Ground, and any un-laid-out cell — are **reported
    to Messages and skipped**, not silently omitted.

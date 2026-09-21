@@ -97,13 +97,6 @@
             <CheckBox IsChecked="{Binding ShowInstanceName}"
                       Content="Instance name"
                       FontSize="11"/>
-            <!-- brief-footprint-2 R-fp2-5: the footprint NAME as a third label, off by default and
-                 drawn AFTER the parameter labels. Nothing is drawn when the footprint is None,
-                 whatever this says. -->
-            <CheckBox IsChecked="{Binding ShowFootprintLabel}"
-                      Content="Footprint"
-                      FontSize="11"
-                      ToolTip.Tip="Draw the footprint's case code as a third label, after the parameters"/>
             <!-- MKlopf entry-mode switch: Z1/Z2 <-> W1/W2, L <-> F3db (converts, never resets) -->
             <Button Content="{Binding MklopfImpedanceToggleLabel}"
                     IsVisible="{Binding IsMklopfTarget}"
@@ -137,40 +130,6 @@
                  is the only way its combo box is the same width as the layer-choice combos above it
                  rather than merely a similar one. -->
             <StackPanel Grid.IsSharedSizeScope="True">
-                <!-- ══ Footprint (brief-footprint-2 R-fp2-4) ═══════════════════════════════
-                     A first-class row on EVERY component — R-fp2-2 is explicit that there is no
-                     allow-list of kinds, because an S2P standing in for a capacitor has a layout
-                     view to place just as an ordinary C does. ABOVE the generic rows and above
-                     every custom panel, because "which part is this" comes before its values.
-
-                     ItemsSource is declared BEFORE SelectedIndex, and that ordering is the point
-                     (R-fp2-4d): the wBond round-6 defect was a ComboBox whose selection was
-                     assigned before its ItemsSource binding attached, which silently dropped it and
-                     read blank. The view model refreshes in the same order for the same reason. -->
-                <Grid IsVisible="{Binding IsNotEmptyState}"
-                      Margin="6,4" ColumnDefinitions="60,*,Auto,Auto">
-                    <TextBlock Grid.Column="0" Text="Footprint"
-                               FontSize="11" VerticalAlignment="Center"
-                               ToolTip.Tip="The land pattern this part is laid out as. Every case row reads its metric twin and its millimetres — 0201 imperial and 0201 metric are two real sizes 2.4x apart."/>
-                    <ComboBox Grid.Column="1"
-                              ItemsSource="{Binding FootprintOptions}"
-                              SelectedIndex="{Binding FootprintIndex}"
-                              FontSize="11"
-                              Padding="4,3"
-                              HorizontalAlignment="Stretch"
-                              ToolTip.Tip="{Binding FootprintTooltip}"/>
-                    <TextBlock Grid.Column="2" Text="Density"
-                               FontSize="11" VerticalAlignment="Center"
-                               Margin="8,0,6,0"
-                               IsEnabled="{Binding IsFootprintDensityEnabled}"/>
-                    <ComboBox Grid.Column="3"
-                              ItemsSource="{Binding FootprintDensityOptions}"
-                              SelectedIndex="{Binding FootprintDensityIndex}"
-                              IsEnabled="{Binding IsFootprintDensityEnabled}"
-                              FontSize="11"
-                              Padding="4,3"
-                              ToolTip.Tip="IPC-7351B density level — M (most land protrusion), N (nominal, the default) or L (least). It writes the '@' suffix of the same footprint reference."/>
-                </Grid>
                 <!-- ══ wBond custom panel ═══════════════════════════════════════════════════
                      Above the generic rows, deliberately — see their own note below.
 
@@ -950,6 +909,68 @@
                                   ToolTip.Tip="Interp Domain — RI: interpolate real/imaginary parts (default). MA: interpolate magnitude/angle."/>
                     </Grid>
                 </StackPanel>
+                <!-- ══ Footprint (brief-footprint-2 R-fp2-4) ═══════════════════════════════
+                     A first-class row on EVERY component — R-fp2-2 is explicit that there is no
+                     allow-list of kinds, because an S2P standing in for a capacitor has a layout
+                     view to place just as an ordinary C does.
+
+                     LAST, and drawn as an ORDINARY PARAMETER ROW (owner, 2026-09-20): the same six
+                     columns in the same shared-size scope the generic rows declare, so the name sits
+                     in the name column, the picker fills the value column, the density sits where a
+                     unit combo sits, and R-fp2-5's show-on-schematic checkbox is the one in the
+                     display column every other row ticks — it was a separate labelled checkbox up in
+                     the flags strip, which is not where a parameter's own display flag lives.
+
+                     ItemsSource is declared BEFORE SelectedIndex, and that ordering is the point
+                     (R-fp2-4d): the wBond round-6 defect was a ComboBox whose selection was
+                     assigned before its ItemsSource binding attached, which silently dropped it and
+                     read blank. The view model refreshes in the same order for the same reason. -->
+                <Grid IsVisible="{Binding IsNotEmptyState}" Margin="4,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
+                        <ColumnDefinition Width="*"                                   MinWidth="50"/>
+                        <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="ParamRemove"  Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- A label, not a TextBox: "Footprint" is not an editable parameter NAME. The
+                         right margin is the name boxes' own, so the text starts where they do. -->
+                    <TextBlock Grid.Column="0" Text="Footprint"
+                               FontSize="11" VerticalAlignment="Center"
+                               Margin="0,0,4,0"
+                               ToolTip.Tip="The land pattern this part is laid out as. Every case row reads its metric twin and its millimetres — 0201 imperial and 0201 metric are two real sizes 2.4x apart."/>
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding FootprintOptions}"
+                              SelectedIndex="{Binding FootprintIndex}"
+                              FontSize="11"
+                              Padding="4,3"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="{Binding FootprintTooltip}"/>
+                    <!-- In the UNIT column, where every parameter row already has a control: the
+                         density modifies the chosen case exactly as a unit modifies a value, so it
+                         needs no label of its own — the tooltip carries what the three rows mean. -->
+                    <ComboBox Grid.Column="2"
+                              ItemsSource="{Binding FootprintDensityOptions}"
+                              SelectedIndex="{Binding FootprintDensityIndex}"
+                              IsEnabled="{Binding IsFootprintDensityEnabled}"
+                              FontSize="11"
+                              Padding="4,3"
+                              MinWidth="60"
+                              Margin="3,0,0,0"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Density — IPC-7351B density level: M (most land protrusion), N (nominal, the default) or L (least). It writes the '@' suffix of the same footprint reference."/>
+                    <!-- R-fp2-5: the footprint NAME as a third schematic label, off by default and
+                         drawn AFTER the parameter labels. Nothing is drawn when the footprint is
+                         None, whatever this says. -->
+                    <CheckBox Grid.Column="4"
+                              IsChecked="{Binding ShowFootprintLabel}"
+                              ToolTip.Tip="Draw the footprint's case code as a third label, after the parameters"
+                              Margin="6,0,2,0"
+                              VerticalAlignment="Center"/>
+                </Grid>
             </StackPanel>
         </ScrollViewer>
 

@@ -191,8 +191,12 @@ public sealed class Placeholders
         {
             ["components", var name] => ComponentTable(name),
             ["components"]           => DocTables.ComponentIndex(),
+            // The SMT case table, read from SmtCaseTable itself — 23 rows of case data nobody
+            // should re-type into a page, and the imperial/metric twin is the column that stops a
+            // reader taking a code the other way (brief-footprint-0 §1e).
+            ["footprints"]           => DocTables.FootprintCases(),
             _ => throw new InvalidOperationException(
-                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>."),
+                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>, footprints."),
         };
     }
 

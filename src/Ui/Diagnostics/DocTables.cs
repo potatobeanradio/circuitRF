@@ -204,5 +204,59 @@ public static class DocTables
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Every case size the built-in generator draws a land pattern for, read from
+    /// <see cref="SmtCaseTable"/> itself.
+    ///
+    /// <para><b>The metric twin is a column and not a footnote</b> for the reason the case table's
+    /// own <c>Display</c> carries it everywhere else: <c>0201</c> imperial and <c>0201</c> metric
+    /// are two real case sizes 2.4x apart, and a list that prints one of them alone is a list
+    /// somebody reads the other way.</para>
+    /// </summary>
+    public static string FootprintCases()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"param-table\">");
+        sb.AppendLine("<thead><tr><th>Case</th><th>Metric twin</th><th>Body</th>"
+                    + "<th>Termination</th><th>Family</th></tr></thead><tbody>");
+
+        foreach (var c in SmtCaseTable.All)
+        {
+            // The body reads "L x W" along the TERMINATION axis first, which is the axis the two
+            // lands are separated in — so a reverse-geometry row's first number is its short side,
+            // exactly as the generator uses it. Millimetres in every column: the code is the only
+            // thing on the row that is not one.
+            // The height is stated only where the CODE states it — a tantalum's trailing group —
+            // so the column is "L x W" on most rows and "L x W x H" on those.
+            string body = $"{Mm(c.BodyLengthMm)} x {Mm(c.BodyWidthMm)}"
+                        + (c.BodyHeightMm is { } h ? $" x {Mm(h)}" : "") + " mm";
+            string twin = c.CodeIsMetric ? $"{c.MetricTwin} (EIA)" : c.MetricTwin;
+
+            sb.AppendLine($"<tr><td class=\"nowrap\"><b>{E(c.Code)}</b></td>"
+                        + $"<td class=\"nowrap\">{E(twin)}</td>"
+                        + $"<td class=\"nowrap\">{E(body)}</td>"
+                        + $"<td class=\"nowrap\">{Mm(c.TerminationLengthMm)} mm</td>"
+                        + $"<td>{E(FamilyName(c.Family))}</td></tr>");
+        }
+
+        sb.AppendLine("</tbody></table>");
+        return sb.ToString();
+    }
+
+    /// <summary>The case table's OWN millimetre spelling — two decimals, three only where a third
+    /// one is real, so a row here reads exactly as the same number reads in the picker.</summary>
+    private static string Mm(decimal v)
+        => v.ToString(decimal.Round(v, 2) == v ? "0.00" : "0.000",
+                      System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FamilyName(SmtCaseFamily family) => family switch
+    {
+        SmtCaseFamily.Chip            => "chip",
+        SmtCaseFamily.ReverseGeometry => "reverse geometry",
+        SmtCaseFamily.Mlcc            => "MLCC body",
+        SmtCaseFamily.MouldedTantalum => "moulded tantalum",
+        _ => family.ToString(),
+    };
+
     private static string E(string s) => WebUtility.HtmlEncode(s);
 }

@@ -873,7 +873,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
-                // The footprint row above owns `Footprint`, for the same reason the VerilogA panel
+                // The footprint row below owns `Footprint`, for the same reason the VerilogA panel
                 // owns `OpVars`: it is a choice from a closed list, not a value, and a text box for
                 // it is a box where `smt:0403` can be typed. Offered in one place so the two cannot
                 // disagree — and a generic row would also be a SECOND write path, which R-fp2-1a
