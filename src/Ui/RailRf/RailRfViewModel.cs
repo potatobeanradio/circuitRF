@@ -89,6 +89,9 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // What the window opened on. A scratch document is captured too, so an EMPTY window is not
         // reported as having unsaved work — see RailRfViewModel.Save.cs.
         CaptureSnapshot();
+
+        // And the undo history starts there too — see RailRfViewModel.Undo.cs.
+        BeginUndoHistory();
     }
 
     private RailDocument _document;
@@ -182,6 +185,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         ApplyLayerVisibility();
 
         CaptureSnapshot();
+
+        // A new document is a new history. Keeping the old one would offer to undo an edit into a
+        // document that is no longer on screen — the snapshot would be applied to the wrong file.
+        BeginUndoHistory();
         OnPropertyChanged(nameof(IsDirty));
 
         OnPropertyChanged(nameof(Document));

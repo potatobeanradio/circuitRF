@@ -1940,7 +1940,13 @@ public class RailWindowTests
         // gesture for THIS COPPER HERE, and a board that names its nets does not make it redundant
         // — a drawn board resolving its nets from a schematic would otherwise have LOST the click
         // that used to work on it.
-        Assert.NotNull(vm.BoardOverlayLayer.PourPick);
+        //
+        // What changed on 2026-09-20 is WHEN it is live: R-ab2-4c armed it on every board, and a
+        // bare left click — the gesture for LOOKING at a board — therefore edited the document.
+        // The gesture is the same and it is now armed by the button beside the rail selector. See
+        // PourPickArmingTests.
+        Assert.True(vm.CanPickFromBoard);
+        Assert.Null(vm.BoardOverlayLayer.PourPick);
     }
 
     /// <summary>

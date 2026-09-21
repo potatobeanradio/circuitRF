@@ -128,8 +128,15 @@ public sealed partial class RailRfViewModel
     /// <remarks>
     /// Rows and markers together, because the keystroke is one gesture. Gating it on the rows alone
     /// is what made Escape silently inert on a selected marker (owner, 2026-09-19).
+    ///
+    /// <para><b>And an ARMED pour pick, which is the third thing Escape has to reach</b> (owner,
+    /// 2026-09-20). It is not a selection, but it is the same shape: a state the user entered
+    /// deliberately, which changes what the next click does, and which they will try to leave with
+    /// Escape because that is how they leave the layout canvas's zoom box next door. A key that
+    /// works on two of three states is the one case a user cannot diagnose — this file's own header
+    /// says so about the four lists.</para>
     /// </remarks>
-    public bool HasSelection => HasRowSelection || HasMarkerSelection;
+    public bool HasSelection => HasRowSelection || HasMarkerSelection || IsPickingFromBoard;
 
     /// <summary>
     /// Makes <paramref name="kept"/> the window's one selection and clears the rest.
@@ -166,6 +173,9 @@ public sealed partial class RailRfViewModel
     private void ClearSelection()
     {
         ClearRowSelection();
+
+        // The armed pour pick goes with them — see HasSelection's own note.
+        CancelPickFromBoard();
 
         // The Data Display's own — see this file's header. It also drops the plot CONTAINER's
         // selection, which is inert here: this window lays the one container out itself and draws no

@@ -347,7 +347,10 @@ the geometry. Unchecking it gives the old throwaway behaviour for a quick look. 
 railRF offers to create one (`WorkspaceCreate`) rather than silently falling back to the throwaway path.
 
 **2 — Identify the rails.** With a board file or a board netlist, pick the power net from a list.
-Otherwise click the pour. railRF highlights everything galvanically connected to your pick — through
+Otherwise press the **crosshair button** beside the rail selector and then click the copper — the
+click is *waiting to be made*, and while it is the pointer over the board is a crosshair, because a
+click that makes a rail cannot be the same bare click that pans and marquees (owner, 2026-09-20).
+railRF highlights everything galvanically connected to your pick — through
 vias, across layers — so you immediately see whether the rail is one region or three islands joined by a
 20 mil neck. *That alone has caught real problems.* Then confirm the reference layer, which railRF
 proposes and never assumes (§2.2). **Repeat for each rail the board has**: where a regulator is

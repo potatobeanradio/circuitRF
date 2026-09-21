@@ -62,6 +62,22 @@ public interface ILayoutCanvasOverlay
     /// </summary>
     bool DuplicateDragArmed => false;
 
+    /// <summary>
+    /// True while the overlay has a gesture ARMED that the next click will perform — so the host
+    /// shows the crosshair, exactly as it already does for its own zoom box.
+    /// </summary>
+    /// <remarks>
+    /// <b>The pointer is how an armed gesture announces itself, and an overlay had no way to say
+    /// so</b> (owner, 2026-09-20). railRF's pour pick is the case: while it is armed a click on the
+    /// copper MAKES A RAIL, and a pointer that still looks like the ordinary arrow says nothing
+    /// about that at all. Answering here rather than letting the overlay set the control's
+    /// <c>Cursor</c> keeps the one resolution order this canvas already has — a held Space still
+    /// outranks it, which is right: panning works while armed.
+    ///
+    /// <para>Defaulted to false: an overlay with no armed gesture of its own says nothing.</para>
+    /// </remarks>
+    bool CrosshairArmed => false;
+
     // ── The COMPANION move (owner, 2026-08-27) ───────────────────────────────────────────────────
     //
     // An overlay holds a selection of its own beside the layout editor's, and §6.3 of wbond.md makes

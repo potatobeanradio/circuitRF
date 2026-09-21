@@ -2129,6 +2129,18 @@ public sealed class LayoutCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>
+    /// Re-asks what the pointer should be — <b>for a host whose overlay just armed or disarmed</b>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="UpdateCursor"/> runs off pointer and key events, which is enough for every state
+    /// this control owns. An overlay's arming is none of those: it arrives from a BUTTON in the
+    /// window beside the canvas, and with the pointer already over the copper there is no further
+    /// event until the user moves it — so the crosshair would appear one mouse-move after the press
+    /// that asked for it.
+    /// </remarks>
+    public void RefreshCursor() => UpdateCursor();
+
     // Crosshair for every drawing tool, arrow for Select — mirrors SymbolEditorCanvas.UpdateCursor.
     private void UpdateCursor()
     {
@@ -2137,6 +2149,11 @@ public sealed class LayoutCanvas : Control
         // The armed magnifier, drawn the way the schematic editor's Zoom Box has always drawn it.
         // Above the grip and tool branches below: while it is armed, none of those gestures can run.
         if (_zoomBoxArmed) { SetCursor(StandardCursorType.Cross); return; }
+
+        // …and an OVERLAY's own armed gesture says the same thing with the same pointer — railRF's
+        // pour pick, where the next click makes a rail. Below the pan latch deliberately: panning
+        // works while armed and the held Space has to keep saying so.
+        if (_canvasOverlay?.CrosshairArmed == true) { SetCursor(StandardCursorType.Cross); return; }
 
         // R-pch-12: over a PCell parameter grip the pointer says which way that grip travels, which is
         // the only pre-press signal separating "edit this parameter" from "move the whole instance".

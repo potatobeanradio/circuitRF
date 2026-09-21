@@ -328,9 +328,29 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// the default is off: the report and the clipboard go to SVG and PDF, where the map stays
     /// vector.
     /// </remarks>
-    public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme) =>
+    public void Draw(SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme)
+    {
+        _drawnAt = viewport;
         RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight,
                              batchTiles: true, netPreview: _netPreview);
+    }
+
+    /// <summary>
+    /// The viewport the last frame was drawn in — <b>what the legend is hit-tested against</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A latch, and it is the right one here.</b> The legend plate is screen-fixed chrome
+    /// (<see cref="RailMapRenderer.TryPlate"/>), so where it IS is a fact about a frame that was
+    /// painted, and the seam's pointer methods are handed world coordinates and no viewport. Null
+    /// until something has drawn, which is exactly when there is no plate on screen to grab.
+    ///
+    /// <para>Nothing clears it, deliberately: a stale viewport can only be one frame old, because
+    /// every pan and every zoom repaints before the next press can arrive. Clearing it on focus
+    /// loss — which <see cref="OnFocusLost"/> does for the READOUT, a value that would otherwise
+    /// describe copper the pointer has left — would only make the legend ungrabbable on the first
+    /// click back into the canvas.</para>
+    /// </remarks>
+    private LayoutViewport? _drawnAt;
 
     /// <summary>
     /// The union of the map, the legend, the source and load markers and the via callouts — <b>not
@@ -372,7 +392,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
         // lands on it is unambiguously about it. Consuming the press is what keeps the canvas's
         // marquee and pan from starting underneath the drag — the same reason the pour pick below
         // consumes its own.
-        if (Scene.Legend is { } legend && legend.Box.Contains(worldX, worldY))
+        if (LegendHit(worldX, worldY))
         {
             _legendGrab = (worldX, worldY);
             _legendGrabOffset = (_legendDx, _legendDy);
@@ -394,6 +414,17 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// consumes the press.
     /// </remarks>
     public Func<long, long, long, bool>? PourPick { get; set; }
+
+    /// <summary>
+    /// The crosshair, while the pour pick is armed — <b>read off the gesture itself</b>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a second flag mirroring the view model's <c>IsPickingFromBoard</c>. The
+    /// pointer's whole job here is to say what the next click will do, and the thing that decides
+    /// that is <see cref="PourPick"/> being non-null — so the two cannot come apart, which is the
+    /// failure the window's own "the sentence was on screen and the click did nothing" already was.
+    /// </remarks>
+    public bool CrosshairArmed => PourPick is not null;
 
     /// <summary>
     /// Reads the value under the cursor and declines the gesture.
@@ -422,6 +453,29 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
 
         SetReadout(ReadoutAt(worldX, worldY, tolDbu));
         return false;
+    }
+
+    /// <summary>
+    /// Whether a press at this world point landed on the legend <b>where it is DRAWN</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The drawn plate, not the world box — which is the bug this replaces</b> (owner,
+    /// 2026-09-20: <i>if I scroll wheel zoom, then I can't drag the legend around</i>). The plate is
+    /// screen-fixed chrome and its world box is only an anchor, so the two rectangles are the same
+    /// only at the one zoom where they happen to coincide. Everywhere else the user was clicking a
+    /// plate they could see and missing a box they could not, and the further they zoomed the wider
+    /// the miss — which is why it reads as "zooming broke the drag".
+    ///
+    /// <para>It asks <see cref="RailMapRenderer.TryPlate"/> rather than repeating its arithmetic:
+    /// that method is documented as the one place the plate's geometry is computed, and a hit test
+    /// with its own copy is how the two come apart again.</para>
+    /// </remarks>
+    private bool LegendHit(long worldX, long worldY)
+    {
+        if (Scene.Legend is not { } legend || _drawnAt is not { } vp) return false;
+        if (!RailMapRenderer.TryPlate(legend, vp, out var plate, out _, out _)) return false;
+
+        return plate.Contains((float)vp.WorldToScreenX(worldX), (float)vp.WorldToScreenY(worldY));
     }
 
     public bool OnPointerReleased(long worldX, long worldY)

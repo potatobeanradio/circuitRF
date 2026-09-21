@@ -47,10 +47,11 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.RailRf;
 using SkiaSharp;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.RailRf;
 
-public sealed class RailBoardViewTests
+public sealed class RailBoardViewTests(ITestOutputHelper output)
 {
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;   // 1000 DBU/µm
     private static readonly LayerKey Top = new(1, 0);
@@ -144,55 +145,64 @@ public sealed class RailBoardViewTests
     }
 
     /// <summary>
-    /// <b>The legend's text grows with the zoom, and it never stops growing.</b>
+    /// <b>The legend is the same size at every zoom.</b>
     /// </summary>
     /// <remarks>
-    /// Owner, 2026-09-19: the plate's text stopped scaling once zoomed in far. It was capped at
-    /// <c>LegendSizePx</c> — <c>Math.Min(1f, …)</c> — so the plate, which is world geometry, went on
-    /// growing around three labels that did not, and the further in a reader went the smaller the
-    /// legend read. The whole point of the plate being world geometry is that it is part of the
-    /// picture; its text was the one thing in it pinned to the screen.
+    /// <b>This reverses the 2026-09-19 claim that the text grows with the zoom</b>, and the reversal
+    /// is the owner's (2026-09-20): <i>the legend for the |Z| plot is scaling incorrectly as the
+    /// user zooms in/out with the scroll wheel; it needs to zoom more like the Drop legend.</i>
     ///
-    /// <para>The ladder is the test, in BOTH directions, and the rung that matters is the one above
-    /// the old ceiling: a fix that only removed the clamp at small sizes would pass a
-    /// zoomed-out-only check.</para>
+    /// <para>The old claim was not wrong about its own premise — if the plate is part of the
+    /// picture then its text has no business being the one screen-fixed thing in it. What changed
+    /// is the premise. The plate is chrome: it names the colours, it is not one of them, and the
+    /// marker callouts on this same map have been screen-fixed since brief 18. So the plate is
+    /// screen-fixed too, and the text still tracks the plate — it simply has nothing left to track
+    /// it to.</para>
+    ///
+    /// <para><b>The teeth are the last two assertions.</b> Constant size would also be what a
+    /// broken TryPlate that returned a fixed rectangle gave, so the test computes what the WORLD
+    /// box would have produced at 16x and requires it to have been the runaway that was reported.
+    /// And it checks the two maps agree, because the report was comparative: the |Z| pass unions a
+    /// marker-reach square into its bounds that the drop pass does not, so its world box is the
+    /// larger and grew faster — which is the difference the owner was looking at.</para>
     /// </remarks>
     [Fact]
-    public void TheLegendsTextTracksTheZoom_UpwardsAsWellAsDown()
+    public void TheLegendIsTheSameSizeAtEveryZoom_OnBothMaps()
     {
-        var scene = RailMapScene.Build(ResultOf(out _), RailMapKind.Drop, Dbu);
-        var legend = scene.Legend;
-        Assert.NotNull(legend);
+        var result = ResultOf(out _);
+        var drop = RailMapScene.Build(result, RailMapKind.Drop, Dbu);
+        Assert.NotNull(drop.Legend);
 
-        float SizeAt(double zoom)
+        SKRect PlateAt(RailMapScene scene, double zoom)
         {
             var vp = LayoutViewport.ZoomToFit(scene.Bounds, CanvasWidth * zoom, CanvasHeight * zoom);
-            Assert.True(RailMapRenderer.TryPlate(legend!, vp, out _, out var bar, out float baseline),
+            Assert.True(RailMapRenderer.TryPlate(scene.Legend!, vp, out var plate, out _, out _),
                         $"the plate collapsed at {zoom}x.");
-            return RailMapRenderer.LayOutLabels(legend!, bar.Left, bar.Right, baseline,
-                                                baseline - bar.Bottom).TextSizePx;
+            return plate;
         }
 
-        float outFar = SizeAt(0.5), fit = SizeAt(1), inNear = SizeAt(4), inFar = SizeAt(16);
+        var fit = PlateAt(drop, 1);
+        foreach (double zoom in new[] { 0.5, 2, 4, 16 })
+        {
+            var at = PlateAt(drop, zoom);
+            Assert.Equal(fit.Width, at.Width, 3);
+            Assert.Equal(fit.Height, at.Height, 3);
+        }
 
-        // ── DOWNWARDS IT STOPS AT THE FLOOR (R-rail21-3a) ────────────────────────────────────
-        //
-        // This read `outFar < fit` — the text tracked the plate all the way down, with no floor,
-        // which is exactly what produced a legend the owner could not read without heavy zoom. The
-        // claim this test exists for is the UPWARD one (2026-09-19: the text stopped growing when
-        // zoomed in and there was no zoom at which it came back); downwards, the correct behaviour
-        // is now to stop rather than to keep shrinking.
-        Assert.True(outFar >= RailMapRenderer.LegendFloorPx,
-                    $"zooming out took the text to {outFar} px, under the floor.");
-        Assert.True(outFar <= fit, $"zooming out ENLARGED the text ({outFar} vs {fit}).");
-        Assert.True(fit <= inNear, $"zooming in shrank the text ({fit} vs {inNear}).");
-        Assert.True(inNear < inFar,
-                    $"the text stopped growing past {inNear} px — this is the reported defect.");
+        // ── teeth 1: the world box really did run away ───────────────────────────────────────
+        var far = LayoutViewport.ZoomToFit(drop.Bounds, CanvasWidth * 16, CanvasHeight * 16);
+        float worldBoxHeightPx = (float)(far.WorldToScreenY(drop.Legend!.Box.MinY)
+                                       - far.WorldToScreenY(drop.Legend.Box.MaxY));
+        output.WriteLine($"plate {fit.Width:0.#}x{fit.Height:0.#} px at every zoom; " +
+                         $"the world box alone would have been {worldBoxHeightPx:0.#} px tall at 16x");
+        Assert.True(worldBoxHeightPx > fit.Height * 4,
+                    $"the world box was only {worldBoxHeightPx:0.#} px at 16x, so this test is not "
+                  + "exercising the runaway it exists for.");
 
-        // ABOVE the old ceiling, which is what makes the two assertions above about the fix rather
-        // than about the shrink that was already there.
-        Assert.True(inFar > RailMapRenderer.LegendSizePx,
-                    $"nothing ever grew past LegendSizePx ({inFar}), so the clamp is still in force.");
+        // ── teeth 2: and the two maps now agree, which is what the report compared ───────────
+        var impedance = RailMapScene.Build(result, RailMapKind.Impedance, Dbu);
+        if (impedance.Legend is not null)
+            Assert.Equal(fit.Height, PlateAt(impedance, 4).Height, 3);
     }
 
     // ══ the legend is draggable (owner, 2026-09-19) ══════════════════════════════════════════
@@ -209,16 +219,36 @@ public sealed class RailBoardViewTests
     /// user had just dragged clear of the copper (§11.6 trap 4).
     /// </remarks>
     [Fact]
-    public void TheLegendPlateIsDragged_AndNothingElseIsConsumed()
+    public void TheLegendPlateIsDraggedWhereItIsDRAWN_EvenAfterAZoom()
     {
         var overlay = WithResult(out _);
         overlay.Kind = RailMapKind.Drop;
 
-        var box = overlay.Scene.Legend!.Box;
-        long cx = (box.MinX + box.MaxX) / 2, cy = (box.MinY + box.MaxY) / 2;
+        // A SCROLL-WHEEL ZOOM, which is the gesture the report names — WithZoomAnchoredAt is what
+        // the canvas's own wheel handler calls. Out rather than in: the plate is screen-fixed, so
+        // zooming out is where it stops fitting inside the world box the hit test used to ask
+        // about, and the whole of the visible plate ends up somewhere that box is not.
+        var fit = LayoutViewport.ZoomToFit(overlay.Scene.Bounds, PixelsWide, PixelsHigh);
+        var vp = fit.WithZoomAnchoredAt(fit.Zoom / 4, PixelsWide / 2.0, PixelsHigh / 2.0);
 
-        // A press OFF the plate is declined, so the canvas's own gestures are untouched.
-        Assert.False(overlay.OnPointerPressed(box.MaxX + Mm(5), cy, 0, KeyModifiers.None, 1));
+        using (var surface = SKSurface.Create(new SKImageInfo(PixelsWide, PixelsHigh)))
+            overlay.Draw(surface.Canvas, vp, LayoutRenderTheme.Light);
+
+        var box = overlay.Scene.Legend!.Box;
+        Assert.True(RailMapRenderer.TryPlate(overlay.Scene.Legend!, vp, out var plate, out _, out _));
+
+        // Where the plate actually IS, back in world coordinates — what the user aims at.
+        long cx = (long)vp.ScreenToWorldX(plate.MidX), cy = (long)vp.ScreenToWorldY(plate.MidY);
+
+        // THE TEETH. At this zoom the point the user can see the plate at is nowhere near the world
+        // box the hit test used to ask about, so the old code declined a press on a plate that was
+        // right there under the pointer — "if I scroll wheel zoom, then I can't drag the legend".
+        Assert.False(box.Contains(cx, cy),
+                     "the drawn plate and the world box still coincide at this zoom, so this test "
+                   + "would have passed against the defect.");
+
+        // A press OFF the plate is still declined, so the canvas's own gestures are untouched.
+        Assert.False(overlay.OnPointerPressed(cx + Mm(50), cy, 0, KeyModifiers.None, 1));
         Assert.False(overlay.IsDraggingLegend);
 
         Assert.True(overlay.OnPointerPressed(cx, cy, 0, KeyModifiers.None, 1));
@@ -229,6 +259,7 @@ public sealed class RailBoardViewTests
         Assert.True(overlay.OnPointerReleased(cx + Mm(4), cy + Mm(3)));
         Assert.False(overlay.IsDraggingLegend);
 
+        // The ANCHOR moved by the world delta, which is what makes the plate follow the pointer.
         var moved = overlay.Scene.Legend!.Box;
         Assert.Equal(box.MinX + Mm(4), moved.MinX);
         Assert.Equal(box.MinY + Mm(3), moved.MinY);

@@ -33299,3 +33299,179 @@ is nothing on the canvas to press. The four `pcb-` technologies give the expecte
 Gate: `tests/Ui.Tests/Footprints/FootprintRowVisibilityAndDragTests.cs`, two tests — the row is shown
 for a land pattern and hidden for an MLIN, and a real press/move/release gesture on a pad leaves the
 case unchanged throughout. The second was confirmed to fail against the old two-line reading.
+
+## railRF: a bare left click on the board EDITED the document, and nothing took it back (2026-09-20)
+
+Owner report: open the shipped Sensor board, press Run, click inside the green rectangle, and the
+window fills with a refusal that nothing on screen explains — *"Confirm the reference layer first…"*
+with the reference combo orange — and neither Escape nor Ctrl+Z gets out of it.
+
+**The click MADE A RAIL.** `RailLayoutOverlay.PourPick` was armed on every loaded board (R-ab2-4c),
+so `TryPickPourAt` hit-tested any single unmodified left press and called `PickRailAt`, which adds a
+`RailSpec` named `rail at (x, y)`, anchors a source at the point, and **selects it**. That rail states
+no reference layer, so `GateRefusal` correctly refused the whole rail set — the set is solved together
+— and flagged the selected rail's combo. Reproduced on the example: one click gives
+`+3V3 | rail at (0, 0) µm`, a second gives a third rail, and the document is silently dirty, so closing
+it prompts to save.
+
+R-ab2-4c had stated the cost in its own comment — *"a left click on a board with a pick list can now
+make a rail"* — and it is not payable. **A bare left click is how you LOOK at a board**: it is the
+layout canvas's marquee, its pan and its hit test, and §11.6's whole promise is that someone who
+learned that canvas has learned this one.
+
+**Both keystrokes were correctly inert, which is the part worth recording.** Escape is wired to
+`ClearSelectionCommand`, gated on `HasSelection` — the four lists plus a plot marker, and a rail is
+none of them. Ctrl+Z did nothing because **the railRF window had no undo stack at all**; the only one
+anywhere in railRF was `PartLibraryEditorViewModel`'s. Every edit this window made was one way.
+
+### What changed
+
+**The gesture is ARMED, not ambient.** `IsPickingFromBoard` gates `SyncPourPick`, so the overlay's
+`PourPick` is null except while armed and `OnPointerPressed` declines the press before hit-testing it
+— an unarmed click is not consumed and reaches the canvas untouched. It is one-shot (a hit disarms; a
+miss does not, because a miss is a miss), Escape disarms it, and the sentence that advertises the
+gesture now names the button rather than a bare click.
+
+**The pointer says so, through the overlay seam rather than the control.** `ILayoutCanvasOverlay`
+gained a defaulted `CrosshairArmed`, which `LayoutCanvas.UpdateCursor` reads immediately below the
+zoom box and above every tool branch — so a held Space still outranks it and panning works while
+armed. `RailLayoutOverlay` answers it as `PourPick is not null`, deliberately **not** a second flag
+mirroring the view model: the pointer's job is to say what the next click does, and the thing that
+decides that is the delegate itself, so the two cannot come apart. `LayoutCanvas.RefreshCursor()` is
+new because the arming arrives from a BUTTON — with the pointer already over the copper there is no
+further event, so the crosshair would otherwise appear one mouse-move late.
+
+**Undo is a coarse snapshot hung off the one edit funnel.** `RailSnapshotCommand` holds the whole
+`.crail` before and after, `ApplySnapshot` deserialises it back, and `NoteEdit` is called from
+`QueueResolve` — this view model's documented funnel for a committed edit, where `RefreshDirty`
+already lives — and from nowhere else, so there is no per-edit-site push to forget at the site
+somebody adds next. `PartLibrarySnapshotCommand`'s `_alreadyApplied` flag is carried over for its own
+reason: `UndoRedoStack.Execute` runs a command as it pushes it.
+
+*Three traps found doing it:*
+
+- **`PickRail`, `PickRailAt` and `RemoveRail` did not call `QueueResolve`.** The gate and the dirty
+  mark still looked right (both are recomputed on demand elsewhere), so the omission was invisible
+  until the undo entry hung off the funnel: Ctrl+Z on a rail that had just appeared took back the
+  edit BEFORE it. All three go through the funnel now.
+- **`ApplySnapshot` must not re-resolve the board.** A `.crail` NAMES its artwork, part library and
+  companions; `LoadDocumentReferences` walks the disk for them. An undo is not a re-open, and
+  re-reading three files to take back a typed number would be slow and a chance for the board to
+  change under the user for reasons they did not cause.
+- **`RebuildRails` selects the FIRST rail**, which is its contract everywhere else. Left alone in
+  `ApplySnapshot` it means taking back a typed load current also moves the whole window to another
+  rail (§11.3's fourth point: the selector moves everything), so the selection is kept where it
+  still exists.
+
+**And the refusal now names both doors.** *"Confirm the reference layer first…"* named only the first,
+and the user it is usually shown to did not want that door — the rail was made by a click they did not
+aim, so "confirm its reference" is an instruction to FINISH the thing they are trying to be rid of.
+This is R-rail19-1b's rule, which the sibling sentence about an *unselected* unreferenced rail had
+already learned, applied to the one the gate raises about the selected one. A rail with no `NetName`
+— which is exactly a pour-picked one — additionally says where it came from.
+
+*Not covered, stated rather than discovered:* the four panel toggles are not on the undo stack. They
+deliberately do not call `QueueResolve` (they are not a solve), and a pane the user closed is not an
+edit they press Ctrl+Z to take back.
+
+### The chrome, in the same round
+
+**The two actions became square glyph buttons** (owner). *Pick from board* and *Make it a rail* were
+wide push buttons carrying a sentence, sitting beside the combo boxes they act on, which reads as
+another row of the form rather than as a thing you press. `Button.sqbtn` is 24x24 **by explicit
+`Width`/`Height`**, not by arithmetic on two paddings — a 14 px glyph at `Padding="6,3"` is 26x20,
+which is a toolbar button's shape and not a square one, and a square that falls out of padding is a
+square until somebody changes a font. `RemoveRailButton` moved to it too, because it is now one of a
+pair beside the rail selector and two different chromes on one row is the accident this was fixing.
+
+**`PickRailButtonText`'s two faces had to survive becoming a glyph**, which is the part that needed
+care: those labels exist because pressing that button on a net the document already carried moved a
+selector that was already where it was going and read as a dead button. A single icon would have put
+that defect back with the fix's words deleted. So `WillShowExistingRail` drives an eye-versus-plus
+pair of glyphs and the labels are still the tooltip.
+
+**The Rail and Ref combo boxes are now in ONE grid.** They were two — `Auto,*,Auto` over the rail and
+`Auto,*` over the reference — so the Rail combo stopped short of the buttons beside it while the Ref
+combo ran the full card width, and each row's own `Auto` label column meant the two did not even
+start at the same x. Shared columns are the fix rather than matched widths: a pair of numbers to keep
+in step is a pair of numbers that drift.
+
+**And the tooltips are in plain words.** The first draft of the arming tooltip said *"Arm the board:
+the next click on its copper makes a rail out of everything galvanically joined to that point"*, and
+the owner asked what that could possibly mean — rightly: nothing is being armed except an internal
+flag, and the user is picking a rail. **A tooltip is where somebody goes when they do not already
+know what a control does, so it is the last place a word from the implementation belongs.** It now
+has two faces for the same reason the label does: before the press it says what pressing will do,
+after it says what to do next, which is the question a user who has already pressed it actually has.
+The specification column's sentence lost "pour" for the same reason.
+
+Gate: `tests/Ui.Tests/RailRf/PourPickArmingTests.cs`, five tests on the shipped example — a bare click
+makes nothing and an armed one makes a rail and disarms; Escape disarms through the same
+`HasSelection` gate the window's handler reads; undo takes the rail back **and the run gate is
+passable again on the other side**; undo reaches an ordinary value edit through the funnel; and the
+selected rail survives an undo that did not remove it. The chrome is held by
+`RailWindowChromeTests.TheRailAndReferenceCombosShareOneGrid_AndTheirActionsAreSquareGlyphButtons` —
+both halves are the shape nothing fails on (two combos at different widths still work, a wide button
+still presses), so a scan is the only thing that would ever notice either being undone.
+
+## railRF: the map legend was world geometry, and both its bugs came from that (2026-09-20)
+
+Two owner reports on one plate: *"the legend for the |Z| plot is scaling incorrectly as the user
+zooms in/out with the scroll wheel — it needs to zoom more like the Drop legend"*, and *"if I scroll
+wheel zoom, then I can't drag the legend around."*
+
+`RailMapLegend.Box` is a `Bbox` in DBU, and `TryPlate` mapped it to screen and then floored it at a
+readable minimum. So the plate was **constant while zoomed out and grew without limit on the way
+in** — and it did that at a different rate on each map, because the two size their boxes off
+different content: `RailMapScene`'s |Z| pass unions a `MarkerReachDbu` square around every marker
+into `bounds` and the drop pass does not, so the |Z| box is the larger and ran away first. That is
+the comparison the report is making. **Equalising the two boxes would only have made them wrong
+together.**
+
+**The plate is screen-fixed now.** Its world box supplies the ANCHOR — its top-left corner — and
+nothing else; the size is the minimum readable plate for that legend's own three strings, which is
+`LabelSizePx`, which is what the marker callouts on the same map are drawn at. Measured on the
+shipped fixture: **182.5 x 26.3 px at every zoom**, against a world box that would have been
+**403 px tall at 16x**.
+
+**This does not reverse the 2026-09-19 decision that the TEXT tracks the plate** — `LayOutLabels`
+still does, untouched. It removes that decision's premise. Its argument was that nothing about a
+plate which is *part of the picture* justifies its text being the one screen-fixed thing in it; that
+was right, and the answer is that **the plate is not part of the picture**. It names the colours, it
+is not one of them, and the callouts beside it have been screen-fixed since brief 18 — so a legend
+that grows past them on the way in is one map measuring itself two ways.
+
+**And that is the whole of the drag bug too.** `RailLayoutOverlay.OnPointerPressed` hit-tested
+`legend.Box.Contains(worldX, worldY)` — the world box — while the user was aiming at the drawn
+plate. The two coincided only near fit zoom, which is why the original drag test passed and why the
+report reads as "zooming broke the drag": **zoom out and the visible plate is mostly outside the box
+it is anchored to**, so a press lands on a plate the code cannot see. It now asks
+`RailMapRenderer.TryPlate` — documented as the one place the plate's geometry is computed — and
+tests the rectangle it returns.
+
+*The viewport this needs is a latch, and that is the right shape here.* The seam hands pointer
+methods world coordinates and no viewport, and where a screen-fixed plate IS is a fact about a frame
+that was painted, so `RailLayoutOverlay` records the viewport in `Draw`. Null until something has
+drawn — which is exactly when there is no plate to grab. Nothing clears it: a stale one can only be
+a frame old, because every pan and zoom repaints before the next press, and clearing it on focus
+loss (as the READOUT is cleared, because a stale readout describes copper the pointer has left)
+would only make the legend ungrabbable on the first click back into the canvas.
+
+*Unchanged, deliberately:* `RailMapScene.Bounds` still unions the legend box, so Zoom to Fit still
+leaves room below the map for it (§11.6 trap 4), and the drag still moves the box in DBU, so a plate
+the user has put somewhere stays there.
+
+*Glyph, same round:* the pick-a-net button's "make" face was `Plus`, which the owner read as "add
+one more of these". What the button makes is not another row on a list, it is the statement that
+this net IS a rail — `RayStartEnd`, a line between two points, which is what a rail is.
+
+Gate: `RailBoardViewTests.TheLegendIsTheSameSizeAtEveryZoom_OnBothMaps` (five zooms, with the world
+box's own 16x height as the teeth, plus the two maps agreeing — which is what the report compared)
+and `TheLegendPlateIsDraggedWhereItIsDRAWN_EvenAfterAZoom`, which performs a real
+`WithZoomAnchoredAt` wheel zoom and **asserts the press point is NOT in the world box**, so it could
+not pass against the defect. The old `TheLegendsTextTracksTheZoom_UpwardsAsWellAsDown` is replaced
+rather than deleted: its claim was the 2026-09-19 one this supersedes.
+
+**Not done, and it is visible:** `docs/user/assets/figures/railrf-window{,-dark}.svg` render the drop
+map with its legend, so they are now stale by a legend's worth of pixels. Regenerating is a DocGen
+run over every figure and that is the owner's call, not a side effect of this fix.

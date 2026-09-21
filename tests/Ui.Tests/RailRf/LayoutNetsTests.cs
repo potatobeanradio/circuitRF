@@ -362,8 +362,11 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
         Assert.True(bare.HasNoPickableNets);
         Assert.Equal("", bare.NetOriginText);
 
-        // And the click-the-pour gesture is armed, which it must stay either way (R-ab2-4c).
-        Assert.NotNull(bare.BoardOverlayLayer.PourPick);
+        // And the click-the-pour gesture is AVAILABLE, which it must stay either way (R-ab2-4c) —
+        // but it is armed by the button and not by a bare click (owner, 2026-09-20), so what the
+        // board carries before the press is nothing at all.
+        Assert.Null(bare.BoardOverlayLayer.PourPick);
+        Assert.True(bare.CanPickFromBoard);
 
         WriteSchematic(fx, TwoPartRail());
 
@@ -372,7 +375,7 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
         Assert.True(named.HasPickableNets);
         Assert.False(named.HasNoPickableNets);     // §6.10: the sentence is ABSENT
         Assert.Equal("nets from the schematic", named.NetOriginText);
-        Assert.NotNull(named.BoardOverlayLayer.PourPick);
+        Assert.True(named.CanPickFromBoard);
     }
 
     // ══ 11. Divergence is reported and the run still completes ══════════════════════════════════

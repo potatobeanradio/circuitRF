@@ -88,6 +88,20 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
+            <!-- EDIT (owner, 2026-09-20). Until this, Ctrl/⌘+Z in railRF did nothing at all — the
+                 only undo stack anywhere in the application's railRF half was the Part Library
+                 editor's. NO Gesture here, for the File menu's own reason: the keystroke is bound
+                 once, in code-behind, so it can be refused while focus is in one of this window's
+                 thirty editable rows. -->
+            <NativeMenuItem Header="Edit">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Undo" Command="{Binding UndoCommand}"/>
+                        <NativeMenuItem Header="Redo" Command="{Binding RedoCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
             <NativeMenuItem Header="View">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
@@ -513,6 +527,27 @@
             <Setter Property="MinHeight" Value="0"/>
         </Style>
 
+        <!-- ── A SQUARE GLYPH BUTTON (owner, 2026-09-20) ─────────────────────────────────────
+             The board panel's own toolbar buttons, made square and stated once. Two controls in
+             the specification column were wide push buttons carrying a sentence — "Pick from
+             board" and "Make it a rail" — beside a combo box they act on, which reads as a second
+             row of the form rather than as a thing you press. A glyph the size of a toolbar button
+             reads as a button.
+
+             SQUARE BY EXPLICIT METRICS, not by padding. A 14 px glyph with Padding="6,3" is 26x20,
+             which is a toolbar button's shape and not a square one; the owner asked for square, and
+             a square that comes out of arithmetic on two paddings is a square until somebody
+             changes a font. Button.ToolActive's lamp still applies on top — that is why these are
+             ordinary Buttons rather than ToggleButtons. -->
+        <Style Selector="Button.sqbtn">
+            <Setter Property="Width"     Value="24"/>
+            <Setter Property="Height"    Value="24"/>
+            <Setter Property="Padding"   Value="0"/>
+            <Setter Property="MinWidth"  Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
     </Window.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto,Auto">
@@ -561,6 +596,13 @@
                           ToolTip.Tip="This design against another .crail — the one that is known to work."/>
                 <Separator/>
                 <MenuItem Header="_Close" Command="{Binding CloseCommand}" InputGesture="Ctrl+W"/>
+            </MenuItem>
+
+            <MenuItem Header="_Edit" Padding="8,4">
+                <!-- InputGesture is DISPLAY ONLY here too — the keystroke is wired in code-behind so
+                     it can defer to a focused text field. See WireUndoKeys. -->
+                <MenuItem Header="_Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z"/>
+                <MenuItem Header="_Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Shift+Z"/>
             </MenuItem>
 
             <MenuItem Header="_View" Padding="8,4">
@@ -832,14 +874,19 @@
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Rail"/>
 
-                            <!-- THE REMOVE BUTTON IS THE OTHER DOOR (R-rail19-1a). A rail could be
-                                 added and never removed: one mis-click on GND made a rail with no
-                                 reference layer, which correctly blocks the whole rail set's solve,
-                                 and there was no command, no menu row and no keystroke that took it
-                                 back — so Run, Compare and Export were dead for the life of the
-                                 document. Same shape as the Sources and Loads lists' own remove
-                                 button, beside the control that made the thing. -->
-                            <Grid ColumnDefinitions="Auto,*,Auto">
+                            <!-- ONE GRID FOR BOTH ROWS, so the two combo boxes are the same width
+                                 (owner, 2026-09-20). They were two grids — "Auto,*,Auto" over the
+                                 rail and "Auto,*" over the reference — so the Rail combo stopped
+                                 short of the buttons beside it and the Ref combo ran the full width
+                                 of the card, and the two labels each sized their own Auto column, so
+                                 the combos did not even start at the same x. Two controls stacked
+                                 one above the other, doing the same kind of job, at two different
+                                 widths reads as a layout accident because it is one. Shared columns
+                                 make it structural rather than a pair of numbers to keep in step.
+
+                                 THE BUTTONS SIT IN THE RAIL ROW'S OWN COLUMNS, and the reference row
+                                 simply leaves them empty — which is what reserves the width. -->
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto">
                                 <TextBlock Classes="detailLabel rowlbl" Text="Rail"/>
                                 <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
                                      here and built in that order in the view model: a combo whose
@@ -850,22 +897,55 @@
                                           ItemsSource="{Binding Rails}"
                                           SelectedItem="{Binding SelectedRailName, Mode=TwoWay}"
                                           ToolTip.Tip="Which rail this window is showing. One rail is analysed at a time; the set is solved in dependency order."/>
-                                <Button Grid.Column="2" Name="RemoveRailButton" Classes="rowbtn"
-                                        Margin="2,0,0,0"
+
+                                <!-- PICKING A RAIL OFF THE BOARD IS A BUTTON NOW, AND NOWHERE ELSE
+                                     (owner, 2026-09-20). It used to be a bare left click anywhere on
+                                     the copper: that made a rail, named after the coordinate,
+                                     selected, blocking the run — on the shipped example, from the
+                                     gesture a user performs to LOOK at a board. The gesture is
+                                     unchanged and the press in front of it is the whole fix. While
+                                     it is waiting for the click the button is lit and the pointer
+                                     over the board is a crosshair, which is the sign the rest of
+                                     this application already uses for "the next click does
+                                     something".
+
+                                     TargetVariant is the layout editor's own Port-tool glyph — the
+                                     other control in this application whose whole job is "click a
+                                     place on the artwork", drawn with the crosshair this one puts
+                                     under the pointer. -->
+                                <Button Grid.Column="2" Name="PickFromBoardButton" Classes="sqbtn"
+                                        Margin="3,0,0,0"
+                                        Classes.ToolActive="{Binding IsPickingFromBoard}"
+                                        Command="{Binding PickFromBoardCommand}"
+                                        ToolTip.Tip="{Binding PickFromBoardTip}">
+                                    <mi:MaterialIcon Kind="TargetVariant" Width="14" Height="14"/>
+                                </Button>
+
+                                <!-- THE REMOVE BUTTON IS THE OTHER DOOR (R-rail19-1a). A rail could
+                                     be added and never removed: one mis-click on GND made a rail
+                                     with no reference layer, which correctly blocks the whole rail
+                                     set's solve, and there was no command, no menu row and no
+                                     keystroke that took it back — so Run, Compare and Export were
+                                     dead for the life of the document. There IS a keystroke now
+                                     (Ctrl+Z, 2026-09-20), and this is still the deliberate door:
+                                     undo takes back the last edit, this removes the rail you are
+                                     looking at whenever it was made. -->
+                                <Button Grid.Column="3" Name="RemoveRailButton" Classes="sqbtn"
+                                        Margin="3,0,0,0"
                                         Command="{Binding RemoveRailCommand}"
                                         ToolTip.Tip="Remove this rail, with its sources, loads, targets and aggressors. A rail added by mistake states no reference layer, and the rail set is solved together — so it blocks every run until it is given one or taken away.">
-                                    <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
+                                    <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
                                 </Button>
-                            </Grid>
 
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="detailLabel rowlbl" Text="Ref."/>
-                                <ComboBox Grid.Column="1" Name="ReferenceSelector" FontSize="10"
+                                <TextBlock Grid.Row="1" Classes="detailLabel rowlbl" Text="Ref."
+                                           Margin="0,3,0,0"/>
+                                <ComboBox Grid.Row="1" Grid.Column="1" Name="ReferenceSelector"
+                                          FontSize="10" Margin="0,3,0,0"
                                           MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
                                           Classes.flagged="{Binding IsReferenceLayerFlagged}"
                                           ItemsSource="{Binding ReferenceLayerOptions}"
                                           SelectedItem="{Binding SelectedReferenceLayer, Mode=TwoWay}"
-                                          ToolTip.Tip="The reference return's drawing layer. railRF proposes one and never assumes it."/>
+                                          ToolTip.Tip="The layer this rail's current returns on — usually the ground plane under it. railRF suggests one and never assumes it, so Run stays off until you confirm."/>
                             </Grid>
 
                             <!-- The PROPOSAL and its REASON, together. A proposal with no reason is
@@ -925,18 +1005,35 @@
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
-                                    <!-- NOT FULL WIDTH, AND NOT LIVE WITH NOTHING PICKED (owner,
-                                         2026-09-19). A stretched button reads as the card's own
-                                         header rather than as the action on the list above it, and
-                                         one that is enabled while nothing is highlighted answers a
-                                         press with silence. Its face also says which of the two
-                                         things it will do, because a net that is already a rail is
-                                         SELECTED rather than added — see PickRailButtonText. -->
-                                    <Button Content="{Binding PickRailButtonText}"
-                                            FontSize="10" Padding="10,2"
+                                    <!-- A SQUARE GLYPH, and not live with nothing picked (owner,
+                                         2026-09-19 and 2026-09-20). A stretched button carrying a
+                                         sentence reads as the card's own header rather than as the
+                                         action on the list above it, and one that is enabled while
+                                         nothing is highlighted answers a press with silence.
+
+                                         BOTH FACES SURVIVED BECOMING A GLYPH, which is the part
+                                         that needed care: the two labels exist because pressing
+                                         this on a net the document already carried moved a selector
+                                         that was already where it was going and read as a dead
+                                         button. The eye says "show you the one you already have",
+                                         the plus says "make a new one", and the words are still
+                                         the tooltip. -->
+                                    <Button Name="PickSelectedNetButton" Classes="sqbtn"
                                             HorizontalAlignment="Right"
                                             Command="{Binding PickSelectedNetCommand}"
-                                            ToolTip.Tip="The rail takes the net's own name. It states no reference layer — that is the next step, and it is confirmed rather than assumed."/>
+                                            ToolTip.Tip="{Binding PickRailButtonText}">
+                                        <Panel>
+                                            <mi:MaterialIcon Kind="Eye" Width="14" Height="14"
+                                                             IsVisible="{Binding WillShowExistingRail}"/>
+                                            <!-- RayStartEnd, not Plus (owner, 2026-09-20): a plus
+                                                 says "one more of these", and what this button
+                                                 makes is not another row on a list — it is the
+                                                 statement that THIS net is a rail. A line between
+                                                 two points is what a rail is. -->
+                                            <mi:MaterialIcon Kind="RayStartEnd" Width="14" Height="14"
+                                                             IsVisible="{Binding !WillShowExistingRail}"/>
+                                        </Panel>
+                                    </Button>
                                 </StackPanel>
                             </Border>
 
@@ -950,7 +1047,7 @@
                                  printed. -->
                             <TextBlock Classes="note" Margin="0,0,0,6"
                                        IsVisible="{Binding HasNoPickableNets}"
-                                       Text="No board netlist named any nets, so pick the rail by clicking its pour on the board. railRF will not guess a net name."/>
+                                       Text="No board netlist named any nets. Press the crosshair button beside the rail selector, then click the copper you want — everything connected to it becomes the rail. railRF will not guess a net name."/>
 
                             <!-- R-ab2-4d: where the names came from. A netlist, a schematic and a
                                  stamp on the copper are three different claims, and a reader is

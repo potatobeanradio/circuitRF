@@ -427,10 +427,21 @@ public sealed partial class RailRfViewModel
                 "This document holds no rails yet. Pick the power net on the board to make one.",
                 RailRefusalControl.None);
 
+        // BOTH DOORS, exactly as R-rail19-1b's sentence below names both (owner, 2026-09-20). This
+        // one named only the first, and the user it is usually shown to did not want that door: the
+        // rail was made by a click they did not aim, so "confirm its reference" is an instruction to
+        // FINISH the thing they are trying to be rid of. A refusal that names one of two exits traps
+        // whoever wanted the other, and this window's Escape and Ctrl+Z were both silent here.
         if (!IsReferenceConfirmed)
             return new RailRefusal(
-                "Confirm the reference layer first. railRF proposes one and never assumes it (Q-8), "
-              + "and a pre-selected combo tabbed past is not a confirmation.",
+                SelectedRail is { NetName: null or "" }
+                    ? $"'{SelectedRail.Name}' was picked off the board, so railRF knows where it is "
+                    + "and not what it is. Confirm its reference layer — proposed and never assumed "
+                    + "(Q-8) — or, if this rail was not the one you meant, remove it with the button "
+                    + "beside the selector."
+                    : "Confirm the reference layer first. railRF proposes one and never assumes it "
+                    + "(Q-8), and a pre-selected combo tabbed past is not a confirmation. If this "
+                    + "rail was not the one you meant, remove it with the button beside the selector.",
                 RailRefusalControl.ReferenceLayer);
 
         // R-rail19-1b: BOTH doors. The first remedy was the only one named, and it is the wrong one
@@ -621,6 +632,10 @@ public sealed partial class RailRfViewModel
         // AND THE DIRTY MARK, for the same reason and at the same one call site: this runs on every
         // committed edit, so it is where the title learns the document no longer matches disk.
         RefreshDirty();
+
+        // AND THE UNDO ENTRY, for the third time the same reason — see RailRfViewModel.Undo.cs.
+        // One funnel, so there is no per-edit-site push to forget at the site somebody adds next.
+        NoteEdit();
 
         if (!CanRun || Board is not { } board || SelectedRail is null) return;
         Start(board, PdnModelKind.Fast);

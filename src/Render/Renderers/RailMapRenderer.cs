@@ -730,52 +730,64 @@ public static class RailMapRenderer
     /// The legend plate's screen geometry — <b>the one place it is computed</b>, so the drawing pass
     /// and anything asking where the labels land read the same rectangle.
     /// </summary>
-    /// <param name="legend">The plate, whose <see cref="RailMapLegend.Box"/> is in DBU.</param>
+    /// <param name="legend">The plate. Its <see cref="RailMapLegend.Box"/> is in DBU and supplies the
+    /// ANCHOR — its top-left corner — and nothing else.</param>
     /// <param name="vp">World → screen.</param>
     /// <param name="plate">The whole plate, device pixels.</param>
     /// <param name="bar">The ramp's rectangle inside it.</param>
     /// <param name="baseline">Where the labels' baseline sits.</param>
-    /// <returns>False where the plate has collapsed to nothing on screen, in which case it is not
-    /// drawn at all.</returns>
+    /// <returns>False where there is no room on the canvas for a readable plate, in which case it is
+    /// not drawn at all.</returns>
     /// <remarks>
-    /// <b>The plate has a MINIMUM SCREEN SIZE, which is R-rail21-3's half that R-rail18-4 could not
-    /// reach from where it was standing.</b> <c>RailMapLegend.Box</c> is 7.5 % of the map's longer
-    /// side in DBU, so on a pane-sized canvas the whole plate is around 24 device pixels tall and
-    /// the strip left under the colour ramp is nine. That is why the text was six pixels: it was
-    /// not the fitting rule that was wrong, it was that THE BOX the rule fits into shrinks with the
-    /// canvas. Floor-size text inside a shrinking box is text that does not fit.
+    /// <b>THE PLATE IS SCREEN-FIXED. It is chrome, like the marker callouts beside it</b> (owner,
+    /// 2026-09-20). Its size was the world box mapped to screen, floored at a readable minimum —
+    /// so it was constant while zoomed out and then grew without limit as the user zoomed in, and
+    /// the two maps did it at different rates because they size their boxes off different content:
+    /// <c>RailMapScene</c>'s |Z| pass unions a <c>MarkerReachDbu</c> square around every marker into
+    /// its bounds and the drop pass does not, so the |Z| box is the larger and ran away first. That
+    /// is what the report was — <i>the |Z| legend needs to zoom more like the Drop legend</i> —
+    /// and equalising the two boxes would only have made them wrong together.
     ///
-    /// <para>So below the size <see cref="LegendFloorPx"/> needs, the plate is drawn LARGER than
-    /// its world box — anchored at the box's own top-left corner, so a plate the user has dragged
-    /// stays where they put it, and clamped to the viewport, so the answer to "there is no room" is
-    /// eventually <see cref="LayOutLabels"/> drawing less rather than this drawing off-screen.
-    /// R-rail18-4 ruled out widening the plate and was right about the reason — the box is world
-    /// geometry and <c>RailMapScene.Bounds</c> frames it — but that reason binds on the SCENE,
-    /// which is what Zoom to Fit reads. Painting a minimum-size plate is a screen decision and
-    /// leaves the world extent, the drag and the framing exactly as they were.</para>
+    /// <para><b>This does not reverse the 2026-09-19 decision that the TEXT tracks the plate</b>
+    /// (see <see cref="LayOutLabels"/>, which still does). It removes that decision's premise. The
+    /// argument there was that nothing about a plate which is <i>part of the picture</i> justifies
+    /// its text being screen-fixed — true, and the answer is that the plate is not part of the
+    /// picture. It names the colours; it is not one of them. The callouts on this same map have
+    /// been screen-fixed by a deliberate decision since brief 18, so a legend that grows past them
+    /// on the way in is the same map measuring itself two ways.</para>
+    ///
+    /// <para><b>The size is the minimum readable one, always</b> — the narrowest, shortest plate
+    /// that holds this legend's own three strings at <see cref="LegendFloorPx"/>, which is
+    /// <see cref="LabelSizePx"/>, which is what the callouts are drawn at. One notion of "readable
+    /// on this map" rather than two that drift.</para>
+    ///
+    /// <para>Clamped to the viewport, so the answer to "there is no room" is eventually
+    /// <see cref="LayOutLabels"/> drawing less rather than this drawing off-screen. The world box
+    /// still frames in <c>RailMapScene.Bounds</c> and the drag still moves it in DBU, so Zoom to
+    /// Fit keeps leaving room below the map and a plate the user has dragged stays where they put
+    /// it.</para>
     /// </remarks>
     public static bool TryPlate(
         RailMapLegend legend, LayoutViewport vp, out SKRect plate, out SKRect bar, out float baseline)
     {
         ArgumentNullException.ThrowIfNull(legend);
 
+        // THE ANCHOR, and the only thing read off the world box. Its top-left, because that is the
+        // corner a drag moves and the corner the plate has always grown from.
         float x0 = (float)vp.WorldToScreenX(legend.Box.MinX);
-        float x1 = (float)vp.WorldToScreenX(legend.Box.MaxX);
         float y0 = (float)vp.WorldToScreenY(legend.Box.MaxY);
-        float y1 = (float)vp.WorldToScreenY(legend.Box.MinY);
 
-        plate = new SKRect(x0, y0, x1, y1);
+        plate = SKRect.Empty;
         bar = SKRect.Empty;
         baseline = 0;
 
-        if (x1 - x0 < 2 || y1 - y0 < 2) return false;
-
-        // ── the floor's own minimum, clamped to the viewport ─────────────────────────────────
-        float h = Math.Max(plate.Height, MinPlateHeightPx);
-        float w = Math.Max(plate.Width, MinPlateWidthPx(legend, h));
+        float h = MinPlateHeightPx;
+        float w = MinPlateWidthPx(legend, h);
 
         if (vp.Width > 0)  w = Math.Min(w, (float)vp.Width);
         if (vp.Height > 0) h = Math.Min(h, (float)vp.Height);
+
+        if (w < 2 || h < 2) return false;
 
         float left = x0, top = y0;
         if (vp.Width > 0 && left + w > vp.Width)   left = Math.Max(0f, (float)vp.Width - w);

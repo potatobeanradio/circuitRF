@@ -78,6 +78,7 @@ public partial class RailRfWindow : Window
         WireBoardCanvas();
         WireLiveArtwork();
         WireEscape();
+        WireUndoKeys();
 
         // The railRF chapter of the reference, through the launcher every other Help button in the
         // application uses — the Match Designer's own line.
@@ -246,6 +247,41 @@ public partial class RailRfWindow : Window
         if (Vm is not { HasSelection: true } vm) return;
 
         vm.ClearSelectionCommand.Execute(null);
+        e.Handled = true;
+    }, RoutingStrategies.Bubble);
+
+    // ── Undo and redo (owner, 2026-09-20) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Ctrl/⌘+Z and Ctrl/⌘+Shift+Z, on the view model's own two commands.
+    /// </summary>
+    /// <remarks>
+    /// <b>A handler rather than a <c>Window.KeyBinding</c>, which is what Save and Open use.</b> A
+    /// key binding fires wherever focus is, and half this window is editable rows: Ctrl+Z inside a
+    /// text box belongs to the text box, and taking it would replace the edit the user is making
+    /// with a document-wide undo they did not ask for. <see cref="RailKeyboardGate.IsTextEntry"/> is
+    /// already this window's predicate for exactly that, on every navigation key and on Escape.
+    ///
+    /// <para><b>Bubbling, and it defers to anything that handled the key first</b> — Escape's own
+    /// rule here, for the same reason: the board canvas is a real editor's canvas and this window
+    /// promises that someone who learned it has learned this one.</para>
+    /// </remarks>
+    private void WireUndoKeys() => AddHandler(KeyDownEvent, (_, e) =>
+    {
+        if (e.Handled || e.Key != Key.Z) return;
+
+        bool modifier = e.KeyModifiers.HasFlag(KeyModifiers.Control)
+                     || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (!modifier) return;
+
+        if (RailKeyboardGate.IsTextEntry(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
+            return;
+        if (Vm is not { } vm) return;
+
+        var command = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? vm.RedoCommand : vm.UndoCommand;
+        if (!command.CanExecute(null)) return;
+
+        command.Execute(null);
         e.Handled = true;
     }, RoutingStrategies.Bubble);
 
@@ -604,6 +640,12 @@ public partial class RailRfWindow : Window
         // for the rulers to label in.
         else if (e.PropertyName is nameof(RailRfViewModel.BoardLayout))
             BindBoardRulerUnits();
+
+        // The pour pick armed or disarmed, and the pointer has to say so NOW — the press came from a
+        // button beside the canvas, so with the pointer already over the copper there is no further
+        // event to carry the change. LayoutCanvas.RefreshCursor's own note.
+        else if (e.PropertyName is nameof(RailRfViewModel.IsPickingFromBoard))
+            BoardCanvas.RefreshCursor();
     }
 
     // ── The four panel lamps (owner, 2026-09-19) ─────────────────────────────────────

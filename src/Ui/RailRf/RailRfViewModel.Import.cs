@@ -222,6 +222,7 @@ public sealed partial class RailRfViewModel
         PickSelectedNetCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SelectedNetName));
         OnPropertyChanged(nameof(PickRailButtonText));
+        OnPropertyChanged(nameof(WillShowExistingRail));
 
         // R-rail19-2a: the pick is the moment a user needs to check they picked the right thing, and
         // on a board carrying +3V3, +3V3_A and VDD_IO the name is not enough. The board answers now
@@ -274,10 +275,21 @@ public sealed partial class RailRfViewModel
     /// selector that was already on that rail and looked exactly like a dead button. The button now
     /// says which of the two it will do before it is pressed.
     /// </remarks>
-    public string PickRailButtonText =>
-        SelectedNetName is { Length: > 0 } net && _document.Rail(net) is not null
-            ? "Show this rail"
-            : "Make it a rail";
+    public string PickRailButtonText => WillShowExistingRail ? "Show this rail" : "Make it a rail";
+
+    /// <summary>
+    /// True when pressing the button will SELECT a rail this document already has, rather than make
+    /// a new one — <b>which of the two faces the glyph wears</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The button is a glyph now</b> (owner, 2026-09-20), and the two faces had to survive that.
+    /// They exist because of a real report — pressing it on a net the document already carried moved
+    /// a selector that was already where it was going and read as a dead button — so a single icon
+    /// would have put the defect back with the fix's words removed. The eye and the plus say the
+    /// same two things the two labels did, and the labels are still the tooltip.
+    /// </remarks>
+    public bool WillShowExistingRail =>
+        SelectedNetName is { Length: > 0 } net && _document.Rail(net) is not null;
 
     /// <summary>Makes the highlighted net a rail — the list route of §2.3 step 2.</summary>
     [RelayCommand(CanExecute = nameof(CanPickSelectedNet))]
@@ -300,6 +312,7 @@ public sealed partial class RailRfViewModel
 
         PickRail(row.Name);
         OnPropertyChanged(nameof(PickRailButtonText));
+        OnPropertyChanged(nameof(WillShowExistingRail));
     }
 
     /// <summary>
@@ -323,6 +336,12 @@ public sealed partial class RailRfViewModel
         RebuildRails();
         SelectedRailName = rail.Name;
         RebuildRegulatorOffers();
+
+        // THE FUNNEL, so this is on the undo stack (owner, 2026-09-20). Adding a rail is a committed
+        // edit and QueueResolve is the one place this view model records one — it was reached from
+        // every typed value and from none of the three rail commands, which is why Ctrl+Z on a rail
+        // that had just appeared took back the edit BEFORE it instead.
+        QueueResolve();
         return rail;
     }
 
@@ -361,6 +380,11 @@ public sealed partial class RailRfViewModel
         RebuildRegulatorOffers();
         RefreshNetMarks();
         OnPropertyChanged(nameof(PickRailButtonText));
+        OnPropertyChanged(nameof(WillShowExistingRail));
+
+        // The funnel — see PickRail's own note. Removing a rail is the edit a user is MOST likely to
+        // want back: it takes the rail's sources, loads, targets and aggressors with it.
+        QueueResolve();
     }
 
     /// <summary>True while there is a rail to remove.</summary>
@@ -386,6 +410,9 @@ public sealed partial class RailRfViewModel
         _document.Rails.Add(rail);
         RebuildRails();
         SelectedRailName = rail.Name;
+
+        // The funnel — see PickRail's own note.
+        QueueResolve();
         return rail;
     }
 

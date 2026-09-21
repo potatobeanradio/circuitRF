@@ -7,6 +7,7 @@
 
 using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Ui.RailRf;
 using Xunit;
@@ -409,6 +410,59 @@ public class RailWindowChromeTests
 
     private static string InWindowMenuBlock(string xaml) =>
         xaml[Index(xaml, "Name=\"RailMenuBar\"")..Index(xaml, "</Menu>")];
+
+    // ── The specification column's two owner rules (2026-09-20) ──────────────────────────────
+
+    /// <summary>
+    /// <b>The two rail combo boxes share one grid, and the two actions beside them are square
+    /// glyphs.</b>
+    /// </summary>
+    /// <remarks>
+    /// One test because it is one instruction about one card. Both halves are the shape nothing
+    /// fails on: two combos at different widths still work, and a wide button carrying a sentence
+    /// still presses — so the only thing that would ever notice either being undone is somebody
+    /// looking at the window, which is what this scan stands in for.
+    ///
+    /// <para><b>The shared COLUMNS are the assertion, not two matching widths.</b> Sizing the Ref
+    /// combo to whatever the Rail combo happens to be is a pair of numbers to keep in step; putting
+    /// them in the same two columns of the same grid is why they cannot come apart.</para>
+    /// </remarks>
+    [Fact]
+    public void TheRailAndReferenceCombosShareOneGrid_AndTheirActionsAreSquareGlyphButtons()
+    {
+        string xaml = Xaml();
+
+        // ONE grid, four columns, two rows — and both combos inside it.
+        string grid = Block(xaml, "ColumnDefinitions=\"Auto,*,Auto,Auto\" RowDefinitions=\"Auto,Auto\"",
+                            "</Grid>");
+        Assert.Contains("Name=\"RailSelector\"", grid, StringComparison.Ordinal);
+        Assert.Contains("Name=\"ReferenceSelector\"", grid, StringComparison.Ordinal);
+
+        // The square style exists and is square by explicit metrics, not by arithmetic on padding.
+        // Whitespace-insensitive: the alignment of these setters is formatting, not the rule.
+        string style = Regex.Replace(Block(xaml, "Selector=\"Button.sqbtn\"", "</Style>"), @"\s+", " ");
+        Assert.Contains("Property=\"Width\" Value=\"24\"", style, StringComparison.Ordinal);
+        Assert.Contains("Property=\"Height\" Value=\"24\"", style, StringComparison.Ordinal);
+
+        // …and the three buttons of this card wear it, each holding a glyph rather than a label.
+        foreach (string name in new[] { "PickFromBoardButton", "PickSelectedNetButton", "RemoveRailButton" })
+        {
+            string button = Block(xaml, $"Name=\"{name}\"", "</Button>");
+
+            Assert.Contains("Classes=\"sqbtn\"", button, StringComparison.Ordinal);
+            Assert.Contains("MaterialIcon", button, StringComparison.Ordinal);
+            Assert.DoesNotContain("Content=", button, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>The AXAML from <paramref name="from"/> up to the next <paramref name="until"/>.</summary>
+    private static string Block(string xaml, string from, string until)
+    {
+        int at = Index(xaml, from);
+        int end = xaml.IndexOf(until, at, StringComparison.Ordinal);
+        Assert.True(end > at, $"{from} is never closed by {until}.");
+        return xaml[at..end];
+    }
 
     private static string Xaml() =>
         File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/RailRf/RailRfWindow.axaml"));

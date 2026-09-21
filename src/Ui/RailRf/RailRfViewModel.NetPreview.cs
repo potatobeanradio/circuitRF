@@ -216,6 +216,7 @@ public sealed partial class RailRfViewModel
 
         OnPropertyChanged(nameof(ReferenceReturnNet));
         OnPropertyChanged(nameof(PickRailButtonText));
+        OnPropertyChanged(nameof(WillShowExistingRail));
         PickSelectedNetCommand.NotifyCanExecuteChanged();
     }
 }

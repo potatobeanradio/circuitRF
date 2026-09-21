@@ -21,6 +21,7 @@ using CircuitRF.Design.RailRf;
 using CircuitRF.Render;
 using CircuitRF.Ui.Layout;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.RailRf;
 
@@ -161,35 +162,113 @@ public sealed partial class RailRfViewModel
             QueueResolve();
         };
 
-        // §2.3 step 2's SECOND route, which the window has always advertised and never wired
-        // (owner, 2026-09-19): the rail is picked by clicking its pour. Armed wherever there is a
-        // board — R-ab2-4c — because it is the gesture for THIS COPPER HERE and a board that now
-        // names its nets does not make it redundant. See SyncPourPick.
+        // §2.3 step 2's SECOND route: the rail is picked by clicking its pour. ARMED BY THE
+        // BUTTON and never by a bare click — see SyncPourPick's own note for the report that
+        // changed, and for why the gesture is the same gesture and no longer an ambient one.
         SyncPourPick();
     }
 
-    /// <summary>
-    /// Arms the pour pick wherever there is a board to click on.
-    /// </summary>
-    /// <remarks>
-    /// <b>It used to be armed only while <c>HasNoPickableNets</c></b>, so that the gesture and the
-    /// sentence advertising it could not come apart. Brief 2 makes the sentence conditional
-    /// (R-ab2-4b) and would have taken the gesture away with it: a board somebody DREW now resolves
-    /// its nets from the schematic beside it, and the very user this series is for would have lost
-    /// the click that used to work. So R-ab2-4c states the gesture outright — <b>click-the-pour
-    /// keeps working on a board with names and on one without</b>, because it is the gesture for
-    /// THIS COPPER HERE and a named board does not make it redundant.
-    ///
-    /// <para>What it costs is that a left click on a board with a pick list can now make a rail.
-    /// That is the same trade the assisted-Gerber path has always made and the same refusal guards
-    /// it — <see cref="TryPickPourAt"/> declines on bare substrate, and a click that hits nothing
-    /// goes on reaching the canvas's own marquee and pan untouched.</para>
-    /// </remarks>
-    private void SyncPourPick() =>
-        BoardOverlayLayer.PourPick = Board is not null ? TryPickPourAt : null;
+    // ── Click-the-pour is ARMED, and a plain click no longer touches the document ──────────────
+    //
+    // Owner, 2026-09-20: open the shipped Sensor board, press Run, click anywhere inside the green
+    // rectangle, and the window fills with a refusal nothing on screen explains. What the click did
+    // was MAKE A RAIL — `rail at (0, 0) µm`, anchored where the pointer was, selected — and that
+    // rail states no reference layer, so the gate correctly refused the whole rail set and turned
+    // the reference combo orange. Every further click made another one. Escape is wired to the row
+    // selections and this is not one; Ctrl+Z did nothing because this window had no undo at all.
+    //
+    // R-ab2-4c armed the gesture on every board and said outright what it cost: "a left click on a
+    // board with a pick list can now make a rail". The cost is not payable. A bare left click is
+    // how you look at a board, and a gesture that EDITS THE DOCUMENT cannot be the same gesture —
+    // the layout canvas's own marquee, pan and hit test are a left click, and §11.6 promises
+    // someone who learned that canvas has learned this one.
+    //
+    // So the gesture keeps working and stops being ambient: it is ARMED, explicitly, by the button
+    // beside the rail selector, and while it is armed the pointer over the board is a CROSSHAIR —
+    // the sign every tool uses to say the next click is about to do something. It disarms itself on
+    // the pick, on Escape, and on the button. The assisted-Gerber path §2.3 step 2 is about, where
+    // no netlist named a net and the click is the only route to a rail, is unchanged apart from the
+    // arming press; the sentence advertising it now names the button rather than a bare click.
 
     /// <summary>
-    /// Makes a rail out of the copper under a click, or declines.
+    /// True while the next click on the board's copper will make a rail out of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Off by default and off again after every pick.</b> One-shot rather than a mode that stays
+    /// on: the whole defect this replaces is a document edit arriving from a gesture nobody aimed,
+    /// and a tool left armed behind the user is the same defect with one more step in front of it.
+    /// </remarks>
+    [ObservableProperty]
+    private bool _isPickingFromBoard;
+
+    partial void OnIsPickingFromBoardChanged(bool value)
+    {
+        SyncPourPick();
+        OnPropertyChanged(nameof(PickFromBoardText));
+        OnPropertyChanged(nameof(PickFromBoardTip));
+
+        // Escape reads HasSelection, and the armed pick is part of it — see that property's note.
+        OnPropertyChanged(nameof(HasSelection));
+    }
+
+    /// <summary>What the pick-from-board button says — <b>which of its two states it is in</b>, the
+    /// same rule <see cref="PickRailButtonText"/> keeps. It is the button's TOOLTIP now that the
+    /// button itself is a glyph (owner, 2026-09-20), so it is also the only words there are.</summary>
+    public string PickFromBoardText => IsPickingFromBoard ? "Now click the board" : "Pick from board";
+
+    /// <summary>
+    /// The pick-from-board button's tooltip, in <b>plain words</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>It used to say "Arm the board"</b>, which the owner read and asked what it could possibly
+    /// mean (2026-09-20) — and they were right: nothing is being armed except an internal flag, and
+    /// the user is picking a rail. A tooltip is where somebody goes when they do not already know
+    /// what a control does, so it is the last place a word from the implementation belongs.
+    ///
+    /// <para>Two faces, because the two states ask for different things: before the press it says
+    /// what pressing will do, and after it says what to do NEXT — which is the question a user who
+    /// has already pressed it actually has.</para>
+    /// </remarks>
+    public string PickFromBoardTip => IsPickingFromBoard
+        ? "Click the copper you want. Everything connected to it — through vias, across layers — "
+        + "becomes the rail. Press Escape if you did not mean to."
+        : "Pick a rail straight off the board. Press this, then click the copper you want; "
+        + "everything connected to it becomes the rail. Use it when the board has no netlist to "
+        + "pick a net name from.";
+
+    /// <summary>Arms the pour pick, or disarms it.</summary>
+    /// <remarks>
+    /// <b>A toggle rather than two commands</b>, because it is one button and the user needs the way
+    /// out to be the control they just pressed. Escape is the other way out — see
+    /// <c>ClearSelection</c>, which this window's Escape is already wired to.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanPickFromBoard))]
+    private void PickFromBoard() => IsPickingFromBoard = !IsPickingFromBoard;
+
+    /// <summary>There has to be copper to click on.</summary>
+    public bool CanPickFromBoard => Board is not null;
+
+    /// <summary>Disarms the pour pick. <b>What Escape calls</b>, and what a pick calls on itself.</summary>
+    internal void CancelPickFromBoard() => IsPickingFromBoard = false;
+
+    /// <summary>
+    /// Arms the pour pick on the overlay while <see cref="IsPickingFromBoard"/> — and only then.
+    /// </summary>
+    /// <remarks>
+    /// <b>The overlay's <c>PourPick</c> is the whole gate.</b> It is null except while the gesture is
+    /// armed, and <see cref="RailLayoutOverlay.OnPointerPressed"/> declines the press outright when it
+    /// is null — so an unarmed left click is not consumed, and reaches the canvas's own marquee, pan
+    /// and hit test exactly as §11.6 requires.
+    /// </remarks>
+    private void SyncPourPick()
+    {
+        BoardOverlayLayer.PourPick = Board is not null && IsPickingFromBoard ? TryPickPourAt : null;
+        PickFromBoardCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanPickFromBoard));
+    }
+
+    /// <summary>
+    /// Makes a rail out of the copper under an ARMED click, or declines.
     /// </summary>
     /// <remarks>
     /// <b>The point has to be ON something</b>, and the test is <see cref="LayoutHitTest.HitStack"/>
@@ -197,6 +276,10 @@ public sealed partial class RailRfViewModel
     /// counts as a hit in the window someone learned the gesture in. Clicking bare substrate makes
     /// no rail: <c>PdnRailRegions</c> seeds its connectivity walk from the anchor point, and a seed
     /// on no copper walks nothing while looking exactly like a rail that has been created.
+    ///
+    /// <para><b>A miss leaves the gesture armed</b>, because a miss is a miss — the user aimed at
+    /// copper and hit substrate, and disarming would answer that by making them press the button
+    /// again. A HIT disarms, so the next click is an ordinary one.</para>
     ///
     /// <para>The rail is NAMED after the place in the board's own display unit, not in DBU. A rail
     /// called <c>rail at (26500000, 9875000)</c> is a name nobody can check against a board, and it
@@ -210,6 +293,7 @@ public sealed partial class RailRfViewModel
         var hits = LayoutHitTest.HitStack(canvas.Model, canvas.Technology, xDbu, yDbu, tolDbu);
         if (hits.Count == 0) return false;
 
+        CancelPickFromBoard();
         PickRailAt(xDbu, yDbu, $"rail at {BoardLengthFormat().Point(xDbu, yDbu)}");
         return true;
     }
