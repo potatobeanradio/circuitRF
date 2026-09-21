@@ -103,10 +103,14 @@ public sealed partial class RailRfViewModel
                     ? RailRefusals.Classify(why)
                     : null;
 
-        // R-rail22-3b: what the BOM actually gave up, stated at the import rather than left to be
-        // inferred from an odd answer later. Set unconditionally so a second import over the first
-        // does not leave the previous board's counts standing.
-        ImportSummary = RailImportReport.BomSummary(bom);
+        // R-rail22-3b: what the companion tables actually gave up, stated at the import rather than
+        // left to be inferred from an odd answer later. Set unconditionally so a second import over
+        // the first does not leave the previous board's counts standing.
+        //
+        // The NETLIST joined the BOM here on 2026-09-21: a netlist file that turned out not to be one
+        // was read, refused by its own reader, and discarded without a word — see
+        // RailImportReport.NetlistSummary for the report that found it.
+        ImportSummary = RailImportReport.Summary(bom, netlist);
 
         RebuildAvailableNets();
         RebuildRegulatorOffers();

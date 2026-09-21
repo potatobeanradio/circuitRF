@@ -288,6 +288,16 @@ it simply contributes nothing to the DC solve, and the DC report lists it as obs
 omitting it. Optionally a peak current per load, which is what the transient form of the target below
 consumes.
 
+**Amended 2026-09-21: the ADD gesture seeds a value, and the model is unchanged.** A source and a load
+placed on a real board gave, correctly and uselessly, a rail with a source at no stated voltage and a
+port drawing nothing — every drop zero by construction, with nothing to say the document was the
+reason. So the window now hands a new load 1 mA and a new source the rail's own
+nominal voltage. Nothing above stops being true: the absence is still representable, clearing the cell
+still restores the observation port, and the numeric layer has learned no default. What keeps Q-16's
+PURPOSE — which was never "no defaults" but "a number nobody typed must not read as one somebody did" —
+is that the status strip counts the rows still holding what railRF put there. See
+`src/Ui/RailRf/RailRfViewModel.Seeds.cs`.
+
 ### The parts
 
 Each part on the rail is one of:
@@ -1328,7 +1338,8 @@ Four things in that sketch are the whole design:
    a connector, a regulator making a second voltage, several ICs on one rail — so both carry add and remove,
    each row is a refdes and a pin rather than a coordinate, and the **rail selector above them** is what
    says which rail the whole window is currently showing (§2.2). A load row with no current reads
-   *observe*, because that is what it is.
+   *observe*, because that is what it is — reached by clearing the cell, since 2026-09-21 a new row
+   arrives carrying a starting current instead (the amendment under §2.2's "loads and their currents").
 
 A fifth was added on 2026-09-19, at the owner's request:
 

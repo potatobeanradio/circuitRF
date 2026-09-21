@@ -78,7 +78,7 @@
             <TextBlock Classes="note"
                        Text="A Gerber set is a folder of files that belong together — the outline, every copper layer and the drill data — so Folder… is the usual answer, and naming the folder here is also what stops railRF asking about the enclosing folder later. File… is for a single Gerber, a drill file, or a .kicad_pcb, which is one file and a whole board."/>
 
-            <Grid ColumnDefinitions="90,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="90,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
                 <TextBlock Text="Artwork" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
                 <TextBox Grid.Column="1" x:Name="ArtworkBox" FontSize="11" Margin="4,3"/>
                 <Button Grid.Column="2" x:Name="ArtworkFilePick" Content="File…" FontSize="11"
@@ -91,7 +91,7 @@
                 <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Spacing="4" Margin="0,12,0,0">
                     <TextBlock Classes="hdr" Text="Companion files"/>
                     <TextBlock Classes="note"
-                               Text="Evidence about the artwork, never geometry. A row naming a reference the board does not have is reported with a count in it, never turned into a footprint."/>
+                               Text="Evidence about the artwork, never geometry. A row naming a reference the board does not have is reported with a count in it, never turned into a footprint. Every row is optional, and what each one gave up is reported after the import &#8212; including a file that turned out not to be what its row wanted."/>
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" Text="Placement" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
@@ -106,9 +106,19 @@
                 <TextBox Grid.Row="4" Grid.Column="1" x:Name="NetlistBox" FontSize="11" Margin="4,3"/>
                 <Button Grid.Row="4" Grid.Column="2" x:Name="NetlistPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
 
-                <TextBlock Grid.Row="5" Text="Part library" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
-                <TextBox Grid.Row="5" Grid.Column="1" x:Name="PartLibraryBox" FontSize="11" Margin="4,3"/>
-                <Button Grid.Row="5" Grid.Column="2" x:Name="PartLibraryPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
+                <!-- WHICH FILE, because the answer is not guessable from a folder listing (outside
+                     field report, 2026-09-21: which file this row wants is not guessable). A
+                     schematic tool's export folder holds half a dozen files with names that say
+                     nothing, and NONE of them is this: what this row wants is the netlist the
+                     FABRICATION output set carries, beside the Gerbers, one record per pad. Naming
+                     the format and naming where it comes from are both needed — the format name
+                     alone does not tell somebody which of their files it is. -->
+                <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Classes="note" Margin="0,0,0,4"
+                           Text="The netlist row takes the BOARD netlist from the fabrication output set &#8212; an IPC-D-356 file, written beside the Gerbers, carrying one record per pad with its net, its component reference and its pin. It is not the netlist a schematic tool exports. Without one, nothing on the board has a net name and the rail is picked by clicking its copper instead, which works."/>
+
+                <TextBlock Grid.Row="6" Text="Part library" FontSize="11" VerticalAlignment="Center" Margin="0,3"/>
+                <TextBox Grid.Row="6" Grid.Column="1" x:Name="PartLibraryBox" FontSize="11" Margin="4,3"/>
+                <Button Grid.Row="6" Grid.Column="2" x:Name="PartLibraryPick" Content="File…" FontSize="11" Padding="10,1" Margin="0,3"/>
             </Grid>
         </StackPanel>
 

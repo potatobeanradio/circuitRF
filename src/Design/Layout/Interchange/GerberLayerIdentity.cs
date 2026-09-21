@@ -299,6 +299,30 @@ public static class GerberLayerCascade
         new([["mask"], BotWords], "Soldermask Bottom", UnidentifiedPurpose, "Bot"),
         new([["silk", "legend"], TopWords], "Silk Top", UnidentifiedPurpose, "Top"),
         new([["silk", "legend"], BotWords], "Silk Bottom", UnidentifiedPurpose, "Bot"),
+
+        // THE ASSEMBLY AND FABRICATION DRAWINGS. Both are declared file functions this file's own
+        // KindNames table already names ("AssemblyDrawing" -> "Assembly", "FabricationDrawing" ->
+        // "Fabrication"), and the spellings here are NameFor's own, so a set that DECLARES one and a
+        // set that merely names one land on the same layer rather than on two near-duplicates.
+        //
+        // They were missing, and it costs more than a label (reported from the field, 2026-09-21:
+        // besides the silkscreen, a real output set also ships a top and a bottom assembly drawing).
+        // A land pattern draws its courtyard on whatever the technology
+        // offers for the assembly role, and LandPatternLayers resolves that role by NAME when no
+        // alias declares it — "Assembly Top" is a front-side name containing "assembly", so importing
+        // one gives every hand-placed footprint on that board its courtyard outline. Unidentified,
+        // the same file became a drawing layer with a generated name that matched nothing, and the
+        // courtyard was omitted with a diagnostic nobody had a reason to read.
+        //
+        // "fab" is three characters and therefore whole-word only (ContainsWord's floor); "assy" and
+        // "assembly" clear it as substrings. Neither row names a tool or a vendor: an assembly
+        // drawing is what the layer IS.
+        new([["assembly", "assy"], TopWords], "Assembly Top", UnidentifiedPurpose, "Top"),
+        new([["assembly", "assy"], BotWords], "Assembly Bottom", UnidentifiedPurpose, "Bot"),
+        new([["assembly", "assy"]], "Assembly", UnidentifiedPurpose, null),
+        new([["fabrication", "fab"], TopWords], "Fabrication Top", UnidentifiedPurpose, "Top"),
+        new([["fabrication", "fab"], BotWords], "Fabrication Bottom", UnidentifiedPurpose, "Bot"),
+        new([["fabrication", "fab"]], "Fabrication", UnidentifiedPurpose, null),
         new([["outline"]], "Outline", UnidentifiedPurpose, null),
         new([["profile"]], "Outline", UnidentifiedPurpose, null),
         new([["keepout"]], "Outline", UnidentifiedPurpose, null),

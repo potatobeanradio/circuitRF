@@ -837,6 +837,21 @@ public sealed partial class RailRfViewModel
             // know which one named the rail they picked.
             if (NetOriginText.Length > 0) parts.Add(NetOriginText);
 
+            // A run built on numbers railRF put there must never be silent about it. The add gesture
+            // now hands a load a current and a source a voltage (RailRfViewModel.Seeds.cs — a field
+            // report, 2026-09-21), which is the whole difference between a first
+            // answer and a column of zeros; this is the half that keeps the old rule's PURPOSE, which
+            // was never "no defaults" but "a number nobody typed must not read as one somebody did".
+            if (SeededRowsText.Length > 0) parts.Add(SeededRowsText);
+
+            // The other thing this window can be busy doing, and until 2026-09-21 the one it did
+            // WITHOUT saying so — on the UI thread, with the window unresponsive for as long as it
+            // took (RailRfViewModel.NetPreview.cs' header). Named rather than spinner-shaped for
+            // BusyText's own reason: a user who knows the board is being read knows the answer is
+            // coming, and a user who does not thinks the reference combo did nothing.
+            if (IsReadingCopper)
+                parts.Add("reading the board's copper — the layer flatten and the connectivity walk");
+
             if (IsSolving) parts.Add(BusyText);
 
             return string.Join(" · ", parts);

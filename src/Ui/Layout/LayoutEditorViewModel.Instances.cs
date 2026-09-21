@@ -320,7 +320,38 @@ public sealed partial class LayoutEditorViewModel
     private string? _instancePlacementCellRef;
     private (LayoutInstance Instance, Bbox Bbox)? _instancePlacementPending;
 
+    /// <summary>
+    /// The angle and handedness the armed ghost is CARRYING — what <c>R</c> and <c>M</c> turn while
+    /// the part is still on the cursor (<see cref="RotateInstancePlacement"/>).
+    /// </summary>
+    /// <remarks>
+    /// <b>Why these exist at all</b> (reported from the field, 2026-09-21): a footprint cannot be
+    /// turned once a part type has been picked and the ghost is on the cursor — it has to be dropped,
+    /// rotated and placed again. That was exact — the ghost was built with everything but
+    /// <c>CellRef</c>/X/Y left at its default, so there was no angle for a keystroke to change, and
+    /// the editor's own <c>R</c>
+    /// branch is gated on the Select tool and never ran while the Instance tool was armed. Aiming a
+    /// part before you put it down is the ordinary way to place one, and drop-rotate-move is three
+    /// gestures and an undo entry for what should be one key.
+    /// </remarks>
+    private double _instancePlacementRotDeg;
+    private bool _instancePlacementMirrorX;
+
     public bool IsInstancePlacementActive => _instancePlacementCellRef is not null;
+
+    /// <summary>
+    /// The armed ghost's current angle, in degrees — for the status readout and the tests.
+    /// </summary>
+    /// <remarks>
+    /// <b>Normalized to [0, 360), exactly as <see cref="LayoutInstance.RotationDegrees"/> normalizes
+    /// on set.</b> Without that the ghost and the instance it is about to become disagree about the
+    /// same placement — the ghost saying −90 and the part landing at 270 — which is a difference with
+    /// no meaning and every opportunity to be read as one.
+    /// </remarks>
+    public double InstancePlacementRotationDegrees => LayoutAngle.Normalize(_instancePlacementRotDeg);
+
+    /// <summary>The armed ghost's current handedness.</summary>
+    public bool InstancePlacementMirrorX => _instancePlacementMirrorX;
 
     /// <summary>Arms the Instance tool with a chosen cell reference (the view's cell-picker dialog
     /// calls this after the user chooses a cell) — sets <see cref="LayoutEditorViewModel.Tool.Instance"/>
@@ -335,7 +366,54 @@ public sealed partial class LayoutEditorViewModel
         // to cancel), then arm the placement.
         ActiveTool = Tool.Instance;
         _instancePlacementCellRef = cellRef;
+
+        // A FRESH arming starts square, and does not inherit the last part's angle: the tool stays
+        // armed after a commit so a row of identical parts keeps the angle it was aimed at, but
+        // picking a DIFFERENT part from the picker is a new decision and a remembered rotation there
+        // would be a surprise with nothing on screen to explain it.
+        _instancePlacementRotDeg = 0;
+        _instancePlacementMirrorX = false;
+
         UpdateInstancePlacementGhost(0, 0);
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// Turns the armed ghost 90° — counter-clockwise, or clockwise with <paramref name="clockwise"/>:
+    /// the same keys and the same sense as <see cref="RotateSelection"/>, because it is the same
+    /// gesture applied to the thing on the cursor instead of the thing in the model.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is committed and there is no undo entry</b>, which is the difference between this
+    /// and the mid-drag <c>R</c> next door: a MOVE drag is carrying something that already exists, so
+    /// rotating it is an edit to the document. This is carrying something that does not exist yet, so
+    /// the angle is part of the placement about to be made and it lands in the model once, with the
+    /// instance, when the button goes down.
+    ///
+    /// <para>It ADVANCES rather than snapping, exactly as R-L3d-11 requires of the selection rotate.</para>
+    /// </remarks>
+    public void RotateInstancePlacement(bool clockwise = false)
+    {
+        if (_instancePlacementPending is not { } pending) return;
+        _instancePlacementRotDeg = LayoutAngle.Normalize(_instancePlacementRotDeg + (clockwise ? -90.0 : 90.0));
+        UpdateInstancePlacementGhost(pending.Instance.X, pending.Instance.Y);
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// Flips the armed ghost — about a vertical axis by default, about a horizontal one with
+    /// <paramref name="horizontal"/> false. <see cref="MirrorSelection"/>'s own keys and its own
+    /// bookkeeping: an instance transform is mirror-then-rotate, so a world reflection NEGATES the
+    /// angle as well as toggling the flag, and a flag toggled on its own mis-places every rotated
+    /// placement.
+    /// </summary>
+    public void MirrorInstancePlacement(bool horizontal = true)
+    {
+        if (_instancePlacementPending is not { } pending) return;
+        _instancePlacementMirrorX = !_instancePlacementMirrorX;
+        _instancePlacementRotDeg = LayoutAngle.Normalize(
+            horizontal ? -_instancePlacementRotDeg : 180.0 - _instancePlacementRotDeg);
+        UpdateInstancePlacementGhost(pending.Instance.X, pending.Instance.Y);
         RebuildOverlay();
     }
 
@@ -349,7 +427,12 @@ public sealed partial class LayoutEditorViewModel
     private void UpdateInstancePlacementGhost(long x, long y)
     {
         if (_instancePlacementCellRef is not { } cellRef) { _instancePlacementPending = null; return; }
-        var inst = new LayoutInstance { CellRef = cellRef, X = x, Y = y, Mag = 1.0 };
+        var inst = new LayoutInstance
+        {
+            CellRef = cellRef, X = x, Y = y, Mag = 1.0,
+            RotationDegrees = _instancePlacementRotDeg,
+            MirrorX = _instancePlacementMirrorX,
+        };
         var bbox = CellHierarchy.InstanceBbox(inst, InstanceBaseDir);
         _instancePlacementPending = (inst, bbox);
     }
@@ -358,12 +441,15 @@ public sealed partial class LayoutEditorViewModel
     {
         _instancePlacementCellRef = null;
         _instancePlacementPending = null;
+        _instancePlacementRotDeg = 0;
+        _instancePlacementMirrorX = false;
     }
 
     private void CommitInstancePlacement()
     {
         if (_instancePlacementPending is not { } pending) return;
-        if (!TryPlaceNewInstance(pending.Instance.CellRef, pending.Instance.X, pending.Instance.Y)) return;
+        if (!TryPlaceNewInstance(pending.Instance.CellRef, pending.Instance.X, pending.Instance.Y,
+                                 _instancePlacementRotDeg, _instancePlacementMirrorX)) return;
 
         // Stay armed (matches the palette-placement precedent elsewhere in this codebase: placing one
         // component doesn't disarm the tool) — the ghost continues from the same cell reference at
@@ -380,7 +466,12 @@ public sealed partial class LayoutEditorViewModel
     /// cref="CommitDragInstancePlacement"/> (drag-and-drop from the project tree). Returns false when
     /// refused so a caller that needs to know (neither current one does, but a future one might) can
     /// react.</summary>
-    private bool TryPlaceNewInstance(string cellRef, long x, long y)
+    /// <param name="rotationDegrees">The angle the gesture aimed the part at before it was put down.
+    /// Zero for every caller that has no ghost to aim — a drop from the project tree, and the
+    /// re-entry after a technology remedy — so the shape this builds is unchanged for them.</param>
+    /// <param name="mirrorX">Its handedness, on the same terms.</param>
+    private bool TryPlaceNewInstance(
+        string cellRef, long x, long y, double rotationDegrees = 0, bool mirrorX = false)
     {
         if (!CheckNotCyclic(cellRef)) return false;
         // Where to put it if a technology remedy has to be applied first — the ONE placement path is
@@ -390,6 +481,8 @@ public sealed partial class LayoutEditorViewModel
         var instance = new LayoutInstance
         {
             CellRef = cellRef, X = x, Y = y, Mag = 1.0,
+            RotationDegrees = rotationDegrees,
+            MirrorX = mirrorX,
             // SL3 R-sl3-4/-6: the interface this instance is being placed against, recorded here
             // because this is the ONE commit path for a brand-new instance. The two ghosts above are
             // previews and record nothing — nothing is stored until this runs.

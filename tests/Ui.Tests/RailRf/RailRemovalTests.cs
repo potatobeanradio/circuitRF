@@ -227,6 +227,11 @@ public sealed class RailRemovalTests
         Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
 
         var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+
+        // The copper read runs INLINE here — see PickNetHighlightTests.Example for the whole of why,
+        // and RailRfReportedDefectsTests for the file that asserts it is off-thread in the application.
+        vm.ReadCopperOffThread = work => { work(); return System.Threading.Tasks.Task.CompletedTask; };
+
         Assert.Empty(vm.LoadDocumentReferences());
         vm.RebuildParts();
         return vm;

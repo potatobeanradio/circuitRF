@@ -3844,6 +3844,32 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
+        // ── AND R ROTATES WHAT YOU ARE CARRYING ON THE PLACEMENT GHOST ──────────────────────
+        //
+        // Reported from the field, 2026-09-21: a footprint could not be turned once a part type had
+        // been picked and the ghost was on the cursor — it had to be dropped, rotated and placed
+        // again. Both halves of that were true. The ghost carried no angle at all (see the fields in
+        // LayoutEditorViewModel.Instances.cs), and the branch below is gated on the SELECT tool,
+        // which the Instance tool is not — so the key fell through to nothing whichever way it was
+        // fixed.
+        //
+        // AHEAD of the mid-drag branch and of the Select-tool block, on the paste ghost's own rule:
+        // while something is attached to the cursor, that something owns the keys it acts on. The
+        // keys are the editor's existing pair rather than a third spelling — R/Shift+R to turn,
+        // M/Shift+M to flip — so aiming a part before it is down and turning it after it is down are
+        // the same gesture at two moments.
+        //
+        // No undo entry, and none is missing: nothing has been placed yet. Escape still disarms the
+        // whole placement, angle and all.
+        if (IsInstancePlacementActive
+            && (mods & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0
+            && key is Key.R or Key.M)
+        {
+            if (key == Key.R) RotateInstancePlacement(clockwise: mods.HasFlag(KeyModifiers.Shift));
+            else              MirrorInstancePlacement(horizontal: !mods.HasFlag(KeyModifiers.Shift));
+            return;
+        }
+
         // ── R ROTATES WHAT YOU ARE CARRYING, MID-DRAG ───────────────────────────────────────
         //
         // Owner request, 2026-08-25: "allow user to press 'R' to rotate port in the middle of a live

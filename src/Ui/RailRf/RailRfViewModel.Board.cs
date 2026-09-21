@@ -355,18 +355,20 @@ public sealed partial class RailRfViewModel
     public void PlaceSource(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Sources.Add(new RailSource { Anchor = anchor });
+        rail.Sources.Add(NewSeededSource(rail, anchor));
         RebuildForSelectedRail();
         QueueResolve();
     }
 
     /// <summary>Adds a load row on this rail, anchored where the user right-clicked.</summary>
-    /// <remarks><b>With no current</b>, exactly as <c>AddLoad</c> does — an observation port, never
-    /// a zero nobody typed (§2.2, Q-16).</remarks>
+    /// <remarks><b>Carrying a starting current</b>, exactly as <c>AddLoad</c> does — so a part
+    /// dropped on the board makes the rail draw something and the picture is not a field of zeros.
+    /// The observation port is one cleared cell away, and <c>RailRfViewModel.Seeds.cs</c> carries the
+    /// argument.</remarks>
     public void PlaceLoad(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Loads.Add(new RailLoad { Anchor = anchor });
+        rail.Loads.Add(NewSeededLoad(anchor));
         RebuildForSelectedRail();
         QueueResolve();
     }
@@ -411,7 +413,28 @@ public sealed partial class RailRfViewModel
             foreach (var shape in board.Shapes) view.Shapes.Add(shape);
         }
 
-        BoardLayout = new LayoutEditorViewModel(view) { Technology = board.Technology };
+        BoardLayout = new LayoutEditorViewModel(view)
+        {
+            Technology = board.Technology,
+
+            // ── AND IT HAS TO KNOW WHERE THE `.clay` IS ────────────────────────────────────────
+            //
+            // A relative `CellRef` resolves against the directory holding the `.clay`, and a view
+            // model that has never been told that directory resolves NONE of them
+            // (`InstanceBaseDir`, which is derived from this one property and is "" without it). So
+            // every part on the board drew as the broken-reference placeholder: a warning-coloured
+            // box at the 28-pixel screen floor, in place of a land pattern, on a board where the
+            // layout editor next door drew the same instances perfectly.
+            //
+            // Reported from outside on a real imported board, 2026-09-21 — and it was invisible for
+            // as long as boards' parts were bare copper, because a board with no instances on it has
+            // nothing that needs resolving. The `.crail` example's own board only grew instances
+            // when its parts became footprints.
+            //
+            // It is the ADDRESS and not an invitation to write: the canvas is ReadOnly (R-rail19-1's
+            // other half), so no save path on this view model is reachable from this window.
+            CurrentLayoutPath = board.ArtworkCellRef,
+        };
         BoardOverlayLayer.DbuPerMicron = board.DbuPerMicron;
 
         // The rows FIRST, because they are built from the technology, and the narrowing second,

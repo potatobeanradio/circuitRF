@@ -47,4 +47,49 @@ public static class RailImportReport
 
         return line + ".";
     }
+
+    /// <summary>
+    /// What the board netlist gave up, or "" where there was none to read.
+    /// </summary>
+    /// <remarks>
+    /// <b>Because a netlist railRF could not read was thrown away in silence</b> (reported from the
+    /// field, 2026-09-21). A folder of files exported by a schematic tool gives no clue which of them
+    /// this row wants; picking one produced a board on which nothing had a net name and a message
+    /// saying no board netlist had named any — which is true, and says nothing at all about the file
+    /// that was chosen. <c>BoardNetlistFile.Read</c> had the sentence the whole time
+    /// (<c>Refusal</c>); <c>ApplyImport</c> classified the PLACEMENT's refusal and dropped this one on
+    /// the floor.
+    ///
+    /// <para><b>Still not a gate</b>, for <see cref="BomSummary"/>'s reason: a board with no netlist
+    /// is the ordinary assisted-Gerber path and solves perfectly well by picking the pour. What must
+    /// not happen is that a file was NAMED and nothing anywhere says what became of it.</para>
+    /// </remarks>
+    public static string NetlistSummary(BoardNetlist? netlist)
+    {
+        if (netlist is null) return "";
+
+        // The refusal INSTEAD of the counts, because there are none — and it is prefixed with the
+        // one thing the reader's own sentence cannot know: which family of file this row wants. The
+        // set a board is fabricated from carries one; a schematic tool's own netlist export is a
+        // different file for a different purpose and is not it.
+        if (netlist.Refusal is { Length: > 0 } refusal)
+            return $"{netlist.FileName} {refusal} This row takes the BOARD netlist that ships beside "
+                 + "the artwork — the IPC-D-356 file the fabrication output set carries, one record "
+                 + "per pad with its net, not a netlist exported from the schematic.";
+
+        string line = $"{netlist.FileName}: {netlist.Records.Count:N0} feature record(s), "
+                    + $"{netlist.Nets.Count:N0} net(s), {netlist.UnitsSummary}";
+
+        if (netlist.UnreadableRecords > 0)
+            line += $"; {netlist.UnreadableRecords:N0} record(s) could not be read and were skipped";
+
+        return line + ".";
+    }
+
+    /// <summary>Every companion's own sentence, joined — what the window shows after one import.</summary>
+    public static string Summary(BomTable? bom, BoardNetlist? netlist)
+    {
+        string a = BomSummary(bom), b = NetlistSummary(netlist);
+        return a.Length == 0 ? b : b.Length == 0 ? a : a + "  " + b;
+    }
 }

@@ -1,5 +1,153 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF and the layout editor — seven findings from a field report (2026-09-21)
+
+A second round of outside use of railRF, against `1.0.0-beta.27`, on a production six-layer board
+imported from its own Gerber output set rather than on the shipped example. Seven findings; five
+fixed here, one in `src/Design`, and one NOT reproduced and recorded as such. The raw material — a
+transcript with screenshots, and a crash report — is in the owner's own files and **must not come
+into the repo**: it names a real board and its part numbers.
+
+### 1. railRF drew every part on the board as a broken reference
+
+Two screenshots of one board were the diagnosis: the layout editor drew the 0603 land patterns that
+had been placed, and railRF's board panel drew each of them as a small warning-coloured box. That box
+is `LayoutRenderer`'s broken-instance placeholder at its 28-pixel screen floor, which is what the
+renderer draws for an instance whose `CellRef` does not resolve.
+
+**`RailRfViewModel.RebuildBoardLayout` built its `LayoutEditorViewModel` without a
+`CurrentLayoutPath`.** `InstanceBaseDir` is derived from that one property and is `""` without it, so
+every relative `CellRef` on the board — `../../footprints/C0603` and its siblings — resolved
+`NotFound`. It is the ADDRESS that was missing and not a permission: the canvas is `ReadOnly`, so no
+save path on that view model is reachable from this window, and setting the path costs nothing else.
+
+**It was invisible for as long as a board's parts were bare copper.** A board with no instances has
+nothing that needs resolving; the shipped example's own board only grew instances when its parts
+became footprints, days earlier. `tests/Ui.Tests/RailRf/DesignerFeedbackRound2Tests` asserts the base
+directory and the resolver's verdict for every instance on that board, rather than pixels — that is
+the same question the renderer asks.
+
+### 2. Confirming the reference layer hung the window
+
+Confirming the reference layer made the window stop responding — photographed with "(Not
+Responding)" in the title bar, and the session then ended without a managed exception, which is what
+force-quitting an unresponsive process looks like.
+
+The path is four calls long and entirely synchronous: `ConfirmReference` → `RefreshNetMarks` → the
+`ReferenceReturnNet` **property getter** → `PdnMeshExtractor.BuildLayerRegions` (a Clipper union of
+every shape on every copper layer) and, inside `PdnRailRegions.ReferenceNetOn`,
+`DrcConnectivity.Extract` (the galvanic partition of all of it). Those are the same two operations
+the solve itself goes off-thread to perform. On the shipped example they are a few milliseconds and
+nobody had ever seen them; on a real board they are the freeze.
+
+**A property getter is the last place anyone looks for that**, which is most of why it survived.
+R-rail19-2c had made the walk cheap to REPEAT — two caches, and a counter to prove it — and nothing
+had ever asked what one of them COST. Caching an expensive thing and moving an expensive thing are
+different fixes for different problems, and only the first had been done.
+
+Both answers are deferred now (`RailRfViewModel.NetPreview.cs`, whose header carries the reasoning):
+the getter and the net preview publish null, start one job, and are re-asked when it lands. Two
+consequences are written down there rather than left to be discovered — `ReferenceReturnNet` reads
+null transiently, and a superseded job is **dropped, not stopped**, because neither Clipper function
+takes a cancellation token. The status strip says which is happening, on `BusyText`'s own terms.
+
+**The existing tests were left asserting the same things.** `PickNetHighlightTests` and
+`RailRemovalTests` close the new seam (`ReadCopperOffThread`) with an inline runner, because what
+they are about is WHAT is computed; the deferral itself is asserted separately, with the production
+seam and a drained `PostToUi` queue, so "not yet" is deterministic rather than racy.
+
+### 3. A load arrived drawing nothing, and a source holding no voltage
+
+The report asked for a dropped load to arrive carrying a small current — a milliamp — rather than
+reading *observe*, and for a source to arrive holding a voltage rather than needing one typed. Both
+placed on a real board gave a correct, useless answer: every drop zero by construction, with nothing
+to say the document was the reason.
+
+This contradicts §2.2 / Q-16 head-on, and the owner's call was to bend it deliberately rather than
+argue it. `RailRfViewModel.Seeds.cs` is the whole of the bend and carries the argument: the MODEL is
+unchanged, clearing the cell still restores the observation port, and the numeric layer has learned
+no default. What keeps the old rule's PURPOSE — which was never "no defaults" but "a number nobody
+typed must not read as one somebody did" — is that the status strip COUNTS the rows still holding
+what railRF put there.
+
+**The bookkeeping is free and worth copying.** Seeded rows are remembered by REFERENCE IDENTITY of
+the record; every committed edit goes through `Commit(_load with { … })`, which builds a new record,
+so a touched row falls out of the set by itself. There is no dirty flag to set, to clear, or to
+forget to clear, and the count is derived from the document's own lists so a removed row stops
+counting too. It deliberately does not survive a save: by the time somebody saved the document they
+adopted the number, and persisting "railRF chose this" would put a provenance field in a file format
+to carry a warning about a session that has ended.
+
+### 4. Nobody could tell which file the netlist row wanted — and a wrong one was silent
+
+Which file the netlist row wants is not guessable from a folder of half a dozen files a schematic
+tool has written — none of which is what that row takes.
+
+Two halves. The dialog never said what the row wanted, and **`ApplyImport` classified the
+PLACEMENT's refusal and dropped the NETLIST's on the floor** — so a file that `BoardNetlistFile.Read`
+had refused in its own words was read, rejected and discarded without a sentence anywhere. What he
+saw instead was the board's own true and useless message that no board netlist had named any nets.
+
+`RailImportReport.NetlistSummary` reports it now, and the sentence names the FAMILY of file the row
+wants rather than only repeating the reader's refusal: naming the format alone does not tell somebody
+which of their files it is. The dialog carries the same answer before the pick.
+
+### 5. A footprint could not be rotated while it was being placed
+
+A footprint could not be turned once a part type had been picked and the ghost was on the cursor: it
+had to be dropped, rotated, and placed again. True twice over — the placement ghost
+carried no angle at all (`new LayoutInstance { CellRef, X, Y, Mag }` and nothing else), and the
+editor's own `R` branch is gated on the Select tool, which the Instance tool is not, so the key
+reached nothing whichever half was fixed alone.
+
+`R`/`Shift+R` and `M`/`Shift+M` now turn and flip the armed ghost, ahead of both the mid-drag branch
+and the Select-tool block, on the paste ghost's own rule that whatever is attached to the cursor owns
+the keys it acts on. No undo entry, and none is missing — nothing has been placed yet.
+
+**The mirror is the subtle half and the test is what caught it.** An instance transform is
+mirror-then-rotate, so a world reflection NEGATES the angle as well as toggling the flag; the flag
+alone silently mis-places every rotated placement. The test also caught the ghost reporting −90 for a
+placement that would land at 270, because `LayoutInstance.RotationDegrees` normalizes on set and the
+ghost's own field did not.
+
+### 6. A missing silkscreen was reported where nobody would read it
+
+The report's own advice: make a silkscreen layer before placing an extra SMD part on a Gerber set
+that ships none, or expect trouble.
+
+`LandPatternLayers.Resolve` has said so since it was written — and the only route to that sentence
+was `GeneratedCellStore.GetOrCreate`'s diagnostics, which are returned on an ACTUAL generation and
+deliberately not on a reuse. So the first 0603 said it once, into Messages, and every one after it
+said nothing. What you get on a board imported from a set with no silkscreen in it is two bare copper
+lands on copper-coloured artwork with no body outline, and nothing connecting that to the technology.
+
+`BeginFootprintPlacement` now asks the same function — a pure query of it, so there is no second rule
+about which layer a role resolves to — on every arming, and adds one sentence naming the CONSEQUENCE
+rather than the omission. Missing COPPER is deliberately not reported there: that is a refusal, the
+generation raises it, and putting the weaker sentence first would bury the stronger one.
+
+### 7. NOT REPRODUCED: the freeze while placing a 0603
+
+A freeze while placing an 0603, and saving after placing a part also taking a while (though the parts
+were there on reopening). This one is recorded rather than fixed, because the obvious candidate was
+measured and **is not it**.
+
+Every layout edit posts `NotifyArtworkChanged`, which re-flattens the whole board on the UI thread
+where the board has instances on it. Measured in Release against a synthetic six-layer board of
+polygons and rectangles:
+
+| shapes | one re-flatten |
+|---|---|
+| 20,000 | 2.6 ms |
+| 50,000 | 8.9 ms |
+| 200,000 | 40.3 ms |
+
+Even at eight times that for a debug build it is not a freeze, so it was left alone — a lazy or
+off-thread re-flatten would have traded a real invariant (the extraction reads current copper) for
+nothing. The remaining candidates are the first-time land-pattern generation, the two canvases now
+repainting one large model, and something in that board’s own technology; none can be separated
+without the board. **Ask for the artwork before guessing again.**
+
 ## The Library palette's column count is the pointer's answer, not the layout's (2026-09-21)
 
 Owner: the docked Library is meant to open two component-glyph columns wide, and resizing the

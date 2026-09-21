@@ -21,9 +21,37 @@
 //
 // The flatten is shared with nothing else on purpose: PdnMeshExtractor builds its own inside the
 // extraction, at solve time, from the same function. Sharing THAT would tie a repaint to a solve.
+//
+// ── AND NONE OF IT RUNS ON THE UI THREAD ───────────────────────────────────────────────────────
+//
+// Reported from outside on a real six-layer board, 2026-09-21: confirming the reference layer made
+// the window stop responding. It was exact, and the path is short — ConfirmReference ->
+// RefreshNetMarks -> the ReferenceReturnNet getter, which did the whole of the following inline:
+//
+//   PdnMeshExtractor.BuildLayerRegions   a Clipper union of every shape on every copper layer
+//   DrcConnectivity.Extract              (inside ReferenceNetOn) the galvanic partition of ALL of it
+//
+// On the shipped example that is a handful of milliseconds and nobody ever saw it; on a production
+// board it is the same two operations the solve itself goes off-thread to do. A property getter was
+// the last place anyone would look for them, which is most of why it survived — R-rail19-2c made the
+// walk cheap to REPEAT and nothing ever asked what one of them cost.
+//
+// So both answers are DEFERRED: the getter and the preview publish null, start the work, and are
+// re-asked when it lands. Two consequences worth stating rather than discovering:
+//
+//   * NULL IS TRANSIENT NOW. `ReferenceReturnNet` reads null while a measurement is in flight, and
+//     RefreshNetMarks runs again on arrival — so a row's mark appears a moment after the
+//     confirmation rather than with it. That is the same contract the solve already has and the
+//     status strip says which is happening.
+//   * A SUPERSEDED JOB IS DROPPED, NOT STOPPED. Neither Clipper function takes a cancellation
+//     token, so cancelling abandons the RESULT and the work runs to completion in the background.
+//     That is enough for the requirement, which is that the window stays alive — and it is why
+//     starting a second job while one is running is cheap only because the flatten is shared.
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Render;
@@ -54,6 +82,39 @@ public sealed partial class RailRfViewModel
     /// <summary>How many times the reference return has been measured off this board.</summary>
     internal int ReferenceMeasurements { get; private set; }
 
+    // ── The copper jobs ────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// How a copper read leaves the UI thread. <c>Task.Run</c> in the application.
+    /// </summary>
+    /// <remarks>
+    /// The same seam, and for the same reason, as <see cref="RunOffThread"/> next door — a test that
+    /// wants the answer in hand replaces it with an inline call, and <see cref="CopperRead"/> is what
+    /// one that wants the real threading awaits.
+    /// </remarks>
+    internal Func<Action, Task> ReadCopperOffThread { get; set; } =
+        static work => Task.Run(work);
+
+    /// <summary>The copper read in flight, or null. <b>Awaitable</b>, so a test can wait for the
+    /// deferred answer rather than sleeping for it.</summary>
+    internal Task? CopperRead { get; private set; }
+
+    /// <summary>What a copper job is for — carried so the completion knows what to publish.</summary>
+    private sealed record CopperJob(LayerKey? MeasureReference, string? PreviewNet);
+
+    private CopperJob? _copperJob;
+    private CancellationTokenSource? _copperCts;
+
+    /// <summary>
+    /// True while the board's copper is being read — <b>what the strip says</b>, because the two
+    /// operations behind it are the same ones the solve announces and a window that went quiet for
+    /// tens of seconds with nothing on it is the report this file exists for.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isReadingCopper;
+
+    partial void OnIsReadingCopperChanged(bool value) => OnPropertyChanged(nameof(StatusLine));
+
     /// <summary>
     /// The net highlighted in the pick list, outlined on the board — or null for none.
     /// </summary>
@@ -70,13 +131,18 @@ public sealed partial class RailRfViewModel
 
     /// <summary>
     /// Which net the confirmed reference layer's copper belongs to, measured from the artwork — or
-    /// null before the reference is confirmed, and null where the measurement does not resolve.
+    /// null before the reference is confirmed, <b>while the measurement is in flight</b>, and where
+    /// the measurement does not resolve.
     /// </summary>
     /// <remarks>
     /// <b>Null before the confirmation is the requirement, not a default</b> (R-rail19-1d). railRF
     /// does not know which net the return is until somebody has said which layer it is on, and a
     /// pick list that marked a row as though it did would be making exactly the name-shaped guess
     /// R-rail19-1c refuses.
+    ///
+    /// <para><b>Reading it ASKS for the measurement</b> and does not perform one — see this file's
+    /// header. The answer arrives on a later turn of the UI thread and <see cref="RefreshNetMarks"/>
+    /// runs again then.</para>
     /// </remarks>
     public string? ReferenceReturnNet
     {
@@ -85,14 +151,8 @@ public sealed partial class RailRfViewModel
             if (!IsReferenceConfirmed || SelectedRail?.ReferenceLayer is not { } layer) return null;
             if (_referenceNetMeasuredOn == layer) return _referenceReturnNet;
 
-            if (LayerRegions() is not { } regions || Board is not { } board) return null;
-
-            _referenceNetMeasuredOn = layer;
-            ReferenceMeasurements++;
-            _referenceReturnNet =
-                PdnRailRegions.ReferenceNetOn(regions, board.Technology, board.NetPoints, layer);
-
-            return _referenceReturnNet;
+            BeginCopperJob(new CopperJob(layer, null));
+            return null;
         }
     }
 
@@ -115,53 +175,140 @@ public sealed partial class RailRfViewModel
     /// <see cref="InvalidateNetWalks"/> when the artwork changes, which is R-rail19-2c. Selecting the
     /// same row twice therefore costs nothing at all, and arrowing down a two-hundred-net list costs
     /// one walk per net rather than one per keystroke.
+    ///
+    /// <para>A net not in the cache is walked OFF the UI thread and the preview appears when it
+    /// lands — the header's reason. Arrowing quickly down a list therefore starts and abandons jobs,
+    /// which is correct: the last row is the one the user is on.</para>
     /// </remarks>
     private void ShowNetPreview(string? net)
     {
         if (net is not { Length: > 0 }) { NetPreview = null; return; }
         if (_netPreviews.TryGetValue(net, out var cached)) { NetPreview = cached; return; }
-        if (LayerRegions() is not { } regions || Board is not { } board) { NetPreview = null; return; }
 
-        // The reference layer is EXCLUDED from the rail's own seeding by Walk — a pad is a coordinate
-        // and a reference plane is usually under all of them (that method's own note). Before the
-        // reference is confirmed there is no layer to exclude, and a LayerKey this board does not
-        // have is how you say "exclude nothing" to a parameter that is not nullable.
-        var referenceLayer = SelectedRail?.ReferenceLayer ?? AbsentLayer(regions);
-
-        NetWalksPerformed++;
-        var walked = PdnRailRegions.Walk(
-            regions, board.Technology, board.NetPoints, net,
-            referenceLayer, board.ReferenceNet, extraRailSeeds: []);
-
-        var copper = new List<(LayerKey Layer, Paths64 Paths)>();
-        var bounds = Bbox.Empty;
-
-        // The reference net is the one case where the rail's own islands are empty and the
-        // REFERENCE's are the answer — Walk puts the copper on the confirmed reference layer there,
-        // and a user who picks the return still has to be shown what they picked.
-        var islands = walked.Power.Count > 0 ? walked.Power : walked.Reference;
-
-        foreach (var island in islands)
-            foreach (var (layer, paths) in island.Copper)
-            {
-                if (paths.Count == 0) continue;
-                copper.Add((layer, paths));
-                bounds = bounds.Union(island.Bounds);
-            }
-
-        var preview = new RailNetPreview(net, copper, bounds);
-        _netPreviews[net] = preview;
-        NetPreview = preview;
+        // Cleared rather than left standing: the outline on the board belongs to the row that WAS
+        // selected, and leaving it there while a different row is highlighted is the preview saying
+        // the wrong thing rather than saying nothing.
+        NetPreview = null;
+        BeginCopperJob(new CopperJob(null, net));
     }
 
-    /// <summary>The flattened copper every walk takes as its input, built once per board.</summary>
-    private Dictionary<LayerKey, Paths64>? LayerRegions()
+    /// <summary>
+    /// Starts one copper job, replacing whatever was in flight.
+    /// </summary>
+    /// <remarks>
+    /// <b>One at a time, and the newest wins.</b> Two of these racing would run two galvanic
+    /// partitions of the same board for no gain — and the newest is the one the user is waiting for,
+    /// exactly as the Fast solve loop cancels and replaces rather than queueing.
+    /// </remarks>
+    private void BeginCopperJob(CopperJob job)
     {
-        if (_layerRegions is not null) return _layerRegions;
-        if (Board is not { } board || board.Shapes.Count == 0) return null;
+        if (Board is not { } board || board.Shapes.Count == 0) return;
+        if (_copperJob == job) return;      // already asking this very question
 
-        // The extraction's own flatten, so a preview cannot outline copper the solve does not see.
-        return _layerRegions = PdnMeshExtractor.BuildLayerRegions(board.Shapes, board.Technology);
+        _copperCts?.Cancel();
+        _copperCts?.Dispose();
+
+        var cts = new CancellationTokenSource();
+        _copperCts = cts;
+        _copperJob = job;
+        IsReadingCopper = true;
+
+        // Everything the job reads is captured HERE, on the UI thread, for BuildRequest's own reason:
+        // the rows and the board move under a user who keeps working while this runs.
+        var shapes = board.Shapes;
+        var tech = board.Technology;
+        var netPoints = board.NetPoints;
+        string? referenceNet = board.ReferenceNet;
+        var railReference = SelectedRail?.ReferenceLayer;
+        var regions = _layerRegions;
+
+        CopperRead = ReadCopperOffThread(() =>
+        {
+            regions ??= PdnMeshExtractor.BuildLayerRegions(shapes, tech);
+
+            string? measured = null;
+            RailNetPreview? preview = null;
+
+            if (job.MeasureReference is { } layer)
+                measured = PdnRailRegions.ReferenceNetOn(regions, tech, netPoints, layer);
+
+            if (job.PreviewNet is { } net)
+            {
+                // The reference layer is EXCLUDED from the rail's own seeding by Walk — a pad is a
+                // coordinate and a reference plane is usually under all of them (that method's own
+                // note). Before the reference is confirmed there is no layer to exclude, and a
+                // LayerKey this board does not have is how you say "exclude nothing" to a parameter
+                // that is not nullable.
+                var walked = PdnRailRegions.Walk(
+                    regions, tech, netPoints, net,
+                    railReference ?? AbsentLayer(regions), referenceNet, extraRailSeeds: []);
+
+                var copper = new List<(LayerKey Layer, Paths64 Paths)>();
+                var bounds = Bbox.Empty;
+
+                // The reference net is the one case where the rail's own islands are empty and the
+                // REFERENCE's are the answer — Walk puts the copper on the confirmed reference layer
+                // there, and a user who picks the return still has to be shown what they picked.
+                var islands = walked.Power.Count > 0 ? walked.Power : walked.Reference;
+
+                foreach (var island in islands)
+                    foreach (var (islandLayer, paths) in island.Copper)
+                    {
+                        if (paths.Count == 0) continue;
+                        copper.Add((islandLayer, paths));
+                        bounds = bounds.Union(island.Bounds);
+                    }
+
+                preview = new RailNetPreview(net, copper, bounds);
+            }
+
+            var finished = regions;
+            PostToUi(() => FinishCopperJob(cts, job, finished, measured, preview));
+        });
+    }
+
+    /// <summary>Publishes one copper job's answers, unless it has been superseded.</summary>
+    private void FinishCopperJob(
+        CancellationTokenSource cts, CopperJob job,
+        Dictionary<LayerKey, Paths64> regions, string? measured, RailNetPreview? preview)
+    {
+        // A job from a board that has since changed is DROPPED — not merely stale: it describes
+        // copper nobody can see any more, which is the same rule Finish() applies to a solve.
+        if (!ReferenceEquals(_copperCts, cts)) { cts.Dispose(); return; }
+
+        _copperCts = null;
+        _copperJob = null;
+        IsReadingCopper = false;
+        cts.Dispose();
+
+        // CopperRead is deliberately LEFT holding the finished task rather than nulled. It exists to
+        // be awaited, and a job that finishes before BeginCopperJob has even assigned it would
+        // otherwise null the field first and have the assignment put it back — a race whose only
+        // victim is a caller trying to wait for the thing that already happened.
+
+        // The FLATTEN is kept whatever the job was for — it is the expensive half and it is the same
+        // answer for every question asked of this board.
+        _layerRegions = regions;
+
+        if (job.MeasureReference is { } layer)
+        {
+            _referenceNetMeasuredOn = layer;
+            _referenceReturnNet = measured;
+            ReferenceMeasurements++;
+            RefreshNetMarks();
+        }
+
+        if (job.PreviewNet is { } net && preview is not null)
+        {
+            NetWalksPerformed++;
+            _netPreviews[net] = preview;
+
+            // Only where that row is still the selected one. A user who arrowed past it while this
+            // ran is looking at a different net, and publishing this one would outline the row they
+            // left.
+            if (string.Equals(SelectedNet?.Name, net, StringComparison.OrdinalIgnoreCase))
+                NetPreview = preview;
+        }
     }
 
     /// <summary>A drawing layer this artwork does not use — see <see cref="ShowNetPreview"/>.</summary>
@@ -179,6 +326,15 @@ public sealed partial class RailRfViewModel
     /// </summary>
     internal void InvalidateNetWalks()
     {
+        // A read in flight is of the board that has just gone, so its answer may not be published.
+        // It cannot be STOPPED (this file's header says why), only abandoned.
+        _copperCts?.Cancel();
+        _copperCts?.Dispose();
+        _copperCts = null;
+        _copperJob = null;
+        CopperRead = null;
+        IsReadingCopper = false;
+
         _layerRegions = null;
         _netPreviews.Clear();
         _referenceNetMeasuredOn = null;
@@ -206,6 +362,9 @@ public sealed partial class RailRfViewModel
     /// Called on every confirmation and every rail change, because the answer is about the SELECTED
     /// rail's reference layer and both move it. Nothing is filtered — R-rail19-1d's whole point is
     /// that the row stays, selectable, and says what it is.
+    ///
+    /// <para>It is also what <see cref="FinishCopperJob"/> calls when a deferred measurement lands,
+    /// which is the whole of the re-asking the deferral needs.</para>
     /// </remarks>
     internal void RefreshNetMarks()
     {

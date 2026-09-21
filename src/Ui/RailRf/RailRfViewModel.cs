@@ -305,14 +305,16 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
     // ── Add and remove ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Adds an empty source row. It refuses until it is anchored, which is visible on the
+    /// <summary>Adds a source row. It refuses until it is anchored, which is visible on the
     /// row rather than only at Run — an unanchored row the user cannot see is a row they will not
     /// fix.</summary>
+    /// <remarks><b>Carrying a voltage</b> — see <c>RailRfViewModel.Seeds.cs</c> for which one and for
+    /// why a seeded value is allowed here when the model itself still refuses to default one.</remarks>
     [RelayCommand]
     private void AddSource()
     {
         if (SelectedRail is not { } rail) return;
-        rail.Sources.Add(new RailSource());
+        rail.Sources.Add(NewSeededSource(rail));
         RebuildForSelectedRail();
         QueueResolve();
     }
@@ -329,13 +331,18 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         QueueResolve();
     }
 
-    /// <summary>Adds an empty load row. <b>With no current</b>, which is an observation port and is
-    /// what the row reads — never a zero somebody did not type.</summary>
+    /// <summary>Adds a load row, <b>carrying a small starting current rather than reading
+    /// <i>observe</i></b>.</summary>
+    /// <remarks>
+    /// The absence is still representable and clearing the cell still restores it — what changed is
+    /// only what the ADD gesture hands you, and <c>RailRfViewModel.Seeds.cs</c> argues that in one
+    /// place rather than at each of the four sites that make a row.
+    /// </remarks>
     [RelayCommand]
     private void AddLoad()
     {
         if (SelectedRail is not { } rail) return;
-        rail.Loads.Add(new RailLoad());
+        rail.Loads.Add(NewSeededLoad());
         RebuildForSelectedRail();
         QueueResolve();
     }

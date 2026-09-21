@@ -1,5 +1,29 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The assembly and fabrication drawings were not layers (2026-09-21)
+
+From a field report, 2026-09-21: besides the silkscreen, a real output set also ships a top and a
+bottom assembly drawing.
+
+`GerberLayerCascade`'s rung-3 table had no row for either, so a set shipping one had it fall through
+to the mapping dialog as an unidentified drawing layer with a generated name.
+
+**It costs more than a label.** `LandPatternLayers` resolves a land pattern's four roles by alias,
+then purpose, then NAME — so `Assembly Top` is a front-side name containing "assembly" and a
+technology that carries it gives every hand-placed footprint on that board its courtyard outline.
+Unidentified, the courtyard is omitted, with a diagnostic nobody has a reason to read. The same
+applies to `Fabrication Top` through the `F.Fab` role.
+
+Six rows added, and the names are **`NameFor`'s own** — `KindNames` already spells `AssemblyDrawing`
+as "Assembly" and `FabricationDrawing` as "Fabrication", so a set that DECLARES the function in its
+`%TF.FileFunction` and a set that merely names the file land on one layer rather than on two
+near-duplicates. `"fab"` is three characters and therefore whole-word only (`ContainsWord`'s floor);
+`"assy"` and `"assembly"` clear it as substrings.
+
+Neither row names a tool, a vendor or a product: an assembly drawing is what the layer IS. Gate:
+`tests/Ui.Tests/GerberAssemblyLayerTests`, which asserts the identification AND the courtyard that
+follows from it — the second half is the whole reason the first is worth having.
+
 ## Authored board brief 2 — net identity, and the four things that were silent (2026-09-20)
 
 The window half — the pick list, the sentence that had to disappear and the gesture — is in

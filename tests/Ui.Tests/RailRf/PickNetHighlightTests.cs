@@ -147,6 +147,15 @@ public sealed class PickNetHighlightTests
         Assert.True(File.Exists(crail), $"The shipped example is not at {crail}.");
 
         var vm = new RailRfViewModel(RailDocumentIo.LoadFromFile(crail), crail);
+
+        // THE COPPER READ, INLINE. Since 2026-09-21 the flatten and the galvanic walk happen off the
+        // UI thread and their answers arrive on a later turn (RailRfViewModel.NetPreview.cs' header —
+        // a real board made the window unresponsive for as long as they took). Nothing about WHAT is
+        // computed changed, and that is what these tests are about, so the seam is closed here rather
+        // than every assertion below being rewritten as a wait. The deferral itself is asserted by
+        // RailRfReportedDefectsTests, which is the file that cares that it IS deferred.
+        vm.ReadCopperOffThread = work => { work(); return System.Threading.Tasks.Task.CompletedTask; };
+
         Assert.Empty(vm.LoadDocumentReferences());
         return vm;
     }

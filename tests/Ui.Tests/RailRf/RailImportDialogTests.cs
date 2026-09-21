@@ -269,7 +269,11 @@ public class RailImportDialogTests : IDisposable
         string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
         Assert.Contains("{Binding ImportSummary}", xaml);
         Assert.Contains("{Binding HasImportSummary}", xaml);
-        Assert.Contains("ImportSummary = RailImportReport.BomSummary(bom)",
+        // The NETLIST joined it on 2026-09-21 — a netlist file that turned out not to be one was
+        // read, refused by its own reader, and discarded without a word (RailRfReportedDefectsTests
+        // asserts the sentence). So the call the window makes is the one that reports BOTH, and this
+        // scan is what stops a later edit quietly dropping the second half again.
+        Assert.Contains("ImportSummary = RailImportReport.Summary(bom, netlist)",
                         Read("src/Ui/RailRf/RailRfViewModel.Import.cs"));
     }
 
