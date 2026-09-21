@@ -9,6 +9,11 @@
 // coordinate, every mounting inductance a typed one, and no parts-table row. None of the four fails.
 // All four degrade to the path a board with no companion files takes, which is why nobody noticed.
 //
+// THREE OF THE FOUR WERE THIS FILE'S TO FIX AND THE FOURTH WAS NOT. Producing the pads is what the
+// first three needed; nothing CONSUMED them to make a parts-table row, so a board with fifty-five
+// placed footprints still opened with column headings over nothing. RailPartDiscovery (brief 26) is
+// that consumer, and it is where the fourth degradation is closed — this file supplies its input.
+//
 // PdnBoardPads' governing rule is that the netlist is EVIDENCE ABOUT THE ARTWORK and never geometry.
 // This file is the opposite and says so: its pads ARE geometry, measured off the board, and they
 // carry PdnPadSource.Artwork so every report that names one can say which claim it is reading

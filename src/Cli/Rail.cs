@@ -328,7 +328,7 @@ internal static class Rail
         var provenance = Provenance(
             doc, o, board, input.DocumentPath, chosen, results, resolvedPads.Pads);
 
-        Report(doc, run, results, order, provenance, o);
+        Report(doc, run, results, order, provenance, o, board, resolvedPads.Pads);
 
         // The DataSet is built whether or not anything is exported, because `--json` carries it and
         // the shape a caller reads is the same either way.
@@ -957,7 +957,8 @@ internal static class Rail
 
     private static void Report(
         RailDocument doc, RailDcRunResult run, IReadOnlyList<RailDcResult> results,
-        RailOrderResult order, RailProvenance provenance, Options o)
+        RailOrderResult order, RailProvenance provenance, Options o,
+        BoardInputs? board, IReadOnlyList<PdnPad> pads)
     {
         Console.WriteLine($"railRF:   {(doc.Name.Length > 0 ? doc.Name : "(unnamed)")}");
         foreach (string line in provenance.Lines) Console.WriteLine($"          {line}");
@@ -1017,9 +1018,52 @@ internal static class Rail
             { Console.Error.WriteLine($"finding: [{result.RailName}] {f}"); JsonRun.Note(CliDiagnostics.RailFinding(result.RailName, f)); }
             foreach (string n in result.Notes)
             { Console.Error.WriteLine($"note: [{result.RailName}] {n}"); JsonRun.Note(CliDiagnostics.RailRunNote(n)); }
+
+            // ── R-rail26-7: THE VERB REPORTS; IT DOES NOT WRITE ────────────────────────────
+            //
+            // `Authoring.cs`' standing rule — there are deliberately no per-primitive edit verbs,
+            // and once a document exists the way to change it is to WRITE it. So this prints the
+            // same parts the WINDOW is offering, by name, and puts none of them in the `.crail`:
+            // an out-of-process agent can see the twenty-four and write them itself.
+            //
+            // Through RailPartDiscovery, which is also what the window calls — the two surfaces
+            // must not come to different conclusions about one board (R-rail26-1).
+            foreach (string line in Discovered(doc, board, pads, result))
+            { Console.Error.WriteLine($"note: [{result.RailName}] {line}"); JsonRun.Note(CliDiagnostics.RailRunNote(line)); }
         }
 
         _ = run;
+    }
+
+    /// <summary>
+    /// What <see cref="RailPartDiscovery"/> makes of one solved rail, as lines to print.
+    /// </summary>
+    /// <remarks>
+    /// <b>The regions are the RESULT's own</b> — the walk the DC answer was built from, carried on
+    /// <see cref="RailDcResult.Regions"/>, never a second one performed here. Empty where the rail
+    /// produced none, which is what a refused run leaves behind and is not something to report as
+    /// a finding about the parts.
+    ///
+    /// <para><b>There is no bill of materials on this path</b>: a <c>.crail</c> carries no BOM
+    /// reference, so every row the verb names comes back with no part number and
+    /// <c>RailPartOrigin.Artwork</c>. That is the honest state and it is the same one the window
+    /// reaches on a document nobody imported a BOM into.</para>
+    /// </remarks>
+    private static IReadOnlyList<string> Discovered(
+        RailDocument doc, BoardInputs? board, IReadOnlyList<PdnPad> pads, RailDcResult result)
+    {
+        if (board is null || doc.Rail(result.RailName) is not { } rail) return [];
+
+        return RailPartDiscovery.Discover(new RailDiscoveryRequest
+        {
+            Rail         = rail,
+            Pads         = pads,
+            Regions      = result.Regions,
+            Technology   = board.Technology,
+            Shapes       = board.Shapes,
+            DbuPerMicron = board.View.DbuPerMicron,
+            ReferenceNet = doc.ReferenceNet,
+        }).Lines;
     }
 
     // ── step 5: what it writes (R-rail10-4) ──────────────────────────────────

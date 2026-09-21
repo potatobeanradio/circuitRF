@@ -9870,3 +9870,68 @@ are document-relative and that is already the default base. Two things came with
   exactly one of the two). `Name` is also a top-level property of a `.crail`, so a railRF document
   somebody called "File" would have sent every absolute reference in it down the workspace-relative
   path. Gate: `tests/Ui.Tests/WorkspaceArchiveTests.ARailRfDocumentsArtwork_IsFoundAndRepointed`.
+
+## The parts table had no PRODUCER — `RailPartDiscovery` (2026-09-21, brief-railrf-26)
+
+Not "the table lost some rows". **Nothing in circuitRF had ever made one.** `new RailPart` appeared
+nowhere in `src/` except `RailDocumentIo` reading one back off a file, `RailPartOrigin.Bom` was
+assigned by nothing at all although `RailPart.cs`' own header stated BOM pre-filling as existing
+behaviour, and the window had no add-part gesture — no Add, no Remove, no context menu. So every part
+row in every `.crail` that has ever existed was hand-written into the JSON, including the shipped
+example's fourteen. A board with fifty-five placed footprint instances, each carrying a designator
+and each pointing at a generated land pattern, opened with column headings over nothing.
+
+`RailPartDiscovery` is that producer. **It returns candidate rows and never writes them onto the
+document** — a function that edited the document would be a second writer beside the view model's
+undo stack — and it lives here rather than in the view model for `RailArtwork`'s reason: `circuitrf
+rail` and the window must not come to different conclusions about one board.
+
+### The predicate, and the one place it is not exact
+
+A candidate is a **two-terminal part with one pad on the rail's own copper and one on the
+reference**. The membership test is `PdnRailRegionSet` containment, read off the LAST extraction and
+never walked again — a galvanic test, not a same-layer one, which matters because on a two-layer
+board both pads of a decoupling capacitor sit on the top and the ground-side one reaches the plane
+through its own stitching via. A test asking "is this pad on the reference LAYER" finds no decoupling
+on any such board at all.
+
+**Containment alone is not enough, and the region set cannot make it enough.**
+`PdnRailRegions.ReferenceNetOn` records the exact discriminator — a point belongs to the reference
+only where every piece of copper covering it is ONE galvanically-joined net — and that test needs the
+whole `DrcNetPiece` set. A `PdnRailRegionSet` does not carry one: `Islands(..., onlyLayer:
+referenceLayer)` keeps only the reference LAYER's copper, so a pad's own top-side land is not in it
+either way. Containment therefore reads EVERY pad on a board with an inner plane as "on the
+reference", and a **pull-up resistor** — one pad on the rail, one on a signal net, both over the same
+plane — would be offered as a decoupling capacitor. That is exactly the failure the classification
+table exists to prevent: a library-defaulted ESR on a part that is not a capacitor produces a curve
+that is smooth, plausible and wrong.
+
+So **where a pad states a NET, the net is a veto**: it can take a pad off copper containment put it
+on, never put one on. That is exact on every board whose pads carry nets — a board netlist, or
+artwork with a schematic behind it. **Where nothing names a net the veto cannot fire and containment
+is all there is**: on a Gerber set the copper stops at every pad, so a ground land with a stitching
+via in it and a signal land without one are the same two polygons over the same plane, and there is
+no information anywhere that separates them. Discovery over-offers there rather than under-offering,
+which is survivable only because R-rail26-4 makes this an OFFER a reader confirms — every offered row
+carries no capacitance, is listed AS unresolved, and is counted on the face.
+
+### Two smaller traps
+
+- **The pad COUNT is what the board states, not what the part has.** The shipped example's `.ipc`
+  lists 31 pads for a board with three ICs on it, so every one of them reads as a single-pad part.
+  The skip sentence says *"the board states no other pad for it"* rather than calling it a
+  one-terminal part, and the converse is worth knowing: a three-pin regulator whose netlist carries
+  only its VDD and GND pads reads as two-terminal and IS offered. The offer is what makes that
+  survivable.
+- **A computed mounting loop must not be written onto the row.** `RailPartResolver` takes a TYPED
+  mounting inductance over a computed one, so a number written into the document would freeze today's
+  via geometry into one a re-layout could no longer move, and `RailMountingBasis` would then report it
+  as typed. The candidate carries the loop for REPORTING; the row carries null and picks its loop up
+  from the solve's own `ComputedMounting` map once it is on the rail.
+
+`PdnMountingLoopExtractor` is deliberately **not** the predicate, although it is the obvious shortcut:
+its third clause — no via within reach — is not part of this question. A capacitor whose return via is
+too far to price still IS decoupling on this rail; it is a row whose mounting inductance is
+unresolved, and using the loop's verdict as the filter would silently drop real parts from the bank.
+
+Gate: `tests/Ui.Tests/RailRf/RailPartDiscoveryTests.cs`.

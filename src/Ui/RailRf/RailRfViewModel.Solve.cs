@@ -758,6 +758,16 @@ public sealed partial class RailRfViewModel
         // R-rail23-3a. AFTER the assignment above, because the baseline is built from what is on
         // screen — and the run that WAS on screen is what becomes the thing to compare against.
         CaptureBaseline(view.Kind);
+
+        // ── R-rail26-2b: THE OFFER FOLLOWS THE RESULT, AND THE TABLE DOES NOT ──────────────────
+        //
+        // Both halves of discovery's predicate are the EXTRACTION's galvanic regions, which arrive
+        // with the result and did not exist a moment ago — so a board solved for the first time has
+        // parts to offer that it had none of before. The parts TABLE is not rebuilt here because
+        // nothing on a row comes off the result: its electrical columns are RailPartResolver's, and
+        // replacing every row object on every solve would drop the selection the board's mark
+        // follows.
+        RebuildPartOffer();
     }
 
     private void CancelInFlight()

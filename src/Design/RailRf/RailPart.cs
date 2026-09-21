@@ -12,21 +12,45 @@
 // live, and it is here.
 //
 // The consequence worth stating: this list is NOT a second bill of materials and railRF does not
-// require one row per capacitor. A rail with an imported BOM carries rows pre-filled from it
-// (Origin = Bom, exactly as RailAggressor does); a rail with no artwork and no BOM — the P1 lumped
-// case — carries rows somebody typed. The same list serves both, and Origin is what tells them
-// apart on the row, because a pre-filled number a user did not check is the one that will be wrong.
+// require one row per capacitor. A row arrives one of three ways and `Origin` is what tells them
+// apart, because a pre-filled number a user did not check is the one that will be wrong:
+//
+//   Typed     somebody typed it — the P1 lumped case, which §6 makes artwork-OPTIONAL
+//   Artwork   `RailPartDiscovery` found it on the board and the user accepted the offer
+//   Bom       the same, with its part number pre-filled from the bill of materials
+//
+// UNTIL brief 26 THIS COMMENT DESCRIBED BOM PRE-FILLING AS EXISTING BEHAVIOUR AND IT DID NOT EXIST:
+// `RailPartOrigin.Bom` was assigned by nothing anywhere in `src/`, `new RailPart` appeared only in
+// the reader, and the window had no add-part gesture at all — so every row in every document had
+// been hand-written into the JSON. `RailPartDiscovery` is the producer this list never had.
 
 namespace CircuitRF.Design.RailRf;
 
 /// <summary>Where a part row came from. Shown on the row — see <see cref="RailPart.Origin"/>.</summary>
 public enum RailPartOrigin
 {
-    /// <summary>Somebody typed it. The default, because nothing else can be assumed about a row.</summary>
+    /// <summary>Somebody typed it. The default, because nothing else can be assumed about a row —
+    /// and what a <c>.crail</c> written before <see cref="Artwork"/> existed still reads as.</summary>
     Typed,
 
     /// <summary>Pre-filled from the bill of materials (brief 2's <c>BomFile</c>).</summary>
     Bom,
+
+    /// <summary>
+    /// Found ON THE BOARD by <see cref="RailPartDiscovery"/> — two pads, one on this rail's copper
+    /// and one on its reference — and accepted by the user (R-rail26-3).
+    /// </summary>
+    /// <remarks>
+    /// <b>It carries no part number and nothing was derived from its footprint.</b> An 0402 land
+    /// pattern is a case size; it is not a capacitance, an ESR or a dielectric class, and a row
+    /// invented from one would be exactly the defaulted number this tool marks and counts
+    /// everywhere else. So the row is listed AS unresolved until a BOM or a user says what the part
+    /// is — which is honest, and is the state the parts table already renders.
+    ///
+    /// <para>A user who edits its part number has ADOPTED it, which the existing origin display
+    /// already handles (R-rail26-6).</para>
+    /// </remarks>
+    Artwork,
 }
 
 /// <summary>

@@ -122,6 +122,11 @@ public sealed partial class RailRfViewModel
                 ? Parts.FirstOrDefault(x => string.Equals(x.Refdes, r, StringComparison.OrdinalIgnoreCase))
                 : null;
 
+            // R-rail26-4a. The offer is recomputed on the SAME FUNNEL the table is, so a refdes
+            // that has just been added is never offered again and nothing has to remember to
+            // refresh it. R-rail26-5's sentence hangs off the same call for the same reason.
+            RebuildPartOffer();
+
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(RecognisedAggressors));
             OnPropertyChanged(nameof(HasRecognisedAggressors));
@@ -333,4 +338,172 @@ public sealed partial class RailRfViewModel
 
         RebuildForSelectedRail();
     }
+
+    // ══ THE PARTS ON THE BOARD (brief 26) ═════════════════════════════════════════════════════
+    //
+    // The table above had no PRODUCER. `new RailPart` appeared nowhere in src/ except the reader,
+    // `RailPartOrigin.Bom` was assigned by nothing, and this window had no add-part gesture at all
+    // — so the only way a part had ever appeared in railRF was somebody writing the JSON, and a
+    // board with fifty-five placed footprints opened with column headings over nothing and no
+    // sentence anywhere saying why.
+    //
+    // NOTHING HERE CLASSIFIES A BOARD. `RailPartDiscovery` does, in src/Design, so `circuitrf rail`
+    // and this window cannot come to different conclusions about one board (R-rail26-1). What is
+    // here is what turns its answer into an OFFER.
+
+    /// <summary>
+    /// What the board has to say about this rail's parts — the candidates, what was skipped and
+    /// why. <b>Recomputed on <see cref="RebuildParts"/>' own funnel</b>, never on a timer.
+    /// </summary>
+    public RailDiscoveryResult PartOffer { get; private set; } =
+        RailDiscoveryResult.None(RailDiscoveryState.NotExtracted);
+
+    /// <summary>True while there is something to offer — the line appears only when there is.</summary>
+    public bool HasPartOffer => PartOffer.HasOffer;
+
+    /// <summary>R-rail26-4's headline: how many two-terminal parts sit between this rail and its
+    /// reference and are not in the document.</summary>
+    public string PartOfferText => PartOffer.OfferSentence;
+
+    /// <summary>
+    /// The other half — how many parts touch this rail and are NOT decoupling, broken down by why.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not decoration</b> (R-rail26-4). A designer who is told 24 were added and not that 12
+    /// were skipped has no way to know whether the bulk capacitor they are looking for is one of
+    /// the 12.
+    /// </remarks>
+    public string PartOfferSkippedText => PartOffer.SkippedSentence;
+
+    /// <summary>True while anything was skipped.</summary>
+    public bool HasPartOfferSkipped => PartOffer.SkippedSentence.Length > 0;
+
+    /// <summary>The per-part reasons, for the offer line's tooltip — every skipped refdes named,
+    /// because a count alone cannot answer "is my bulk capacitor one of them".</summary>
+    public string PartOfferSkippedTooltip =>
+        PartOffer.Skipped.Count == 0 ? "" : string.Join("\n", PartOffer.Skipped.Select(s => s.Sentence));
+
+    /// <summary>
+    /// The sentence an EMPTY parts table carries, or null while it has rows (R-rail26-5).
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the part of the report that is a defect on its own</b>: a pane that is empty and
+    /// silent reads as a broken pane, and that is what was reported. It names the STATE it is in
+    /// rather than saying one thing always — before a board, before a reference is confirmed, on a
+    /// rail where nothing was found, and on one where something was.
+    /// </remarks>
+    public string? PartsEmptyText
+    {
+        get
+        {
+            if (Parts.Count > 0) return null;
+
+            if (SelectedRail is null)
+                return "No rail yet. Pick one on the board, or add one — a part row belongs to a " +
+                       "rail, so there is nothing for it to sit on until there is one.";
+
+            if (Board is null)
+                return "No board yet. Open the layout this document names, or import one — with no " +
+                       "artwork railRF has nothing to read parts off, and a part row is one you type.";
+
+            if (PartOffer.State == RailDiscoveryState.NotExtracted)
+                return "This rail's copper has not been extracted yet. Confirm its reference return " +
+                       "and run, and railRF will look for the parts sitting between the rail and it.";
+
+            if (PartOffer.HasOffer)
+                return $"This rail has no part rows yet — add the {PartOffer.Offered.Count} railRF " +
+                       "found on the board, or type them.";
+
+            return "No two-terminal part sits between this rail and its reference, so there was " +
+                   "nothing to offer. Rows can still be typed — §6 makes artwork optional.";
+        }
+    }
+
+    /// <summary>True while <see cref="PartsEmptyText"/> has something to say.</summary>
+    public bool HasPartsEmptyText => PartsEmptyText is not null;
+
+    /// <summary>
+    /// Re-reads the board for this rail's parts.
+    /// </summary>
+    /// <remarks>
+    /// <b>The regions come off the LAST EXTRACTION</b> (R-rail26-2a) — <see cref="SeriesRegions"/>,
+    /// which reads them back off the DC result rather than walking the copper a second time. A
+    /// second connectivity model beside the one the DC answer is built from is two answers to one
+    /// question, and both halves of this predicate are that walk's own answer.
+    /// </remarks>
+    private void RebuildPartOffer()
+    {
+        PartOffer = SelectedRail is { } rail && Board is { } board
+            ? RailPartDiscovery.Discover(new RailDiscoveryRequest
+            {
+                Rail         = rail,
+                Pads         = board.Pads,
+                Regions      = SeriesRegions(rail),
+                Bom          = Bom,
+                ReferenceNet = board.ReferenceNet ?? Document.ReferenceNet,
+
+                // NO TECHNOLOGY AND NO SHAPES, deliberately. Those are what discovery computes a
+                // candidate's MOUNTING LOOP from, and nothing on this window reads one: a row gets
+                // its loop after it is added, from the solve's own ComputedMounting map, exactly as
+                // every other row does (R-rail26-3a). The verb supplies them because its report is
+                // what an agent writes rows from, and a loop it never printed would be a loop
+                // nobody could use.
+            })
+            : RailDiscoveryResult.None(RailDiscoveryState.NotExtracted);
+
+        OnPropertyChanged(nameof(PartOffer));
+        OnPropertyChanged(nameof(HasPartOffer));
+        OnPropertyChanged(nameof(PartOfferText));
+        OnPropertyChanged(nameof(PartOfferSkippedText));
+        OnPropertyChanged(nameof(HasPartOfferSkipped));
+        OnPropertyChanged(nameof(PartOfferSkippedTooltip));
+        OnPropertyChanged(nameof(PartsEmptyText));
+        OnPropertyChanged(nameof(HasPartsEmptyText));
+        AcceptDiscoveredPartsCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Adds every offered row to the selected rail, and re-solves ONCE.
+    /// </summary>
+    /// <remarks>
+    /// <b>ONE EDIT, and that is R-rail26-4b.</b> <c>SetPartsMounted</c> has already settled that a
+    /// batch is the real gesture; 24 separate undo entries would be 24 presses to take back one
+    /// button. The undo entry is <see cref="QueueResolve"/>'s, which this calls once at the end —
+    /// the same funnel every other committed edit in this window goes through.
+    ///
+    /// <para><b>Idempotent by refdes</b> (R-rail26-4a): a refdes the rail already carries is never
+    /// added twice, so pressing the button again adds nothing. Discovery filters on the same rule,
+    /// so after the first press there is nothing left to offer and the line goes away.</para>
+    ///
+    /// <para><b>A discovered row is a row like any other</b> (R-rail26-6) — it saves, it mounts and
+    /// unmounts, it resolves against the library and it is deletable. <c>Origin</c> is all that says
+    /// where it came from.</para>
+    /// </remarks>
+    /// <returns>How many rows were added.</returns>
+    public int AddDiscoveredParts()
+    {
+        if (SelectedRail is not { } rail) return 0;
+
+        var already = new HashSet<string>(
+            rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+
+        int added = 0;
+        foreach (var part in PartOffer.Parts)
+            if (part.Refdes is { Length: > 0 } refdes && already.Add(refdes))
+            {
+                rail.Parts.Add(part);
+                added++;
+            }
+
+        if (added == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return added;
+    }
+
+    /// <summary>The button on the offer line.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand(CanExecute = nameof(HasPartOffer))]
+    public void AcceptDiscoveredParts() => AddDiscoveredParts();
 }

@@ -1685,7 +1685,13 @@
                     <Border Grid.Row="2" Name="PartsCard" Classes="card" Margin="0,5,0,0"
                             ClipToBounds="True"
                             IsVisible="{Binding ShowParts}">
-                        <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto" MaxHeight="170">
+                        <!-- TWO ROWS BELOW THE LIST, AND SyncPanes STILL OWNS ROW 2 (brief 26).
+                             Row 3 is the sentence an empty table carries and row 4 is the offer;
+                             both are Auto and both collapse to nothing when they have nothing to
+                             say, so the card is the height it always was on a document that
+                             already has its rows. They are APPENDED rather than inserted because
+                             RailRfWindow.SyncPanes addresses the list's row by index. -->
+                        <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto,Auto,Auto" MaxHeight="210">
                             <TextBlock Classes="cardhdr" Text="Parts"/>
                             <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
                                  This is R-rail7-2's one exception and it is an owner decision: any
@@ -1827,6 +1833,50 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+
+                            <!-- ── R-rail26-5: THE EMPTY PANE SAYS WHERE ROWS COME FROM ──────
+                                 This is the part of the report that is a defect on its own. The
+                                 card was column headings over nothing, with no sentence anywhere
+                                 saying why — and a pane that is empty and silent reads as a broken
+                                 pane, which is what was reported. The sentence names the STATE it
+                                 is in: no rail, no board, no extraction yet, nothing found, or
+                                 something found and not yet added. -->
+                            <SelectableTextBlock Grid.Row="3" Classes="note" TextWrapping="Wrap"
+                                                 Margin="2,6,2,2"
+                                                 IsVisible="{Binding HasPartsEmptyText}"
+                                                 Text="{Binding PartsEmptyText}"/>
+
+                            <!-- ── R-rail26-4: AN OFFER, AND THE COUNTS ARE PART OF IT ───────
+                                 The rows land in a document that gets saved, so this follows
+                                 RecognisedAggressors and RailRegulatorOffer exactly: a line with a
+                                 button, not an edit that happens by itself.
+
+                                 THE SECOND SENTENCE IS NOT DECORATION. A designer told that 24
+                                 were added and not that 12 were skipped has no way to know whether
+                                 the bulk capacitor they are looking for is one of the 12 — so the
+                                 count is on the face and every skipped part is named in the
+                                 tooltip. -->
+                            <Border Grid.Row="4" Classes="card" Margin="0,5,0,0"
+                                    IsVisible="{Binding HasPartOffer}">
+                                <StackPanel Spacing="3">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                             VerticalAlignment="Center"
+                                                             Text="{Binding PartOfferText}"/>
+                                        <Button Grid.Column="1" Content="Add them" FontSize="10"
+                                                Padding="8,1" Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding AcceptDiscoveredPartsCommand}"
+                                                ToolTip.Tip="Add every two-terminal part railRF found between this rail and its reference. Each row says it came from the artwork, and carries NO capacitance — an 0402 land pattern is a case size, not a part."/>
+                                    </Grid>
+                                    <SelectableTextBlock Classes="note" TextWrapping="Wrap"
+                                                         IsVisible="{Binding HasPartOfferSkipped}"
+                                                         Text="{Binding PartOfferSkippedText}"
+                                                         ToolTip.Tip="{Binding PartOfferSkippedTooltip}"/>
+                                    <TextBlock Classes="note" TextWrapping="Wrap"
+                                               Text="Offered, not created — and a row arrives with no part number until a bill of materials or you say what the part is."/>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Border>
                 </Grid>

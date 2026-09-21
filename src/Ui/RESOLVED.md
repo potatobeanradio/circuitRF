@@ -34008,3 +34008,60 @@ is not recognised as copper — `GerberLayerIdentity`'s copper rows match `coppe
 `inner`, and a numbered `layer n`. Adding net-name spellings is a classification guess and belongs in
 its own change; what makes it survivable today is that the extraction already reports every drawing
 layer carrying geometry no conductor claims, and that report now has a combo that can act on it.
+
+## The parts pane was empty and silent, and nothing could fill it (2026-09-21, brief-railrf-26)
+
+A Gerber set imported into a workspace, the designer's own footprints placed by hand in the `.clay`,
+the `.clay` reopened in railRF days later — and none of the placed parts in the table under the
+board. **Two defects, and the smaller one is a defect on its own.**
+
+**The pane said nothing.** It was a header row and a list, so an empty table read as a broken table,
+which is what was reported. `PartsEmptyText` now names the STATE it is in rather than saying one
+thing always: *no rail yet*, *no board yet*, *this rail's copper has not been extracted yet*, *add
+the 13 railRF found on the board*, or *no two-terminal part sits between this rail and its
+reference*. It is null the moment there is a row, which is every ordinary document, so nothing was
+added to a pane that was already working.
+
+**The bigger one is that nothing had ever produced a row** — see `src/Design/RESOLVED.md` for the
+producer and for what "a part on this rail" is. What is here is what turns its answer into an OFFER,
+on `RecognisedAggressors`' and `RailRegulatorOffer`'s own terms: the rows land in a document that
+gets saved, so this is a line with a button and never an edit that happens by itself. Both counts are
+on the face — *13 two-terminal parts sit between this rail and its reference and are not in this
+document*, and beside it *3 more parts touch this rail and are not decoupling: 3 have only one stated
+pad* — because a designer told that 13 were added and not that 3 were skipped has no way to know
+whether the bulk capacitor they are looking for is one of the 3. Every skipped part is named in the
+tooltip.
+
+**Three things that had to be got right and were not obvious:**
+
+- **The offer follows the RESULT; the parts table does not.** Both halves of the predicate are the
+  extraction's galvanic regions, which arrive with the result, so a board solved for the first time
+  has parts to offer that it had none of a moment ago. `RebuildPartOffer` is therefore called from
+  the solve's own acceptance as well as from `RebuildParts`. The TABLE is not rebuilt there, because
+  nothing on a row comes off the result — its electrical columns are `RailPartResolver`'s — and
+  replacing every row object on every solve would drop the selection the board's mark follows.
+- **One undo entry, for free.** `AddDiscoveredParts` writes the rows and calls `QueueResolve` once,
+  which is the funnel the coarse-grained undo snapshot already hangs off. Twenty-four separate
+  entries would be twenty-four presses to take back one button. Nothing per-site had to be pushed,
+  which is the whole reason that stack was built coarse.
+- **The window asks for no geometry.** `RailDiscoveryRequest`'s technology and shapes are what a
+  candidate's mounting loop is computed from, and nothing on this window reads one: a row gets its
+  loop after it is added, from the solve's own `ComputedMounting` map, exactly as every other row
+  does. The CLI supplies them because its report is what an out-of-process caller writes rows from,
+  and it prints each refdes with its loop for that reason.
+
+**The parts card grew two rows at the END** (`Auto,Auto,Auto,Auto,Auto`) rather than having them
+inserted: `RailRfWindow.SyncPanes` addresses the list's row by index, and both new rows collapse to
+nothing when they have nothing to say, so the card is the height it always was on a document that
+already has its rows.
+
+**What this does NOT close on the board it came from**, stated because "the parts are in the table"
+and "the designer has a curve" are not the same thing: that board's inner ground plane came in from
+Gerber as a `drawing` layer belonging to no stackup conductor, so there is no reference to confirm
+and nothing to discover (the entry above this one is that combo); clicking the ground pour makes a
+"rail" whose copper IS the reference, on which nothing bridges anything and discovery correctly finds
+nothing; and a discovered row carries no capacitance, so with no BOM the |Z| curve has no decoupling
+in it. That last one is honest and the table says so — **"13 parts added" is not "the answer now
+includes 13 capacitors"**, which is why the unresolved count is already on the status strip.
+
+Gate: `tests/Ui.Tests/RailRf/RailPartDiscoveryTests.cs`.
