@@ -9267,3 +9267,75 @@ one node and false on a rail with two, and **nothing fails when a lie is printed
 R-rail25-4b has a gate of its own and why it is the gate most likely to be skipped. It is now
 conditional on `request.Series is null`, and what replaces it says the opposite by name. The same
 conditionality had to reach `examples/Power Rail/README.md`, which stated it as a flat fact.
+
+## SMT footprints — brief 4: one picker over built-ins, imported cells and Custom (2026-09-20)
+
+`FootprintCatalog`, `FootprintTokens` and `DensityVariant`, below the firewall so `check` and
+`explain` offer and judge exactly what the parameter editor offers. Findings that are not in the
+brief and were only visible from the code.
+
+### R-fp4-1d and brief 3's non-primary refusal contradict each other, and the tension is real
+
+R-fp4-1d wants one picker row **per layout view**, because a part imported with three density
+variants produced three pieces of artwork and "the primary is not automatically the one wanted".
+Brief 3's `ResolveFootprintPath` **refuses** a `.clay` that is not its cell's primary, and that
+refusal is right on its own terms: a `LayoutInstance` names a cell FOLDER and draws that folder's
+primary view — the `.clay` format has no per-view reference — so placing the primary instead of the
+view the user pointed at would be a silent substitution.
+
+Both cannot be satisfied as written. What was built: **the variant rows are listed, and a
+non-primary one carries the refusal as its own `NotPlaceable` sentence**, shown in the row text and
+on the tooltip. Hiding them would make a three-variant import look like it produced one pattern,
+which is exactly what R-fp4-1d forbids; offering them silently would be the "picker that offers a
+refusal" R-fp4-1b forbids. Saying so in the row is the only reading that is both complete and
+honest. **Making a non-primary view genuinely placeable is a `.clay` FORMAT change** (a per-view
+reference on `LayoutInstance`) and is not this brief's.
+
+### The Custom row stored a reference that could not resolve, for any schematic below the root
+
+Brief 2's Custom… picker wrote `SnpPathPolicy.ToStored(path, workspaceRoot)` — **workspace-root
+relative**, which is the correct rule for an `SnP`'s `File`, because the elaborator resolves that
+against the root. A footprint is not resolved that way: brief 3 hands the stored value to
+`ExternalCellRef.ResolveCellDir(footprint, schematicDir)`, exactly as a `CellRef` is resolved. So a
+Custom choice stored as `Widget/layout/Widget.clay` was looked for under
+`<cell>/schematic/Widget/layout/…` and reported as not found — **for every schematic that is not at
+the workspace root, which is every schematic**. It only ever worked in a test whose schematic
+directory happened to be the root.
+
+Fixed with `FootprintCatalog.StoredReferenceForPath`, which inverts the resolution through
+`ExternalCellRef.MakeCellRef` — the same function that spells a placed cell's `CellRef`, so a cell
+in a REFERENCED workspace gets its `ws://alias/…` spelling for free. Nothing pinned the old
+spelling, which is why it survived brief 2's gate.
+
+### The ambiguous set cannot be derived from `SmtCaseTable`, and a lookup-first order hides it
+
+R-fp4-3c names eight colliding tokens. Only three of them (`0201`, `0402`, `0603`) are imperial
+codes in our own table; `1005`, `1608`, `2012`, `3216` and `3225` are the metric twins of cases we
+generate and are **not codes we generate**. So:
+
+- a derivation over the table (codes ∩ twins) finds three of the eight and calls the other five
+  unambiguous, reading them as metric with nothing said;
+- and **matching before testing for ambiguity reports those five as `Unmatched`**, which is worse
+  than wrong — it hides a 2.4x collision behind a word that means "nothing to see". The first
+  version did exactly that and the gate caught it.
+
+So the eight are DATA, in one table, and the ambiguity test runs **before any lookup**. Each
+reading is still looked up in `SmtCaseTable` where it exists, so the millimetres in a report cannot
+drift from the case data.
+
+### `Freshness` bounds staleness, not cost — the pad-count memo is what R-fp4-1c actually needs
+
+R-fp4-1c's requirement is that a workspace with a large imported library must not make the
+parameter editor pause on every selection. A two-second freshness window on the WALK does not
+deliver that: it bounds how stale an answer may be and says nothing about the cost of producing the
+next one, which is one `.clay` parse per layout view, every two seconds of interaction. The second
+memo — pad count keyed by path and **mtime** — is what makes a re-walk directory listings and stats
+only. A failed read is never cached, for `CellStat`'s reason.
+
+### Scope note: the layout editor's own instance picker was deliberately left on built-ins
+
+`LayoutShapePropertiesViewModel`'s footprint combobox (brief 3 R-fp3-6a) still lists case sizes
+only. R-fp4-1b's filter is defined against "the component's port count" and a layout instance has no
+component; the brief's §5 gate never touches that picker, and the gesture for pointing an instance
+at an arbitrary cell — Re-target… — is already beside it. Adding the middle section there needs a
+stated rule for what it may offer, which this brief does not give.

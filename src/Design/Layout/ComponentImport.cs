@@ -454,6 +454,14 @@ public static class ComponentImport
                 $"{part.Footprints.Count:N0} land patterns were imported as sibling layout views of one " +
                 "cell; the nominal one is primary. Open the cell's layout views to switch between them.");
 
+        // R-fp4-2b: the one thing worth connecting the two features with — a user who has just
+        // imported a part should not have to discover that the footprint picker will offer it. The
+        // SENTENCE is FootprintCatalog's, not this file's: R-fp4-2a says this series adds no code
+        // here beyond a call site, and the claim the sentence makes is a claim about the catalog.
+        if (built.Layouts.Count > 0)
+            messages.Add(Footprints.FootprintCatalog.ImportAvailabilitySentence(
+                built.Layouts[0].View.Pins.Count, built.Layouts.Count));
+
         if (copied.Count > 0)
             messages.Add($"Kept a copy of {string.Join(", ", copied)} in the cell folder.");
 

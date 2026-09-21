@@ -53,7 +53,7 @@ Twelve verbs run no analysis, so none of §3-§6 applies to them and §7's exit 
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
-| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` | reports what resolution DECIDED | **nothing** — §10 |
+| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` | reports what resolution DECIDED | **nothing** — §10 |
 | `render` | the same three view documents, a cell folder, a workspace + `--cell`, or a `.cdd` | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, and §13.7 for a data display |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
@@ -818,7 +818,23 @@ deliberately (§11.3).
   **not** the display table beside it: that one gives micrometres as `µm`, which the parser does accept
   but which travels through an argument list, a JSON document and somebody's shell on the way back.
 
-The six questions are **refused together rather than ordered** (R-rnd3-2) — each asks something
+- **`--footprints`** *(a `.csch` or a cell)* — per component: **what it states, what that resolved to,
+  how many pads against how many ports, and — for a built-in case size — the technology the land
+  pattern would be generated against** (brief-footprint-4 R-fp4-4b). Resolution here is two different
+  walks chosen by the first four characters of the stored value: `smt:` goes to the case table and is
+  GENERATED on demand, anything else is a path resolved against the schematic's own folder exactly as
+  a `CellRef` is — so which one produced the answer is reported, not just the answer. The technology
+  is named **for a built-in and only for a built-in**, because a generated land pattern resolves its
+  copper, mask and silkscreen BY ROLE against it and the shipped technologies disagree about every
+  layer key; a cell's artwork is already on disk on keys of its own, and naming a technology beside it
+  would suggest it was about to be re-resolved. The pad count is printed **against the port count on
+  the same line**, because the pair is the contract and two numbers in two places is how a mismatch
+  goes unread. It reads the SCHEMATIC and not the netlist: `Footprint` is dropped before parameter
+  resolution (R-fp2-6), so asking the netlist would report every design as stating none. The
+  resolution is `FootprintCatalog.Resolve`, the same one Update Layout performs, so `explain` cannot
+  describe artwork the application would then refuse.
+
+The seven questions are **refused together rather than ordered** (R-rnd3-2) — each asks something
 different, and a precedence nobody stated would be an invention. `--all` is `--cells`' own modifier and
 is refused beside anything else; `--view` is only ever a cell folder's disambiguator, spelled exactly
 as `render` spells it, and a cell folder holding more than one view is a refusal LISTING them.
@@ -1013,7 +1029,7 @@ advertised beside them by `HistoryBatch` because it is the only one that is not 
 |---|---|
 | `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em`, selected by an argument — one tool, not six |
 | `check` | `check` |
-| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents` |
+| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents` and `--footprints` |
 | `create` | `new workspace` / `new cell` |
 | `import` | `import part` / `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |

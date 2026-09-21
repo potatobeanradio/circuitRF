@@ -12,7 +12,10 @@ public static class ComponentRead
 
     /// <summary>The file-name suffixes that mark a density level of a land pattern rather than a
     /// separate pattern (R-PL1-25). A name carrying none of them is the nominal pattern.</summary>
-    private static readonly string[] DensitySuffixes = ["-M", "-L", "_M", "_L"];
+    /// <remarks>R-fp4-2c: the list is <see cref="Footprints.DensityVariant.Suffixes"/>, not a second
+    /// copy of it — a generated pattern and an imported one must spell a density the same way or the
+    /// footprint picker lists the same thing twice.</remarks>
+    private static readonly string[] DensitySuffixes = Footprints.DensityVariant.Suffixes;
 
     public static ReadResult Read(ComponentCandidate candidate, int dbuPerMicron)
     {

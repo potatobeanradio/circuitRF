@@ -1297,7 +1297,8 @@ What each finding means, and the limits of the causality measurement, are on the
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
-                            [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]</code></pre>
+                            [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
+                            [--footprints]</code></pre>
 
 `check` answers "is something wrong". `explain` answers the question that is **not** a failure: which
 technology did this layout get, which analysis would actually run, what does this expression evaluate
@@ -1459,6 +1460,43 @@ Two things it cannot tell you, both worth knowing:
   the technology does not define is ordinary after an import, and it *renders*. Omitting those rows
   would report a document as drawing on layers it does not and hide the ones it does. The generated
   name is a name [`render --layers`](#render-layers) accepts.
+
+<h3 id="explain-footprints">`--footprints` — what artwork does each part state?</h3>
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Board1/schematic/Board1.csch --footprints
+<span class="output">  footprints: 3
+    C1             smt:0402@N             builtin   2 pad(s) / 2 port(s)
+                   via the built-in case table, because the value starts with 'smt:' — generated on demand, not read from a file
+                   → 0402 (metric 1005)   1.00 x 0.50 mm, density N (nominal) — generated
+                   against technology PCB 2-Layer FR-4 (70mil, 1oz)
+    U1             ../../Widget9          cell      9 pad(s) / 9 port(s)
+                   via a path, resolved against the document's own folder
+                   → /work/Board/Widget9/layout/Widget9.clay
+    S4P1           smt:0402@N             builtin   2 pad(s) / 4 port(s)   MISMATCH
+                   via the built-in case table, because the value starts with 'smt:' — generated on demand, not read from a file</span></code></pre>
+
+**What it states, what that resolved to, and how it got there.** A footprint resolves one of two
+ways, decided by the first four characters: `smt:` is a built-in case size, which does not exist as a
+file and is *generated on demand*; anything else is a path, resolved against the schematic's own
+folder exactly as a cell reference is. Which of the two produced the answer is printed, because that
+is the half you cannot work out from the result.
+
+**The technology is named for a built-in and only for a built-in.** A generated land pattern picks its
+copper, soldermask and silkscreen *by role* out of whatever technology is in force — and the shipped
+technologies disagree about every layer key, so which technology that is is part of what the artwork
+will be. A cell you imported or drew already has its artwork on disk on keys of its own, and printing
+a technology beside it would suggest it was about to be re-resolved.
+
+**Pads and ports are on the same line, and a mismatch says so.** A land pattern with two pads under a
+four-port part is a design error that Update Layout reports and refuses to place; two numbers in two
+places is how that goes unread.
+
+<div class="callout note">
+<span class="label">It reads the schematic, not the netlist</span>
+<p><code>Footprint</code> is artwork, not a value, and it is dropped before parameters are resolved —
+it never reaches the simulator. Asking the netlist about it would report every design as stating
+none.</p>
+</div>
 
 <h3 id="explain-extents">`--extents` — how big is it?</h3>
 
@@ -1969,7 +2007,7 @@ the process's own stdin and stdout.</p>
 |---|---|
 | `run` | `sparam`, `dc`, `hb`, `lp`, `lpp` or `em`, chosen by an argument |
 | `check` | `check` |
-| `explain` | `explain`, including `--cells`, `--layers` and `--extents` |
+| `explain` | `explain`, including `--cells`, `--layers`, `--extents` and `--footprints` |
 | `create` | `new workspace` or `new cell` |
 | `import` | `import part` or `convert` |
 | `render` | `render` — one tool over every document kind, as the verb is |

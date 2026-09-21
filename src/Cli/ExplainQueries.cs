@@ -1,5 +1,6 @@
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.Theming;
@@ -494,6 +495,110 @@ internal static class ExplainQueries
     private static string DesignUnitWindow(WorldRect b)
         => string.Join(',', new[] { b.X0, b.Y0, b.X1, b.Y1 }
                             .Select(v => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+
+
+    // ── --footprints ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Per component: what it STATES, what that resolved to, how many pads, and — for a built-in —
+    /// the technology the pattern would be generated against (R-fp4-4b).
+    /// </summary>
+    /// <remarks>
+    /// <b>The walk is reported as well as the answer</b>, which is what <c>explain</c> is for.
+    /// Resolution here is two different walks depending on the first four characters of the stored
+    /// value: <c>smt:</c> goes to the case table and is GENERATED, anything else is a path resolved
+    /// against the schematic's own folder exactly as a <c>CellRef</c> is. Which one produced the
+    /// answer is the part a caller cannot otherwise see.
+    ///
+    /// <para><b>The technology is reported for a built-in and only for a built-in.</b> A generated
+    /// land pattern resolves its copper, mask and silkscreen BY ROLE against the technology in
+    /// force, and the shipped technologies disagree about every layer key — so which technology is
+    /// in force is part of what the artwork WILL BE. A cell's artwork is already on disk on keys of
+    /// its own, and naming a technology beside it would suggest it was about to be re-resolved.</para>
+    ///
+    /// <para><b>It reads the schematic, not the netlist.</b> <c>Footprint</c> is dropped before
+    /// parameter resolution (R-fp2-6), so it is not in an elaborated netlist and never will be —
+    /// asking the netlist would report every design as stating none.</para>
+    /// </remarks>
+    public static (IReadOnlyList<ExplainFootprintJson> Rows, int Exit) Footprints(
+        string path, DocumentKind kind, List<ResolutionStepJson> walks)
+    {
+        string? csch = kind switch
+        {
+            DocumentKind.Schematic => Path.GetFullPath(path),
+            DocumentKind.Cell      => PrimarySchematicOf(Path.GetFullPath(path)),
+            _                      => null,
+        };
+
+        if (csch is null)
+            return ([], JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable(
+                "--footprints", DocumentKinds.Name(kind),
+                "the footprints a schematic's components state")));
+
+        SchematicEditModel model;
+        try { (model, _, _) = SchematicPersistence.LoadFromFile(csch); }
+        catch (Exception ex) { return ([], JsonRun.Fail(CliDiagnostics.ExplainUnreadable(csch, ex.Message))); }
+
+        string baseDir = Path.GetDirectoryName(csch)!;
+
+        // Resolved ONCE, not per component: the walk is the same for all of them and repeating it
+        // would print the same line thirteen times for the Power Rail example.
+        var (techRes, _) = TechnologyResolver.ResolveForDocument(
+            null, Path.Combine(baseDir, "x" + CellFolder.ViewExtension(ViewType.Layout)), null,
+            new TechnologyCache());
+        string? techName = techRes.Tech is { } t
+            ? (t.Name.Length > 0 ? t.Name : techRes.ResolvedPath) ?? techRes.ResolvedPath
+            : null;
+
+        var rows = new List<ExplainFootprintJson>();
+        foreach (var comp in model.Components)
+        {
+            if (comp.Footprint is not { Length: > 0 } stored) continue;
+
+            var r = FootprintCatalog.Resolve(stored, baseDir);
+            string who = comp.InstanceName is { Length: > 0 } n ? n : comp.Id;
+
+            string? resolvedTo = r.State switch
+            {
+                FootprintCatalog.FootprintState.BuiltIn =>
+                    $"{r.Case!.Display}, {DensityVariant.Label(r.Density)} — generated",
+                FootprintCatalog.FootprintState.Cell => r.ResolvedPath,
+                _ => null,
+            };
+
+            rows.Add(new ExplainFootprintJson(
+                who, stored, r.State.ToString().ToLowerInvariant(), r.Walk,
+                r.PadCount, comp.EffectivePortCount, resolvedTo,
+                r.State == FootprintCatalog.FootprintState.BuiltIn
+                    ? techName ?? "nothing resolved: no workspace default"
+                    : null,
+                r.Refusal));
+        }
+
+        walks.Add(new ResolutionStepJson(
+            "footprints", csch,
+            rows.Count == 0
+                ? "no component states a Footprint"
+                : $"{rows.Count} component(s) state a footprint",
+            "the schematic's own stored parameters — Footprint is dropped before elaboration, so "
+            + "it is not in the netlist"));
+
+        return (rows, 0);
+    }
+
+    /// <summary>The cell folder's primary schematic, or null — the same primacy resolution
+    /// <c>--cells</c> reports and <c>render</c> draws.</summary>
+    private static string? PrimarySchematicOf(string cellDir)
+    {
+        try
+        {
+            var res = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
+            return res.ResolvedName is { Length: > 0 } name
+                ? Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Schematic), name)
+                : null;
+        }
+        catch { return null; }
+    }
 
     /// <summary>The same table <c>render</c> reports its own scale from.</summary>
     private static double MetresPerUnit(LayoutUnit u) => u switch

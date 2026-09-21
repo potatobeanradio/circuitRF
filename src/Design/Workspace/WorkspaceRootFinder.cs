@@ -104,6 +104,11 @@ public static class WorkspaceRootFinder
         // reference is read out of the same .cws the alias table above comes from, so a .cws being
         // rewritten (including by the per-reference override itself) changes both answers at once.
         ReferencedWorkspacePolicy.InvalidateCache();
+        // R-fp4-1c: the sixth. The footprint picker's walk of the workspace's cells is memoised on
+        // exactly the same terms and bounded by its own freshness window, so this is what makes a
+        // cell that was just created or just imported appear in the picker at once rather than
+        // within T.
+        Layout.Footprints.FootprintCatalog.Invalidate();
     }
 
     /// <summary>

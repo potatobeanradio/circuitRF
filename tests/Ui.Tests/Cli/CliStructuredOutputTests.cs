@@ -437,6 +437,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.em.warning",
         "check.em.would-run",
         "check.file.unreadable",
+        "check.footprint.pad-count",
+        "check.footprint.unresolved",
         "check.name.invalid",
         "check.path.interchange",
         "check.path.not-found",

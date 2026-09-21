@@ -1000,6 +1000,34 @@ internal static class CliDiagnostics
             + "Re-save the document to write the current path.",
             ("path", path), ("cellRef", cellRef), ("movedTo", movedTo));
 
+    // ── footprints (brief-footprint-4 R-fp4-4a) ──────────────────────────────
+    //
+    // WARNING, NOT ERROR, on both: the design is still simulable and what is missing is the
+    // ARTWORK. A warning is always reported and still exits 0 — a check that hid it to keep the
+    // exit code clean makes the exit code useless, and a check that failed on it would stop a build
+    // machine over a land pattern nothing in the run touches.
+    //
+    // Neither sentence is `check`'s own. Both come out of FootprintCatalog, which is the same
+    // resolution Update Layout performs — a rule living only here is a rule the application does
+    // not enforce, so a design would pass headlessly and be refused when somebody opened it.
+
+    /// <summary>A stored <c>Footprint</c> that resolves to nothing.</summary>
+    public static Diagnostic CheckFootprintUnresolved(
+        string path, string component, string stored, string why) => Diagnostic.Create(
+        "check.footprint.unresolved", DiagnosticSeverity.Warning,
+        "{path}: '{component}' states footprint '{stored}', which does not resolve. {why}",
+        ("path", path), ("component", component), ("stored", stored), ("why", why));
+
+    /// <summary>A stored <c>Footprint</c> that resolves, to artwork with the wrong number of pads —
+    /// the pad-count contract (R-fp3-5), which Update Layout reports and refuses to place.</summary>
+    public static Diagnostic CheckFootprintPadCount(
+        string path, string component, string stored, int pads, int ports) => Diagnostic.Create(
+        "check.footprint.pad-count", DiagnosticSeverity.Warning,
+        "{path}: '{component}' states footprint '{stored}', which has {pads} pad(s), and the "
+        + "component has {ports} port(s). Update Layout would report it and place nothing.",
+        ("path", path), ("component", component), ("stored", stored),
+        ("pads", pads), ("ports", ports));
+
     /// <summary><c>NetExtractor</c>'s own non-fatal naming conflicts.</summary>
     public static Diagnostic CheckExtractionConflict(string path, string text) => Diagnostic.Create(
         "check.schematic.conflict", DiagnosticSeverity.Warning,

@@ -182,6 +182,51 @@ public sealed class RailPartRowViewModel
         ?? "No capacitance resolved for this part, so nothing here is derated and nothing is "
          + "defaulted.";
 
+    // ══ THE FOOTPRINT COLUMN (brief-footprint-4 R-fp4-3) ══════════════════════════════════════
+    //
+    // BomFile has recognised a footprint column since brief-railrf-2 and PartLibraryRow.Footprint
+    // has existed beside it; neither fed anything. They feed this — and this REPORTS, it never
+    // assigns (R-fp4-3d). A BOM column that silently set artwork would be the same class of error
+    // as the imperial/metric ambiguity it is trying to avoid.
+
+    /// <summary>The footprint token this part carries: the bill of materials' own column first,
+    /// then what the description parse recognised, then the part library's. Null where none of the
+    /// three states one.</summary>
+    private string? FootprintToken =>
+        _bom?.Footprint is { Length: > 0 } f ? f
+        : _bom?.Parsed.CaseCode is { Length: > 0 } c ? c
+        : (Model?.Row ?? _model?.Row)?.Footprint is { Length: > 0 } lib ? lib
+        : null;
+
+    private FootprintTokenMatch? _footprintMatch;
+    private FootprintTokenMatch Footprint => _footprintMatch ??= FootprintTokens.Match(FootprintToken);
+
+    /// <summary>
+    /// What the footprint column reads: the matched case code, the token itself where nothing
+    /// matched, or the token marked ambiguous.
+    /// </summary>
+    /// <remarks>
+    /// <b>An unmatched token is shown AS WRITTEN and is never turned into the nearest code</b>
+    /// (R-fp4-3b). The whole point of the column is that it tells you something; a fuzzy match tells
+    /// you what the matcher believed. <b>A bare four-digit token that names a real case in both
+    /// schemes is marked ambiguous rather than read</b> (R-fp4-3c) — <c>0201</c> imperial and
+    /// <c>0201</c> metric differ by 2.4x, and the tooltip names both readings.
+    /// </remarks>
+    public string FootprintText => FootprintToken is null
+        ? UnresolvedText
+        : Footprint.Outcome switch
+        {
+            FootprintTokenOutcome.Matched   => Footprint.Case!.Code,
+            FootprintTokenOutcome.Ambiguous => $"{Footprint.Token} — ambiguous",
+            _                               => $"{Footprint.Token} — unmatched",
+        };
+
+    /// <summary>Both readings for an ambiguous token, the full §1e spelling for a matched one, and
+    /// the case list for an unmatched one — <c>FootprintTokens</c> owns every sentence.</summary>
+    public string FootprintTooltip => FootprintToken is null
+        ? "Neither the bill of materials nor the part library states a footprint for this part."
+        : Footprint.Report;
+
     /// <summary>
     /// Library row / attached file, and which won.
     /// </summary>

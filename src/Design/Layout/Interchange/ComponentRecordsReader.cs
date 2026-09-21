@@ -605,7 +605,8 @@ public static class ComponentRecordsReader
     /// decal NAME, rather than in a file name the way PL1's formats do.</summary>
     internal static (string BaseName, string Variant) SplitVariant(string name)
     {
-        foreach (var suffix in new[] { "_M", "_L", "-M", "-L" })
+        // R-fp4-2c: one list, shared with ComponentRead and with the generated patterns.
+        foreach (var suffix in Footprints.DensityVariant.Suffixes)
             if (name.EndsWith(suffix, StringComparison.Ordinal) && name.Length > suffix.Length)
                 return (name[..^suffix.Length], suffix);
         return (name, "");

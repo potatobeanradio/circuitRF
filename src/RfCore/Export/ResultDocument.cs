@@ -811,6 +811,34 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Note = null);
 
+    /// <summary>
+    /// One component's footprint, as <c>explain --footprints</c> reports it
+    /// (brief-footprint-4 R-fp4-4b): what it STATES, what that resolved to, how many pads, and —
+    /// for a built-in — the technology the pattern would be generated against.
+    /// </summary>
+    /// <param name="Walk">How the answer was reached, not only what it was. Resolution here is a
+    /// walk like every other one in <c>explain</c>, and which step produced the answer is the part
+    /// a caller cannot otherwise see.</param>
+    /// <param name="Pads">-1 where nothing resolved, so a missing answer cannot be read as zero
+    /// pads.</param>
+    /// <param name="Technology">Only for a built-in, whose artwork does not exist until it is
+    /// generated: a land pattern resolves its copper, mask and silkscreen BY ROLE against this, and
+    /// the shipped technologies disagree about every layer key. Absent for a cell, whose artwork is
+    /// already on disk on keys of its own.</param>
+    public sealed record ExplainFootprintJson(
+        string  Component,
+        string  Stated,
+        string  State,
+        string  Walk,
+        int     Pads,
+        int     Ports,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? ResolvedTo,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Technology,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
+
     public sealed record ExplainReportJson(
         string                              Path,
         string                              Kind,
@@ -826,7 +854,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainLayersJson?                  Layers = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainExtentsJson?                 Extents = null);
+        ExplainExtentsJson?                 Extents = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainFootprintJson>? Footprints = null);
 
     // ── reference, on the wire (brief-automation-6-reference-and-components.md) ──
 

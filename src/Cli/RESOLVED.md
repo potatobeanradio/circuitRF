@@ -2483,3 +2483,33 @@ a band needs two ends. `SmithBandJson` lost its `Clamped` field with the clamp i
 `--at` is untouched and is now the ONLY thing that can put a design frequency outside the table's
 span — the document's own is the table's median, which is inside it by construction. That is why
 `SmithDesign.DesignFrequencyOverrideHz` exists and why `SmithDesign.Refusal` still carries the rule.
+
+## `check` and `explain --footprints` (brief-footprint-4 R-fp4-4, 2026-09-20)
+
+`explain` is a **seventh** question now, refused beside the other six rather than ordered against
+them, and the MCP tool gained the matching flag because R-aut-13 says nothing reachable from the
+command line may be unreachable there.
+
+**Neither verb writes a rule of its own.** Both findings and the whole report come from
+`FootprintCatalog` in `src/Design` — the same resolution `SchematicToLayoutGenerator` performs. A
+rule living only here is a rule the application does not enforce, and a design that passed
+headlessly and was refused when somebody opened it would be the worst possible answer for a build
+machine.
+
+Three things about the shape of the answers that are worth knowing.
+
+- **`--footprints` reads the SCHEMATIC, never the netlist.** `Footprint` is artwork, not a value,
+  and R-fp2-6 drops it before parameter resolution — it is not in an elaborated netlist and never
+  will be. A version that asked the netlist would report every design as stating none, with nothing
+  saying why.
+- **The technology is reported for a built-in and only for a built-in**, and resolved ONCE for the
+  document rather than per component. A generated land pattern picks its copper, mask and
+  silkscreen BY ROLE against whatever technology is in force, and the shipped technologies disagree
+  about every layer key (the series overview's §1b), so which one that is is part of what the
+  artwork WILL BE. A cell's artwork is already on disk on keys of its own; naming a technology
+  beside it would suggest it was about to be re-resolved.
+- **`check`'s two findings are warnings and the exit code stays 0.** The design is still simulable
+  and what is missing is artwork. The pad count is printed against the port count on the same line
+  for the same reason the GUI's refusal names both: two numbers in two places is how a mismatch
+  goes unread. The one that bites is an `SnP` with `RefNode` set, which has one more port than its
+  file has — `EffectivePortCount`, not `PortCount`.

@@ -7,6 +7,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
@@ -413,6 +414,32 @@ internal static class Check
 
             if (res.Redirect is { } moved)
                 f.Add(CliDiagnostics.CheckRefRedirected(path, cellRef, moved.To));
+        }
+
+        // R-fp4-4a: every stored Footprint, through FootprintCatalog — the SAME resolution
+        // SchematicToLayoutGenerator performs, so `check` cannot call a design clean and Update
+        // Layout then refuse it. Warnings, because the design is still simulable and what is
+        // missing is artwork.
+        foreach (var comp in model.Components)
+        {
+            if (comp.Footprint is not { Length: > 0 } stored) continue;
+            string who = comp.InstanceName is { Length: > 0 } n ? n : comp.Id;
+
+            var resolution = FootprintCatalog.Resolve(stored, baseDir);
+            if (resolution.State == FootprintCatalog.FootprintState.Unresolved ||
+                resolution.Refusal is { Length: > 0 })
+            {
+                f.Add(CliDiagnostics.CheckFootprintUnresolved(
+                    path, who, stored, resolution.Refusal ?? "It named no case size and no cell."));
+                continue;
+            }
+
+            // Pad count against port count is the contract (the series overview §1f), and the one
+            // that bites is an SnP with RefNode set: it has one more port than its file has, so a
+            // 2-port S2P with RefNode is three ports and does not fit a two-pad chip land.
+            if (resolution.PadCount >= 0 && resolution.PadCount != comp.EffectivePortCount)
+                f.Add(CliDiagnostics.CheckFootprintPadCount(
+                    path, who, stored, resolution.PadCount, comp.EffectivePortCount));
         }
 
         // Extraction is the schematic's own "does this make a netlist?" It reports naming conflicts

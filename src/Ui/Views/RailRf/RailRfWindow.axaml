@@ -1598,20 +1598,29 @@
                                  keeps on its right, so it does not sit flush against the refdes
                                  beside it — the column is those two numbers and no slack. -->
                             <Grid Grid.Row="1" Name="PartsHeader"
-                                  ColumnDefinitions="20,52,*,96,62,64,92,78,86">
+                                  ColumnDefinitions="20,52,*,72,96,62,64,92,78,86">
                                 <Button Grid.Column="1" Classes="gridhdr" Content="refdes"/>
                                 <Button Grid.Column="2" Classes="gridhdr" Content="part number"/>
-                                <Button Grid.Column="3" Classes="gridhdr" Content="C"/>
-                                <Button Grid.Column="4" Classes="gridhdr" Content="ESR"/>
-                                <Button Grid.Column="5" Classes="gridhdr" Content="f₀"/>
-                                <Button Grid.Column="6" Classes="gridhdr" Content="L pkg + mount"/>
-                                <Button Grid.Column="7" Classes="gridhdr" Content="model source"/>
+                                <!-- WHAT THE BILL OF MATERIALS CALLS THE LAND PATTERN, and what
+                                     that resolved to (brief-footprint-4 R-fp4-3). It REPORTS: a
+                                     token matching nothing is shown as written rather than snapped
+                                     to the nearest code, and a bare four-digit token that names a
+                                     real case in BOTH the imperial and the metric scheme is marked
+                                     ambiguous rather than read one way — 0201 differs by 2.4x
+                                     between the two, and nothing downstream would notice. Nothing
+                                     here assigns artwork (R-fp4-3d). -->
+                                <Button Grid.Column="3" Classes="gridhdr" Content="footprint"/>
+                                <Button Grid.Column="4" Classes="gridhdr" Content="C"/>
+                                <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
+                                <Button Grid.Column="6" Classes="gridhdr" Content="f₀"/>
+                                <Button Grid.Column="7" Classes="gridhdr" Content="L pkg + mount"/>
+                                <Button Grid.Column="8" Classes="gridhdr" Content="model source"/>
                                 <!-- WHERE IT IS, or that nothing says. Without this column the table
                                      was a list of parts with no visible relationship to the artwork
                                      beside it, and a reader looking for C1 on the board had nothing
                                      to tell them that railRF does not know where C1 is either
                                      (owner, 2026-09-19). -->
-                                <Button Grid.Column="8" Classes="gridhdr" Content="where"/>
+                                <Button Grid.Column="9" Classes="gridhdr" Content="where"/>
                             </Grid>
                             <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
                                  MaxHeight constrains the MEASURE and does not clip, so a list taller
@@ -1635,7 +1644,7 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="20,52,*,96,62,64,92,78,86" Margin="0,1"
+                                        <Grid ColumnDefinitions="20,52,*,72,96,62,64,92,78,86" Margin="0,1"
                                               Classes.unresolved="{Binding IsUnresolved}"
                                               Classes.unmounted="{Binding IsUnmounted}"
                                               Classes.series="{Binding IsSeries}"
@@ -1662,7 +1671,10 @@
                                             <TextBlock Grid.Column="2" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding PartNumber}"
                                                        ToolTip.Tip="{Binding PartNumberTooltip}"/>
-                                            <TextBlock Grid.Column="3" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="3" Classes="detailLabel"
+                                                       HorizontalAlignment="Left" Text="{Binding FootprintText}"
+                                                       ToolTip.Tip="{Binding FootprintTooltip}"/>
+                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding CapacitanceText}"
                                                        ToolTip.Tip="{Binding CapacitanceTooltip}"/>
                                             <!-- ITALIC where the ESR is a dissipation-factor default
@@ -1673,19 +1685,19 @@
                                                  and the number in this cell is what sizes that peak.
                                                  The tooltip says it in words; the slant is what a
                                                  reader sees without hovering. -->
-                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding EsrText}"
                                                        Classes.indicative="{Binding IsEsrIndicative}"
                                                        ToolTip.Tip="{Binding EsrTooltip}"/>
-                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding SelfResonanceText}"
                                                        ToolTip.Tip="{Binding SelfResonanceTooltip}"/>
-                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="7" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding InductanceText}"
                                                        ToolTip.Tip="{Binding InductanceTooltip}"/>
-                                            <TextBlock Grid.Column="7" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="8" Classes="detailLabel" 
                                                        HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
-                                            <TextBlock Grid.Column="8" Classes="detailLabel"
+                                            <TextBlock Grid.Column="9" Classes="detailLabel"
                                                        HorizontalAlignment="Left" Text="{Binding PositionText}"
                                                        ToolTip.Tip="{Binding PositionTooltip}"/>
                                         </Grid>

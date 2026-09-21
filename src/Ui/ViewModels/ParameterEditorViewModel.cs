@@ -232,15 +232,30 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     public const string FootprintCustomRow = "Custom…";
 
     /// <summary>
-    /// The rows of the footprint combobox, in order: None, the built-in case sizes, an extra row for
-    /// a stored value that is not in the list (R-fp2-4e), then Custom….
+    /// The rows of the footprint combobox, in order: None, the built-in case sizes, <b>every layout
+    /// view of every cell in this workspace whose pad count matches this component's port count</b>,
+    /// an extra row for a stored value that is not in the list (R-fp2-4e), then Custom….
     ///
     /// <para>Every case row reads its metric twin and its millimetres — <c>SmtCase.Display</c>, the
     /// overview's §1e spelling. That is not decoration: <c>0201</c> imperial and <c>0201</c> metric
     /// are two real case sizes differing by 2.4x, and a row reading only <c>0402</c> is the
     /// defect.</para>
+    ///
+    /// <para><b>The middle section is brief 4, and it is the whole answer to "how does this meet
+    /// Component Import?"</b> — it does not meet it, because they are not two things. An imported
+    /// part appears here because it IS a cell with a layout view (<c>FootprintCatalog</c>), with no
+    /// extra step and no second index.</para>
     /// </summary>
     public ObservableCollection<string> FootprintOptions { get; } = [];
+
+    /// <summary>The choice behind each row of <see cref="FootprintOptions"/>, same index — so a
+    /// selection is READ rather than re-derived from arithmetic over a list whose middle section
+    /// changes length with the workspace.</summary>
+    private readonly List<FootprintChoice> _footprintRows = [];
+
+    /// <summary>Non-null when the catalog's walk stopped at its depth bound (R-fp4-1c). Shown on the
+    /// row's tooltip: a listing that quietly gave up is a listing a user reads as complete.</summary>
+    [ObservableProperty] private string? _footprintCatalogNote;
 
     /// <summary>IPC-7351B density levels, in the order a picker reads them. Nominal is the default
     /// and is pre-selected.</summary>
@@ -282,33 +297,44 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     partial void OnFootprintIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
-
-        // Custom… is a gesture, not a value: it opens a picker and either writes what was chosen or
-        // leaves the previous value exactly as it was.
-        if (newValue == FootprintOptions.Count - 1 && FootprintOptions.Count > 1)
-        {
-            _ = PickFootprintFileAndApplyAsync(oldValue);
-            return;
-        }
-
-        if (newValue == 0) { ApplyFootprint(null); return; }
+        if ((uint)newValue >= (uint)_footprintRows.Count) return;
 
         // The extra row IS the stored value. Selecting it writes back what is already there, which
         // is the one thing a picker showing an unresolvable choice must not turn into a reset.
         if (newValue == _footprintExtraRow) { ApplyFootprint(_footprintStored); return; }
 
-        int caseIndex = newValue - 1;
-        if ((uint)caseIndex >= (uint)SmtCaseTable.All.Count) return;
-        ApplyFootprint(FootprintRef.For(SmtCaseTable.All[caseIndex], DensityAt(FootprintDensityIndex)).ToString());
+        var choice = _footprintRows[newValue];
+        switch (choice.Section)
+        {
+            case FootprintSection.None:
+                ApplyFootprint(null);
+                return;
+
+            // Custom… is a gesture, not a value: it opens a picker and either writes what was chosen
+            // or leaves the previous value exactly as it was.
+            case FootprintSection.Custom:
+                _ = PickFootprintFileAndApplyAsync(oldValue);
+                return;
+
+            case FootprintSection.BuiltIn when choice.Case is { } smtCase:
+                ApplyFootprint(FootprintRef.For(smtCase, DensityAt(FootprintDensityIndex)).ToString());
+                return;
+
+            // A workspace cell's density is the VIEW it is, not a control — an imported part's three
+            // density variants are three rows, so choosing one is choosing the density (R-fp4-1d).
+            case FootprintSection.Workspace when choice.Reference is { Length: > 0 } reference:
+                ApplyFootprint(reference);
+                return;
+        }
     }
 
     partial void OnFootprintDensityIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         // R-fp2-4c: the density writes the '@' suffix of the SAME parameter. There is no second one.
-        int caseIndex = FootprintIndex - 1;
-        if ((uint)caseIndex >= (uint)SmtCaseTable.All.Count) return;
-        ApplyFootprint(FootprintRef.For(SmtCaseTable.All[caseIndex], DensityAt(newValue)).ToString());
+        if ((uint)FootprintIndex >= (uint)_footprintRows.Count) return;
+        if (_footprintRows[FootprintIndex] is not { Section: FootprintSection.BuiltIn, Case: { } c }) return;
+        ApplyFootprint(FootprintRef.For(c, DensityAt(newValue)).ToString());
     }
 
     private static DensityLevel DensityAt(int index) => index switch
@@ -329,9 +355,18 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             _isRefreshing = false;
             return;
         }
-        // Workspace-relative where it can be, which is the same portability rule every other stored
-        // file reference in a .csch follows.
-        ApplyFootprint(SnpPathPolicy.ToStored(path, _schematicVm?.WorkspaceRoot));
+
+        // DOCUMENT-relative, not workspace-relative — FootprintCatalog.StoredReferenceForPath.
+        //
+        // This was SnpPathPolicy.ToStored, which spells a path relative to the WORKSPACE ROOT, and
+        // that is the right rule for an `SnP`'s File (the elaborator resolves it against the root).
+        // A footprint is not resolved that way: brief 3 hands the stored value to
+        // ExternalCellRef.ResolveCellDir against the SCHEMATIC's own directory, exactly as a CellRef
+        // is resolved. So a Custom choice stored root-relative resolved to a path under the
+        // schematic folder and was reported as not found — for every schematic that is not at the
+        // workspace root, which is every schematic.
+        ApplyFootprint(FootprintCatalog.StoredReferenceForPath(
+            _schematicVm?.EditModel.SchematicDirectory, path));
     }
 
     /// <summary>
@@ -376,9 +411,23 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         bool wasRefreshing = _isRefreshing;
         _isRefreshing = true;
 
+        // R-fp4-1: ONE list over all three sections, built by FootprintCatalog — which is below the
+        // firewall, so `check` and `explain` offer and judge exactly what this offers. The
+        // Custom… row it ends with is dropped and re-added below, after the extra row, so an
+        // unresolvable stored value still sorts before it (R-fp2-4a's "Custom… last").
+        var catalog = FootprintCatalog.Build(
+            _schematicVm?.KitWorkspaceRoot,
+            _schematicVm?.EditModel.SchematicDirectory,
+            _target.EffectivePortCount);
+
         FootprintOptions.Clear();
-        FootprintOptions.Add(FootprintNoneRow);
-        foreach (var c in SmtCaseTable.All) FootprintOptions.Add(c.Display);
+        _footprintRows.Clear();
+        foreach (var choice in catalog.Choices)
+        {
+            if (choice.Section == FootprintSection.Custom) continue;
+            FootprintOptions.Add(choice.Display);
+            _footprintRows.Add(choice);
+        }
 
         int index = 0;
         var density = FootprintRef.DefaultDensity;
@@ -389,11 +438,22 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         {
             if (FootprintRef.TryParse(stored, out var parsed, out _))
             {
-                int caseIndex = IndexOfCase(parsed!.Case.Code);
-                if (caseIndex >= 0) { index = caseIndex + 1; density = parsed.Density; isBuiltIn = true; }
+                int caseIndex = IndexOfRow(c =>
+                    c.Section == FootprintSection.BuiltIn && c.Case is { } sc &&
+                    string.Equals(sc.Code, parsed!.Case.Code, StringComparison.OrdinalIgnoreCase));
+                if (caseIndex >= 0) { index = caseIndex; density = parsed!.Density; isBuiltIn = true; }
+            }
+            else
+            {
+                // A workspace cell the catalog already lists: select THAT row rather than adding a
+                // second one reading the same thing.
+                int cellIndex = IndexOfRow(c =>
+                    c.Section == FootprintSection.Workspace &&
+                    string.Equals(c.Reference, stored, StringComparison.OrdinalIgnoreCase));
+                if (cellIndex >= 0) index = cellIndex;
             }
 
-            if (!isBuiltIn)
+            if (index == 0)
             {
                 // R-fp2-4e: shown AS ITSELF, as an extra row, marked unresolved when it claimed to be
                 // a built-in and is not. Never silently reset to None — a design's stored choice is
@@ -402,13 +462,17 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 FootprintOptions.Add(FootprintRef.IsBuiltInReference(stored)
                     ? $"{stored}   (unresolved)"
                     : stored);
+                _footprintRows.Add(new FootprintChoice(
+                    FootprintSection.Workspace, stored, FootprintOptions[^1], -1));
                 _footprintExtraRow = FootprintOptions.Count - 1;
                 index = _footprintExtraRow;
             }
         }
 
         FootprintOptions.Add(FootprintCustomRow);
+        _footprintRows.Add(new FootprintChoice(FootprintSection.Custom, null, FootprintCustomRow, -1));
 
+        FootprintCatalogNote       = catalog.Note;
         FootprintIndex             = index;
         FootprintDensityIndex      = density switch
         {
@@ -419,16 +483,26 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // R-fp2-4c: the density is meaningless for None, a workspace cell and Custom, so it is
         // disabled there rather than reading a value that writes nothing.
         IsFootprintDensityEnabled = isBuiltIn;
-        FootprintTooltip          = stored ?? "";
+
+        // The machine spelling, plus anything the row itself has to say: a view that is not its
+        // cell's primary cannot be placed as it stands, and a walk that stopped at its depth bound
+        // has cells it did not list. Both are said here rather than left for Update Layout to
+        // discover — R-fp4-1c and the R-fp4-1d note in FootprintCatalog.WorkspaceViews.
+        var tooltip = new List<string>(3);
+        if (stored is { Length: > 0 }) tooltip.Add(stored);
+        if ((uint)index < (uint)_footprintRows.Count &&
+            _footprintRows[index].NotPlaceable is { Length: > 0 } why) tooltip.Add(why);
+        if (catalog.Note is { Length: > 0 } note) tooltip.Add(note);
+        FootprintTooltip          = string.Join("  ", tooltip);
         ShowFootprintLabel        = _target.ShowFootprintLabel;
 
         _isRefreshing = wasRefreshing;
     }
 
-    private static int IndexOfCase(string code)
+    private int IndexOfRow(Func<FootprintChoice, bool> match)
     {
-        for (int i = 0; i < SmtCaseTable.All.Count; i++)
-            if (string.Equals(SmtCaseTable.All[i].Code, code, StringComparison.OrdinalIgnoreCase)) return i;
+        for (int i = 0; i < _footprintRows.Count; i++)
+            if (match(_footprintRows[i])) return i;
         return -1;
     }
 

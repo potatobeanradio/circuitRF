@@ -61,6 +61,7 @@ internal static class Explain
     {
         string? path = null, expr = null, reference = null, analysisName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
+        bool wantFootprints = false;
         ViewType? askedView = null;
         var sets = new List<(string Name, string Expr)>();
 
@@ -73,6 +74,9 @@ internal static class Explain
                 case "--cells":   wantCells   = true; continue;
                 case "--layers":  wantLayers  = true; continue;
                 case "--extents": wantExtents = true; continue;
+                // brief-footprint-4 R-fp4-4b. An OPTION and not a verb, on R-rnd3-1's terms, and it
+                // joins the one-question rule below rather than getting an exception from it.
+                case "--footprints": wantFootprints = true; continue;
                 case "--all":     all         = true; continue;
                 case "--view" when i + 1 < args.Length:
                 {
@@ -134,7 +138,8 @@ internal static class Explain
         JsonRun.InputPath = path;
 
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
-                  + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0);
+                  + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
+                  + (wantFootprints ? 1 : 0);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -151,6 +156,7 @@ internal static class Explain
         IReadOnlyList<ExplainCellJson>?     cells    = null;
         ExplainLayersJson?                  layers   = null;
         ExplainExtentsJson?                 extents  = null;
+        IReadOnlyList<ExplainFootprintJson>? footprints = null;
 
         // The document's OWN resolution always runs, whatever was asked: "which workspace, which
         // technology" is context for every other answer, and a report that omitted it would leave a
@@ -214,6 +220,13 @@ internal static class Explain
             exit   |= extentExit;
         }
 
+        if (wantFootprints)
+        {
+            var (rows, fpExit) = ExplainQueries.Footprints(path, kind, walks);
+            footprints = rows.Count > 0 || fpExit == 0 ? rows : null;
+            exit |= fpExit;
+        }
+
         if (expr is not null || wantAnalyses)
         {
             var circuit = ReadCircuit(path, kind);
@@ -244,9 +257,10 @@ internal static class Explain
         }
 
         JsonRun.Explain = new ExplainReportJson(
-            path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents);
+            path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
+            footprints);
 
-        Print(path, kind, walks, analyses, value, refRes, cells, layers, extents);
+        Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
         return exit;
     }
 
@@ -255,6 +269,7 @@ internal static class Explain
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
+        Console.Error.WriteLine("                            [--footprints]");
         return 1;
     }
 
@@ -1001,7 +1016,8 @@ internal static class Explain
         ExplainReferenceJson? reference,
         IReadOnlyList<ExplainCellJson>? cells = null,
         ExplainLayersJson? layers = null,
-        ExplainExtentsJson? extents = null)
+        ExplainExtentsJson? extents = null,
+        IReadOnlyList<ExplainFootprintJson>? footprints = null)
     {
         Console.WriteLine($"{path}  ({DocumentKinds.Name(kind)})");
 
@@ -1060,6 +1076,25 @@ internal static class Explain
                     + (l.InstancesUsing is > 0 and { } u ? $", {u} instance(s)" : ""));
             if (layers.Truncated == true)
                 Console.WriteLine("    (counts are a floor — the hierarchy is larger than this walk)");
+        }
+
+        if (footprints is not null)
+        {
+            // WHAT IT STATES, WHAT THAT RESOLVED TO, HOW MANY PADS, and the walk that got there —
+            // R-fp4-4b. The pad count is printed against the PORT count on the same line, because
+            // the pair is the contract (§1f) and two numbers in two places is how a mismatch goes
+            // unread.
+            Console.WriteLine($"  footprints: {footprints.Count}");
+            foreach (var fp in footprints)
+            {
+                Console.WriteLine($"    {fp.Component,-14} {fp.Stated,-22} {fp.State}"
+                                  + $"   {fp.Pads} pad(s) / {fp.Ports} port(s)"
+                                  + (fp.Pads >= 0 && fp.Pads != fp.Ports ? "   MISMATCH" : ""));
+                Console.WriteLine($"      {"",-12} via {fp.Walk}");
+                if (fp.ResolvedTo is { } to)  Console.WriteLine($"      {"",-12} → {to}");
+                if (fp.Technology is { } tch) Console.WriteLine($"      {"",-12} against technology {tch}");
+                if (fp.Refusal is { } why)    Console.WriteLine($"      {"",-12} {why}");
+            }
         }
 
         if (extents is not null)

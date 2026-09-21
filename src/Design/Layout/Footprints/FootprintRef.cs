@@ -39,12 +39,7 @@ public sealed record FootprintRef(SmtCase Case, DensityLevel Density)
     /// already the one that becomes <c>PrimaryLayout</c>. A generated pattern and an imported one
     /// must spell a density the same way or the picker lists the same thing twice.</para>
     /// </summary>
-    public string VariantSuffix => Density switch
-    {
-        DensityLevel.Most  => "-M",
-        DensityLevel.Least => "-L",
-        _ => "",
-    };
+    public string VariantSuffix => DensityVariant.SuffixOf(Density);
 
     /// <summary>The canonical spelling, density always stated: <c>smt:0402@N</c>. This is the
     /// generator id, so two densities of one case are two ids and therefore two generated cells

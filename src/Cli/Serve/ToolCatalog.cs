@@ -356,6 +356,12 @@ internal static class ToolCatalog
                             "The document's bounding box, in base SI with its unit and scale — what render --fit frames on. "
                           + "Each box also comes back as a `window` string in the spelling render --window takes, whole "
                           + "document and per layer, so no conversion is needed to frame one."),
+                        // brief-footprint-4 R-fp4-4b. R-aut-13 again: it is reachable from the
+                        // command line, so it is reachable here.
+                        new("footprints", "--footprints", OptKind.Flag,
+                            "Per component of a schematic: the footprint it states, what that resolved to, how many pads "
+                          + "against how many ports, and — for a built-in case size — the technology the land pattern "
+                          + "would be generated against."),
                         new("all",     "--all",     OptKind.Flag,
                             "Only with cells: include generated cells, which are hidden by default. On its own it is refused."),
                         new("view",    "--view",    OptKind.Str,
