@@ -309,11 +309,21 @@ equal — and **vetoes the pair**. On the ordinary flow the brief itself calls t
 component carries a footprint and a designator, and the layout came from Update Layout), every
 device on the board is type-incompatible with its own schematic component.
 
-Recorded rather than fixed for the same scope reason, and because it is brief 7's decision which
-way to take it. The two candidate fixes: treat `DeviceKind.Cell` as compatible with any kind when
-only ONE side resolved a directory (it means "nothing more specific said", which is what `Unknown`
-already means), or have the layout side read the kind through the resolved cell. Detail in
-`src/Design/RESOLVED.md`.
+**Fixed in brief 7** by the first of the two candidates: `DeviceKind.Cell` is compatible with any
+kind where only ONE side resolved a directory, because it means "nothing more specific said", which
+is what `Unknown` already meant. Where both sides resolve a directory the directory still decides.
+A third candidate — resolve the schematic's `Footprint` into a cell directory so both sides have one
+— was rejected and must stay rejected: it turns F6 into a type mismatch and loses the value that was
+actually wrong. Detail in `src/Design/RESOLVED.md`.
+
+### The MMIC does not compare clean, and the spiral inductor is why
+
+`Bias tee` reports exactly one `lvs.net.short`. A spiral inductor is one continuous piece of metal,
+so a galvanic extraction reads its two terminals as one net and the comparison correctly says that
+two schematic nets are one piece of copper. Nothing here is a fixture defect — the missing rule is
+that a recognised DEVICE's internal copper is not interconnect, which is brief 3's and brief 14's.
+This cell is the first fixture in the repository that could show it: a board's two land-pattern pads
+are separate copper, and a MIM capacitor's plates are on different conductors.
 
 ### F5 splits the ground in two, and three was never reachable
 

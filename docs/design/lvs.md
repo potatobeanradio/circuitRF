@@ -585,10 +585,22 @@ comparison rather than a backtracking search.
 2. **Colour.** Initial colour of a device = hash(canonical type, terminal count, parameter class,
    anchor id-or-none). Initial colour of a net = hash(terminal count, anchor id-or-none, whether it
    is net `"0"`).
+
+   > **As built (brief 7, 2026-09-21): the canonical type and the parameter class are NOT in the
+   > colour, and cannot be.** A colour component has to be equal on both sides for a *correct*
+   > design, and neither is — an ordinary board's layout says "a cell with this land pattern" where
+   > its schematic says "a resistor", and a PCell's parameter names have nothing in common with its
+   > symbol's. The type is applied as `DeviceType.CouldBe`'s veto where a pairing is proposed, which
+   > is what produces R-lvs-31's one-line type mismatch. `src/Design/RESOLVED.md` has the reasoning
+   > and the third candidate fix that must stay rejected.
 3. **Refine.** Recolour each object from the sorted multiset of its neighbours' colours **and the
    terminal position each neighbour is attached through** — a resistor is symmetric but a FET is
    not, and losing the pin index would match a drain to a source. Iterate to a fixed point.
-4. **Match.** Colour classes of size 1 on both sides are a correspondence. Classes of size *n* > 1
+4. **Match.** An ANCHORED pair is matched; the refinement matches what is left and says where an
+   anchor is refuted. Unpairing an anchored pair because the fixed point separated it produces the
+   four-hundred-finding cascade step 1 exists to prevent — one deleted capacitor changes a net's
+   degree and every correctly-named part around it comes back unmatched (brief 7's completion note).
+   Colour classes of size 1 on both sides are a correspondence. Classes of size *n* > 1
    on both sides with identical colours are an **automorphism** — *n* genuinely interchangeable
    objects, which is the common case for paralleled fingers and decoupling caps. Pair them by a
    deterministic tie-break (provenance order: instance path, then designator) and **say so**:

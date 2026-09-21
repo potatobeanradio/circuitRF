@@ -10490,3 +10490,125 @@ own defaults, and `MeasuredNames`' default was a static field declared BELOW it.
 initializers run in declaration order, so `Default` was built with a null set and the first test to
 reach the measure clause threw a `NullReferenceException` from inside the reducer. The field is
 declared first now, with a comment saying why it is up there.
+
+## The comparison: anchors, colour refinement, divergence (2026-09-21, brief-lvs-7)
+
+`Layout/Lvs/LvsCompare.cs` and `LvsRun.cs`. The correct board compares with nothing above info and
+each of brief 5's six faults produces exactly one finding — singly and all together. What follows is
+what the brief did not already say, in the order it bit.
+
+### Two components of R-lvs7-3a's initial colour CANNOT be in a colour, and both for one reason
+
+A colour component has to be **equal on both sides for a correct design**, and the type and the
+parameter class are not.
+
+- **The type.** A board drawn the ordinary way answers `DeviceKind.Cell` plus a land-pattern
+  directory on the layout side and `DeviceKind.Resistor` with no directory on the schematic side.
+  Hashing that puts every part on every board in a class of its own on each side.
+- **The parameter class.** A MIM capacitor's layout parameters are its generator's (`w`, `l`); its
+  schematic component's are `C` and `Footprint`. The name sets have nothing in common, so hashing
+  them separates every PCell from its own symbol.
+
+So the type is what `DeviceType` already says it is — a **veto, not evidence** — applied where a
+pairing is proposed, and a pairing it refuses is reported as `lvs.device.type-mismatch` rather than
+as two anonymous unmatched devices (R-lvs7-5d). The initial colour is the terminal/pin count and the
+anchor. Parameters are brief 10's entirely.
+
+**A corollary that matters for brief 14:** with the layout side of an ordinary board saying only
+"a cell", the type veto cannot distinguish a 0402 resistor from a 0402 capacitor. On a board with no
+designators at all the two are genuinely interchangeable, the pairing is arbitrary, and
+`lvs.match.by-symmetry` is what says so. Tier-3 recognition is what would change that answer.
+
+### `DeviceType.CouldBe` vetoing the ordinary board is FIXED, by the narrower of the two candidates
+
+`DeviceKind.Cell` now means what `Unknown` already meant — *nothing more specific was said* — in the
+one clause where only one side resolved a directory. Where both resolve one the directory still
+decides, which is the rule the method is built on.
+
+**The third candidate — fold the `Footprint` into the type so both sides resolve a directory — was
+rejected and must stay rejected.** A board layout's only statement of a value IS its land pattern, so
+brief 5's fault F6 (R3 re-pointed from `R0402-294R` to `R0402-150R`) would become a type mismatch and
+brief 10 would lose the value that was actually wrong.
+
+### An anchor MATCHES; the refinement's job is what is left, and where an anchor is refuted
+
+Taken literally, "every anchor is verified by the refinement" (R-lvs7-2b) means running the
+refinement with anchor-seeded colours and unpairing anything the fixed point separates. **That
+produces the four-hundred-finding report the brief exists to prevent**, and brief 5's fault F2 is the
+proof: delete one capacitor and the net it was on has a different degree, which changes its colour,
+which changes the colour of every device on it, which changes their nets — and every correctly-named
+part on the board comes back unmatched. Colour refinement is an isomorphism test; a local difference
+is not local to it.
+
+So an anchored pair is matched, and the refinement matches the unanchored remainder. The names are
+what stop the cascade, and they are also the one thing a fault cannot forge, because the designer
+wrote them before the fault existed.
+
+**Refuted is defined narrowly and has to be**: EVERY terminal of the pair reaches copper that belongs
+to some other schematic net. One terminal doing that is a mis-wiring and is `lvs.terminal.wrong-net`;
+all of them is a pairing that was simply wrong. A device with fewer than two terminals is never
+refuted, because it has no majority to have.
+
+### Nets are DERIVED from the matched devices, not refined — and that is what makes a short one line
+
+A matched device's terminal is a vote that its two nets correspond; a net anchor (port position, or a
+label both sides share) outweighs every terminal. The net with the most votes is the correspondence.
+Then:
+
+- **short** = two or more schematic nets whose correspondence is the same piece of copper;
+- **open** = one schematic net over several pieces, counting a piece only where nothing else has a
+  better claim on it;
+- **wrong-net** = a terminal on a piece whose strongest claim is a DIFFERENT schematic net.
+
+The three clauses are mutually exclusive by construction and that is the whole point: without the
+"different schematic net" qualifier, F5's missing via reports a wrong-net per pin as well as the
+open, and without the open's two-clause test the combined six-fault board reports the short and
+silently loses the open. Both were observed before the rules were written this way.
+
+### An unequal automorphism class (R-lvs7-4d) cannot be what the brief pictures
+
+Three parallel capacitors against four **cannot share a colour** while they share a net: refinement
+sees the rail's degree, so the rail gets two different colours and the devices on it are separated
+before they can be counted against each other. Two sizes can only coexist in one class where the
+members share no net at all, which is what `ComparisonTests` builds.
+
+**The shared-net case is not lost, it is reduction's** — and this is the strongest argument yet for
+reduction being on by default. The group collapses to one device per side carrying its multiplicity,
+the topologies then match exactly, and three-against-four is a value difference for brief 10.
+
+### The attenuator's shunt pair is NOT an automorphism, and brief 5 §R-lvs5-1c is wrong about it
+
+The two shunt resistors are interchangeable only if you ignore which port each sits at. The boundary
+is anchored **by position** on both sides — a correspondence may not map port 1 to port 2, or a
+layout with its ports swapped would pass — so each shunt is alone in its class and is paired by
+structure. What IS arbitrary on that board, once the designators are stripped, is the series resistor
+against the capacitor across it: both two-terminal, both between the same pair of nets, and a land
+pattern says nothing about which is which. `lvs.match.by-symmetry` fires on that pair, and the test
+that gates it says so rather than quietly asserting the shunts.
+
+### A spiral inductor reads as a short, and it is nobody's bug
+
+`examples/LVS/Bias tee` does NOT compare clean: it reports one `lvs.net.short`, because a spiral
+inductor is one continuous piece of metal and a galvanic extraction correctly concludes that its two
+terminals are one net. The artwork is right, the extraction is right and the comparison is right.
+
+What is missing is the rule that **a recognised DEVICE's own internal copper is not interconnect** —
+only its terminal pads are. That is brief 3's `IsDevice` walk and brief 14's recognition, not brief
+7's, which changes no extraction; and it is not a one-line change, because dropping a device cell's
+copper outright would leave its own pins on nothing and report `lvs.pin.no-copper` for every one of
+them. A board never shows this (two land-pattern pads are separate copper) and a MIM capacitor never
+shows it (the plates are on different conductors), so the spiral is the first fixture in the
+repository that could. `ProvingDesignTests` pins the current answer so it cannot change silently.
+
+### Two smaller things
+
+**A symmetric two-terminal device with its pads exchanged IS reported.** The terminal map names pin 1
+and pin 2, and the check compares port for port, so a resistor whose pads land the other way round
+reports two `lvs.terminal.wrong-net` lines. Production tools have pin-swap groups; this repository
+has no vocabulary for one and the series' scope forbids inventing a matching rule language. Worth
+knowing before someone meets it on a real board.
+
+**A cell with only one of the two views returns an empty result carrying `lvs.scope.view-missing` at
+info**, rather than throwing. R-lvs11-2b wants the mid-design state to be ordinary, and
+`tests/Firewall.Tests`' user-facing-text gate is what turned the first version's exception message
+into a diagnostic — correctly.

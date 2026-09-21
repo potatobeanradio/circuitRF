@@ -84,14 +84,37 @@ public readonly record struct DeviceType(DeviceKind Kind, string? CellDir, strin
     /// <b>A cell directory beats a kind.</b> Where both sides resolve one, that path IS the
     /// answer; where neither does, the kinds decide, and <see cref="DeviceKind.Unknown"/> matches
     /// anything because "nothing said" is not evidence of difference.
+    ///
+    /// <para><b><see cref="DeviceKind.Cell"/> is the second thing that means "nothing said", and
+    /// leaving it out of that clause vetoed the ordinary board</b> (brief 7, from brief 5's own
+    /// fixture). A designer draws a resistor carrying a <c>Footprint</c> and runs Update Layout.
+    /// The placement it writes has a <c>SchematicId</c> and NO <c>PartKind</c> — "the schematic
+    /// knows" — so <see cref="DeviceTypes.OfLayout"/> reaches its last clause and answers
+    /// <c>Cell</c> with the land pattern's directory, while the schematic component answers
+    /// <c>Resistor</c> with no directory at all. Neither is <c>Unknown</c>, <c>Cell</c> is not
+    /// <c>Resistor</c>, and every part on every ordinary board was type-incompatible with its own
+    /// schematic component — the one pairing that must never be refused.</para>
+    ///
+    /// <para><b>The land pattern is deliberately NOT folded into the type to close that gap.</b>
+    /// A board layout's only statement of a value IS its land pattern (brief 5's
+    /// <c>R0402-294R</c>), so a part re-pointed at the wrong one is a PROPERTY error — brief 10's
+    /// <c>lvs.property.mismatch</c> — and making the footprint part of the identity would turn it
+    /// into a type mismatch and lose the value that was actually wrong.</para>
+    ///
+    /// <para>Where BOTH sides resolve a directory the directory still decides, which is the rule
+    /// this method is built on and the reason the change is confined to the asymmetric case.</para>
     /// </remarks>
     public bool CouldBe(DeviceType other)
     {
         if (CellDir is { Length: > 0 } mine && other.CellDir is { Length: > 0 } theirs)
             return string.Equals(mine, theirs, StringComparison.OrdinalIgnoreCase);
 
-        return Kind == DeviceKind.Unknown || other.Kind == DeviceKind.Unknown || Kind == other.Kind;
+        return SaysNothing(Kind) || SaysNothing(other.Kind) || Kind == other.Kind;
     }
+
+    /// <summary>The kinds that are an absence of a statement rather than a statement.</summary>
+    private static bool SaysNothing(DeviceKind kind)
+        => kind is DeviceKind.Unknown or DeviceKind.Cell;
 }
 
 /// <summary>Where a device's canonical type is decided.</summary>

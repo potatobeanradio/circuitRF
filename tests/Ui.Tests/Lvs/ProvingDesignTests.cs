@@ -326,6 +326,113 @@ public sealed class ProvingDesignTests
         Assert.Single(faulted.Nets[island].Pins);
     }
 
+    // ══ 5 — the correct board compares with ZERO findings above info ════════════════════════════
+    //
+    // R-lvs5-1d, switched on by brief 7. The easy path: every component carries a footprint and a
+    // designator, and the layout came from Update Layout, so every instance carries a SchematicId.
+    // Not "zero errors" — zero findings above info, which is the bar an example has to clear before
+    // any of the broken board's findings mean anything.
+
+    [Fact]
+    public void TheCorrectBoardComparesWithNothingAboveInfo()
+    {
+        var result = LvsRun.Run(Lvs(Correct));
+
+        Assert.True(result.IsClean,
+            "the correct board reported: " + string.Join("; ",
+                result.Diagnostics.Where(d => d.Severity > DiagnosticSeverity.Info).Select(d => d.Render())));
+
+        // Every part paired, by the name the designer gave it, and every net with it.
+        Assert.Equal(4, result.Comparison.Devices.Count);
+        Assert.Equal(4, result.Comparison.Anchors);
+        Assert.All(result.Comparison.Devices, p => Assert.Equal(p.SchematicName, p.LayoutName));
+        Assert.Equal(3, result.Comparison.Nets.Count);
+
+        // R-lvs6-5c: the reduction mode is on the face of the result either way, both sides.
+        Assert.Equal(2, result.Diagnostics.Count(d => d.Id == "lvs.reduce.mode"));
+    }
+
+    // ══ 6 — each fault is ONE finding, and all of them together are not sixty ═══════════════════
+    //
+    // R-lvs5-2a/c. By DIAGNOSTIC ID and by the objects the finding names, never by its sentence.
+    //
+    // F6 is deliberately silent HERE and is brief 10's: re-pointing R3 at a 150 Ω land pattern
+    // changes a value and not a topology, which is R-lvs7-3a's own reason for keeping parameter
+    // values out of the matching. That is why the committed six-fault board reports FIVE.
+
+    [PythonTheory]
+    [InlineData("F1", "lvs.terminal.wrong-net")]
+    [InlineData("F2", "lvs.device.unmatched-schematic")]
+    [InlineData("F3", "lvs.device.unmatched-layout")]
+    [InlineData("F4", "lvs.net.short")]
+    [InlineData("F5", "lvs.net.open")]
+    [InlineData("F6", null)]
+    public void EachFaultProducesExactlyItsOwnFinding(string fault, string? expected)
+    {
+        var findings = CompareFaultedBoard(fault).Comparison.Findings
+            .Where(f => f.Severity > DiagnosticSeverity.Info).ToList();
+
+        if (expected is null) { Assert.Empty(findings); return; }
+        Assert.Equal(expected, Assert.Single(findings).Id);
+    }
+
+    [Fact]
+    public void AllSixFaultsTogetherAreFiveFindingsAndTheSameFiveEveryRun()
+    {
+        string Report(LvsResult r) => string.Join("\n", r.Comparison.Findings
+            .Where(f => f.Severity > DiagnosticSeverity.Info)
+            .Select(f => $"{f.Id}: {f.Render()}"));
+
+        var first = LvsRun.Run(Lvs(Broken));
+        var ids = first.Comparison.Findings
+            .Where(f => f.Severity > DiagnosticSeverity.Info).Select(f => f.Id).ToList();
+
+        Assert.Equal(
+            ["lvs.device.unmatched-layout", "lvs.device.unmatched-schematic",
+             "lvs.net.open", "lvs.net.short", "lvs.terminal.wrong-net"],
+            ids);
+
+        // The objects, not the sentences: F1 is R2's second terminal, F2 is C1, F3 is the R4 that
+        // is on the board and not on the drawing.
+        Assert.Equal("R2", Single(first, "lvs.terminal.wrong-net").Arguments["path"]);
+        Assert.Equal("C1", Single(first, "lvs.device.unmatched-schematic").Arguments["path"]);
+        Assert.Equal("R4", Single(first, "lvs.device.unmatched-layout").Arguments["path"]);
+
+        // R-lvs5-1c's other half, and R-lvs7-6a: ten runs, one answer, in one order.
+        for (int run = 0; run < 10; run++)
+            Assert.Equal(Report(first), Report(LvsRun.Run(Lvs(Broken))));
+    }
+
+    private static Diagnostic Single(LvsResult result, string id)
+        => Assert.Single(result.Comparison.Findings, f => f.Id == id);
+
+    // ══ The MMIC does NOT compare clean, and this is what it reports ════════════════════════════
+    //
+    // NOT a gate brief 5 or brief 7 asked for — it is here so a real, known limitation cannot
+    // quietly change. A spiral inductor IS one continuous piece of metal, so a galvanic extraction
+    // reads its two terminals as one net and the comparison correctly concludes that two schematic
+    // nets are one piece of copper. The artwork is right, the extraction is right and the
+    // comparison is right; what is missing is the rule that a DEVICE's own internal copper is not
+    // interconnect, which is brief 3's `IsDevice` walk and brief 14's recognition — not this
+    // brief's, which changes no extraction. `src/Design/RESOLVED.md` carries the detail.
+
+    [Fact]
+    public void TheMmicSpiralStillReadsAsAShortBecauseItsCopperIsInterconnect()
+    {
+        var result = LvsRun.Run(Lvs(Mmic));
+
+        Assert.Equal(4, result.Comparison.Devices.Count);
+        Assert.Equal(4, result.Comparison.Anchors);
+
+        var only = Assert.Single(result.Diagnostics.Where(d => d.Severity > DiagnosticSeverity.Info));
+        Assert.Equal("lvs.net.short", only.Id);
+        Assert.Equal(2, only.Arguments["count"]);
+
+        // The inductor is the reason, on its face: both its terminals are on one layout net.
+        var spiral = Assert.Single(result.Layout.Devices, d => d.Designator == "L1");
+        Assert.Equal(spiral.Terminals[0].NetIndex, spiral.Terminals[1].NetIndex);
+    }
+
     // ══ 8 — the MMIC reaches ground through metal nobody drew ═══════════════════════════════════
 
     [Fact]
@@ -462,6 +569,17 @@ public sealed class ProvingDesignTests
 
         Assert.NotNull(resolution.Tech);
         return LayoutRead.Read(view, clayPath, Path.Combine(work, Broken), resolution.Tech);
+    }
+
+    /// <summary>The broken board carrying exactly one fault, COMPARED — the same throwaway copy
+    /// <see cref="ReadFaultedBoard"/> makes, run through the one door.</summary>
+    private static LvsResult CompareFaultedBoard(string fault)
+    {
+        string work = CopyWorkspace();
+        string cell = Path.Combine(work, Broken);
+        RunPython(Path.Combine(cell, "layout", "Attenuator.break.py"),
+                  work, "--only", fault, "-o", Path.Combine(cell, "layout", "Attenuator.clay"));
+        return LvsRun.Run(cell);
     }
 
     private static LvsNetlist ReadSchematic(string cell)

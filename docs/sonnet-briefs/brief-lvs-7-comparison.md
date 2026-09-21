@@ -169,3 +169,75 @@ so a large comparison can be stopped. A cancelled run returns nothing and writes
 - **No hierarchy.** Brief 9; this brief's flat answer is that brief's oracle.
 - **No properties.** Brief 10.
 - **No search.** `R-lvs7-1b`.
+
+---
+
+## 9. Completion note (2026-09-21)
+
+Built. `src/Design/Layout/Lvs/LvsCompare.cs` and `LvsRun.cs`; the gates are
+`tests/Ui.Tests/Lvs/ComparisonTests.cs` (11 tests) and the brief-5 gates that switch on here, added
+to `tests/Ui.Tests/Lvs/ProvingDesignTests.cs` (4 more). 133 tests under `Ui.Tests/Lvs`, all passing,
+plus `Firewall.Tests`.
+
+**The headline: brief 5's correct board compares with nothing above info, and each of its six faults
+produces exactly one finding — singly AND all six together.** F6 is silent here and is brief 10's, so
+the committed six-fault board reports five.
+
+| | F1 wrong net | F2 missing | F3 extra | F4 short | F5 open | F6 value |
+|---|---|---|---|---|---|---|
+| alone | `terminal.wrong-net` | `device.unmatched-schematic` | `device.unmatched-layout` | `net.short` | `net.open` | — |
+| all six | the same five, and only those five | | | | | — |
+
+**Everything worth knowing is in `src/Design/RESOLVED.md`**; `examples/RESOLVED.md` carries the two
+that are about the fixture. What follows is the map, plus the four places this brief's own text does
+not survive contact with the code.
+
+**Four departures, each with its reason recorded in full in `RESOLVED.md`.**
+
+1. **`R-lvs7-3a`'s initial colour drops the canonical type AND the parameter class.** A colour
+   component must be equal on both sides for a CORRECT design, and neither is: an ordinary board's
+   layout says `Cell` + a land pattern where its schematic says `Resistor`, and a PCell's parameter
+   names have nothing in common with its symbol's. Hashing either puts every part in a class of its
+   own on each side. The type stays what `DeviceType` calls it — a veto, applied where a pairing is
+   proposed — and a pairing it refuses is `lvs.device.type-mismatch`, which is R-lvs7-5d's own
+   requirement met more directly.
+2. **`R-lvs7-2b`'s "verified by the refinement" is not "unpaired by the refinement".** An anchored
+   pair is MATCHED and the refinement matches the remainder. Taken the other way, F2 — one deleted
+   capacitor — changes one net's degree and tears apart every correctly-named part on the board,
+   which is precisely the cascade R-lvs7-2c exists to prevent. Refuted is defined narrowly: EVERY
+   terminal of the pair reaching copper that belongs to another schematic net.
+3. **`R-lvs7-4d`'s unequal class cannot be a shared-net parallel group.** Three caps on a rail
+   against four give that rail two colours and the devices are separated before they can be counted.
+   Two sizes coexist in one class only where the members share no net; the shared-net case is
+   reduction's, which collapses both sides to one device carrying its multiplicity and leaves brief
+   10 a value to compare. This is the strongest argument yet for reduction being on by default.
+4. **The attenuator's shunt pair is not the automorphism** — `R-lvs5-1c` is wrong about it. The
+   boundary is anchored by PORT POSITION on both sides, so each shunt is alone in its class. What is
+   arbitrary, once the designators are stripped, is the series resistor against the capacitor across
+   it, and that is what gate 3/6's test asserts.
+
+**Two findings that are not this brief's to fix and are pinned so they cannot drift.**
+
+- **`DeviceType.CouldBe` vetoing the ordinary board is FIXED** (brief 5's own finding 2), by the
+  narrower candidate: `DeviceKind.Cell` means "nothing more specific said", exactly as `Unknown`
+  does, in the one clause where only one side resolved a directory.
+- **A spiral inductor reads as a short.** `examples/LVS/Bias tee` reports one `lvs.net.short`: a
+  spiral is one continuous piece of metal and the extraction is right to say so. The missing rule —
+  a recognised DEVICE's internal copper is not interconnect — is brief 3's `IsDevice` walk and brief
+  14's recognition, and it is not a one-liner, because dropping a device cell's copper outright
+  leaves its own pins on nothing. `ProvingDesignTests` pins the current answer.
+
+**Gate 11's counter, measured rather than asserted in the abstract:** a ladder scaled 10× (20 → 200
+sections, 40 → 400 devices) takes 5,218 → 51,838 units of refinement work — **9.93×**, against a
+bound of 20× that deliberately allows for the one n log n step in the pass (grouping objects by
+signature, which the counter includes rather than hides). Two refinement iterations either way.
+
+**One thing the firewall caught and was right to:** the first version threw an exception naming the
+missing view when a cell had only one of the two. `tests/Firewall.Tests`' user-facing-text gate
+refused it, and the answer is `lvs.scope.view-missing` at **info** with an empty result — which is
+also R-lvs11-2b's own rule, arrived at from the other direction.
+
+**Known limitation, stated rather than worked around:** a symmetric two-terminal device with its
+pads exchanged IS reported, twice. The terminal map names pin 1 and pin 2 and the check compares
+port for port. Production tools have pin-swap groups; this repository has no vocabulary for one and
+the series' scope forbids inventing a matching rule language.

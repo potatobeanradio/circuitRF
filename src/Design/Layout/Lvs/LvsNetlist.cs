@@ -75,6 +75,23 @@ public sealed record LvsDevice(
     public IReadOnlyList<string> Group { get; init; } = [Path];
 
     /// <summary>
+    /// What this device says its counterpart on the OTHER side is called — brief 7's tier-0
+    /// anchor (R-lvs7-2a), which on the layout side is <c>LayoutInstance.SchematicId</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is a claim, not an identity, and the comparison verifies every one of them</b>
+    /// (R-lvs7-2b). Empty is the ordinary case: a hand-drawn board claims nothing and is compared
+    /// on its structure.
+    ///
+    /// <para><b>Read symmetrically.</b> An anchor exists where one side's <c>AnchorId</c> equals
+    /// the other side's <see cref="Path"/>, whichever side stated it — the comparator never asks
+    /// which document it is holding, for <see cref="LvsNetlist"/>'s own reason. Today only the
+    /// layout side fills it, because only the layout side has a field for it; the schematic's own
+    /// <see cref="Path"/> IS the thing that field names.</para>
+    /// </remarks>
+    public string AnchorId { get; init; } = "";
+
+    /// <summary>
     /// How many devices are in parallel here — <b>carried, not discarded</b> (R-lvs6-2c). A merge
     /// of four fingers is 4, and brief 10 compares it against the schematic's own <c>Nf</c>/<c>M</c>.
     /// 1 for everything that has not been merged in parallel.

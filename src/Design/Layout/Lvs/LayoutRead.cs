@@ -201,7 +201,13 @@ public static class LayoutRead
 
                 devices.Add(new LvsDevice(
                     path, inst.DisplayRefDes ?? "", type, terminals, parameters,
-                    new LvsProvenance(document, path, x, y)));
+                    new LvsProvenance(document, path, x, y))
+                {
+                    // Brief 7's tier-0 anchor, carried and never obeyed here (R-lvs7-2b): every
+                    // element of an array states the SAME one, which is exactly why it is a claim
+                    // the comparison has to check for uniqueness rather than an identity.
+                    AnchorId = inst.SchematicId ?? "",
+                });
             }
         }
 

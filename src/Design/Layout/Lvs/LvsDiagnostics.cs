@@ -183,6 +183,16 @@ public static class LvsDiagnostics
         + "compare them as devices.",
         ("document", document), ("excluded", excluded));
 
+    /// <summary>
+    /// R-lvs11-2b. A cell with only one of the two views. <b>Info, and not a refusal</b>: it is the
+    /// ordinary mid-design state, and a comparison that failed on it would be one nobody runs while
+    /// the design is being drawn.
+    /// </summary>
+    public static Diagnostic ViewMissing(string cell, string view) => Diagnostic.Create(
+        "lvs.scope.view-missing", DiagnosticSeverity.Info,
+        "'{cell}' has no primary {view} view, so there was nothing to compare it against.",
+        ("cell", cell), ("view", view));
+
     // ── Reduction (brief-lvs-6-reduction.md R-lvs6-5, note R-lvs-38/40) ─────
 
     /// <summary>
@@ -230,6 +240,137 @@ public static class LvsDiagnostics
                 ? "Its two nets were read as one, on both sides."
                 : "It was left as a device, because the other document has no jumper to collapse "
                   + "against and collapsing one side only would compare a circuit neither document draws."));
+
+    // ── The comparison (brief-lvs-7-comparison.md) ───────────────────────────
+    //
+    // Brief 8 owns the catalogue as a whole and adds the shorts' PATHS and the opens' ISLANDS to
+    // what is here. These are the ids brief 7 can produce on its own — what the refinement
+    // concluded, before anything has been given a marker.
+
+    /// <summary>
+    /// R-lvs7-5a, and R-lvs7-4d's counts. A schematic device the layout has no counterpart for.
+    /// </summary>
+    /// <remarks>
+    /// <b>The class sizes are on the finding.</b> "Three parallel caps here and four there" is a
+    /// different fault from "this one part is missing", and a reader who is given only the missing
+    /// part cannot tell which they are looking at.
+    /// </remarks>
+    public static Diagnostic UnmatchedSchematic(string path, int schematicCount, int layoutCount)
+        => Diagnostic.Create(
+            "lvs.device.unmatched-schematic", DiagnosticSeverity.Error,
+            "The schematic's '{path}' has no counterpart in the layout ({schematicCount} "
+            + "indistinguishable device(s) in the schematic against {layoutCount} in the layout).",
+            ("path", path), ("schematicCount", schematicCount), ("layoutCount", layoutCount));
+
+    /// <summary>R-lvs7-5a, the other side.</summary>
+    public static Diagnostic UnmatchedLayout(string path, int schematicCount, int layoutCount)
+        => Diagnostic.Create(
+            "lvs.device.unmatched-layout", DiagnosticSeverity.Error,
+            "The layout's '{path}' has no counterpart in the schematic ({schematicCount} "
+            + "indistinguishable device(s) in the schematic against {layoutCount} in the layout).",
+            ("path", path), ("schematicCount", schematicCount), ("layoutCount", layoutCount));
+
+    /// <summary>
+    /// R-lvs7-5d. <b>One line, not two unmatched-device lines.</b> "R1 is a resistor in the
+    /// schematic and a capacitor in the layout" is a sentence a user can act on; two anonymous
+    /// "unmatched" lines are a puzzle whose answer is this sentence.
+    /// </summary>
+    public static Diagnostic TypeMismatch(
+        string schematicPath, string layoutPath, string schematicType, string layoutType)
+        => Diagnostic.Create(
+            "lvs.device.type-mismatch", DiagnosticSeverity.Error,
+            "'{schematicPath}' is a {schematicType} in the schematic and '{layoutPath}' is a "
+            + "{layoutType} in the layout. They name each other and cannot be the same part.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath),
+            ("schematicType", schematicType), ("layoutType", layoutType));
+
+    /// <summary>
+    /// R-lvs7-5a. A matched device whose terminal reaches copper belonging to a DIFFERENT
+    /// schematic net — the mis-wiring finding, and the one that names both nets.
+    /// </summary>
+    /// <remarks>
+    /// <b>Only where the copper it reached belongs to another net.</b> A terminal that landed on
+    /// an island of its own net is an open (<see cref="NetOpen"/>) and reporting it here as well
+    /// would turn one missing via into a finding per pin.
+    /// </remarks>
+    public static Diagnostic TerminalWrongNet(
+        string path, int port, string terminal, string expected, string found)
+        => Diagnostic.Create(
+            "lvs.terminal.wrong-net", DiagnosticSeverity.Error,
+            "{path} terminal {port} ('{terminal}') is on '{expected}' in the schematic and reaches "
+            + "'{found}' in the layout.",
+            ("path", path), ("port", port), ("terminal", terminal),
+            ("expected", expected), ("found", found));
+
+    /// <summary>
+    /// Two or more schematic nets are one piece of copper. <b>Brief 8 adds the PATH</b> — the
+    /// narrowest join and its coordinate — which is the half a designer can act on.
+    /// </summary>
+    public static Diagnostic NetShort(string nets, int count, string layoutNet) => Diagnostic.Create(
+        "lvs.net.short", DiagnosticSeverity.Error,
+        "{count} schematic nets are one piece of copper ('{layoutNet}'): {nets}.",
+        ("nets", nets), ("count", count), ("layoutNet", layoutNet));
+
+    /// <summary>
+    /// One schematic net is several pieces of copper. <b>Brief 8 adds the ISLANDS</b> and a marker
+    /// on each.
+    /// </summary>
+    public static Diagnostic NetOpen(string net, int islands, string pins) => Diagnostic.Create(
+        "lvs.net.open", DiagnosticSeverity.Error,
+        "Schematic net '{net}' is {islands} separate pieces of copper in the layout: {pins}.",
+        ("net", net), ("islands", islands), ("pins", pins));
+
+    /// <summary>
+    /// R-lvs7-2b, and <b>usually the most useful line in the whole report</b>: a name-based pairing
+    /// every terminal of which the structure refutes. It names a mis-wired part by the designer's
+    /// own name for it rather than reporting two anonymous unmatched objects.
+    /// </summary>
+    /// <remarks>
+    /// <b>Warning, not error, and the comparison continues without it</b> (R-lvs7-2c). Keeping a
+    /// contradicted anchor would propagate one wrong pairing through every neighbour's colour and
+    /// turn one fault into a cascade, which is how a report goes from six findings to four hundred.
+    /// </remarks>
+    public static Diagnostic AnchorContradicted(string schematicPath, string layoutPath)
+        => Diagnostic.Create(
+            "lvs.anchor.contradicted", DiagnosticSeverity.Warning,
+            "'{layoutPath}' in the layout names the schematic's '{schematicPath}', but none of its "
+            + "terminals reaches the copper that pairing requires. The name was dropped and the "
+            + "two were compared on their structure.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath));
+
+    /// <summary>
+    /// R-lvs7-4c. <b>Not a nicety.</b> The pairing inside an automorphism group is arbitrary, so a
+    /// later finding naming "C7" may mean the part the designer calls C9 — and a user who does not
+    /// know that will chase the wrong part.
+    /// </summary>
+    public static Diagnostic MatchBySymmetry(int count, string pairs) => Diagnostic.Create(
+        "lvs.match.by-symmetry", DiagnosticSeverity.Info,
+        "{count} device(s) are genuinely interchangeable and were paired arbitrarily: {pairs}. A "
+        + "finding naming one of them may mean any other.",
+        ("count", count), ("pairs", pairs));
+
+    /// <summary>
+    /// R-lvs7-2e. No designator, no <c>SchematicId</c>, no net name the two sides share — the
+    /// comparison ran on structure alone. <b>The case that proves the algorithm rather than the
+    /// naming</b>, and the one where every pairing is the algorithm's own choice.
+    /// </summary>
+    public static Diagnostic MatchStructuralOnly(int devices) => Diagnostic.Create(
+        "lvs.match.structural-only", DiagnosticSeverity.Info,
+        "Nothing named a part on both sides, so all {devices} device(s) were paired on structure "
+        + "alone. Every name in this report is the layout's or the schematic's own, never a "
+        + "correspondence either document stated.",
+        ("devices", devices));
+
+    /// <summary>
+    /// R-lvs7-3d. <b>It should never bind</b>: the partition strictly refines on every iteration
+    /// that changes anything, so it cannot change more times than there are objects. If this ever
+    /// fires the signatures are not stable and the answer is not to be trusted.
+    /// </summary>
+    public static Diagnostic RefinementCapped(int cap) => Diagnostic.Create(
+        "lvs.compare.refinement-capped", DiagnosticSeverity.Error,
+        "Colour refinement was still changing after {cap} iteration(s) and was stopped. The "
+        + "comparison below is incomplete.",
+        ("cap", cap));
 
     // ── The whole run (R-lvs3-2c) ────────────────────────────────────────────
 
