@@ -9399,3 +9399,87 @@ own artwork. There is no placement to attach a position to, and importing the pl
 the literal string `>NAME` on the silkscreen of every instance of that part. The prefix IS carried,
 one level up, through `Metadata["Reference"]` — which is what `FootprintLabel.SeedDesignator` reads
 when a part is placed by hand.
+
+## The Power Rail example rebuilt on real footprints (brief-footprint-5)
+
+The shipped example's parts became INSTANCES of footprint cells. Three things in this project had
+never met a board with a part on it, and each of them was wrong in a way that produced an answer.
+
+### railRF read `view.Shapes` and nothing else, and that is now a board with no capacitors on it
+
+Every railRF surface — the window's open, the CLI verb, the doc-figure fixture — built its
+`RailBoardInputs.Shapes` from the root layout's own shape list. Harmless for exactly as long as no
+board it was pointed at held an instance; on a board whose parts are footprint cells, every land is
+INSIDE an instance, so what the extraction read was the rail's copper and not one capacitor. The run
+completes, the answer is wrong, and nothing says so.
+
+`RailArtwork.FlattenedShapes` is the one flatten, through `LayoutDesignFlatten` — the same one
+Gerber, DRC and `circuitrf check` already use, rather than a second walk of the instance tree. **The
+VIEW is deliberately left alone**: the picture railRF draws is the hierarchy, because that is where a
+reference designator lives and because it is a live view of a `.clay` somebody may have open.
+`RailBoardInputs.Shapes`' own contract already said "flattened to shapes in DBU"; it is now true.
+
+### A soldermask opening is drawn ON a land, so the connectivity walk joined the rail to itself
+
+`PdnMeshExtractor.BuildLayerRegions` unioned every layer the artwork carried, and `DrcConnectivity`
+joins pieces that overlap. A land pattern's mask opening is a rectangle 50 µm larger than its land on
+every side, so on the first board with footprints the rail reached layer 5 — and the run refused with
+"the rail reaches layer 5/0, which no Conductor entry of the stackup claims", naming a layer nobody
+thought was electrical. Before footprints existed, no board here carried a non-conducting layer at
+all, which is why this was never wrong until now.
+
+A drawing layer the TECHNOLOGY declares and the STACKUP does not claim is the technology author's own
+statement that it is not copper. Those are dropped — and the drop is REPORTED in one sentence, not
+silently and not one sentence per layer, because the case that looks identical from here is a copper
+layer somebody forgot to add to the stackup, and that reader needs to be told. A layer the technology
+has never heard of still flows through to `ResolveConductors`' refusal, which is the case that
+message was written for.
+
+### "Its observation ports read DIFFERENT curves" was true of the element and not of the ports
+
+R-rail25-4b made the one-curve note conditional on there BEING a series element. A rail with an
+element still reads one curve at every port when every port is on one side of it — which is the
+ordinary arrangement, since decoupling and the loads it serves are both downstream. Both notes are
+conditional on the PARTITION now. A lie in the second place is the same lie.
+
+### The fast model refuses a path it cannot price, and a land is not a trace
+
+`PdnCopperClassifier` calls a piece under ten squares SPREADING, and `PourDominatedRefusal` excludes
+spreading pieces from the reachability walk — so a load whose only path runs through one is
+unreachable and the fast model produces no number. Re-spacing the example hit this twice: a 2.0 ×
+0.4 mm load land is 5 squares, and a regulator land plus a short run plus a 0603 pad is 6.4. Both
+were fixed in the ARTWORK rather than by relaxing the classifier, because the classifier is right:
+those are pieces the closed form cannot price, and the error it would make is optimistic. The
+refusal's own sentence names the largest spreading region on the board as a likely culprit, which on
+this board was a pour that was not on the path at all — worth knowing when reading it.
+
+### A via pad is copper, and the generator's land-overlap audit could not see one
+
+`Board.gen.py` checked that no two parts' LANDS overlap. C13's return via landed 0.275 mm outside its
+own land and its 0.55 mm pad reached across onto C9's RAIL land: two nets on one piece of TOP copper,
+drawn by two shapes neither of which overlaps the other's land. What it produced was not a refusal —
+it was a rail whose every anchor resolved into one island, because the reference plane had joined the
+rail through that pad, and the series element was then reported as BRIDGED. The audit checks a via
+pad against every land of the other net now, and a return via's pad against the rail's own bare
+copper.
+
+Its via-proximity check was also relaxed, and that is a correction rather than a loosening: a power
+via's clearance is cut in GND and a return via's in IN3, so the two never interact, and the old
+all-against-all form called a modern via-in-land pattern 0.8 mm apart a defect.
+
+### A via in a solder land is a FABRICATION specification, and the example had not stated one
+
+Owner's review, 2026-09-20: *is it common, or possible, to place SMT components directly on the
+vias?* Seven of the example's parts have a barrel in each of their two lands, and that is what gets
+them a 555 pH mounting loop against 1201 pH for a 0.9 mm fan-out on the same purchased part.
+
+**It is buildable and it is not free.** An OPEN plated via under a land wicks solder down the hole at
+reflow — starved joints, voiding, tombstoned chips. Done properly the barrel is plugged and plated
+over flat (IPC-4761 Type VII), which is an extra step the fab charges for.
+
+**The electrical model needed no change, and that is the part worth recording.** The plug is
+non-conductive epoxy, so a filled-and-capped via is still a plated ANNULUS: the stackup's
+`ViaFillKind.Plated` with a 25 µm wall is already the right model, and `ViaFillKind.Solid` — a filled
+COPPER barrel — would have overstated its conductance. A `.ctech` has no field for "these vias are
+plugged" because there is nothing electrical for it to say; it is a fab note, and the example now
+carries it in prose beside the mounting-loop table that depends on it.

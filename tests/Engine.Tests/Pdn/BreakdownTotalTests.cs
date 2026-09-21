@@ -4,9 +4,10 @@
 //  ── TWO TOTALS, BOTH CALLED THE DROP ────────────────────────────────────────────────────────
 //
 //  The Drop card reports a port's own drop; the Breakdown card's rows are shares of a DIFFERENT
-//  total — the sum of every group's drop on the rail. On the shipped Power Rail example those are
+//  total — the sum of every group's drop on the rail. On the shipped Power Rail example they were
 //  50.131 mV and 48.368 mV, both labelled in millivolts, with nothing on screen saying they answer
-//  different questions. A designer read the pair as a bug (2026-09-20).
+//  different questions. A designer read the pair as a bug (2026-09-20). The example has been
+//  re-spaced since and both figures have moved; the two totals still differ, and that is the point.
 //
 //  ── AND THE ARITHMETIC IS NOT THE BUG ───────────────────────────────────────────────────────
 //
@@ -19,8 +20,10 @@
 //
 //  A series chain, where the rows telescope to the port's own drop and there is nothing to
 //  reconcile; and a chain that DIVIDES between two legs and rejoins, where the port drops one leg
-//  and the table lists both. The second is the shipped example's shape, reduced: its 1.763 mV gap
-//  is exactly its second parallel leg (src/Design/RESOLVED.md carries that row by row).
+//  and the table lists both. The second is the shipped example's shape, reduced: on the board as it
+//  stood then the 1.763 mV gap was exactly its second parallel leg (src/Design/RESOLVED.md carries
+//  that row by row). The synthetic boards below are the test, so no number here follows the
+//  example.
 //
 //  One test per CLAIM, not one per rung.
 // ================================================================

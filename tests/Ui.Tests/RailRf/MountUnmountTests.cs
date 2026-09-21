@@ -13,8 +13,13 @@
 //  one would cost. Unmounting a part and re-running is a second, completely separate path to the
 //  same number — one goes through PdnSweep's own branch list with a branch dropped, the other
 //  through the document, the resolver and a whole new run. The shipped example's README publishes
-//  C10 at 16.3 dB growth, to a worst margin of -15.6 dB, so the two mechanisms have to agree, and
-//  the first gate below is that agreement rather than a hard-coded figure.
+//  C10's growth and the margin without it, so the two mechanisms have to agree, and the first gate
+//  below is that agreement rather than a hard-coded figure.
+//
+//  THE PUBLISHED FIGURES ARE NOT REPEATED HERE. They moved once already, when brief-footprint-5
+//  re-spaced the board onto real footprints, and a second copy of them in this file is a second
+//  place to forget. PowerRailExampleTests parses them out of the README and compares them to a live
+//  run; what is gated here is the AGREEMENT between the two mechanisms and the shape of the answer.
 //
 //  Driven on the SHIPPED example throughout, because that is the document the report is about.
 //  One test per CLAIM the brief makes.
@@ -79,10 +84,11 @@ public sealed class MountUnmountTests(ITestOutputHelper output)
         // different sweeps land on identical arrays.
         Assert.Equal(predicted.WorstMarginDb, after, 1);
 
-        // And it is the README's own published figure, which is what makes this the example's gate
-        // rather than a self-consistency check.
-        Assert.Equal(-15.6, after, 1);
-        Assert.Equal(16.3, before - after, 1);
+        // And C10 is worth an order of magnitude more than anything else on this board — it is the
+        // bulk, and it is holding the low band up on its own. The README carries the figure;
+        // PowerRailExampleTests is what holds the README to it.
+        Assert.True(after < -10, $"the bulk is no longer the part this gate is about: {after:0.###} dB.");
+        Assert.True(before - after > 10, $"C10 is worth only {before - after:0.###} dB now.");
 
         // Gate 9: absent, not ranked at zero.
         Assert.DoesNotContain(depopulated.Removal,
@@ -98,9 +104,9 @@ public sealed class MountUnmountTests(ITestOutputHelper output)
     /// </summary>
     /// <remarks>
     /// <b>That surviving number is the whole feature.</b> Deleting the part from the artwork loses
-    /// the loop the geometry gave it — 1.20 nH on <c>C11</c>, 0.56 nH on <c>C1</c>, and the
-    /// difference between those two is what the example's own README is about — so a part deleted
-    /// and re-drawn does not come back the same part. Unmounted, it does.
+    /// the loop the geometry gave it — 1.2 nH on <c>C11</c> against 0.56 nH on <c>C1</c>, and the
+    /// difference between the two tiers is what the example's own README is about — so a part
+    /// deleted and re-drawn does not come back the same part. Unmounted, it does.
     /// </remarks>
     [Fact]
     public void TheRowSurvivesWithItsInductance_ReMountingRestoresTheAnswer_AndTheClayIsUntouched()

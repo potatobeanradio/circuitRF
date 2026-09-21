@@ -452,18 +452,36 @@ public static class PdnSweep
         // ports genuinely differ — by that element's own impedance, at every frequency. Printing it
         // in the second case would be a false statement about the model, and nothing fails when a
         // lie is printed, which is why it is a gate of its own.
-        if (rail.Loads.Count > 1 && request.Series is null)
+        // A rail with a series element has two nodes, but its PORTS only differ if they are on
+        // different sides of it. Every port on one side reads one curve, exactly as a rail with no
+        // element at all does — so the sentence is conditional on the PARTITION and not merely on
+        // there being an element, because "they read different curves" printed over two ports that
+        // read the same one is the same lie in a different place.
+        bool portsSpanSections = request.Series is not null && request.Partition is { } p2 &&
+            Enumerable.Range(0, rail.Loads.Count).Select(p2.LoadSection).Distinct().Count() > 1;
+
+        if (rail.Loads.Count > 1 && (request.Series is null || !portsSpanSections))
             notes.Add(
-                "Every observation port on this rail reads the same curve. That is P1's lumped model " +
-                "rather than a defect: there is no copper between the ports yet, so nothing in the " +
-                "model can make them differ. The distributed low band is P2a.");
+                "Every observation port on this rail reads the same curve. " +
+                (request.Series is null
+                    ? "That is P1's lumped model rather than a defect: there is no copper between " +
+                      "the ports yet, so nothing in the model can make them differ. The distributed " +
+                      "low band is P2a."
+                    : "This rail has a series element, but every port is on the SAME side of it, so " +
+                      "nothing in the model separates them. Put a port on the other side and the two " +
+                      "differ by that element's own impedance at every frequency."));
 
         if (request.Series is { } seriesModel)
         {
             notes.Add(
                 $"This rail has a SERIES element, {seriesModel.Refdes}, so it is two nodes rather " +
-                "than one and its observation ports read DIFFERENT curves — they differ by that " +
-                $"element's own impedance at every frequency. {seriesModel.Describe()}");
+                "than one" +
+                (portsSpanSections
+                    ? " and its observation ports read DIFFERENT curves — they differ by that " +
+                      "element's own impedance at every frequency."
+                    : ", though every observation port on it is on one side of the element and they " +
+                      "therefore read one curve.") +
+                $" {seriesModel.Describe()}");
 
             if (request.Partition?.Describe() is { } how) notes.Add(how);
             notes.AddRange(request.Partition?.Notes ?? []);

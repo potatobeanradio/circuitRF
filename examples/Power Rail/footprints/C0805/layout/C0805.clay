@@ -1,0 +1,104 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Nm",
+  "SnapDbu": 0,
+  "AngleMode": "AnyAngle",
+  "Pins": [
+    {
+      "Name": "1",
+      "X": -875000,
+      "Y": 0,
+      "WidthDbu": 1350000,
+      "OutwardDeg": 180,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "2",
+      "X": 875000,
+      "Y": 0,
+      "WidthDbu": 1350000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "X1": -1400000,
+      "Y1": -675000,
+      "X2": -350000,
+      "Y2": 675000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "1"
+    },
+    {
+      "$type": "Rect",
+      "X1": 350000,
+      "Y1": -675000,
+      "X2": 1400000,
+      "Y2": 675000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    },
+    {
+      "$type": "Rect",
+      "X1": -1450000,
+      "Y1": -725000,
+      "X2": -300000,
+      "Y2": 725000,
+      "Layer": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Pin": "1"
+    },
+    {
+      "$type": "Rect",
+      "X1": 300000,
+      "Y1": -725000,
+      "X2": 1450000,
+      "Y2": 725000,
+      "Layer": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    },
+    {
+      "$type": "Rect",
+      "X1": -1000000,
+      "Y1": 825000,
+      "X2": 1000000,
+      "Y2": 945000,
+      "Layer": {
+        "Layer": 6,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": -1000000,
+      "Y1": -945000,
+      "X2": 1000000,
+      "Y2": -825000,
+      "Layer": {
+        "Layer": 6,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Instances": []
+}

@@ -1141,12 +1141,19 @@ public class RailWindowTests
                 Pads         = vm.Board!.Pads,
                 ReferenceNet = vm.Board!.ReferenceNet,
             },
-            rail.Parts.Select(p => p.Refdes));
+            rail.ShuntParts.Select(p => p.Refdes));
 
-        // EVERY part, not most of them: one unresolved row is a part that silently keeps a typed
-        // value, and on a board this example authored deliberately there is no excuse for one.
+        // EVERY SHUNT part, not most of them: one unresolved row is a part that silently keeps a
+        // typed value, and on a board this example authored deliberately there is no excuse for one.
+        //
+        // The SERIES element is excluded and that is not a loophole. A mounting loop is the path from
+        // a pad through its via to the plane pair and BACK, and a ferrite in the rail has both of its
+        // pads on the rail: there is no return half of a loop to compute, the extractor says so by
+        // name rather than guessing, and a rail's one series element is priced by its own DCR and its
+        // own impedance over frequency instead.
         Assert.All(loops, l => Assert.Null(l.Unresolved));
         Assert.All(loops, l => Assert.InRange(l.Henries!.Value, 0.3e-9, 5e-9));
+        Assert.Equal(rail.Parts.Count - 1, loops.Count);
 
         // §4.3's lever, which is the whole reason the artwork is worth reading: C11-C13 are the same
         // purchased part as C1-C3 and reach their vias down 0.9 mm of fan-out instead of through the
@@ -1158,10 +1165,12 @@ public class RailWindowTests
 
         // And the resolver PREFERS these over a typed number only because the example states none —
         // a computed value is a default, not a fact (§2.2). The basis is what says which is on show.
+        // Asked of the SHUNT rows, for the reason above: a series element has no mounting loop to
+        // compute and therefore no basis to report.
         var models = new RailPartResolver(vm.PartLibrary!)
             .ResolveAll(rail.Parts, rail.NominalVoltageV,
                         loops.ToDictionary(l => l.Refdes, l => l.Henries!.Value));
-        Assert.All(models.Models,
+        Assert.All(models.Models.Where(m => m.Connection == RailPartConnection.Shunt),
                    m => Assert.Equal(RailMountingBasis.ComputedFromGeometry, m.MountingBasis));
     }
 

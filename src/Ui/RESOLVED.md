@@ -32897,3 +32897,13 @@ the chain would then replace the wrong instance. All deletions are collected and
 that resolves to no layout at all. A kit part whose kit is not loaded, or a `CellRef` that stopped
 resolving, keeps its artwork: those are transient conditions, and deleting board artwork over one is
 the destructive reading of the same evidence.
+
+### The railRF doc figures had been drawn from a board with no netlist
+
+`DocRailFixtures` builds its `RailBoardInputs` through `ApplyImport`, which fills `Pads` and
+`NetPoints` from the `netlist` argument it is PASSED — and nothing was passing one. Every anchor on
+the Power Rail example is a refdes, and a refdes is a coordinate only once the board netlist has said
+where its pads are, so the rail resolved to no copper and the figures were of a window showing a
+refusal. The window's own open (`RailRfViewModel.LoadDocumentReferences`) reads both companions; the
+fixture bypasses that path, so it now reads them through the same `RailArtwork` walks and hands them
+in. The placement goes with them, because the parts table's Position column is in the picture.

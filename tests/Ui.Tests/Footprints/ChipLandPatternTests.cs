@@ -110,33 +110,48 @@ public sealed class ChipLandPatternTests
     // This is the test that would have caught a shipped .clay: the three technologies put silkscreen
     // on (5,0), on (7,0), and nowhere at all, and a stored land pattern carrying an absolute layer
     // key would have painted silk into the second one's soldermask with nothing said.
+    //
+    // THE THIRD ONE IS A FIXTURE AND NOT A SHIPPED TECHNOLOGY, from brief-footprint-5 R-fp5-1c. The
+    // Power Rail example's technology WAS the no-silkscreen case until that brief gave it the three
+    // drawing layers a board carries; what is kept here is the five-layer table it had before, so
+    // the case of a PCB technology with copper and nothing else stays covered. It is real — an
+    // imported Gerber set with no silkscreen in it mints exactly this — and the omission path is
+    // what R-fp1-3a is about.
 
     [Fact]
     public void LayersResolveByRoleOnEachTechnologyAndAMissingRoleIsReportedNotRelocated()
     {
         var two  = ShippedTechnologies.Load("pcb-2layer_FR-4_70mil_1oz");
         var four = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
-        var rail = PowerRailTechnology();
+        var copperOnly = CopperOnlyTechnology();
 
         var reference = Parse("smt:0402@N");
 
         var onTwo  = ChipLandPatternGenerator.Generate(reference, two,  PCellLayerSelection.Default);
         var onFour = ChipLandPatternGenerator.Generate(reference, four, PCellLayerSelection.Default);
-        var onRail = ChipLandPatternGenerator.Generate(reference, rail, PCellLayerSelection.Default);
+        var onCopperOnly = ChipLandPatternGenerator.Generate(reference, copperOnly, PCellLayerSelection.Default);
 
         Assert.Equal(new LayerKey(1, 0), CopperOf(onTwo, two));
         Assert.Equal(new LayerKey(1, 0), CopperOf(onFour, four));
-        Assert.Equal(new LayerKey(1, 0), CopperOf(onRail, rail));
+        Assert.Equal(new LayerKey(1, 0), CopperOf(onCopperOnly, copperOnly));
 
         // Silk lands where each technology actually keeps it — and the keys differ, which is the point.
         Assert.Contains(onTwo.Shapes,  s => s.Layer == new LayerKey(5, 0));
         Assert.Contains(onFour.Shapes, s => s.Layer == new LayerKey(7, 0));
 
         // The third has no silkscreen at all: nothing is drawn, and the omission is NAMED.
-        Assert.All(onRail.Shapes, s => Assert.Equal(new LayerKey(1, 0), s.Layer));
-        Assert.Contains(onRail.Diagnostics ?? [], d =>
+        Assert.All(onCopperOnly.Shapes, s => Assert.Equal(new LayerKey(1, 0), s.Layer));
+        Assert.Contains(onCopperOnly.Diagnostics ?? [], d =>
             d.Contains("silkscreen", StringComparison.OrdinalIgnoreCase) &&
-            d.Contains(rail.Name, StringComparison.Ordinal));
+            d.Contains(copperOnly.Name, StringComparison.Ordinal));
+
+        // And the technology that fixture was taken from now has all three roles, which is the
+        // other half of R-fp5-1: the shipped example generates its own footprints.
+        var rail = PowerRailTechnology();
+        var onRail = ChipLandPatternGenerator.Generate(reference, rail, PCellLayerSelection.Default);
+        Assert.Equal(new LayerKey(1, 0), CopperOf(onRail, rail));
+        Assert.Contains(onRail.Shapes, s => s.Layer == new LayerKey(5, 0));
+        Assert.Contains(onRail.Shapes, s => s.Layer == new LayerKey(6, 0));
     }
 
     // ══ 4. A MMIC technology is refused, by name ════════════════════════════════════════════════
@@ -275,6 +290,19 @@ public sealed class ChipLandPatternTests
         var key = result.Pins[0].Layer;
         Assert.Contains(tech.Layers, l => l.Key == key);
         return key;
+    }
+
+    /// <summary>R-fp5-1c's fixture: the Power Rail example's five-layer table, as it was before the
+    /// three drawing layers were added — a PCB technology with copper and nothing else.</summary>
+    private static Technology CopperOnlyTechnology()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir is { Length: > 0 } && !File.Exists(Path.Combine(dir, "circuitRF.slnx")))
+            dir = Path.GetDirectoryName(dir) ?? "";
+        string path = Path.Combine(dir, "tests", "Ui.Tests", "Footprints", "Fixtures",
+                                   "pcb-4layer-copper-only.ctech");
+        Assert.True(File.Exists(path), $"the copper-only technology fixture is not at '{path}'.");
+        return TechPersistence.Deserialize(File.ReadAllText(path));
     }
 
     private static Technology PowerRailTechnology()

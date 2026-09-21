@@ -225,6 +225,62 @@ public static class RailArtwork
         catch (Exception ex) { error = ex.Message; return null; }
     }
 
+    /// <summary>
+    /// The artwork the EXTRACTION reads: <paramref name="view"/>'s own shapes plus every shape its
+    /// INSTANCES contribute, in the root's coordinate frame.
+    /// </summary>
+    /// <remarks>
+    /// <b>railRF used to read <c>view.Shapes</c> and nothing else</b>, which was harmless only for as
+    /// long as no board it was pointed at held an instance. A board whose parts are footprint CELLS —
+    /// which is what a board drawn in circuitRF now is — has its every land inside an instance, so the
+    /// unflattened read is a board with the rail's copper on it and not one capacitor land: the run
+    /// completes, the answer is wrong, and nothing says so. It is flattened through
+    /// <see cref="LayoutDesignFlatten"/>, which is the same flatten Gerber, DRC and
+    /// <c>circuitrf check</c> already use, rather than a second walk of the instance tree.
+    ///
+    /// <para><b>The VIEW is left alone.</b> The picture railRF draws is the hierarchy — that is where
+    /// a reference designator lives (brief-footprint-4b) and it is a LIVE view of a <c>.clay</c>
+    /// somebody may have open. This returns a separate list for
+    /// <c>RailBoardInputs.Shapes</c>, whose own contract already says "flattened to shapes in
+    /// DBU".</para>
+    /// </remarks>
+    /// <param name="view">The artwork as read.</param>
+    /// <param name="clayPath">Where it was read from — an instance's <c>CellRef</c> is relative to the
+    /// layout folder holding it, so with no path nothing can be resolved and the root's own shapes are
+    /// returned unchanged.</param>
+    /// <param name="technology">The root stackup, which is what a land pattern's layer keys are
+    /// reconciled against.</param>
+    /// <param name="notes">Appended with one sentence per instance that did not resolve. An
+    /// unresolved instance contributes NO geometry, and a board silently missing a part's lands is
+    /// exactly the failure this function exists to prevent.</param>
+    public static IReadOnlyList<LayoutShape> FlattenedShapes(
+        LayoutView view, string? clayPath, Technology? technology,
+        System.Collections.Generic.List<string>? notes = null)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (view.Instances.Count == 0 || clayPath is not { Length: > 0 }) return view.Shapes;
+
+        string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "";
+        string cellDir = Path.GetDirectoryName(layoutDir) ?? layoutDir;
+
+        var flat = LayoutDesignFlatten.Flatten(view, cellDir, technology, null, null);
+
+        if (flat.ExceedsCeiling)
+        {
+            notes?.Add(
+                $"'{Path.GetFileName(clayPath)}' holds more instance geometry than the flatten ceiling " +
+                "allows, so its parts' lands were not read. The rail's own copper was.");
+            return view.Shapes;
+        }
+
+        foreach (string u in flat.UnresolvedInstances) notes?.Add(u);
+        foreach (var pendingCell in flat.PendingCrossTechMappings.Keys)
+            notes?.Add($"The cell at '{pendingCell}' is drawn on another technology and its layers " +
+                       "need reconciling, so it contributed no geometry to this board.");
+
+        return flat.Shapes;
+    }
+
     /// <summary>The primary layout view of a cell folder, or null where it holds none.</summary>
     public static string? LayoutOf(string cellDir)
     {

@@ -283,7 +283,7 @@ public static class PdnMeshExtractor
                 "never infers one (railrf.md §2.2, Q-8).");
 
         // ── the copper, flattened exactly as the DRC run flattens it ───────────────────────────
-        var layerRegions = BuildLayerRegions(request.Shapes, tech);
+        var layerRegions = BuildLayerRegions(request.Shapes, tech, diagnostics);
         if (layerRegions.Count == 0)
             return PdnExtraction.Refused(
                 "This artwork flattens to no copper at all. Check that the layout view carries the " +
@@ -481,7 +481,7 @@ public static class PdnMeshExtractor
     /// about what a via IS.
     /// </summary>
     internal static Dictionary<LayerKey, Paths64> BuildLayerRegions(
-        IReadOnlyList<LayoutShape> shapes, Technology tech)
+        IReadOnlyList<LayoutShape> shapes, Technology tech, List<string>? diagnostics = null)
     {
         var byLayer = new Dictionary<LayerKey, Paths64>();
         var order = new List<LayerKey>();
@@ -500,8 +500,48 @@ public static class PdnMeshExtractor
             });
         }
 
+        // ── ARTWORK THAT IS NOT COPPER IS NOT COPPER ────────────────────────────────────────────
+        //
+        // A soldermask opening is drawn ON a land, by construction, and a silkscreen outline runs
+        // between two of them. Left in, the connectivity walk joins whatever they overlap — which on
+        // a board with footprints on it is the rail to its own reference through every part's mask —
+        // and the run then refuses with "the rail reaches layer 5/0", naming a layer nobody thought
+        // was electrical. Before footprints existed no board here carried a non-conducting layer at
+        // all, which is why this was never wrong until now.
+        //
+        // A layer the TECHNOLOGY declares and the STACKUP does not claim is the technology author's
+        // own statement that it is a drawing layer. It is dropped, and the drop is REPORTED rather
+        // than silent, because the one case that looks identical from here is a copper layer
+        // somebody forgot to add to the stackup — and that reader needs the sentence. A layer the
+        // technology has never heard of is left alone and still reaches ResolveConductors' refusal,
+        // which is the case that message was written for.
+        var claimed = tech.Stackup.Layers
+            .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+        var declared = tech.Layers.ToDictionary(l => l.Key, l => l.Name);
+
         var unioned = new Dictionary<LayerKey, Paths64>();
-        foreach (var layer in order) unioned[layer] = DrcRegions.Union(byLayer[layer]);
+        var dropped = new List<string>();
+        foreach (var layer in order)
+        {
+            if (!claimed.Contains(layer) && declared.TryGetValue(layer, out string? name))
+            {
+                dropped.Add($"{layer.Layer}/{layer.Datatype} ('{name}')");
+                continue;
+            }
+            unioned[layer] = DrcRegions.Union(byLayer[layer]);
+        }
+
+        // ONE sentence, not one per layer: every board carries a soldermask and a silkscreen, and
+        // three notes saying so on every run is noise a reader learns to skip past.
+        if (dropped.Count > 0)
+            diagnostics?.Add(
+                $"{string.Join(", ", dropped)} carry geometry that no Conductor or Via entry of the " +
+                "stackup claims, so they were read as non-conducting artwork — mask openings, " +
+                "silkscreen, the board outline — and left out of the electrical model. If any of " +
+                "them is copper, add it to the stackup.");
+
         return unioned;
     }
 

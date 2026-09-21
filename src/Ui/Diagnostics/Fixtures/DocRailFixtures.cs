@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.VisualTree;
 using Avalonia;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Render;
@@ -136,6 +137,16 @@ public static class DocRailFixtures
 
         var document = RailDocumentIo.LoadFromFile(crail);
         var view = LayoutPersistence.LoadFromFile(clay);
+        var technology = TechPersistence.LoadFromFile(ctech);
+
+        // THE COMPANIONS, and without them the rail resolves to no copper at all: every anchor on
+        // this document is a REFDES, and a refdes is a coordinate only once the board netlist has
+        // said where its pads are. The window's own open reads them (RailRfViewModel.Open); an
+        // ApplyImport bypasses that path, so they are read here through the same walk.
+        var netlist = RailArtwork.ResolveBoardNetlist(
+            document, crail, view.DbuPerMicron, out _, out _);
+        var placement = RailArtwork.ResolvePlacement(
+            document, crail, view.DbuPerMicron, out _, out _);
 
         var vm = new RailRfViewModel(document, crail)
         {
@@ -147,11 +158,19 @@ public static class DocRailFixtures
             new RailImportOptions(),
             new RailBoardInputs
             {
-                Shapes = view.Shapes,
-                Technology = TechPersistence.LoadFromFile(ctech),
+                // Flattened, exactly as the window's own open does it: the parts on this board are
+                // instances of footprint cells and their lands are inside them.
+                Shapes = RailArtwork.FlattenedShapes(view, clay, technology),
+                View = view,
+                Technology = technology,
                 DbuPerMicron = view.DbuPerMicron,
                 ArtworkCellRef = clay,
+                Pads = PdnBoardPads.PadsOf(netlist),
+                NetPoints = PdnBoardPads.NetPointsOf(netlist),
+                ReferenceNet = document.ReferenceNet,
             },
+            placement: placement,
+            netlist: netlist,
             library: PartLibraryIo.LoadFromFile(crlib));
 
         vm.ConfirmReference();

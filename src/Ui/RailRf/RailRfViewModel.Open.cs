@@ -103,9 +103,16 @@ public sealed partial class RailRfViewModel
 
                 foreach (string d in netlist?.Diagnostics ?? []) notes.Add(d);
 
+                // The EXTRACTION reads the flattened artwork; the picture below reads the hierarchy.
+                // A board whose parts are footprint cells keeps every land inside an instance, so the
+                // unflattened read is a board with the rail's copper on it and not one capacitor land.
+                var flattenNotes = new List<string>();
+                var shapes = RailArtwork.FlattenedShapes(view, found.ClayPath, tech, flattenNotes);
+                foreach (string d in flattenNotes) notes.Add(d);
+
                 Board = new RailBoardInputs
                 {
-                    Shapes         = view.Shapes,
+                    Shapes         = shapes,
                     Technology     = tech,
                     TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,

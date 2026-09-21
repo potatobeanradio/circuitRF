@@ -281,7 +281,7 @@ internal static class Rail
         var run = RailDcRun.Run(new RailDcRequest
         {
             Document       = doc,
-            Shapes         = board.View.Shapes,
+            Shapes         = board.Shapes,
             Technology     = board.Technology,
             DbuPerMicron   = board.View.DbuPerMicron,
             LengthFormat   = board.LengthFormat,
@@ -418,7 +418,9 @@ internal static class Rail
     /// <param name="Technology">The stackup.</param>
     /// <param name="ClayPath">Where the artwork came from, for the report.</param>
     /// <param name="BaseDir">What an instance's <c>CellRef</c> resolves against.</param>
-    private sealed record BoardInputs(LayoutView View, Technology Technology, string ClayPath, string BaseDir)
+    private sealed record BoardInputs(
+        LayoutView View, Technology Technology, string ClayPath, string BaseDir,
+        IReadOnlyList<LayoutShape> Shapes)
     {
         /// <summary>The artwork's own units — what every coordinate on this run's report reads in
         /// (owner, 2026-09-18). The `.clay`'s own display unit, which is what the layout editor shows
@@ -481,7 +483,18 @@ internal static class Rail
 
         Console.Error.WriteLine($"[circuitRF] technology: {found.TechnologyPath} ({found.TechnologySource})");
 
-        return (new BoardInputs(view, tech, clay, CellHierarchy.BaseDirOfDocument(clay)), null);
+        // The artwork the EXTRACTION reads is the FLATTENED one — a board whose parts are footprint
+        // cells keeps every land inside an instance, and reading only the root's own shapes solves a
+        // board with the rail on it and not one capacitor. RailArtwork owns the walk; this prints it.
+        var flattenNotes = new List<string>();
+        var shapes = RailArtwork.FlattenedShapes(view, clay, tech, flattenNotes);
+        foreach (string d in flattenNotes)
+        {
+            Console.Error.WriteLine("warning: " + d);
+            JsonRun.Note(CliDiagnostics.RailRunNote(d));
+        }
+
+        return (new BoardInputs(view, tech, clay, CellHierarchy.BaseDirOfDocument(clay), shapes), null);
     }
 
     // ── step 3: the overrides (R-rail10-1) ───────────────────────────────────

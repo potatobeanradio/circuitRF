@@ -274,26 +274,30 @@ a passing report.
 it, set up for all four questions. Open it and follow along; its own README carries the full numbers.
 
 1. Open `Sensor board.crail`. The board, the stackup and the part library are already resolved, and the
-   window opens on Fast.
-2. **Run.** DC: **48.7 mV** at `U1` against a **52 mV** budget &mdash; met, and only just. The breakdown
-   names it: **26 mm of 0.209 mm copper on the bottom layer is 65 mΩ**, and 47 % of the budget on its
+   window opens on Fast. Every part on it is an instance of a footprint cell with its reference
+   designator on silkscreen, so the parts table and the board are reading the same thing.
+2. **Run.** DC: **48.6 mV** at `U1` against a **52 mV** budget &mdash; met, and only just. The breakdown
+   names it: **26.5 mm of 0.209 mm copper on the bottom layer is 65 mΩ**, and 46 % of the budget on its
    own, because the supply took the long way round the connector cut-out at the width a low-current net
-   gets by default. Three via transitions, none over its limit. The second load, `U3`, is listed as
-   *observed*: it states no current and draws none.
-3. **Widen that run to 0.4 mm** in the layout editor and re-run. **37.6 mV.** The copper term halves and
+   gets by default. The ferrite `FB1` is the third row at **20 mΩ and 7 mV**, ranked with the copper
+   rather than reported beside it. Three via transitions, none over its limit. The second load, `U3`, is
+   listed as *observed*: it states no current and draws none.
+3. **Widen that run to 0.4 mm** in the layout editor and re-run. **40.6 mV.** The copper term halves and
    the protection FET becomes the thing worth arguing about &mdash; which is a part choice rather than a
    layout one.
-4. **The sweep**, over 100 kHz to 100 MHz against a flat 88 mΩ: **passes by 0.6 dB at its worst, at
+4. **The sweep**, over 100 kHz to 100 MHz against a flat 55 mΩ: **passes by 0.8 dB at its worst, at
    100 MHz** &mdash; the top of the band, where every capacitor is its own mounting inductance and nothing
    else.
-5. Two anti-resonances are named: *L(C9) against C(C7&ndash;C8)* at 3.0 MHz, and *L(C7&ndash;C8) against
-   C(C1&ndash;C13)* at 8.3 MHz. **The converter's fourth harmonic at 8.8 MHz sits 6.2 % from the second
+5. Two anti-resonances are named: *L(C9) against C(C7&ndash;C8)* at 4.14 MHz, and *L(C7&ndash;C8) against
+   C(C1&ndash;C13)* at 10.80 MHz. **The converter's fifth harmonic at 11 MHz sits 1.8 % from the second
    of them** &mdash; the coincidence check earning its keep.
 6. **Open the ranking.** `C10`, the bulk, is holding the low band up on its own: remove it and the rail
-   fails by 11.5 dB. `C11`&ndash;`C13` are the same part as `C1`&ndash;`C3` and worth a third as much,
-   because they were placed further from the load and carry three times the mounting inductance.
-7. **Delete `C11`&ndash;`C13`.** Still passes, at 0.2 dB. Three parts and three placements saved, on a
-   board that does not exist yet.
+   fails by 17.8 dB. `C11`&ndash;`C13` are the same part number as `C1`&ndash;`C3` and worth about half
+   as much, because their 0.9 mm fan-out carries **1201 pH** against the **555 pH** of a via in the land.
+7. **Unmount `C11`.** Still passes, at 0.3 dB &mdash; one part and one placement saved on a board that
+   does not exist yet. **Unmount all three and the rail fails by 0.7 dB**, which is the ranking's own
+   limit said out loud: it re-solves once per part and answers *what does removing THIS one cost*, and
+   three answers of 0.5 dB do not add up to a margin of 1.5 dB.
 
 Steps 2 and 3 are the form-factor question. Step 7 is the cost question, and today it happens after
 tooling, with a soldering iron.

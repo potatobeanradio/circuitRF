@@ -142,17 +142,21 @@ public partial class RailRfWindow
         }
 
         vm.Document.ArtworkCellRef = clay;
+        var flattenNotes = new List<string>();
+        var shapes = RailArtwork.FlattenedShapes(view, clay, tech, flattenNotes);
+
         vm.Board = new RailBoardInputs
         {
-            Shapes         = view.Shapes,
+            Shapes         = shapes,
             Technology     = tech,
             TechPath       = resolution.ResolvedPath,
             DbuPerMicron   = view.DbuPerMicron,
             ArtworkCellRef = clay,
         };
 
-        vm.PendingImportRefusal = resolution.Diagnostics.Count == 0
+        var openNotes = resolution.Diagnostics.Concat(flattenNotes).ToList();
+        vm.PendingImportRefusal = openNotes.Count == 0
             ? null
-            : new RailRefusal(string.Join(" ", resolution.Diagnostics), RailRefusalControl.Stackup);
+            : new RailRefusal(string.Join(" ", openNotes), RailRefusalControl.Stackup);
     }
 }

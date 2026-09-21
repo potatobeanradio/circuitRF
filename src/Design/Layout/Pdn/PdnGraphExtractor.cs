@@ -201,7 +201,7 @@ public static class PdnGraphExtractor
                 "through and no graph to build. Name the reference return's drawing layer — railRF " +
                 "never infers one (railrf.md §2.2, Q-8).");
 
-        var layerRegions = PdnMeshExtractor.BuildLayerRegions(request.Shapes, tech);
+        var layerRegions = PdnMeshExtractor.BuildLayerRegions(request.Shapes, tech, diagnostics);
         if (layerRegions.Count == 0)
             return PdnExtraction.Refused(
                 "This artwork flattens to no copper at all. Check that the layout view carries the " +

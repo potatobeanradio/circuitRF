@@ -37,8 +37,8 @@
             "Pin": "OUT"
           },
           "OpenCircuitVoltageV": 3.3,
-          "SeriesResistanceOhms": 0.06,
-          "SeriesInductanceHenries": 1e-06
+          "SeriesResistanceOhms": 0.04,
+          "SeriesInductanceHenries": 5e-08
         }
       ],
       "Loads": [
@@ -78,6 +78,23 @@
         }
       ],
       "Parts": [
+        {
+          "Refdes": "FB1",
+          "PartNumber": "FERRITE-0603-600R-1A",
+          "Origin": "Typed",
+          "Connection": "Series",
+          "TerminalA": {
+            "Refdes": "FB1",
+            "Pin": "1"
+          },
+          "TerminalB": {
+            "Refdes": "FB1",
+            "Pin": "2"
+          },
+          "DcResistanceOhms": 0.02,
+          "SeriesResistanceOhms": 0.05,
+          "SeriesInductanceHenries": 6e-07
+        },
         {
           "Refdes": "C1",
           "PartNumber": "CAP-0402-100N-X7R-16V",
