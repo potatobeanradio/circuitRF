@@ -139,6 +139,10 @@ public static class EmRunInFlightDialog
 
         dialog.Content = body;
 
+        // Asked BEFORE the save prompt on the same quit path, so it carries the same hazard: a
+        // torn-off document window in front of the shell would hide it. See ModalPromptFront.
+        ModalPromptFront.Attach(dialog);
+
         await dialog.ShowDialog(owner);
         return result;
     }

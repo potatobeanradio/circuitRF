@@ -392,6 +392,13 @@ public partial class WorkspaceWindow : Window
     private void RaiseFloatingToolWindows()
     {
         if (_raisingFloatingTools) return;
+
+        // A modal prompt over this window outranks the panels. They are owned by this window too, so
+        // raising them here raises them OVER the prompt — and the one the user is most likely to be
+        // looking for is the quit prompt, which ModalPromptFront exists for. Owner report,
+        // 2026-09-21, where the window in front was a torn-off document rather than a panel.
+        if (ModalPromptFront.HasOpenPrompt(this)) return;
+
         if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
 
         var tools = desktop.Windows

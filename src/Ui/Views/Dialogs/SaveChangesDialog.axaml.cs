@@ -10,7 +10,14 @@ public partial class SaveChangesDialog : Window
     /// <summary>Result set when the dialog closes. Also returned by ShowDialog&lt;SaveChangesResult&gt;.</summary>
     public SaveChangesResult Result { get; private set; } = SaveChangesResult.Cancel;
 
-    public SaveChangesDialog() => InitializeComponent();
+    public SaveChangesDialog()
+    {
+        InitializeComponent();
+
+        // This is the prompt that stands between the user and quitting, and a torn-off document
+        // window in front of the shell used to hide it completely — see ModalPromptFront.
+        ModalPromptFront.Attach(this);
+    }
 
     /// <param name="message">Body text shown in the dialog.</param>
     /// <param name="saveLabel">Label for the primary (Save/default) button. Default "Save".</param>

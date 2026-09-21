@@ -31,7 +31,14 @@ public partial class SavePlanDialog : Window
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
-    public SavePlanDialog() => InitializeComponent();
+    public SavePlanDialog()
+    {
+        InitializeComponent();
+
+        // Reached from the close/quit prompt's "Save All", so it inherits that prompt's hazard:
+        // see ModalPromptFront.
+        ModalPromptFront.Attach(this);
+    }
 
     /// <summary>Opens the dialog pre-populated from the given initial plan.</summary>
     public SavePlanDialog(SavePlan initialPlan, SavePlanBuilder builder) : this()

@@ -1,5 +1,57 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The quit prompt could open UNDERNEATH a torn-off document window (2026-09-21)
+
+Owner report: quitting circuitRF with the Smith Chart torn off into its own window left the "Unsaved
+Changes" prompt hidden behind that window, so the application simply looked as though it refused to
+quit. The prompt had been shown and was taking the keyboard — it was invisible, not absent.
+
+### Why an owned dialog is not a raised dialog
+
+`ShowDialog(owner)` makes the dialog a CHILD window of that owner, and a child is ordered relative to
+**its own owner**, not to the application's other top-levels. The fact was already written down in
+`App.ShowReleaseNotes` for the modeless case ("an owned window is kept above its OWNER; it is not
+raised above the application's other windows") — a modal one is no different, and `Activate()` on the
+dialog cannot lift it either: its place in the stack is its owner's place plus one.
+
+The other half is deliberate and stays: a torn-off DOCUMENT window is a **peer**
+(`CircuitRfDockFactory.OwnerModeFor` gives it `DockWindowOwnerMode.None`, so the workspace window can
+be placed on top of it — R-dock-14 makes only floating TOOL panels owned). A peer in front of the
+shell is therefore in front of the shell's dialogs. Nothing about this is particular to the Smith
+Chart, and nothing about it is particular to quitting; quitting is only where it costs the most,
+because the user has no other symptom to read.
+
+### The fix is an ORDER, and the second half is the one that is easy to miss
+
+`Views/ModalPromptFront.cs` — attached from the constructor of the three prompts that can stand
+between a user and a quit (`SaveChangesDialog`, its "Save All" follow-on `SavePlanDialog`, and
+`EmRunInFlightDialog`, which is asked first on the same path). On `Opened` it activates the
+**owner** and then the dialog: activating the owner moves the whole group past the peer, and the
+dialog is raised within the group.
+
+**And that activation would otherwise have re-created the bug with a floating panel in place of the
+Smith Chart.** The shell raises every floating tool panel from its own `Activated` hook (R-dock-14,
+`WorkspaceWindow.RaiseFloatingToolWindows`), and those panels are siblings of the dialog under the
+same owner. So the raise now stands down while a prompt is open over that window —
+`ModalPromptFront.HasOpenPrompt`, checked before anything is raised.
+
+Two details that are not decoration:
+
+- **The raise runs again one dispatcher pass later.** On macOS the quit prompt is shown from inside
+  AppKit's own `applicationShouldTerminate:` callback — `App.Quit` runs on that stack — and ordering
+  asked for there is not reliably kept once it returns. The second raise costs nothing when the first
+  one held.
+- **The open-prompt record drops windows that have gone rather than trusting `Closed`.** A latch that
+  could stick would switch the floating-panel raise off for the rest of the session with nothing
+  reported, which is a worse fault than the one being fixed.
+
+**Not verified on screen.** Window z-order is a platform fact and this session cannot run the GUI, so
+what holds this is the reasoning above plus source gates:
+`tests/Ui.Tests/QuitPromptFrontTests.cs` (owner activated before the dialog, all three prompts
+attached, the panel raise standing down first). `DockWindowBehaviourTests`' Gate18 still passes
+unchanged.
+
+
 ## A decimal comma is accepted in every input field (2026-09-21)
 
 Owner report: circuitRF rejects `,` as a decimal point, and much of the world writes one and a half
