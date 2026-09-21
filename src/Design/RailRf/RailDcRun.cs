@@ -60,7 +60,7 @@ public sealed class RailDcRequest
     public RailLengthFormat LengthFormat { get; init; } = RailLengthFormat.Dbu;
 
     /// <summary>The board's pads, as the netlist or a placement join knows them.</summary>
-    public IReadOnlyList<PdnPad> Pads { get; init; } = [];
+    public IReadOnlyList<PlacedPin> Pads { get; init; } = [];
 
     /// <summary>What the board netlist knows about net identity.</summary>
     public IReadOnlyList<PdnNetPoint> NetPoints { get; init; } = [];

@@ -313,7 +313,7 @@ public static class RailArtwork
     /// <param name="Stamped">The copper partition this resolution named its pads against — empty
     /// where the board states no net on any shape. <b>Carried rather than rebuilt</b> (R-ab3-1a):
     /// the companion writers need the same answer for a VIA that the pads already took, and a
-    /// second <c>PdnCopperPieces.Build</c> over one board is a second partition that nothing
+    /// second <c>CopperPieces.Build</c> over one board is a second partition that nothing
     /// compares. Its <c>Refusals</c> are also the writers' own refusal (R-ab3-2e) — a piece of
     /// copper carrying two names is a board nothing may be written for.</param>
     /// <param name="Schematic">The schematic beside the artwork, as this resolution read it —
@@ -321,7 +321,7 @@ public static class RailArtwork
     /// footprint and type off the same <c>.csch</c> the nets came from, and resolving it a second
     /// time is a second answer to "which schematic is this board's".</param>
     public sealed record RailPadResolution(
-        System.Collections.Generic.IReadOnlyList<PdnPad>      Pads,
+        System.Collections.Generic.IReadOnlyList<PlacedPin>      Pads,
         System.Collections.Generic.IReadOnlyList<PdnNetPoint> NetPoints,
         int                                                   FromBoardNetlist,
         int                                                   FromArtwork,
@@ -329,7 +329,7 @@ public static class RailArtwork
         System.Collections.Generic.IReadOnlyList<string>      Nets,
         PdnNetOrigin                                          NetOrigin,
         System.Collections.Generic.IReadOnlyList<PdnDivergence> Divergences,
-        PdnCopperPieces                                       Stamped,
+        CopperPieces                                       Stamped,
         PdnSchematicNets                                      Schematic);
 
     /// <summary>
@@ -396,16 +396,19 @@ public static class RailArtwork
         // layout editor asks it a DIFFERENT question — "what is joined to this?" — and must not take
         // this short cut; see LayoutEditorViewModel.CopperPieces.)
         var stamped = view is null || !view.Shapes.Any(sh => sh.Net is { Length: > 0 })
-            ? PdnCopperPieces.Empty
-            : PdnCopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes,
+            ? CopperPieces.Empty
+            : CopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes,
                                     RailLengthFormat.For(view));
         notes.AddRange(stamped.Refusals);
 
-        var extents = new System.Collections.Generic.Dictionary<PdnPad, long>();
+        var extents = new System.Collections.Generic.Dictionary<PlacedPin, long>();
         var artwork = view is null
             ? []
-            : PdnLayoutPads.PadsOf(
+            : PlacedPins.Of(
                 view, clayPath, technology,
+                // R-lvs2-5c. railRF's own precedence rule, unchanged and now spelled out: the
+                // schematic's binding where a schematic resolves, else the net stated on the copper.
+                PinNaming.SchematicThenArtwork,
                 portNamesOf ?? (id => schematic.For(id)?.PortNames ?? []),
                 notes,
                 id => schematic.For(id)?.Nets ?? [],
@@ -426,7 +429,7 @@ public static class RailArtwork
             .Where(p => p.Refdes is not { Length: > 0 } r || !covered.Contains(r))
             .ToList();
 
-        var pads = new System.Collections.Generic.List<PdnPad>(fromNetlist.Count + fromArtwork.Count);
+        var pads = new System.Collections.Generic.List<PlacedPin>(fromNetlist.Count + fromArtwork.Count);
         pads.AddRange(fromNetlist);
         pads.AddRange(fromArtwork);
 
@@ -438,7 +441,7 @@ public static class RailArtwork
         var seen = new System.Collections.Generic.HashSet<PdnNetPoint>();
         foreach (var pt in PdnBoardPads.NetPointsOf(netlist)) if (seen.Add(pt)) points.Add(pt);
         if (view is not null)
-            foreach (var pt in PdnLayoutPads.NetPointsOf(view, fromArtwork, stamped))
+            foreach (var pt in PlacedPins.NetPointsOf(view, fromArtwork, stamped))
                 if (seen.Add(pt)) points.Add(pt);
 
         // ── R-ab2-4a: the RESOLVED net set, which is what the pick list offers ──────────────────

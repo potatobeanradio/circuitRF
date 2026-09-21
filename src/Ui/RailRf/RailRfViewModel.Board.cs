@@ -68,7 +68,7 @@ public sealed partial class RailRfViewModel
     /// after the rows are built), and a row holding the pad list it was constructed with would go on
     /// offering the pads of a board that is no longer loaded.
     /// </remarks>
-    public Func<IReadOnlyList<PdnPad>> BoardPads =>
+    public Func<IReadOnlyList<PlacedPin>> BoardPads =>
         () => Board?.Pads ?? [];
 
     /// <summary>The unit the last refresh printed in — see <see cref="RefreshIfUnitChanged"/>.</summary>
@@ -274,7 +274,7 @@ public sealed partial class RailRfViewModel
     /// <b>The point has to be ON something</b>, and the test is <see cref="LayoutHitTest.HitStack"/>
     /// — the layout editor's own, at the canvas's own tolerance, so what counts as a hit here is what
     /// counts as a hit in the window someone learned the gesture in. Clicking bare substrate makes
-    /// no rail: <c>PdnRailRegions</c> seeds its connectivity walk from the anchor point, and a seed
+    /// no rail: <c>Regions</c> seeds its connectivity walk from the anchor point, and a seed
     /// on no copper walks nothing while looking exactly like a rail that has been created.
     ///
     /// <para><b>A miss leaves the gesture armed</b>, because a miss is a miss — the user aimed at

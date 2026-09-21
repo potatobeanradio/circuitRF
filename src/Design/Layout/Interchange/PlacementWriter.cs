@@ -16,7 +16,7 @@
 // ── IT RE-DERIVES NOTHING (R-ab3-1a) ───────────────────────────────────────────────────────────
 //
 // The rows are the ROOT's own placements, verbatim — the same list LayoutDesignFlatten walks for
-// designators (R-fp4b-4b) and PdnLayoutPads walks for pads. A land pattern nested three cells deep
+// designators (R-fp4b-4b) and PlacedPins walks for pads. A land pattern nested three cells deep
 // inside a module is that module's internal business until somebody places the module, and a
 // placement table that descended into one would name parts no assembly machine is asked to place.
 

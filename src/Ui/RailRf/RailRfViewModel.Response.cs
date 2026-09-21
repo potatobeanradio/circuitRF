@@ -319,7 +319,7 @@ public sealed partial class RailRfViewModel
     /// </summary>
     /// <remarks>
     /// <b>Read back off the RESULT rather than walked again</b> (brief 25). The walk is the
-    /// extraction's — <c>PdnRailRegions.Walk</c> through <c>PdnGraphExtractor</c> — and doing it a
+    /// extraction's — <c>Regions.Walk</c> through <c>PdnGraphExtractor</c> — and doing it a
     /// second time here would be a second connectivity model beside the one the DC answer and the
     /// copper map are built from. Null before the first solve, and the sweep then takes the rows'
     /// own stated sides, which is exactly what a rail with no artwork gets.

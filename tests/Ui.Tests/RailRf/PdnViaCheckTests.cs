@@ -145,13 +145,13 @@ public sealed class PdnViaCheckTests
         };
         foreach (double y in viaYsMm) shapes.Add(Via(6.0, y, drillMm));
 
-        var pads = new List<PdnPad>();
-        foreach (double y in viaYsMm) pads.Add(new PdnPad("BT1", "1", "VDD", Mm(1), Mm(y), PdnPadSource.BoardNetlist));
+        var pads = new List<PlacedPin>();
+        foreach (double y in viaYsMm) pads.Add(new PlacedPin("BT1", "1", "VDD", Mm(1), Mm(y), PinSource.BoardNetlist));
 
         if (cornerLoad)
-            pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(7), Mm(viaYsMm[0]), PdnPadSource.BoardNetlist));
+            pads.Add(new PlacedPin("U1", "VDD", "VDD", Mm(7), Mm(viaYsMm[0]), PinSource.BoardNetlist));
         else
-            foreach (double y in viaYsMm) pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(11), Mm(y), PdnPadSource.BoardNetlist));
+            foreach (double y in viaYsMm) pads.Add(new PlacedPin("U1", "VDD", "VDD", Mm(11), Mm(y), PinSource.BoardNetlist));
 
         var run = RailDcRun.Run(new RailDcRequest
         {

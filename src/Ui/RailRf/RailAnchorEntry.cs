@@ -87,7 +87,7 @@ internal static class RailAnchorEntry
     /// ON this rail, which is the only useful half of a board's pad set.</param>
     /// <param name="format">The board's units, so the coordinate example is in the unit the row
     /// would print one in rather than in DBU.</param>
-    internal static string Tip(IReadOnlyList<PdnPad> pads, string? net, RailLengthFormat format)
+    internal static string Tip(IReadOnlyList<PlacedPin> pads, string? net, RailLengthFormat format)
     {
         string how =
             "Where this port sits on the board. Double-click to type it.\n\n"

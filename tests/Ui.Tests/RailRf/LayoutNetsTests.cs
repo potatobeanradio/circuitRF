@@ -190,7 +190,7 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
                 DrillSize = Um(200), PadSize = Um(400),
             });
 
-        var pieces = PdnCopperPieces.Build(view.Shapes, TechFixture());
+        var pieces = CopperPieces.Build(view.Shapes, TechFixture());
 
         for (int i = 0; i < view.Shapes.Count; i++)
             Assert.Equal("+3V3", pieces.NameOfShape(i));
@@ -201,7 +201,7 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
 
         // And the vias are net POINTS now, which is what lets an inner-layer pour be recognised
         // (R-ab2-2e) — before this they contributed one only where somebody stamped that very via.
-        var points = PdnLayoutPads.NetPointsOf(view, [], pieces);
+        var points = PlacedPins.NetPointsOf(view, [], pieces);
         Assert.Equal(3, points.Count);
         Assert.All(points, p => Assert.Equal("+3V3", p.Net));
     }
@@ -247,7 +247,7 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
         view.Shapes.Add(new RectShape { Layer = Top, Net = "+3V3", X1 = 0, Y1 = 0, X2 = Mm(10), Y2 = Mm(1) });
         view.Shapes.Add(new RectShape { Layer = Top, Net = "GND",  X1 = Mm(8), Y1 = 0, X2 = Mm(20), Y2 = Mm(1) });
 
-        var pieces = PdnCopperPieces.Build(view.Shapes, TechFixture());
+        var pieces = CopperPieces.Build(view.Shapes, TechFixture());
 
         string why = Assert.Single(pieces.Refusals);
         output.WriteLine(why);

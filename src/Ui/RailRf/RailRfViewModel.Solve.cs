@@ -842,7 +842,7 @@ public sealed partial class RailRfViewModel
             // 14 from the artwork" is R-ab1-3b made visible, and it is the only way a user finds out
             // their netlist is two parts stale. One spelling, shared with the export banner.
             if (Board is { Pads.Count: > 0 } withPads)
-                parts.Add(PdnPadSummary.Describe(withPads.Pads));
+                parts.Add(PlacedPinSummary.Describe(withPads.Pads));
 
             // R-ab2-4d, beside it and in the same shape: a netlist, a schematic and a stamp on the
             // copper are three different claims, and a reader of the numbers below is entitled to

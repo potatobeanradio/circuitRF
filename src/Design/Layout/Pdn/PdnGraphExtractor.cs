@@ -201,7 +201,7 @@ public static class PdnGraphExtractor
                 "through and no graph to build. Name the reference return's drawing layer — railRF " +
                 "never infers one (railrf.md §2.2, Q-8).");
 
-        var layerRegions = PdnMeshExtractor.BuildLayerRegions(request.Shapes, tech, diagnostics);
+        var layerRegions = LayerRegions.Build(request.Shapes, tech, diagnostics);
         if (layerRegions.Count == 0)
             return PdnExtraction.Refused(
                 "This artwork flattens to no copper at all. Check that the layout view carries the " +
@@ -213,7 +213,7 @@ public static class PdnGraphExtractor
 
         // R-rail27-2: the anchors that are NOTHING BUT A COORDINATE — the pour-click route, and the
         // only one on which a rail anchored on its own return cannot be detected any other way. See
-        // PdnRailRegions.Walk's own note on why a refdes anchor is not one of these.
+        // Regions.Walk's own note on why a refdes anchor is not one of these.
         var bareCoordinateSeeds = new List<(long X, long Y)>();
         foreach (var s in rail.Sources)
             if (s.Anchor.Refdes is not { Length: > 0 })
@@ -222,7 +222,7 @@ public static class PdnGraphExtractor
             if (l.Anchor.Refdes is not { Length: > 0 })
                 bareCoordinateSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
 
-        var regions = PdnRailRegions.Walk(
+        var regions = Regions.Walk(
             layerRegions, tech, request.NetPoints, rail.NetName,
             referenceLayer, request.ReferenceNet, anchorSeeds, bareCoordinateSeeds);
 
@@ -332,7 +332,7 @@ public static class PdnGraphExtractor
             int n = 0;
             var b = DrcRegions.BoundsOf(piece);
             foreach (var (x, y) in attachmentPoints)
-                if (b.Contains(x, y) && PdnRailRegions.Contains(piece, x, y)) n++;
+                if (b.Contains(x, y) && Regions.Contains(piece, x, y)) n++;
             return n;
         }
 

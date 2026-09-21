@@ -20,6 +20,7 @@ global using CircuitRF.Design.Layout;
 // (posts a run to the Messages panel) and `WBondWireClearance` (reads a per-USER preference).
 global using CircuitRF.Design.Layout.Assembly;
 global using CircuitRF.Design.Layout.Drc;
+global using CircuitRF.Design.Layout.Extraction;
 global using CircuitRF.Design.Layout.Interchange;
 global using CircuitRF.Design.Layout.Em;
 global using CircuitRF.Design.Layout.PCells;

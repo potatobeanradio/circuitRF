@@ -45,12 +45,12 @@ public sealed record BoardProjection(
     string ClayPath,
     string BoardName,
     int DbuPerMicron,
-    IReadOnlyList<PdnPad> Pads,
+    IReadOnlyList<PlacedPin> Pads,
     IReadOnlyList<ViaShape> Vias,
     IReadOnlyList<PlacementEntry> Placements,
     IReadOnlyList<BomEntry> Parts,
     Technology? Technology,
-    PdnCopperPieces Stamped,
+    CopperPieces Stamped,
     bool HasSchematic,
     string? Refusal,
     IReadOnlyList<string> Notes)
@@ -71,7 +71,7 @@ public sealed record BoardProjection(
     /// <summary>The sentence a caller prints before it writes, or empty where there is nothing to
     /// warn about. <b>Said once, here</b> — the verb's stderr line and the dialog's own are the
     /// same statement about the same board, and two spellings of it is the divergence nobody
-    /// notices until they are compared (<c>PdnPadSummary</c>'s reason, one table along).</summary>
+    /// notices until they are compared (<c>PlacedPinSummary</c>'s reason, one table along).</summary>
     public string ThinnessSummary
     {
         get
@@ -116,7 +116,7 @@ public static class BoardCompanions
         var notes = new List<string>();
 
         BoardProjection Refuse(string sentence) => new(
-            full, board, view.DbuPerMicron, [], [], [], [], tech, PdnCopperPieces.Empty, false,
+            full, board, view.DbuPerMicron, [], [], [], [], tech, CopperPieces.Empty, false,
             sentence, notes);
 
         // R-ab3-2e, first refusal. LayoutDesignFlatten's own predicate, not a second one: a board

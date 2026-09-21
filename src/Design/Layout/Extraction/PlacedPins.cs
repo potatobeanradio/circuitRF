@@ -1,4 +1,8 @@
-// The BOARD ITSELF, as the PDN extractors want it — brief-authored-board-1-layout-pads.md.
+// WHERE EVERY PLACED PART'S TERMINALS ARE — brief-authored-board-1-layout-pads.md, promoted to the
+// shared extraction by brief-lvs-2-shared-extraction.md R-lvs2-1.
+//
+// Was `PlacedPins.Of` in Layout/Pdn/. Same walk, same join, same answers; what it gained is
+// PinNaming (R-lvs2-2) and a namespace that does not belong to one of its two readers.
 //
 // ── THE OTHER HALF OF PdnBoardPads, AND DELIBERATELY NOT THE SAME KIND OF KNOWLEDGE ────────────
 //
@@ -16,7 +20,7 @@
 //
 // PdnBoardPads' governing rule is that the netlist is EVIDENCE ABOUT THE ARTWORK and never geometry.
 // This file is the opposite and says so: its pads ARE geometry, measured off the board, and they
-// carry PdnPadSource.Artwork so every report that names one can say which claim it is reading
+// carry PinSource.Artwork so every report that names one can say which claim it is reading
 // (overview §1b). A pad set whose origin is not recoverable is the defect the series exists to fix.
 //
 // ── IT PERFORMS NO SECOND FLATTEN, PIN RESOLUTION OR TRANSFORM ─────────────────────────────────
@@ -41,10 +45,12 @@
 using System.IO;
 using System.Linq;
 
-namespace CircuitRF.Design.Layout.Pdn;
+using CircuitRF.Design.Layout.Pdn;
+
+namespace CircuitRF.Design.Layout.Extraction;
 
 /// <summary>The artwork's own pads — what a board circuitRF drew already states.</summary>
-public static class PdnLayoutPads
+public static class PlacedPins
 {
     /// <summary>
     /// Every pad of every part placed on <paramref name="view"/> — its designator, the pin it is,
@@ -55,6 +61,8 @@ public static class PdnLayoutPads
     /// layout folder holding it, so with no path nothing resolves and nothing is contributed.</param>
     /// <param name="tech">The root stackup, which is what <see cref="CellPins"/> re-invokes a
     /// generator against for a cell written before pins were persisted.</param>
+    /// <param name="naming">Which claims may name a pin's net — R-lvs2-2a. Required and without a
+    /// default, because the wrong one here has no symptom: see <see cref="PinNaming"/>.</param>
     /// <param name="portNamesOf">The ports of the component an instance's <c>SchematicId</c> names,
     /// IN PORT ORDER, or null where nothing can answer. R-ab1-4's join is against this list; with no
     /// answer, pads come out named by their pin name alone (R-ab1-4d), which is what an anchor
@@ -70,17 +78,29 @@ public static class PdnLayoutPads
     /// owner's rule of 2026-09-20 in one line of code.</param>
     /// <param name="extents">Filled, when supplied, with each pad's own extent in DBU — the
     /// footprint pin's stated width. It is a side channel rather than a seventh member of
-    /// <see cref="PdnPad"/> because a netlist pad has no extent to state, and the one consumer is
+    /// <see cref="PlacedPin"/> because a netlist pad has no extent to state, and the one consumer is
     /// <c>PdnBoardDivergence</c>'s position comparison.</param>
-    public static IReadOnlyList<PdnPad> PadsOf(
+    public static IReadOnlyList<PlacedPin> Of(
         LayoutView view, string? clayPath, Technology? tech,
+        PinNaming naming,
         Func<string, IReadOnlyList<string>>? portNamesOf = null,
         List<string>? notes = null,
         Func<string, IReadOnlyList<string>>? portNetsOf = null,
-        PdnCopperPieces? stamped = null,
-        IDictionary<PdnPad, long>? extents = null)
+        CopperPieces? stamped = null,
+        IDictionary<PlacedPin, long>? extents = null)
     {
         ArgumentNullException.ThrowIfNull(view);
+
+        // R-lvs2-2c. A parameter that is silently ignored in one mode is a parameter somebody will
+        // supply and believe in — and believing in it here means LVS asking the artwork what the
+        // artwork says and getting the SCHEMATIC's answer back, on every net of every design, with
+        // nothing anywhere that looks wrong (overview §1a).
+        if (naming == PinNaming.ArtworkOnly && (portNamesOf is not null || portNetsOf is not null))
+            throw new ArgumentException(
+                "PinNaming.ArtworkOnly reads the artwork and nothing else, so it takes no " +
+                "schematic-facing delegate. Pass PinNaming.SchematicThenArtwork to let the " +
+                "schematic answer, or drop the delegates.", nameof(naming));
+
         if (view.Instances.Count == 0 || clayPath is not { Length: > 0 }) return [];
 
         string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "";
@@ -96,7 +116,7 @@ public static class PdnLayoutPads
             return [];
         }
 
-        var pads = new List<PdnPad>();
+        var pads = new List<PlacedPin>();
 
         foreach (var inst in view.Instances)
         {
@@ -145,11 +165,16 @@ public static class PdnLayoutPads
                 // resolves, else the net stated on the copper this pad lands on — on its OWN layer
                 // (R-ab2-2d). A pad on unnamed copper stays unnamed, which is representable and is
                 // what a board with placement and no netlist produces today.
-                string? net = port >= 0 && port < nets.Count && nets[port] is { Length: > 0 } bound
+                // R-lvs2-2a spells the precedence at the call site. In ArtworkOnly `nets` is
+                // empty by construction — the delegate is refused above — and the test is written
+                // out anyway, because "empty by construction" is a property of two other lines.
+                string? net = naming == PinNaming.SchematicThenArtwork
+                              && port >= 0 && port < nets.Count
+                              && nets[port] is { Length: > 0 } bound
                     ? bound
                     : stamped?.NameAt(x, y, pins[i].Layer);
 
-                var pad = new PdnPad(refdes, name, net, x, y, PdnPadSource.Artwork);
+                var pad = new PlacedPin(refdes, name, net, x, y, PinSource.Artwork);
                 pads.Add(pad);
                 if (extents is not null && pins[i].WidthDbu > 0) extents[pad] = pins[i].WidthDbu;
             }
@@ -170,10 +195,10 @@ public static class PdnLayoutPads
     ///
     /// <para><b>The cell's NAME, not a resolution.</b> This is the last segment of the instance's
     /// <c>CellRef</c> — no file is opened, no pins are resolved, and an unresolvable reference still
-    /// contributes its name, because the name is the whole answer here. <see cref="PadsOf"/> resolves
+    /// contributes its name, because the name is the whole answer here. <see cref="Of"/> resolves
     /// because it needs the pins; this does not.</para>
     ///
-    /// <para><b>The ROOT's own placements</b>, exactly as <see cref="PadsOf"/> walks them (R-ab1-1a):
+    /// <para><b>The ROOT's own placements</b>, exactly as <see cref="Of"/> walks them (R-ab1-1a):
     /// a land pattern nested three cells deep inside a module is that module's internal business.
     /// A placement with no designator to draw contributes nothing, for R-ab1-1b's reason.</para>
     /// </remarks>
@@ -201,19 +226,19 @@ public static class PdnLayoutPads
     /// <remarks>
     /// <b>Vias included, and not an oversight</b> — <c>PdnBoardPads.NetPointsOf</c>'s own note says
     /// why: a stitching via is frequently the only thing standing on an inner-layer pour, and a net
-    /// point is how <c>PdnRailRegions</c> learns that a pour it reached is the rail's. The root's
+    /// point is how <c>Regions</c> learns that a pour it reached is the rail's. The root's
     /// vias are in <see cref="LayoutView.Shapes"/> and need no transform.
     ///
     /// <para><b>A via FOLLOWS ITS PIECE</b> (R-ab2-2e). Before brief 2 a via contributed a point
     /// only where somebody had stamped that very via, which on a stitching fence means stamping
     /// thirty of them; now naming the trace they land on names them all, which is what lets
-    /// <c>PdnRailRegions</c> recognise an inner-layer pour it reached. The via's OWN stamp still
+    /// <c>Regions</c> recognise an inner-layer pour it reached. The via's OWN stamp still
     /// wins where it has one — it is the more specific statement.</para>
     /// </remarks>
     /// <param name="stamped">The partition, where one was built. Null leaves the pre-brief-2
     /// behaviour exactly as it was.</param>
     public static IReadOnlyList<PdnNetPoint> NetPointsOf(
-        LayoutView view, IReadOnlyList<PdnPad> pads, PdnCopperPieces? stamped = null)
+        LayoutView view, IReadOnlyList<PlacedPin> pads, CopperPieces? stamped = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(pads);

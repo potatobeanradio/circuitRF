@@ -133,7 +133,7 @@ public sealed record RailProvenance(
         string? libraryPath,
         string artworkPath,
         string technologyName,
-        IReadOnlyList<PdnPad>? pads = null)
+        IReadOnlyList<PlacedPin>? pads = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(rails);
@@ -172,7 +172,7 @@ public sealed record RailProvenance(
             referenced.Count,
             artworkPath,
             technologyName,
-            PdnPadSummary.Describe(pads ?? []));
+            PlacedPinSummary.Describe(pads ?? []));
     }
 }
 

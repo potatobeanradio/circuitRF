@@ -302,7 +302,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
     /// two sides. Separating them would let the bridged case pass against a fixture that never
     /// separated in the first place, which is the failure mode of a refusal test.
     ///
-    /// <para><b>This calls <c>PdnRailRegions.Walk</c> directly</b> rather than running an
+    /// <para><b>This calls <c>Regions.Walk</c> directly</b> rather than running an
     /// extraction, because the walk IS the input the partition takes and this test is about what
     /// the partition does with it.</para>
     /// </remarks>
@@ -593,15 +593,15 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         return rail;
     }
 
-    private static IReadOnlyList<PdnPad> ArtworkPads() =>
+    private static IReadOnlyList<PlacedPin> ArtworkPads() =>
     [
-        new PdnPad("BT1", "1", "VBAT", Mm(0.5), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("C1", "1", "VBAT", Mm(2.0), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("FB1", "1", "VBAT", Mm(3.5), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("FB1", "2", "VBAT", Mm(6.5), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("C2", "1", "VBAT", Mm(8.0), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("C3", "1", "VBAT", Mm(10.0), Mm(0.15), PdnPadSource.BoardNetlist),
-        new PdnPad("U1", "VDD", "VBAT", Mm(13.5), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PlacedPin("BT1", "1", "VBAT", Mm(0.5), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("C1", "1", "VBAT", Mm(2.0), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("FB1", "1", "VBAT", Mm(3.5), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("FB1", "2", "VBAT", Mm(6.5), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("C2", "1", "VBAT", Mm(8.0), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("C3", "1", "VBAT", Mm(10.0), Mm(0.15), PinSource.BoardNetlist),
+        new PlacedPin("U1", "VDD", "VBAT", Mm(13.5), Mm(0.15), PinSource.BoardNetlist),
     ];
 
     private static IReadOnlyList<LayoutShape> ArtworkShapes(bool bridged) =>
@@ -619,7 +619,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         var top = new Paths64 { Box(0, 0, Mm(4), Mm(0.3)), Box(Mm(6), 0, Mm(14), Mm(0.3)) };
         if (bridged) top.Add(Box(Mm(4), Mm(0.1), Mm(6), Mm(0.2)));
 
-        return PdnRailRegions.Walk(
+        return Regions.Walk(
             new Dictionary<LayerKey, Paths64>
             {
                 [Top] = Clipper.Union(top, LayoutClipper.Rule),

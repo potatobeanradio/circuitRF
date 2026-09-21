@@ -3,6 +3,7 @@ using System.Text;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Theming;
@@ -924,7 +925,7 @@ internal static class Rail
     private static RailProvenance Provenance(
         RailDocument doc, Options o, BoardInputs? board, string documentPath,
         IReadOnlyList<RailSpec> rails, IReadOnlyList<RailDcResult> results,
-        IReadOnlyList<PdnPad> pads)
+        IReadOnlyList<PlacedPin> pads)
     {
         // Document-relative, like every other reference a `.crail` carries — and through the one
         // function the WINDOW's open calls, so the two surfaces cannot land on different files.
@@ -958,7 +959,7 @@ internal static class Rail
     private static void Report(
         RailDocument doc, RailDcRunResult run, IReadOnlyList<RailDcResult> results,
         RailOrderResult order, RailProvenance provenance, Options o,
-        BoardInputs? board, IReadOnlyList<PdnPad> pads)
+        BoardInputs? board, IReadOnlyList<PlacedPin> pads)
     {
         Console.WriteLine($"railRF:   {(doc.Name.Length > 0 ? doc.Name : "(unnamed)")}");
         foreach (string line in provenance.Lines) Console.WriteLine($"          {line}");
@@ -1050,7 +1051,7 @@ internal static class Rail
     /// reaches on a document nobody imported a BOM into.</para>
     /// </remarks>
     private static IReadOnlyList<string> Discovered(
-        RailDocument doc, BoardInputs? board, IReadOnlyList<PdnPad> pads, RailDcResult result)
+        RailDocument doc, BoardInputs? board, IReadOnlyList<PlacedPin> pads, RailDcResult result)
     {
         if (board is null || doc.Rail(result.RailName) is not { } rail) return [];
 
@@ -1214,7 +1215,7 @@ internal static class Rail
     private static RailReportJson RailJson(
         RailDocument doc, RailDcRunResult run, IReadOnlyList<RailDcResult> results,
         RailOrderResult order, RailProvenance provenance, PdnModelKind model,
-        IReadOnlyList<PdnPad> pads)
+        IReadOnlyList<PlacedPin> pads)
         => new(
             doc.Name,
             model == PdnModelKind.Accurate ? "accurate" : "fast",
@@ -1239,8 +1240,8 @@ internal static class Rail
             // a board whose parts the netlist named from one railRF read off the artwork itself —
             // and so `--json` can be compared against the in-process answer (R-ab1-5c's gate).
             pads.Count,
-            pads.Count(p => p.Source == PdnPadSource.BoardNetlist),
-            pads.Count(p => p.Source == PdnPadSource.Artwork));
+            pads.Count(p => p.Source == PinSource.BoardNetlist),
+            pads.Count(p => p.Source == PinSource.Artwork));
 
     private static void Progress(string stage) => Console.Error.WriteLine($"[circuitRF] {stage}...");
 

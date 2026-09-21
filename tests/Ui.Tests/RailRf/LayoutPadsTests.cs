@@ -12,7 +12,7 @@
 //
 //  ── THE ORACLE IS HAND ARITHMETIC, NOT ANOTHER circuitRF PATH ─────────────────────────────────
 //
-//  §7.1 and §7.2 ask for the exact DBU coordinates, written out. A test that compared PdnLayoutPads
+//  §7.1 and §7.2 ask for the exact DBU coordinates, written out. A test that compared PlacedPins
 //  against LayoutInstanceTransform would pass for as long as the two agreed with each other and
 //  would say nothing about whether either is right. The fixture's pins are off BOTH axes for the
 //  same reason: a mirror that is a no-op on a symmetric land proves nothing (the WB-C trap, in its
@@ -65,10 +65,10 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
             Place("Land", "C1", Mm(5), Mm(3)),
             Place("Land", "C2", Mm(9), Mm(7)));
 
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork);
 
         Assert.Equal(4, pads.Count);
-        Assert.All(pads, p => Assert.Equal(PdnPadSource.Artwork, p.Source));
+        Assert.All(pads, p => Assert.Equal(PinSource.Artwork, p.Source));
 
         // R-ab1-1's scope: the nets arrive in brief 2, and null is already a representable state.
         Assert.All(pads, p => Assert.Null(p.Net));
@@ -98,7 +98,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         inst.MirrorX = mirror;
         var fx = Board(inst);
 
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork);
         Assert.Equal(2, pads.Count);
 
         double rad = deg * Math.PI / 180.0;
@@ -132,7 +132,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         inst.PitchY = Mm(4);
         var fx = Board(inst);
 
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork);
 
         Assert.Equal(12, pads.Count);
         Assert.All(pads, p => Assert.Equal("F1", p.Refdes));
@@ -162,7 +162,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         var fx = Board(anonymous, missing, Place("Land", "C1", Mm(5), Mm(3)));
 
         var notes = new List<string>();
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech, null, notes);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork, null, notes);
 
         Assert.Equal(2, pads.Count);
         Assert.All(pads, p => Assert.Equal("C1", p.Refdes));
@@ -196,8 +196,9 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         };
 
         var notes = new List<string>();
-        var pads = PdnLayoutPads.PadsOf(
-            fx.View, fx.Clay, fx.Tech, id => ports.TryGetValue(id, out var p) ? p : [], notes);
+        var pads = PlacedPins.Of(
+            fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork,
+            id => ports.TryGetValue(id, out var p) ? p : [], notes);
 
         // By NAME: pin "2" is port "2" wherever it sits in the list.
         Assert.Equal(["2", "1"], pads.Where(p => p.Refdes == "U1").Select(p => p.Pin));
@@ -221,7 +222,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
     public void WithNoSchematicIdThePadIsNamedByItsPin()
     {
         var fx = Board(Place("Land", "C1", Mm(5), Mm(3)));
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech, _ => ["VDD", "GND"]);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork, _ => ["VDD", "GND"]);
 
         Assert.Equal(["1", "2"], pads.Select(p => p.Pin));
     }
@@ -251,14 +252,14 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         // The netlist's own coordinates survive for the parts it names — the artwork's reading of C1
         // is DISCARDED, which is what "the netlist is the statement of record" means.
         var c1 = resolved.Pads.Where(p => p.Refdes == "C1").ToList();
-        Assert.All(c1, p => Assert.Equal(PdnPadSource.BoardNetlist, p.Source));
+        Assert.All(c1, p => Assert.Equal(PinSource.BoardNetlist, p.Source));
         Assert.All(c1, p => Assert.Equal(Mm(20), p.X));
 
         Assert.All(resolved.Pads.Where(p => p.Refdes == "C3"),
-                   p => Assert.Equal(PdnPadSource.Artwork, p.Source));
+                   p => Assert.Equal(PinSource.Artwork, p.Source));
 
         Assert.Equal("6 pads: 4 from the board netlist, 2 from the artwork",
-                     PdnPadSummary.Describe(resolved.Pads));
+                     PlacedPinSummary.Describe(resolved.Pads));
     }
 
     /// <summary><b>R-ab1-3c.</b> A refused netlist contributes NOTHING — the contract
@@ -274,7 +275,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
 
         Assert.Equal(0, resolved.FromBoardNetlist);
         Assert.Equal(2, resolved.FromArtwork);
-        Assert.Equal("2 pads, from the artwork", PdnPadSummary.Describe(resolved.Pads));
+        Assert.Equal("2 pads, from the artwork", PlacedPinSummary.Describe(resolved.Pads));
     }
 
     // ══ 8. The mounting loop, computed from geometry ════════════════════════════════════════════
@@ -331,7 +332,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         Land(cell, pins);
         var fx = Board(Place(cell, "C1", Mm(5), Mm(3)));
 
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech)
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork)
             .Select(p => p with { Net = p.Pin == "1" ? "VDD" : "GND" })   // brief 2's half, stated
             .ToList();
 
@@ -452,7 +453,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         var fx = Board(huge);
 
         var notes = new List<string>();
-        var pads = PdnLayoutPads.PadsOf(fx.View, fx.Clay, fx.Tech, null, notes);
+        var pads = PlacedPins.Of(fx.View, fx.Clay, fx.Tech, PinNaming.SchematicThenArtwork, null, notes);
 
         Assert.Empty(pads);
         Assert.Contains("flatten", Assert.Single(notes), StringComparison.Ordinal);
@@ -490,7 +491,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         // IN each land, so a pad's point and its via's point are the same point said twice — what
         // this asserts is that the ARTWORK contributed no point the netlist had not already named.
         Assert.Equal(PdnBoardPads.NetPointsOf(netlist).Distinct(), after.NetPoints);
-        Assert.Equal($"{before.Count} pads, from the board netlist", PdnPadSummary.Describe(after.Pads));
+        Assert.Equal($"{before.Count} pads, from the board netlist", PlacedPinSummary.Describe(after.Pads));
 
         output.WriteLine($"{before.Count} pads, all from the netlist; artwork contributed {after.FromArtwork}");
     }
@@ -541,7 +542,7 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
 
     private sealed record Fx(LayoutView View, string Clay, Technology Tech);
 
-    private static void AssertPad(IReadOnlyList<PdnPad> pads, string refdes, string pin, long x, long y)
+    private static void AssertPad(IReadOnlyList<PlacedPin> pads, string refdes, string pin, long x, long y)
     {
         var pad = Assert.Single(pads, p => p.Refdes == refdes && p.Pin == pin);
         Assert.Equal((x, y), (pad.X, pad.Y));

@@ -9,7 +9,7 @@
 //
 // THERE IS NO CUTTING CODE HERE, AND THERE MUST NOT BE. On imported artwork the copper already
 // stops at every pad — §2.8's own sentence, and the whole reason PdnSeriesElement exists — so the
-// rail arrives from PdnRailRegions.Walk ALREADY partitioned into galvanically separate islands, and
+// rail arrives from Regions.Walk ALREADY partitioned into galvanically separate islands, and
 // the series element is the thing that bridges two of them. The measurement is therefore: which
 // island does each terminal land in. Subtracting a synthetic gap at each pad would be a second
 // connectivity model beside DrcConnectivity's, and a second one drifts.
@@ -145,12 +145,12 @@ public sealed record RailSeriesPartition(
     /// galvanic islands its pads are in.
     /// </summary>
     /// <param name="rail">The rail. Its part, load and source rows are the subjects.</param>
-    /// <param name="regions">The islands <see cref="PdnRailRegions.Walk"/> already produced for this
+    /// <param name="regions">The islands <see cref="Regions.Walk"/> already produced for this
     /// rail — <b>the same walk the DC answer and the copper map are built from</b>, never a second
     /// one.</param>
     /// <param name="pads">The board's pads, so a refdes resolves to coordinates.</param>
     public static RailSeriesPartition FromArtworkRegions(
-        RailSpec rail, PdnRailRegionSet regions, IReadOnlyList<PdnPad> pads)
+        RailSpec rail, PdnRailRegionSet regions, IReadOnlyList<PlacedPin> pads)
     {
         ArgumentNullException.ThrowIfNull(rail);
         ArgumentNullException.ThrowIfNull(regions);
@@ -276,13 +276,13 @@ public sealed record RailSeriesPartition(
     /// pads is on the rail's copper.
     /// </summary>
     /// <remarks>
-    /// <b>The same containment test <see cref="PdnRailRegions"/> seeds with</b>, holes honoured and
+    /// <b>The same containment test <see cref="Regions"/> seeds with</b>, holes honoured and
     /// clipped against a 2 DBU square rather than a winding count — a pad coordinate from a drill
     /// file lands ON a boundary as often as inside one, and a via's own centre is the centre of the
     /// HOLE it drilled.
     /// </remarks>
     private static int? IslandOf(
-        RailPortAnchor anchor, PdnRailRegionSet regions, IReadOnlyList<PdnPad> pads)
+        RailPortAnchor anchor, PdnRailRegionSet regions, IReadOnlyList<PlacedPin> pads)
     {
         var points = PdnAttachments.Resolve(anchor, pads);
         if (points.Count == 0) return null;
@@ -290,7 +290,7 @@ public sealed record RailSeriesPartition(
         foreach (var region in regions.Power)
             foreach (var (_, paths) in region.Copper)
                 foreach (var (x, y) in points)
-                    if (PdnRailRegions.Contains(paths, x, y)) return region.Index;
+                    if (Regions.Contains(paths, x, y)) return region.Index;
 
         return null;
     }

@@ -2,7 +2,7 @@
 //
 // ── THE LINK THAT WAS NEVER DRAWN ──────────────────────────────────────────────────────────────
 //
-// PdnAttachments' own summary of PdnPad says "BoardNetlistRecord maps onto this directly", and until
+// PdnAttachments' own summary of PlacedPin says "BoardNetlistRecord maps onto this directly", and until
 // this file existed nothing performed that mapping. The consequence was invisible and total:
 // RailBoardInputs.Pads was assigned NOWHERE in src/, so it was always empty, so
 //
@@ -49,11 +49,11 @@ public static class PdnBoardPads
     /// half-read netlist mislabels pads rather than failing, and a mislabelled pad is a part whose
     /// mounting loop is computed from a neighbour's via.
     /// </remarks>
-    public static IReadOnlyList<PdnPad> PadsOf(BoardNetlist? netlist)
+    public static IReadOnlyList<PlacedPin> PadsOf(BoardNetlist? netlist)
     {
         if (netlist is not { Refusal: null }) return [];
 
-        var pads = new List<PdnPad>();
+        var pads = new List<PlacedPin>();
         foreach (var r in netlist.Records)
         {
             // The component reference AND the pin, rather than IsComponentHole — see this file's
@@ -61,7 +61,7 @@ public static class PdnBoardPads
             if (r.Component is not { Length: > 0 } refdes || r.Pin is not { Length: > 0 } pin)
                 continue;
 
-            pads.Add(new PdnPad(refdes, pin, r.Net, r.X, r.Y, PdnPadSource.BoardNetlist));
+            pads.Add(new PlacedPin(refdes, pin, r.Net, r.X, r.Y, PinSource.BoardNetlist));
         }
 
         return pads;
@@ -71,7 +71,7 @@ public static class PdnBoardPads
     /// Every record that names a net, as a point the connectivity walk can be seeded from.
     /// </summary>
     /// <remarks>
-    /// Vias included, and on purpose: a net point is how <c>PdnRailRegions</c> learns that a pour it
+    /// Vias included, and on purpose: a net point is how <c>Regions</c> learns that a pour it
     /// reached is the rail's rather than the next net's, and a stitching via is frequently the only
     /// record standing on an inner-layer pour at all.
     /// </remarks>

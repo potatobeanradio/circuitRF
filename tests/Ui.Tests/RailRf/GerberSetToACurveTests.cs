@@ -21,7 +21,7 @@
 //  no copper pattern in `GerberLayerIdentity`.
 //
 //  THE GROUND POUR THE USER CLICKS IS ON THE BOTTOM LAYER, not on the inner plane. That is not
-//  decoration: `PdnRailRegions.Walk` seeds the rail off every layer EXCEPT the reference layer, so a
+//  decoration: `Regions.Walk` seeds the rail off every layer EXCEPT the reference layer, so a
 //  click on the reference layer's own copper resolves to nothing and comes back as the ordinary
 //  "resolves to no copper" refusal. The reported board's rail was a pour galvanically joined to the
 //  plane by stitching vias — one piece of copper, reached from a layer the seeding does look at —
@@ -338,7 +338,7 @@ public sealed class GerberSetToACurveTests(ITestOutputHelper output) : IDisposab
     public void ARailAnchoredOnItsOwnReturn_IsRefused_AndOneThatMerelyReachesTheReferenceLayerIsNot()
     {
         // ── the reported board: a bottom-side ground pour, stitched to the inner plane ────────
-        var onItsOwnReturn = PdnRailRegions.Walk(
+        var onItsOwnReturn = Regions.Walk(
             new Dictionary<LayerKey, Paths64>
             {
                 [Top]   = [Box(Mm(2), Mm(12), Mm(18), Mm(18))],    // the supply pour, clear of the stitch
@@ -359,7 +359,7 @@ public sealed class GerberSetToACurveTests(ITestOutputHelper output) : IDisposab
         // ── and the case that must NOT fire: a rail whose copper reaches the reference LAYER ───
         //     A power pour on the mixed inner layer, stitched up to the supply pour on top. The
         //     plane's own piece survives, so a return still exists.
-        var reachesTheLayer = PdnRailRegions.Walk(
+        var reachesTheLayer = Regions.Walk(
             new Dictionary<LayerKey, Paths64>
             {
                 [Top]   = [Box(Mm(2), Mm(12), Mm(18), Mm(18))],    // the supply pour
@@ -599,7 +599,7 @@ public sealed class GerberSetToACurveTests(ITestOutputHelper output) : IDisposab
         // Bottom: the ground pour the designer clicks by mistake, stitched to the plane above it.
         // CLEAR OF THE SUPPLY RAIL, because a seed is a coordinate with no layer on it: a ground pour
         // under the rail would make the pick itself ambiguous, which is a different question and is
-        // `PdnRailRegions`' own (its seeding note records the same fact from the other side).
+        // `Regions`' own (its seeding note records the same fact from the other side).
         File.WriteAllText(Path.Combine(dir, "board.gbl"), Pour("Copper,L3,Bot,Signal", 0, 7, 20, 10));
 
         // The stitching vias, at the capacitors' return lands — clear of the supply pour, so they

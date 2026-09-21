@@ -1,5 +1,6 @@
-// Which copper IS this rail, and is it one region or three islands
-// (docs/sonnet-briefs/brief-railrf-3-mesh-extractor.md R-rail3-3 / R-rail3-4).
+// Which copper is one galvanically-joined piece, and which pieces are this rail's
+// (docs/sonnet-briefs/brief-railrf-3-mesh-extractor.md R-rail3-3 / R-rail3-4, promoted by
+// brief-lvs-2-shared-extraction.md R-lvs2-1).
 //
 // ── THE WALK IS ALREADY WRITTEN, AND THERE IS NO SECOND ONE ────────────────────────────────────
 //
@@ -8,49 +9,33 @@
 // which is what makes an offset staircase of metal connect correctly. It is `internal`, which is not
 // an obstacle: this file is the same assembly.
 //
-// DO NOT COPY IT, DO NOT MAKE IT PUBLIC, AND DO NOT WRITE A SECOND WALK. A rail whose island
-// structure the DRC and railRF disagree about is a bug neither of them reports.
+// DO NOT COPY IT, DO NOT MAKE IT PUBLIC, AND DO NOT WRITE A SECOND WALK. A board whose island
+// structure the DRC, railRF and LVS disagree about is a bug none of them reports.
 //
 // What it does NOT do is name a net. Net identity comes from the board netlist or the .kicad_pcb
 // (brief 2) and this file joins the two: a NET POINT is a (net name, coordinate) pair, and the
 // pieces containing those points are the rail.
 //
-// ── THE COPPER STOPS AT EVERY PAD, AND THAT IS CORRECT (§2.8) ──────────────────────────────────
+// ── THE COPPER STOPS AT EVERY PAD, AND THAT IS CORRECT (railrf §2.8) ───────────────────────────
 //
 // On imported artwork the board is not electrically continuous until the user has said what bridges
 // each gap. So the island structure is a first-class OUTPUT — "this rail is three regions joined by
 // a 20 mil neck" — and §2.3 step 2 says that alone has caught real problems. Two islands joined by
 // nothing at DC and by a capacitor at AC is NOT an error and must not be reported as one. It is two
 // regions, stated.
+//
+// ── WHY THE RECORDS BELOW STILL SPELL THEMSELVES `Pdn` ─────────────────────────────────────────
+//
+// PdnNetPoint, PdnRegion and PdnRailRegionSet came here with the walk. R-lvs2-1's table renames the
+// types LVS and railRF SHARE and says nothing about these three, which are railRF's own vocabulary
+// for a rail and its return — and R-lvs2-1d forbids an alias, so renaming them would be sixty call
+// sites of churn for no reader's benefit. PdnConductor did not come at all: it PRICES copper, and
+// R-lvs2-1b keeps every pricing type in Pdn.
 
 using Clipper2Lib;
 using CircuitRF.Design.Layout.Drc;
 
-namespace CircuitRF.Design.Layout.Pdn;
-
-/// <summary>
-/// One conductor of the stackup as the extraction reads it: its drawing layer, its thickness and its
-/// conductivity. <see cref="SheetResistanceOhmsPerSquare"/> is the whole of the DC model.
-/// </summary>
-/// <param name="StackupName">The <see cref="StackupLayer.Name"/> it came from.</param>
-/// <param name="Layer">The drawing layer its copper is on.</param>
-/// <param name="ThicknessMetres">Finished copper thickness.</param>
-/// <param name="ConductivitySm">Conductivity at the extraction's stated temperature, S/m.</param>
-public sealed record PdnConductor(
-    string StackupName, LayerKey Layer, double ThicknessMetres, double ConductivitySm)
-{
-    /// <summary>
-    /// <c>Rs = ρ / T</c> — the sheet resistance BELOW TWO SKIN DEPTHS, which at ω = 0 is every
-    /// frequency this brief covers. 0.49 mΩ/square at 1 oz, 0.99 mΩ/square at 0.5 oz (§2.8).
-    ///
-    /// <para><b>This is ONE conductor's sheet resistance, and §4.1's <c>R = 2·Rs</c> is the
-    /// LOOP's.</b> The factor of two is the two planes in series in the loop — see
-    /// <see cref="PdnMeshExtractor"/>'s own note at the site where it is stamped, and read it before
-    /// putting a 2 anywhere near this property.</para>
-    /// </summary>
-    public double SheetResistanceOhmsPerSquare =>
-        ThicknessMetres > 0 && ConductivitySm > 0 ? 1.0 / (ConductivitySm * ThicknessMetres) : 0.0;
-}
+namespace CircuitRF.Design.Layout.Extraction;
 
 /// <summary>A (net, coordinate) pair — what the board netlist or the <c>.kicad_pcb</c> knows that
 /// the geometry does not. <c>BoardNetlistRecord</c> maps onto this directly.</summary>
@@ -104,7 +89,7 @@ public sealed record PdnRailRegionSet(
     string? OwnReturnRefusal = null);
 
 /// <summary>The galvanic region walk — <see cref="DrcConnectivity"/> joined to a net name.</summary>
-public static class PdnRailRegions
+public static class Regions
 {
     /// <summary>
     /// Partitions <paramref name="layerRegions"/> into the rail's islands and the reference's.

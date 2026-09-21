@@ -50,7 +50,7 @@
 //
 // ── A PAD OVER A PLANE IS NOT A PAD ON IT, AND THE NET IS WHAT SETTLES IT ──────────────────────
 //
-// `PdnRailRegions.ReferenceNetOn` records the same fact from the other side and calls the exact
+// `Regions.ReferenceNetOn` records the same fact from the other side and calls the exact
 // discriminator GALVANIC AMBIGUITY: a point belongs to the reference only where every piece of
 // copper covering it is ONE galvanically-joined net. That test needs the whole piece set, and a
 // `PdnRailRegionSet` does not carry one — `Islands(..., onlyLayer: referenceLayer)` keeps only the
@@ -62,7 +62,7 @@
 // So where a pad STATES a net, the net is a VETO: a pad naming something other than the reference
 // net is not on the reference, and one naming something other than the rail's net is not on the
 // rail. That is exact on every board whose pads carry nets — a board netlist, or artwork with a
-// schematic behind it — which is every board `PdnLayoutPads` resolves nets for.
+// schematic behind it — which is every board `PlacedPins` resolves nets for.
 //
 // WHERE NOTHING NAMES A NET THE VETO CANNOT FIRE AND CONTAINMENT IS ALL THERE IS. On a Gerber set
 // with no netlist and no schematic the copper stops at every pad (§2.8), so a ground land with a
@@ -293,7 +293,7 @@ public sealed class RailDiscoveryRequest
 
     /// <summary>The board's pads — the netlist's where it speaks, the artwork's everywhere else.
     /// <c>RailArtwork.PadsFor</c>'s own answer, never a second reading of the board.</summary>
-    public required IReadOnlyList<PdnPad> Pads { get; init; }
+    public required IReadOnlyList<PlacedPin> Pads { get; init; }
 
     /// <summary>
     /// The rail's galvanic islands and its reference's, off the LAST EXTRACTION. Null before the
@@ -491,10 +491,10 @@ public static class RailPartDiscovery
     /// part the netlist names, so this is the belt to that braces; the key is the pin and the
     /// coordinate together, because a part whose two pads share a pin name is still two pads.
     /// </remarks>
-    private static IEnumerable<(string Refdes, IReadOnlyList<PdnPad> Pads)> PadsByRefdes(
-        IReadOnlyList<PdnPad> pads)
+    private static IEnumerable<(string Refdes, IReadOnlyList<PlacedPin> Pads)> PadsByRefdes(
+        IReadOnlyList<PlacedPin> pads)
     {
-        var byRefdes = new Dictionary<string, List<PdnPad>>(StringComparer.OrdinalIgnoreCase);
+        var byRefdes = new Dictionary<string, List<PlacedPin>>(StringComparer.OrdinalIgnoreCase);
         var seen = new HashSet<(string, string, long, long)>();
 
         foreach (var pad in pads)
@@ -519,7 +519,7 @@ public static class RailPartDiscovery
     /// it on; it never puts one on. Unstated on either side is not evidence, so it permits — which
     /// is what leaves the Gerber case on containment alone, as this file's header explains.
     /// </remarks>
-    private static bool NetAllows(PdnPad pad, string? net) =>
+    private static bool NetAllows(PlacedPin pad, string? net) =>
         pad.Net is not { Length: > 0 } stated || net is not { Length: > 0 } wanted ||
         string.Equals(stated, wanted, StringComparison.OrdinalIgnoreCase);
 
@@ -531,13 +531,13 @@ public static class RailPartDiscovery
     /// and clipped against a 2 DBU square rather than a winding count, because a pad coordinate
     /// lands ON a boundary as often as inside one.
     /// </remarks>
-    private static bool In(IReadOnlyList<PdnRegion> islands, PdnPad pad)
+    private static bool In(IReadOnlyList<PdnRegion> islands, PlacedPin pad)
     {
         foreach (var region in islands)
         {
             if (!region.Bounds.Contains(pad.X, pad.Y)) continue;
             foreach (var (_, paths) in region.Copper)
-                if (PdnRailRegions.Contains(paths, pad.X, pad.Y)) return true;
+                if (Regions.Contains(paths, pad.X, pad.Y)) return true;
         }
         return false;
     }

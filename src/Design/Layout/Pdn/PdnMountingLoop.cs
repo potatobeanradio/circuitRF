@@ -122,7 +122,7 @@ public sealed class PdnMountingLoopRequest
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 
     /// <summary>The board's pads. A part's power pad and its return pad are found here by net.</summary>
-    public required IReadOnlyList<PdnPad> Pads { get; init; }
+    public required IReadOnlyList<PlacedPin> Pads { get; init; }
 
     /// <summary>The reference return's net, where one is named. Without it a part's return pad
     /// cannot be told from its power pad and every part is unresolved, which is what happens.</summary>

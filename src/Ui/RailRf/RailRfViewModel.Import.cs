@@ -160,7 +160,7 @@ public sealed partial class RailRfViewModel
     /// <b>Empty is not an error.</b> On the assisted-Gerber path there is no netlist and geometry
     /// alone has no net in it, so the pick is made by CLICKING THE POUR instead —
     /// <see cref="PickRailAt"/>. Both routes end in the same place: a rail, whose copper
-    /// <c>PdnRailRegions</c> walks and brief 8 highlights, so a user sees straight away whether it is
+    /// <c>Regions</c> walks and brief 8 highlights, so a user sees straight away whether it is
     /// one region or three islands joined by a 20 mil neck.
     /// </remarks>
     public ObservableCollection<RailNetRowViewModel> AvailableNets { get; } = [];
@@ -401,7 +401,7 @@ public sealed partial class RailRfViewModel
     /// </summary>
     /// <remarks>
     /// <b>railRF will not guess a net name</b> (brief 1), so a rail made this way carries none — it
-    /// carries a source anchored at the point instead, which is what <c>PdnRailRegions.Walk</c> seeds
+    /// carries a source anchored at the point instead, which is what <c>Regions.Walk</c> seeds
     /// the connectivity walk from. The rail is NAMED after where it was picked rather than left
     /// unnamed, because every rail is named: the selector shows it and a refusal about the order has
     /// to say which two rails it is about.

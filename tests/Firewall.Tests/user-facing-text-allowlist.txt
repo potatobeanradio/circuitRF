@@ -893,3 +893,10 @@ src/Design/Smith/SmithCascade.cs|{SmithDesign.FmtHz(fHz)} is outside the generat
 src/Design/Smith/SmithInverse.cs|'{e.Name}' is a {e.Kind} and does not expose {p} — 
 src/Design/Smith/SmithInverse.cs|'{e.Name}' is a {e.Kind} and {p} has no inverse written for it.
 src/Design/Smith/SmithInverse.cs|'{e.Name}' is a {e.Kind}, whose value is a FILE — it has no draggable parameter 
+#
+# brief-lvs-2-shared-extraction.md R-lvs2-2c. A PROGRAMMER's error, not a user's: it fires only
+# when a caller asks for PinNaming.ArtworkOnly and hands over a schematic-facing delegate anyway,
+# which is a call that cannot be written from any document. Nothing a user can do reaches it, so
+# there is nothing for the Messages window to group, collapse or hang an action on — the plain
+# exception is the deliberate choice this file's header describes.
+src/Design/Layout/Extraction/PlacedPins.cs|PinNaming.ArtworkOnly reads the artwork and nothing else, so it takes no 

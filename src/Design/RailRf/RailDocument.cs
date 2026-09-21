@@ -152,7 +152,7 @@ public sealed class RailDocument
     /// pin where there is one, and the plating flag per hole (<c>BoardNetlistFile</c>).
     ///
     /// <para><b>This is the reference that makes a refdes mean anything.</b> Until it resolves,
-    /// <c>PdnPad</c> has no source at all: every source and load anchor has to be a COORDINATE, and
+    /// <c>PlacedPin</c> has no source at all: every source and load anchor has to be a COORDINATE, and
     /// <c>PdnMountingLoopExtractor</c> can compute no mounting loop for any part, because a part's
     /// loop is a property of where it was placed and nothing said where that is. Both degrade
     /// silently to the typed path, which is why this lives on the document rather than only in the

@@ -126,7 +126,7 @@ public static class LayoutDesignFlatten
     /// <see cref="HardCeiling"/> — R-L3c-4's safety valve, asked WITHOUT flattening.
     ///
     /// <para><b>Extracted so a second consumer can gate on the same answer</b> (R-ab1-5d):
-    /// <c>PdnLayoutPads</c> reads a part's pads off the very geometry this ceiling stops being read,
+    /// <c>PlacedPins</c> reads a part's pads off the very geometry this ceiling stops being read,
     /// and a board whose lands were never flattened must not come back with a confident pad list over
     /// them. A second copy of the estimate loop would be a second ceiling that drifts.</para>
     /// </summary>

@@ -31,11 +31,11 @@ public sealed partial class RailSourceRowViewModel : ObservableObject
 
     /// <summary>The board's pads, for the anchor field's own tooltip — a function for
     /// <see cref="_lengthFormat"/>'s reason: a board can be adopted under an open window.</summary>
-    private readonly Func<IReadOnlyList<PdnPad>> _pads;
+    private readonly Func<IReadOnlyList<PlacedPin>> _pads;
 
     public RailSourceRowViewModel(RailSpec rail, RailSource source,
                                   Func<RailLengthFormat>? lengthFormat = null,
-                                  Func<IReadOnlyList<PdnPad>>? pads = null)
+                                  Func<IReadOnlyList<PlacedPin>>? pads = null)
     {
         _rail = rail;
         _source = source;

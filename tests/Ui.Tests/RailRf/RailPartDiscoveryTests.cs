@@ -94,36 +94,36 @@ public sealed class RailPartDiscoveryTests(ITestOutputHelper output) : IDisposab
         [new Point64(x1, y1), new Point64(x2, y1), new Point64(x2, y2), new Point64(x1, y2)];
 
     /// <summary>One pad of each row of R-rail26-2's table, on one board.</summary>
-    private static IReadOnlyList<PdnPad> Pads() =>
+    private static IReadOnlyList<PlacedPin> Pads() =>
     [
         // Two caps, rail → reference. THE ONLY TWO THAT MAY BE OFFERED.
-        new PdnPad("C1", "1", "VDD", Mm(2),  Mm(1), PdnPadSource.BoardNetlist),
-        new PdnPad("C1", "2", "GND", Mm(2),  Mm(3), PdnPadSource.BoardNetlist),
-        new PdnPad("C2", "1", "VDD", Mm(4),  Mm(1), PdnPadSource.BoardNetlist),
-        new PdnPad("C2", "2", "GND", Mm(4),  Mm(3), PdnPadSource.BoardNetlist),
+        new PlacedPin("C1", "1", "VDD", Mm(2),  Mm(1), PinSource.BoardNetlist),
+        new PlacedPin("C1", "2", "GND", Mm(2),  Mm(3), PinSource.BoardNetlist),
+        new PlacedPin("C2", "1", "VDD", Mm(4),  Mm(1), PinSource.BoardNetlist),
+        new PlacedPin("C2", "2", "GND", Mm(4),  Mm(3), PinSource.BoardNetlist),
 
         // A resistor spanning the rail twice — a series element, whose terminals are the user's
         // statement about the topology and not something to infer.
-        new PdnPad("R1", "1", "VDD", Mm(6),  Mm(1), PdnPadSource.BoardNetlist),
-        new PdnPad("R1", "2", "VDD", Mm(8),  Mm(1), PdnPadSource.BoardNetlist),
+        new PlacedPin("R1", "1", "VDD", Mm(6),  Mm(1), PinSource.BoardNetlist),
+        new PlacedPin("R1", "2", "VDD", Mm(8),  Mm(1), PinSource.BoardNetlist),
 
         // A cap across the reference alone. NO pad on this rail — not this rail's business.
-        new PdnPad("C3", "1", "GND", Mm(10), Mm(3), PdnPadSource.BoardNetlist),
-        new PdnPad("C3", "2", "GND", Mm(12), Mm(3), PdnPadSource.BoardNetlist),
+        new PlacedPin("C3", "1", "GND", Mm(10), Mm(3), PinSource.BoardNetlist),
+        new PlacedPin("C3", "2", "GND", Mm(12), Mm(3), PinSource.BoardNetlist),
 
         // A three-pad regulator with a pad on the rail. A LOAD, never a capacitor.
-        new PdnPad("U1", "VDD", "VDD", Mm(14), Mm(1), PdnPadSource.BoardNetlist),
-        new PdnPad("U1", "GND", "GND", Mm(14), Mm(3), PdnPadSource.BoardNetlist),
-        new PdnPad("U1", "OUT", "SDA", Mm(16), Mm(3), PdnPadSource.BoardNetlist),
+        new PlacedPin("U1", "VDD", "VDD", Mm(14), Mm(1), PinSource.BoardNetlist),
+        new PlacedPin("U1", "GND", "GND", Mm(14), Mm(3), PinSource.BoardNetlist),
+        new PlacedPin("U1", "OUT", "SDA", Mm(16), Mm(3), PinSource.BoardNetlist),
 
         // THE PULL-UP. Geometrically identical to C1 and C2 — one pad on the rail pour, one over
         // the plane — and it is not decoupling. Only its NET says so.
-        new PdnPad("R2", "1", "VDD", Mm(18), Mm(1), PdnPadSource.BoardNetlist),
-        new PdnPad("R2", "2", "SDA", Mm(18), Mm(3), PdnPadSource.BoardNetlist),
+        new PlacedPin("R2", "1", "VDD", Mm(18), Mm(1), PinSource.BoardNetlist),
+        new PlacedPin("R2", "2", "SDA", Mm(18), Mm(3), PinSource.BoardNetlist),
     ];
 
-    private static PdnRailRegionSet Regions() =>
-        PdnRailRegions.Walk(
+    private static PdnRailRegionSet Walked() =>
+        Regions.Walk(
             new Dictionary<LayerKey, Paths64>
             {
                 [Top] = [Box(0, 0, Mm(20), Mm(2))],                       // the rail pour
@@ -142,7 +142,7 @@ public sealed class RailPartDiscoveryTests(ITestOutputHelper output) : IDisposab
     {
         Rail         = rail ?? Rail(),
         Pads         = Pads(),
-        Regions      = Regions(),
+        Regions      = Walked(),
         Bom          = bom,
         ReferenceNet = "GND",
     };
@@ -162,7 +162,7 @@ public sealed class RailPartDiscoveryTests(ITestOutputHelper output) : IDisposab
     /// <para><b>R2 is the case containment alone cannot see</b> — a pull-up, one pad on the rail
     /// pour and one over the same ground plane every other pad on the board sits over. The region
     /// set carries only the reference LAYER's copper, so the exact galvanic-ambiguity test
-    /// <c>PdnRailRegions.ReferenceNetOn</c> uses is not available from it; the pad's own NET is what
+    /// <c>Regions.ReferenceNetOn</c> uses is not available from it; the pad's own NET is what
     /// vetoes it. On a board that names no nets the veto cannot fire and this part would be
     /// offered — stated in <c>RailPartDiscovery</c>'s header rather than discovered later.</para>
     /// </remarks>

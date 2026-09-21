@@ -11,7 +11,7 @@
 //
 //  ── WHAT IS ASSERTED, AND WHAT IS NOT ─────────────────────────────────────────────────────────
 //
-//  The preview's GEOMETRY is compared against PdnRailRegions.Walk's own answer for the same net,
+//  The preview's GEOMETRY is compared against Regions.Walk's own answer for the same net,
 //  because the requirement is that it is the same walk and not a second one — a picture that could
 //  disagree with the solve about what the rail IS is the one thing a preview must never be. The
 //  ROLE is compared as colours, in both variants, because "distinct from a committed rail's
@@ -39,7 +39,7 @@ public sealed class PickNetHighlightTests
     /// </summary>
     /// <remarks>
     /// <b>Nothing was published at HEAD</b> — there was no property to read. The comparison is
-    /// against <c>PdnRailRegions.Walk</c> run directly with the same arguments: same islands, same
+    /// against <c>Regions.Walk</c> run directly with the same arguments: same islands, same
     /// extent, same total path count. Anything that merely LOOKED right would pass a preview built
     /// from a second, simpler notion of connectivity, which is exactly what R-rail19-2a forbids.
     /// </remarks>
@@ -62,8 +62,8 @@ public sealed class PickNetHighlightTests
         Assert.Same(preview, vm.BoardOverlayLayer.NetPreview);
 
         var board = vm.Board!;
-        var walked = PdnRailRegions.Walk(
-            PdnMeshExtractor.BuildLayerRegions(board.Shapes, board.Technology),
+        var walked = Regions.Walk(
+            LayerRegions.Build(board.Shapes, board.Technology),
             board.Technology, board.NetPoints, "+3V3",
             vm.Document.Rails[0].ReferenceLayer!.Value, board.ReferenceNet, []);
 

@@ -155,7 +155,7 @@ public sealed class RailRemovalTests
         Assert.Equal("GND", Example().ReferenceReturnNet);
 
         var tech = SplitNameBoard();
-        var regions = PdnMeshExtractor.BuildLayerRegions(SplitNameShapes(), tech);
+        var regions = LayerRegions.Build(SplitNameShapes(), tech);
 
         // The rail's pad sits over the plane and the return's pad is stitched to it.
         List<PdnNetPoint> points =
@@ -164,7 +164,7 @@ public sealed class RailRemovalTests
             new("RTN",  Mm(15.5), Mm(3.5)),
         ];
 
-        Assert.Equal("RTN", PdnRailRegions.ReferenceNetOn(regions, tech, points, Inner2));
+        Assert.Equal("RTN", Regions.ReferenceNetOn(regions, tech, points, Inner2));
 
         // The half that says this is not a coincidence: neither name is suggestive, and the plane
         // layer's own name is not what was read.

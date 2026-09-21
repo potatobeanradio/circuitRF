@@ -8,7 +8,7 @@
 //
 // ── IT RE-DERIVES NOTHING (R-ab3-1a) ───────────────────────────────────────────────────────────
 //
-// It takes briefs 1 and 2's projection — PdnLayoutPads' pads, already carrying their refdes, their
+// It takes briefs 1 and 2's projection — PlacedPins' pads, already carrying their refdes, their
 // pin and their net — plus the root's own vias, and serialises them. A second projection is the
 // drift this whole series exists to prevent: the netlist a user exports and the pads railRF analyses
 // would then be two readings of one board that nothing compares.
@@ -62,13 +62,13 @@ public static class BoardNetlistWriter
     /// names no feature this format can express and is skipped.</param>
     /// <param name="vias">The ROOT's own vias — <c>LayoutView.Shapes</c>, not the flatten's. A via
     /// inside a land pattern is that pattern's internal business, which is
-    /// <c>PdnLayoutPads.NetPointsOf</c>' rule and is right here for its reason.</param>
+    /// <c>PlacedPins.NetPointsOf</c>' rule and is right here for its reason.</param>
     /// <param name="netOfVia">The net at a via, where the pad projection's own partition knows one —
-    /// <c>PdnCopperPieces.NameAt</c>, passed in rather than rebuilt (R-ab3-1a). Null asks nothing
+    /// <c>CopperPieces.NameAt</c>, passed in rather than rebuilt (R-ab3-1a). Null asks nothing
     /// and takes the via's own stamp alone.</param>
     /// <param name="tech">The stackup, which is the only thing that can say what a via SPANS.</param>
     public static string Write(
-        IReadOnlyList<PdnPad> pads,
+        IReadOnlyList<PlacedPin> pads,
         IReadOnlyList<ViaShape> vias,
         int dbuPerMicron,
         Technology? tech = null,

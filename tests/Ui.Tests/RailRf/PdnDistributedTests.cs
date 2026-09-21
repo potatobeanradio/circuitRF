@@ -154,13 +154,13 @@ public sealed class PdnDistributedTests
             OpenCircuitVoltageV = 3.7,
         });
 
-        var pads = new List<PdnPad> { new("BT1", "1", "VDD", source.X, source.Y, PdnPadSource.BoardNetlist) };
+        var pads = new List<PlacedPin> { new("BT1", "1", "VDD", source.X, source.Y, PinSource.BoardNetlist) };
 
         for (int k = 0; k < loads.Count; k++)
         {
             string refdes = $"U{k + 1}";
             rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = refdes, Pin = "VDD" } });
-            pads.Add(new PdnPad(refdes, "VDD", "VDD", loads[k].X, loads[k].Y, PdnPadSource.BoardNetlist));
+            pads.Add(new PlacedPin(refdes, "VDD", "VDD", loads[k].X, loads[k].Y, PinSource.BoardNetlist));
         }
 
         return new PdnExtractionRequest
@@ -398,7 +398,7 @@ public sealed class PdnDistributedTests
     ///
     /// <para>What would make it genuinely converge is a port that ties every cell its pads COVER
     /// rather than the one cell each pad's centre lands in — §4.3's "its own pin-field cells" read
-    /// as an area. <c>PdnPad</c> carries no pad size, so that is a change to brief 2's readers and
+    /// as an area. <c>PlacedPin</c> carries no pad size, so that is a change to brief 2's readers and
     /// not to this brief. Recorded in <c>src/Design/RESOLVED.md</c> rather than tuned away, because
     /// a fixture adjusted until the number looked converged would have hidden it.</para>
     /// </summary>
@@ -534,8 +534,8 @@ public sealed class PdnDistributedTests
                 SearchRadiusMetres = 1e-6,          // the via must be ON the pad
                 Pads =
                 [
-                    new PdnPad("C1", "1", "VDD", Mm(5), Mm(5), PdnPadSource.BoardNetlist),
-                    new PdnPad("C1", "2", "GND", Mm(5) + d, Mm(5), PdnPadSource.BoardNetlist),
+                    new PlacedPin("C1", "1", "VDD", Mm(5), Mm(5), PinSource.BoardNetlist),
+                    new PlacedPin("C1", "2", "GND", Mm(5) + d, Mm(5), PinSource.BoardNetlist),
                 ],
             };
 
@@ -732,9 +732,9 @@ public sealed class PdnDistributedTests
         });
         rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = "U1", Pin = "VDD" } });
 
-        var pads = new List<PdnPad>();
-        foreach (var (x, y) in source) pads.Add(new PdnPad("BT1", "1", "VDD", x, y, PdnPadSource.BoardNetlist));
-        foreach (var (x, y) in pins) pads.Add(new PdnPad("U1", "VDD", "VDD", x, y, PdnPadSource.BoardNetlist));
+        var pads = new List<PlacedPin>();
+        foreach (var (x, y) in source) pads.Add(new PlacedPin("BT1", "1", "VDD", x, y, PinSource.BoardNetlist));
+        foreach (var (x, y) in pins) pads.Add(new PlacedPin("U1", "VDD", "VDD", x, y, PinSource.BoardNetlist));
 
         return new PdnExtractionRequest
         {

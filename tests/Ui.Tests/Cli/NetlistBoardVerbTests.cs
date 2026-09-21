@@ -170,7 +170,7 @@ public sealed class NetlistBoardVerbTests(ITestOutputHelper output) : IDisposabl
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A board whose one placement is a 1,000 × 1,000 array — past the flatten's own
-    /// ceiling, which is the predicate <c>PdnLayoutPads</c> already refuses on.</summary>
+    /// ceiling, which is the predicate <c>PlacedPins</c> already refuses on.</summary>
     private string OverTheCeilingBoard()
     {
         const int dbu = LayoutUnits.DefaultDbuPerMicron;

@@ -13,6 +13,7 @@ global using CircuitRF.Design.Cells;
 global using CircuitRF.Design.Layout;
 global using CircuitRF.Design.Layout.Assembly;
 global using CircuitRF.Design.Layout.Drc;
+global using CircuitRF.Design.Layout.Extraction;
 global using CircuitRF.Design.Layout.Em;
 global using CircuitRF.Design.Layout.PCells;
 global using CircuitRF.Design.Results;

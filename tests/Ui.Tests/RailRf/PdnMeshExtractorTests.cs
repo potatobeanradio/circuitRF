@@ -125,8 +125,8 @@ public sealed class PdnMeshExtractorTests
             DbuPerMicron = DbuPerMicron,
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", source.X, source.Y, PdnPadSource.BoardNetlist),
-                new PdnPad("U1", "VDD", "VDD", load.X, load.Y, PdnPadSource.BoardNetlist),
+                new PlacedPin("BT1", "1", "VDD", source.X, source.Y, PinSource.BoardNetlist),
+                new PlacedPin("U1", "VDD", "VDD", load.X, load.Y, PinSource.BoardNetlist),
             ],
             Mesh = new PdnMeshSettings
             {
@@ -502,7 +502,7 @@ public sealed class PdnMeshExtractorTests
         // The copper the flattener produced, and the copper the mesh cells account for, agree — so
         // the split, the cutout and every antipad removed cells rather than being averaged away, and
         // nothing outside the copper was filled in.
-        var flat = PdnMeshExtractor.BuildLayerRegions(shapes, tech);
+        var flat = LayerRegions.Build(shapes, tech);
         double dbuPerMetre = DbuPerMicron * 1e6;
         double copper = (Math.Abs(Clipper.Area(flat[Top])) + Math.Abs(Clipper.Area(flat[Bot])))
                       / (dbuPerMetre * dbuPerMetre);
@@ -514,9 +514,9 @@ public sealed class PdnMeshExtractorTests
         var holes = HolesOf(pour);
         Assert.DoesNotContain(
             result.Netlist.NodeCells.Values.Where(c => !c.IsReference),
-            c => PdnRailRegions.Contains(holes, c.CentreX, c.CentreY)
-              && PdnRailRegions.Contains(holes, c.CentreX - Mm(0.2), c.CentreY - Mm(0.2))
-              && PdnRailRegions.Contains(holes, c.CentreX + Mm(0.2), c.CentreY + Mm(0.2)));
+            c => Regions.Contains(holes, c.CentreX, c.CentreY)
+              && Regions.Contains(holes, c.CentreX - Mm(0.2), c.CentreY - Mm(0.2))
+              && Regions.Contains(holes, c.CentreX + Mm(0.2), c.CentreY + Mm(0.2)));
     }
 
     private static Paths64 HolesOf(PolygonShape p)
@@ -613,10 +613,10 @@ public sealed class PdnMeshExtractorTests
             DbuPerMicron = DbuPerMicron,
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", Mm(0.5), Mm(2), PdnPadSource.BoardNetlist),
+                new PlacedPin("BT1", "1", "VDD", Mm(0.5), Mm(2), PinSource.BoardNetlist),
                 // Both parts sit within one cell of the shared return.
-                new PdnPad("U1", "VDD", "VDD", Mm(5.1), Mm(2), PdnPadSource.BoardNetlist),
-                new PdnPad("U2", "VDD", "VDD", Mm(5.4), Mm(2), PdnPadSource.BoardNetlist),
+                new PlacedPin("U1", "VDD", "VDD", Mm(5.1), Mm(2), PinSource.BoardNetlist),
+                new PlacedPin("U2", "VDD", "VDD", Mm(5.4), Mm(2), PinSource.BoardNetlist),
             ],
             Mesh = new PdnMeshSettings { CellSizeMetres = 1e-3, PortRefinementRatio = 1 },
         };
@@ -697,8 +697,8 @@ public sealed class PdnMeshExtractorTests
                 Technology = request.Technology,
                 DbuPerMicron = request.DbuPerMicron,
                 Pads = [.. request.Pads,
-                        new PdnPad("Q1", "D", "VDD", Mm(9.9), w / 2, PdnPadSource.BoardNetlist),
-                        new PdnPad("Q1", "S", "VDD", Mm(11.1), w / 2, PdnPadSource.BoardNetlist)],
+                        new PlacedPin("Q1", "D", "VDD", Mm(9.9), w / 2, PinSource.BoardNetlist),
+                        new PlacedPin("Q1", "S", "VDD", Mm(11.1), w / 2, PinSource.BoardNetlist)],
                 SeriesElements =
                 [
                     new PdnSeriesElement(
@@ -914,7 +914,7 @@ public sealed class PdnMeshExtractorTests
             Shapes = request.Shapes,
             Technology = request.Technology,
             DbuPerMicron = request.DbuPerMicron,
-            Pads = [.. request.Pads, new PdnPad("C1", "1", "VDD", Mm(4), Mm(0.25), PdnPadSource.BoardNetlist)],
+            Pads = [.. request.Pads, new PlacedPin("C1", "1", "VDD", Mm(4), Mm(0.25), PinSource.BoardNetlist)],
             ShuntParts =
             [
                 new PdnShuntPart("C1", new RailPortAnchor { Refdes = "C1", Pin = "1" }, 1e-6),

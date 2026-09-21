@@ -18,7 +18,7 @@
 // ── IT CARRIES GEOMETRY, NOT A NET NAME ────────────────────────────────────────────────────────
 //
 // Nothing below the firewall may walk a board's connectivity. Which copper is on `+3V3` is a
-// question for PdnRailRegions, joined to the board netlist; the caller walks, this says where to
+// question for Regions, joined to the board netlist; the caller walks, this says where to
 // draw. Same rule, same reason, as RailPartHighlight's.
 
 using CircuitRF.Design.Layout;

@@ -167,7 +167,7 @@ public sealed class RailCliVerbTests(ITestOutputHelper output) : IDisposable
         {
             // the extraction and the solve
             "PdnGraphExtractor", "PdnMeshExtractor", "PdnAssembly", "LinearDcEngine", "DcResultPacker",
-            "PdnRailRegions", "PdnCopperClassifier",
+            "Regions.Walk", "PdnCopperClassifier",
             // the breakdown and the via check
             "PdnBreakdown", "PdnViaCheck", "PdnViaCurrentLimit",
             // a second renderer, or a canvas of its own

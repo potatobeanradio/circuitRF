@@ -56,10 +56,10 @@ public sealed partial class LayoutEditorViewModel
     /// FLATTENED artwork instead, because a pad has to land on something; the two differ in what
     /// they are asked, not in how they answer.</para>
     /// </remarks>
-    private PdnCopperPieces CopperPieces() =>
+    private CopperPieces PartitionedCopper() =>
         // The model's own display unit: the one refusal this can raise names two places on the
         // board, and a coordinate in DBU is one nobody can find on the canvas it came off.
-        PdnCopperPieces.Build(Model.Shapes, Technology, null,
+        CopperPieces.Build(Model.Shapes, Technology, null,
                               Design.RailRf.RailLengthFormat.For(Model));
 
     /// <summary>
@@ -128,7 +128,7 @@ public sealed partial class LayoutEditorViewModel
     {
         System.ArgumentNullException.ThrowIfNull(seeds);
 
-        var pieces = CopperPieces();
+        var pieces = PartitionedCopper();
         var reached = pieces.Any ? pieces.ShapesJoinedTo(seeds) : [.. seeds.Distinct().OrderBy(i => i)];
         var existing = pieces.Any
             ? pieces.NamesOn(seeds)

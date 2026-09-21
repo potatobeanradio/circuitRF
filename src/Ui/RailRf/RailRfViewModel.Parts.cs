@@ -620,5 +620,5 @@ public sealed partial class RailRfViewModel
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     private void RebuildBoardFootprints() =>
-        _boardFootprints = PdnLayoutPads.FootprintsOf(Board?.View);
+        _boardFootprints = PlacedPins.FootprintsOf(Board?.View);
 }

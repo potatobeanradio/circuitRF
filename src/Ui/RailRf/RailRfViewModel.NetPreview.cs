@@ -3,10 +3,10 @@
 //
 // ── THERE IS NO SECOND CONNECTIVITY WALK HERE ──────────────────────────────────────────────────
 //
-// R-rail19-4's scope rule, and PdnRailRegions' own header says it first: DrcConnectivity partitions
-// the copper, PdnRailRegions joins that to a net name, and the extraction the numbers come from
-// calls the same function. Everything in this file goes through PdnRailRegions.Walk and
-// PdnRailRegions.ReferenceNetOn. A preview drawn from a walk of its own would be a picture that
+// R-rail19-4's scope rule, and Regions' own header says it first: DrcConnectivity partitions
+// the copper, Regions joins that to a net name, and the extraction the numbers come from
+// calls the same function. Everything in this file goes through Regions.Walk and
+// Regions.ReferenceNetOn. A preview drawn from a walk of its own would be a picture that
 // could disagree with the solve about what the rail IS, which is the one thing a preview must never
 // do.
 //
@@ -28,7 +28,7 @@
 // the window stop responding. It was exact, and the path is short — ConfirmReference ->
 // RefreshNetMarks -> the ReferenceReturnNet getter, which did the whole of the following inline:
 //
-//   PdnMeshExtractor.BuildLayerRegions   a Clipper union of every shape on every copper layer
+//   LayerRegions.Build   a Clipper union of every shape on every copper layer
 //   DrcConnectivity.Extract              (inside ReferenceNetOn) the galvanic partition of ALL of it
 //
 // On the shipped example that is a handful of milliseconds and nobody ever saw it; on a production
@@ -224,13 +224,13 @@ public sealed partial class RailRfViewModel
 
         CopperRead = ReadCopperOffThread(() =>
         {
-            regions ??= PdnMeshExtractor.BuildLayerRegions(shapes, tech);
+            regions ??= LayerRegions.Build(shapes, tech);
 
             string? measured = null;
             RailNetPreview? preview = null;
 
             if (job.MeasureReference is { } layer)
-                measured = PdnRailRegions.ReferenceNetOn(regions, tech, netPoints, layer);
+                measured = Regions.ReferenceNetOn(regions, tech, netPoints, layer);
 
             if (job.PreviewNet is { } net)
             {
@@ -239,7 +239,7 @@ public sealed partial class RailRfViewModel
                 // note). Before the reference is confirmed there is no layer to exclude, and a
                 // LayerKey this board does not have is how you say "exclude nothing" to a parameter
                 // that is not nullable.
-                var walked = PdnRailRegions.Walk(
+                var walked = Regions.Walk(
                     regions, tech, netPoints, net,
                     railReference ?? AbsentLayer(regions), referenceNet, extraRailSeeds: []);
 

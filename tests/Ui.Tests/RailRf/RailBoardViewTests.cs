@@ -1459,8 +1459,8 @@ public sealed class RailBoardViewTests(ITestOutputHelper output)
             ],
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2), PdnPadSource.BoardNetlist),
-                new PdnPad("U1", "VDD", "VDD", Mm(29.8), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PlacedPin("BT1", "1", "VDD", Mm(0.2), Mm(0.2), PinSource.BoardNetlist),
+                new PlacedPin("U1", "VDD", "VDD", Mm(29.8), Mm(0.2), PinSource.BoardNetlist),
             ],
         });
 
