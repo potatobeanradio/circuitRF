@@ -222,8 +222,13 @@ public static class LvsCompare
     /// R-lvs8-1b's ordering, brought forward so the answer is already deterministic: severity,
     /// then id, then the rendered sentence. Two runs over unchanged documents produce identical
     /// lists and a test can assert on order.
+    ///
+    /// <para><b>Internal because brief 10's property pass re-orders the merged list.</b> Its
+    /// findings arrive after this method has already run — they are about values, and values may
+    /// not be compared until the correspondence exists — so the one place that knows this order has
+    /// to be reachable from there rather than copied.</para>
     /// </summary>
-    private static List<Diagnostic> Ordered(IEnumerable<Diagnostic> findings) =>
+    internal static List<Diagnostic> Ordered(IEnumerable<Diagnostic> findings) =>
         [.. findings
             .OrderByDescending(f => f.Severity)
             .ThenBy(f => f.Id, StringComparer.Ordinal)

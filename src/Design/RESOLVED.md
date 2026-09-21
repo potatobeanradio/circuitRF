@@ -10795,3 +10795,120 @@ layer" true rather than aspirational. The components of the INTERSECTION are wha
 not — a module whose pad overlaps a trace and whose ground ring also grazes it meets the parent
 twice on one piece of metal, and asking whether the PIECE holds a pin would answer yes and report
 nothing.
+
+## LVS brief 10 — property tolerances, measured rather than chosen (2026-09-21)
+
+`brief-lvs-10-properties.md`. Matched devices are now compared on their VALUES as well as their
+topology, within a tolerance per `UnitDimension` that was measured off a real design — *"I don't
+have default property tolerances, you'll have to create a design to test it. We can tweak it
+later"* (owner, 2026-09-21). The pass is `LvsProperties`, called from `LvsRun` after
+`LvsCompare.Compare` and over the pairs it produced; its divergences join the comparison's own
+ordered list because they are the same kind of thing and a second list would be a second answer to
+"what did the comparison find".
+
+### The numbers, and both bounds — R-lvs10-6c
+
+**They are provisional** (R-lvs10-6d). They live in `LvsPropertyTolerances.Derivations`, one table,
+overridable per technology in the `.ctech` beside `DrcRules`, and **every finding prints the
+tolerance it applied** so a wrong default is visible on the line it produced rather than latent in a
+table nobody opens.
+
+Measured off `examples/LVS/Bias tee/`, the only fixture with parameters on the layout side. Every
+part there is drawn on a 0.25 µm grid, so the value its geometry resolves to is not exactly the one
+the schematic asked for; that gap is the **lower bound**, because a tolerance tighter than it
+rejects correct artwork. The **upper bound** is one step of the E96 series, 2.4276 % — the smallest
+wrong part anybody could have fitted, so a tolerance at or above it accepts the neighbour.
+
+| dimension | observed spread (lower) | chosen | smallest fault (upper) | what was measured |
+|---|---|---|---|---|
+| Resistance  | 0.2016 %  | **1 %** | 2.4276 % | `TFR-62R`: 62 Ω asked, 61.875 Ω drawn |
+| Capacitance | 0.1950 %  | **1 %** | 2.4276 % | `MIM-0P8P`: 0.8 pF asked, 0.798440 pF drawn (`MIM-4P0P` is 0.0346 %) |
+| Inductance  | 0.01251 % | **1 %** | 2.4276 % | `SPIRAL-1N2`: 1.2 nH asked, 1.199850 nH drawn |
+| Length      | — | **1 DBU, absolute** | — | R-lvs10-3e, not a measurement: a sub-DBU difference cannot exist |
+| everything else | — | **exact** | — | no representative in the fixture (R-lvs10-6e) |
+
+The recorded spreads are the measurements rounded UP to three figures, so the bound cannot be
+failed by a rounding digit while still failing on a real widening.
+`PropertyTests.EveryShippedToleranceSitsBetweenTheTwoBoundsItWasDerivedFrom` **recomputes the
+spread off the fixture on every run** and asserts each default sits between its two bounds. A later
+PCell change that widens a spread past its tolerance fails there, loudly, instead of silently
+making LVS pass a real error.
+
+A dimension with no representative is compared **exactly** and the run says so once
+(`lvs.property.tolerance-unestablished`, info) — no number was invented, and the line is what makes
+the gap visible enough to close. It is emitted only for a dimension something actually compared.
+
+### R-lvs10-2a and brief 5's named land patterns are the same rule, read twice
+
+R-lvs10-2a names two sources for a layout-side value — a PCell's `PCellOrigin.Parameters` and brief
+14's recognition — and rules out a land pattern, because one land pattern is shared by every 0402 on
+the board and a value stored on it would be wrong for all but one. Brief 5 then built the board
+fixture the other way round on purpose: its parts are `R0402-294R` and `R0402-150R`, **one cell per
+value**, because *"a land pattern is the only place a board layout can state a value and F6 needs
+one to state"*. Read literally the two are in conflict and gate 2 (F6 produces
+`lvs.property.mismatch`) is unreachable.
+
+What R-lvs10-2a forbids is a value that is not true of every placement of the cell carrying it. A
+cell whose whole identity is "a 294 Ω 0402" states something true of all of them, and **a
+`LayoutInstance` carries no parameter overrides at all**, so a cell's claim is necessarily true of
+every placement of it. So the layout's claim is the CELL's own — its `PCellOrigin.Parameters` where
+a generator drew it, and its `.ccell` declared parameter DEFAULTS where the cell declares any — and
+a generic `R0402` declaring no default claims nothing and gets R-lvs10-2b's one info line per device
+type, which is the case R-lvs10-2a was protecting.
+
+The declared default is an expression with a unit beside it and is resolved through the one
+expression engine with the unit applied, never by parsing a number out of it. A default that does
+not evaluate (it names a variable this cell has no scope for) claims nothing, which is the same
+answer as declaring none.
+
+### Values may not be judged on an ARBITRARY pairing, and the brief does not say so
+
+R-lvs10-1a's rule is "after topology, never before", and there is a pairing that exists after the
+topology and is still not evidence: `LvsPairedBy.Symmetry`. R-lvs7-4c already states what it is — a
+tie-break between interchangeable candidates, where *"a finding naming this object may mean any
+other in its group"*.
+
+`ComparisonTests.WithNoNameAtAllTheBoardStillMatchesOnItsStructure` is what found it. Strip every
+designator and every `SchematicId` from the correct board and the series resistor and the capacitor
+across it become interchangeable — both two-terminal, both between the same pair of nets, and a land
+pattern says nothing about whether the part on it resists or stores. The tie-break pairs R2 with
+C1's land pattern, and the property pass then reported two confident warnings saying the artwork's
+generator carries no `R` and the other carries no `C`. Both were true of the pairing and neither was
+true of the board.
+
+The pass now skips a `Symmetry` pairing. That is not a silent omission: the run already reports
+`lvs.match.by-symmetry` with a count. It is also the case where judging values would be worst —
+those are exactly the designs where the values could have told the two apart, and R-lvs7-3a
+deliberately keeps them out of the matching.
+
+### `lvs.property.missing` is directional, and it has to be
+
+R-lvs10-2d's example is *"the schematic asks for a `W` the layout's PCell does not carry"*. The
+reverse is every PCell there is: `SPIRAL-1N2` carries `Width`, `Space`, `Inner` and `Turns`, and the
+schematic's inductor mentions none of them. So the finding fires only where the SCHEMATIC carries a
+value the layout does not **while the layout states others** — a generator with a parameter list
+that lacks this one. A layout that states nothing at all is R-lvs10-2b's silent land pattern
+instead, at info and once per device type.
+
+### Two dictionaries, not a richer value
+
+`LvsDevice.ParameterFacts` is a second dictionary beside `Parameters` because the VALUES are what
+brief 6 merges, sums and drops while a dimension and a `Computed` flag are declarations that survive
+that arithmetic unchanged. Its keys are a subset of `Parameters`', deliberately: there is no
+"declared but unvalued" entry, because a parameter with no value is one the side claims nothing
+about and R-lvs10-2b already answers that. `LvsReduce.MergedFacts` narrows the merged device's facts
+to the values that survived for the same reason — a group that kept a declaration for a value the
+merge dropped would look like a generator missing a parameter rather than like a group that claims
+nothing, which is what `MergedParameters`' own header says it is.
+
+The dimension is taken from the SCHEMATIC where it states one, because that is the side that always
+has one: a drawing's parameter carries `EditableParameter.Dimension` from the component that
+declared it, while a PCell's snapshot is resolved numbers and says nothing about what they mean. On
+the MMIC cell every compared dimension comes from the drawing.
+
+### The absolute bound is strict where the relative one is not
+
+`LvsTolerance.Accepts` passes a difference at or below `Relative` and strictly below `Absolute`. A
+relative tolerance is a slack a correct design is allowed to use; an absolute one here is a
+RESOLUTION, and a difference of exactly one DBU is a real difference — which is gate 9's own
+assertion, and the reason the two bounds cannot share a comparison operator.

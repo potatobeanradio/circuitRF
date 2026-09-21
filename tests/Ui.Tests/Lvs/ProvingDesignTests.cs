@@ -356,9 +356,10 @@ public sealed class ProvingDesignTests
     //
     // R-lvs5-2a/c. By DIAGNOSTIC ID and by the objects the finding names, never by its sentence.
     //
-    // F6 is deliberately silent HERE and is brief 10's: re-pointing R3 at a 150 Ω land pattern
-    // changes a value and not a topology, which is R-lvs7-3a's own reason for keeping parameter
-    // values out of the matching. That is why the committed six-fault board reports FIVE.
+    // F6 is the one that is not a topology fault: re-pointing R3 at a 150 Ω land pattern changes a
+    // VALUE, which is R-lvs7-3a's own reason for keeping parameter values out of the matching. It
+    // went unreported until brief 10 and is `lvs.property.mismatch` now, which is why the committed
+    // six-fault board reports six.
 
     [PythonTheory]
     [InlineData("F1", "lvs.terminal.wrong-net")]
@@ -366,7 +367,7 @@ public sealed class ProvingDesignTests
     [InlineData("F3", "lvs.device.unmatched-layout")]
     [InlineData("F4", "lvs.net.short")]
     [InlineData("F5", "lvs.net.open")]
-    [InlineData("F6", null)]
+    [InlineData("F6", "lvs.property.mismatch")]
     public void EachFaultProducesExactlyItsOwnFinding(string fault, string? expected)
     {
         var findings = CompareFaultedBoard(fault).Comparison.Findings
@@ -377,7 +378,7 @@ public sealed class ProvingDesignTests
     }
 
     [Fact]
-    public void AllSixFaultsTogetherAreFiveFindingsAndTheSameFiveEveryRun()
+    public void AllSixFaultsTogetherAreSixFindingsAndTheSameSixEveryRun()
     {
         string Report(LvsRunResult r) => string.Join("\n", r.Comparison.Findings
             .Where(f => f.Severity > DiagnosticSeverity.Info)
@@ -389,14 +390,15 @@ public sealed class ProvingDesignTests
 
         Assert.Equal(
             ["lvs.device.unmatched-layout", "lvs.device.unmatched-schematic",
-             "lvs.net.open", "lvs.net.short", "lvs.terminal.wrong-net"],
+             "lvs.net.open", "lvs.net.short", "lvs.property.mismatch", "lvs.terminal.wrong-net"],
             ids);
 
         // The objects, not the sentences: F1 is R2's second terminal, F2 is C1, F3 is the R4 that
-        // is on the board and not on the drawing.
+        // is on the board and not on the drawing, F6 is R3 pointing at the wrong part.
         Assert.Equal("R2", Single(first, "lvs.terminal.wrong-net").Arguments["path"]);
         Assert.Equal("C1", Single(first, "lvs.device.unmatched-schematic").Arguments["path"]);
         Assert.Equal("R4", Single(first, "lvs.device.unmatched-layout").Arguments["path"]);
+        Assert.Equal("R3", Single(first, "lvs.property.mismatch").Arguments["schematicPath"]);
 
         // R-lvs5-1c's other half, and R-lvs7-6a: ten runs, one answer, in one order.
         for (int run = 0; run < 10; run++)

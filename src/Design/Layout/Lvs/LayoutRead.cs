@@ -32,6 +32,7 @@
 
 using System.IO;
 using System.Linq;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.Layout.Footprints;
@@ -251,7 +252,7 @@ public static class LayoutRead
                     new DirectoryInfo(positional).Name, map.Terminals.Count));
 
             var type = DeviceTypes.OfLayout(inst, resolvedDir, subView);
-            var parameters = ParametersOf(subView);
+            var (parameters, parameterFacts) = ParametersOf(subView, resolvedDir);
 
             // R-lvs3-4a. An MxN array is MxN devices, each with the array element's own transformed
             // pins — and all of them carry the SAME designator (R-lvs3-4b), which is correct and is
@@ -291,6 +292,8 @@ public static class LayoutRead
                     path, inst.DisplayRefDes ?? "", type, terminals, parameters,
                     new LvsProvenance(document, path, x, y))
                 {
+                    ParameterFacts = parameterFacts,
+
                     // Brief 7's tier-0 anchor, carried and never obeyed here (R-lvs7-2b): every
                     // element of an array states the SAME one, which is exactly why it is a claim
                     // the comparison has to check for uniqueness rather than an identity.
@@ -476,26 +479,99 @@ public static class LayoutRead
         return conductor.Count > 0 && subView.Shapes.Any(s => conductor.Contains(s.Layer));
     }
 
-    /// <summary>What the artwork already states about this device's values. Brief 10 compares
-    /// them; this only carries what a generated cell recorded when it drew itself.</summary>
-    private static IReadOnlyDictionary<string, object?> ParametersOf(LayoutView? subView)
+    /// <summary>
+    /// <b>What the artwork itself states about this device's values</b>, and what each of those
+    /// values is — brief 10 compares them (R-lvs10-2a), this only carries what the CELL already
+    /// says.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two sources, and both of them are the cell's own.</b> A generated cell records the
+    /// resolved SI parameters it drew from (<c>PCellOrigin.Parameters</c>) and which of them it
+    /// DERIVED from its own geometry rather than read; a cell folder may additionally DECLARE
+    /// parameters in its <c>.ccell</c>, whose defaults are the value that cell is for —
+    /// <c>R0402-294R</c> is a 294 Ω 0402 and every placement of it is one.
+    ///
+    /// <para><b>What is deliberately NOT a source is the PLACEMENT.</b> A layout instance carries no
+    /// parameter overrides, so a cell's claim is true of every placement of it — which is exactly the
+    /// property R-lvs10-2a requires and the reason a cell that declares no default claims nothing
+    /// rather than claiming zero.</para>
+    ///
+    /// <para>The declared default is an EXPRESSION with a unit beside it, and it is resolved through
+    /// the one expression engine with the unit applied — never by parsing the number out of it.
+    /// A default that does not evaluate (it names a variable this cell has no scope for) claims
+    /// nothing, which is the same answer as declaring none.</para>
+    /// </remarks>
+    private static (IReadOnlyDictionary<string, object?> Values,
+                    IReadOnlyDictionary<string, LvsParameterFact> Facts)
+        ParametersOf(LayoutView? subView, string? cellDir)
     {
-        if (subView?.PCellOrigin is not { } origin || origin.Parameters.Count == 0)
-            return EmptyParameters;
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var facts  = new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
 
-        var values = new Dictionary<string, object?>(origin.Parameters.Count, StringComparer.Ordinal);
-        foreach (var (name, value) in origin.Parameters) values[name] = value.Kind switch
+        foreach (var declared in (cellDir is { Length: > 0 } dir ? ReadCcell(dir) : null)?.Parameters ?? [])
         {
-            PCellValueKind.String => value.AsText(),
-            PCellValueKind.Bool   => value.AsBool(),
-            PCellValueKind.Int    => value.AsInt(),
-            _                     => value.AsReal(),
-        };
-        return values;
+            if (declared.Name is not { Length: > 0 } name) continue;
+            if (Declared(declared) is not { } value) continue;
+            values[name] = value;
+            facts[name] = new LvsParameterFact(declared.Dimension);
+        }
+
+        // The generator's own snapshot WINS where both say something: a `.ccell` default is what
+        // the cell is for and the snapshot is what was actually drawn.
+        if (subView?.PCellOrigin is { } origin)
+            foreach (var (name, value) in origin.Parameters)
+            {
+                values[name] = value.Kind switch
+                {
+                    PCellValueKind.String => value.AsText(),
+                    PCellValueKind.Bool   => value.AsBool(),
+                    PCellValueKind.Int    => value.AsInt(),
+                    _                     => value.AsReal(),
+                };
+                facts[name] = new LvsParameterFact(
+                    facts.TryGetValue(name, out var prior) ? prior.Dimension : UnitDimension.None,
+                    origin.IsComputed(name), origin.IsUnread(name));
+            }
+
+        return values.Count == 0
+            ? (EmptyParameters, EmptyFacts)
+            : (values, facts);
+    }
+
+    /// <summary>
+    /// One declared parameter's default, resolved to SI — or null where it declares no default or
+    /// the default does not evaluate on its own.
+    /// </summary>
+    private static object? Declared(CcellParameter declared)
+    {
+        if (string.IsNullOrWhiteSpace(declared.DefaultExpression)) return null;
+        try
+        {
+            string unit = UnitNormalizer.ToEngineUnit(declared.Unit);
+            var value = new Evaluator().Eval(
+                declared.DefaultExpression, new Scope("ccell"), unit.Length > 0 ? unit : null);
+            return value.Kind switch
+            {
+                ValueKind.Real    => value.AsReal(),
+                ValueKind.Complex => value.AsComplex(),
+                ValueKind.Bool    => value.AsBool(),
+                ValueKind.String  => value.AsString(),
+                _                 => null,
+            };
+        }
+        catch (Exception)
+        {
+            // A default naming something this cell has no scope for is not a finding: it is a cell
+            // that states nothing about this parameter, which R-lvs10-2b already answers.
+            return null;
+        }
     }
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyParameters =
         new Dictionary<string, object?>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, LvsParameterFact> EmptyFacts =
+        new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
 
     private static CcellFile? ReadCcell(string cellDir)
     {

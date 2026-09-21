@@ -353,6 +353,134 @@ public static class LvsDiagnostics
             ("named", named.Length > 0 ? $" stamped '{named}'" : ""), ("pieces", pieces),
             ("where", where), ("net", named));
 
+    // ── Properties (brief-lvs-10-properties.md) ──────────────────────────────
+    //
+    // EVERY ONE OF THESE PRINTS BOTH VALUES AND THE TOLERANCE THAT WAS APPLIED (R-lvs10-3c).
+    // Never the word "mismatch" alone: the defaults are measured off one design and are declared
+    // provisional, so a wrong default has to be VISIBLE on the line it produced rather than latent
+    // in a table nobody opens. "R3: schematic 294 Ω, layout 150 Ω, tolerance 1 %" is actionable and
+    // is also self-auditing.
+
+    /// <summary>
+    /// R-lvs10-3c. Two values that disagree by more than the dimension's tolerance.
+    /// </summary>
+    public static Diagnostic PropertyMismatch(
+        string schematicPath, string layoutPath, string name,
+        string schematic, string layout, string tolerance)
+        => Diagnostic.Create(
+            "lvs.property.mismatch", DiagnosticSeverity.Error,
+            "{schematicPath} {name}: schematic {schematic}, layout {layout}, tolerance {tolerance}.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("name", name),
+            ("schematic", schematic), ("layout", layout), ("tolerance", tolerance));
+
+    /// <summary>
+    /// R-lvs10-4b. The layout's generator DERIVED this value from the artwork it drew, so it
+    /// cannot disagree with the artwork — only with what the schematic asked for.
+    /// </summary>
+    /// <remarks>
+    /// <b>A different sentence because it sends the designer somewhere different.</b> "C2 value
+    /// mismatch" leaves them to work out whether the drawing or the artwork is wrong; "the layout's
+    /// geometry gives 1.82 pF; the schematic asks for 2.0 pF" says the geometry is self-consistent
+    /// and one of the two numbers is the one to change.
+    /// </remarks>
+    public static Diagnostic PropertyDerivedDiffers(
+        string schematicPath, string layoutPath, string name,
+        string schematic, string layout, string tolerance)
+        => Diagnostic.Create(
+            "lvs.property.derived-differs", DiagnosticSeverity.Error,
+            "{schematicPath} {name}: the layout's geometry gives {layout}; the schematic asks for "
+            + "{schematic}. Tolerance {tolerance}. The generator derived this from what it drew, so "
+            + "change the artwork's dimensions or change the drawing's request.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("name", name),
+            ("schematic", schematic), ("layout", layout), ("tolerance", tolerance));
+
+    /// <summary>
+    /// R-lvs10-4c. <b>Info, and the artwork is not wrong.</b> The generator never read this
+    /// parameter, so nothing about the geometry depends on it — a model name or a multiplier is
+    /// still the user's to set and a difference there is information rather than a fault.
+    /// </summary>
+    public static Diagnostic PropertyUnreadDiffers(
+        string schematicPath, string layoutPath, string name,
+        string schematic, string layout, string tolerance)
+        => Diagnostic.Create(
+            "lvs.property.unread-differs", DiagnosticSeverity.Info,
+            "{schematicPath} {name}: schematic {schematic}, layout {layout}, tolerance {tolerance}. "
+            + "The generator never read this parameter, so no geometry depends on it.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("name", name),
+            ("schematic", schematic), ("layout", layout), ("tolerance", tolerance));
+
+    /// <summary>
+    /// R-lvs10-2b. <b>Once per device TYPE, at info, and it is not a finding about a device.</b>
+    /// Four hundred 0402s sharing one land pattern must not produce four hundred lines saying the
+    /// obvious — the land pattern is shared by every 0402 on the board, so a value stored on it
+    /// would be wrong for all but one, and claiming nothing is the correct thing for it to do.
+    /// </summary>
+    public static Diagnostic PropertyLayoutSilent(string cellName, int devices, string parameters)
+        => Diagnostic.Create(
+            "lvs.property.layout-silent", DiagnosticSeverity.Info,
+            "'{cellName}' ({devices} device(s)) states no values of its own, so the schematic's "
+            + "{parameters} had nothing to be compared against.",
+            ("cellName", cellName), ("devices", devices), ("parameters", parameters));
+
+    /// <summary>
+    /// R-lvs10-2d. <b>Not the same thing as <see cref="PropertyLayoutSilent"/>.</b> The artwork
+    /// states values — it is a generator with a parameter list — and this one is not on it, which
+    /// means the two sides are not the same generator.
+    /// </summary>
+    public static Diagnostic PropertyMissing(
+        string schematicPath, string layoutPath, string name, string schematic, string stated)
+        => Diagnostic.Create(
+            "lvs.property.missing", DiagnosticSeverity.Warning,
+            "{schematicPath} asks for {name} = {schematic} and the artwork's '{layoutPath}' carries "
+            + "no {name} at all, though it states {stated}. The two are not the same generator.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("name", name),
+            ("schematic", schematic), ("stated", stated));
+
+    /// <summary>
+    /// R-lvs10-5a. <b>A property finding and not a topology one</b>: the merge is what made the
+    /// comparison possible, and judging it is here.
+    /// </summary>
+    public static Diagnostic PropertyMultiplicity(
+        string schematicPath, string layoutPath, string name, int schematic, int layout)
+        => Diagnostic.Create(
+            "lvs.property.multiplicity", DiagnosticSeverity.Error,
+            "{schematicPath} declares {name} = {schematic} and the artwork has {layout} in "
+            + "parallel. Multiplicity is an integer and is compared exactly.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("name", name),
+            ("schematic", schematic), ("layout", layout));
+
+    /// <summary>
+    /// R-lvs10-5b. Several devices in parallel in the artwork against a schematic device that
+    /// declares no multiplicity parameter at all — <b>a real and common under-specification</b>,
+    /// and the designer should know rather than have it silently accepted.
+    /// </summary>
+    public static Diagnostic MultiplicityUnstated(string schematicPath, string layoutPath, int devices, string group)
+        => Diagnostic.Create(
+            "lvs.reduce.multiplicity-unstated", DiagnosticSeverity.Warning,
+            "The artwork has {devices} devices in parallel here ({group}) and '{schematicPath}' "
+            + "declares no multiplicity parameter. They were compared as one; say Nf or M on the "
+            + "schematic if that is what is meant.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath),
+            ("devices", devices), ("group", group));
+
+    /// <summary>
+    /// R-lvs10-6e. <b>No tolerance is invented before it is measured.</b> A unit dimension with no
+    /// representative in the fixture the table was measured off is compared EXACTLY, and this line
+    /// is what makes that gap visible enough to close instead of leaving a number nobody can
+    /// defend.
+    /// </summary>
+    /// <remarks>
+    /// <b>Once per dimension, and only for a dimension something actually compared.</b> A run-level
+    /// line about the table rather than about a device: it has nowhere on the board to point at.
+    /// </remarks>
+    public static Diagnostic ToleranceUnestablished(string dimension, int compared)
+        => Diagnostic.Create(
+            "lvs.property.tolerance-unestablished", DiagnosticSeverity.Info,
+            "No property tolerance has been measured for {dimension}, so its {compared} "
+            + "comparison(s) were exact. The shipped table was measured off a correct design and "
+            + "that dimension had no representative in it.",
+            ("dimension", dimension), ("compared", compared));
+
     // ── The run's own lines (brief-lvs-8-findings.md §6) ────────────────────────────────────
 
     /// <summary>

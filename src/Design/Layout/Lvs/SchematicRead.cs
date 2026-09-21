@@ -31,6 +31,7 @@ using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 
@@ -166,11 +167,15 @@ public static class SchematicRead
                 nets.Attach(net, deviceIndex, terminals.Count - 1);
             }
 
+            var parameters = ParametersOf(inst, resolved);
             devices.Add(new LvsDevice(
                 inst.InstanceName, comp?.InstanceName ?? inst.InstanceName, type, terminals,
-                ParametersOf(inst, resolved),
+                parameters,
                 new LvsProvenance(document, inst.InstanceName,
-                                  (long)Math.Round(comp?.X ?? 0), (long)Math.Round(comp?.Y ?? 0))));
+                                  (long)Math.Round(comp?.X ?? 0), (long)Math.Round(comp?.Y ?? 0)))
+            {
+                ParameterFacts = FactsOf(comp, parameters),
+            });
         }
 
         // ── The boundary: this cell's own ports, IN PORT ORDER ─────────────────────────────────
@@ -264,6 +269,35 @@ public static class SchematicRead
     private static IReadOnlyDictionary<string, object?> ParametersOf(
         Instance inst, IReadOnlyDictionary<string, Resolved> resolved)
         => resolved.TryGetValue(inst.InstanceName, out var r) ? r.Parameters : EmptyParameters;
+
+    /// <summary>
+    /// What each resolved value IS — its <see cref="UnitDimension"/>, from the component that
+    /// declared the parameter (brief 10's R-lvs10-3a).
+    /// </summary>
+    /// <remarks>
+    /// <b>The drawing is the side that always knows.</b> <c>EditableParameter.Dimension</c> is what
+    /// drives the unit ComboBox beside the field, so every parameter a user can type into carries
+    /// one; the artwork's side of a PCell is a snapshot of resolved numbers and says nothing about
+    /// what they mean. Nothing is derived or unread here: a drawing computes nothing from its own
+    /// geometry, which is exactly what makes those two flags a layout-side answer.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, LvsParameterFact> FactsOf(
+        EditableComponent? comp, IReadOnlyDictionary<string, object?> parameters)
+    {
+        if (comp is null || parameters.Count == 0) return EmptyFacts;
+
+        var facts = new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
+        foreach (var p in comp.Parameters)
+        {
+            if (p.Dimension == UnitDimension.None) continue;
+            if (!parameters.ContainsKey(p.Name)) continue;
+            facts[p.Name] = new LvsParameterFact(p.Dimension);
+        }
+        return facts.Count > 0 ? facts : EmptyFacts;
+    }
+
+    private static readonly IReadOnlyDictionary<string, LvsParameterFact> EmptyFacts =
+        new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
 
     /// <summary>The kinded values as plain objects, on the same terms the layout side carries its
     /// <c>PCellOrigin</c> parameters — one dictionary shape, so brief 10 compares one way.</summary>

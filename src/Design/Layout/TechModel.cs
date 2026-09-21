@@ -2,6 +2,7 @@
 // true of a fabrication process rather than of one cell (docs/design/layout-view.md §2.4).
 // The stackup and DRC rules are carried and round-tripped now, consumed later (L5b/L6).
 
+using CircuitRF.Design.Cells;
 using CircuitRF.Design.Theming;
 
 namespace CircuitRF.Design.Layout;
@@ -525,6 +526,33 @@ public sealed class DrcRule
              or DrcRuleKind.AntennaRatio;
 }
 
+/// <summary>
+/// One process's answer to "how close is close enough" for one <see cref="UnitDimension"/> —
+/// brief-lvs-10-properties.md R-lvs10-3b.
+/// </summary>
+/// <remarks>
+/// <b>Per DIMENSION, never per parameter</b> (R-lvs10-8). A per-parameter table is a configuration
+/// surface with no evidence behind it, and the evidence that exists — the quantisation spread
+/// measured off <c>examples/LVS/Bias tee/</c> — is a property of the dimension.
+///
+/// <para>Both fields are optional and a row may state either or both: a value passes when it is
+/// within EITHER, so a row stating only <see cref="Relative"/> is a pure percentage and a row
+/// stating only <see cref="Absolute"/> is a pure floor. Stating neither is exact, which is a real
+/// answer and is what every dimension with no measurement behind it gets.</para>
+/// </remarks>
+public sealed class LvsToleranceRule
+{
+    /// <summary>Which dimension this row is about.</summary>
+    public UnitDimension Dimension { get; set; }
+
+    /// <summary>A fraction of the larger of the two values — <c>0.01</c> is one percent.</summary>
+    public double? Relative { get; set; }
+
+    /// <summary>An absolute difference, <b>in the dimension's SI base unit</b> (ohms, farads,
+    /// metres) — the two sides are already resolved SI by the time anything compares them.</summary>
+    public double? Absolute { get; set; }
+}
+
 public sealed class Technology
 {
     public string Name { get; set; } = "";
@@ -557,6 +585,18 @@ public sealed class Technology
 
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
+
+    /// <summary>
+    /// Per-dimension property tolerances for LVS — <b>beside <see cref="DrcRules"/> and for the
+    /// same reason</b> (brief-lvs-10-properties.md R-lvs10-3b): a PCB 1 % part and an MMIC
+    /// thin-film resistor are not held to the same number, and the number is a property of the
+    /// PROCESS rather than of the comparison.
+    ///
+    /// <para>Empty — every technology authored before LVS existed — means the shipped default
+    /// table, which <c>LvsPropertyTolerances</c> holds in one place. A row here REPLACES the
+    /// default for that one dimension and leaves the rest alone.</para>
+    /// </summary>
+    public List<LvsToleranceRule> LvsTolerances { get; set; } = [];
 
     /// <summary>The stipple <paramref name="name"/> resolves to, or null for none/unknown.
     ///

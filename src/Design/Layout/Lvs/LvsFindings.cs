@@ -151,6 +151,19 @@ public static class LvsFindingIds
         "lvs.reduce.series",
         "lvs.reduce.jumper",
 
+        // properties (brief 10). `lvs.reduce.multiplicity-unstated` is spelled `reduce.` and not
+        // `property.` deliberately: it is what the COLLAPSE found — several devices in parallel the
+        // drawing never said were several — and grouping it with the merge lines is where a reader
+        // chasing a device count will look for it.
+        "lvs.property.mismatch",
+        "lvs.property.derived-differs",
+        "lvs.property.unread-differs",
+        "lvs.property.layout-silent",
+        "lvs.property.missing",
+        "lvs.property.multiplicity",
+        "lvs.property.tolerance-unestablished",
+        "lvs.reduce.multiplicity-unstated",
+
         // what the run could not do
         "lvs.layout.over-flatten-ceiling",
         "lvs.layout.over-device-ceiling",

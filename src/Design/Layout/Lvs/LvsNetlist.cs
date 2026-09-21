@@ -16,6 +16,7 @@
 // which needs SOME total order on otherwise-indistinguishable candidates and takes this one so the
 // same design gives the same answer twice.
 
+using CircuitRF.Design.Cells;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Layout.Lvs;
@@ -36,6 +37,36 @@ public sealed record LvsProvenance(string Document, string InstancePath, long X,
 /// terminal that landed on no copper gets a net of its own, with one pin and no label, because an
 /// open is a topological fact and a sentinel would have to be special-cased by every reader.</param>
 public sealed record LvsTerminal(int Port, string Name, int NetIndex);
+
+/// <summary>
+/// What a device's own side says ABOUT one of its parameters, beyond the value — <b>everything
+/// brief 10 needs and nothing it does not</b> (R-lvs10-8's "no new parameter model").
+/// </summary>
+/// <remarks>
+/// <b>It has exactly the same shape on both sides, and that is the point.</b>
+/// <see cref="LvsNetlist"/>'s own rule is that the comparator must not be able to tell the two
+/// netlists apart; a schematic simply fills <see cref="Computed"/> and <see cref="Unread"/> false,
+/// because a drawing derives nothing from its own geometry.
+///
+/// <para><b>A name appears here exactly when it appears in <see cref="LvsDevice.Parameters"/>.</b>
+/// There is deliberately no "declared but unvalued" entry: a parameter with no value is a
+/// parameter the side claims nothing about, and R-lvs10-2b already says what to do about that.</para>
+/// </remarks>
+/// <param name="Dimension">The physical dimension the side declares — <c>CcellParameter.Dimension</c>
+/// on one side and <c>EditableParameter.Dimension</c> on the other, which are the same enum.
+/// <see cref="UnitDimension.None"/> is an ordinary answer: a count, a ratio, a model name.</param>
+/// <param name="Computed">
+/// <c>PCellOrigin.IsComputed</c> — the generator DERIVED this from its own geometry rather than
+/// reading it (R-lvs10-4a). Such a parameter cannot disagree with the artwork; it can disagree with
+/// what the schematic ASKED for, and that is a different sentence pointing at a different file.
+/// </param>
+/// <param name="Unread">
+/// <c>PCellOrigin.IsUnread</c> — the run that drew this artwork never read the parameter, so
+/// nothing about the geometry depends on it (R-lvs10-4c). A difference there is information, not a
+/// fault.
+/// </param>
+public readonly record struct LvsParameterFact(
+    UnitDimension Dimension, bool Computed = false, bool Unread = false);
 
 /// <summary>One device.</summary>
 /// <param name="Path">
@@ -90,6 +121,21 @@ public sealed record LvsDevice(
     /// <see cref="Path"/> IS the thing that field names.</para>
     /// </remarks>
     public string AnchorId { get; init; } = "";
+
+    /// <summary>
+    /// What each of <see cref="Parameters"/> IS — its dimension, and whether the artwork derived it
+    /// or never read it. Empty where the side says nothing about any of them.
+    /// </summary>
+    /// <remarks>
+    /// A second dictionary rather than a richer value type on <see cref="Parameters"/> because the
+    /// VALUES are what brief 6 merges, sums and drops; these are declarations about the parameter
+    /// and survive that arithmetic unchanged. Keys are a subset of <see cref="Parameters"/>' —
+    /// a fact about a value nothing carries is a fact about nothing.
+    /// </remarks>
+    public IReadOnlyDictionary<string, LvsParameterFact> ParameterFacts { get; init; } = NoFacts;
+
+    private static readonly IReadOnlyDictionary<string, LvsParameterFact> NoFacts =
+        new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
 
     /// <summary>
     /// How many devices are in parallel here — <b>carried, not discarded</b> (R-lvs6-2c). A merge

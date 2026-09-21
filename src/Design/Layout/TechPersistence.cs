@@ -27,6 +27,11 @@ public sealed class CtechFile
     public List<FillPattern>? FillPatterns { get; set; }
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
+
+    /// <summary>The LVS property tolerances this process overrides (rev 1, additive) — nullable
+    /// for <see cref="FillPatterns"/>' reason: absent in every .ctech written before brief 10, and
+    /// absent is what "use the shipped table" already meant, so nothing on disk changes.</summary>
+    public List<LvsToleranceRule>? LvsTolerances { get; set; }
 }
 
 /// <summary>Reads and writes .ctech files. Framework-free (no Avalonia / Skia).</summary>
@@ -84,6 +89,7 @@ public static class TechPersistence
         FillPatterns         = tech.FillPatterns.Count > 0 ? [.. tech.FillPatterns] : null,
         Stackup              = tech.Stackup,
         DrcRules             = [.. tech.DrcRules],
+        LvsTolerances        = tech.LvsTolerances.Count > 0 ? [.. tech.LvsTolerances] : null,
     };
 
     private static Technology FromFileModel(CtechFile file)
@@ -124,5 +130,6 @@ public static class TechPersistence
         FillPatterns         = file.FillPatterns is { Count: > 0 } fp ? [.. fp] : [],
         Stackup              = file.Stackup,
         DrcRules             = [.. file.DrcRules],
+        LvsTolerances        = file.LvsTolerances is { Count: > 0 } lt ? [.. lt] : [],
     };
 }

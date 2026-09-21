@@ -206,6 +206,25 @@ public static class LvsRun
         control?.BeginStage("Comparing");
         var comparison = LvsCompare.Compare(reducedSchematic, reducedLayout, control);
 
+        // ── R-lvs10-1a: the property pass, AFTER the topology and on the pairs it produced ──────
+        //
+        // Not inside `LvsCompare`, and not a second comparison either. Two identical netlists have
+        // to compare identically whether or not one of them was drawn somewhere (R-lvs3-1a), and a
+        // geometric tolerance is one DBU of the DOCUMENT's own database — so the pass takes the
+        // resolution and the technology's overrides from here, where both are known, and hands back
+        // divergences that join the ones brief 7 concluded. They are the same kind of thing and
+        // belong in one ordered list; a second one would be a second answer to "what did the
+        // comparison find", differing in what it counted.
+        var properties = LvsProperties.Compare(
+            reducedSchematic, reducedLayout, comparison,
+            LvsPropertyTolerances.For(tech, layout.DbuPerMicron));
+
+        if (properties.Count > 0)
+            comparison = comparison with
+            {
+                Findings = LvsCompare.Ordered([.. comparison.Findings, .. properties]),
+            };
+
         // Both sides' reduction lines are printed TOGETHER (R-lvs6-5a): an asymmetry between them
         // is often the first clue to what is actually wrong.
         var notes = new List<Diagnostic>();

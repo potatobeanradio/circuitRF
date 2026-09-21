@@ -81,7 +81,7 @@ which is how you see a single finding on its own.
 | **F3** extra part | a second 294 Ω resistor, designator `R4`, placed and wired to nothing | R4 is in the layout and not in the schematic |
 | **F4** short | a 0.2 mm spur of copper from the lower ground strip up to the input trace | IN and ground are one net — **with the path, and the spur's own coordinate**. A short reported without its path is a finding nobody can act on |
 | **F5** open | the upper-left ground's only stitching via is deleted | ground is in **two** islands, and R1's return is on the one that reaches nothing else |
-| **F6** wrong value | R3's placement is re-pointed from the 294 Ω part to a 150 Ω one | the artwork claims a part the schematic does not — same land pattern, same designator, same topology |
+| **F6** wrong value | R3's placement is re-pointed from the 294 Ω part to a 150 Ω one | R3's value disagrees — *schematic 294 Ω, layout 150 Ω, tolerance 1 %*. Same land pattern, same designator, same topology, so it is the one fault here that is not a topology fault at all |
 
 **F5 splits the ground into two islands, not three.** A via joins at most one piece of copper per
 conductor, so on a two-layer board it is an edge of degree two and deleting one edge of a tree
@@ -135,6 +135,15 @@ any property tolerance: a tolerance tighter than this rejects good artwork.
 
 Re-run the generator and it prints these again; if a change to a generator widens one of them past
 the tolerance, that is a real regression and the test suite fails on it.
+
+That table is also where LVS's **property tolerances** come from. The widest gap above is 0.2 %, and
+one step of the E96 series — the smallest wrong part anybody could have fitted — is 2.4 %, so the
+shipped default sits between them at **1 %**, for resistance, capacitance and inductance alike. A
+length is compared to one database unit instead, because a smaller difference cannot be drawn. Every
+other dimension is compared exactly and the report says that no tolerance has been measured for it,
+rather than a plausible number being invented. The numbers are provisional, they are overridable per
+technology in the `.ctech`, and **every finding prints the tolerance it applied**, so a wrong default
+shows up on the line it produced.
 
 ---
 

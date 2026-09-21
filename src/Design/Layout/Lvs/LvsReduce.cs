@@ -471,13 +471,15 @@ public static class LvsReduce
                                                .OrderBy(b => _order[b[0].Path]))
             {
                 var representative = bucket[0];
+                var values = MergedParameters(bucket, representative.Type.Kind, parallel: true);
                 var device = representative with
                 {
                     Terminals    = [.. representative.Terminals.Select(t =>
                                       t with { NetIndex = Find(t.NetIndex) })],
                     Group        = [.. bucket.SelectMany(d => d.Group)],
                     Multiplicity = bucket.Sum(d => d.Multiplicity),
-                    Parameters   = MergedParameters(bucket, representative.Type.Kind, parallel: true),
+                    Parameters   = values,
+                    ParameterFacts = MergedFacts(representative, values),
                 };
 
                 merged[representative.Path] = device;
@@ -568,6 +570,7 @@ public static class LvsReduce
                 var aFree = a.Terminals[1 - aTerminal];
                 var bFree = b.Terminals[1 - bTerminal];
 
+                var values = MergedParameters([a, b], a.Type.Kind, parallel: false);
                 var device = a with
                 {
                     Terminals = [
@@ -578,7 +581,8 @@ public static class LvsReduce
                     // A series merge is not a multiplicity: two four-finger groups end to end are
                     // still four in parallel, so this is the MAX rather than the sum.
                     Multiplicity = Math.Max(a.Multiplicity, b.Multiplicity),
-                    Parameters   = MergedParameters([a, b], a.Type.Kind, parallel: false),
+                    Parameters   = values,
+                    ParameterFacts = MergedFacts(a, values),
                 };
 
                 merged[a.Path] = device;
@@ -700,6 +704,29 @@ public static class LvsReduce
         }
 
         return merged;
+    }
+
+    /// <summary>
+    /// The merged device's parameter FACTS, narrowed to the values that survived the merge.
+    /// </summary>
+    /// <remarks>
+    /// <b>Narrowed, and that is load-bearing.</b> Brief 10 reads a fact only for a value something
+    /// carries, and a device that kept a declaration for a value the merge dropped would look to it
+    /// like a generator missing a parameter (<c>lvs.property.missing</c>) rather than like a group
+    /// that claims nothing — which is what <see cref="MergedParameters"/>' own header says it is.
+    ///
+    /// <para>The representative's, because a group whose members disagreed about what a parameter
+    /// MEANS is a group whose values disagreed too, so the value is already gone.</para>
+    /// </remarks>
+    private static IReadOnlyDictionary<string, LvsParameterFact> MergedFacts(
+        LvsDevice representative, IReadOnlyDictionary<string, object?> merged)
+    {
+        if (representative.ParameterFacts.Count == 0) return representative.ParameterFacts;
+
+        var facts = new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
+        foreach (var (name, fact) in representative.ParameterFacts)
+            if (merged.ContainsKey(name)) facts[name] = fact;
+        return facts;
     }
 
     /// <summary>Which parameter carries the value of a lumped part, or null where there is no

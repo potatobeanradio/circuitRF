@@ -280,9 +280,18 @@ internal static class LvsReport
                     return LvsMarker.Of(
                         diagnostic, Group(schematic, Schematic(Text(diagnostic, "path"))), Bbox.Empty);
 
-                // One line naming both sides (R-lvs7-5d).
+                // One line naming both sides (R-lvs7-5d) — and every property finding, which names
+                // both by construction (brief 10): the marker is the artwork's pads, because that is
+                // the half a user can go and look at, and the objects are both devices' un-reduced
+                // groups so a merged four-finger group names all four.
                 case "lvs.device.type-mismatch":
                 case "lvs.anchor.contradicted":
+                case "lvs.property.mismatch":
+                case "lvs.property.derived-differs":
+                case "lvs.property.unread-differs":
+                case "lvs.property.missing":
+                case "lvs.property.multiplicity":
+                case "lvs.reduce.multiplicity-unstated":
                 {
                     var objects = new List<string>();
                     objects.AddRange(Group(schematic, Schematic(Text(diagnostic, "schematicPath"))));
