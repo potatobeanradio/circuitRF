@@ -379,7 +379,7 @@ public sealed class ProvingDesignTests
     [Fact]
     public void AllSixFaultsTogetherAreFiveFindingsAndTheSameFiveEveryRun()
     {
-        string Report(LvsResult r) => string.Join("\n", r.Comparison.Findings
+        string Report(LvsRunResult r) => string.Join("\n", r.Comparison.Findings
             .Where(f => f.Severity > DiagnosticSeverity.Info)
             .Select(f => $"{f.Id}: {f.Render()}"));
 
@@ -403,7 +403,7 @@ public sealed class ProvingDesignTests
             Assert.Equal(Report(first), Report(LvsRun.Run(Lvs(Broken))));
     }
 
-    private static Diagnostic Single(LvsResult result, string id)
+    private static Diagnostic Single(LvsRunResult result, string id)
         => Assert.Single(result.Comparison.Findings, f => f.Id == id);
 
     // ══ The MMIC does NOT compare clean, and this is what it reports ════════════════════════════
@@ -573,7 +573,7 @@ public sealed class ProvingDesignTests
 
     /// <summary>The broken board carrying exactly one fault, COMPARED — the same throwaway copy
     /// <see cref="ReadFaultedBoard"/> makes, run through the one door.</summary>
-    private static LvsResult CompareFaultedBoard(string fault)
+    private static LvsRunResult CompareFaultedBoard(string fault)
     {
         string work = CopyWorkspace();
         string cell = Path.Combine(work, Broken);

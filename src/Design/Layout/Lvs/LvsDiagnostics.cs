@@ -303,22 +303,85 @@ public static class LvsDiagnostics
             ("expected", expected), ("found", found));
 
     /// <summary>
-    /// Two or more schematic nets are one piece of copper. <b>Brief 8 adds the PATH</b> — the
-    /// narrowest join and its coordinate — which is the half a designer can act on.
+    /// Two or more schematic nets are one piece of copper — <b>with the PATH</b> (R-lvs8-4b),
+    /// which is the half a designer can act on.
     /// </summary>
-    public static Diagnostic NetShort(string nets, int count, string layoutNet) => Diagnostic.Create(
+    /// <remarks>
+    /// <b>One factory, one template, and the path is an ARGUMENT.</b> The comparison concludes the
+    /// short before anything has been located, and the report adds the route once it has the
+    /// artwork's geometry; two factories would be two sentences for one id, which is the drift
+    /// R-lvs8-2a is about. <paramref name="through"/> is empty where nothing located it — and it is
+    /// empty on the comparison's own pass, always.
+    /// </remarks>
+    /// <param name="nets">The two schematic nets, as the designer spells them.</param>
+    /// <param name="count">How many nets this line is about — two, for a pair (R-lvs8-4d).</param>
+    /// <param name="layoutNet">What the copper they share is called.</param>
+    /// <param name="through">" They are joined through …", or empty.</param>
+    /// <param name="widthDbu">The narrowest metal on the route, DBU — <b>typed, so a test asserts
+    /// the number rather than the sentence</b>. Zero where nothing was located.</param>
+    /// <param name="x">Where, DBU.</param>
+    /// <param name="y">DBU.</param>
+    public static Diagnostic NetShort(
+        string nets, int count, string layoutNet,
+        string through = "", long widthDbu = 0, long x = 0, long y = 0) => Diagnostic.Create(
         "lvs.net.short", DiagnosticSeverity.Error,
-        "{count} schematic nets are one piece of copper ('{layoutNet}'): {nets}.",
-        ("nets", nets), ("count", count), ("layoutNet", layoutNet));
+        "{count} schematic nets are one piece of copper ('{layoutNet}'): {nets}.{through}",
+        ("nets", nets), ("count", count), ("layoutNet", layoutNet), ("through", through),
+        ("widthDbu", widthDbu), ("x", x), ("y", y));
 
     /// <summary>
-    /// One schematic net is several pieces of copper. <b>Brief 8 adds the ISLANDS</b> and a marker
-    /// on each.
+    /// One schematic net is several pieces of copper — <b>with the ISLANDS</b> (R-lvs8-5a) and a
+    /// marker on each.
     /// </summary>
     public static Diagnostic NetOpen(string net, int islands, string pins) => Diagnostic.Create(
         "lvs.net.open", DiagnosticSeverity.Error,
         "Schematic net '{net}' is {islands} separate pieces of copper in the layout: {pins}.",
         ("net", net), ("islands", islands), ("pins", pins));
+
+    /// <summary>
+    /// R-lvs8-5c. An island with no pin on it at all. <b>A warning, and NOT an open</b>:
+    /// unconnected copper on a net is a pour somebody forgot to stitch, which is worth saying and
+    /// is not the same defect — an open is a net the schematic says is one and the artwork makes
+    /// several, and copper nothing lands on is not part of that story.
+    /// </summary>
+    public static Diagnostic NetFloatingCopper(string named, int pieces, string where)
+        => Diagnostic.Create(
+            "lvs.net.floating-copper", DiagnosticSeverity.Warning,
+            "{pieces} piece(s) of copper{named} carry no pin at all, at {where}. Nothing connects "
+            + "to them, so they are in no net — a pour that was never stitched reads exactly like "
+            + "this.",
+            ("named", named.Length > 0 ? $" stamped '{named}'" : ""), ("pieces", pieces),
+            ("where", where), ("net", named));
+
+    // ── The run's own lines (brief-lvs-8-findings.md §6) ────────────────────────────────────
+
+    /// <summary>
+    /// R-lvs8-6b. <b>Emitted on every run, including one that found nothing.</b>
+    /// </summary>
+    /// <remarks>
+    /// "Nothing changed, say nothing" is a rule about per-object noise. A run that deliberately
+    /// concluded "these match" and then said nothing at all is indistinguishable from a broken
+    /// command, which is the one outcome a gate cannot catch and a user cannot diagnose.
+    /// </remarks>
+    public static Diagnostic RunSummary(string counts, string technology, ReductionMode reduction)
+        => Diagnostic.Create(
+            "lvs.report.summary", DiagnosticSeverity.Info,
+            "Compared {counts}, against {technology}, with reduction {reduction}.",
+            ("counts", counts), ("technology", technology),
+            ("reduction", reduction == Lvs.ReductionMode.On ? "ON" : "OFF (--no-reduce)"));
+
+    /// <summary>
+    /// R-lvs8-6a. The trailing count when a cap bit — <c>SchematicToLayoutGenerator.ReportLine</c>'s
+    /// own convention, where a line about the run carries no object.
+    /// </summary>
+    /// <remarks>
+    /// <b>A pour accidentally joined to forty nets must not emit a finding per pair without saying
+    /// so.</b> Capping silently is worse than not capping: the report looks complete and is not.
+    /// </remarks>
+    public static Diagnostic Capped(string id, int shown, int total) => Diagnostic.Create(
+        "lvs.report.capped", DiagnosticSeverity.Info,
+        "{shown} of {total} '{finding}' finding(s) are listed; the rest were the same fault again.",
+        ("finding", id), ("shown", shown), ("total", total));
 
     /// <summary>
     /// R-lvs7-2b, and <b>usually the most useful line in the whole report</b>: a name-based pairing

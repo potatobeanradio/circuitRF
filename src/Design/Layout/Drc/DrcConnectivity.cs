@@ -173,6 +173,29 @@ internal static class DrcConnectivity
         out GroundReach ground)
         => Extract(layerRegions, tech, null, out ground);
 
+    /// <summary>
+    /// The partition, the ground reading <b>and</b> the spanning forest — the one form
+    /// <c>brief-lvs-8-findings.md</c> R-lvs8-4a needs, because a short has to be reported with its
+    /// PATH and an LVS run needs the ground reading in the same walk.
+    /// </summary>
+    /// <remarks>
+    /// <b>A fourth parameter rather than a fourth name.</b> The two existing additive forms each
+    /// keep half of what this walk already computes and throw the other half away; asking for both
+    /// is not a third question, and a second <c>Extract</c> overload differing only in its
+    /// out-parameters would make <c>out var</c> ambiguous at every existing call site.
+    /// </remarks>
+    public static IReadOnlyList<DrcNetPiece> ExtractWithGround(
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech,
+        out GroundReach ground,
+        out IReadOnlyList<PieceJoin> joins)
+    {
+        var found = new List<PieceJoin>();
+        var pieces = Extract(layerRegions, tech, found, out ground);
+        joins = found;
+        return pieces;
+    }
+
     private static IReadOnlyList<DrcNetPiece> Extract(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,

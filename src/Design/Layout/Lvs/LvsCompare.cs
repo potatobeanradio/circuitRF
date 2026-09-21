@@ -92,6 +92,26 @@ public sealed record LvsPair(
     string SchematicName, string LayoutName, LvsPairedBy By);
 
 /// <summary>
+/// Two schematic nets on one piece of copper — <b>one pair, not one group</b> (R-lvs8-4d).
+/// </summary>
+/// <remarks>
+/// <b>Structure as well as a sentence.</b> The comparison knows WHICH nets and WHICH copper by
+/// index; the report has to walk the artwork from one to the other to say how they are joined, and
+/// it cannot do that from a comma-separated list of names. So the pass hands over the indices and
+/// the report renders the line — one producer for the id either way, because both go through
+/// <c>LvsDiagnostics.NetShort</c>.
+/// </remarks>
+/// <param name="LayoutNet">The copper they share, as an index into the layout netlist.</param>
+/// <param name="SchematicA">One schematic net, the lower index.</param>
+/// <param name="SchematicB">The other.</param>
+public readonly record struct LvsShort(int LayoutNet, int SchematicA, int SchematicB);
+
+/// <summary>One schematic net on several pieces of copper — R-lvs8-5a's islands.</summary>
+/// <param name="SchematicNet">Index into the schematic netlist.</param>
+/// <param name="LayoutNets">The islands, ascending — indices into the layout netlist.</param>
+public sealed record LvsOpen(int SchematicNet, IReadOnlyList<int> LayoutNets);
+
+/// <summary>
 /// What the comparison concluded — <b>the correspondence as well as the failures</b> (R-lvs7-5c),
 /// because brief 12's cross-probing needs it and "what DID match" is a reasonable question.
 /// </summary>
@@ -120,6 +140,15 @@ public sealed record LvsComparison(
 {
     /// <summary>Nothing above <see cref="DiagnosticSeverity.Info"/> was found.</summary>
     public bool IsClean => !Findings.Any(f => f.Severity > DiagnosticSeverity.Info);
+
+    /// <summary>
+    /// Every pair of schematic nets the artwork made one — <b>the structure behind the
+    /// <c>lvs.net.short</c> lines</b>, so brief 8 can walk the copper from one to the other.
+    /// </summary>
+    public IReadOnlyList<LvsShort> Shorts { get; init; } = [];
+
+    /// <summary>Every schematic net the artwork left in pieces, with its islands.</summary>
+    public IReadOnlyList<LvsOpen> Opens { get; init; } = [];
 }
 
 /// <summary>Two netlists in, a correspondence and the places it fails out.</summary>
@@ -182,7 +211,11 @@ public static class LvsCompare
         return new LvsComparison(
             pass.DevicePairs, pass.NetPairs,
             pass.UnmatchedSchematic, pass.UnmatchedLayout,
-            Ordered(findings), anchors.Count, pass.Iterations, work);
+            Ordered(findings), anchors.Count, pass.Iterations, work)
+        {
+            Shorts = pass.Shorts,
+            Opens = pass.Opens,
+        };
     }
 
     /// <summary>
@@ -349,7 +382,14 @@ public static class LvsCompare
         List<Diagnostic> Findings,
         List<(int S, int L)> Contradicted,
         int Iterations,
-        long Work);
+        long Work)
+    {
+        /// <summary>The shorts, by index — brief 8 renders them with the route.</summary>
+        public List<LvsShort> Shorts { get; init; } = [];
+
+        /// <summary>The opens, by index.</summary>
+        public List<LvsOpen> Opens { get; init; } = [];
+    }
 
     private static Pass Evaluate(
         LvsNetlist schematic, LvsNetlist layout,
@@ -422,10 +462,23 @@ public static class LvsCompare
             else findings.AddRange(wrong);
         }
 
+        var shorts = new List<LvsShort>();
+        var opens = new List<LvsOpen>();
         if (contradicted.Count == 0)
         {
-            findings.AddRange(Shorts(schematic, layout, principal));
-            findings.AddRange(Opens(schematic, layout, votes, principal, owner));
+            shorts.AddRange(Shorts(principal));
+            opens.AddRange(Opens(votes, principal, owner));
+
+            foreach (var pair in shorts)
+                findings.Add(LvsDiagnostics.NetShort(
+                    $"{NetName(schematic, pair.SchematicA)}, {NetName(schematic, pair.SchematicB)}",
+                    2, NetName(layout, pair.LayoutNet)));
+            foreach (var open in opens)
+                findings.Add(LvsDiagnostics.NetOpen(
+                    NetName(schematic, open.SchematicNet), open.LayoutNets.Count,
+                    string.Join("; ", open.LayoutNets.Select(l =>
+                        $"{NetName(layout, l)} ({layout.Nets[l].Pins.Count} pin(s))"))));
+
             findings.AddRange(Unmatched(schematic, layout, refined, reportedS, reportedL,
                                         pairedS, pairedL));
         }
@@ -437,7 +490,11 @@ public static class LvsCompare
                  .Where(i => pairedS[i] < 0 && !reportedS.Contains(i))],
             [.. Enumerable.Range(0, layout.Devices.Count)
                  .Where(i => pairedL[i] < 0 && !reportedL.Contains(i))],
-            findings, contradicted, refined.Iterations, refined.Work);
+            findings, contradicted, refined.Iterations, refined.Work)
+        {
+            Shorts = shorts,
+            Opens = opens,
+        };
     }
 
     private static LvsPair Pair(LvsNetlist s, LvsNetlist l, int si, int li, LvsPairedBy by)
@@ -642,17 +699,26 @@ public static class LvsCompare
         return best.ToDictionary(e => e.Key, e => e.Value.To);
     }
 
-    /// <summary>Several schematic nets on one piece of copper.</summary>
-    private static IEnumerable<Diagnostic> Shorts(
-        LvsNetlist schematic, LvsNetlist layout, Dictionary<int, int> principal)
+    /// <summary>
+    /// Several schematic nets on one piece of copper, <b>as PAIRS</b> (R-lvs8-4d).
+    /// </summary>
+    /// <remarks>
+    /// One finding per pair, because "IN and GND are joined" is a sentence with a route and "IN,
+    /// GND and VCC are joined" is three of them — and the report has to name the metal that does
+    /// the joining, which differs pair by pair. The cap and the summary that keep a forty-net pour
+    /// from emitting 780 lines are the report's, not the pass's: what is produced here is the
+    /// complete truth and what is SHOWN is bounded.
+    /// </remarks>
+    private static IEnumerable<LvsShort> Shorts(Dictionary<int, int> principal)
     {
         foreach (var group in principal.GroupBy(e => e.Value)
                                        .Where(g => g.Count() > 1)
                                        .OrderBy(g => g.Key))
         {
-            var nets = group.Select(e => e.Key).Order().Select(s => NetName(schematic, s)).ToList();
-            yield return LvsDiagnostics.NetShort(
-                string.Join(", ", nets), nets.Count, NetName(layout, group.Key));
+            var nets = group.Select(e => e.Key).Order().ToList();
+            for (int i = 0; i < nets.Count; i++)
+                for (int j = i + 1; j < nets.Count; j++)
+                    yield return new LvsShort(group.Key, nets[i], nets[j]);
         }
     }
 
@@ -670,8 +736,7 @@ public static class LvsCompare
     /// via AND a short together leave the main pour claimed by the net it was shorted to, so the
     /// owner clause alone sees one island and says nothing.</para>
     /// </remarks>
-    private static IEnumerable<Diagnostic> Opens(
-        LvsNetlist schematic, LvsNetlist layout,
+    private static IEnumerable<LvsOpen> Opens(
         Dictionary<(int S, int L), int> votes,
         Dictionary<int, int> principal, Dictionary<int, int> owner)
     {
@@ -684,11 +749,7 @@ public static class LvsCompare
         }
 
         foreach (var (s, islands) in islandsOf.Where(e => e.Value.Count > 1))
-        {
-            string pins = string.Join("; ", islands.Select(l =>
-                $"{NetName(layout, l)} ({layout.Nets[l].Pins.Count} pin(s))"));
-            yield return LvsDiagnostics.NetOpen(NetName(schematic, s), islands.Count, pins);
-        }
+            yield return new LvsOpen(s, islands);
     }
 
     /// <summary>

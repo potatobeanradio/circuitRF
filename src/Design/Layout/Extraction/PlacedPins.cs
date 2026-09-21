@@ -192,7 +192,10 @@ public static class PlacedPins
                 pads.Add(pad);
                 if (extents is not null && pins[i].WidthDbu > 0) extents[pad] = pins[i].WidthDbu;
                 origins?.Add(new PlacedPinOrigin(
-                    instIndex, res.ResolvedCellDir!, PinKeyOf(pins, i), pins[i].Layer, r, c));
+                    instIndex, res.ResolvedCellDir!, PinKeyOf(pins, i), pins[i].Layer, r, c)
+                {
+                    WidthDbu = pins[i].WidthDbu,
+                });
             }
         }
 

@@ -62,8 +62,27 @@ public static class LayoutRead
         LayoutView view, string clayPath, string cellDir, Technology? tech,
         Func<string?, string, TechResolution>? resolveTechAt = null,
         IReadOnlySet<string>? schematicComponents = null)
+        => Read(view, clayPath, cellDir, tech, out _, resolveTechAt, schematicComponents);
+
+    /// <summary>
+    /// The same read, and <b>where everything it found IS</b> — <c>brief-lvs-8-findings.md</c>
+    /// R-lvs8-2c.
+    /// </summary>
+    /// <param name="geometry">
+    /// The artwork's own coordinates, in the netlist's index space. <b>A side channel and not a
+    /// member of <see cref="LvsNetlist"/></b>: that type serves both sides and a schematic has no
+    /// DBU to fill it with, which is R-lvs3-1a's whole point. See <see cref="LvsGeometry"/>.
+    /// </param>
+    /// <inheritdoc cref="Read(LayoutView, string, string, Technology, Func{string, string, TechResolution}, IReadOnlySet{string})"/>
+    public static LvsNetlist Read(
+        LayoutView view, string clayPath, string cellDir, Technology? tech,
+        out LvsGeometry geometry,
+        Func<string?, string, TechResolution>? resolveTechAt = null,
+        IReadOnlySet<string>? schematicComponents = null)
     {
         ArgumentNullException.ThrowIfNull(view);
+        geometry = LvsGeometry.None;
+        var padGeometry = new List<LvsPadGeometry>();
 
         var notes = new List<Diagnostic>();
         string document = Path.GetFileName(clayPath);
@@ -170,6 +189,17 @@ public static class LayoutRead
                 notes.Add(LvsDiagnostics.NoTerminalMap(
                     new DirectoryInfo(unmapped).Name, string.Join(" ", map.Notes)));
 
+            // R-lvs1-3c, carried into the LVS report rather than restated: a map read positionally
+            // is a GUESS, and R-lvs8-3's catalogue lists it because a comparison resting on one is
+            // a comparison whose every finding may name the wrong terminal. Brief 1 authored the
+            // sentence and `check` already prints it; giving it a second `lvs.` id here would be
+            // one fault with two contracts. Once per cell TYPE, for UnclassifiedCell's reason.
+            if (map.Origin == TerminalMapOrigin.ByOrder
+                && resolvedDir is { Length: > 0 } positional
+                && saidOnce.Add("by-order:" + positional))
+                notes.Add(TerminalDiagnostics.DerivedByOrder(
+                    new DirectoryInfo(positional).Name, map.Terminals.Count));
+
             var type = DeviceTypes.OfLayout(inst, resolvedDir, subView);
             var parameters = ParametersOf(subView);
 
@@ -193,7 +223,8 @@ public static class LayoutRead
                 {
                     int net = ResolveTerminal(
                         terminal, instIndex, r, c, path,
-                        padsByPin, pads, origins, pieces, tech, nets, notes);
+                        padsByPin, pads, origins, pieces, tech, nets, notes,
+                        deviceIndex, terminals.Count, padGeometry);
 
                     terminals.Add(new LvsTerminal(terminal.Port, terminal.Name, net));
                     nets.Attach(net, deviceIndex, terminals.Count - 1);
@@ -218,6 +249,17 @@ public static class LayoutRead
         var boundary = BoundaryNetsOf(view, cellDir, tech, pieces, nets);
 
         nets.ReportLabelDisagreements(notes);
+
+        // ── Where all of it IS (R-lvs8-2c) ─────────────────────────────────────────────────────
+        var netOfPiece = new int[pieces.Count];
+        for (int p = 0; p < pieces.Count; p++) netOfPiece[p] = nets.Existing(pieces.NetOfPiece(p));
+
+        var layerNames = new Dictionary<LayerKey, string>();
+        foreach (var layer in tech?.Layers ?? []) layerNames[layer.Key] = layer.Name;
+
+        geometry = new LvsGeometry(
+            pieces, padGeometry, netOfPiece, RailRf.RailLengthFormat.For(view), layerNames);
+
         return new LvsNetlist(devices, nets.Build(), boundary, notes);
     }
 
@@ -250,7 +292,8 @@ public static class LayoutRead
         Terminal terminal, int instIndex, int row, int col, string path,
         Dictionary<(int, int, int, string), List<int>> padsByPin,
         IReadOnlyList<PlacedPin> pads, IReadOnlyList<PlacedPinOrigin> origins,
-        CopperPieces pieces, Technology? tech, NetTable nets, List<Diagnostic> notes)
+        CopperPieces pieces, Technology? tech, NetTable nets, List<Diagnostic> notes,
+        int deviceIndex, int terminalIndex, List<LvsPadGeometry> padGeometry)
     {
         var reached = new List<int>();
 
@@ -263,7 +306,14 @@ public static class LayoutRead
                 // R-ab2-2d: ON THE PIN'S OWN LAYER. A pad takes the name — and the identity — of
                 // the piece it lands on, and asking any-layer would have a top pad answer with the
                 // net of whatever sits under it on the bottom.
-                int piece = pieces.PieceAt(pads[p].X, pads[p].Y, origins[p].Layer);
+                int index = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
+                int piece = index < 0 ? -1 : pieces.NetOfPiece(index);
+
+                // Recorded EITHER WAY, including where it landed on nothing: a pad on no copper is
+                // exactly the finding `lvs.pin.no-copper` is, and it needs a marker like any other.
+                padGeometry.Add(new LvsPadGeometry(
+                    deviceIndex, terminalIndex, pads[p].X, pads[p].Y,
+                    origins[p].Layer, origins[p].WidthDbu, index));
 
                 if (piece < 0)
                 {
@@ -441,6 +491,22 @@ public static class LayoutRead
 
         /// <summary>A net with one pin on it and no name — what a pin that landed on nothing is.</summary>
         public int Open() => Add(null);
+
+        /// <summary>
+        /// The net a partition net already belongs to, or <c>-1</c> where nothing put it on one —
+        /// <b>which is R-lvs8-5c's floating copper</b>. Asks; never creates.
+        /// </summary>
+        /// <remarks>
+        /// The ground clause has to be here rather than in the caller: a piece of the undrawn
+        /// reference's own network that no terminal happened to touch is still net 0, and calling
+        /// it floating would put a warning on every stitching via of a correct MMIC.
+        /// </remarks>
+        public int Existing(int partitionNet)
+        {
+            if (partitionNet < 0) return -1;
+            if (_ofPartition.TryGetValue(partitionNet, out int existing)) return existing;
+            return pieces.IsGround(partitionNet) ? _ground : -1;
+        }
 
         public void Attach(int net, int device, int terminal) => _pins[net].Add((device, terminal));
 

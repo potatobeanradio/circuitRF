@@ -20,6 +20,7 @@
 // does not make it LVS: this answers "which copper is joined, and what is it called", which is the
 // input to LVS and to railRF alike.
 
+using Clipper2Lib;
 using System.Linq;
 using CircuitRF.Design.Layout.Drc;
 
@@ -65,27 +66,42 @@ public readonly record struct GroundReading(
 public sealed class CopperPieces
 {
     private readonly PieceIndex _index;
+    private readonly IReadOnlyList<DrcNetPiece> _pieces;
     private readonly int[] _pieceOfShape;                 // index into the shapes handed in, -1 = none
     private readonly Dictionary<int, string> _nameOfPiece; // DrcNetPiece.Net -> the stated name
 
     private readonly GroundReading _ground;
 
     private CopperPieces(
-        PieceIndex index, int pieceCount, int[] pieceOfShape,
+        PieceIndex index, IReadOnlyList<DrcNetPiece> pieces, int[] pieceOfShape,
         Dictionary<int, string> nameOfPiece, IReadOnlyList<string> refusals,
-        GroundReading ground)
+        GroundReading ground, IReadOnlyList<PieceJoin> joins)
     {
         _index = index;
-        Count = pieceCount;
+        _pieces = pieces;
+        Count = pieces.Count;
         _pieceOfShape = pieceOfShape;
         _nameOfPiece = nameOfPiece;
         Refusals = refusals;
         _ground = ground;
+        Joins = joins;
     }
 
     /// <summary>Nothing to partition — no technology, or no copper.</summary>
     public static readonly CopperPieces Empty =
-        new(new PieceIndex([]), 0, [], [], [], GroundReading.None);
+        new(new PieceIndex([]), [], [], [], [], GroundReading.None, []);
+
+    /// <summary>
+    /// The spanning forest the partition was built from — R-lvs2-4, <b>retained rather than
+    /// recomputed</b>, because it is the only thing that can say WHY two pins are one net
+    /// (<c>brief-lvs-8-findings.md</c> R-lvs8-4a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Indices are PIECES, not nets.</b> <see cref="PieceAt"/> answers with a net because that
+    /// is what every existing reader asks for; <see cref="IndexAt"/> is the same lookup answering
+    /// with the node these edges connect.
+    /// </remarks>
+    public IReadOnlyList<PieceJoin> Joins { get; }
 
     /// <summary>How many galvanically-joined pieces the partition holds.</summary>
     public int Count { get; }
@@ -138,7 +154,7 @@ public sealed class CopperPieces
         var layerRegions = LayerRegions.Build(copper, tech);
         if (layerRegions.Count == 0) return Empty;
 
-        var pieces = DrcConnectivity.ExtractWithGround(layerRegions, tech, out var reach);
+        var pieces = DrcConnectivity.ExtractWithGround(layerRegions, tech, out var reach, out var joins);
         if (pieces.Count == 0) return Empty;
 
         // R-lvs2-3. Built once per run and dropped with the answer — never maintained
@@ -200,9 +216,30 @@ public sealed class CopperPieces
         }
 
         return new CopperPieces(
-            index, pieces.Count, pieceOfShape, nameOfPiece, refusals,
-            new GroundReading(reach.ReferenceName, reach.ReferenceDraws, reach.Nets, reach.ViasReached));
+            index, pieces, pieceOfShape, nameOfPiece, refusals,
+            new GroundReading(reach.ReferenceName, reach.ReferenceDraws, reach.Nets, reach.ViasReached),
+            joins);
     }
+
+    /// <summary>
+    /// The <b>piece</b> covering (<paramref name="x"/>, <paramref name="y"/>) on
+    /// <paramref name="layer"/>, or <c>-1</c> — the node a <see cref="PieceJoin"/> names, where
+    /// <see cref="PieceAt"/> gives the net it belongs to.
+    /// </summary>
+    public int IndexAt(long x, long y, LayerKey? layer) => _index.IndexAt(x, y, layer);
+
+    /// <summary>Which drawing layer a piece is on.</summary>
+    public LayerKey LayerOfPiece(int piece) => _pieces[piece].Layer;
+
+    /// <summary>A piece's bounding box, DBU.</summary>
+    public Bbox BoundsOfPiece(int piece) => _pieces[piece].Bounds;
+
+    /// <summary>The net a piece belongs to — the number <see cref="PieceAt"/> answers with.</summary>
+    public int NetOfPiece(int piece) => _pieces[piece].Net;
+
+    /// <summary>A piece's geometry. Internal because <c>Paths64</c> is Clipper2's and the
+    /// partition does not put it on this project's public face.</summary>
+    internal Paths64 PathsOfPiece(int piece) => _pieces[piece].Paths;
 
     /// <summary>
     /// The <b>net index</b> of the piece covering (<paramref name="x"/>, <paramref name="y"/>) on

@@ -1,6 +1,6 @@
 // The one door into LVS — brief-lvs-7-comparison.md R-lvs7-6b, overview §3.
 //
-//   cell folder ──► read both views ──► reduce both ──► compare ──► LvsResult
+//   cell folder ──► read both views ──► reduce both ──► compare ──► report ──► LvsRunResult
 //
 // ── WHY THERE IS EXACTLY ONE ENTRY POINT ─────────────────────────────────────────────────────
 //
@@ -44,42 +44,9 @@ public sealed record LvsRunOptions
     public LvsReduceOptions Reduce { get; init; } = LvsReduceOptions.Default;
 }
 
-/// <summary>
-/// One comparison, end to end: what was read, what it reduced to, what corresponds, and
-/// everything either step had to say.
-/// </summary>
-/// <param name="Comparison">The correspondence and the divergences.</param>
-/// <param name="Schematic">The schematic netlist as compared — <b>reduced</b>.</param>
-/// <param name="Layout">The layout netlist as compared — <b>reduced</b>.</param>
-/// <param name="SchematicReduction">What the collapse did to the schematic.</param>
-/// <param name="LayoutReduction">What it did to the layout.</param>
-/// <param name="Diagnostics">
-/// <b>Everything, in one ordered list</b>: both extractions' notes, both reduction summaries and
-/// every finding. A caller that wants only the comparison reads
-/// <see cref="LvsComparison.Findings"/>; a caller that wants to know what the run could not do
-/// needs this, because an extraction that refused is the reason a comparison looks clean.
-/// </param>
-/// <param name="TechnologyName">Which process the layout was read against — named because a
-/// workspace with two of them has a default that may not be the one the designer has in mind.</param>
-public sealed record LvsResult(
-    LvsComparison Comparison,
-    LvsNetlist Schematic,
-    LvsNetlist Layout,
-    ReductionLog SchematicReduction,
-    ReductionLog LayoutReduction,
-    IReadOnlyList<Diagnostic> Diagnostics,
-    string? TechnologyName)
-{
-    /// <summary>How many of <see cref="Diagnostics"/> are errors.</summary>
-    public int ErrorCount => Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
-
-    /// <summary>How many are warnings.</summary>
-    public int WarningCount => Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning);
-
-    /// <summary>Nothing above <see cref="DiagnosticSeverity.Info"/> — <b>the answer to "does the
-    /// artwork implement the drawing"</b>.</summary>
-    public bool IsClean => ErrorCount == 0 && WarningCount == 0;
-}
+// The result model moved to LvsRunResult.cs when brief 8 landed: one comparison produces ONE
+// result type, and it is the one the CLI and the panel consume. A second, thinner record here
+// would be two answers to "what did the run conclude", differing in what they counted.
 
 /// <summary>The single entry point (R-lvs7-6b).</summary>
 public static class LvsRun
@@ -96,7 +63,7 @@ public static class LvsRun
     /// is missing</b> (R-lvs11-2b) — it is the ordinary mid-design state, not a refusal, and a
     /// comparison that threw on it would be one nobody runs while a design is being drawn.
     /// </remarks>
-    public static LvsResult Run(string cellDir, LvsRunOptions? options = null, RunControl? control = null)
+    public static LvsRunResult Run(string cellDir, LvsRunOptions? options = null, RunControl? control = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cellDir);
 
@@ -129,7 +96,7 @@ public static class LvsRun
     /// <param name="isTestBenchCell">Whether the owning <c>.ccell</c> says so (R-lvs4-4d).</param>
     /// <param name="options">What was asked for.</param>
     /// <param name="control">Progress and cancellation.</param>
-    public static LvsResult Run(
+    public static LvsRunResult Run(
         LayoutView layout, string clayPath, string cellDir, Technology? tech,
         SchematicEditModel schematic, string cschPath, bool isTestBenchCell = false,
         LvsRunOptions? options = null, RunControl? control = null)
@@ -151,7 +118,7 @@ public static class LvsRun
         // does: supplying them cannot change a net, a terminal or a device.
         control?.BeginStage("Reading the layout");
         var layoutNetlist = LayoutRead.Read(
-            layout, clayPath, cellDir, tech, null,
+            layout, clayPath, cellDir, tech, out var geometry, null,
             schematicNetlist.Devices.Select(d => d.Path).ToHashSet(StringComparer.Ordinal));
         control?.ThrowIfCancellationRequested();
 
@@ -165,16 +132,27 @@ public static class LvsRun
 
         // Both sides' reduction lines are printed TOGETHER (R-lvs6-5a): an asymmetry between them
         // is often the first clue to what is actually wrong.
-        var diagnostics = new List<Diagnostic>();
-        diagnostics.AddRange(schematicNetlist.Notes);
-        diagnostics.AddRange(layoutNetlist.Notes);
-        diagnostics.AddRange(schematicLog.Notes(schematicDoc));
-        diagnostics.AddRange(layoutLog.Notes(layoutDoc));
-        diagnostics.AddRange(comparison.Findings);
+        var notes = new List<Diagnostic>();
+        notes.AddRange(schematicNetlist.Notes);
+        notes.AddRange(layoutNetlist.Notes);
+        notes.AddRange(schematicLog.Notes(schematicDoc));
+        notes.AddRange(layoutLog.Notes(layoutDoc));
 
-        return new LvsResult(
-            comparison, reducedSchematic, reducedLayout, schematicLog, layoutLog,
-            diagnostics, tech?.Name);
+        var counts = new LvsCounts(
+            new LvsSideCounts(schematicNetlist.Devices.Count, reducedSchematic.Devices.Count,
+                              schematicNetlist.Nets.Count, reducedSchematic.Nets.Count),
+            new LvsSideCounts(layoutNetlist.Devices.Count, reducedLayout.Devices.Count,
+                              layoutNetlist.Nets.Count, reducedLayout.Nets.Count));
+
+        var mode = options.Reduce.Enabled ? ReductionMode.On : ReductionMode.Off;
+
+        control?.BeginStage("Reporting");
+        var findings = LvsReport.Build(
+            comparison, reducedSchematic, reducedLayout, geometry, notes, counts, tech?.Name, mode);
+
+        return new LvsRunResult(
+            findings, comparison, reducedSchematic, reducedLayout, geometry,
+            schematicLog, layoutLog, counts, tech?.Name);
     }
 
     private static string? ViewPath(string cellDir, ViewType type)
@@ -183,16 +161,24 @@ public static class LvsRun
             : null;
 
     /// <summary>The empty answer, and the one line that says why there is one.</summary>
-    private static LvsResult Nothing(string cellDir, ViewType missing)
+    private static LvsRunResult Nothing(string cellDir, ViewType missing)
     {
         var note = LvsDiagnostics.ViewMissing(
             Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar)),
             CellFolder.SubFolderName(missing));
         var empty = LvsNetlist.Nothing([]);
         var log = new ReductionLog(false, 0, 0, 0, []);
-        return new LvsResult(
-            new LvsComparison([], [], [], [], [], 0, 0, 0),
-            empty, empty, log, log, [note], null);
+        var comparison = new LvsComparison([], [], [], [], [], 0, 0, 0);
+
+        // The summary still comes out (R-lvs8-6b): a run that said nothing at all is
+        // indistinguishable from a broken command, and "no primary layout view" is the answer.
+        var findings = LvsReport.Build(
+            comparison, empty, empty, LvsGeometry.None, [note],
+            LvsCounts.Nothing, null, ReductionMode.On);
+
+        return new LvsRunResult(
+            findings, comparison, empty, empty, LvsGeometry.None,
+            log, log, LvsCounts.Nothing, null);
     }
 
     /// <summary>Whether the cell declares itself a bench — for R-lvs4-4d's info line, and for

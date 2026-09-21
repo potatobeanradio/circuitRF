@@ -360,7 +360,7 @@ public sealed class ComparisonTests
     /// </summary>
     private static class Board
     {
-        public static LvsResult Compare(Action<LayoutView> mutate)
+        public static LvsRunResult Compare(Action<LayoutView> mutate)
         {
             string cell = Path.Combine(RepoRoot(), "examples", "LVS", "Attenuator");
             string clay = Path.Combine(cell, "layout", "Attenuator.clay");

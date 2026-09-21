@@ -10612,3 +10612,84 @@ knowing before someone meets it on a real board.
 info**, rather than throwing. R-lvs11-2b wants the mid-design state to be ordinary, and
 `tests/Firewall.Tests`' user-facing-text gate is what turned the first version's exception message
 into a diagnostic — correctly.
+
+## LVS brief 8 — the findings, and the one rule in it that could not be implemented as written
+
+`brief-lvs-8-findings.md`, 2026-09-21. `LvsRunResult` / `LvsFinding` / `LvsReport` /
+`LvsShortPath` / `LvsGeometry`, plus `CopperNeck` in `Layout/Extraction`.
+
+### The spanning forest CANNOT find a same-layer short, and F4 is a same-layer short
+
+R-lvs8-4a says a short's path is "a breadth-first walk over that spanning forest, and the shortest
+join sequence between the two pieces". That is necessary and it is not sufficient, and brief 2's own
+note said so without drawing the conclusion: **`DrcRegions.Components` unions two pieces of metal
+that meet on ONE LAYER before the union-find ever sees them**, so a same-layer short leaves no edge
+behind. It is not a short join on the path — it is not on the path at all, because the two ends are
+one node.
+
+The proving board's F4 is exactly that: 0.2 mm of top copper from the ground strip up to the input
+run. Walk the forest and the shortest sequence from the input pad to a ground pad goes down a
+stitching barrel, across the pour and up another — three 0.6 mm vias, every one correct artwork, and
+not one of them the fault. **A report naming one of those vias would be worse than one naming
+nothing**, because a user would go and look at it.
+
+So the route is the forest walk **and**, at every piece the walk passes through, the narrowest place
+inside that piece between where the route entered and where it left. The narrowest step of the whole
+route is what the finding names. That is the brief's own example sentence read literally — "a 0.2 mm
+**neck of Metal1**", which is not a via — and it is the only reading under which its own gate can
+pass. The board now reports:
+
+> *2 schematic nets are one piece of copper ('0'): 0, IN. They are joined through a 200.064 µm neck
+> of Top Copper at (1500, 4675) µm.*
+
+against a spur drawn from (1.40, 3.55) to (1.60, 5.80).
+
+**The measurement is the DRC's own minimum-width test, bisected.** `DrcEngine.CheckMinWidth` erodes
+by w/2 and dilates back to answer "which part of this conductor is narrower than w"; `CopperNeck`
+asks that repeatedly, halving the interval, until the two ends stop being connected. §8's "no new
+geometry" holds in the sense that matters — no second partition, no second flatten, no new rule
+about what is joined — but it could not hold literally, and the file says so at its header.
+
+**It lives in `Layout/Extraction`, not in `Layout/Lvs`.** R-lvs3-7 forbids a Clipper call anywhere
+under `Lvs/` and a comment-stripped source scan enforces it; the first version of `LvsShortPath`
+tripped that gate within a minute of being written, which is the gate working. "Where is this piece
+of metal at its narrowest between here and there" is a question about copper, so it belongs with the
+copper.
+
+### The first pin pair is the wrong pair, twice over
+
+`LvsReport` measures the short over **every** pin of one net against every pin of the other, capped
+at 16 probes, and keeps the narrowest. Two reasons, both visible on the six-fault board: a pin pair
+may not be joined at all (F5 leaves one ground pad on an island of its own, so the first ground pin
+has no route to the input and the whole short goes unlocated — which is exactly what the first
+version reported), and where several routes exist the narrowest is the one to look at.
+
+### Three narrowings of the brief's own text, each recorded where it bites
+
+- **A finding about a SCHEMATIC-only object carries no marker.** R-lvs8-2c's rule is "a marker, or a
+  run-level line with an empty one", and it does not name the third case: `lvs.device.unmatched-
+  schematic` names a part the artwork does not have, and there is nothing to point at — that absence
+  IS the finding. `LvsFinding` therefore splits `IsRunLevel` (no objects) from `HasMarker` (rings),
+  and the gate asserts the partition rather than asserting rings on everything.
+- **`lvs.terminals.derived-by-order` was not adopted.** Brief 1 already ships that diagnostic as
+  `check.terminals.derived-by-order` and `check` already prints it; a second id so it reads `lvs.`
+  would be one fault with two contracts. LVS carries brief 1's own line instead — and LVS now
+  carries it at all, which it did not: a map read positionally is a guess every downstream finding
+  rests on, and nothing in the report said so.
+- **F5 is two islands, not three.** Already recorded in the fixture's own generator note; repeated
+  here because the brief's §7 gate asks for three.
+
+### Derived, not stored
+
+`LvsRunResult.Correspondence`, `.Diagnostics`, `.Incomplete`, `.Reduction` and every tally are
+computed from what is stored. The brief writes them as record fields; a second list holding the
+pairs `LvsComparison` already holds would make this the third place a device pairing lives, which is
+the scar `VersionSingleSourceTests` exists for. `LvsResult` was renamed rather than joined by a
+second result type, for the same reason.
+
+### `lvs.net.floating-copper` is a partition-net question, and ground has to be excluded from it
+
+Copper with no pin on it is found by asking which partition nets no terminal ever resolved onto.
+The clause that is easy to miss: a piece of an **undrawn ground reference's** own network that no
+terminal happened to touch is still net 0, so `NetTable.Existing` answers with the ground net rather
+than with -1. Without it every stitching via of a correct MMIC reports a warning.

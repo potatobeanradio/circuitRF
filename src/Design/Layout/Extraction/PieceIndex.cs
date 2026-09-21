@@ -129,6 +129,23 @@ internal sealed class PieceIndex
     /// thing that joins them, so restricting it to one is asking the wrong question.</param>
     public int PieceAt(long x, long y, LayerKey? layer)
     {
+        int i = IndexAt(x, y, layer);
+        return i < 0 ? -1 : _pieces[i].Net;
+    }
+
+    /// <summary>
+    /// The same lookup, answering with the <b>piece</b> rather than with its net —
+    /// <c>brief-lvs-8-findings.md</c> R-lvs8-4a.
+    /// </summary>
+    /// <remarks>
+    /// <b>The path walk needs the node, not the class it belongs to.</b> A short's path is a walk
+    /// over <see cref="PieceJoin"/>s, which are edges between PIECES; membership of a net is the
+    /// answer that walk exists to explain, so a lookup that only gives the net cannot start it.
+    /// <see cref="PieceAt"/> is this, mapped — one walk, so a broad phase that changed which piece
+    /// answers changes both together.
+    /// </remarks>
+    public int IndexAt(long x, long y, LayerKey? layer)
+    {
         int candidates = 0, exact = 0, answer = -1;
 
         // Outside the whole partition's extent there is no bucket and no piece can contain the
@@ -156,7 +173,7 @@ internal sealed class PieceIndex
             if (!piece.Bounds.Contains(x, y)) continue;
 
             exact++;
-            if (Regions.Contains(piece.Paths, x, y)) { answer = piece.Net; break; }
+            if (Regions.Contains(piece.Paths, x, y)) { answer = i; break; }
         }
 
         Counters = new PieceLookupCounters(_pieces.Count, candidates, exact);

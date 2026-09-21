@@ -103,7 +103,20 @@ public enum PlacementScope
 /// <param name="Row">Which array cell, 0-based. Zero for a plain placement.</param>
 /// <param name="Col">Which array cell, 0-based. Zero for a plain placement.</param>
 public readonly record struct PlacedPinOrigin(
-    int Instance, string CellDir, string PinKey, LayerKey Layer, int Row, int Col);
+    int Instance, string CellDir, string PinKey, LayerKey Layer, int Row, int Col)
+{
+    /// <summary>
+    /// The footprint pin's own stated width, DBU — <b>the extent a marker is drawn at</b>
+    /// (<c>brief-lvs-8-findings.md</c> R-lvs8-2c). Zero where the pattern states none.
+    /// </summary>
+    /// <remarks>
+    /// <b>Init-only, so every existing construction still compiles and still means what it
+    /// meant.</b> It is the same number the <c>extents</c> side channel carries; it is repeated
+    /// here because that dictionary is keyed on the pad VALUE and two cells of one array can put
+    /// two identical pads at two places, which is the case this list exists to keep apart.
+    /// </remarks>
+    public long WidthDbu { get; init; }
+}
 
 /// <summary>How a pad set reads on a status strip and on a provenance banner — R-ab1-6c.</summary>
 /// <remarks>
