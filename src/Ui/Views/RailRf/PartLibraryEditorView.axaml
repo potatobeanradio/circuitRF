@@ -51,6 +51,21 @@
             <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
         </Style>
+        <!-- The footprint picker sits in the same column string as the text cells, so it takes the
+             same metrics: a control an em taller would set the row height for every row in the grid.
+             Padding is smaller on the right because a combo box spends that space on its arrow. -->
+        <Style Selector="ComboBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="6,4,2,4"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ComboBox.cell.flagged">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
 
         <!-- Owner report, 2026-09-20: "it's hard to select a row because there are so many text edit
              boxes." Two halves, and they are separate problems.
@@ -181,7 +196,7 @@
                                  different star pool from its rows lands every boundary somewhere else,
                                  which is a report this codebase has already had once. -->
                             <Grid Grid.Row="0"
-                                  ColumnDefinitions="3,1.5*,1.6*,0.7*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*"
+                                  ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*"
                                   Margin="0,0,0,6">
                                 <TextBlock Grid.Column="1"  Classes="colhdr" Text="Part number"/>
                                 <TextBlock Grid.Column="2"  Classes="colhdr" Text="Description"/>
@@ -212,7 +227,7 @@
                                 </ListBox.Styles>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="rail:PartLibraryRowViewModel">
-                                        <Grid ColumnDefinitions="3,1.5*,1.6*,0.7*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*">
+                                        <Grid ColumnDefinitions="3,1.5*,1.6*,1.1*,0.7*,0.7*,0.8*,0.9*,0.9*,0.9*,0.8*,1.2*,1.0*">
                                             <!-- The selection mark. See the ListBoxItem styles above for
                                                  why the row carries one of its own. -->
                                             <Border Classes="rowmark" CornerRadius="1.5" Margin="0,1"/>
@@ -223,8 +238,25 @@
                                                      ToolTip.Tip="{Binding Refusal}"/>
                                             <TextBox Grid.Column="2" Classes="cell"
                                                      Text="{Binding Description, Mode=TwoWay}"/>
-                                            <TextBox Grid.Column="3" Classes="cell"
-                                                     Text="{Binding Footprint, Mode=TwoWay}"/>
+                                            <!-- R-rail24-4a: a picker over the case sizes, editable,
+                                                 so a maintained table's own spelling can still be
+                                                 typed and is still shown as written (R-fp4-3b). The
+                                                 ITEM TEMPLATE carries the metric twin and the
+                                                 millimetres; the closed box carries the token, which
+                                                 is what the file holds and what fits the column. -->
+                                            <ComboBox Grid.Column="3" Classes="cell"
+                                                      Classes.flagged="{Binding IsFootprintAmbiguous}"
+                                                      ItemsSource="{Binding FootprintOptions}"
+                                                      IsEditable="True"
+                                                      Text="{Binding Footprint, Mode=TwoWay}"
+                                                      SelectionChanged="OnFootprintSelectionChanged"
+                                                      ToolTip.Tip="{Binding FootprintReport}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="rail:FootprintOption">
+                                                        <TextBlock Text="{Binding Display}" FontSize="11"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
                                             <TextBox Grid.Column="4" Classes="cell"
                                                      Text="{Binding DielectricClass, Mode=TwoWay}"
                                                      ToolTip.Tip="X7R, X5R, C0G/NP0, … Blank means the ESR resolves from no class at all, rather than quietly taking X7R's."/>

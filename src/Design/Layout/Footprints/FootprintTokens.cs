@@ -94,6 +94,9 @@ public static class FootprintTokens
     /// <remarks>
     /// <b>The rule, in order.</b>
     /// <list type="number">
+    ///   <item>A canonical <c>smt:&lt;case&gt;[@&lt;density&gt;]</c> reference, parsed by
+    ///   <see cref="FootprintRef"/> itself. It is the spelling this file's own ambiguity report asks
+    ///   for, so it has to be one this file can read back.</item>
     ///   <item>The WHOLE trimmed token, against the table. This comes first because a tantalum code
     ///   contains the separator the next step splits on — <c>7343-31</c> would otherwise be split
     ///   into two halves that name nothing.</item>
@@ -120,7 +123,31 @@ public static class FootprintTokens
 
         string s = raw.ToUpperInvariant();
 
-        // 0 — THE AMBIGUITY, BEFORE ANY LOOKUP. A bare token is the whole token, so this cannot be
+        // 0a — A CANONICAL BUILT-IN REFERENCE READS AS ITSELF, density and all.
+        //
+        // `smt:` is `FootprintRef`'s spelling and it arrives here from three real places: the
+        // ambiguity report below TELLS a reader to write `smt:0402`, the part library editor's
+        // footprint picker STORES exactly that (brief-railrf-24 R-rail24-4a), and a footprint
+        // parameter copied out of a schematic is the fully canonical `smt:0402@N`. The reduction
+        // below can read none of them, and the two failures are silent ones:
+        //
+        //   `smt:0402@N`  — `@` is not a separator, so the segment is `0402@N`, which is not a code,
+        //                   and stripping the trailing `N` leaves `0402@`, which is not one either.
+        //   `smt:3216-18` — `-` IS a separator, so a tantalum code is split into `3216` and `18`,
+        //                   neither of which is a code. (Bare `3216-18` works, because step 1 tries
+        //                   the whole token first; prefixing the scheme is what breaks it.)
+        //
+        // So the scheme is parsed by the type that owns it, first, and a MALFORMED one is reported
+        // with that type's own refusal rather than falling through to a reduction that can only
+        // reach a wrong answer or the generic sentence.
+        if (FootprintRef.IsBuiltInReference(s))
+            return FootprintRef.TryParse(s, out var canonical, out string? refusal)
+                ? Matched(raw, canonical!.Case.Code, canonical.Case, canonical.Density)
+                : new FootprintTokenMatch(
+                      raw, raw, FootprintTokenOutcome.Unmatched, null, DensityLevel.Nominal, null,
+                      $"'{raw}' claims to be a built-in footprint reference and is not one: {refusal}");
+
+        // 0b — THE AMBIGUITY, BEFORE ANY LOOKUP. A bare token is the whole token, so this cannot be
         // reached by reduction and does not need to be re-asked below. It comes first because five
         // of the eight (1005, 1608, 2012, 3216, 3225) are NOT codes in SmtCaseTable at all — they
         // are real EIA chip codes circuitRF generates no pattern for — so a lookup-first order

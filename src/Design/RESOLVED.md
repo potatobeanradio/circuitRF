@@ -9483,3 +9483,39 @@ non-conductive epoxy, so a filled-and-capped via is still a plated ANNULUS: the 
 COPPER barrel — would have overstated its conductance. A `.ctech` has no field for "these vias are
 plugged" because there is nothing electrical for it to say; it is a fab note, and the example now
 carries it in prose beside the mounting-loop table that depends on it.
+
+---
+
+## `FootprintTokens` could not read the spelling its own refusal asks for (2026-09-20)
+
+Found while making the part library's footprint column a picker
+(`brief-railrf-24-part-library-editor.md` R-rail24-4a), which had to decide what a chosen row stores.
+
+`FootprintTokens.Match`'s ambiguity report ends *"State the scheme — 'smt:0402' is the imperial
+reading and 'smt:01005' the metric one."* **`Match` could not read either of them reliably.** The
+reduction is a whole-token lookup, then a split on a fixed separator set, and the `smt:` scheme was
+never a step of its own, so the outcome depended on what happened to survive the split:
+
+| token | before | why |
+|---|---|---|
+| `smt:0402` | Matched | `:` IS a separator, so the segment `0402` reaches the table by luck |
+| `smt:0402@N` | **Unmatched** | `@` is NOT a separator; `0402@N` misses, and stripping the trailing density letter leaves `0402@`, which misses too |
+| `smt:3216-18` | **Unmatched** | `-` IS a separator, so a tantalum code is split into `3216` and `18`, neither of which is a code |
+
+Both failures are silent, and both are reachable without anyone writing a reference by hand:
+`smt:0402@N` is the **canonical** `FootprintRef.ToString()`, which is what a schematic's `Footprint`
+parameter holds — copy one into a bill of materials or a part library and the column reads *"not a
+case size circuitRF knows"*. `smt:3216-18` is the shape of defect that survives a casual check,
+because the bare `3216-18` it is built from works perfectly (step 1 tries the whole token first, and
+prefixing the scheme is exactly what stops that step firing).
+
+**Fixed by parsing the scheme with the type that owns it, first.** `Match` now begins with
+`FootprintRef.IsBuiltInReference` / `TryParse`, returns the case *and its stated density*, and reports
+a malformed one (`smt:0402@Q`) with `FootprintRef`'s own sentence rather than letting it fall through
+to a reduction whose only available answer is the generic "not a case size". The ambiguity check stays
+after it and is unaffected: a token carrying the scheme is not bare, which is what ambiguity is
+defined on.
+
+**The rule this is an instance of:** a refusal that names a remedy has to be able to READ that remedy
+back. The sentence and the parser were written in the same file and still disagreed, because the
+sentence was reasoning about the format and the parser was reasoning about separators.

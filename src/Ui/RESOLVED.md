@@ -32907,3 +32907,52 @@ where its pads are, so the rail resolved to no copper and the figures were of a 
 refusal. The window's own open (`RailRfViewModel.LoadDocumentReferences`) reads both companions; the
 fixture bypasses that path, so it now reads them through the same `RailArtwork` walks and hands them
 in. The placement goes with them, because the parts table's Position column is in the picture.
+
+---
+
+## The part library's footprint column: a picker over the CASE TABLE, not over the catalog (2026-09-20)
+
+`brief-railrf-24-part-library-editor.md` R-rail24-4a, closed now that the footprint series has
+landed. Three things are worth keeping.
+
+**1. The obvious reading of the requirement was the wrong one.** The brief says the column "becomes a
+picker over `FootprintCatalog`". `FootprintCatalog.Build` returns four sections — None, the built-in
+case sizes, **every workspace cell layout view of matching pad count**, and **`Custom…` over a
+`.clay`** — and the last two are *artwork* references, spelled relative to a **schematic's** own
+directory because that is what `SchematicToLayoutGenerator.ResolveFootprintPath` hands
+`ExternalCellRef.ResolveCellDir`. A `.crlib` is not a schematic and nothing resolves a footprint
+relative to one: `PartLibraryRow.Footprint` is documented as *the package the part is bought in*, and
+the one thing that reads it — the parts table's column, via `FootprintTokens.Match` — would report
+such a path as unmatched for ever. **Offering a row that cannot be read back is offering a refusal.**
+So the picker is the section that means something here, and it keeps everything the requirement
+actually asked for: the same rows, the same metric twin and millimetres, the same ambiguity report.
+
+**2. A chosen row stores `smt:0402` — scheme stated, density NOT.** The scheme because a bare `0402`
+is ambiguous between two case sizes 2.4x apart and `smt:0402` is the remedy `FootprintTokens`' own
+report names (which is also why that file now parses it — see `src/Design/RESOLVED.md`). No density
+because an IPC-7351B level is a property of a **land pattern**, not of a package a part is bought in;
+writing `@N` here would state a fabrication preference in a purchasing column, in a file no land
+pattern is generated from.
+
+**3. The trap: an editable `ComboBox` raises `SelectionChanged` while the document is being BOUND.**
+The cell is `IsEditable="True"` with `Text` two-way bound to the row, and Avalonia matches that text
+against the items — so a library whose rows already name case sizes raises a selection per row at
+bind time. With the naive setter that is **one undo entry per row, and a document that opens dirty
+against a file it has not changed a byte of.** `PartLibraryRowViewModel.SetFootprint` is therefore the
+one write path for both the typed and the picked case and **ignores an edit that changes nothing**.
+The gate asserts that directly, against the shipped example, because it is invisible otherwise.
+
+Two smaller notes on the same control. `FootprintOption.ToString()` returns the **token**, not the
+display: an editable combo puts the selected item's string in its text box, and that box is what
+lands in the file — the long form is the dropdown's, through an `ItemTemplate`, which is also what
+keeps a ·0.7 grid column legible. It cannot be a `TextSearch.Text` attached value, because that lives
+on `AvaloniaObject` and the record is a POCO on the far side of the firewall; the `ToString()`
+fallback is therefore *determined* rather than hoped for. And the view's `SelectionChanged` handler
+calls the view model anyway, so the stored value does not depend on the control's text-search rules
+at all — the no-op guard is what makes belt-and-braces free.
+
+**The shipped example was itself the defect R-rail24-4b names.** `examples/Power Rail/parts/
+decoupling.crlib` carried bare `0402`, `0603`, `0805` and `7343` while the board it belongs to places
+`smt:0402@N`, `smt:0603@N`, `smt:0805@N` and `smt:7343-31@N`. Two ambiguous, one (`7343`) not a case
+code at all, and none of it visible anywhere until the column grew a report. It now states the
+packages it means.

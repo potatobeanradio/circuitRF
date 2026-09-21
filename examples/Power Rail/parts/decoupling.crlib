@@ -5,7 +5,7 @@
     {
       "PartNumber": "CAP-0402-100N-X7R-16V",
       "Description": "100 nF 0402 X7R 16 V",
-      "Footprint": "0402",
+      "Footprint": "smt:0402",
       "DielectricClass": "X7R",
       "VoltageRatingV": 16,
       "CapacitanceFarads": 1E-07,
@@ -37,7 +37,7 @@
     {
       "PartNumber": "CAP-0603-1U0-X5R-10V",
       "Description": "1 uF 0603 X5R 10 V",
-      "Footprint": "0603",
+      "Footprint": "smt:0603",
       "DielectricClass": "X5R",
       "VoltageRatingV": 10,
       "CapacitanceFarads": 1E-06,
@@ -69,7 +69,7 @@
     {
       "PartNumber": "CAP-0805-10U-X5R-10V",
       "Description": "10 uF 0805 X5R 10 V",
-      "Footprint": "0805",
+      "Footprint": "smt:0805",
       "DielectricClass": "X5R",
       "VoltageRatingV": 10,
       "CapacitanceFarads": 1E-05,
@@ -101,7 +101,7 @@
     {
       "PartNumber": "CAP-BULK-100U-POLY-10V",
       "Description": "100 uF polymer bulk 10 V",
-      "Footprint": "7343",
+      "Footprint": "smt:7343-31",
       "DielectricClass": "Polymer",
       "VoltageRatingV": 10,
       "CapacitanceFarads": 0.0001,

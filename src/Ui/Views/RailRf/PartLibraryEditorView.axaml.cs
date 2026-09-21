@@ -60,6 +60,29 @@ public partial class PartLibraryEditorView : UserControl
                    RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
+    /// <summary>
+    /// Writes a chosen footprint row onto the part library row the combo box is in (R-rail24-4a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Not left to the text binding alone.</b> An editable <c>ComboBox</c> is two-way bound to the
+    /// row’s <c>Footprint</c>, and Avalonia does put a selected item’s string into its text box — but
+    /// which string that is depends on the control’s own text-search rules, and the value landing in
+    /// the file is not a thing to leave to them. The view model’s
+    /// <c>SelectFootprint</c> is the one write path; it ignores a selection that changes nothing, so
+    /// the pair cannot record two undo entries for one gesture and binding-time selection cannot
+    /// open the document dirty.
+    ///
+    /// <para>This is the whole of the view’s part in it: no list, no token, no refusal sentence
+    /// — those are all <c>PartLibraryRowViewModel</c>’s, which is framework-free and driven from the
+    /// gate with no host.</para>
+    /// </remarks>
+    private static void OnFootprintSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox { DataContext: Ui.RailRf.PartLibraryRowViewModel row } combo) return;
+        if (combo.SelectedItem is not Ui.RailRf.FootprintOption option) return;
+        row.SelectFootprint(option);
+    }
+
     /// <summary>Selects the row a newly-focused cell belongs to. A no-op when the row is already
     /// selected, so re-focusing a cell in the current row costs nothing.</summary>
     private static void OnCellGotFocus(object? sender, RoutedEventArgs e)

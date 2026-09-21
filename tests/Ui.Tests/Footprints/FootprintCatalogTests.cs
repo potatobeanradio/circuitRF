@@ -195,6 +195,48 @@ public sealed class FootprintCatalogTests : IDisposable
         Assert.Equal("7343-31", FootprintTokens.Match("7343-31").Case?.Code);
     }
 
+    /// <summary>
+    /// The canonical <c>smt:</c> spelling reads back — which is what makes the ambiguity report's own
+    /// remedy a real one.
+    /// </summary>
+    /// <remarks>
+    /// Two of these FAILED before the part library's footprint picker needed them
+    /// (brief-railrf-24 R-rail24-4a), and both silently: <c>@</c> is not one of the reduction's
+    /// separators, so <c>smt:0402@N</c> — a footprint parameter copied straight out of a schematic —
+    /// reduced to <c>0402@</c> and reported as a case circuitRF does not know; and <c>-</c> IS one, so
+    /// a tantalum's <c>smt:3216-18</c> was split into two halves that name nothing. Bare
+    /// <c>3216-18</c> worked, which is the shape of defect that survives a casual check.
+    /// </remarks>
+    [Theory]
+    [InlineData("smt:0402",     "0402",    DensityLevel.Nominal)]
+    [InlineData("smt:0402@M",   "0402",    DensityLevel.Most)]
+    [InlineData("smt:0402@L",   "0402",    DensityLevel.Least)]
+    [InlineData("smt:3216-18",  "3216-18", DensityLevel.Nominal)]
+    public void ACanonicalBuiltInReferenceReadsAsItself(
+        string token, string code, DensityLevel density)
+    {
+        var m = FootprintTokens.Match(token);
+        Assert.Equal(FootprintTokenOutcome.Matched, m.Outcome);
+        Assert.Equal(code, m.Case?.Code);
+        Assert.Equal(density, m.Density);
+
+        // The scheme states what a bare token cannot, so it is never reported as ambiguous — which is
+        // the whole reason the ambiguity report names this spelling as its answer.
+        Assert.Contains("smt:", FootprintTokens.Match("0402").Report, StringComparison.Ordinal);
+    }
+
+    /// <summary>A MALFORMED built-in is reported as one, with <c>FootprintRef</c>'s own sentence —
+    /// rather than falling through to a reduction whose only honest answer is "not a case size".</summary>
+    [Fact]
+    public void AMalformedBuiltInReferenceIsReportedAsOne()
+    {
+        var m = FootprintTokens.Match("smt:0402@Q");
+        Assert.Equal(FootprintTokenOutcome.Unmatched, m.Outcome);
+        Assert.Null(m.Reference);
+        Assert.Contains("smt:0402@Q", m.Report, StringComparison.Ordinal);
+        Assert.Contains("density", m.Report, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ══ 8. The walk is bounded ══════════════════════════════════════════════════════════════════
 
     /// <summary>

@@ -88,12 +88,42 @@ a run against it says the same thing.
 
 `PartLibraryRow.Footprint` is a `string?` that nothing writes and nothing reads.
 
-**`R-rail24-4a`** With the [footprint series](brief-footprint-0-overview.md) landed, it becomes a
-picker over `FootprintCatalog` rather than a free-text box — the same rows, the same metric twin,
-the same ambiguity refusal for a four-digit token that names a case in both schemes.
+**`R-rail24-4a` — DONE, 2026-09-20, with the [footprint series](brief-footprint-0-overview.md)
+landed.** It is a picker: an editable combobox over the case table, each row reading its metric twin
+and its millimetres (`SmtCase.Display`), with `FootprintTokens`' own report on the cell's tooltip and
+its ambiguity marked on the cell's border.
 
-**`R-rail24-4b`** Without that series, it stays free text and is shown. A field that exists and is
-invisible is a field that silently disagrees with whatever else claims to know a part's package.
+**Over the case table, and NOT over the whole `FootprintCatalog`.** The catalog's other two sections
+— a workspace cell's layout views, and `Custom…` over a `.clay` — are **artwork** references, resolved
+relative to a *schematic's* own directory by `SchematicToLayoutGenerator`. A `.crlib` is not a
+schematic and nothing resolves a footprint relative to one: this field is documented as *the package
+the part is bought in*, and the only thing that reads it — the parts table's own column, via
+`FootprintTokens.Match` — would report such a path as unmatched for ever. **Offering rows that cannot
+be read back is offering a refusal.**
+
+**A chosen row stores `smt:0402`.** The scheme is stated because a bare `0402` is *ambiguous* — eight
+codes name a real case in both schemes, differing by 2.4x — and `smt:0402` is the exact remedy
+`FootprintTokens`' own ambiguity report names. The **density is not** stated: an IPC-7351B level is a
+property of a land pattern, not of a package a part is bought in, and no land pattern is generated
+from this file.
+
+**And the remedy that report names now works.** `FootprintTokens.Match` could not read the scheme it
+was telling people to write, and failed **silently** two ways: `@` is not one of the reduction's
+separators, so `smt:0402@N` — a footprint parameter copied straight out of a schematic — reduced to
+`0402@` and was reported as a case circuitRF does not know; and `-` *is* one, so a tantalum's
+`smt:3216-18` was split into two halves that name nothing (bare `3216-18` worked, which is what made
+it survivable). `Match` now parses a canonical reference through `FootprintRef` first, and reports a
+malformed one with that type's own sentence.
+
+**`R-rail24-4b`** Superseded by `-4a`, and its point is kept: the field is **shown**, whatever it
+holds. Free text still typed, still stored, and still displayed as written — a maintained table's
+`SM/C_0402` or a vendor decal name is legitimate and is never turned into the nearest code
+(`R-fp4-3b`). What the cell adds is that it now *says what the token reads as*.
+
+**The shipped example was itself the defect this requirement names.** `decoupling.crlib` carried
+bare `0402`, `0603`, `0805` and `7343` while the board it belongs to places `smt:0402@N`,
+`smt:0603@N`, `smt:0805@N` and `smt:7343-31@N` — two of them ambiguous, one (`7343`) not a case code
+at all, and none of them visible anywhere. It now states the packages it means.
 
 ---
 
@@ -116,6 +146,12 @@ invisible is a field that silently disagrees with whatever else claims to know a
    (R-rail24-3a).
 9. **The bias curve edits and plots.** Adding a point changes the derated capacitance the resolver
    computes.
+10. **The footprint picker** (R-rail24-4a). Every offered row stores a token `FootprintTokens.Match`
+   reads back as the case it names, with no density; picking one is a single undoable edit and
+   picking the row a part already carries is **no edit at all** — which is what stops an editable
+   combobox's binding-time `SelectionChanged` opening the document dirty against a file it has not
+   changed a byte of. A typed token survives as written, and only an ambiguous one is flagged.
+   `tests/Ui.Tests/Footprints/FootprintCatalogTests.cs` holds the canonical-reference half.
 
 ## 6. Scope
 

@@ -395,4 +395,121 @@ public sealed class PartLibraryEditorTests : IDisposable
         Assert.Equal(2, PartLibraryIo.LoadFromFile(path)
                                      .Part("CAP-BULK-100U-POLY-10V")!.BiasCurve.Count);
     }
+
+    // ── 10. The footprint column is a picker (R-rail24-4a) ───────────────────────────
+
+    /// <summary>
+    /// The picker offers the case table, and a chosen row stores a token the parts table can read
+    /// back — which is the only property of the stored spelling that matters.
+    /// </summary>
+    /// <remarks>
+    /// <b>The catalogue's other sections are deliberately absent.</b> A workspace cell's layout view
+    /// and Custom… are ARTWORK references resolved against a schematic's directory;
+    /// <c>PartLibraryRow.Footprint</c> is the package a part is BOUGHT in and nothing resolves it to
+    /// artwork, so a path stored here would read as unmatched for ever. The assertion below is that
+    /// round trip, not the spelling: every offered row must survive
+    /// <see cref="FootprintTokens.Match"/> as the case it names.
+    /// </remarks>
+    [Fact]
+    public void EveryOfferedFootprintStoresATokenTheCaseTableReadsBack()
+    {
+        var offered = PartLibraryRowViewModel.Footprints;
+
+        // The (none) row is first and stores nothing; every other row is one case, in table order.
+        Assert.Equal("", offered[0].Token);
+        Assert.Equal(SmtCaseTable.Codes.Select(c => "smt:" + c), offered.Skip(1).Select(o => o.Token));
+
+        foreach (var option in offered.Skip(1))
+        {
+            var m = FootprintTokens.Match(option.Token);
+            Assert.Equal(FootprintTokenOutcome.Matched, m.Outcome);
+
+            // No density: an IPC-7351B level is a property of a land pattern, not of a package a
+            // part is bought in, and no land pattern is generated from this file.
+            Assert.DoesNotContain('@', option.Token);
+        }
+
+        // ToString is the TOKEN, because that is what an editable combo box puts in its text box and
+        // therefore what lands in the file. The long form is the dropdown's, through the template.
+        Assert.Equal(offered[1].Token, offered[1].ToString());
+        Assert.Contains("metric", offered[1].Display, StringComparison.Ordinal);
+        Assert.Contains("mm",     offered[1].Display, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Picking a row writes it, dirties the document and undoes — and picking the row a part already
+    /// carries does none of the three.
+    /// </summary>
+    /// <remarks>
+    /// The second half is not a nicety. An editable combo box raises <c>SelectionChanged</c> when its
+    /// text first matches an item, which happens while the document is being bound: without the
+    /// no-op guard, opening this library — whose every row names a case size — would push an undo
+    /// entry per row and the document would open dirty against a file it had not changed a byte of.
+    /// </remarks>
+    [Fact]
+    public void PickingAFootprintIsOneUndoableEdit_AndPickingTheStoredOneIsNoEditAtAll()
+    {
+        string path = CopyShippedLibrary();
+        var vm  = Open(path);
+        var row = vm.Rows.Single(r => r.PartNumber == "CAP-0402-100N-X7R-16V");
+
+        // What the file already says — re-picking it is not an edit.
+        Assert.Equal("smt:0402", row.Footprint);
+        row.SelectFootprint(PartLibraryRowViewModel.Footprints.Single(o => o.Token == "smt:0402"));
+        Assert.False(vm.IsDirty);
+        Assert.False(vm.UndoRedo.CanUndo);
+
+        row.SelectFootprint(PartLibraryRowViewModel.Footprints.Single(o => o.Token == "smt:1206"));
+        Assert.Equal("smt:1206", row.Footprint);
+        Assert.True(vm.IsDirty);
+        Assert.True(vm.UndoRedo.CanUndo);
+
+        vm.UndoCommand.Execute(null);
+        Assert.Equal("smt:0402",
+                     vm.Rows.Single(r => r.PartNumber == "CAP-0402-100N-X7R-16V").Footprint);
+
+        // And it survives the file, read back by the same matcher the parts table uses.
+        vm.RedoCommand.Execute(null);
+        vm.SaveCommand.Execute(null);
+        string stored = PartLibraryIo.LoadFromFile(path, validate: false)
+                                     .Part("CAP-0402-100N-X7R-16V")!.Footprint ?? "";
+        Assert.Equal("1206", FootprintTokens.Match(stored).Case?.Code);
+    }
+
+    /// <summary>
+    /// A typed token is still accepted and still shown as written — and a bare one that names a real
+    /// case in BOTH schemes is the one state the cell flags.
+    /// </summary>
+    /// <remarks>
+    /// R-fp4-3b: an unmatched token is ordinary. A vendor decal name is a legitimate thing for a
+    /// maintained table to carry, and turning it into the nearest code would tell the reader what the
+    /// matcher believed. An ambiguous one is different: <c>0402</c> read the wrong way is 2.4x out, it
+    /// places, it renders, it exports, and the first sign of trouble is a board.
+    /// </remarks>
+    [Fact]
+    public void ATypedTokenSurvivesAsWritten_AndOnlyAnAmbiguousOneIsFlagged()
+    {
+        var vm = Open(CopyShippedLibrary());
+        var row = vm.Rows[0];
+
+        row.Footprint = "SM/C_0402";
+        Assert.Equal("SM/C_0402", row.Footprint);
+        Assert.False(row.IsFootprintAmbiguous);
+        Assert.Contains("0402", row.FootprintReport, StringComparison.Ordinal);
+
+        row.Footprint = "WIDGET-77";
+        Assert.Equal("WIDGET-77", row.Footprint);
+        Assert.False(row.IsFootprintAmbiguous);
+        Assert.Contains("WIDGET-77", row.FootprintReport, StringComparison.Ordinal);
+
+        row.Footprint = "0402";
+        Assert.True(row.IsFootprintAmbiguous);
+        Assert.Contains("imperial", row.FootprintReport, StringComparison.Ordinal);
+        Assert.Contains("metric",   row.FootprintReport, StringComparison.Ordinal);
+
+        // …and the remedy the sentence names is one the picker offers and the matcher reads.
+        Assert.Contains("smt:0402", row.FootprintReport, StringComparison.Ordinal);
+        row.Footprint = "smt:0402";
+        Assert.False(row.IsFootprintAmbiguous);
+    }
 }

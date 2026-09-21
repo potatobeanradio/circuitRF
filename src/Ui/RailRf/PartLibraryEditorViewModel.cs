@@ -29,6 +29,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
+using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Ui.Commands;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -142,6 +143,34 @@ public sealed partial class PartBiasPointViewModel(PartLibraryEditorViewModel ow
 }
 
 /// <summary>
+/// One row of the footprint picker (R-rail24-4a).
+/// </summary>
+/// <param name="Token">What is STORED when the row is chosen, and what the closed combo box shows.
+/// Empty on the <b>(none)</b> row.</param>
+/// <param name="Display">What the DROPDOWN shows — <see cref="SmtCase.Display"/>, which carries the
+/// metric twin and the millimetres on every mention. That is the overview’s §1e spelling and it is
+/// not decoration: <c>0201</c> imperial and <c>0201</c> metric are two real case sizes differing by
+/// 2.4x.</param>
+public sealed record FootprintOption(string Token, string Display)
+{
+    /// <summary>
+    /// <b>The TOKEN, deliberately — never the display.</b>
+    /// </summary>
+    /// <remarks>
+    /// An editable <c>ComboBox</c> puts the selected item’s string into its text box, and that text
+    /// box is two-way bound to the row’s <see cref="PartLibraryRowViewModel.Footprint"/>. So this is
+    /// what lands in the file. The dropdown reads the long form through an <c>ItemTemplate</c>
+    /// instead, which is also what keeps a ·0.7 grid column legible.
+    ///
+    /// <para>It cannot be a <c>TextSearch.Text</c> attached value: that property lives on
+    /// <c>AvaloniaObject</c> and this record is a POCO on the far side of the UI firewall, so
+    /// Avalonia falls back to <c>ToString()</c> here — which is exactly the behaviour wanted, and is
+    /// determined rather than hoped for.</para>
+    /// </remarks>
+    public override string ToString() => Token;
+}
+
+/// <summary>
 /// One row of the part library grid — <b>the fields <see cref="PartLibraryRow"/> actually has, and
 /// no invented ones</b> (R-rail24-1b), plus the three things the model already computes and nothing
 /// showed (R-rail24-2).
@@ -167,17 +196,130 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         set => Commit(() => Model.Description = Blank(value), "Change a part description", nameof(Description));
     }
 
+    // ══ THE FOOTPRINT COLUMN (R-rail24-4a) ════════════════════════════════════════════════════
+    //
+    // A PICKER OVER THE CASE TABLE, AND NOT OVER THE WHOLE `FootprintCatalog`.
+    //
+    // The catalog’s other two sections — a workspace cell’s layout views, and Custom… over a `.clay`
+    // — are ARTWORK references, resolved relative to a schematic’s own directory by
+    // `SchematicToLayoutGenerator`. A `.crlib` is not a schematic and nothing resolves a footprint
+    // relative to one: `PartLibraryRow.Footprint` is documented as "the footprint this part is
+    // BOUGHT IN … nothing here resolves it to artwork", and the one thing that reads it — the parts
+    // table’s own column, via `FootprintTokens.Match` — would report any such path as unmatched for
+    // ever. Offering rows that cannot be read back is offering a refusal.
+    //
+    // So what is offered is the section that DOES mean something here: the case sizes, with the same
+    // metric twin, the same millimetres and the same ambiguity report the brief asks for.
+    //
+    // WHAT A CHOSEN ROW STORES IS `smt:0402`, WITH NO DENSITY. Two halves:
+    //
+    //   • The scheme is stated because a bare `0402` is AMBIGUOUS — eight of the codes name a real
+    //     case in both schemes, differing by 2.4x — and `smt:0402` is the exact remedy
+    //     `FootprintTokens`’ own ambiguity report names. (It is also why that file now parses the
+    //     scheme: the spelling a refusal asks for has to be one the matcher can read.)
+    //   • The density is NOT stated, because an IPC-7351B density level is a property of a LAND
+    //     PATTERN, not of a package a part is bought in. Writing `@N` here would state a fabrication
+    //     preference in a purchasing column, in a file no land pattern is generated from.
+    //
+    // FREE TEXT SURVIVES. The combo box is editable, so a maintained table’s own spelling —
+    // `SM/C_0402`, `CAP-0402-X7R`, a vendor decal name — can still be typed and is still shown as
+    // written. That is R-fp4-3b, and it is why this is a picker rather than a closed list.
+
+    /// <summary>The picker’s rows. One shared list: it is the case table, which does not vary by
+    /// row, by library or by workspace.</summary>
+    public static IReadOnlyList<FootprintOption> Footprints { get; } =
+    [
+        new FootprintOption("", "(none)"),
+        .. SmtCaseTable.All.Select(c => new FootprintOption(FootprintRef.Scheme + c.Code, c.Display)),
+    ];
+
+    /// <summary>The same list, as an instance property — compiled bindings resolve against the row’s
+    /// own type and do not reach a static.</summary>
+    public IReadOnlyList<FootprintOption> FootprintOptions => Footprints;
+
     /// <summary>
-    /// The package the part is bought in. <b>Free text, and SHOWN</b> (R-rail24-4b) — a field that
-    /// exists and is invisible is a field that silently disagrees with whatever else claims to know a
-    /// part's package. It becomes a picker over the footprint catalogue when that series lands
-    /// (R-rail24-4a); until then this is the honest control for it.
+    /// The package the part is bought in — the combo box’s own text, which is the token as the file
+    /// holds it.
     /// </summary>
+    /// <remarks>
+    /// <b>Shown, whatever it is</b> (R-rail24-4b): a field that exists and is invisible is a field
+    /// that silently disagrees with whatever else claims to know a part’s package.
+    /// </remarks>
     public string Footprint
     {
         get => Model.Footprint ?? "";
-        set => Commit(() => Model.Footprint = Blank(value), "Change a part footprint", nameof(Footprint));
+        set => SetFootprint(value, echo: false);
     }
+
+    /// <summary>Applies a picker row, and echoes it back to the control.</summary>
+    /// <remarks>
+    /// Called from the view’s <c>SelectionChanged</c> rather than left to the text binding alone, so
+    /// the stored value does not depend on whether Avalonia chooses to push a selected item’s string
+    /// into an editable combo box’s text box. <b>It echoes</b> — unlike a keystroke, where re-raising
+    /// the edited property would push the stored spelling back under the caret (see
+    /// <see cref="Commit"/>) — because after a selection there is no caret to move and the box must
+    /// read what was chosen.
+    /// </remarks>
+    internal void SelectFootprint(FootprintOption option) => SetFootprint(option.Token, echo: true);
+
+    /// <summary>
+    /// The one write path for the footprint, typed or picked.
+    /// </summary>
+    /// <remarks>
+    /// <b>An edit that changes nothing is not recorded</b>, and here that is load-bearing rather than
+    /// tidy: an editable combo box raises <c>SelectionChanged</c> when its text first matches an item,
+    /// which happens while the document is being BOUND. Without this guard, opening a library whose
+    /// rows already name case sizes would push an undo entry per row and the document would open
+    /// dirty — against a file it had not changed a byte of.
+    /// </remarks>
+    private void SetFootprint(string? text, bool echo)
+    {
+        string? next = Blank(text);
+        if (string.Equals(next, Model.Footprint, StringComparison.Ordinal))
+        {
+            if (echo) OnPropertyChanged(nameof(Footprint));
+            return;
+        }
+
+        Commit(() => Model.Footprint = next, "Change a part footprint", nameof(Footprint));
+        if (echo) OnPropertyChanged(nameof(Footprint));
+    }
+
+    /// <summary>What this row’s footprint token turned out to be — <c>FootprintTokens</c>’ answer,
+    /// not a second reading of it. Recomputed rather than cached: it is a handful of dictionary
+    /// lookups, and a cache here is a cache to invalidate on every keystroke.</summary>
+    private FootprintTokenMatch FootprintMatch => FootprintTokens.Match(Model.Footprint);
+
+    /// <summary>
+    /// The sentence the footprint cell carries: the reading for a matched token, BOTH readings for an
+    /// ambiguous one, and the case list for an unmatched one.
+    /// </summary>
+    /// <remarks>
+    /// <c>FootprintTokens</c> owns every one of them, so the parts table and this editor cannot come
+    /// to two different conclusions about one token. The empty case is the exception, and only
+    /// because that file’s own sentence names a bill of materials — which is not what is being edited
+    /// here.
+    /// </remarks>
+    public string FootprintReport =>
+        Model.Footprint is { Length: > 0 }
+            ? FootprintMatch.Report
+            : "This row states no footprint. Pick a case size, or type the package as the maintained "
+            + "table spells it — an unrecognised token is shown as written and is never matched to the "
+            + "nearest code.";
+
+    /// <summary>
+    /// True for a bare four-digit token that names a real case in BOTH schemes.
+    /// </summary>
+    /// <remarks>
+    /// <b>The one footprint state worth colouring</b>, and the picker itself can never produce it. An
+    /// UNMATCHED token is ordinary — a vendor decal name is a legitimate thing for a maintained table
+    /// to carry, and R-fp4-3b’s whole point is that it is reported rather than corrected. An
+    /// ambiguous one is different: <c>0201</c> read the wrong way is 2.4x out, it places, it renders,
+    /// it exports, and the first sign of trouble is a board.
+    /// </remarks>
+    public bool IsFootprintAmbiguous =>
+        Model.Footprint is { Length: > 0 } &&
+        FootprintMatch.Outcome == FootprintTokenOutcome.Ambiguous;
 
     /// <summary>X7R, X5R, C0G/NP0, … <b>Blank is load-bearing</b>: it produces a part marked as
     /// having no class rather than one quietly given X7R's dissipation factor.</summary>
@@ -353,6 +495,8 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         if (except != nameof(PartNumber)) OnPropertyChanged(nameof(PartNumber));
         if (except != nameof(Description)) OnPropertyChanged(nameof(Description));
         if (except != nameof(Footprint)) OnPropertyChanged(nameof(Footprint));
+        OnPropertyChanged(nameof(FootprintReport));
+        OnPropertyChanged(nameof(IsFootprintAmbiguous));
         if (except != nameof(DielectricClass)) OnPropertyChanged(nameof(DielectricClass));
         if (except != nameof(VoltageRatingEntry)) OnPropertyChanged(nameof(VoltageRatingEntry));
         if (except != nameof(CapacitanceEntry)) OnPropertyChanged(nameof(CapacitanceEntry));
