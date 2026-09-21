@@ -307,6 +307,37 @@ public sealed class LayoutNetsTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(["+3V3"], again!.ExistingNames);
     }
 
+    /// <summary>
+    /// <b>§6.8b.</b> Whether the menu row EXISTS is a hit test; what it reaches is the partition.
+    /// The two were one call, so every right-click that landed on any shape partitioned the whole
+    /// document's copper on the UI thread to decide whether one row was there — which is ~0.5 s at
+    /// 5,000 shapes and ~5 s at 20,000, and this window has one compositor.
+    ///
+    /// <para>The structural property, rather than a clock: the seeds are what was CLICKED and the
+    /// reach is what that is joined to, so a seed set that had expanded to the connected piece is a
+    /// seed set that had already paid for the partition.</para>
+    /// </summary>
+    [Fact]
+    public void TheMenuRowsPresenceIsAHitTestAndNotThePartition()
+    {
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(new RectShape { Layer = Top, X1 = 0, Y1 = 0, X2 = Mm(10), Y2 = Mm(1) });
+        view.Shapes.Add(new RectShape { Layer = Top, X1 = Mm(8), Y1 = 0, X2 = Mm(20), Y2 = Mm(10) });
+
+        var vm = new LayoutEditorViewModel(view) { Technology = TechFixture() };
+
+        var seeds = vm.NetNameSeedsAt(Mm(5), Um(500), Um(10));
+        Assert.NotNull(seeds);
+        Assert.Equal([0], seeds);                       // the clicked shape ALONE — no walk yet
+
+        Assert.Null(vm.NetNameSeedsAt(Mm(25), Mm(25), Um(10)));   // off every shape: no row at all
+
+        // And the reach off those same seeds is still the whole joined piece, unchanged.
+        var reach = vm.NetNameReachFor(seeds!);
+        Assert.Equal(2, reach.ShapeIndices.Count);
+        Assert.Equal("Names this piece and the 1 shape joined to it.", reach.Sentence);
+    }
+
     // ══ 9 & 10. The window offers a drawn board's nets, and stops saying the wrong thing ════════
 
     /// <summary>

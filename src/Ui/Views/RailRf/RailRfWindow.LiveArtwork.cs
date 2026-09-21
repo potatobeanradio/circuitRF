@@ -30,6 +30,7 @@
 
 using System;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.RailRf;
 using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.ViewModels;
 
@@ -78,7 +79,23 @@ public partial class RailRfWindow
                 // A DIFFERENT object, so the picture has to be rebuilt around it — viewport included,
                 // since this is a one-off swap onto the real document rather than an edit to what is
                 // already shown. Shapes comes along because that is what the extraction reads.
-                vm.Board = board with { View = live, Shapes = live.Shapes };
+                //
+                // FLATTENED, and this line took `live.Shapes` until a board's parts became INSTANCES
+                // (brief-footprint-3). The two open paths already flattened; only this one did not,
+                // so a board whose lands are all inside footprint cells lost every one of them the
+                // moment its layout document was opened beside the railRF window — the run completed,
+                // the answer was of the rail's bare copper, and nothing said so. That is
+                // FlattenedShapes' own stated failure, arrived at from the one direction it was not
+                // wired into. On a board with no instances it hands back `live.Shapes` itself, so the
+                // live-list identity NotifyArtworkChanged relies on is unchanged there.
+                // No notes are collected: this window already reported the flatten's own sentences
+                // when it opened this very `.clay`, and this runs on every Activated — a note posted
+                // here would be the same sentence again each time the user came back to the window.
+                vm.Board = board with
+                {
+                    View = live,
+                    Shapes = RailArtwork.FlattenedShapes(live, clay, board.Technology),
+                };
             }
         }
 

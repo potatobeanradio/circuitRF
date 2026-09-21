@@ -497,6 +497,48 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
+    // ══ The live-artwork seam: a board whose lands are all inside instances ═════════════════════
+
+    /// <summary>
+    /// <b>The fourth site that had never met a board with a footprint on it.</b> Both open paths
+    /// flatten before handing the artwork to the extraction, because a board drawn in circuitRF keeps
+    /// every land inside a footprint cell. The LIVE seam did not: when the same <c>.clay</c> was open
+    /// in the layout editor, activating the railRF window replaced <c>Board.Shapes</c> with the live
+    /// model's ROOT shapes — the rail's bare copper and not one capacitor land. The run completed,
+    /// the answer was of a different board, and nothing said so.
+    ///
+    /// <para>And the edit that follows is the same defect one step along: a flattened list is CLONES,
+    /// so an edit next door leaves it describing the board as it was, and the re-run the cleared
+    /// result invites answers for the old copper.</para>
+    /// </summary>
+    [Fact]
+    public void TheLiveArtworkSeamKeepsAFootprintsLands()
+    {
+        var fx = Board(Place("Land", "C1", Mm(5), Mm(3)));
+
+        // What the two open paths hand over, and what the live model's own list says on its own.
+        var flattened = RailArtwork.FlattenedShapes(fx.View, fx.Clay, fx.Tech);
+        Assert.True(flattened.Count > fx.View.Shapes.Count,
+            "the fixture has to have lands inside its instance for this to mean anything");
+
+        var vm = new Ui.RailRf.RailRfViewModel
+        {
+            Board = new Ui.RailRf.RailBoardInputs
+            {
+                Shapes = flattened, Technology = fx.Tech, View = fx.View, ArtworkCellRef = fx.Clay,
+            },
+        };
+
+        // An edit next door: the flattened snapshot is re-taken rather than left describing the
+        // board as it was.
+        fx.View.Shapes.Add(new RectShape { Layer = Top, X1 = Mm(1), Y1 = Mm(1), X2 = Mm(2), Y2 = Mm(2) });
+        vm.NotifyArtworkChanged();
+
+        Assert.Equal(flattened.Count + 1, vm.Board!.Shapes.Count);
+        Assert.True(vm.Board.Shapes.Count > fx.View.Shapes.Count,
+            "the lands inside the instance are still there after the edit");
+    }
+
     private sealed record Fx(LayoutView View, string Clay, Technology Tech);
 
     private static void AssertPad(IReadOnlyList<PdnPad> pads, string refdes, string pin, long x, long y)

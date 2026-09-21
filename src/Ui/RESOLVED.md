@@ -33072,3 +33072,56 @@ Deriving the column from pads would be a small change and it was deliberately no
 outside brief 1's scope, and the two sources disagree in a way worth deciding on rather than
 defaulting: a placement row is a part's CENTROID, and a pad set's centroid is not the same point on
 an asymmetric part.
+
+---
+
+## Name Net… partitioned the whole board on every right-click (2026-09-20, review of brief-authored-board-2)
+
+`LayoutCanvas`' context-menu builder called `NetNameReachAt` to decide whether the **Name Net…** row
+exists. That call runs `PdnCopperPieces.Build` — a Clipper2 union over every shape in the document
+plus `DrcConnectivity.Extract` — **synchronously, on the UI thread, for every right-click that landed
+on any shape at all**, whatever the user was actually reaching for. Measured on a grid of separate
+copper rects, Debug:
+
+| shapes | `PdnCopperPieces.Build` |
+|---|---|
+| 200 | 14 ms |
+| 1,000 | 33 ms |
+| 5,000 | 492 ms |
+| 20,000 | 5,196 ms |
+
+Four times the shapes is ten times the time, so it is not linear, and this window has one compositor
+— a stall there stalls all of it. `LayoutEditorViewModel.Nets.cs`' own note ("built only on a
+right-click … so the cost is paid twice per gesture rather than per frame") reasoned about the
+frequency and not about the size of one call.
+
+**Split in two.** `NetNameSeedsAt` is the hit test and decides whether the row is there;
+`NetNameReachFor` is the partition and is asked only of a user who hovered or opened the row, once,
+memoised for that menu. R-ab2-3c is unchanged — the dialog still states the reach before the commit,
+and the tooltip still carries the count, it is simply paid for on the hover. `LayoutNetsTests`'
+§6.8b gates the structural property rather than a clock: the seeds are what was CLICKED, so a seed
+set that had already expanded to the connected piece is one that had already paid.
+
+---
+
+## railRF's LIVE artwork seam dropped every footprint's lands (2026-09-20, review of brief-footprint-3)
+
+Both railRF open paths hand the extraction `RailArtwork.FlattenedShapes`, because a board drawn in
+circuitRF keeps every land inside a footprint cell and the unflattened read is "the rail's copper and
+not one capacitor land" — that function's own words. **`RailRfWindow.AdoptLiveArtwork` was the one
+site that was not wired into it.** When the same `.clay` was open in the layout editor, activating the
+railRF window replaced `Board.Shapes` with `live.Shapes` — the ROOT's own shapes. The run completed,
+the answer was of the bare rail, and nothing said so. It is the same failure `FlattenedShapes` exists
+to prevent, reached from the one direction the footprint series did not visit: that commit predates
+the flatten by one series, and nothing compares the two lists.
+
+`NotifyArtworkChanged` was the same defect one step along, and its own comment is where it hid — *"
+`Shapes` on the live path IS the document's own list, the same object the edit mutated in place"*.
+True of a flat board; **false of a flattened one, which is CLONES**, so an edit next door left the
+snapshot describing the board as it was and the re-run the cleared result invites answered for the
+old copper. Both now re-flatten, `NotifyArtworkChanged` through the backing field for
+`AdoptTechnology`'s reason (assigning the property rebuilds the canvas and takes the viewport away).
+
+**Neither change costs a flat board anything**: with no instances `FlattenedShapes` hands back
+`live.Shapes` itself, so the live-list identity the comment relies on is preserved exactly where it
+was actually true. Gated by `LayoutPadsTests.TheLiveArtworkSeamKeepsAFootprintsLands`.

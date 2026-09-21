@@ -2551,3 +2551,17 @@ be written is the wrong order to ask it in.
 two lines above them in `WorkspaceViewModel`: a `[RelayCommand(CanExecute=…)]` gated on the active
 document is not re-evaluated on its own, and one missed from a fan-out is a menu row greyed out
 permanently with nothing to say so.
+
+---
+
+## `netlist`'s board half was not reachable through `serve` (2026-09-20, review of brief-authored-board-3)
+
+R-aut-13 — restated in `ToolCatalog` six lines above the `explain --footprints` entry the footprint
+series added — is that a capability reachable from the command line is reachable from the MCP
+surface. The board projection was not: the `netlist` tool declared only `-o` and `--cell`, and its
+`path` said "A .csch, a cell folder, or a workspace with cell". A caller that handed it a `.clay`
+therefore got R-ab3-2b's refusal, which names three flags — `--ipc`, `--placement`, `--bom` — that
+the tool did not offer, so the refusal was a dead end rather than an instruction.
+
+The three are declared individually rather than folded into `-o` for the reason the refusal itself
+gives: two of the three tables are `.csv` and the extension cannot say which.

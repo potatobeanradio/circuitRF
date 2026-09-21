@@ -353,13 +353,31 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     public void NotifyArtworkChanged()
     {
-        if (Board is not { View: not null }) return;
+        if (Board is not { View: { } live } board) return;
 
         // NOT `Board = board with { … }`. That would raise OnBoardChanged, which rebuilds the
         // LayoutEditorViewModel and with it the viewport — the very thing the paragraph above says
-        // must not happen. Nothing needs re-stating in any case: `Shapes` on the live path IS the
-        // document's own list, the same object the edit mutated in place, so what the extraction
-        // reads is already current.
+        // must not happen.
+        //
+        // ON A FLAT BOARD NOTHING NEEDS RE-STATING: `Shapes` is the document's own list, the same
+        // object the edit mutated in place, so what the extraction reads is already current.
+        //
+        // ON A BOARD WHOSE PARTS ARE INSTANCES IT IS NOT (brief-footprint-3). There `Shapes` is a
+        // FLATTENED list — clones, in the root's frame — so an edit next door leaves it describing
+        // the board as it was, and the re-run this method invites would answer for the old copper
+        // with nothing to say so. Re-flattened here, through the backing field for AdoptTechnology's
+        // reason, and only where there is an instance to flatten: with none, FlattenedShapes hands
+        // back `live.Shapes` itself and the identity above is preserved exactly.
+        if (live.Instances.Count > 0)
+        {
+#pragma warning disable MVVMTK0034
+            _board = board with
+            {
+                Shapes = RailArtwork.FlattenedShapes(live, board.ArtworkCellRef, board.Technology),
+            };
+#pragma warning restore MVVMTK0034
+        }
+
         ClearResults();
         InvalidateNetWalks();       // the copper moved, so every walk taken off it is of a board that is gone
         SyncBoardOverlayResult();

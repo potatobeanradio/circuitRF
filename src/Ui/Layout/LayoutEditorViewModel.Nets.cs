@@ -86,7 +86,23 @@ public sealed partial class LayoutEditorViewModel
     /// is how every other item on this menu behaves, and naming only the one under the pointer after
     /// a user had deliberately selected six would be the surprise.
     /// </remarks>
-    public LayoutNetNameReach? NetNameReachAt(double wx, double wy, long tolDbu)
+    public LayoutNetNameReach? NetNameReachAt(double wx, double wy, long tolDbu) =>
+        NetNameSeedsAt(wx, wy, tolDbu) is { } seeds ? NetNameReachFor(seeds) : null;
+
+    /// <summary>
+    /// What a right-click at (<paramref name="wx"/>, <paramref name="wy"/>) would NAME, before
+    /// anything asks what that reaches — or null where the click landed on nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Split off the reach because the partition is not free</b> — <see cref="CopperPieces"/> is
+    /// a Clipper2 union plus a connected-component walk over every shape in the document, measured
+    /// at ~0.5 s on 5,000 shapes and ~5 s on 20,000 (Debug), and it grows faster than linearly. It
+    /// used to run on EVERY right-click that landed on a shape, to decide whether one menu row
+    /// exists, on the UI thread — and this window has one compositor, so that stalls the whole of
+    /// it. Whether the row is there is a hit test; what it reaches is the expensive question and is
+    /// asked only of a user who hovered or clicked the row.
+    /// </remarks>
+    public IReadOnlyList<int>? NetNameSeedsAt(double wx, double wy, long tolDbu)
     {
         long px = (long)System.Math.Round(wx), py = (long)System.Math.Round(wy);
 
@@ -98,7 +114,16 @@ public sealed partial class LayoutEditorViewModel
         else if (hits.Count > 0)
             seeds.Add(hits[0]);
 
-        if (seeds.Count == 0) return null;
+        return seeds.Count == 0 ? null : seeds;
+    }
+
+    /// <summary>
+    /// What naming <paramref name="seeds"/> would reach — R-ab2-3c's count, and the expensive half
+    /// of <see cref="NetNameReachAt"/>.
+    /// </summary>
+    public LayoutNetNameReach NetNameReachFor(IReadOnlyList<int> seeds)
+    {
+        System.ArgumentNullException.ThrowIfNull(seeds);
 
         var pieces = CopperPieces();
         var reached = pieces.Any ? pieces.ShapesJoinedTo(seeds) : [.. seeds.Distinct().OrderBy(i => i)];

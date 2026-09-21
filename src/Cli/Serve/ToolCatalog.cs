@@ -543,19 +543,40 @@ internal static class ToolCatalog
         // nothing here could simulate a design anyone had actually DRAWN. It is also the reference
         // answer a client checks its own authoring against — AUT-7 §3's false defect report came
         // from an instance line one look at a known-good extraction would have settled.
+        // A BOARD is the same sentence about a different document
+        // (brief-authored-board-3-companion-writers.md R-ab3-2), so it is this tool and not a fourth
+        // one — and R-aut-13 puts it here for the reason stated on `explain --footprints`: it is
+        // reachable from the command line, so it is reachable here. Without these three a caller
+        // handed a .clay gets only the refusal that names flags this tool does not offer.
         new("netlist",
             "Extract the .cnl netlist a schematic simulates as — the same extraction Simulate "
           + "performs, byte for byte. Without output the netlist comes back as text. Every run "
           + "analysis also takes a .csch directly and extracts in memory; this is for reading what "
-          + "it will run, and for checking your own authoring against a known-good one.",
+          + "it will run, and for checking your own authoring against a known-good one. Given a "
+          + ".clay it PROJECTS the board instead: a board netlist, a placement table and a bill of "
+          + "materials, from one reading of the artwork, so the three cannot disagree.",
             null, null,
             [
                 new("", [ "netlist" ],
-                    [new("path", true, "A .csch, a cell folder, or a workspace with cell.")],
+                    [new("path", true,
+                        "A .csch, a cell folder, or a workspace with cell — or a .clay, with at least "
+                      + "one of ipc/placement/bom.")],
                     [
                         new("output", "-o", OptKind.Path,
                             "Where the .cnl is written. Without it the text comes back in the result."),
                         new("cell", "--cell", OptKind.Str, "Which cell, when the path is a workspace."),
+                        // Named individually because two of the three are .csv and an extension
+                        // cannot say which — R-ab3-2b, which is why `-o` on a board is a refusal.
+                        new("ipc", "--ipc", OptKind.Path,
+                            "Board only. Where the board netlist (IPC-D-356) is written — one record per "
+                            + "pad and per via that carries a net."),
+                        new("placement", "--placement", OptKind.Path,
+                            "Board only. Where the placement table is written — a centroid, a rotation "
+                            + "and a side per reference designator."),
+                        new("bom", "--bom", OptKind.Path,
+                            "Board only. Where the bill of materials is written — the value, footprint "
+                            + "and type each placement resolves to. More than one of the three in a run "
+                            + "is encouraged: they come from one projection."),
                     ],
                     ""),
             ]),

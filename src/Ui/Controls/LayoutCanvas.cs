@@ -1366,15 +1366,28 @@ public sealed class LayoutCanvas : Control
         // behaviour — and it is here rather than only in that panel because the thing a user wants
         // to say is "this pour is +3V3", which is a right-click on the pour and not a text box on a
         // panel they opened for something else.
-        if (_viewModel.NetNameReachAt(wx, wy, HitTolDbu()) is { } reach)
+        //
+        // THE ROW'S PRESENCE IS A HIT TEST; ITS REACH IS NOT. `NetNameReachFor` partitions the whole
+        // document's copper — a Clipper2 union plus a connected-component walk, ~0.5 s at 5,000
+        // shapes and ~5 s at 20,000 in Debug, growing faster than linearly — and it used to run here,
+        // synchronously, on every right-click that landed on ANY shape, just to decide whether this
+        // one row exists. On a real board that stalls the whole window, because there is one
+        // compositor. So the seeds are taken now and the reach is computed once, lazily, for a user
+        // who actually hovered or opened the row.
+        if (_viewModel.NetNameSeedsAt(wx, wy, HitTolDbu()) is { } netSeeds)
         {
             if (items.Count > 0) items.Add(new Separator());
             var nameNet = new MenuItem { Header = "Name Net…" };
-            // The reach on the tooltip as well as in the dialog: R-ab2-3c asks that the blast radius
-            // be visible before the gesture is committed to, and hovering the row is earlier than
-            // opening it.
-            ToolTip.SetTip(nameNet, reach.Sentence);
-            nameNet.Click += async (_, _) => await ShowNameNetDialogAsync(reach);
+
+            Layout.LayoutNetNameReach? reach = null;
+            Layout.LayoutNetNameReach Reach() =>
+                reach ??= _viewModel!.NetNameReachFor(netSeeds);
+
+            // R-ab2-3c still asks that the blast radius be visible before the gesture is committed
+            // to, and hovering the row is earlier than opening it — so the tooltip keeps the count
+            // and simply pays for it on the hover rather than on the right-click.
+            nameNet.PointerEntered += (_, _) => ToolTip.SetTip(nameNet, Reach().Sentence);
+            nameNet.Click += async (_, _) => await ShowNameNetDialogAsync(Reach());
             items.Add(nameNet);
         }
 
