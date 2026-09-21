@@ -282,9 +282,14 @@ public sealed class AppPreferences
     public bool? AutomaticUpdates { get; set; }
 
     /// <summary>
-    /// Whether prerelease versions are offered. Null means the default, which is <b>OFF</b> — the
-    /// opposite default to the one above, and deliberately: the users on the fastest-moving channel
-    /// should be the ones who opted into it.
+    /// Whether prerelease versions are offered. Null means the default, which is <b>ON</b> while
+    /// circuitRF itself ships as a beta: the releases that exist to be run ARE the prereleases, and
+    /// a default that hid them left the ordinary user on a channel with nothing on it.
+    ///
+    /// <para>Null carries more than "unset": it means the user has never touched the box, which is
+    /// what lets the default change under an existing installation. An explicit <c>false</c> is a
+    /// decision and is never overridden. The property that makes null trustworthy is that the
+    /// settings dialog writes this key only from a user-driven change, never on load.</para>
     ///
     /// <para>A sub-item of <see cref="AutomaticUpdates"/> in the UI, and disabled while that is off.
     /// Turning it off DISCARDS a staged prerelease, and leaves a staged stable version alone — a user

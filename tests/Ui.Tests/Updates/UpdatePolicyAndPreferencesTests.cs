@@ -48,17 +48,17 @@ public sealed class UpdatePolicyAndPreferencesTests : IDisposable
 
     /// <summary>
     /// R-AU-37. With NO preferences.json present at all — the fresh-install case — automatic updates
-    /// resolve ON and betas OFF. Absence IS the default; a seeded file would pass a weaker test.
+    /// resolve ON and betas ON. Absence IS the default; a seeded file would pass a weaker test.
     /// </summary>
     [Fact]
-    public void FreshInstall_ResolvesUpdatesOn_AndBetasOff_WithNoFileAtAll()
+    public void FreshInstall_ResolvesUpdatesOn_AndBetasOn_WithNoFileAtAll()
     {
         Assert.False(File.Exists(PrefsPath));
 
         UpdatePolicyState p = UpdatePolicy.Resolve(_install, AppPreferencesIo.Load());
 
         Assert.True(p.AutomaticUpdates);
-        Assert.False(p.IncludeBetas);
+        Assert.True(p.IncludeBetas);
         Assert.False(p.IsOverridden);
 
         // ...and reading a preference did not create the file.
@@ -66,14 +66,37 @@ public sealed class UpdatePolicyAndPreferencesTests : IDisposable
     }
 
     [Fact]
-    public void TheTwoDefaultsDiffer_AndBothComeFromTheNullableIdiom()
+    public void BothDefaultsComeFromTheNullableIdiom_AndBothAreOn()
     {
         var empty = new AppPreferences();
         Assert.Null(empty.AutomaticUpdates);
         Assert.Null(empty.IncludeBetaUpdates);
 
         Assert.True(empty.AutomaticUpdates ?? true);
-        Assert.False(empty.IncludeBetaUpdates ?? false);
+        Assert.True(empty.IncludeBetaUpdates ?? true);
+    }
+
+    /// <summary>
+    /// The migration, such as it is. An installation that predates the default flip has a
+    /// preferences.json with no <c>include_beta_updates</c> key at all, because the dialog writes
+    /// that key only when the user changes the box — so it reads the NEW default and betas come on
+    /// by themselves. An explicit <c>false</c> is a decision the user made and survives untouched.
+    /// </summary>
+    [Fact]
+    public void AnExistingInstallGetsBetas_UnlessItStoredAnExplicitChoice()
+    {
+        // Never touched: the key is absent, whatever else the file holds.
+        AppPreferencesIo.Save(new AppPreferences { ActiveThemeName = "Default" });
+        Assert.DoesNotContain("include_beta_updates", File.ReadAllText(PrefsPath));
+        Assert.True(UpdatePolicy.Resolve(_install, AppPreferencesIo.Load()).IncludeBetas);
+
+        // Turned off deliberately: left alone.
+        AppPreferencesIo.Update(p => p.IncludeBetaUpdates = false);
+        Assert.False(UpdatePolicy.Resolve(_install, AppPreferencesIo.Load()).IncludeBetas);
+
+        // Turned on deliberately: also left alone, and indistinguishable in effect.
+        AppPreferencesIo.Update(p => p.IncludeBetaUpdates = true);
+        Assert.True(UpdatePolicy.Resolve(_install, AppPreferencesIo.Load()).IncludeBetas);
     }
 
     [Fact]

@@ -210,7 +210,7 @@ underneath says so.
 | Control | What it does |
 |---|---|
 | **Automatic updates** | Downloads new versions in the background and installs them the next time the application is relaunched. |
-| **Include beta releases** | Includes pre-release builds when looking for a new version. A sub-item of the box above, and disabled while it is off. Turning it off discards a staged beta; a staged stable version is left alone. |
+| **Include beta releases** | Includes pre-release builds when looking for a new version. **On by default while circuitRF is in beta**, since that is where the releases are; untick it to be offered stable releases only. A sub-item of the box above, and disabled while it is off. Turning it off discards a staged beta; a staged stable version is left alone. |
 | **Show release notes after an update** | Opens the release notes once, the first time a newly installed version is launched — never on a fresh installation, and never twice for the same version. If releases went out while the application was not launched, **the versions you skipped are listed underneath**, newest first, up to ten of them; a single update shows one set of notes as before. **Not** a sub-item of automatic updates, and deliberately not disabled with it: a version installed by hand is still a new version, and its notes are still worth reading. |
 
 **Last checked** underneath is read from the updater's own state file and is never written here. It is

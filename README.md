@@ -61,9 +61,10 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-> **While circuitRF is in beta, tick *Settings ▸ Security & Permissions ▸ Include beta releases*.**
-> Beta versions are published as GitHub pre-releases, and that box is what puts them on your update
-> channel — without it you stay on the version you installed until the first stable release.
+> **While circuitRF is in beta, *Settings ▸ Security & Permissions ▸ Include beta releases* is
+> ticked by default.** Beta versions are published as GitHub pre-releases, and that box is what puts
+> them on your update channel — untick it and you stay on the version you installed until the first
+> stable release.
 
 | Platform | Download |
 |---|---|

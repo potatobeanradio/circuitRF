@@ -534,7 +534,13 @@ Two checkboxes, stored in `AppPreferences` using the existing nullable-with-defa
 - **Automatic updates** — default **on**. Downloads new versions in the background and installs them the
   next time circuitRF is relaunched. One `preferences.json` serves all three applications, so this
   governs circuitRF, harmonicaRF and wBond together, and the help text says so.
-- **Include beta releases** — default **off**. Sub-item, disabled while automatic updates are off.
+- **Include beta releases** — default **on** while circuitRF itself ships as a beta, since the
+  releases that exist to be run are the pre-releases and the original **off** default left an ordinary
+  user on a channel with nothing on it. Sub-item, disabled while automatic updates are off.
+  **The flip needed no migration pass**: null means the user has never touched the box (the dialog's
+  populate guard is what makes that true, and is tested), so an existing installation that never
+  expressed a preference simply reads the new default, and one that stored an explicit `false` cannot
+  be reached by a change to the fallback. An explicit choice is never overridden.
 
 Plus one greyed informational line, *Last checked: <time>* or *Last checked: never*. It costs nothing and
 it is the first thing anyone looks at when wondering whether the feature is working at all.
@@ -713,8 +719,9 @@ kernel and initramfs that compiled device models are run inside. Downloading tha
 application — circuitRF, harmonicaRF and wBond are three separate installs — on a hotel connection is
 genuinely rude.
 
-**v1 answer:** at most one check per day, resumable low-priority download, and betas off by default so
-the users on the fastest-moving channel are the ones who opted into it.
+**v1 answer:** at most one check per day, resumable low-priority download, and betas on by default
+while the product itself is a beta — the channel a user is put on by default should be the one that has
+releases on it, and the box is there for anyone who wants off it.
 
 These figures are also what §13 has to survive: at peak an update needs the download *and* its expanded
 copy at once, so the macOS payload above implies roughly half a gigabyte of headroom, not 160 MB of it.

@@ -67,6 +67,26 @@ public class UpdateSettingsWiringTests
     }
 
     /// <summary>
+    /// The dialog reads the preference itself rather than through <c>UpdatePolicy</c> — it has to,
+    /// since it must show the stored preference even while an override disables the box — so the two
+    /// fallbacks are written twice and could disagree. A box that reads "off" while the updater is
+    /// on betas is worse than no box, so pin that they are the same literal.
+    /// </summary>
+    [Fact]
+    public void TheDialogsDefaultsMatchThePolicysDefaults()
+    {
+        string dialog = UpdateInstallSiteTests.StripComments(Control());
+        string policy = UpdateInstallSiteTests.StripComments(
+            Read("src", "Ui", "Updates", "UpdatePolicy.cs"));
+
+        // Spelled out one line each, so a failure names which side drifted.
+        Assert.Contains("prefs.AutomaticUpdates   ?? true;",   dialog);
+        Assert.Contains("prefs.IncludeBetaUpdates ?? true;",   dialog);
+        Assert.Contains("prefs.AutomaticUpdates   ?? true;",   policy);
+        Assert.Contains("prefs.IncludeBetaUpdates ?? true;",   policy);
+    }
+
+    /// <summary>
     /// R-AU-40 / gate 19. The populate guard is not optional: setting <c>IsChecked</c> raises
     /// <c>IsCheckedChanged</c>, and without it the dialog writes the preference it just read on every
     /// open — which would make "absence is the default" untrue after one visit to Settings.

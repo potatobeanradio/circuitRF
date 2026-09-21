@@ -1,5 +1,29 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## "Include beta releases" now defaults ON, and it reaches existing installations (2026-09-21)
+
+While circuitRF itself ships as a beta, the releases that exist to be run ARE the prereleases, so the
+original **off** default put an ordinary user on a channel with nothing on it — they stayed on the
+version they installed and the updater looked broken rather than idle. The default is now **on**.
+
+**The interesting half is that no migration pass was needed, and none was written.** `AppPreferences`
+stores both update settings as `bool?` with `JsonIgnore(WhenWritingNull)`, and the settings dialog's
+populate guard (`_loading`) means the key is written **only** from a user-driven change — opening and
+closing Settings writes nothing. So `null` does not merely mean "unset", it means *the user has never
+touched that box*, which is exactly the distinction the request needed: changing the fallback from
+`?? false` to `?? true` turns betas on for a fresh install AND for an existing one that never expressed
+a preference, and provably cannot reach one that stored an explicit `false`. Seeding a value at first
+run — the obvious implementation — would have destroyed that distinction permanently.
+
+Two sites hold the fallback, and they are written twice on purpose: `UpdatePolicy.Resolve` is the one
+accessor the updater reads through, and `UpdateSettingsView.Load` reads the preference directly because
+it must show the stored value even while an administrator override has the box disabled. They can
+therefore drift, and a box reading "off" over an updater on betas is worse than no box, so
+`UpdateSettingsWiringTests.TheDialogsDefaultsMatchThePolicysDefaults` pins them to the same literal.
+
+The regenerated `settings-security.svg` is the end-to-end confirmation: it is drawn from the live
+dialog, and the checkbox in it came back ticked with no change to the figure fixture.
+
 ## Four footprint reports, three causes (2026-09-20)
 
 Four owner reports on land patterns in the Layout Editor, filed in one sitting. They are three

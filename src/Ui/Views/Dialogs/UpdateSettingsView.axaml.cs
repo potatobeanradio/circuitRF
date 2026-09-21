@@ -46,9 +46,10 @@ public partial class UpdateSettingsView : UserControl
             AppPreferences prefs = AppPreferencesIo.Load();
 
             // Absence IS the default: a machine with no preferences.json at all reads automatic
-            // updates ON and betas OFF, with no first-run seeding anywhere.
+            // updates ON and betas ON, with no first-run seeding anywhere. Both fallbacks must
+            // match UpdatePolicy.Resolve's, or the box shows one thing and the updater does another.
             AutoUpdateCheck.IsChecked   = prefs.AutomaticUpdates   ?? true;
-            IncludeBetasCheck.IsChecked = prefs.IncludeBetaUpdates ?? false;
+            IncludeBetasCheck.IsChecked = prefs.IncludeBetaUpdates ?? true;
 
             // Through the gate rather than off `prefs`, by the same one-accessor rule the two above
             // follow via UpdatePolicy: ReleaseNotesGate is the only thing that reads this key.

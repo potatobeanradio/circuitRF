@@ -62,10 +62,16 @@ public static class UpdatePolicy
     /// <summary>The testable form — no real install, no real preferences file.</summary>
     public static UpdatePolicyState Resolve(string installRoot, AppPreferences prefs)
     {
-        // The two defaults differ, and the nullable idiom is what delivers them without a line of
-        // first-run seeding: a machine with NO preferences.json at all reads ON and betas OFF.
+        // Both defaults come from the nullable idiom rather than a line of first-run seeding: a
+        // machine with NO preferences.json at all reads automatic updates ON and betas ON.
+        //
+        // Null is not merely "unset", it is "the user has never touched that box" — the settings
+        // dialog's populate guard is what keeps that true — so changing the fallback here reaches
+        // an EXISTING installation that never expressed a preference, and provably cannot reach
+        // one that stored an explicit false. That is the whole migration; there is no seeding pass
+        // and nothing to write.
         bool wanted = prefs.AutomaticUpdates   ?? true;
-        bool betas  = prefs.IncludeBetaUpdates ?? false;
+        bool betas  = prefs.IncludeBetaUpdates ?? true;
 
         if (PolicyFilePresent(installRoot))
             return new UpdatePolicyState(false, false, UpdateOverride.PolicyFile,

@@ -620,7 +620,8 @@ key itself — two-factor on the account, no long-lived release tokens, and the 
 key as over the Developer ID certificate. Design §9.1 has the full table.
 
 How to drive one without waiting for a real release: install the previous version, publish the new one
-as a GitHub prerelease, tick **Settings ▸ Security & Permissions ▸ Include beta releases**, then
+as a GitHub prerelease, check **Settings ▸ Security & Permissions ▸ Include beta releases** is still
+ticked (it is the default), then
 **Help ▸ Check for Updates…** (which ignores the 24-hour throttle). The Message Panel says when it has
 staged. Quit and relaunch — that relaunch is what the matrix is actually testing.
 
@@ -861,13 +862,14 @@ user who is not offered an update has nothing to notice.
 *Set as the latest release* cannot hold users on a version or roll them back. To withhold a bad release,
 draft it or delete it and ship the next one.
 
-**What ticking Pre-release actually costs, and why it is still right.** Betas are off by default
-(*Settings ▸ Security & Permissions ▸ Include beta releases*, unticked), so a pre-release is offered
-only to users who asked for one. Everyone else waits for the next stable release — and is not stranded,
-because `1.1.0-beta.4 < 1.1.0`, so the stable release is strictly greater than every beta that preceded
-it and is offered to all of them at once. The alternative — publishing betas as stable releases — makes
-that checkbox inert and, the moment a stable release exists, pushes beta code onto users who never
-opted in. Say so in the release notes and in the README, so testers know to tick the box.
+**What ticking Pre-release actually costs, and why it is still right.** Betas are **on** by default
+(*Settings ▸ Security & Permissions ▸ Include beta releases*, ticked) while circuitRF itself ships as a
+beta — the releases that exist to be run are the pre-releases, and the earlier default left an ordinary
+user on a channel with nothing on it. A user who unticks the box waits for the next stable release and
+is not stranded, because `1.1.0-beta.4 < 1.1.0`: the stable release is strictly greater than every beta
+that preceded it and is offered to all of them at once. The alternative — publishing betas as stable
+releases — makes that checkbox inert, and leaves no way to opt out at all. When the default flips back
+at 1.0 stable, say so in the release notes and in the README so testers know to tick the box.
 
 ---
 
