@@ -178,6 +178,14 @@ ever show you.
 
 ## 6. R-loc-3 — the expression language is invariant, stated and gated
 
+> **Half of this was superseded on 2026-09-21** and the brief is left as written, as the record of
+> what was asked for at the time. The invariance half stands and is stronger than ever. The
+> never-accept-a-comma half does not: `1,5` IS a decimal point now, at bracket depth 0, identically
+> in every locale, because the grammar has no comma at depth 0 for it to collide with. Inside an
+> argument list the comma is still a separator. See `docs/design/expressions.md` §15A and
+> `src/Core/RESOLVED.md`; §2.3's silently-reverting εr field below is the symptom that was reopened.
+
+
 `docs/design/expressions.md` gains a short, explicit section, and a test enforces it:
 
 - **Numeric literals use `.` as the decimal separator in every locale.** `1.5e9` parses; `1,5e9` does

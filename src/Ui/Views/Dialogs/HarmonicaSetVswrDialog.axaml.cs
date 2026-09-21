@@ -58,7 +58,7 @@ public partial class HarmonicaSetVswrDialog : Window
     /// circle (see this type's own summary).</summary>
     private bool TryCommit()
     {
-        if (!double.TryParse(VswrBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+        if (!NumericText.TryParseDouble(VswrBox.Text, out double v)
             || !double.IsFinite(v))
         {
             ShowError("VSWR must be a number.");

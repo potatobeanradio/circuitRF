@@ -70,8 +70,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
     public void CommitFrequency()
     {
         if (!MarkerIsLive) return;
-        if (!double.TryParse(FreqDisplayText, NumberStyles.Any,
-                             CultureInfo.CurrentCulture, out double val))
+        if (!NumericText.TryParseDouble(FreqDisplayText, out double val))
             return;
 
         double freqHz  = val / _marker.FreqUnits.Scale();
@@ -238,8 +237,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
     public void CommitVswrValue()
     {
         if (!MarkerIsLive) return;
-        if (double.TryParse(VswrValueText, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.CurrentCulture, out double v))
+        if (NumericText.TryParseDouble(VswrValueText, out double v))
         {
             _marker.VswrValue = v;
             VswrValueText = v.ToString("G6");

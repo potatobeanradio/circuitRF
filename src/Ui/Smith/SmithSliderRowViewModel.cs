@@ -363,8 +363,7 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
         // Degrees: the number, with an optional "deg"/"°" the user may have typed back.
         value = 0.0;
         string s = (text ?? "").Trim().TrimEnd('°').Replace("deg", "", StringComparison.OrdinalIgnoreCase).Trim();
-        return double.TryParse(s, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
-            || double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        return NumericText.TryParseDouble(s, out value);
     }
 
     /// <summary>The unit a bare number is read as — the registry's own display unit for the

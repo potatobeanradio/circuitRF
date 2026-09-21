@@ -21,7 +21,11 @@ public static class LayoutUnits
     public const int DefaultDbuPerMicron = 1000;
 
     private static readonly Regex ParsePattern = new(
-        @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Zµμ]*)\s*$",
+        // Either decimal separator: much of the world writes 1,5 for one and a half, and a
+        // dimension field is typing, not a format. The pattern is anchored and captures ONE
+        // number, so the comma here can never be a list separator — see NumericText for the
+        // general rule this is the local, unambiguous case of.
+        @"^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Zµμ]*)\s*$",
         RegexOptions.Compiled);
 
     /// <summary>Exact size of one unit, in nanometres.</summary>
@@ -86,7 +90,9 @@ public static class LayoutUnits
         if (!m.Success)
             return false;
 
-        if (!decimal.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        // Group 1 is a single number and nothing else, so a comma in it is a decimal point.
+        var number = m.Groups[1].Value.Replace(',', '.');
+        if (!decimal.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
             return false;
 
         var suffix = m.Groups[2].Value.ToLowerInvariant();

@@ -101,7 +101,7 @@ public sealed class ScaleFieldLinker
     /// <summary>User typed directly into the Factor box.</summary>
     private bool TrySetFactorXText(string text)
     {
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double fx) || fx <= 0)
+        if (!NumericText.TryParseDouble(text, out double fx) || fx <= 0)
             return false;
         FactorX = fx;
         if (IsUniform) FactorY = fx;
@@ -112,7 +112,7 @@ public sealed class ScaleFieldLinker
     /// <summary>User typed directly into the Factor Y box (only reachable when Uniform is off).</summary>
     private bool TrySetFactorYText(string text)
     {
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double fy) || fy <= 0)
+        if (!NumericText.TryParseDouble(text, out double fy) || fy <= 0)
             return false;
         FactorY = fy;
         AuthoritativeField = ScaleField.FactorY;

@@ -85,7 +85,7 @@ public partial class WBondValuePromptDialog : Window
         string? text = await dlg.ShowDialog<string?>(owner);
         if (text is null) return null;
 
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double deg)
+        return NumericText.TryParseDouble(text, out double deg)
                && double.IsFinite(deg)
             ? deg
             : null;
@@ -119,7 +119,7 @@ public partial class WBondValuePromptDialog : Window
         string? text = await dlg.ShowDialog<string?>(owner);
         if (text is null) return null;
 
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double ghz)
+        return NumericText.TryParseDouble(text, out double ghz)
                && double.IsFinite(ghz) && ghz > 0.0
             ? ghz
             : null;
@@ -151,7 +151,7 @@ public partial class WBondValuePromptDialog : Window
         string? text = await dlg.ShowDialog<string?>(owner);
         if (text is null) return null;
 
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double er)
+        return NumericText.TryParseDouble(text, out double er)
                && double.IsFinite(er) && er >= 1.0
             ? er
             : null;
@@ -213,13 +213,13 @@ public partial class WBondValuePromptDialog : Window
         }
         else if (_mode == Mode.FrequencyGHz)
         {
-            ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double f)
+            ok = NumericText.TryParseDouble(text, out double f)
                  && double.IsFinite(f) && f > 0.0;
             reason = string.IsNullOrWhiteSpace(text) ? "Enter a frequency." : "Not a positive number of GHz.";
         }
         else if (_mode == Mode.Permittivity)
         {
-            ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double er)
+            ok = NumericText.TryParseDouble(text, out double er)
                  && double.IsFinite(er) && er >= 1.0;
             reason = string.IsNullOrWhiteSpace(text)
                 ? "Enter a permittivity."
@@ -227,7 +227,7 @@ public partial class WBondValuePromptDialog : Window
         }
         else
         {
-            ok = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+            ok = NumericText.TryParseDouble(text, out double d)
                  && double.IsFinite(d);
             reason = string.IsNullOrWhiteSpace(text) ? "Enter an angle." : "Not a number.";
         }

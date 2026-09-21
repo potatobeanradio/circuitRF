@@ -166,7 +166,7 @@ public sealed partial class LayerRowViewModel : ObservableObject
 
     public void CommitFillOpacity()
     {
-        if (!double.TryParse(StagedFillOpacity, System.Globalization.NumberStyles.Float, Inv, out var v))
+        if (!NumericText.TryParseDouble(StagedFillOpacity, out var v))
         { RefreshFromModel(); return; }
         v = System.Math.Clamp(v, 0.0, 1.0);
         if (System.Math.Abs(v - Layer.FillOpacity) < 1e-9) { StagedFillOpacity = v.ToString("0.###", Inv); return; }

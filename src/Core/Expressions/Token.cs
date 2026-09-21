@@ -1,3 +1,5 @@
+using CircuitRF.Text;
+
 namespace CircuitRF.Core.Expressions;
 
 public enum TokenKind
@@ -32,7 +34,11 @@ public readonly struct Token(TokenKind kind, string text, int position)
 
 public sealed class Tokenizer(string source)
 {
-    private readonly string _source = source;
+    // A decimal comma is rewritten to a decimal point HERE, once, at the lexical layer where the
+    // question belongs — see NumericText.NormalizeDecimalSeparator for the rule and for why a comma
+    // inside an argument list is left alone. The rewrite is one character for one character, so
+    // every Token.Position below still indexes the character the user typed.
+    private readonly string _source = NumericText.NormalizeDecimalSeparator(source);
     private int _pos;
 
     public Token[] Tokenize()

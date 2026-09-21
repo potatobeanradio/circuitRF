@@ -64,8 +64,7 @@ public sealed partial class SmithChartViewModel
         get => MatchValueFormat.Significant(_design.ConstantQ.Q, 4);
         set
         {
-            bool ok = double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out double q)
-                   || double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out q);
+            bool ok = NumericText.TryParseDouble(value, out double q);
 
             if (ok && double.IsFinite(q) && q > 0)
                 Edit("Edit Q", () => _design.ConstantQ.Q = q);

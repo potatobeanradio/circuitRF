@@ -612,7 +612,7 @@ public sealed partial class LayoutEditorViewModel
 
     public void CommitSelectedInstanceMagText(string text)
     {
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mag) || mag <= 0)
+        if (!NumericText.TryParseDouble(text, out var mag) || mag <= 0)
             return;
         ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.Mag = mag; return c; });
     }

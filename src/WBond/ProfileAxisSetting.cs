@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Text;
 
 namespace CircuitRF.WBond;
 
@@ -66,7 +67,7 @@ public static class ProfileAxisSetting
             }
         }
 
-        if (!double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double degrees))
+        if (!NumericText.TryParseDouble(number, out double degrees))
             return false;
         if (!double.IsFinite(degrees)) return false;
 

@@ -423,7 +423,7 @@ public sealed partial class MatchDesignerViewModel
     public static double? ParseBandPercent(string? text)
     {
         string t = (text ?? "").Trim().TrimEnd('%').Trim();
-        return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v >= 0
+        return NumericText.TryParseDouble(t, out double v) && v >= 0
             ? v
             : null;
     }

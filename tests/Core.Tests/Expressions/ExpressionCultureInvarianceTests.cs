@@ -1,8 +1,9 @@
 // ================================================================
 //  ExpressionCultureInvarianceTests.cs — the expression language is a FORMAL
-//  language and does not follow the user's locale.
-//  (docs/sonnet-briefs/brief-localization-groundwork.md §6, R-loc-3;
-//   docs/design/expressions.md §"Locale")
+//  language and does not follow the user's locale. It accepts '.' and ',' alike
+//  as a decimal point, everywhere, for that same reason.
+//  (docs/design/expressions.md §"Locale"; supersedes the never-accept-a-comma
+//   half of brief-localization-groundwork.md §6, R-loc-3 — owner, 2026-09-21)
 // ================================================================
 
 using System.Globalization;
@@ -12,16 +13,24 @@ using CircuitRF.Core.Expressions;
 namespace CircuitRF.Core.Tests.Expressions;
 
 /// <summary>
-/// circuitRF's expression language uses <c>.</c> as the decimal separator in every locale, forever,
-/// and <c>,</c> exclusively as the function-argument separator. Those two rules are one rule: a
-/// grammar cannot have <c>if(a,b,c)</c> AND a comma decimal, because <c>f(1,5)</c> would be both
-/// "f of one-point-five" and "f of one and five" with nothing to tell them apart. Every circuit
-/// simulator resolves this the same way, and so does every programming language.
+/// circuitRF's expression language does not follow the user's locale — not in any locale, not ever.
+/// What changed (owner, 2026-09-21) is that it now accepts BOTH spellings of a decimal point, in
+/// every locale alike: <c>1.5</c> and <c>1,5</c> are the same number on a German machine and on an
+/// American one. That is not a locale-sensitive parser; it is a formal language with two spellings
+/// of one token, which is why the invariance claim this file exists to protect is untouched.
 ///
-/// <para><b>This does not change when the UI is localized.</b> A localized circuitRF still parses
-/// <c>1.5e9</c> and still rejects <c>1,5e9</c>. What a German user sees in a status line is display
-/// text and correctly follows their locale (<c>2,5 GHz</c>); what they TYPE into a parameter field
-/// is source code in a formal language and does not. The same split governs the file formats — see
+/// <para><b>The earlier rule said a comma decimal was impossible, and the argument was too
+/// strong.</b> It ran: a grammar cannot have <c>if(a,b,c)</c> AND a comma decimal, because
+/// <c>f(1,5)</c> would be both "f of one-point-five" and "f of one and five". That is true — but
+/// only INSIDE the brackets. Every separator comma in this grammar sits inside <c>(…)</c> or
+/// <c>[…]</c>, and <c>Parser.Parse</c> requires EOF after one expression, so a comma at bracket
+/// depth 0 is a hard parse error today and means nothing at all. Rewriting it is a pure widening.
+/// Inside an argument list the comma is still a separator and a decimal point must be written as a
+/// point — the ambiguity is real there and nothing resolves it.</para>
+///
+/// <para><b>This does not change when the UI is localized.</b> What a German user sees in a status
+/// line is display text and correctly follows their locale (<c>2,5 GHz</c>); what they TYPE is read
+/// by the same rule everywhere. The same split governs the file formats — see
 /// <c>FormatCultureInvarianceTests</c> in Ui.Tests.</para>
 ///
 /// <para><b>Why this file exists at all when <c>Parser</c> already names
@@ -90,7 +99,7 @@ public sealed class ExpressionCultureInvarianceTests
         // Standard functions over fractional arguments.
         "sin(0.5)", "cos(1.25)", "tan(0.75)", "tanh(0.5)", "exp(1.5)",
         "ln(2.5)", "log10(1000.0)", "sqrt(2.25)", "abs(-3.5)",
-        // ',' as the ARGUMENT separator — the rule that makes a comma decimal impossible.
+        // ',' as the ARGUMENT separator — still exactly that, inside the brackets.
         "max(1.5, 2.5)", "min(1.5, 2.5)", "if(1.5 > 0.5, 10.25, 20.75)",
         "if(1.5 < 0.5, 10.25, if(2.5 >= 2.5, 30.125, 40.5))",
         // Comparisons and booleans folded into a numeric result.
@@ -122,55 +131,47 @@ public sealed class ExpressionCultureInvarianceTests
     }
 
     /// <summary>
-    /// The negative half, and the one that would silently corrupt a design rather than fail loudly:
-    /// under a comma-decimal locale <c>1,5e9</c> must NOT become 1.5e9. Whatever the parser does
-    /// with it — reject it, or read a comma at top level as something else — the one outcome that
-    /// must never occur is quietly agreeing with the user's locale, because the same file opened on
-    /// an American machine would then mean a different circuit.
+    /// A decimal comma at bracket depth 0 IS a decimal point, and reads the same on every machine.
+    /// This is the half a user in a comma-decimal region actually types, and until 2026-09-21 it was
+    /// a parse error everywhere — which is why widening it cannot change what any existing text
+    /// means.
     /// </summary>
     [Theory]
-    [InlineData("1,5e9")]
-    [InlineData("1,5")]
-    [InlineData("1.234,5")]
-    public void CommaDecimal_IsNeverAcceptedAsADecimalSeparator(string expr)
+    [InlineData("1,5",      1.5)]
+    [InlineData("1,5e9",    1.5e9)]
+    [InlineData("0,25",     0.25)]
+    [InlineData("1234,5678", 1234.5678)]
+    [InlineData("2,5 * 2",  5.0)]
+    public void CommaDecimal_IsADecimalPoint_IdenticallyInEveryLocale(string expr, double expected)
     {
         foreach (var culture in new[] { "en-US", "de-DE", "fi-FI" })
-        {
-            InCulture(culture, () =>
-            {
-                double? value = null;
-                try
-                {
-                    var v = new Evaluator().Eval(expr, new Scope("test"));
-                    if (v.Kind == ValueKind.Real) value = v.AsReal();
-                }
-                catch (ExpressionException) { /* rejecting it outright is the ideal outcome */ }
-                catch (FormatException)  { /* likewise */ }
-
-                Assert.False(
-                    value is { } d && Math.Abs(d - CommaDecimalReading(expr)) < 1e-6,
-                    $"\"{expr}\" was read as the comma-decimal number {value} under {culture}. " +
-                    $"',' is the function-argument separator and nothing else; a comma decimal " +
-                    $"cannot coexist with if(a,b,c) in one grammar.");
-                return 0;
-            });
-        }
+            Assert.Equal(expected, InCulture(culture, () => Real(expr)), 12);
     }
 
-    /// <summary>What the string WOULD mean if ',' were a decimal separator — the value this must
-    /// never produce.</summary>
-    private static double CommaDecimalReading(string expr) => expr switch
+    /// <summary>
+    /// The negative half, and the one that would silently corrupt a design rather than fail loudly:
+    /// a GROUPED number must never be read, in any locale. <c>1.234,5</c> is 1234.5 to a German and
+    /// something else entirely to an American, and nothing in the text says which — so it is
+    /// refused, exactly as <c>1,234.5</c> is. circuitRF's fields carry engineering units; none of
+    /// them needs a thousands separator.
+    /// </summary>
+    [Theory]
+    [InlineData("1.234,5")]
+    [InlineData("1,234.5")]
+    public void AGroupedNumber_IsRefused_InEveryLocale(string expr)
     {
-        "1,5e9"   => 1.5e9,
-        "1,5"     => 1.5,
-        "1.234,5" => 1234.5,
-        _         => double.NaN,
-    };
+        foreach (var culture in new[] { "en-US", "de-DE", "fi-FI" })
+            InCulture(culture, () =>
+            {
+                Assert.ThrowsAny<Exception>(() => new Evaluator().Eval(expr, new Scope("test")));
+                return 0;
+            });
+    }
 
     /// <summary>
-    /// The positive statement of the same rule: <c>,</c> separates arguments, in every locale, and a
-    /// call with fractional arguments keeps its arity. Under a comma-decimal reading
-    /// <c>max(1.5, 2.5)</c> would be a 4-argument call, or a 1-argument one — either way not this.
+    /// Inside an argument list <c>,</c> still separates arguments, in every locale, and a call with
+    /// fractional arguments keeps its arity. This is the boundary of the widening above: at depth 0
+    /// a comma is a decimal point, inside brackets it is a separator and always was.
     /// </summary>
     [Fact]
     public void CommaIsAlwaysTheArgumentSeparator()
@@ -180,6 +181,9 @@ public sealed class ExpressionCultureInvarianceTests
             Assert.Equal(2.5,    InCulture(culture, () => Real("max(1.5, 2.5)")), 12);
             Assert.Equal(1.5,    InCulture(culture, () => Real("min(1.5, 2.5)")), 12);
             Assert.Equal(10.25,  InCulture(culture, () => Real("if(1.5 > 0.5, 10.25, 20.75)")), 12);
+
+            // The ambiguous shape itself: max(1,5) is the larger of 1 and 5, NOT max(1.5).
+            Assert.Equal(5.0,    InCulture(culture, () => Real("max(1,5)")), 12);
         }
     }
 

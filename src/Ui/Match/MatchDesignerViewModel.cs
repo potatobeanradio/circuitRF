@@ -294,7 +294,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             string? text = _target!.Parameters.FirstOrDefault(p => p.Name == name)?.Expression;
             if (text is null) return;
-            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+            if (!NumericText.TryParseDouble(text, out double v))
                 return;                                   // an expression, not a number — not ours to judge
             if (Math.Abs(v - expected) > 1e-6 * Math.Max(1.0, Math.Abs(expected))) stale.Add(name);
         }
@@ -1428,7 +1428,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             string t = (value ?? "").Trim();
             if (t.EndsWith("dB", StringComparison.OrdinalIgnoreCase)) t = t[..^2].Trim();
-            if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0)
+            if (NumericText.TryParseDouble(t, out double v) && v > 0)
                 RippleDb = v;
             OnPropertyChanged();
         }

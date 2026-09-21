@@ -2660,7 +2660,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         => int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out v) && v >= min;
 
     private static bool TryDouble(string s, out double v)
-        => double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+        => NumericText.TryParseDouble(s.Trim(), out v);
 
     /// <summary>Accepts <c>50</c>, <c>50+10j</c>, <c>50 - 10j</c>. Complex is permitted because
     /// <c>RFNetwork.ZToS</c> already handles a complex per-port reference — refusing it here would
@@ -2674,7 +2674,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         int jAt = s.IndexOf('j');
         if (jAt < 0) jAt = s.IndexOf('i');
         if (jAt < 0)
-            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double re)
+            return NumericText.TryParseDouble(s, out double re)
                    && Finish(re, 0, out z);
 
         // Split at the sign that begins the imaginary term (never the leading sign, never an
@@ -2691,7 +2691,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             string imagOnly = s.Remove(jAt, 1);
             if (imagOnly is "" or "+" ) imagOnly = "1";
             if (imagOnly is "-") imagOnly = "-1";
-            return double.TryParse(imagOnly, NumberStyles.Float, CultureInfo.InvariantCulture, out double im)
+            return NumericText.TryParseDouble(imagOnly, out double im)
                    && Finish(0, im, out z);
         }
 
@@ -2700,8 +2700,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         if (imagPart is "+") imagPart = "1";
         if (imagPart is "-") imagPart = "-1";
 
-        return double.TryParse(realPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double r)
-            && double.TryParse(imagPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double i2)
+        return NumericText.TryParseDouble(realPart, out double r)
+            && NumericText.TryParseDouble(imagPart, out double i2)
             && Finish(r, i2, out z);
 
         static bool Finish(double re, double im, out Complex outZ)

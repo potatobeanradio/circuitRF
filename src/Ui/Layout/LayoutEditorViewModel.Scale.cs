@@ -273,7 +273,7 @@ public sealed partial class LayoutEditorViewModel
         double fx = _scaleLiveFactorX, fy = _scaleLiveFactorY;
         string trimmed = text.Trim();
 
-        if (double.TryParse(trimmed, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double factor) && factor > 0)
+        if (NumericText.TryParseDouble(trimmed, out double factor) && factor > 0)
         {
             if (_scaleDragKind == ScaleDragKind.Corner) { fx = factor; fy = factor; }
             else if (_scaleDragHandleIndex is 1 or 3) fx = factor;

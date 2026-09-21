@@ -341,37 +341,56 @@ All reported with the offending text/name, never a silent zero or NaN swallow:
 ## 15A. Locale — the language is invariant, in every country, forever
 
 The expression language is a **formal language**, like C# or a SPICE deck. It does **not** follow the
-user's locale, and it will not start to when the UI is localized.
+user's locale, and it will not start to when the UI is localized. What it does do — since
+2026-09-21 — is accept **both spellings of a decimal point**, the same way on every machine.
 
-- **Numeric literals use `.` as the decimal separator in every locale.** `1.5e9` parses everywhere;
-  `1,5e9` parses nowhere, ever.
-- **`,` is the function-argument separator and nothing else.**
-- **These are one rule, not two.** A grammar cannot have both `if(a,b,c)` and a comma decimal:
-  `f(1,5)` would be simultaneously "f of one-point-five" and "f of one and five", with nothing in the
-  text to tell them apart. Every circuit simulator resolves this the same way, and so does every
-  programming language.
+- **`1.5` and `1,5` are the same number, in `en-US`, in `de-DE`, everywhere.** Much of the world
+  writes one and a half with a comma, and a parameter field is somewhere a person types, not a file
+  format. Accepting the second spelling is not locale sensitivity: the reading does not depend on
+  the machine's culture, which is the property this section exists to protect.
+- **Inside `(…)` or `[…]`, `,` is still the argument separator and nothing else.** `max(1,5)` is the
+  larger of 1 and 5, not `max(1.5)`. There the ambiguity is real and nothing in the text resolves
+  it, so a decimal point inside an argument list must be written as a point.
+- **The rule is one line: a comma between two digits, at bracket depth 0, outside a string literal.**
+  It is total because the grammar has no comma at depth 0 at all — every separator comma sits inside
+  brackets, and `Parser.Parse` requires EOF after one expression, so `1,5` was a hard parse ERROR
+  before this. Widening it cannot change what any existing text means.
+- **A grouped number is refused in every locale.** `1.234,5` and `1,234.5` are 1234.5 to some readers
+  and something else to others, with nothing in the text to say which, so neither is read. circuitRF's
+  fields carry engineering units; none of them needs a thousands separator.
+- **The canonical spelling is still the point.** What is stored in a `.csch`, written to a `.cnl` or
+  printed by the CLI is `1.5`, so a design authored on one machine reads identically on every other.
 - **Localizing the UI does not change any of this.** What a German user *reads* in a status line is
-  display text and correctly follows their locale (`2,5 GHz`); what they *type* into a parameter field
-  is source code and does not. The same display-vs-machine-readable split governs the file formats.
+  display text and correctly follows their locale (`2,5 GHz`); what they *type* is read by the same
+  rule everywhere.
 
-**Why it is worth stating rather than leaving to the implementation.** `Parser` already parses every
-literal with `CultureInfo.InvariantCulture`, but that is one argument on one line, and it looks
-redundant to a reader who has only ever run in `en-US` — where invariant and current agree exactly.
-Removing it does not fail loudly. It fails *silently and wrongly*: with the parser at `de-DE`,
-`abs(-3.5)` evaluates to **35**, and `7.5-2.25-1.25` to **-275**. No exception, no warning, a
-plausible number, a different circuit.
+**Why the earlier rule was narrowed.** This section used to say `1,5e9` parses nowhere, ever, and
+gave the reason: a grammar cannot have both `if(a,b,c)` and a comma decimal, because `f(1,5)` would
+be two things at once. That argument is correct — **but only inside the brackets**, which is where
+the ambiguous `f(1,5)` lives. It was being applied to the whole grammar, and the cost fell on the
+people it was least defensible for: a user in a comma-decimal region typing `4,4` into a stackup's
+εr watched the field silently revert to its old value with no message
+(`brief-localization-groundwork.md` §2.3 records that symptom, and R-loc-1's remedy was to make the
+*rejection* consistent rather than to accept the value).
+
+**What has not changed, and is the real hazard.** A *locale-sensitive* parser is still forbidden.
+With the parser at `de-DE`, `abs(-3.5)` would evaluate to **35** and `7.5-2.25-1.25` to **-275** — no
+exception, no warning, a plausible number, a different circuit. Every literal is still parsed with
+`CultureInfo.InvariantCulture`; the comma is rewritten to a point *before* that, by
+`NumericText.NormalizeDecimalSeparator`, identically on every machine.
 
 **The gate** is `tests/Core.Tests/Expressions/ExpressionCultureInvarianceTests.cs`, which drives the
 v1 language surface — literals, exponents, precedence, the standard functions, comparisons, `if()`,
-nesting — under `de-DE` and `fi-FI` and demands results **bit-identical** to `en-US`, plus the
-negative half: a comma decimal must never be *accepted* as one. It is a deliberate foreign-locale
-pass because the default run cannot substitute for it — `tests/TestCulture.cs` pins the whole suite to
-`en-US`, precisely so no test is accidentally asserting the runner's locale.
+nesting — under `de-DE` and `fi-FI` and demands results **bit-identical** to `en-US`, plus both
+halves of the comma rule: a depth-0 comma decimal read the same everywhere, an argument-list comma
+still separating, and a grouped number refused. It is a deliberate foreign-locale pass because the
+default run cannot substitute for it — `tests/TestCulture.cs` pins the whole suite to `en-US`,
+precisely so no test is accidentally asserting the runner's locale.
 
 **A unit suffix is a row FIELD, not part of the expression** (§8), which is why `60u` is a parse
-error here. That is unrelated to locale, and localization is not a reason to revisit it — but it is
-pinned in the same file, so that "make the parser more forgiving about what follows a number" cannot
-arrive as a fix for a comma-decimal user and quietly change it.
+error here. That is unrelated to locale, and the decimal-comma widening is not a reason to revisit
+it — but it is pinned in the same file, so that "make the parser more forgiving about what follows a
+number" cannot arrive as a fix and quietly change it.
 
 ---
 

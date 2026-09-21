@@ -1,6 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="using:CircuitRF.Ui.Converters"
+        xmlns:glob="using:System.Globalization"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:dockCore="clr-namespace:Dock.Model.Core;assembly=Dock.Model">
@@ -361,6 +362,22 @@
              field with a label. -->
         <Style Selector="NumericUpDown">
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+
+            <!-- HOW THIS CONTROL READS WHAT IS TYPED INTO IT (owner, 2026-09-21).
+
+                 Avalonia's defaults are ParsingNumberStyle=Any against CurrentCulture, and `Any`
+                 admits a GROUP separator. Measured rather than assumed:
+                 double.TryParse("4,4", NumberStyles.Any, en-US) returns 44. So a user typing four
+                 point four into any of the 14 views using this control got FORTY-FOUR — no error, no
+                 revert, a plausible number. `1.234` reads as 1234 on a German machine by the same
+                 mechanism, in the other direction.
+
+                 Float admits no thousands separator in any culture, and InvariantInfo takes the
+                 machine out of it. Accepting the comma as a DECIMAL point is the other half and
+                 cannot be done with a setter — Controls/NumericUpDownInputInstaller.cs rewrites the
+                 text before the control parses it. -->
+            <Setter Property="ParsingNumberStyle" Value="Float"/>
+            <Setter Property="NumberFormat" Value="{x:Static glob:NumberFormatInfo.InvariantInfo}"/>
         </Style>
 
         <!-- AND THE SAME BUG ONE CONTROL FURTHER AGAIN (owner-reported 2026-09-11, against the EM

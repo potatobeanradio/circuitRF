@@ -420,8 +420,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
                 ? MatchValueFormat.AutoUnitFor(Reactance, quantity)
                 : ReactanceUnit;
 
-            if (!double.TryParse(number.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture,
-                                 out double raw) || !double.IsFinite(raw) || raw < 0)
+            if (!NumericText.TryParseDouble(number.Trim(), out double raw) || !double.IsFinite(raw) || raw < 0)
             {
                 OnPropertyChanged();
                 return;

@@ -305,11 +305,11 @@ public sealed partial class HbBodyViewModel : ObservableObject
     private string NextToneSeed()
     {
         var last = Tones[^1];
-        if (double.TryParse(last.Coeff.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+        if (NumericText.TryParseDouble(last.Coeff.Trim(), out double v))
         {
             double step = 1.0;
             if (Tones.Count >= 2 &&
-                double.TryParse(Tones[^2].Coeff.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double prev))
+                NumericText.TryParseDouble(Tones[^2].Coeff.Trim(), out double prev))
             {
                 double d = v - prev;
                 if (Math.Abs(d) > 1e-15) step = d;

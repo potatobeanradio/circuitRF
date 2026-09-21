@@ -111,7 +111,7 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
         set
         {
             string typed = (value ?? "").Trim();
-            if (!double.TryParse(typed, NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
+            if (!NumericText.TryParseDouble(typed, out double n)
                 || !double.IsFinite(n) || n <= 0)
             {
                 _owner.SetTransformNote(

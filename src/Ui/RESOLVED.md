@@ -1,5 +1,73 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A decimal comma is accepted in every input field (2026-09-21)
+
+Owner report: circuitRF rejects `,` as a decimal point, and much of the world writes one and a half
+as `1,5`. The requested rule is **either separator, regardless of the machine's region** — which is
+deliberately NOT locale-following, and is what makes it safe: `1,5` reads as 1.5 on a German machine
+and on an American one alike, so nothing a user types means a different circuit somewhere else.
+
+The rule itself, and why it reversed a decision `docs/design/expressions.md` §15A had already taken,
+is in `src/Core/RESOLVED.md`. What follows is the input surface.
+
+### 52 sites, and the three carve-outs that matter more than the 52
+
+`NumericText.TryParseDouble` replaced the `double.TryParse(x, NumberStyles.Float,
+CultureInfo.InvariantCulture, out v)` shape across the technology editor, the layout editor, the EM
+setup panel, Match, Smith, the Data Display, railRF, harmonicaRF, wBond and the dialogs. Expression
+fields needed none of it — they inherit the behaviour from `Tokenizer`.
+
+**What was deliberately left strict.** A parser is only tolerant where a comma cannot already mean
+something. Left alone, each for a reason a later change should not undo:
+
+- **`Layout/TechImport/*`, `Harmonica/CharmIo`, `SmithPasteRecognizer`, the paste/clipboard
+  commands, `Render/DataDisplay/SliceTokenParser`** — these read FILES and formats, not typing. A
+  document is a contract; only a field is typing.
+- **`WBond/ProfileCoordinateText`** — splits a pasted table on `['\t', ',']`. The comma is a COLUMN
+  there, and normalising it would silently merge two coordinates into one.
+- **`src/Cli`'s argument parsing** — an argument is a contract too, and `--window 0,0,500,300` is
+  four coordinates.
+
+### Two live culture bugs fell out on the way, neither of them the reported one
+
+- **`MarkerEditorViewModel` (frequency, VSWR) parsed with `NumberStyles.Any` + `CurrentCulture`.**
+  `Any` admits a group separator, so on a German machine `1.5` was silently read as **15** — a
+  plausible number, no error, a marker in the wrong place. Both sites are invariant and tolerant now.
+- **`SmithSliderRowViewModel` and `SmithChartViewModel.ConstantQ` each tried `CurrentCulture` and
+  then fell back to `InvariantCulture`.** That pair was reaching for exactly this feature and got a
+  machine-dependent answer instead; one tolerant parse replaces both.
+
+### A dimension field takes the comma in front of its UNIT, and that is a different path
+
+`LayoutUnits.TryParse` — every length box in the layout editor, the stackup and railRF — splits the
+number from its suffix with an anchored regex, so it never reached the plain-double path. Its pattern
+captures ONE number and cannot see a list, which is why the comma can be rewritten there directly.
+
+### Avalonia's own `NumericUpDown` was the worst of the lot, and not in the reported direction
+
+14 views use it, and it parses its own text: `ParsingNumberStyle` defaults to **`NumberStyles.Any`**
+against `CurrentCulture`, and `Any` admits a group separator. Measured, not assumed —
+`double.TryParse("4,4", NumberStyles.Any, en-US)` returns **44**. So this control never refused a
+decimal comma at all. It read four point four as forty-four, on an American machine, silently, and
+`1.234` as 1234 on a German one by the same mechanism in the other direction.
+
+Three corrections, none of them in the 14 views:
+
+- `ParsingNumberStyle="Float"` and `NumberFormat="{x:Static glob:NumberFormatInfo.InvariantInfo}"`,
+  as setters on the application-scope `NumericUpDown` style in `Styles/CircuitRfStyles.axaml` — the
+  sheet all three binaries include.
+- The comma itself in `Controls/NumericUpDownInputInstaller.cs`, a `[ModuleInitializer]` for the
+  reason `UiVerilogACacheInstaller` gives (three `Main`s, no startup ordering to get wrong). It
+  rewrites the control's `Text` before the control parses it, and terminates on its own because the
+  rewritten string holds no comma left to act on.
+
+**Two things that do not work and cost time to find out.** `OverrideDefaultValue` refuses a property
+on its own declaring type — *"Metadata is already set for ParsingNumberStyle on
+Avalonia.Controls.NumericUpDown"* — which is why those two are setters and not defaults; the failure
+surfaces as a `TypeInitializationException` from the module initializer that poisons every test in
+the assembly, not as anything pointing at the property. And `TextConverter`, the only parse hook the
+control exposes, also takes over FORMATTING and would override each usage's own `FormatString`.
+
 ## railRF and the layout editor — seven findings from a field report (2026-09-21)
 
 A second round of outside use of railRF, against `1.0.0-beta.27`, on a production six-layer board

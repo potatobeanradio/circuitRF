@@ -5,6 +5,55 @@ Going forward, a completed brief's detail lands here instead — one `##` sectio
 only for findings that are still true, still surprising, and would cost someone real time to
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Decimal comma accepted in every input field (2026-09-21)
+
+Owner report: circuitRF refuses `1,5` in its editable numeric fields, and much of the world writes
+one and a half that way. Requested rule: either separator is valid **regardless of the machine's
+region**, which is not the same thing as following the locale and is the reason the change is safe.
+
+### This reversed a documented decision, deliberately
+
+`docs/design/expressions.md` §15A and `brief-localization-groundwork.md` §6 (R-loc-3) both stated
+that a comma decimal parses *nowhere, ever*, gated by a test named
+`CommaDecimal_IsNeverAcceptedAsADecimalSeparator`. The argument was: a grammar cannot hold both
+`if(a,b,c)` and a comma decimal, because `f(1,5)` would mean two things at once.
+
+**That argument is correct only INSIDE the brackets.** Every separator comma in this grammar sits
+inside `(…)` or `[…]` — `Parser.cs` consumes one at exactly five places, all of them within a call,
+a ternary, a qualified accessor or a cube index — and `Parser.Parse` requires `Eof` after one
+expression. So a comma at bracket depth 0 parses to nothing at all today; it is a hard
+`ParseException`. Rewriting it therefore cannot change what any text that parses now means, which is
+what makes the widening total rather than a judgement call.
+
+Two failures fell out of the existing gate when the change landed (`1,5` and `1,5e9`), both the
+intended reversal. `1.234,5` kept failing on its own — the scan rewrites it to `1.234.5` and the
+PARSE refuses it, which is the behaviour wanted and worth knowing is not the scan's doing.
+
+### Where the rule lives, and why it is one place
+
+`NumericText.NormalizeDecimalSeparator`, in `src/Diagnostics` — the leaf project every other can
+see, `WBond` included, for the same reason `Diagnostic` is there and recorded in that `.csproj`.
+`Tokenizer`'s constructor runs its source through it, so every expression-valued field in the
+application (schematic parameters, VARs, sweeps, measurements, SDD equations, harmonicaRF) inherits
+the behaviour from one line rather than from dozens of call sites that could drift.
+
+The rewrite is one character for one character, so every `Token.Position` still indexes the
+character the user typed and parse errors still point at the right column.
+
+### What must NOT be routed through it
+
+A field whose own grammar separates values with commas. Three were found and left strict:
+
+- **`.cnl`'s `Values=`** and the List-mode sweep behind it (`CnlReader.cs`, `SweepExpander`) —
+  `1,2,3` is three points.
+- **`WBond/ProfileCoordinateText`** — splits a PASTED table on `['\t', ',']`, so a comma is a column.
+- **`render --window 0,0,500,300`** — four coordinates. Safe by construction anyway, since
+  `LayoutUnits.TryParse`'s pattern is anchored and captures one number, but the reason is worth
+  writing down because the obvious "normalize the whole string first" would have broken it.
+
+A decimal comma inside an argument list stays impossible and always will: `max(1,5)` is genuinely
+ambiguous and nothing in the text resolves it. That is the documented boundary, not an oversight.
+
 ## SMT footprints brief 2 — dropping an artwork parameter before resolution (2026-09-20)
 
 `Footprint` is an ordinary instance parameter that must never reach the evaluator: `smt:0402@N` is

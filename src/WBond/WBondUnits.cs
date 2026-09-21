@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Text;
 
 namespace CircuitRF.WBond;
 
@@ -103,7 +104,7 @@ public static class WBondUnits
 
         if (end == 0) return false;
 
-        if (!double.TryParse(s[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        if (!NumericText.TryParseDouble(s[..end], out double value))
             return false;
         if (!double.IsFinite(value)) return false;
 

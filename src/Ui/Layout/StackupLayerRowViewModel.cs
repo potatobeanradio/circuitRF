@@ -699,7 +699,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitEpsr()
     {
-        if (!double.TryParse(StagedEpsr, System.Globalization.NumberStyles.Float, Inv, out var v))
+        if (!NumericText.TryParseDouble(StagedEpsr, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Epsr) < 1e-12) return;
         var before = _owner.SnapshotJson();
@@ -710,7 +710,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitTanD()
     {
-        if (!double.TryParse(StagedTanD, System.Globalization.NumberStyles.Float, Inv, out var v))
+        if (!NumericText.TryParseDouble(StagedTanD, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.TanD) < 1e-15) return;
         var before = _owner.SnapshotJson();
@@ -721,7 +721,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitMur()
     {
-        if (!double.TryParse(StagedMur, System.Globalization.NumberStyles.Float, Inv, out var v))
+        if (!NumericText.TryParseDouble(StagedMur, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Mur) < 1e-12) return;
         var before = _owner.SnapshotJson();
@@ -732,7 +732,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitSigmaSm()
     {
-        if (!double.TryParse(StagedSigmaSm, System.Globalization.NumberStyles.Float, Inv, out var v))
+        if (!NumericText.TryParseDouble(StagedSigmaSm, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.SigmaSm) < 1e-6) return;
         var before = _owner.SnapshotJson();

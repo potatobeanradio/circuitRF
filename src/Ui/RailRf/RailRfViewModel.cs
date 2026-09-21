@@ -823,9 +823,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             string trimmed = (value ?? "").Trim();
             _document.Settings.ViaPlatingThicknessMicrometres =
                 trimmed.Length == 0 ? null
-                : double.TryParse(trimmed.TrimEnd('µ', 'u', 'm', ' '),
-                                  System.Globalization.NumberStyles.Float,
-                                  System.Globalization.CultureInfo.InvariantCulture, out double um)
+                : NumericText.TryParseDouble(trimmed.TrimEnd('µ', 'u', 'm', ' '), out double um)
                     ? um : _document.Settings.ViaPlatingThicknessMicrometres;
             OnPropertyChanged();
             QueueResolve();
@@ -904,8 +902,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     private static double? ParseCelsius(string? text)
     {
         string trimmed = (text ?? "").Trim().TrimEnd('C', 'c', '°', ' ');
-        return double.TryParse(trimmed, System.Globalization.NumberStyles.Float,
-                               System.Globalization.CultureInfo.InvariantCulture, out double c)
+        return NumericText.TryParseDouble(trimmed, out double c)
             ? c : null;
     }
 

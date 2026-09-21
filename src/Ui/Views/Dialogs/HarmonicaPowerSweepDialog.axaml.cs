@@ -132,5 +132,5 @@ public partial class HarmonicaPowerSweepDialog : Window
     private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
 
     private static bool TryReal(string? s, out double v)
-        => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+        => NumericText.TryParseDouble(s, out v);
 }

@@ -347,7 +347,7 @@ public partial class AxesLimitsViewModel : ViewModelBase
     // ---- Helpers --------------------------------------------------------
 
     private static bool TryParse(string text, out double value) =>
-        double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out value) &&
+        NumericText.TryParseDouble(text, out value) &&
         double.IsFinite(value);
 
     private static string FormatValue(double v) =>

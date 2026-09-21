@@ -181,8 +181,7 @@ public partial class HarmonicaAdvancedSettingsView : UserControl
     private void CommitTickleDefault()
     {
         if (_updating) return;
-        if (!double.TryParse(TickleDefaultDbmBox.Text, System.Globalization.NumberStyles.Float,
-                             System.Globalization.CultureInfo.InvariantCulture, out double dbm))
+        if (!NumericText.TryParseDouble(TickleDefaultDbmBox.Text, out double dbm))
         {
             LoadTickleDefault();
             return;
@@ -221,8 +220,7 @@ public partial class HarmonicaAdvancedSettingsView : UserControl
         if (_updating) return;
         if (KernelCombo.SelectedItem is not RbfKernel kernel) { RefreshFromModel(); return; }
 
-        if (!double.TryParse(ContourSmoothBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                              out double smooth))
+        if (!NumericText.TryParseDouble(ContourSmoothBox.Text, out double smooth))
         {
             ShowError("Smooth must be a number.");
             RefreshFromModel();
@@ -233,7 +231,7 @@ public partial class HarmonicaAdvancedSettingsView : UserControl
         string epsText = ContourEpsilonBox.Text?.Trim() ?? "";
         if (epsText.Length > 0)
         {
-            if (!double.TryParse(epsText, NumberStyles.Float, CultureInfo.InvariantCulture, out double eps))
+            if (!NumericText.TryParseDouble(epsText, out double eps))
             {
                 ShowError("Epsilon must be a number, or blank for auto.");
                 RefreshFromModel();

@@ -984,7 +984,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public void CommitBitmapOpacityText(string text)
     {
         if (DragBlocksEdits()) return;
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pct))
+        if (!NumericText.TryParseDouble(text, out var pct))
         { BitmapOpacityError = "Invalid value"; return; }
         double frac = pct / 100.0;
         if (frac < 0 || frac > 1) { BitmapOpacityError = "Opacity must be between 0 and 100%"; return; }
@@ -1252,8 +1252,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public void CommitInstanceRotationText(string text)
     {
         if (_vm is null) return;
-        if (!double.TryParse(text.Trim().TrimEnd('\u00B0'), System.Globalization.NumberStyles.Float,
-                             System.Globalization.CultureInfo.InvariantCulture, out var deg)
+        if (!NumericText.TryParseDouble(text.Trim().TrimEnd('\u00B0'), out var deg)
             || !double.IsFinite(deg))
         { InstanceRotationError = "Rotation must be an angle in degrees"; return; }
         InstanceRotationError = null;
@@ -1303,7 +1302,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public void CommitInstanceMagText(string text)
     {
         if (_vm is null) return;
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mag) || mag <= 0)
+        if (!NumericText.TryParseDouble(text, out var mag) || mag <= 0)
         { InstanceMagError = "Magnification must be a positive number"; return; }
         InstanceMagError = null;
         _vm.CommitSelectedInstanceMagText(text);
@@ -2076,7 +2075,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // Strip a trailing unit suffix the display itself would have appended (e.g. "50 Ω", "90 deg").
         if (!string.IsNullOrEmpty(unit) && trimmed.EndsWith(unit, System.StringComparison.Ordinal))
             trimmed = trimmed[..^unit.Length].TrimEnd();
-        if (!double.TryParse(trimmed, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double raw))
+        if (!NumericText.TryParseDouble(trimmed, out double raw))
             return false;
         // "deg"/Ω/dimensionless pass through unchanged (Units.Scale is 1.0 for Ω and undefined for a
         // blank unit; "deg" is EXCLUDED deliberately — see ToDisplayValue's own doc comment: degrees
@@ -2880,8 +2879,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
         if (mode == RulerSizeMode.Fixed)
         {
-            if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
-                                 System.Globalization.CultureInfo.InvariantCulture, out double pt))
+            if (!NumericText.TryParseDouble(text, out double pt))
             { RulerSizeError = "Invalid value"; return; }
             if (pt <= 0) { RulerSizeError = "Text size must be greater than 0"; return; }
             RulerSizeError = null;

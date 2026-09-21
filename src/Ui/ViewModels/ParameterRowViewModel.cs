@@ -853,6 +853,5 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     /// <summary>True if the trimmed text is just a numeric literal (so a preview would be noise).</summary>
     private static bool IsBareNumber(string s)
-        => double.TryParse(s, NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                           CultureInfo.InvariantCulture, out _);
+        => NumericText.TryParseDouble(s, out _);
 }

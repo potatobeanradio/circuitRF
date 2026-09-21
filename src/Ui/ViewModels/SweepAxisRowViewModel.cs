@@ -253,9 +253,7 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
 
     private bool TryResolve(string expr, out double value)
     {
-        if (double.TryParse(expr.Trim(),
-                NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out value))
+        if (NumericText.TryParseDouble(expr.Trim(), out value))
             return true;
 
         // Expression-valued coefficient (e.g. a VAR reference): resolve its RAW value against the

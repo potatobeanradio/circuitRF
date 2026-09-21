@@ -196,7 +196,7 @@ internal static class AnalysisPreviewHelper
         foreach (var fmt in PrecisionLadder)
         {
             string s = v.ToString(fmt, CultureInfo.InvariantCulture);
-            if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double back)
+            if (NumericText.TryParseDouble(s, out double back)
                 && RoundTrips(back, v))
                 return (s, true);
         }
@@ -215,6 +215,5 @@ internal static class AnalysisPreviewHelper
     }
 
     private static bool IsBareNumber(string s)
-        => double.TryParse(s, NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                           CultureInfo.InvariantCulture, out _);
+        => NumericText.TryParseDouble(s, out _);
 }

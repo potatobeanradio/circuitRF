@@ -600,7 +600,7 @@ public static class HarmonicaInputs
         && (text[0] is 't' or 'T' or 'y' or 'Y' || (text[0] != '0' && char.IsDigit(text[0])));
 
     private static bool TryReal(string s, out double v)
-        => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+        => NumericText.TryParseDouble(s, out v);
 
     private static bool TryInt(string s, out int v)
         => int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out v);

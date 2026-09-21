@@ -241,8 +241,7 @@ public sealed partial class DrcRuleRowViewModel : ObservableObject
 
         if (text.Length > 0)
         {
-            if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out double v) || v < 0)
+            if (!NumericText.TryParseDouble(text, out double v) || v < 0)
                 return;
 
             // A density is a FRACTION, but people type percentages. Accepting both and normalising

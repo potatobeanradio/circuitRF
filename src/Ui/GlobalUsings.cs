@@ -72,3 +72,9 @@ global using CircuitRF.Design.Matching;
 // rather than imported wholesale: `CircuitRF.Core`'s root namespace also holds `ComponentModel`,
 // which would shadow `System.ComponentModel` in every file here that names it.
 global using RefPath = CircuitRF.Core.RefPath;
+
+// NumericText — decimal-separator tolerance for user-typed numeric fields (a person may write
+// 1.5 or 1,5 and mean the same number, on any machine). It lives in the CircuitRF.Diagnostics
+// assembly because that is the only leaf every project can see, WBond included; the namespace is
+// its own so "Diagnostics.NumericText" never has to be read as a diagnostic.
+global using CircuitRF.Text;

@@ -1659,7 +1659,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         double er = ComponentModelFactory.DefaultSubstrateEpsR;
         foreach (var o in overrides)
         {
-            if (!double.TryParse(o.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) continue;
+            if (!NumericText.TryParseDouble(o.Expression, out double v)) continue;
             switch (o.Name)
             {
                 case "H":  h = v;  break;
@@ -1682,7 +1682,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         var p = parms.FirstOrDefault(x => x.Name == name);
         if (p is null) return fallbackSi;
-        if (!double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double raw))
+        if (!NumericText.TryParseDouble(p.Expression, out double raw))
             return fallbackSi;
         double scale = Units.Scale(UnitNormalizer.ToEngineUnit(p.Unit)) ?? 1.0;
         return raw * scale;

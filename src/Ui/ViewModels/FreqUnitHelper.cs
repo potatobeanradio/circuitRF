@@ -25,9 +25,7 @@ internal static class FreqUnitHelper
     /// </summary>
     internal static (string Coeff, string Unit) Split(string hzExpr)
     {
-        if (double.TryParse(hzExpr.Trim(),
-                NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out double hz))
+        if (NumericText.TryParseDouble(hzExpr.Trim(), out double hz))
         {
             double abs = Math.Abs(hz);
             if (abs >= 1e9) return (Fmt(hz / 1e9), "GHz");
@@ -45,9 +43,7 @@ internal static class FreqUnitHelper
     internal static string Rescale(string coeff, string fromUnit, string toUnit)
     {
         if (fromUnit == toUnit) return coeff;
-        if (!double.TryParse(coeff.Trim(),
-                NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out double v)) return coeff;
+        if (!NumericText.TryParseDouble(coeff.Trim(), out double v)) return coeff;
         double scale = Multiplier(fromUnit) / Multiplier(toUnit);
         return Fmt(v * scale);
     }
