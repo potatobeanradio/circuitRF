@@ -33216,3 +33216,50 @@ old copper. Both now re-flatten, `NotifyArtworkChanged` through the backing fiel
 **Neither change costs a flat board anything**: with no instances `FlattenedShapes` hands back
 `live.Shapes` itself, so the live-list identity the comment relies on is preserved exactly where it
 was actually true. Gated by `LayoutPadsTests.TheLiveArtworkSeamKeepsAFootprintsLands`.
+
+---
+
+## railRF read the whole board in DBU, and flagged the one control that was right (2026-09-20)
+
+Two reports on the shipped `Sensor board.crail`, and they are one story.
+
+**The reference combo was outlined in the warning colour whatever it was set to.** `RefreshRunGate`
+built a sentence and then handed it to `RailRefusals.Classify` — the matcher that exists for
+sentences an EXTRACTION owns, where nobody on the window side knows what the refusal is about. On
+the two reasons this gate raises about the reference it got both wrong, in opposite directions:
+
+- *"Confirm the reference layer first…"* matches no stem, so the one refusal the combo on screen
+  really does answer turned **nothing** red.
+- *"Rail 'X' states no reference layer…"* matches the extractor's stem and turned the combo red — but
+  that sentence is about a rail the window is **not showing**, and the combo belongs to the rail it
+  **is**. So the example opened with its reference correctly set to the plane and the control holding
+  the right answer was the one flagged. Its remedy is in the SELECTOR, which is what the sentence
+  itself says: show that rail, or remove it.
+
+The window knows which control answers its own refusals and was throwing that away. `GateRefusal`
+now states the control; classification is kept for what arrives from an extraction. The import's own
+refusal was being re-classified out of its sentence too, and came back pointing at nothing.
+
+**`RailBoardInputs.View` was set by nothing but the live-artwork swap.** That swap needs a layout
+SESSION open on the same `.clay`, so on every ordinary open — the `.crail`, the bare `.clay` and the
+import, all three of which had just READ a `LayoutView` and dropped it — `View` was null and
+`LengthFormat` fell back to `RailLengthFormat.Dbu`. The whole window then read in database units,
+against its own 2026-09-18 rule, and `RebuildBoardLayout` drew the canvas through a synthesised view
+in the TECHNOLOGY's default unit — so the rulers and the rows disagreed as well.
+
+The part that outlives the session is that **a pour pick BAKES the reading into the document**:
+`TryPickPourAt` names the rail after the place, so the saved `.crail` carried a rail called
+`rail at (30058230, 12324568) DBU`. A unit fallback that only ever affected a readout would have been
+a blemish; this one is written to a file.
+
+**The same sweep finished the 2026-09-18 unit work**, which had threaded `RailLengthFormat` into the
+requests and converted most call sites but not these: the mesh-coarsening note, the two-net-names
+refusal, the netlist-vs-artwork divergence, the unresolved-anchor refusal, `PdnRegionRef.Describe`,
+the nearest-reference-copper distances in `PdnAssembly`, and `RailPortAnchor.Refusal` with the
+`RailSource`/`RailLoad`/`RailSpec`/`RailDocument` chain above it (optional, so `RailDocumentIo`'s
+read-and-write validation — which genuinely has no artwork — still says DBU out loud). The fast
+model's spreading refusal was reading a **millimetre** size against a **DBU** vertex in one clause.
+
+Gate: `RailReadingUnitTests`, three tests — the opened example takes the artwork's unit, an
+unreferenced rail elsewhere flags the selector, and the selected rail's own unconfirmed reference
+flags the combo.

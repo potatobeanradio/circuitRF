@@ -172,6 +172,11 @@ public partial class RailRfWindow
         return new RailBoardInputs
         {
             Shapes         = view.Shapes,
+
+            // The model the import just wrote and read back, so the window reads in ITS display unit
+            // rather than in DBU. It is not a live one — no session is open on a cell created a
+            // moment ago — and the adoption on Activated swaps it for one if the user opens it.
+            View           = view,
             Technology     = tech,
             TechPath       = result.TechPath,
             DbuPerMicron   = view.DbuPerMicron,

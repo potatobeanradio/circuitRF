@@ -1325,9 +1325,12 @@ public class RailWindowTests
         Assert.Contains("GND", vm.RunBlockedReason, StringComparison.Ordinal);
         Assert.Contains("states no reference layer", vm.RunBlockedReason, StringComparison.Ordinal);
 
-        // It names the control that answers it, which is the reference combo — reached through the
-        // rail selector, which the sentence says.
-        Assert.Equal(RailRefusalControl.ReferenceLayer, vm.Refusal?.Control);
+        // It names the control that answers it, which is the rail SELECTOR — the sentence's own two
+        // remedies both live there, and the reference combo beside it belongs to the rail on screen,
+        // whose reference is correctly set (owner, 2026-09-20: it was outlined in the warning colour
+        // whatever he did to it, because this refusal used to flag it).
+        Assert.Equal(RailRefusalControl.RailSelector, vm.Refusal?.Control);
+        Assert.False(vm.IsReferenceLayerFlagged);
         Assert.Contains("rail selector", vm.Refusal!.Sentence, StringComparison.Ordinal);
 
         // Fix it the way the sentence says to: show that rail and confirm its reference.

@@ -387,7 +387,8 @@ public static class PdnMeshExtractor
         var refineBands = RefinementBands(rail, request, baseDeltaDbu);
         var grid = PdnGrid.Build(extent, baseDeltaDbu, refineBands,
                                  Math.Max(1, request.Mesh.PortRefinementRatio),
-                                 request.Mesh.MaxCells, conductorCount: 2, notes);
+                                 request.Mesh.MaxCells, conductorCount: 2, notes,
+                                 request.LengthFormat);
 
         // ── the cells ──────────────────────────────────────────────────────────────────────────
         var mesh = new MeshBuilder(grid, byLayer, referenceLayer);
@@ -835,7 +836,7 @@ public static class PdnMeshExtractor
 
         public static PdnGrid Build(
             Bbox extent, long delta, List<Bbox> bands, int ratio, int maxCells,
-            int conductorCount, List<string> notes)
+            int conductorCount, List<string> notes, RailLengthFormat format)
         {
             long spanX = Math.Max(1, extent.MaxX - extent.MinX);
             long spanY = Math.Max(1, extent.MaxY - extent.MinY);
@@ -852,7 +853,8 @@ public static class PdnMeshExtractor
 
             if (d != Math.Max(1, delta))
                 notes.Add(
-                    $"The mesh was coarsened from {delta} to {d} DBU to stay under the " +
+                    $"The mesh was coarsened from {format.Length(delta)} to {format.Length(d)} "
+                  + "to stay under the " +
                     $"{maxCells:N0}-cell ceiling. Each cell still carries the copper AREA actually " +
                     "inside it, so a run's resistance is still right; what a coarse cell loses is the " +
                     "separation between two conductors that share it.");

@@ -180,7 +180,12 @@ public sealed class RailSpec
     public IEnumerable<RailLoad> DcInjections => Loads.Where(l => l.DcCurrentA is not null);
 
     /// <summary>Null when this rail is well formed, or the first refusal sentence.</summary>
-    public string? Refusal()
+    /// <param name="format">
+    /// The artwork's own units, so a coordinate anchor in a refusal reads as a place on the board.
+    /// Omitted by <c>RailDocumentIo</c>'s read-and-write validation, which has no artwork open and
+    /// says DBU out loud rather than picking a unit nobody stated.
+    /// </param>
+    public string? Refusal(RailLengthFormat? format = null)
     {
         string rail = $"Rail '{(Name.Length > 0 ? Name : "(unnamed)")}'";
 
@@ -190,11 +195,13 @@ public sealed class RailSpec
                    "about.";
 
         for (int i = 0; i < Sources.Count; i++)
-            if (Sources[i].Refusal($"{rail}'s source {i + 1} ({Sources[i].Anchor.Describe()})") is { } s)
+            if (Sources[i].Refusal($"{rail}'s source {i + 1} ({Sources[i].Anchor.Describe(format)})",
+                                   format) is { } s)
                 return s;
 
         for (int i = 0; i < Loads.Count; i++)
-            if (Loads[i].Refusal($"{rail}'s load {i + 1} ({Loads[i].Anchor.Describe()})") is { } l)
+            if (Loads[i].Refusal($"{rail}'s load {i + 1} ({Loads[i].Anchor.Describe(format)})",
+                                 format) is { } l)
                 return l;
 
         if (DropBudget?.Refusal($"{rail}'s drop budget", RailTargetKind.DropBudget) is { } d) return d;

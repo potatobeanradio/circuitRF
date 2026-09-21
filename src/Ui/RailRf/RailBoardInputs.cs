@@ -35,9 +35,15 @@ public sealed record RailBoardInputs
     /// that document mutates this <see cref="LayoutView"/> and raises its <c>Changed</c> event, which
     /// is what the railRF window repaints on. Nothing is copied and nothing is polled.
     ///
-    /// <para>Null for a board that came from an import into a throwaway directory, or wherever no
-    /// session is open on the file — <see cref="Shapes"/> is still the artwork either way, and it is
-    /// what the EXTRACTION reads. This is only what the picture is drawn from.</para>
+    /// <para><b>Set by every path that read a <c>.clay</c></b> — the import, the bare-layout open and
+    /// the <c>.crail</c> open — and swapped for the SESSION's object when one turns out to be open on
+    /// the same file. It was set only by that swap until 2026-09-20, which made it null on every
+    /// ordinary open, and <see cref="LengthFormat"/> then fell back to raw DBU: the whole window read
+    /// in database units, and a rail made by clicking the pour carried one in its NAME, in the saved
+    /// document. Null only where nothing read a layout at all.</para>
+    ///
+    /// <para><see cref="Shapes"/> is still the artwork either way, and it is what the EXTRACTION
+    /// reads. This is what the picture is drawn from, and what the units come off.</para>
     /// </remarks>
     public LayoutView? View { get; init; }
 

@@ -57,7 +57,10 @@ public sealed partial class LayoutEditorViewModel
     /// they are asked, not in how they answer.</para>
     /// </remarks>
     private PdnCopperPieces CopperPieces() =>
-        PdnCopperPieces.Build(Model.Shapes, Technology);
+        // The model's own display unit: the one refusal this can raise names two places on the
+        // board, and a coordinate in DBU is one nobody can find on the canvas it came off.
+        PdnCopperPieces.Build(Model.Shapes, Technology, null,
+                              Design.RailRf.RailLengthFormat.For(Model));
 
     /// <summary>
     /// Every net name already on this board — what the dialog offers, before whatever the user

@@ -44,19 +44,20 @@ public sealed record RailPortAnchor
     /// one. <paramref name="where"/> names the rail and the row, because a document with two loads
     /// and a source is a document where "an anchor is malformed" is not an answer anyone can act on.
     /// </summary>
-    public string? Refusal(string where)
+    public string? Refusal(string where, RailLengthFormat? format = null)
     {
         bool pad   = Refdes is { Length: > 0 };
         bool point = Point is not null;
+        var fmt = format ?? RailLengthFormat.Dbu;
 
         if (pad && point)
-            return $"{where} states both a component pad ({Describe()}) and a coordinate " +
-                   $"({Point!.Value.X}, {Point.Value.Y}) DBU. An anchor is one or the other: give the " +
-                   "refdes and pin, or remove them and keep the coordinate.";
+            return $"{where} states both a component pad ({Describe(format)}) and a coordinate " +
+                   $"{fmt.Point(Point!.Value.X, Point.Value.Y)}. An anchor is one or the other: give " +
+                   "the refdes and pin, or remove them and keep the coordinate.";
 
         if (!pad && !point)
             return $"{where} states neither a component pad nor a coordinate. Give a refdes (and a " +
-                   "pin, where the part has more than one), or a coordinate in DBU where there is no " +
+                   "pin, where the part has more than one), or a coordinate where there is no " +
                    "placement file to name one.";
 
         // A coordinate anchor carrying a pin names a pin on no component — a fragment of the pad

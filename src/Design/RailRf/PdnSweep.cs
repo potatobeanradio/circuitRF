@@ -340,7 +340,8 @@ public static class PdnSweep
         ArgumentNullException.ThrowIfNull(request);
 
         var rail = request.Rail;
-        if (rail.Refusal() is { } railRefusal) return PdnSweepResult.Refused(railRefusal);
+        if (rail.Refusal(request.LengthFormat) is { } railRefusal)
+            return PdnSweepResult.Refused(railRefusal);
 
         // ── R-rail25-3c: unmounting a series element OPENS THE RAIL ───────────────────────────
         //

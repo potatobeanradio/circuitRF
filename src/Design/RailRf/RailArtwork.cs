@@ -397,7 +397,8 @@ public static class RailArtwork
         // this short cut; see LayoutEditorViewModel.CopperPieces.)
         var stamped = view is null || !view.Shapes.Any(sh => sh.Net is { Length: > 0 })
             ? PdnCopperPieces.Empty
-            : PdnCopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes);
+            : PdnCopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes,
+                                    RailLengthFormat.For(view));
         notes.AddRange(stamped.Refusals);
 
         var extents = new System.Collections.Generic.Dictionary<PdnPad, long>();
@@ -415,7 +416,10 @@ public static class RailArtwork
         // reading of a part the netlist also names is worked out at all: R-ab1-3a discards those
         // pads and this comparison is what they are for. It is not LVS — it compares two files that
         // both claim to describe one board.
-        var divergences = PdnBoardDivergence.Compare(fromNetlist, artwork, extents);
+        // In the ARTWORK's own unit — these sentences name two places on a board and a distance
+        // between them, and a reader has to be able to hold a ruler against them.
+        var divergences = PdnBoardDivergence.Compare(
+            fromNetlist, artwork, extents, view is null ? null : RailLengthFormat.For(view));
         foreach (var d in divergences) notes.Add(d.Sentence);
 
         var fromArtwork = artwork

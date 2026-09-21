@@ -56,9 +56,9 @@ public sealed record RailSource
     public bool IsRl => SeriesResistanceOhms is not null || SeriesInductanceHenries is not null;
 
     /// <summary>Null when this row is usable, or the refusal sentence naming the rail and the row.</summary>
-    public string? Refusal(string where)
+    public string? Refusal(string where, RailLengthFormat? format = null)
     {
-        if (Anchor.Refusal(where) is { } anchor) return anchor;
+        if (Anchor.Refusal(where, format) is { } anchor) return anchor;
 
         if (TouchstoneRef is { Length: > 0 } && IsRl)
             return $"{where} states both a series R-L and a Touchstone file ('{TouchstoneRef}'). " +

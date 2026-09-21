@@ -158,6 +158,10 @@ public partial class RailRfWindow
         vm.Board = new RailBoardInputs
         {
             Shapes         = shapes,
+
+            // The model this window just read, so the board reads in the `.clay`'s own display unit
+            // rather than in DBU — the same line the `.crail` open needs, for the same reason.
+            View           = view,
             Technology     = tech,
             TechPath       = resolution.ResolvedPath,
             DbuPerMicron   = view.DbuPerMicron,

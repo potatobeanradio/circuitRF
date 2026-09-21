@@ -393,32 +393,74 @@ public sealed partial class RailRfViewModel
         return null;
     }
 
+    /// <summary>
+    /// The gate's own refusal, with the control it points at STATED rather than matched.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window knows which control answers its own refusals, and it used to throw that away</b>
+    /// (owner, 2026-09-20). Every reason went out through <see cref="RailRefusals.Classify"/>, which
+    /// matches the stem of a sentence an ENGINE owns — and on the two reasons this gate raises about
+    /// the reference, that got both of them wrong in opposite directions:
+    ///
+    /// <para><i>"Confirm the reference layer first…"</i> matches no stem, so the one refusal the combo
+    /// on screen really does answer turned nothing red at all.</para>
+    ///
+    /// <para><i>"Rail 'X' states no reference layer…"</i> matches the extractor's stem and turned the
+    /// combo red — but that sentence is about a rail the window is NOT showing, and the combo belongs
+    /// to the rail it IS showing. So the example opened with the reference correctly set to the plane,
+    /// and the control holding the right answer was outlined in the warning colour whatever the user
+    /// did to it. Its remedy is in the SELECTOR, which is what the sentence itself says: show that
+    /// rail, or remove it.</para>
+    ///
+    /// <para>Classification is still right for what arrives FROM an extraction — the document's own
+    /// refusal, and the import's — because nobody on this side knows what those are about.</para>
+    /// </remarks>
+    private RailRefusal? GateRefusal()
+    {
+        if (Board is null)
+            return new RailRefusal(
+                "There is no board yet. Import one — the artwork, and the placement, BOM and netlist "
+              + "that go with it.", RailRefusalControl.None);
+
+        if (SelectedRail is null)
+            return new RailRefusal(
+                "This document holds no rails yet. Pick the power net on the board to make one.",
+                RailRefusalControl.None);
+
+        if (!IsReferenceConfirmed)
+            return new RailRefusal(
+                "Confirm the reference layer first. railRF proposes one and never assumes it (Q-8), "
+              + "and a pre-selected combo tabbed past is not a confirmation.",
+                RailRefusalControl.ReferenceLayer);
+
+        // R-rail19-1b: BOTH doors. The first remedy was the only one named, and it is the wrong one
+        // for the user this sentence is usually shown to — a rail added by mistake is one they want
+        // GONE, not one they want to give a reference to. A refusal that names one of two exits
+        // traps whoever wanted the other.
+        if (UnreferencedRail() is { } unreferenced)
+            return new RailRefusal(
+                $"Rail '{unreferenced}' states no reference layer, so there is nothing to return "
+              + "current through. The rail set is solved together, so this one blocks the run as "
+              + "well — pick it in the rail selector above and confirm its reference, or remove "
+              + "it with the button beside the selector.", RailRefusalControl.RailSelector);
+
+        // The import's own, control and all: it was classified out of its sentence here and came back
+        // as something else — a placement-origin refusal that pointed at no control.
+        if (PendingImportRefusal is { } import) return import;
+
+        // In the BOARD's own unit — a document refusal naming a coordinate anchor is a refusal
+        // about a place somebody has to find on the canvas beside it.
+        return _document.Refusal(BoardLengthFormat()) is { } doc
+            ? RailRefusals.Classify(doc)
+            : null;
+    }
+
     private void RefreshRunGate()
     {
-        string? why =
-            Board is null
-                ? "There is no board yet. Import one — the artwork, and the placement, BOM and netlist "
-                + "that go with it."
-            : SelectedRail is null
-                ? "This document holds no rails yet. Pick the power net on the board to make one."
-            : !IsReferenceConfirmed
-                ? "Confirm the reference layer first. railRF proposes one and never assumes it (Q-8), "
-                + "and a pre-selected combo tabbed past is not a confirmation."
-            : UnreferencedRail() is { } unreferenced
-                // R-rail19-1b: BOTH doors. The first remedy was the only one named, and it is the
-                // wrong one for the user this sentence is usually shown to — a rail added by
-                // mistake is one they want GONE, not one they want to give a reference to. A
-                // refusal that names one of two exits traps whoever wanted the other.
-                ? $"Rail '{unreferenced}' states no reference layer, so there is nothing to return "
-                + "current through. The rail set is solved together, so this one blocks the run as "
-                + "well — pick it in the rail selector above and confirm its reference, or remove "
-                + "it with the button beside the selector."
-            : PendingImportRefusal is { } import
-                ? import.Sentence
-            : _document.Refusal();
+        var refusal = GateRefusal();
 
-        RunBlockedReason = why ?? "";
-        CanRun = why is null;
+        RunBlockedReason = refusal?.Sentence ?? "";
+        CanRun = refusal is null;
         OnPropertyChanged(nameof(CanStartRun));
         RunCommand.NotifyCanExecuteChanged();
         AccuracyCommand.NotifyCanExecuteChanged();
@@ -427,7 +469,7 @@ public sealed partial class RailRfViewModel
 
         // The gate's own reason is a refusal in R-rail7-4's sense whenever it names a control, so it
         // shows in the strip and turns that control red rather than hiding behind a disabled button.
-        Refusal = why is null ? null : RailRefusals.Classify(why);
+        Refusal = refusal;
     }
 
     // ── The refusals, and the control each one turns red (R-rail7-4) ───────────────────────────

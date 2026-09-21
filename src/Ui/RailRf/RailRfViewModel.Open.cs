@@ -126,6 +126,15 @@ public sealed partial class RailRfViewModel
                 Board = new RailBoardInputs
                 {
                     Shapes         = shapes,
+
+                    // THE LAYOUT ITSELF, and not only its shapes (owner, 2026-09-20). `View` is what
+                    // carries the artwork's DISPLAY UNIT, and without it `RailLengthFormat` falls back
+                    // to raw DBU — so a `.crail` opened from the project tree read every coordinate,
+                    // every length and the mesh cell in database units, and a rail made by clicking
+                    // the pour was NAMED `rail at (30058230, 12324568) DBU` in the saved document.
+                    // Only the live-artwork swap ever set this, and that swap needs a layout SESSION
+                    // on the same `.clay`, which the ordinary open does not have.
+                    View           = view,
                     Technology     = tech,
                     TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,

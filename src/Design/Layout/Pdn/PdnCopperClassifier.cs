@@ -72,7 +72,14 @@ public enum PdnCopperClass
 public readonly record struct PdnRegionRef(LayerKey Layer, long X, long Y)
 {
     /// <summary>How it reads on a report row and in the class tab's readout.</summary>
-    public string Describe() => $"layer {Layer.Layer}/{Layer.Datatype} at ({X}, {Y}) DBU";
+    /// <param name="format">
+    /// The artwork's own units, so the identifying vertex reads as a place on the board rather than
+    /// as a database integer. Omitted where nothing has stated one, and the string then says DBU out
+    /// loud rather than picking a unit nobody named.
+    /// </param>
+    public string Describe(RailRf.RailLengthFormat? format = null) =>
+        $"layer {Layer.Layer}/{Layer.Datatype} at "
+      + $"{(format ?? RailRf.RailLengthFormat.Dbu).Point(X, Y)}";
 }
 
 /// <summary>

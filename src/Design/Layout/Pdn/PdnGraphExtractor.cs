@@ -1297,12 +1297,15 @@ internal sealed class GraphBuild(
                                         (c.Bounds.MaxY - c.Bounds.MinY))
                 .FirstOrDefault();
 
-            double dbuPerMetre = request.DbuPerMicron * 1e6;
+            // IN THE BOARD'S OWN UNIT, both the size and the vertex — this row used to read a
+            // millimetre size against a DBU vertex, two units in one clause, on a board that reads
+            // in neither (owner, 2026-09-20).
+            var fmt = request.LengthFormat;
             string where = worst is null
                 ? "copper the fast model classified as spreading"
-                : $"a {(worst.Bounds.MaxX - worst.Bounds.MinX) / dbuPerMetre * 1e3:0.#} × " +
-                  $"{(worst.Bounds.MaxY - worst.Bounds.MinY) / dbuPerMetre * 1e3:0.#} mm region on " +
-                  $"{worst.Region.Describe()}";
+                : $"a {fmt.Length(worst.Bounds.MaxX - worst.Bounds.MinX)} × " +
+                  $"{fmt.Length(worst.Bounds.MaxY - worst.Bounds.MinY)} region on " +
+                  $"{worst.Region.Describe(fmt)}";
 
             return
                 $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(request.LengthFormat)} only through {where}, " +

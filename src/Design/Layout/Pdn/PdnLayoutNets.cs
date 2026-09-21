@@ -329,7 +329,7 @@ public sealed class PdnCopperPieces
     /// </param>
     public static PdnCopperPieces Build(
         IReadOnlyList<LayoutShape> copper, Technology? tech,
-        IReadOnlyList<LayoutShape>? stamps = null)
+        IReadOnlyList<LayoutShape>? stamps = null, RailRf.RailLengthFormat? format = null)
     {
         ArgumentNullException.ThrowIfNull(copper);
         if (tech is null || copper.Count == 0) return Empty;
@@ -385,11 +385,12 @@ public sealed class PdnCopperPieces
             if (contested.Add(piece))
             {
                 nameOfPiece.Remove(piece);
+                var fmt = format ?? RailRf.RailLengthFormat.Dbu;
                 refusals.Add(
                     $"One connected piece of copper carries two different net names: '{first.Net}' " +
-                    $"at ({first.X}, {first.Y}) and '{net}' at ({px}, {py}), both in DBU. Either the " +
-                    "artwork shorts those two nets or one of the labels is wrong. Nothing on that " +
-                    "piece took a name.");
+                    $"at {fmt.Point(first.X, first.Y)} and '{net}' at {fmt.Point(px, py)}. Either " +
+                    "the artwork shorts those two nets or one of the labels is wrong. Nothing on " +
+                    "that piece took a name.");
             }
         }
 
@@ -515,7 +516,8 @@ public static class PdnBoardDivergence
     public static IReadOnlyList<PdnDivergence> Compare(
         IReadOnlyList<PdnPad> netlistPads,
         IReadOnlyList<PdnPad> artworkPads,
-        IReadOnlyDictionary<PdnPad, long>? extents = null)
+        IReadOnlyDictionary<PdnPad, long>? extents = null,
+        RailRf.RailLengthFormat? format = null)
     {
         ArgumentNullException.ThrowIfNull(netlistPads);
         ArgumentNullException.ThrowIfNull(artworkPads);
@@ -557,10 +559,12 @@ public static class PdnBoardDivergence
             double d = Math.Sqrt(dx * dx + dy * dy);
             if (d <= extent) continue;
 
+            var fmt = format ?? RailRf.RailLengthFormat.Dbu;
             found.Add(new PdnDivergence(refdes, pin,
-                $"{refdes}.{pin} stands at ({stated.X}, {stated.Y}) according to the board netlist " +
-                $"and at ({art.X}, {art.Y}) according to the artwork — {d:F0} DBU apart, which is " +
-                $"more than the pad's own {extent} DBU extent. The run used the board netlist's."));
+                $"{refdes}.{pin} stands at {fmt.Point(stated.X, stated.Y)} according to the board " +
+                $"netlist and at {fmt.Point(art.X, art.Y)} according to the artwork — "
+              + $"{fmt.Length((long)Math.Round(d))} apart, which is more than the pad's own "
+              + $"{fmt.Length(extent)} extent. The run used the board netlist's."));
         }
 
         return found;

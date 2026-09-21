@@ -167,12 +167,14 @@ public static class PdnAttachments
 
     /// <summary>The refusal for an anchor that names no copper, or null. <b>It names what would
     /// answer it</b> — the house spelling `convert` and `em` already set.</summary>
-    public static string? RefusalForUnresolved(string where, RailPortAnchor anchor, int padCount) =>
+    public static string? RefusalForUnresolved(
+        string where, RailPortAnchor anchor, int padCount, RailLengthFormat? format = null) =>
         padCount > 0
             ? null
             : anchor.IsPad
-                ? $"{where} names {anchor.Describe()}, and no pad of that reference is on this board. " +
-                  "Check the reference against the board netlist, or give a coordinate in DBU instead."
-                : $"{where} names {anchor.Describe()}, which is not on the rail's copper. Move it onto " +
-                  "the rail, or give the refdes and pin the pad is under.";
+                ? $"{where} names {anchor.Describe(format)}, and no pad of that reference is on this " +
+                  "board. Check the reference against the board netlist, or give a coordinate " +
+                  "instead."
+                : $"{where} names {anchor.Describe(format)}, which is not on the rail's copper. Move " +
+                  "it onto the rail, or give the refdes and pin the pad is under.";
 }

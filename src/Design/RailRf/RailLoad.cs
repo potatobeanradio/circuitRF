@@ -66,9 +66,9 @@ public sealed record RailLoad
     public bool IsObservationOnly => DcCurrentA is null;
 
     /// <summary>Null when this row is usable, or the refusal sentence naming the rail and the row.</summary>
-    public string? Refusal(string where)
+    public string? Refusal(string where, RailLengthFormat? format = null)
     {
-        if (Anchor.Refusal(where) is { } anchor) return anchor;
+        if (Anchor.Refusal(where, format) is { } anchor) return anchor;
 
         if (DcCurrentA is { } i && double.IsNaN(i))
             return $"{where} states a DC current that is not a number. Leave it out to make this an " +

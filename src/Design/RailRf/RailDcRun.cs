@@ -139,7 +139,8 @@ public static class RailDcRun
     {
         var doc = request.Document;
 
-        if (doc.Refusal() is { } docRefusal) return RailDcRunResult.Refused(docRefusal);
+        if (doc.Refusal(request.LengthFormat) is { } docRefusal)
+            return RailDcRunResult.Refused(docRefusal);
 
         var order = RailOrder.Resolve(doc);
         if (!order.Ok) return RailDcRunResult.Refused(order.Refusal!);

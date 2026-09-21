@@ -417,10 +417,11 @@ internal sealed class PdnAssembly
 
             _ground = Merge(nodes);
             ReferencePoint =
-                $"the reference conductor under {anchor.Describe()}, this rail's first {what}" +
+                $"the reference conductor under {anchor.Describe(_req.LengthFormat)}, this rail's " +
+                $"first {what}" +
                 (away > 0
-                    ? $" — the nearest reference copper is {away} DBU away, because there is none " +
-                      "directly under that pad"
+                    ? $" — the nearest reference copper is {_req.LengthFormat.Length(away)} away, " +
+                      "because there is none directly under that pad"
                     : "");
             return null;
         }
@@ -447,15 +448,18 @@ internal sealed class PdnAssembly
             var b = PowerNodesFor(part.B);
 
             if (a.Count == 0)
-                return PdnAttachments.RefusalForUnresolved($"{where}'s first end", part.A, 0);
+                return PdnAttachments.RefusalForUnresolved(
+                    $"{where}'s first end", part.A, 0, _req.LengthFormat);
             if (b.Count == 0)
-                return PdnAttachments.RefusalForUnresolved($"{where}'s second end", part.B, 0);
+                return PdnAttachments.RefusalForUnresolved(
+                    $"{where}'s second end", part.B, 0, _req.LengthFormat);
 
             int na = Merge(a), nb = Merge(b);
             if (na == nb)
             {
                 _diagnostics.Add(
-                    $"{where} bridges {part.A.Describe()} to {part.B.Describe()}, which are already " +
+                    $"{where} bridges {part.A.Describe(_req.LengthFormat)} to "
+                  + $"{part.B.Describe(_req.LengthFormat)}, which are already " +
                     "one piece of copper. Its resistance is in the netlist and carries no current.");
             }
 
@@ -536,7 +540,7 @@ internal sealed class PdnAssembly
 
             var power = PowerNodesFor(src.Anchor);
             if (power.Count == 0)
-                return PdnAttachments.RefusalForUnresolved(where, src.Anchor, 0);
+                return PdnAttachments.RefusalForUnresolved(where, src.Anchor, 0, _req.LengthFormat);
 
             var reference = ReferenceNodesFor(src.Anchor, out _);
             if (reference.Count == 0)
@@ -611,7 +615,7 @@ internal sealed class PdnAssembly
 
             var power = PowerNodesFor(load.Anchor);
             if (power.Count == 0)
-                return PdnAttachments.RefusalForUnresolved(where, load.Anchor, 0);
+                return PdnAttachments.RefusalForUnresolved(where, load.Anchor, 0, _req.LengthFormat);
 
             var reference = ReferenceNodesFor(load.Anchor, out _);
             if (reference.Count == 0)
@@ -713,9 +717,9 @@ internal sealed class PdnAssembly
         {
             nodes.Add(nearest);
             _diagnostics.Add(
-                $"There is no reference copper under {anchor.Describe()}; the return was attached " +
-                $"to the nearest reference cell, {distanceDbu} DBU away. The spreading between the " +
-                "two is NOT in this answer.");
+                $"There is no reference copper under {anchor.Describe(_req.LengthFormat)}; the return " +
+                $"was attached to the nearest reference cell, {_req.LengthFormat.Length(distanceDbu)} " +
+                "away. The spreading between the two is NOT in this answer.");
         }
         return nodes;
     }

@@ -244,12 +244,12 @@ public sealed class RailDocument
     /// <see cref="RailDocumentIo"/> applies this on both read AND write, so a document that cannot be
     /// read back is one that was never written.
     /// </summary>
-    public string? Refusal()
+    public string? Refusal(RailLengthFormat? format = null)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var rail in Rails)
         {
-            if (rail.Refusal() is { } r) return r;
+            if (rail.Refusal(format) is { } r) return r;
             if (!seen.Add(rail.Name))
                 return $"Two rails are both called '{rail.Name}'. A rail's name is how --rail picks " +
                        "one and how the solve order names one, so they are distinct.";
