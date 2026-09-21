@@ -1270,6 +1270,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // §9B.6: rulers are the third channel and follow the same rule — a REPLACE owns the whole
         // selection, so it clears them too.
         if (clearOtherKind && _selectedRulerIndices.Count > 0) _selectedRulerIndices.Clear();
+        // ...and designators are the FOURTH. Owner reports, 2026-09-20 — three symptoms, this one
+        // cause: Escape did not deselect a designator, clicking empty canvas did not deselect one,
+        // and Reset in the Properties Inspector moved a DIFFERENT part's designator than the one the
+        // panel was showing. All three are a designator selection nothing else could end.
+        // SetDesignatorSelection was taught to clear the other three when it took the selection; the
+        // other three were never taught about it, so it survived every replace that followed.
+        if (clearOtherKind && _selectedDesignatorIndices.Count > 0) _selectedDesignatorIndices.Clear();
 
         SelectionStatusText = ComputeSelectionStatus();
         RebuildOverlay();
@@ -1557,7 +1564,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             _cycleCache.Clear();
             LastPressResolvedNewSelection = true;   // nothing picked up: see the property's own note
-            if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears the other two
+            if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears the other three
             BeginMarquee(px, py, shift, ctrl);
             return;
         }
@@ -3120,6 +3127,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _selectedIndices.Clear(); _selectedIndices.AddRange(shapes);
         _selectedInstanceIndices.Clear(); _selectedInstanceIndices.AddRange(insts);
         _selectedRulerIndices.Clear(); _selectedRulerIndices.AddRange(rulers);
+        // This method IS the whole selection's new state, so the fourth channel is part of it: no
+        // designator survives a mixed replace either.
+        _selectedDesignatorIndices.Clear();
         _pickedVertexIndex = null;
 
         SelectionStatusText = ComputeSelectionStatus();

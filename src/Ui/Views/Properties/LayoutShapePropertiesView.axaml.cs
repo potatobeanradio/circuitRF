@@ -45,18 +45,6 @@ public partial class LayoutShapePropertiesView : UserControl
         else if (e.Key == Key.Escape) Vm?.RevertField(key);
     }
 
-    /// <summary>A cardinal-angle preset (R-L3d-10). Routes through the SAME commit path a typed angle
-    /// takes, so there is one place a placement angle is set and not two that can disagree.</summary>
-    private void OnInstanceRotationPresetClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Tag: string degrees }) Vm?.CommitInstanceRotationText(degrees);
-    }
-
-    /// <summary>brief-footprint-4b R-fp4b-6b — Reset to AUTO, which is back to derived rather than
-    /// back to a remembered number. Applies to every selected placement, not only this one.</summary>
-    private void OnResetDesignatorPositionClick(object? sender, RoutedEventArgs e)
-        => Vm?.ResetInstanceDesignatorPosition();
-
     // ── Bitmap: Browse… (UI firewall — the file picker lives in code-behind, never the VM) ───────
 
     private async void OnBitmapBrowseClick(object? sender, RoutedEventArgs e)
@@ -76,27 +64,6 @@ public partial class LayoutShapePropertiesView : UserControl
         });
         if (files.Count > 0)
             Vm.CommitBitmapPathText(files[0].Path.LocalPath);
-    }
-
-    // ── Instance: Re-target… (UI firewall — the cell-picker dialog lives in code-behind, never the
-    // VM; mirrors LayoutEditorView.axaml.cs's own OnInstanceTool exactly, minus the placement-arming
-    // step at the end — this button retargets the ALREADY-PLACED selected instance in place) ─────────
-
-    private async void OnInstanceRetargetClick(object? sender, RoutedEventArgs e)
-    {
-        if (Vm?.EditorVm is not { } editorVm) return;
-        var owner = TopLevel.GetTopLevel(this) as Window;
-        if (owner is null) return;
-
-        // No "Reference Cell…" here, deliberately: re-targeting is an edit on one existing instance,
-        // and taking a cell in from another workspace is a change to the WORKSPACE. Offering it from a
-        // property row would bury a workspace-level act inside a field edit. The picker falls back to
-        // its plain Browse… for the same reason it always did.
-        var dialog = new InstanceCellPickerDialog(editorVm.WorkspaceRootDir, editorVm.InstanceBaseDir, editorVm.CurrentCellDir);
-        var pick = await dialog.ShowDialog<CellPickResult?>(owner);
-        if (pick is null || pick.ReferenceRequested || pick.CellRef.Length == 0) return;
-
-        editorVm.RetargetSelectedInstance(pick.CellRef);
     }
 
     // ── Vertex-list rows (Tag = "X" or "Y"; DataContext = the row itself) ───────────────────────
@@ -128,5 +95,9 @@ public partial class LayoutShapePropertiesView : UserControl
     }
 
     // PCell parameter list rows moved to PCellParameterListView.axaml.cs (brief-L5-followups.md §5,
-    // extracted so LayoutPCellParameterDialog can host the same surface).
+    // extracted so LayoutPCellParameterDialog can host the same surface). The whole INSTANCE section
+    // — and with it OnInstanceRotationPresetClick, OnResetDesignatorPositionClick and
+    // OnInstanceRetargetClick — moved to LayoutInstancePropertiesView.axaml.cs for the same reason
+    // (owner report, 2026-09-20): that dialog now hosts the instance surface as well, so a land
+    // pattern with no declared parameters opens on something rather than on an empty header.
 }

@@ -518,8 +518,10 @@ public partial class LayoutEditorView : UserControl
     /// "the SAME editor, not a new dialog" reading had wrongly read as "route to the docked Properties
     /// panel only" — the owner's own repeated reports make clear a popup was always what was wanted, to
     /// match the schematic side exactly. The dialog hosts the identical
-    /// <c>PCellParameterListView</c> the docked panel uses (never a second parameter-editing
-    /// implementation) and is shown non-modally (<c>Window.Show</c>, not <c>ShowDialog</c>), matching
+    /// <c>LayoutInstancePropertiesView</c> + <c>PCellParameterListView</c> pair the docked panel uses
+    /// (never a second implementation of either — and hosting the instance half is what stopped a
+    /// built-in land pattern, which declares no parameters, from opening on an empty window; owner
+    /// report 2026-09-20) and is shown non-modally (<c>Window.Show</c>, not <c>ShowDialog</c>), matching
     /// the schematic dialog's own non-modal default. An ordinary (non-PCell) instance falls through to
     /// push-in exactly as before, including its own correct refusal reason for a genuinely unresolvable
     /// one.

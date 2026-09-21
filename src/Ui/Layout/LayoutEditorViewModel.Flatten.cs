@@ -77,7 +77,7 @@ public sealed partial class LayoutEditorViewModel
             if (inst.Rows > 1 || inst.Cols > 1)
                 return $"→ {(long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols):N0} instance(s)";
             return LayoutFlatten.CountOneLevelShapes(inst, InstanceBaseDir) is { } n
-                ? $"→ {n:N0} shape(s)"
+                ? $"→ {n + DesignatorShapeCount(inst):N0} shape(s)"
                 : null;
         }
     }
@@ -94,7 +94,7 @@ public sealed partial class LayoutEditorViewModel
             long count = LayoutFlatten.CountResultingShapes(inst, InstanceBaseDir);
             return count < 0
                 ? $"→ over {LayoutFlatten.FlattenAllLevelsHardCeiling:N0} shapes — refused"
-                : $"→ {count:N0} shape(s)";
+                : $"→ {count + DesignatorShapeCount(inst):N0} shape(s)";
         }
     }
 
@@ -110,9 +110,15 @@ public sealed partial class LayoutEditorViewModel
                 return (long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols) > FlattenConfirmThreshold;
             // Same count the menu label shows — a confirm dialog that fires on a threshold the
             // preview beside it never crossed reads as the app disagreeing with itself.
-            return LayoutFlatten.CountOneLevelShapes(inst, InstanceBaseDir) > FlattenConfirmThreshold;
+            return LayoutFlatten.CountOneLevelShapes(inst, InstanceBaseDir) + DesignatorShapeCount(inst) > FlattenConfirmThreshold;
         }
     }
+
+    /// <summary>0 or 1 — whether the flatten will also emit this placement's own designator
+    /// (<see cref="FlattenedDesignatorShape"/>). Every outcome preview adds it, because the emit
+    /// does: this file's own history says a preview that promises N and produces N+1 is its own
+    /// bug, and it is the same bug in either direction.</summary>
+    private int DesignatorShapeCount(LayoutInstance inst) => FlattenedDesignatorShape(inst) is null ? 0 : 1;
 
     /// <summary>Resolves the technology the currently selected instance's OWN sub-cell uses — the
     /// first place this codebase resolves a sub-cell's technology rather than inheriting the
@@ -176,6 +182,60 @@ public sealed partial class LayoutEditorViewModel
     }
 
     /// <summary>
+    /// <b>The designator the flattened instance was drawing, as ARTWORK</b> — owner report,
+    /// 2026-09-20: "I flattened a footprint and the Designator text (Silk Top) disappeared."
+    ///
+    /// <para>It disappeared because a designator is not a shape of the sub-cell — it is the PARENT's
+    /// own data, derived from the placement and drawn by the parent
+    /// (<see cref="FootprintLabel"/>'s "the parent emits them" rule, R-fp4b-5). Flatten deletes the
+    /// placement, so the one thing that knew the part was called C1 went with it, and the sub-cell
+    /// had nothing of its own to contribute in its place. Everything else the placement drew became
+    /// geometry; this alone was simply removed.</para>
+    ///
+    /// <para><b>Made through <see cref="FootprintLabel.ShapeFor"/>, which is the function the
+    /// renderer, the whole-design flatten and both hierarchical exports already call</b> — so what
+    /// lands in the document is the label that was on the screen, in the same place, at the same
+    /// height and angle, on the same silkscreen role, and not a fourth opinion about where a
+    /// designator goes. <see cref="LayoutDesignFlatten"/> already emits these for the Gerber/DRC
+    /// path; the editor's own Flatten Hierarchy was the one path that did not.</para>
+    ///
+    /// <para>Null when there is nothing to draw — no designator, the placement's own Show turned off,
+    /// or a technology with no silkscreen role, which draws no designator anywhere else either and
+    /// does NOT get the text relocated to another layer (R-fp4b-4c).</para>
+    ///
+    /// <para><b>Deliberately NOT applied to an array.</b> Exploding an array leaves N placements
+    /// standing, and one designator cannot belong to all of them — that case needs an answer about
+    /// identity, not about artwork, and inventing one here would put the same refdes on N parts.</para>
+    /// </summary>
+    private LabelShape? FlattenedDesignatorShape(LayoutInstance inst)
+    {
+        if (inst.Rows > 1 || inst.Cols > 1) return null;
+        var roles = LandPatternLayers.Resolve(Technology, PCellLayerSelection.Default, []);
+        if (roles.Silkscreen is not { } silk) return null;
+
+        // A stored offset needs no cell at all; only the auto position reads it — the same split the
+        // renderer makes, and the reason a broken reference still draws its designator.
+        var cellView = inst.LabelDx is not null && inst.LabelDy is not null
+            ? null
+            : CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).View;
+        return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron, silk);
+    }
+
+    /// <summary>Appends <see cref="FlattenedDesignatorShape"/> to an already-reconciled shape list.
+    /// AFTER the reconciliation, never through it: the cross-technology mapping translates the
+    /// SUB-CELL's layers into this document's, and this label was built on this document's own
+    /// silkscreen role to begin with — putting it through the mapping would look for a layer it never
+    /// came from.</summary>
+    private IReadOnlyList<LayoutShape> WithFlattenedDesignator(LayoutInstance inst, IReadOnlyList<LayoutShape> shapes)
+    {
+        if (FlattenedDesignatorShape(inst) is not { } label) return shapes;
+        var list = new List<LayoutShape>(shapes.Count + 1);
+        list.AddRange(shapes);
+        list.Add(label);
+        return list;
+    }
+
+    /// <summary>
     /// Commits Flatten Hierarchy — ONE level (R-L3c-1) — for the currently selected instance. On an
     /// array this yields N plain instances (Explode Array is the same command under a second, array-
     /// only-enabled menu entry — §2's explicit "must route through the same command" requirement); on
@@ -199,7 +259,7 @@ public sealed partial class LayoutEditorViewModel
             return;
         }
 
-        var shapes = ApplyFlattenReconciliation(inst, result.Shapes, resolvedMapping);
+        var shapes = WithFlattenedDesignator(inst, ApplyFlattenReconciliation(inst, result.Shapes, resolvedMapping));
 
         int shapeInsertAt = Model.Shapes.Count;
         int instanceInsertAt = Model.Instances.Count;
@@ -258,7 +318,7 @@ public sealed partial class LayoutEditorViewModel
         }
 
         var result = LayoutFlatten.FlattenAllLevels(inst, InstanceBaseDir);
-        var shapes = ApplyFlattenReconciliation(inst, result.Shapes, resolvedMapping);
+        var shapes = WithFlattenedDesignator(inst, ApplyFlattenReconciliation(inst, result.Shapes, resolvedMapping));
 
         int shapeInsertAt = Model.Shapes.Count;
         int instanceInsertAt = Model.Instances.Count;

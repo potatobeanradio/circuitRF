@@ -4,10 +4,11 @@
         xmlns:props="using:CircuitRF.Ui.Views.Properties"
         x:Class="CircuitRF.Ui.Views.Dialogs.LayoutPCellParameterDialog"
         x:DataType="vm:LayoutShapePropertiesViewModel"
-        Title="PCell Parameters"
+        Title="Component Properties"
         Width="380"
         MinWidth="320"
         MinHeight="220"
+        MaxHeight="720"
         SizeToContent="Height"
         CanResize="True"
         WindowStartupLocation="CenterOwner"
@@ -26,9 +27,22 @@
         <KeyBinding Gesture="Ctrl+Y"       Command="{Binding EditorVm.RedoCommand}"/>
     </Window.KeyBindings>
 
-    <Grid RowDefinitions="*,Auto" Margin="10">
-        <props:PCellParameterListView Grid.Row="0"/>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6" Margin="0,10,0,0">
+    <!-- TWO sections, in the docked panel's own order: what the placement IS, then what its
+         generator takes. Before the owner's 2026-09-20 report this window hosted the parameter list
+         ALONE, which is empty for a built-in land pattern (a generated cell that declares no
+         parameters — its case and its density are its identity, R-fp1-4c), so double-clicking a
+         capacitor footprint opened a window showing a "Parameters" header over nothing. Both
+         sections are the SAME controls the docked Properties panel embeds, never a second
+         implementation of either; the parameter list carries its own visibility (ShowPCellParameterList
+         is already false when the rows are empty) so a footprint gets the instance surface with no
+         empty header under it, and a microstrip PCell gets both. -->
+    <Grid RowDefinitions="Auto,Auto,Auto" Margin="10">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" MaxHeight="440">
+            <props:LayoutInstancePropertiesView IsEnabled="{Binding IsEditingEnabled}"/>
+        </ScrollViewer>
+        <props:PCellParameterListView Grid.Row="1" IsVisible="{Binding ShowPCellParameterList}"
+                                      MaxHeight="220" Margin="0,6,0,0"/>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6" Margin="0,10,0,0">
             <Button Content="Close" FontSize="11" Padding="10,4" Click="OnCloseClick"/>
         </StackPanel>
     </Grid>

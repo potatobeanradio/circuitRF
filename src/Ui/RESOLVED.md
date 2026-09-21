@@ -1,5 +1,96 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Four footprint reports, three causes (2026-09-20)
+
+Four owner reports on land patterns in the Layout Editor, filed in one sitting. They are three
+separate defects, and the last three reports are one defect wearing three faces.
+
+### 1. Double-clicking a land pattern opened a dialog with no parameters in it
+
+The ROUTING was right. `LayoutHierarchyResolver.IsPCellInstance` is true for a built-in land pattern,
+because a land pattern IS a PCell-generated cell, so the double-click correctly went to the parameter
+dialog instead of to push-in (which refuses a PCell anyway). What was wrong is what that dialog
+CONTAINED: `LayoutPCellParameterDialog` hosted `PCellParameterListView` alone, and **a land pattern
+declares no parameters at all** — its case and its density are its identity (R-fp1-4c). The docked
+Properties Inspector already handles this (`ShowPCellParameterList` is set from the ROWS, after
+building them, precisely so the panel does not draw a "Parameters" header over 60px of nothing), so
+the panel beside the window was showing the footprint picker, the designator, the placement and the
+array while the window showed nothing.
+
+The fix extracts the panel's instance section into **`LayoutInstancePropertiesView`** — the same move
+`PCellParameterListView` itself came from, for the same reason — and the dialog hosts both. The
+parameter list keeps its own visibility, so a land pattern gets the instance surface with no empty
+header under it and a microstrip PCell gets both. **Neither control is defined twice**, which is what
+`FootprintDoubleClickDialogTests` holds: a dialog that grew its own copy of either would drift from
+the panel silently.
+
+*The trap in the extraction*: the three generic Tag-keyed field handlers (`OnFieldGotFocus`/
+`LostFocus`/`KeyDown`) stay on `LayoutShapePropertiesView` too, because its other sections still use
+them — the new control carries its own copies, exactly as `PCellParameterListView` does. Only
+`OnInstanceRotationPresetClick`, `OnResetDesignatorPositionClick` and `OnInstanceRetargetClick` MOVED,
+because nothing else used them.
+
+### 2. Flattening a footprint deleted its designator text
+
+**A designator is not a shape of the cell — it is the PLACEMENT's data** (`FootprintLabel`'s own
+"the parent emits them" rule, R-fp4b-5), derived from `DisplayRefDes` and drawn by the parent each
+frame. Flatten Hierarchy deletes the placement, so the only thing that knew the part was called C1
+went with it. Everything else the placement drew became geometry; this alone was removed, silently.
+
+The machinery to emit it as artwork already existed and was already used by the whole-design flatten
+(`LayoutDesignFlatten`, for Gerber/DRC/`check`) and by both hierarchical exports. **The editor's own
+Flatten Hierarchy was the one path that did not call it.** `LayoutEditorViewModel.Flatten.cs` now
+appends `FootprintLabel.ShapeFor(...)` — the same function the renderer calls, so what lands in the
+document is the label that was on the screen, at the same place, height and angle, on the same
+silkscreen role.
+
+Three things about where it goes:
+
+- **AFTER the cross-technology reconciliation, never through it.** `ApplyFlattenReconciliation`
+  translates the SUB-CELL's layers into this document's; the label was built on this document's own
+  silkscreen role to begin with, so mapping it would look for a layer it never came from.
+- **The outcome previews had to move with it.** This file's own history is that a preview promising
+  three shapes and producing one is its own bug; it is the same bug in the other direction, so
+  `FlattenOneLevelOutcomeText`, `FlattenAllLevelsOutcomeText` and `FlattenOneLevelNeedsConfirmation`
+  all add `DesignatorShapeCount`, which is the emit predicate itself and not a second reading of it.
+- **Not applied to an ARRAY.** Exploding an array leaves N placements standing and one designator
+  cannot belong to all of them — that case needs an answer about IDENTITY, not about artwork, and
+  emitting one here would put the same refdes on N parts. **Explode Array still drops the
+  designator**, because `FlattenOneLevel`'s array branch builds fresh instances without `RefDes`,
+  `SchematicId` or the label fields. Left as it was, deliberately, and recorded here rather than
+  guessed at.
+
+A technology with no silkscreen role emits nothing and does NOT relocate the text to another layer
+(R-fp4b-4c) — and note for anyone writing a test here: **the first shipped technology is the MMIC
+stackup, which has no silkscreen role**, so a test that picks `ShippedTechnologies.All[0]` passes
+vacuously. `FlattenKeepsDesignatorTests` picks the first entry that resolves one.
+
+### 3. Escape, empty-canvas click and Reset — one cause, three faces
+
+Three reports: Escape did not deselect a designator; clicking empty canvas did not deselect one; and
+Reset in the Properties Inspector, pressed with a MLIN selected, moved a CAPACITOR's designator.
+
+**The designator is the FOURTH selection channel and nothing but another designator click could end
+it.** `SetDesignatorSelection` was taught to clear the other three when it takes the selection — the
+other three were never taught about it. So `SetSelection`, `SetInstanceSelection`, `SetRulerSelection`
+and `ReplaceMixedSelection` all left `_selectedDesignatorIndices` standing, and every gesture that
+ends a selection runs through one of them (Escape and the empty-canvas click both reach
+`SetSelection([])`).
+
+The Reset report is the damaging face of it, and it is worth stating exactly why the WRONG part
+moved: **the Properties Inspector follows the INSTANCE selection, while
+`ResetSelectedDesignatorPositions` prefers the DESIGNATOR one when it is non-empty.** Two channels,
+two different parts, one button — so the button under a MLIN's properties reset whichever designator
+had last been clicked. That preference is correct on its own terms (the command is reachable from
+both the canvas and the panel); what was wrong is that the two channels could both be populated at
+once, pointing at different parts.
+
+This is the same shape as the ruler channel's own bug (owner report, 2026-08-27: `SetSelection` had
+been taught about rulers and `SetInstanceSelection` had not) — **a new selection channel is not done
+when it clears the others; it is done when the others clear it.** Held by
+`DesignatorSelectionEndsTests`, which drives the real pointer path rather than a test-only entry
+point, and which was verified to fail on all three faces with the clears removed.
+
 ## Authored board brief 4 — the library already knew which rows were missing (2026-09-20)
 
 `AddRow` added one empty row while `PartLibraryCoverageContext` already knew, by resolved path,

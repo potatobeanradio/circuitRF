@@ -93,6 +93,13 @@ public sealed partial class LayoutEditorViewModel
             // Nothing to do with PCells or with MKlopf: SetSelection had been taught about rulers and
             // this, its instance-side mirror, had not.
             if (_selectedRulerIndices.Count > 0) _selectedRulerIndices.Clear();
+
+            // AND the fourth (owner report, 2026-09-20). This is the half that made Reset in the
+            // Properties Inspector move the wrong part's designator: the panel follows the INSTANCE
+            // selection, ResetSelectedDesignatorPositions prefers the DESIGNATOR selection when one
+            // exists, and selecting a different instance did not end the old one — so the button
+            // under a MLIN's properties reset whichever designator had last been clicked.
+            if (_selectedDesignatorIndices.Count > 0) _selectedDesignatorIndices.Clear();
         }
 
         SelectionStatusText = ComputeSelectionStatus();

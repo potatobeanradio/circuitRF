@@ -1,0 +1,224 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Properties.LayoutInstancePropertiesView"
+             x:DataType="vm:LayoutShapePropertiesViewModel">
+
+    <!-- Extracted from LayoutShapePropertiesView.axaml (owner report, 2026-09-20) for exactly the
+         reason PCellParameterListView.axaml was: the SAME instance-editing surface now has two
+         hosts — the docked Properties panel and the double-click popup
+         (LayoutPCellParameterDialog). Before the extraction the popup hosted the PCell parameter
+         list ALONE, so double-clicking a built-in land pattern — a generated cell that declares no
+         parameters at all, its case and its density being its identity (R-fp1-4c) — opened a window
+         showing a "Parameters" header over nothing, while the docked panel beside it was showing
+         the footprint picker, the designator, the placement and the array. One view, two hosts;
+         never a second instance-editing implementation.
+
+         The IsVisible="{Binding IsInstanceContext}" that used to sit on this root moved to the
+         HOST: the docked panel shows it only in instance context, the popup is only ever opened on
+         an instance. -->
+    <StackPanel Spacing="4">
+
+        <TextBlock IsVisible="{Binding !IsSingleInstanceSelected}"
+                   Text="Multiple instances selected — editing is single-instance only."
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                   FontSize="11" TextWrapping="Wrap"/>
+
+        <StackPanel IsVisible="{Binding IsSingleInstanceSelected}" Spacing="4">
+            <!-- R-L5f-7: a PCell instance's generated cell is an implementation detail —
+                 no Cell reference field, no Re-target… button. Both stay for an ordinary
+                 instance. -->
+            <Grid ColumnDefinitions="56,*,Auto" IsVisible="{Binding !IsSelectedInstancePCell}">
+                <TextBlock Grid.Column="0" Text="Cell" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceCellRefText}" Tag="InstanceCellRef"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2" Margin="0,0,4,0"/>
+                <Button Grid.Column="2" Content="Re-target…" Click="OnInstanceRetargetClick" FontSize="11" Padding="6,2"/>
+            </Grid>
+
+            <!-- MW2 R-mw2-11/-12/-13: an external cell reference marks the CHROME and
+                 says which of the three states it is in. A resolved one is marked too,
+                 not only a broken one — seeing that a cell is not yours without having
+                 to click is the whole safety story. The geometry is never tinted: layer
+                 colours are literal user-authored values and the reference exists to
+                 show them as they are. -->
+            <Border IsVisible="{Binding HasExternalRef}"
+                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding ExternalRefNoticeText}" FontSize="11" TextWrapping="Wrap"
+                               Classes.warn="{Binding ExternalRefIsProblem}"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding ExternalRefRepairText}" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding ExternalRefIsProblem}"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- SL3 R-sl3-9/-10: the referenced cell's published interface changed
+                 since this instance was placed. A separate band from the one above —
+                 an external cell whose interface changed carries both, and they say
+                 different things. Accepting is one explicit gesture and never
+                 automatic (R-sl3-10): the recorded hash is the only evidence the
+                 design was authored against a different shape. -->
+            <Border IsVisible="{Binding HasInterfaceChanged}"
+                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding InterfaceChangedNoticeText}" FontSize="11"
+                               TextWrapping="Wrap" Classes="warn"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="Accept new interface" FontSize="11" Padding="6,2"
+                                Command="{Binding AcceptNewInterfaceCommand}"/>
+                        <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                                Command="{Binding AcceptNewInterfaceEverywhereCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- TM2 R-tm2-12/-13/-14: the cell has MOVED and this instance still
+                 spells the old place. A third band, and deliberately NOT in the
+                 "warn" class: a reference that resolves through a redirect is an
+                 expected, correct state, and colouring it like breakage teaches
+                 users to ignore the colour that marks real breakage. -->
+            <Border IsVisible="{Binding HasMovedCell}"
+                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding MovedNoticeText}" FontSize="11"
+                               TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="Update references" FontSize="11" Padding="6,2"
+                                Command="{Binding UpdateReferencesCommand}"/>
+                        <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                                Command="{Binding UpdateReferencesEverywhereCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceXText}" Tag="InstanceX"
+                          Classes.error="{Binding HasInstanceXError}" ToolTip.Tip="{Binding InstanceXError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+                <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="3" Text="{Binding InstanceYText}" Tag="InstanceY"
+                          Classes.error="{Binding HasInstanceYError}" ToolTip.Tip="{Binding InstanceYError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+            </Grid>
+
+            <!-- L3d: a free angle in degrees, not a four-value picker. The cardinals
+                 stay one click away via the presets flyout, over the same commit path. -->
+            <Grid ColumnDefinitions="56,*,Auto,56,Auto" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceRotationText}" Tag="InstanceRotation"
+                          Classes.error="{Binding HasInstanceRotationError}" ToolTip.Tip="{Binding InstanceRotationError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+                <Button Grid.Column="2" Content="&#x00B0;&#x25BE;" FontSize="11" Padding="5,2"
+                        ToolTip.Tip="Degrees, counter-clockwise. Pick a cardinal angle.">
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuItem Header="0&#x00B0;"   Tag="0"   Click="OnInstanceRotationPresetClick"/>
+                            <MenuItem Header="90&#x00B0;"  Tag="90"  Click="OnInstanceRotationPresetClick"/>
+                            <MenuItem Header="180&#x00B0;" Tag="180" Click="OnInstanceRotationPresetClick"/>
+                            <MenuItem Header="270&#x00B0;" Tag="270" Click="OnInstanceRotationPresetClick"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+                <TextBlock Grid.Column="3" Text="Mirror X" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <CheckBox Grid.Column="4" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
+            </Grid>
+
+            <!-- brief-footprint-4b: the reference designator this placement draws on
+                 silkscreen. The text is DERIVED for a schematic-generated instance
+                 (its SchematicId), so the field is read-only there and says why —
+                 renaming belongs on the schematic and arrives through Update Layout.
+                 Reset puts a dragged designator back to its AUTOMATIC position, not
+                 to a remembered number (R-fp4b-6b). -->
+            <Grid ColumnDefinitions="56,*,Auto,Auto" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Designator" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceRefDesText}" Tag="InstanceRefDes"
+                         IsReadOnly="{Binding !InstanceRefDesEditable}"
+                         ToolTip.Tip="{Binding InstanceRefDesHint}"
+                         GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                         FontSize="11" Padding="4,2"/>
+                <CheckBox Grid.Column="2" IsChecked="{Binding InstanceShowRefDesValue, Mode=TwoWay}"
+                          ToolTip.Tip="Draw this part's designator on silkscreen. It is exported as well as shown."/>
+                <Button Grid.Column="3" Content="Reset" FontSize="11" Padding="5,2"
+                        IsEnabled="{Binding InstanceDesignatorIsManual}"
+                        Click="OnResetDesignatorPositionClick"
+                        ToolTip.Tip="Put the designator back where it is placed automatically — above the part's body, following it when the footprint changes."/>
+            </Grid>
+
+            <!-- brief-footprint-3 R-fp3-6a: re-point this instance at a built-in land
+                 pattern. ItemsSource is declared BEFORE SelectedIndex, deliberately —
+                 a ComboBox whose selection is assigned before its items binding
+                 attaches silently drops it and reads blank (the wBond round-6
+                 defect). Every row reads its metric twin and its millimetres. -->
+            <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Footprint" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                          ItemsSource="{Binding InstanceFootprintOptions}"
+                          SelectedIndex="{Binding InstanceFootprintIndex, Mode=TwoWay}"
+                          ToolTip.Tip="Re-point this instance at a built-in SMT land pattern. The schematic is not changed."/>
+                <ComboBox Grid.Column="2" FontSize="11" Padding="4,2"
+                          ItemsSource="{Binding InstanceFootprintDensityOptions}"
+                          SelectedIndex="{Binding InstanceFootprintDensityIndex, Mode=TwoWay}"
+                          ToolTip.Tip="IPC-7351B density level — Most, Nominal or Least land protrusion."/>
+            </Grid>
+
+            <Grid ColumnDefinitions="56,*">
+                <TextBlock Grid.Column="0" Text="Mag" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceMagText}" Tag="InstanceMag"
+                          Classes.error="{Binding HasInstanceMagError}" ToolTip.Tip="{Binding InstanceMagError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Rows" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstanceRowsText}" Tag="InstanceRows"
+                          Classes.error="{Binding HasInstanceRowsError}" ToolTip.Tip="{Binding InstanceRowsError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+                <TextBlock Grid.Column="2" Text="Cols" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="3" Text="{Binding InstanceColsText}" Tag="InstanceCols"
+                          Classes.error="{Binding HasInstanceColsError}" ToolTip.Tip="{Binding InstanceColsError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Pitch X" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="1" Text="{Binding InstancePitchXText}" Tag="InstancePitchX"
+                          Classes.error="{Binding HasInstancePitchXError}" ToolTip.Tip="{Binding InstancePitchXError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+                <TextBlock Grid.Column="2" Text="Pitch Y" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <TextBox Grid.Column="3" Text="{Binding InstancePitchYText}" Tag="InstancePitchY"
+                          Classes.error="{Binding HasInstancePitchYError}" ToolTip.Tip="{Binding InstancePitchYError}"
+                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                          FontSize="11" Padding="4,2"/>
+            </Grid>
+
+            <TextBlock IsVisible="{Binding HasInstanceArrayCount}" Text="{Binding InstanceArrayCountText}"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       FontSize="10" Opacity="0.75" Margin="0,2,0,0"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

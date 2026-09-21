@@ -53,6 +53,7 @@ public sealed partial class LayoutEditorViewModel
         {
             if (_selectedIndices.Count > 0) { _selectedIndices.Clear(); _pickedVertexIndex = null; }
             if (_selectedInstanceIndices.Count > 0) _selectedInstanceIndices.Clear();
+            if (_selectedDesignatorIndices.Count > 0) _selectedDesignatorIndices.Clear();
         }
 
         // DELIBERATELY NOT _cycleCache.Clear() — this method is what the overlap cycle CALLS to move
