@@ -473,7 +473,8 @@ field that something else might one day populate. Concretely:
 - The ratsnest (§9) draws from it, and §9A's DRC uses it for the check that matters most in practice:
   spacing rules apply *between different nets*, not within one.
 
-**Toward LVS.** Full LVS needs three things layout does not have yet: geometric connectivity extraction
+**Toward LVS** — now designed in full in [`lvs.md`](lvs.md); the paragraph below is the original
+sketch and its first item has since been built (`DrcConnectivity`). Full LVS needs three things layout did not have: geometric connectivity extraction
 (union shapes that touch, per layer, then bridge through vias), device recognition, and graph
 comparison against the extracted schematic netlist. The **first** of those is a natural extension of
 §9A's DRC framework — both are "walk the geometry with Clipper2 and report" — and it is what upgrades
@@ -994,6 +995,12 @@ default on, with violations shown before the file is written. Catching a spacing
 a fab is most of DRC's value.
 
 ### 9A.3 Toward LVS
+
+> **Designed in full, 2026-09-21: [`lvs.md`](lvs.md).** That note supersedes this section's
+> three-things sketch — the premise it turns on is that circuitRF's layout is instance-bearing, so
+> device *recognition* is an opt-in second reading rather than the main event. It also names the
+> eleven gaps that would block an implementation today, and it shares its extraction API with
+> railRF rather than growing a second reading of the same copper.
 
 The connectivity extraction described in §3.4 — union touching shapes per layer, bridge through vias,
 assign net identity — is the same kind of Clipper2 walk as spacing, over the same violation-and-marker
