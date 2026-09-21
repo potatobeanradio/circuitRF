@@ -34335,3 +34335,52 @@ numbers into `preferences.json`, so a user who reverts picks up a later circuitR
 Gate: `tests/Ui.Tests/Smith/SmithPreferredValuesTests.cs`, which is in
 `UserStateDirectoryCollection` because the ladders are per-user state and a test reading the real
 preferences file would answer differently on a machine whose owner had edited their own list.
+
+## The menu-bar repaint was eating the menu-bar click (2026-09-21)
+
+Owner, on macOS: clicking a menu title sometimes does not pull the menu down; clicking away to
+another application and back usually makes it work, and sometimes that takes a few attempts.
+
+**It is the repair from six days earlier, run on the wrong activation.** Clicking the menu bar of a
+background application is one gesture that does two things — it activates the application and it
+opens the menu — and `MacOsAppMenu.RedrawMenuBar` runs synchronously from `WorkspaceWindow`'s
+`Activated`, in between. It sets `NSApp.mainMenu` to the application-only menu and straight back, so
+for that instant the bar the click is opening is not the bar that is installed, and the tracking
+session the click began has nothing to pull down. The reported workaround is the tell: clicking away
+and back spends the activation on the window instead of on the bar, and the next click — with the
+application already frontmost, so no `Activated` at all — opens the menu normally. "A few tries" is
+the case where the way back IS another click on the bar.
+
+**The rule the gate states is not "skip the click", it is "repaint only what AppKit does not
+repaint".** The fault `RedrawMenuBar` exists for is an in-application focus change — the About
+dialog takes key from the shell window and hands it back and the bar is never redrawn. Coming back
+from another application is the opposite case: it is the workaround the owner had been using for
+that fault since the first report, which is direct evidence that macOS draws the bar correctly there
+by itself. So the repair had nothing to gain on that path and a menu click to lose.
+
+**The two are separated at DEACTIVATION, because that is the one moment they differ.** `[NSApp
+isActive]` is still true when a dialog of ours takes focus and false when another application does;
+by activation time the application is active either way and the difference is gone. The reading is
+taken in the Background pass that `RememberBareMenuBar` already used — AppKit has delivered both its
+resign-key and its resign-active by then, which a synchronous read in the handler could not rely on
+(the window resigns key first). `MenuBarRepairGate` holds that one bit per shell window: armed by
+`Deactivated`, consumed by `Activated`, so an activation following no deactivation — the first after
+launch, or a re-entrant one from raising a floating panel — repaints nothing either.
+
+**`CRF_MENU_FIX=always` restores the unconditional behaviour**, which is how the diagnosis is checked
+rather than argued: with it set, the menu should again refuse to pull down on the first click into
+the application. `CRF_MENU_DIAG` now logs which way each activation went (`applicationStillActive=`
+on the deactivation, and a line naming the skip on the activation).
+
+**A prediction worth testing while this is being confirmed, because it would close an open item.**
+The app-switch delay recorded above — an intermittent half-second of bare bar coming back from
+another application, which the repair was measured at 13-16 ms and did NOT fix — is on exactly the
+path this change stops swapping the menu on. Two `setMainMenu:` calls inside the activation are also
+the only thing circuitRF does there that the applications the owner compared against (TextEdit,
+Claude, GitHub Desktop, all instant) do not. If the delay goes with it, the repair was causing it; if
+it stays, that is one more candidate eliminated, on a path where nothing is being given up.
+
+**What could not be verified here, and it is the same limit as last time**: nothing in process can
+see what is painted, and a menu-bar tracking session cannot be driven without a real click, so this
+change is reasoned from the mechanism and gated by `MenuBarRepairGateTests` (the state machine only).
+It needs the owner to click a menu to confirm it.

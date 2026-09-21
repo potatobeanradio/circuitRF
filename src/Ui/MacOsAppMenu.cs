@@ -49,6 +49,12 @@ internal static class MacOsAppMenu
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     private static extern long SendLong(nint receiver, nint sel);
 
+    // BOOL is a signed char, so only the low byte of the return register is defined — marshalled as
+    // I1 rather than read out of a long, which would be reading bits the ABI does not set.
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool SendBool(nint receiver, nint sel);
+
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     private static extern nint SendStr(nint receiver, nint sel,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string arg);
@@ -159,6 +165,15 @@ internal static class MacOsAppMenu
     /// already on <c>NSApp</c>. Running here puts the repair in the same run-loop pass as the install
     /// that needed it, which is before anything is drawn at all.</para>
     ///
+    /// <para><b>But NOT on every activation — see <see cref="MenuBarRepairGate"/>.</b> Swapping the
+    /// menu is not free: doing it on the way back from another application eats the menu-bar click
+    /// that caused the activation, because clicking the bar of a background application activates it
+    /// and opens the menu in one gesture and this replaces the bar in between (owner, 2026-09-21:
+    /// the menu would not pull down, and clicking away and back cleared it). That path never needed
+    /// the repair anyway — macOS draws the bar correctly when the application itself is reactivated,
+    /// which is why switching away and back was the workaround for the fault this fixes. So the
+    /// caller runs it only after an in-application focus change.</para>
+    ///
     /// <para><b><c>CRF_MENU_FIX=2</c> picks the other candidate</b>: toggling
     /// <c>+[NSMenu setMenuBarVisible:]</c> off and on, which asks AppKit to tear the bar down and
     /// build it again rather than asking it to notice a new menu. It is second because it acts on
@@ -210,6 +225,27 @@ internal static class MacOsAppMenu
         }
         catch (Exception e) { Diagnostics.MenuBarProbe.Note("RedrawMenuBar: threw " + e.Message); }
         return false;
+    }
+
+    /// <summary>
+    /// <c>[NSApp isActive]</c> — whether circuitRF is the frontmost application right now.
+    ///
+    /// <para>Read from the shell window's <c>Deactivated</c> handler, one dispatcher pass later, it
+    /// is what separates the two ways a window stops being active: a dialog of ours taking focus
+    /// leaves the application active, and another application taking focus does not. Only the first
+    /// needs <see cref="RedrawMenuBar"/> — see <see cref="MenuBarRepairGate"/> for why running it on
+    /// the second costs the user a menu click. True off macOS, where neither caller does anything.</para>
+    /// </summary>
+    internal static bool ApplicationIsActive()
+    {
+        if (!OperatingSystem.IsMacOS()) return true;
+
+        try
+        {
+            nint app = Send(GetClass("NSApplication"), Sel("sharedApplication"));
+            return app != 0 && SendBool(app, Sel("isActive"));
+        }
+        catch { return true; }
     }
 
     /// <summary>

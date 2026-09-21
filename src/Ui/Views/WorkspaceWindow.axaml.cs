@@ -36,6 +36,10 @@ public partial class WorkspaceWindow : Window
     // no DataContext, so its header cannot bind and is relabelled here instead.
     private NativeMenuItem? _dockersNativeItem;
 
+    // Which activations the macOS menu-bar repaint runs on. Armed by this window's own Deactivated,
+    // consumed by its Activated; see MenuBarRepairGate for the rule and what broke without it.
+    private readonly MenuBarRepairGate _menuBarRepair = new();
+
     public WorkspaceWindow()
     {
         InitializeComponent();
@@ -72,6 +76,11 @@ public partial class WorkspaceWindow : Window
             // MacOsAppMenu.RedrawMenuBar. False means the menu is somehow not installed yet, which is
             // the one case worth a second try.
             //
+            // ONLY on an activation that followed an in-application focus change, which is the only
+            // one AppKit does not draw for itself — see MenuBarRepairGate. Repainting on the way back
+            // from another application ate the menu-bar click that caused the activation, which is
+            // the owner's "the menu does not pull down" (2026-09-21).
+            //
             // Being first is correctness, not a fix, and the measurement says so: the handler's
             // remaining work is 0.3-0.6 ms, and moving the call here changed nothing about the
             // intermittent half-second of bare menu bar the owner still sees coming back from another
@@ -80,7 +89,11 @@ public partial class WorkspaceWindow : Window
             // every time, never once reporting the menu as not yet installed. Leave it first anyway:
             // a repaint queued behind window raising and menu rebuilding is a latency waiting to
             // happen on a larger workspace.
-            bool repainted = MacOsAppMenu.RedrawMenuBar();
+            bool repairing = _menuBarRepair.TakeRepair();
+            bool repainted = !repairing || MacOsAppMenu.RedrawMenuBar();
+            if (!repairing)
+                Diagnostics.MenuBarProbe.Note(
+                    "Activated: no repaint — the application itself was reactivated, which draws the bar");
 
             // What the menu bar would have waited behind if the call above were anywhere else. Free
             // unless CRF_MENU_DIAG is set, and the one number that says whether a report of a slow
@@ -121,8 +134,23 @@ public partial class WorkspaceWindow : Window
         // Avalonia's own, built in native code, with no managed API that hands it over. A dialog
         // taking focus is exactly this event, so the menu is always captured before the repair that
         // swaps through it needs it. Background priority so the bar has actually changed first.
+        //
+        // The same pass arms the repair, and it has to be this one: whether the application ITSELF
+        // is still active is what tells a dialog of ours taking focus (nothing will redraw the bar,
+        // so the repair is wanted) from another application taking it (macOS redraws the bar on the
+        // way back, and repairing there eats the menu-bar click that brought us back). AppKit has
+        // delivered both its resign-key and its resign-active by the time a Background post runs,
+        // which is why the reading is taken here rather than in the handler itself.
         Deactivated += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(
-            MacOsAppMenu.RememberBareMenuBar,
+            () =>
+            {
+                MacOsAppMenu.RememberBareMenuBar();
+                bool stillActive = MacOsAppMenu.ApplicationIsActive();
+                _menuBarRepair.NoteDeactivated(stillActive);
+                Diagnostics.MenuBarProbe.Note(
+                    $"Deactivated: applicationStillActive={stillActive} — menu-bar repair " +
+                    (stillActive ? "armed" : "not armed"));
+            },
             Avalonia.Threading.DispatcherPriority.Background);
     }
 
