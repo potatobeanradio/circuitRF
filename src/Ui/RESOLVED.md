@@ -1,5 +1,23 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The cell Properties panel gained a Terminals section (2026-09-21)
+
+`brief-lvs-1-terminal-map.md` R-lvs1-4c: a rule that exists only in `check` is a rule the application
+does not enforce. The surface is the existing **Cell Properties Inspector**
+(`CellParameterBodyView` → `CellParameterEditorViewModel`), an Expander below Primaries/Ports showing
+the resolved map, **its origin — always**, every `check.terminals.*` finding, and, when the map cannot
+be derived, the two unmatched pin lists side by side.
+
+**The whole block commits, never one field.** The map's defects are relational — a duplicate port, one
+layout pin claimed twice — so a row that wrote itself per keystroke would leave the cell reporting a
+duplicate while the user was still typing the other half of the fix. `SetCellTerminalsCommand` replaces
+the list wholesale and deep-copies both snapshots, which also makes undo exact: undoing **Use This Map**
+returns the cell to declaring *nothing*, which is a different state from declaring an empty list.
+
+**`TerminalMapResult` carries the two unmatched lists structurally as well as in its prose notes.** The
+panel shows them in two columns; splitting a sentence back apart to do that would have been a second
+copy of the rule that built it.
+
 ## The quit prompt could open UNDERNEATH a torn-off document window (2026-09-21)
 
 Owner report: quitting circuitRF with the Smith Chart torn off into its own window left the "Unsaved

@@ -74,6 +74,130 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private int _numPorts;
 
+    // ── Terminals (brief-lvs-1-terminal-map.md R-lvs1-4c) ─────────────────────
+    //
+    // R-aut4-2's rule, applied: a rule that exists only in `check` is a rule the application does not
+    // enforce, so a design would pass headlessly and be refused when someone opened it. Every finding
+    // and every sentence here is `TerminalMap`'s — this panel computes none of its own.
+
+    /// <summary>The resolved map, one row per terminal.</summary>
+    public ObservableCollection<CellTerminalRowViewModel> TerminalRows { get; } = [];
+
+    /// <summary><b>Always shown</b> (R-lvs1-2b): a derived map that does not say it was derived is
+    /// indistinguishable from a declared one, and the two have very different failure modes.</summary>
+    [ObservableProperty] private string _terminalOriginText = "";
+
+    /// <summary>What the derivation had to say, and every <c>check.terminals.*</c> finding — the
+    /// SAME ones <c>circuitrf check</c> prints, because they come from the same call.</summary>
+    public ObservableCollection<string> TerminalNotes    { get; } = [];
+    public ObservableCollection<string> TerminalFindings { get; } = [];
+
+    /// <summary>R-lvs1-3d's two lists, shown SIDE BY SIDE, because that is a two-minute fix the user
+    /// can only make if they can see both.</summary>
+    public ObservableCollection<string> UnmatchedSymbolPins { get; } = [];
+    public ObservableCollection<string> UnmatchedLayoutPins { get; } = [];
+
+    public bool HasTerminals          => TerminalRows.Count > 0;
+    public bool HasNoTerminals        => TerminalRows.Count == 0;
+    public bool HasTerminalNotes      => TerminalNotes.Count > 0;
+    public bool HasTerminalFindings   => TerminalFindings.Count > 0;
+    public bool HasUnmatchedPins      => UnmatchedSymbolPins.Count > 0 || UnmatchedLayoutPins.Count > 0;
+
+    /// <summary>True when the cell itself says — as opposed to the map having been derived.</summary>
+    [ObservableProperty] private bool _terminalsAreDeclared;
+
+    /// <summary>
+    /// Writes the map currently shown into the cell's <c>.ccell</c>, turning a derivation into a
+    /// declaration. <b>This is the gesture that fixes a <c>derived-by-order</c> warning</b> — the
+    /// positional guess was right, and saying so is what stops it being a guess.
+    /// </summary>
+    [RelayCommand]
+    private void DeclareTerminals() => CommitTerminals();
+
+    /// <summary>Removes the block entirely, so the map derives again. Not the same as an empty
+    /// list, which says "this cell has no terminals".</summary>
+    [RelayCommand]
+    private void ClearTerminals()
+        => UndoRedo.Execute(new SetCellTerminalsCommand(_editModel, null));
+
+    [RelayCommand]
+    private void AddTerminal()
+    {
+        int next = TerminalRows.Count == 0 ? 1 : TerminalRows.Max(r => r.Port) + 1;
+        TerminalRows.Add(new CellTerminalRowViewModel(next, "", [], isDerived: false, this));
+        CommitTerminals();
+    }
+
+    internal void RemoveTerminalRow(CellTerminalRowViewModel row)
+    {
+        if (!TerminalRows.Remove(row)) return;
+        CommitTerminals();
+    }
+
+    /// <summary>
+    /// Commits every row as ONE block. Called by the view on LostFocus/Enter and by the commands
+    /// above; a no-op when the rows already say exactly what the file says, so simply tabbing through
+    /// the section adds nothing to the undo stack.
+    /// </summary>
+    public void CommitTerminals()
+    {
+        var rows = TerminalRows.Select(r => r.ToTerminal()).ToList();
+        if (_editModel.Terminals is { } current && SameBlock(current, rows)) return;
+
+        UndoRedo.Execute(new SetCellTerminalsCommand(_editModel, rows));
+    }
+
+    private static bool SameBlock(IReadOnlyList<CcellTerminal> a, IReadOnlyList<CcellTerminal> b)
+        => a.Count == b.Count
+           && a.Zip(b).All(p => p.First.Port == p.Second.Port
+                                && string.Equals(p.First.Name, p.Second.Name, StringComparison.Ordinal)
+                                && p.First.LayoutPin.SequenceEqual(p.Second.LayoutPin, StringComparer.Ordinal));
+
+    /// <summary>
+    /// Re-resolves the map and every finding from the cell on disk. Called from
+    /// <see cref="RebuildRows"/>, so an undo, a redo and a primary-view change all land here.
+    /// </summary>
+    private void RebuildTerminals()
+    {
+        var map = TerminalMap.ResolveCell(_editModel.CellDir);
+        bool declared = map.Origin == TerminalMapOrigin.Declared;
+
+        TerminalRows.Clear();
+        foreach (var t in map.Terminals)
+            TerminalRows.Add(new CellTerminalRowViewModel(t.Port, t.Name, t.LayoutPins, !declared, this));
+
+        TerminalNotes.Clear();
+        foreach (var note in map.Notes) TerminalNotes.Add(note);
+
+        TerminalFindings.Clear();
+        foreach (var finding in TerminalMap.ValidateCell(_editModel.CellDir))
+            TerminalFindings.Add(finding.Render());
+
+        UnmatchedSymbolPins.Clear();
+        foreach (var pin in map.UnmatchedSymbolPins) UnmatchedSymbolPins.Add(pin);
+        UnmatchedLayoutPins.Clear();
+        foreach (var pin in map.UnmatchedLayoutPins) UnmatchedLayoutPins.Add(pin);
+
+        TerminalsAreDeclared = declared;
+        TerminalOriginText   = OriginTextOf(map.Origin);
+
+        OnPropertyChanged(nameof(HasTerminals));
+        OnPropertyChanged(nameof(HasNoTerminals));
+        OnPropertyChanged(nameof(HasTerminalNotes));
+        OnPropertyChanged(nameof(HasTerminalFindings));
+        OnPropertyChanged(nameof(HasUnmatchedPins));
+    }
+
+    private static string OriginTextOf(TerminalMapOrigin origin) => origin switch
+    {
+        TerminalMapOrigin.Declared    => "Declared by this cell.",
+        TerminalMapOrigin.ImportTable => "Derived — this cell was imported, and its two views were numbered together.",
+        TerminalMapOrigin.ByName      => "Derived — symbol pin names matched layout pin names.",
+        TerminalMapOrigin.ByOrder     => "Derived BY ORDER — nothing is named on either side, so this is a guess. "
+                                         + "Use This Map to confirm it, or name the pins.",
+        _                             => "No map.",
+    };
+
     // ── Partial callbacks ─────────────────────────────────────────────────────
 
     partial void OnSelectedPrimarySchematicChanged(string value)
@@ -190,6 +314,7 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(HasParameters));
         OnPropertyChanged(nameof(HasNoParameters));
 
+        RebuildTerminals();
         SyncPrimarySelectionsFromModel();
     }
 

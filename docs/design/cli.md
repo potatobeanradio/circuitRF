@@ -653,6 +653,7 @@ rather than missing; what `src/Cli/Check.cs` adds is the WALK and the reporting,
 | `ChainSelector` | `src/Cli/ChainSelection.cs` | whether a declared analysis chain will dispatch |
 | `DrcPredicateParser` | `src/Design/Layout/Drc` | a `.wasm` rule that will not parse |
 | `DrcEngine` | `src/Design/Layout/Drc` | layout design rules |
+| `TerminalMap.Validate` | `src/Design/Layout` | which layout pin is which schematic port — a declared map that names a pin the `.clay` does not have, a port outside range, a duplicate, a pin claimed twice, an unmapped port or pin, a map DERIVED by order, or one that cannot be derived at all |
 
 **A `.cem` is extracted and meshed, and never solved** (`brief-em-run-severity-and-check.md`
 R-emsev-5). `EmRunService.Preflight` is the first half of `EmRunService.Run` — the same flatten, the
@@ -662,6 +663,15 @@ before the first frequency point: on the design that motivated EM-SEV the extrac
 second or two and the solve is eleven minutes, and a run that had silently dropped half the drawn
 circuit used to `check` clean. It writes nothing, exactly as §10.1 requires, and the findings carry
 the severity their PRODUCER attached (`EmFinding`), never one this verb invents.
+
+**A cell's TERMINAL MAP is checked before anyone asks for an LVS**
+(`brief-lvs-1-terminal-map.md` R-lvs1-4). `TerminalMap.Resolve` answers "which layout pin is which
+schematic port" once, for `check`, for the cell Properties panel and for LVS itself, and it **returns
+the ORIGIN of its answer as well as the answer** — declared, the import table, by name, by order, or
+nothing. A map derived BY ORDER is a warning on every run that derives one, including an otherwise
+clean one: it is a guess that happens to be right most of the time, and a guess that is never
+announced is the shape of a wrong answer nobody finds. **A cell with no layout view — which is most
+cells — is silent**, because one finding each would bury every real one.
 
 **A rule that exists only in `check` is a rule the GUI does not enforce** — a design would pass here
 and be refused when someone opened it. The converse matters just as much and cost a round to find:
@@ -683,6 +693,11 @@ extension, and for a directory by what it contains — and an extension circuitR
 offered to **`convert`'s own classifier**, which reads content, before being called unknown. A GDSII
 or Gerber file is reported as interchange rather than as something circuitRF cannot read; it is not
 VALIDATED, because there is nothing to validate it against.
+
+**A bare `.ccell` is the CELL it declares** (R-lvs1-4d), so `check` on one checks the folder around
+it. That one redirection lives in `check` rather than in `DocumentKinds.Classify`, because every other
+verb that classifies a path — `render`, `explain`, `find` — takes a cell as a DIRECTORY and would be
+handed a file.
 
 ### 10.3 A `.csch` goes through the `.cnl` on its way to the elaborator
 

@@ -52,6 +52,28 @@ public sealed class CellParameterEditModel
         PortCountChanged?.Invoke(CellDir);
     }
 
+    // ── Terminal map (brief-lvs-1-terminal-map.md R-lvs1-4c) ─────────────────────────
+
+    /// <summary>
+    /// The cell's declared terminal map, or null when it declares none — in which case
+    /// <c>TerminalMap.Resolve</c> derives one and says which rule answered.
+    /// </summary>
+    public IReadOnlyList<CcellTerminal>? Terminals => _file.Terminals;
+
+    /// <summary>Fired (with the cell directory) when the terminal map changes, including on undo.</summary>
+    public event Action<string>? TerminalsChanged;
+
+    /// <summary>Written only by <c>SetCellTerminalsCommand</c>. Null clears the block entirely, which
+    /// is not the same as an empty list: cleared means the cell no longer says, and the map derives
+    /// again.</summary>
+    internal void SetTerminals(List<CcellTerminal>? value)
+    {
+        _file.Terminals = value;
+        Save();
+        NotifyChanged();
+        TerminalsChanged?.Invoke(CellDir);
+    }
+
     /// <summary>Current parameter list (read view for the ViewModel).</summary>
     public IReadOnlyList<CcellParameter> Parameters => _file.Parameters;
 

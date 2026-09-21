@@ -1,5 +1,58 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The terminal map: which layout pin is which schematic port (2026-09-21)
+
+`brief-lvs-1-terminal-map.md`. A cell now says, in its own `.ccell`, which of its layout pins is which
+of its schematic ports; where it does not, `TerminalMap.Resolve` derives an answer and **returns which
+rule produced it**. Nothing compares anything yet — that is briefs 3-7 — but every one of them needs
+this, and it ships as a `check` rule on its own account.
+
+### The guard that is not in the brief, and without which every workspace lights up red
+
+The brief's four derivation rules end in `None` → `check.terminals.underivable`, an **error**. Applied
+literally that fires on a cell with a symbol and no layout — which is **most cells in every workspace**
+— and on a layout-only cell with no symbol, which is what a shipped land pattern and a PCell-generated
+cell both are. Run against the nine example workspaces before the guard, that is an error on nearly
+every cell in them; after it, **zero terminal findings and zero errors**.
+
+So `None` covers two states and only one of them is a failure. R-lvs1-3d is "the two sides disagree";
+"there is only one side" is silence with a note. The note still says so, because the Properties panel
+has to explain an empty section.
+
+### `Terminals: []` is not a declaration
+
+`CellFolder.CreateCellFolder` writes an empty list — R-lvs1-5c's "circuitRF made this cell and it has
+no terminals yet". Treating that as a DECLARED map of zero terminals was the first implementation and
+it is wrong: a user draws a symbol with G/D/S and a layout with G/D/S, and the cell that would have
+derived `ByName` instead reports three unmapped ports and three unmapped pins. An empty list derives.
+Only a non-empty one declares.
+
+### A generated PCell refuses AFTER generating, not before
+
+R-lvs1-5b makes a generator whose pin names disagree with its symbol's fail the cell's creation.
+`GeneratedCellStore.GetOrCreate` used to create the cell folder first and generate into it, so the
+refusal had to move behind the generate — **a folder with no `.clay` in it is exactly the state the
+reuse check at the top reads as "not created yet"**, so the refusal would have left a retry-forever
+cell behind on every placement attempt. All six built-in microstrip generators agree with their
+symbols today; the gate asserts that rather than assuming it.
+
+### The import writes the block it already computed
+
+`ComponentTerminals.Build` decides one numbering for both views, and until now that was recorded only
+as a positional convention — `SymbolPin.PortIndex i` ↔ `LayoutView.Pins[i-1]` — which **stops being
+true the moment a terminal has no pad**, because `AddPins` writes a pin per pad and every port after
+one is then off by one. `ComponentImport` serializes the table itself now, so an imported cell is
+`Declared` rather than derived. The positional derivation stays as the legacy fallback for cells
+imported before this, and says in its note when the two counts differ.
+
+### An unnamed layout pin still has to be referable
+
+`LayoutPin.Name` is explicitly allowed to be empty. A terminal row naming one has nothing to name, so
+`TerminalMap` keys it by its 1-based position (`#1`, `#2`) — the only handle it has. That is also what
+makes the `ByOrder` map expressible as a `.ccell` block at all, which is what the Properties panel's
+**Use This Map** button writes when a positional guess turns out to be right.
+
+
 ## The assembly and fabrication drawings were not layers (2026-09-21)
 
 From a field report, 2026-09-21: besides the silkscreen, a real output set also ships a top and a

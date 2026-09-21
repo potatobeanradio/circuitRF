@@ -228,6 +228,7 @@ public static class ComponentImport
         ccell.PrimarySymbol = primarySymbol;
         ccell.PrimaryLayout = primaryLayout;
         ccell.NumPorts = built.Terminals.Count;
+        ccell.Terminals = TerminalBlockOf(built);
         ccell.Parameters = [.. MetadataParameters(part)];
         ccell.ImportedFrom = new CcellImportProvenance
         {
@@ -241,6 +242,34 @@ public static class ComponentImport
         Report(part, built, copied, messages);
 
         return new ImportResult(false, cellDir, built.LayersToAdd, messages);
+    }
+
+    /// <summary>
+    /// R-lvs1-5a: the cell's terminal map, written straight out of the table
+    /// <see cref="ComponentTerminals.Build"/> already decided. <b>Nothing is recomputed</b> — the same
+    /// <c>IReadOnlyList&lt;ComponentTerminal&gt;</c> that numbered the symbol's pins and ordered the
+    /// layout's is serialized, which is what makes an imported cell's map <c>Declared</c> rather than
+    /// derived (and what makes the correspondence a guarantee rather than a positional convention that
+    /// only holds while every terminal has a pad).
+    ///
+    /// <para>A terminal whose pad the PRIMARY land pattern does not actually draw carries no layout
+    /// pin: <see cref="AddPins"/> writes a pin per pad it has geometry for, and naming one it does not
+    /// would be a map that points at nothing. It is still a row, because the port exists.</para>
+    /// </summary>
+    private static List<CcellTerminal> TerminalBlockOf(BuiltPart built)
+    {
+        var drawn = new HashSet<string>(
+            built.Layouts.FirstOrDefault()?.View.Pins.Select(p => p.Name) ?? [], StringComparer.Ordinal);
+
+        return
+        [
+            .. built.Terminals.Select(t => new CcellTerminal
+            {
+                Port      = t.PortIndex,
+                Name      = t.PinName ?? t.PadName ?? "",
+                LayoutPin = t.PadName is { Length: > 0 } pad && drawn.Contains(pad) ? [pad] : [],
+            }),
+        ];
     }
 
     // ── Pins ────────────────────────────────────────────────────────────────────────────────────

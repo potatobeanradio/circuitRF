@@ -325,6 +325,13 @@ says which rule answered:
 4. **Nothing.** Counts disagree, or names partly match. `lvs.terminals.underivable`, error, and the
    device is reported as unmatchable rather than matched against a fabricated terminal list.
 
+**BUILT, 2026-09-21** (`brief-lvs-1-terminal-map.md`). `src/Design/Layout/TerminalMap.cs` is the one
+place R-lvs-9's question is answered, and it returns the ORIGIN of every answer. One guard had to be
+added that this section does not state: `None` covers "the two sides disagree" **and** "there is only
+one side", and only the first is R-lvs-10's error — a cell with a symbol and no layout is most cells
+in every workspace, and a layout-only cell is what every shipped land pattern is. See
+`src/Design/RESOLVED.md`.
+
 **R-lvs-11. `check` validates the terminal map without running LVS.** A cell whose map names a pin
 the `.clay` does not have, or leaves a declared port unmapped, is a `check` error today — long
 before anyone asks for an LVS. This is exactly R-aut4-2's rule: the validator lives where the GUI

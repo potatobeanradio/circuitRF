@@ -74,6 +74,86 @@ public sealed class CcellParameter
 }
 
 /// <summary>
+/// One row of the cell's TERMINAL MAP: which layout pin is which schematic port
+/// (<c>docs/design/lvs.md</c> §4.2, R-lvs-9).
+///
+/// <para><b>Why a cell has to say this at all.</b> The schematic orders a cell's ports by the
+/// <c>Num</c> parameter on its <c>Port</c> components and the layout appends its pins in whatever
+/// order they were drawn; nothing relates the two, and <see cref="LayoutPin"/> is explicitly allowed
+/// to be empty. Position is not a correspondence either — a symbol's pin positions and a land
+/// pattern's pad positions have no reason to agree. Where the cell does not say, <c>TerminalMap</c>
+/// derives an answer and states which rule produced it.</para>
+/// </summary>
+public sealed class CcellTerminal
+{
+    /// <summary>1-based, and it is the number BOTH sides already use — <c>SymbolPin.PortIndex</c> and
+    /// the <c>Port Num=</c> parameter. It is not re-derived here and not renumbered (R-lvs1-1b).</summary>
+    public int Port { get; set; }
+
+    /// <summary>The terminal's own name, for reports. It may differ from <see cref="LayoutPin"/> and
+    /// usually does not. Empty is legal (R-lvs1-1d).</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>
+    /// Entries in the PRIMARY <c>.clay</c>'s <c>Pins</c>, by name. Usually one; SEVERAL where several
+    /// pins are one terminal — a bonded ground, a FET's two source pads. That is not new semantics:
+    /// it is the <c>GND@1</c>/<c>GND@2</c> case <c>ComponentTerminals</c> already understands.
+    ///
+    /// <para>Spelled in JSON as a bare string when there is one and as an array when there are
+    /// several, which is what <see cref="CcellLayoutPinConverter"/> is for.</para>
+    /// </summary>
+    [JsonConverter(typeof(CcellLayoutPinConverter))]
+    public List<string> LayoutPin { get; set; } = [];
+
+    public CcellTerminal Clone() => new()
+    {
+        Port      = Port,
+        Name      = Name,
+        LayoutPin = [.. LayoutPin],
+    };
+}
+
+/// <summary>
+/// Reads <c>"G"</c> and <c>["S1", "S2"]</c> alike into <see cref="CcellTerminal.LayoutPin"/>, and
+/// writes the one-element case back as a bare string so the ordinary row round-trips byte for byte.
+///
+/// <para><b>It never throws.</b> R-lvs1-1f: an unreadable terminal block makes the cell's map
+/// ABSENT, which is a defined state that derives — it must not take the rest of the <c>.ccell</c>
+/// (the parameter interface, the primary views) down with it.</para>
+/// </summary>
+internal sealed class CcellLayoutPinConverter : JsonConverter<List<string>>
+{
+    public override List<string> Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.String:
+                return [reader.GetString() ?? ""];
+
+            case JsonTokenType.StartArray:
+                var names = new List<string>();
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    if (reader.TokenType == JsonTokenType.String) names.Add(reader.GetString() ?? "");
+                    else reader.Skip();
+                return names;
+
+            default:
+                reader.Skip();
+                return [];
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+    {
+        if (value.Count == 1) { writer.WriteStringValue(value[0]); return; }
+
+        writer.WriteStartArray();
+        foreach (var name in value) writer.WriteStringValue(name);
+        writer.WriteEndArray();
+    }
+}
+
+/// <summary>
 /// On-disk model for a .ccell file.  Records the cell's parameter interface and
 /// which view file (relative filename) is primary for each view type.
 /// Id is never persisted; the cell folder name is the identity.
@@ -180,6 +260,21 @@ public sealed class CcellFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CcellImportProvenance? ImportedFrom { get; set; }
+
+    /// <summary>
+    /// Which layout pin is which schematic port (<c>brief-lvs-1-terminal-map.md</c> R-lvs1-1). Null —
+    /// the state every cell written before this field existed is in — means the cell does not say, and
+    /// <c>TerminalMap.Resolve</c> derives an answer with its provenance stated. <c>WhenWritingNull</c>,
+    /// so every existing <c>.ccell</c> re-serializes byte for byte.
+    ///
+    /// <para>An EMPTY list is deliberately distinct from null: it is what
+    /// <see cref="CellFolder.CreateCellFolder"/> writes, and it means <i>this cell was created by
+    /// circuitRF and has no terminals yet</i> — a brand-new cell with no views legitimately is that.
+    /// It still derives, because a cell that has since been drawn has terminals the empty list does
+    /// not know about (R-lvs1-5c).</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CcellTerminal>? Terminals { get; set; }
 
     /// <summary>
     /// Number of electrical ports this cell exposes to instantiating parents.

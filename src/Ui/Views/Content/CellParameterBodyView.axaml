@@ -53,6 +53,130 @@
             </Grid>
         </Border>
 
+        <!-- ── Terminals ────────────────────────────────────────────────────────
+             brief-lvs-1-terminal-map.md R-lvs1-4c. Which layout pin is which schematic port, the
+             ORIGIN of that answer (always — a derived map that does not say it was derived is
+             indistinguishable from a declared one), and every check.terminals.* finding. Everything
+             shown here comes from TerminalMap; this view computes nothing. -->
+        <Expander DockPanel.Dock="Top"
+                  Header="Terminals"
+                  FontSize="11"
+                  IsExpanded="False"
+                  HorizontalAlignment="Stretch"
+                  Margin="0,0,0,0">
+            <StackPanel Spacing="4" Margin="4,2,4,6">
+
+                <TextBlock Text="{Binding TerminalOriginText}"
+                           FontSize="10"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+                <!-- Findings — the same ids, severities and sentences `circuitrf check` prints. -->
+                <ItemsControl ItemsSource="{Binding TerminalFindings}"
+                              IsVisible="{Binding HasTerminalFindings}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding}"
+                                       FontSize="10"
+                                       TextWrapping="Wrap"
+                                       Margin="0,1"
+                                       Foreground="{DynamicResource CrfWarningBrush}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- R-lvs1-3d: the two unmatched lists, SIDE BY SIDE. -->
+                <Grid ColumnDefinitions="*,*" IsVisible="{Binding HasUnmatchedPins}" Margin="0,2">
+                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                        <TextBlock Text="Symbol pins with no layout pin" FontSize="10"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        <ItemsControl ItemsSource="{Binding UnmatchedSymbolPins}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Text="{Binding}" FontSize="11"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Layout pins with no symbol pin" FontSize="10"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        <ItemsControl ItemsSource="{Binding UnmatchedLayoutPins}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Text="{Binding}" FontSize="11"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Column headers -->
+                <Grid ColumnDefinitions="60,*,*,Auto" IsVisible="{Binding HasTerminals}">
+                    <TextBlock Grid.Column="0" Text="Port"       FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    <TextBlock Grid.Column="1" Text="Name"       FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="3,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="Layout pin" FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="3,0,0,0"/>
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding TerminalRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CellTerminalRowViewModel">
+                            <Grid ColumnDefinitions="60,*,*,Auto" Margin="0,1,0,0">
+                                <NumericUpDown Grid.Column="0"
+                                               Value="{Binding Port, Mode=TwoWay}"
+                                               Minimum="1" Maximum="64" Increment="1" FormatString="0"
+                                               ShowButtonSpinner="False"
+                                               FontSize="11" Padding="3,2"
+                                               LostFocus="OnTerminalFieldLostFocus"/>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding Name, Mode=TwoWay}"
+                                         FontSize="11" Padding="4,3" Margin="3,0,0,0"
+                                         LostFocus="OnTerminalFieldLostFocus"
+                                         KeyDown="OnTerminalFieldKeyDown"/>
+                                <TextBox Grid.Column="2"
+                                         Text="{Binding LayoutPins, Mode=TwoWay}"
+                                         FontSize="11" Padding="4,3" Margin="3,0,0,0"
+                                         ToolTip.Tip="One layout pin, or several separated by commas where they are one terminal"
+                                         LostFocus="OnTerminalFieldLostFocus"
+                                         KeyDown="OnTerminalFieldKeyDown"/>
+                                <Button Grid.Column="3"
+                                        Command="{Binding RemoveCommand}"
+                                        ToolTip.Tip="Remove terminal"
+                                        Padding="5,3" Margin="3,0,0,0">
+                                    <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Derivation notes, last: they explain the origin line above. -->
+                <ItemsControl ItemsSource="{Binding TerminalNotes}" IsVisible="{Binding HasTerminalNotes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap" Opacity="0.7"
+                                       Margin="0,1"
+                                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,2,0,0">
+                    <Button Content="＋ Add Terminal" Command="{Binding AddTerminalCommand}"
+                            FontSize="11" Padding="8,3"/>
+                    <Button Content="Use This Map" Command="{Binding DeclareTerminalsCommand}"
+                            IsVisible="{Binding !TerminalsAreDeclared}"
+                            ToolTip.Tip="Write the map shown above into this cell, so it is declared rather than derived"
+                            FontSize="11" Padding="8,3"/>
+                    <Button Content="Clear" Command="{Binding ClearTerminalsCommand}"
+                            IsVisible="{Binding TerminalsAreDeclared}"
+                            ToolTip.Tip="Remove the declared map, so it is derived again"
+                            FontSize="11" Padding="8,3"/>
+                </StackPanel>
+
+            </StackPanel>
+        </Expander>
+
         <!-- ── Footer: Add Parameter ────────────────────────────────────────── -->
         <Border DockPanel.Dock="Bottom"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"

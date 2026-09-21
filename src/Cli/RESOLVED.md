@@ -6,6 +6,26 @@ what the design says.
 
 ---
 
+## `check` learned the terminal map, and a `.ccell` became a path it accepts (2026-09-21)
+
+`brief-lvs-1-terminal-map.md` R-lvs1-4. `Check.cs` gained a row in §10.2's validator table and
+**nothing else**: `CheckCell` calls `TerminalMap.ValidateCell` and forwards whatever comes back. Every
+`check.terminals.*` id, severity and sentence is authored in `src/Design/Layout/TerminalDiagnostics.cs`,
+below the firewall, so the cell Properties panel reports the identical ones — R-aut4-2's rule, which is
+the reason the family is not in `CliDiagnostics` beside its neighbours.
+
+**Loading a cell's two primary views moved out of the verb too.** The first version had a private
+`ReadPrimary` here; `TerminalMap.PrimaryViewsOf` is where it belongs, because the panel and (from
+brief 3) LVS resolve the same two files and three copies of "which `.csym` and which `.clay`" is the
+shape that drifts.
+
+**A bare `.ccell` is redirected to its folder in `Run`, not in `DocumentKinds.Classify`.** Classifying
+the file as `DocumentKind.Cell` would be honest — the file IS the cell's declaration — but `render`,
+`explain` and `find` all take a cell as a DIRECTORY and would then be handed a file. One verb wanted
+it, so one verb does it.
+
+---
+
 
 ## AUT-12 — layer colour, framing on a subset, and two shapes that did not compose (2026-09-08)
 

@@ -147,6 +147,15 @@ internal static class Check
         if (!File.Exists(path) && !Directory.Exists(path))
             return JsonRun.Fail(CliDiagnostics.CheckPathNotFound(path));
 
+        // R-lvs1-4d: a bare `.ccell` is a CELL — the file IS the cell's own declaration, and pointing
+        // at it means the folder it declares. Answered here rather than in `DocumentKinds.Classify`,
+        // because every other verb that classifies a path (`render`, `explain`, `find`) takes a cell
+        // as a DIRECTORY and would be handed a file.
+        if (File.Exists(path)
+            && string.Equals(Path.GetFileName(path), CellFolder.CcellFileName, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(Path.GetFullPath(path)) is { Length: > 0 } owningCell)
+            path = owningCell;
+
         var findings = new Findings();
         var cache    = new TechnologyCache();
 
@@ -336,6 +345,8 @@ internal static class Check
             }
         }
 
+        CheckTerminals(cellDir, f);
+
         f.End();
 
         // Then every view file in the cell, each in its own scope so the report says which file a
@@ -349,6 +360,21 @@ internal static class Check
                                  .Order(StringComparer.Ordinal))
                 CheckPath(file, DocumentKinds.Classify(file), f, cache, recursive: false);
         }
+    }
+
+    /// <summary>
+    /// R-lvs1-4a: which layout pin is which schematic port, and whether the cell's own answer holds
+    /// up. <b>No rule of its own</b> — every finding is <c>TerminalMap.Validate</c>'s, authored below
+    /// the firewall so the cell Properties panel enforces the identical ones (R-lvs1-4c).
+    ///
+    /// <para><b>It reports on a cell with NO terminal block at all</b> (R-lvs1-4b), which is the
+    /// point: <c>check</c> tells a user their cell cannot be compared before they ever ask for a
+    /// comparison. A cell with no LAYOUT is silent, because most cells are that and one finding each
+    /// would bury every real one.</para>
+    /// </summary>
+    private static void CheckTerminals(string cellDir, Findings f)
+    {
+        foreach (var finding in TerminalMap.ValidateCell(cellDir)) f.Add(finding);
     }
 
     private static int CountViews(string cellDir, ViewType view)

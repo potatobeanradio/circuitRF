@@ -112,7 +112,13 @@ public static class CellFolder
         Directory.CreateDirectory(Path.Combine(cellDir, SymbolSubFolder));
         Directory.CreateDirectory(Path.Combine(cellDir, LayoutSubFolder));
 
-        CellPersistence.SaveToFile(Path.Combine(cellDir, CcellFileName), new CcellFile());
+        // R-lvs1-5c: an EMPTY terminal map, which is not the same thing as no map at all. It says
+        // "circuitRF created this cell and it has no terminals yet" — which a brand-new cell with no
+        // views legitimately is. Every path that goes on to author real terminals (a component
+        // import, a generated PCell) overwrites it with its own table; a cell someone then DRAWS
+        // derives one, because the empty list records what was true at creation and not what is true
+        // after a symbol and a layout exist.
+        CellPersistence.SaveToFile(Path.Combine(cellDir, CcellFileName), new CcellFile { Terminals = [] });
 
         return cellDir;
     }

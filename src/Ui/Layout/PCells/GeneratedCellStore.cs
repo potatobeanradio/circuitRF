@@ -119,13 +119,30 @@ public static class GeneratedCellStore
         if (File.Exists(clayPath))
             return cellDir;
 
-        Directory.CreateDirectory(genRoot);
-        CellFolder.CreateCellFolder(genRoot, cellName);
-        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
-
         var result = (cache ?? new PCellGeometryCache())
             .GetOrGenerate(generatorId, generator, parameters, technology, layerSelection);
         diagnostics = result.Diagnostics;
+
+        // ── R-lvs1-5b: the terminal map, and the refusal that comes with it ──────────────────────
+        //
+        // GENERATE FIRST, THEN CREATE THE FOLDER. The refusal below must leave nothing behind: a
+        // half-written cell folder with no `.clay` in it is the state `File.Exists(clayPath)` above
+        // reads as "not created yet", so it would be retried forever and would sit in the workspace
+        // meanwhile.
+        //
+        // pcell-contract.md R3 already requires a generated pin's name to match the symbol's pin, and
+        // until now nothing checked it. A generator that disagrees produced a cell that silently could
+        // not be compared, and the mismatch surfaced — if at all — as wrong connectivity much later.
+        var terminals = TerminalMap.FromGeneratorPins(
+            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId), out string? refusal);
+
+        if (refusal is not null)
+            throw new InvalidOperationException(
+                $"The PCell '{generatorId}' cannot be created: {refusal}");
+
+        Directory.CreateDirectory(genRoot);
+        CellFolder.CreateCellFolder(genRoot, cellName);
+        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
 
         var view = new LayoutView
         {
@@ -173,8 +190,31 @@ public static class GeneratedCellStore
         }
 
         LayoutPersistence.SaveToFile(clayPath, view);
+
+        // R-lvs1-5b: written as DECLARED, from the generator's own pins. A generated cell has no
+        // symbol view of its own — the symbol is the one its generator is registered with — so
+        // deriving this later would have nothing to derive from.
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.Terminals = TerminalMap.ToBlock(terminals!);
+        CellPersistence.SaveToFile(ccellPath, ccell);
+
         return cellDir;
     }
+
+    /// <summary>
+    /// The pin names of the symbol <paramref name="generatorId"/> is registered with, in PORT order —
+    /// what R-lvs1-5b pairs the generator's own pins against.
+    ///
+    /// <para>Empty for a generator that has no registered symbol, which is not a defect: a built-in
+    /// land pattern is artwork for a part whose symbol is chosen at placement, and a kit's generator
+    /// brings its own. There is then nothing to disagree with, and the generator's own pin order is
+    /// the port order.</para>
+    /// </summary>
+    private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId)
+        => LayoutToSchematicGenerator.TryGetSymbolKind(generatorId, out var kind)
+            ? [.. SymbolPortDefs.For(kind).Select(p => p.Name)]
+            : [];
 
     /// <summary>
     /// brief-L5-followups-2.md §4.2/R-L5g-6: records (or refreshes) <paramref name="view"/>'s own

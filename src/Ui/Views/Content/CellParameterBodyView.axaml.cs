@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using CircuitRF.Ui.Schematic;
@@ -52,6 +53,26 @@ public partial class CellParameterBodyView : UserControl
                 e.Handled = true;
             }
         }
+    }
+
+    // ── Terminals (R-lvs1-4c) ─────────────────────────────────────────────────
+    //
+    // The WHOLE block commits, not one field: the map's defects are relational, so a row that wrote
+    // itself per keystroke would leave the cell reporting a duplicate port while the user was still
+    // typing the fix for it. A commit that changes nothing adds nothing to the undo stack.
+
+    private void OnTerminalFieldLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: CellTerminalRowViewModel } c
+            && c.FindAncestorOfType<CellParameterBodyView>()?.DataContext is CellParameterEditorViewModel vm)
+            vm.CommitTerminals();
+    }
+
+    private void OnTerminalFieldKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Return or Key.Enter)) return;
+        OnTerminalFieldLostFocus(sender, e);
+        e.Handled = true;
     }
 
     // ── Unit ComboBox ─────────────────────────────────────────────────────────
