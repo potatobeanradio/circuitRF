@@ -146,12 +146,12 @@ public sealed class PdnViaCheckTests
         foreach (double y in viaYsMm) shapes.Add(Via(6.0, y, drillMm));
 
         var pads = new List<PdnPad>();
-        foreach (double y in viaYsMm) pads.Add(new PdnPad("BT1", "1", "VDD", Mm(1), Mm(y)));
+        foreach (double y in viaYsMm) pads.Add(new PdnPad("BT1", "1", "VDD", Mm(1), Mm(y), PdnPadSource.BoardNetlist));
 
         if (cornerLoad)
-            pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(7), Mm(viaYsMm[0])));
+            pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(7), Mm(viaYsMm[0]), PdnPadSource.BoardNetlist));
         else
-            foreach (double y in viaYsMm) pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(11), Mm(y)));
+            foreach (double y in viaYsMm) pads.Add(new PdnPad("U1", "VDD", "VDD", Mm(11), Mm(y), PdnPadSource.BoardNetlist));
 
         var run = RailDcRun.Run(new RailDcRequest
         {

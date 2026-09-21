@@ -776,8 +776,8 @@ public sealed class RailZMapTests(ITestOutputHelper output)
             rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = "U2", Pin = "VDD" } });
         doc.Rails.Add(rail);
 
-        var pads = new List<PdnPad> { new("U1", "VDD", "VDD", Mm(0.5), Mm(0.5)) };
-        if (secondPort) pads.Add(new PdnPad("U2", "VDD", "VDD", Mm(AMm / 2), Mm(0.5)));
+        var pads = new List<PdnPad> { new("U1", "VDD", "VDD", Mm(0.5), Mm(0.5), PdnPadSource.BoardNetlist) };
+        if (secondPort) pads.Add(new PdnPad("U2", "VDD", "VDD", Mm(AMm / 2), Mm(0.5), PdnPadSource.BoardNetlist));
 
         return new RailDcRequest
         {

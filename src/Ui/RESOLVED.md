@@ -32956,3 +32956,25 @@ decoupling.crlib` carried bare `0402`, `0603`, `0805` and `7343` while the board
 `smt:0402@N`, `smt:0603@N`, `smt:0805@N` and `smt:7343-31@N`. Two ambiguous, one (`7343`) not a case
 code at all, and none of it visible anywhere until the column grew a report. It now states the
 packages it means.
+
+---
+
+## railRF: the parts table's Position column does NOT read pads (2026-09-20, brief-authored-board-1)
+
+Brief 1 R-ab1-6b states that *"the parts table's Position column and the row-to-board selection work
+off pads and now populate on an authored board"*. **Half of that is wrong and the half that is wrong
+is the Position column.**
+
+- **The row-to-board MARK does read pads.** `RailRfViewModel.Selection.Mark` resolves the row's
+  refdes through `PdnAttachments.Resolve` over `RailBoardInputs.Pads`, so a part row now marks itself
+  on a board with no companion files at all. `LayoutPadsTests` asserts it.
+- **The Position column reads the PLACEMENT TABLE.** `RailRfViewModel.Parts.cs:141` builds `placedBy`
+  from `Placement.Rows` and from nothing else, so a board a user drew still reads *not placed* on
+  every row however many pads it resolved. Nothing in this series changes that: a `.crail` with no
+  `PlacementRef` has no placement table, and brief 3's `PlacementWriter` is an interop artifact rather
+  than the railRF path (overview §0's corollary).
+
+Deriving the column from pads would be a small change and it was deliberately not made here — it is
+outside brief 1's scope, and the two sources disagree in a way worth deciding on rather than
+defaulting: a placement row is a part's CENTROID, and a pad set's centroid is not the same point on
+an asymmetric part.

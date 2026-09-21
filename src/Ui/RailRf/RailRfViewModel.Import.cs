@@ -72,10 +72,15 @@ public sealed partial class RailRfViewModel
         _document.BoardNetlistRef = options.BoardNetlistPath;
         _document.PlacementRef    = options.PlacementPath;
 
+        // R-ab1-5b. The one funnel, so an IMPORTED board whose parts are footprint instances
+        // resolves its own pads for every refdes the netlist did not name.
+        var resolvedPads = RailArtwork.PadsFor(
+            board.View, board.ArtworkCellRef, board.Technology, netlist);
+
         Board = board with
         {
-            Pads         = PdnBoardPads.PadsOf(netlist),
-            NetPoints    = PdnBoardPads.NetPointsOf(netlist),
+            Pads         = resolvedPads.Pads,
+            NetPoints    = resolvedPads.NetPoints,
             ReferenceNet = _document.ReferenceNet,
         };
         Placement = placement;

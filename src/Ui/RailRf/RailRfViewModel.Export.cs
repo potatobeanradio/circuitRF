@@ -54,7 +54,8 @@ public sealed partial class RailRfViewModel
                 PartLibrary,
                 PartLibraryPath,
                 Board?.ArtworkCellRef ?? "(none)",
-                Board is { } b ? b.Technology.Name : "(none)")
+                Board is { } b ? b.Technology.Name : "(none)",
+                Board?.Pads ?? [])
             : null;
 
     /// <summary>The folder a report page resolves a placed cell's artwork against — the board's

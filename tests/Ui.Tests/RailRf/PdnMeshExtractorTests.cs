@@ -125,8 +125,8 @@ public sealed class PdnMeshExtractorTests
             DbuPerMicron = DbuPerMicron,
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", source.X, source.Y),
-                new PdnPad("U1", "VDD", "VDD", load.X, load.Y),
+                new PdnPad("BT1", "1", "VDD", source.X, source.Y, PdnPadSource.BoardNetlist),
+                new PdnPad("U1", "VDD", "VDD", load.X, load.Y, PdnPadSource.BoardNetlist),
             ],
             Mesh = new PdnMeshSettings
             {
@@ -613,10 +613,10 @@ public sealed class PdnMeshExtractorTests
             DbuPerMicron = DbuPerMicron,
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", Mm(0.5), Mm(2)),
+                new PdnPad("BT1", "1", "VDD", Mm(0.5), Mm(2), PdnPadSource.BoardNetlist),
                 // Both parts sit within one cell of the shared return.
-                new PdnPad("U1", "VDD", "VDD", Mm(5.1), Mm(2)),
-                new PdnPad("U2", "VDD", "VDD", Mm(5.4), Mm(2)),
+                new PdnPad("U1", "VDD", "VDD", Mm(5.1), Mm(2), PdnPadSource.BoardNetlist),
+                new PdnPad("U2", "VDD", "VDD", Mm(5.4), Mm(2), PdnPadSource.BoardNetlist),
             ],
             Mesh = new PdnMeshSettings { CellSizeMetres = 1e-3, PortRefinementRatio = 1 },
         };
@@ -697,8 +697,8 @@ public sealed class PdnMeshExtractorTests
                 Technology = request.Technology,
                 DbuPerMicron = request.DbuPerMicron,
                 Pads = [.. request.Pads,
-                        new PdnPad("Q1", "D", "VDD", Mm(9.9), w / 2),
-                        new PdnPad("Q1", "S", "VDD", Mm(11.1), w / 2)],
+                        new PdnPad("Q1", "D", "VDD", Mm(9.9), w / 2, PdnPadSource.BoardNetlist),
+                        new PdnPad("Q1", "S", "VDD", Mm(11.1), w / 2, PdnPadSource.BoardNetlist)],
                 SeriesElements =
                 [
                     new PdnSeriesElement(
@@ -914,7 +914,7 @@ public sealed class PdnMeshExtractorTests
             Shapes = request.Shapes,
             Technology = request.Technology,
             DbuPerMicron = request.DbuPerMicron,
-            Pads = [.. request.Pads, new PdnPad("C1", "1", "VDD", Mm(4), Mm(0.25))],
+            Pads = [.. request.Pads, new PdnPad("C1", "1", "VDD", Mm(4), Mm(0.25), PdnPadSource.BoardNetlist)],
             ShuntParts =
             [
                 new PdnShuntPart("C1", new RailPortAnchor { Refdes = "C1", Pin = "1" }, 1e-6),

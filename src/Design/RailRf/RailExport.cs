@@ -68,7 +68,8 @@ public sealed record RailProvenance(
     string? PartLibraryPath,
     int PartsReferenced,
     string ArtworkPath,
-    string TechnologyPath)
+    string TechnologyPath,
+    string PadSummary = "")
 {
     /// <summary>The banner, in the order every surface prints it.</summary>
     public IReadOnlyList<string> Lines =>
@@ -90,6 +91,12 @@ public sealed record RailProvenance(
                 : ""),
         $"artwork: {ArtworkPath}",
         $"stackup: {TechnologyPath}",
+        // R-ab1-2c. WHICH KIND OF KNOWLEDGE the pads are — a netlist can disagree with the board and
+        // a projection of the board cannot, so "computed from the artwork" and "stated by the board
+        // netlist" are different claims and a reader six months later is entitled to know which one
+        // they are reading. Omitted entirely on a board with no pads, because "0 pads" reads as a
+        // checked board that came back empty.
+        .. PadSummary is { Length: > 0 } pads ? new[] { $"pads: {pads}" } : [],
     ];
 
     /// <summary>How a model kind reads on the banner.</summary>
@@ -125,7 +132,8 @@ public sealed record RailProvenance(
         PartLibrary? library,
         string? libraryPath,
         string artworkPath,
-        string technologyName)
+        string technologyName,
+        IReadOnlyList<PdnPad>? pads = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(rails);
@@ -163,7 +171,8 @@ public sealed record RailProvenance(
             libraryPath,
             referenced.Count,
             artworkPath,
-            technologyName);
+            technologyName,
+            PdnPadSummary.Describe(pads ?? []));
     }
 }
 

@@ -402,7 +402,10 @@ namespace RfCore.Export
         bool                            Indicative,
         IReadOnlyList<string>           Order,
         IReadOnlyList<RailResultJson>   Rails,
-        IReadOnlyList<string>           Solved);
+        IReadOnlyList<string>           Solved,
+        int                             Pads = 0,
+        int                             PadsFromBoardNetlist = 0,
+        int                             PadsFromArtwork = 0);
 
     /// <summary>
     /// One node of the Smith Chart's walk: the impedance looking back toward the generator from the

@@ -110,6 +110,15 @@ public sealed partial class RailRfViewModel
                 var shapes = RailArtwork.FlattenedShapes(view, found.ClayPath, tech, flattenNotes);
                 foreach (string d in flattenNotes) notes.Add(d);
 
+                // R-ab1-5b. Through the ONE funnel, which is what makes a board the user DREW
+                // resolve its own pads here and in the verb and in the bare-`.clay` open, all three
+                // out of one answer. It applies R-ab1-3's per-refdes precedence, so a document that
+                // ships an `.ipc` is unchanged.
+                var resolvedPads = RailArtwork.PadsFor(view, found.ClayPath, tech, netlist);
+                // An instance that does not resolve contributes neither geometry nor pads, and both
+                // walks report it with the SAME sentence (R-ab1-1c) — so it is said once.
+                foreach (string d in resolvedPads.Notes) if (!notes.Contains(d)) notes.Add(d);
+
                 Board = new RailBoardInputs
                 {
                     Shapes         = shapes,
@@ -117,8 +126,8 @@ public sealed partial class RailRfViewModel
                     TechPath       = found.TechnologyPath,
                     DbuPerMicron   = view.DbuPerMicron,
                     ArtworkCellRef = found.ClayPath,
-                    Pads           = PdnBoardPads.PadsOf(netlist),
-                    NetPoints      = PdnBoardPads.NetPointsOf(netlist),
+                    Pads           = resolvedPads.Pads,
+                    NetPoints      = resolvedPads.NetPoints,
                     ReferenceNet   = _document.ReferenceNet,
                 };
                 break;

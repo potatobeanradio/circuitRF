@@ -595,13 +595,13 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
 
     private static IReadOnlyList<PdnPad> ArtworkPads() =>
     [
-        new PdnPad("BT1", "1", "VBAT", Mm(0.5), Mm(0.15)),
-        new PdnPad("C1", "1", "VBAT", Mm(2.0), Mm(0.15)),
-        new PdnPad("FB1", "1", "VBAT", Mm(3.5), Mm(0.15)),
-        new PdnPad("FB1", "2", "VBAT", Mm(6.5), Mm(0.15)),
-        new PdnPad("C2", "1", "VBAT", Mm(8.0), Mm(0.15)),
-        new PdnPad("C3", "1", "VBAT", Mm(10.0), Mm(0.15)),
-        new PdnPad("U1", "VDD", "VBAT", Mm(13.5), Mm(0.15)),
+        new PdnPad("BT1", "1", "VBAT", Mm(0.5), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("C1", "1", "VBAT", Mm(2.0), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("FB1", "1", "VBAT", Mm(3.5), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("FB1", "2", "VBAT", Mm(6.5), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("C2", "1", "VBAT", Mm(8.0), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("C3", "1", "VBAT", Mm(10.0), Mm(0.15), PdnPadSource.BoardNetlist),
+        new PdnPad("U1", "VDD", "VBAT", Mm(13.5), Mm(0.15), PdnPadSource.BoardNetlist),
     ];
 
     private static IReadOnlyList<LayoutShape> ArtworkShapes(bool bridged) =>

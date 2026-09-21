@@ -154,6 +154,10 @@ public static class DocRailFixtures
             RunOffThread = (work, _) => System.Threading.Tasks.Task.FromResult(work()),
         };
 
+        // R-ab1-5b: the one funnel, so the shipped figures are drawn off exactly the pads the window
+        // and the verb resolve.
+        var resolvedPads = RailArtwork.PadsFor(view, clay, technology, netlist);
+
         vm.ApplyImport(
             new RailImportOptions(),
             new RailBoardInputs
@@ -165,8 +169,8 @@ public static class DocRailFixtures
                 Technology = technology,
                 DbuPerMicron = view.DbuPerMicron,
                 ArtworkCellRef = clay,
-                Pads = PdnBoardPads.PadsOf(netlist),
-                NetPoints = PdnBoardPads.NetPointsOf(netlist),
+                Pads = resolvedPads.Pads,
+                NetPoints = resolvedPads.NetPoints,
                 ReferenceNet = document.ReferenceNet,
             },
             placement: placement,

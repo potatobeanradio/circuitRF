@@ -9519,3 +9519,51 @@ defined on.
 **The rule this is an instance of:** a refusal that names a remedy has to be able to READ that remedy
 back. The sentence and the parser were written in the same file and still disagreed, because the
 sentence was reasoning about the format and the parser was reasoning about separators.
+
+---
+
+## `PdnLayoutPads` — a board circuitRF drew resolves its own pads (2026-09-20, brief-authored-board-1)
+
+`RailBoardInputs.Pads` had exactly one producer — a companion `.ipc` through `PdnBoardPads` — so a
+`.clay` somebody authored opened with `Pads = []`. Four things degraded at once and not one of them
+failed: no pick list, every refdes anchor falling back to a coordinate, every mounting inductance a
+typed one, and no parts-table row. All four are the path a board with no companion files takes, which
+is why the silence had never been noticed.
+
+`PdnLayoutPads.PadsOf` walks the root's own placements, resolves each one's cell through
+`CellLayoutResolver`, takes its pins through `CellPins.Resolve` and its coordinates through
+`LayoutInstanceTransform.TransformPoint` — the two functions the renderer already performs every
+frame. `RailArtwork.PadsFor` is the one funnel every construction site calls.
+
+### Four things that are not obvious
+
+**A layout-derived pad is a different KIND of knowledge, and the type now says so.** `PdnBoardPads`'
+governing rule is that the netlist is evidence ABOUT the artwork and never geometry; this file is the
+opposite. `PdnPad.Source` is a REQUIRED positional member for that reason — adding it broke all 55
+construction sites, and each had to state which claim it was making. A default would let a new one
+drift in unmarked, and a pad set whose origin is not recoverable is the defect the whole series
+exists to fix.
+
+**The mounting loop tells a power pad from a return pad BY NET, so the headline is only half
+reachable until nets land.** `RailMountingBasis.ComputedFromGeometry` now has a producer for any
+board whose pads carry nets, but an artwork-derived pad's `Net` is null by this brief's own scope —
+so a board with NO companion netlist gets its pads and still no computed loop. The coordinate is
+brief 1's and it is the term the answer actually depends on (the via separation is the whole of the
+−2M term); the name is brief 2's.
+
+**The flatten's ceiling had to become a predicate.** Pads are read off the geometry the ceiling stops
+being read, so a board over it must come back with no pads rather than with a confident list over
+artwork the run never saw. `LayoutDesignFlatten.ExceedsCeiling` is the estimate loop lifted out of
+`Flatten` verbatim — a second copy would be a second ceiling that drifts.
+
+**Two walks now report the same unresolved instance.** `FlattenedShapes` and `PadsOf` skip the same
+placements and, by R-ab1-1c, say so in the same words (`LayoutDesignFlatten.UnresolvedNote`), so each
+construction site de-duplicates its own note list. Reporting it once from only one of the two walks
+would have made whichever walk ran second silently authoritative.
+
+### And one report that changed shape
+
+`RailProvenance` gained a `pads:` line, which rides the `.npy`/`.mat` provenance axis as well as the
+console banner — so a run of a board that already worked answers with the same numbers and one more
+line of provenance. That is R-ab1-2c's whole point and it is worth knowing before comparing two
+exports byte for byte.

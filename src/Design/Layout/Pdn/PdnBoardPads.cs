@@ -61,7 +61,7 @@ public static class PdnBoardPads
             if (r.Component is not { Length: > 0 } refdes || r.Pin is not { Length: > 0 } pin)
                 continue;
 
-            pads.Add(new PdnPad(refdes, pin, r.Net, r.X, r.Y));
+            pads.Add(new PdnPad(refdes, pin, r.Net, r.X, r.Y, PdnPadSource.BoardNetlist));
         }
 
         return pads;

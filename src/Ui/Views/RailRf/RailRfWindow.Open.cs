@@ -145,6 +145,16 @@ public partial class RailRfWindow
         var flattenNotes = new List<string>();
         var shapes = RailArtwork.FlattenedShapes(view, clay, tech, flattenNotes);
 
+        // ── R-ab1-5b: THE SITE THAT TOOK NO PADS AT ALL ────────────────────────────────────────
+        //
+        // This is the whole reported gap, in one line. A bare `.clay` is precisely the board a user
+        // DREW — its parts are footprint instances carrying designators, and every one of their lands
+        // is inside one — and until this call it opened with `Pads = []`: no pick list, every refdes
+        // anchor falling back to a coordinate, and every mounting inductance a typed one. There is no
+        // companion netlist on this path by construction, so every pad here is the artwork's own.
+        var resolvedPads = RailArtwork.PadsFor(view, clay, tech, null);
+        foreach (string d in resolvedPads.Notes) if (!flattenNotes.Contains(d)) flattenNotes.Add(d);
+
         vm.Board = new RailBoardInputs
         {
             Shapes         = shapes,
@@ -152,6 +162,8 @@ public partial class RailRfWindow
             TechPath       = resolution.ResolvedPath,
             DbuPerMicron   = view.DbuPerMicron,
             ArtworkCellRef = clay,
+            Pads           = resolvedPads.Pads,
+            NetPoints      = resolvedPads.NetPoints,
         };
 
         var openNotes = resolution.Diagnostics.Concat(flattenNotes).ToList();

@@ -127,7 +127,7 @@ public sealed class PdnCavityTests
         (long X, long Y)? source = null, double? sourceOhms = null, double? cellSize = null)
     {
         var rail = new RailSpec { Name = "VDD", NetName = "VDD", ReferenceLayer = Bot };
-        var pads = new List<PdnPad> { new("U1", "VDD", "VDD", load.X, load.Y) };
+        var pads = new List<PdnPad> { new("U1", "VDD", "VDD", load.X, load.Y, PdnPadSource.BoardNetlist) };
         rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = "U1", Pin = "VDD" } });
 
         if (source is { } s)
@@ -137,7 +137,7 @@ public sealed class PdnCavityTests
                 Anchor = new RailPortAnchor { Refdes = "BT1", Pin = "1" },
                 SeriesResistanceOhms = sourceOhms,
             });
-            pads.Add(new PdnPad("BT1", "1", "VDD", s.X, s.Y));
+            pads.Add(new PdnPad("BT1", "1", "VDD", s.X, s.Y, PdnPadSource.BoardNetlist));
         }
 
         return new PdnExtractionRequest

@@ -56,18 +56,8 @@ public static class LayoutDesignFlatten
         var unresolved = new List<string>();
         var pending = new Dictionary<string, IReadOnlyList<LayerMappingRow>>();
         int flattenedCount = 0;
-        long totalShapeEstimate = 0;
-        bool exceedsCeiling = false;
 
-        foreach (var inst in rootView.Instances)
-        {
-            long estimate = LayoutFlatten.CountResultingShapes(inst, rootLayoutDir, HardCeiling - totalShapeEstimate);
-            if (estimate < 0) { exceedsCeiling = true; continue; }
-            totalShapeEstimate += estimate;
-            if (totalShapeEstimate > HardCeiling) { exceedsCeiling = true; continue; }
-        }
-
-        if (exceedsCeiling)
+        if (ExceedsCeiling(rootView, rootLayoutDir))
             return new FlattenResult([], 0, 0, [], pending, ExceedsCeiling: true);
 
         foreach (var inst in rootView.Instances)
@@ -75,7 +65,7 @@ public static class LayoutDesignFlatten
             var res = CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir);
             if (res.State != CellLayoutState.Resolved)
             {
-                unresolved.Add($"Instance referencing \"{inst.CellRef}\" does not resolve — skipped, no geometry contributed for it.");
+                unresolved.Add(UnresolvedNote(inst.CellRef));
                 continue;
             }
 
@@ -130,6 +120,38 @@ public static class LayoutDesignFlatten
         int contributed = shapes.Count - rootView.Shapes.Count;
         return new FlattenResult(shapes, flattenedCount, contributed, unresolved, pending, ExceedsCeiling: false);
     }
+
+    /// <summary>
+    /// Whether flattening <paramref name="rootView"/>'s instance tree would exceed
+    /// <see cref="HardCeiling"/> — R-L3c-4's safety valve, asked WITHOUT flattening.
+    ///
+    /// <para><b>Extracted so a second consumer can gate on the same answer</b> (R-ab1-5d):
+    /// <c>PdnLayoutPads</c> reads a part's pads off the very geometry this ceiling stops being read,
+    /// and a board whose lands were never flattened must not come back with a confident pad list over
+    /// them. A second copy of the estimate loop would be a second ceiling that drifts.</para>
+    /// </summary>
+    public static bool ExceedsCeiling(LayoutView rootView, string rootLayoutDir)
+    {
+        ArgumentNullException.ThrowIfNull(rootView);
+
+        long total = 0;
+        foreach (var inst in rootView.Instances)
+        {
+            long estimate = LayoutFlatten.CountResultingShapes(inst, rootLayoutDir, HardCeiling - total);
+            if (estimate < 0) return true;
+            total += estimate;
+            if (total > HardCeiling) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>The sentence an instance that does not resolve is reported with. <b>One sentence,
+    /// not two</b> (R-ab1-1c): the pad projection walks the same list and skips the same instances,
+    /// and a reader comparing two reports of one board should not have to tell two wordings
+    /// apart.</summary>
+    public static string UnresolvedNote(string cellRef) =>
+        $"Instance referencing \"{cellRef}\" does not resolve — skipped, no geometry contributed for it.";
 
     private static IReadOnlyList<LayoutShape> ApplyCrossTechMapping(
         Technology? subTech, IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayerMappingRow>? resolvedRows)

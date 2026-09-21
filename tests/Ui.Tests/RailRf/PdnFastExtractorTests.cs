@@ -149,8 +149,8 @@ public sealed class PdnFastExtractorTests
             DbuPerMicron = DbuPerMicron,
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", source.X, source.Y),
-                new PdnPad("U1", "VDD", "VDD", load.X, load.Y),
+                new PdnPad("BT1", "1", "VDD", source.X, source.Y, PdnPadSource.BoardNetlist),
+                new PdnPad("U1", "VDD", "VDD", load.X, load.Y, PdnPadSource.BoardNetlist),
             ],
             ClassOverrides = overrides ?? new Dictionary<PdnRegionRef, PdnCopperClass>(),
             Graph = new PdnGraphSettings { FrequencyHz = frequencyHz },

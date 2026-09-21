@@ -141,10 +141,10 @@ public sealed class PdnDcSolveTests
                 ],
                 Pads =
                 [
-                    new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2)),
-                    new PdnPad("BT1", "2", "VDD", Mm(12.0), Mm(0.2)),   // the WRONG pad, for the negative
-                    new PdnPad("BT2", "1", "VDD", Mm(29.8), Mm(0.2)),
-                    new PdnPad("U1", "VDD", "VDD", Mm(18.0), Mm(0.2)),
+                    new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2), PdnPadSource.BoardNetlist),
+                    new PdnPad("BT1", "2", "VDD", Mm(12.0), Mm(0.2), PdnPadSource.BoardNetlist),   // the WRONG pad, for the negative
+                    new PdnPad("BT2", "1", "VDD", Mm(29.8), Mm(0.2), PdnPadSource.BoardNetlist),
+                    new PdnPad("U1", "VDD", "VDD", Mm(18.0), Mm(0.2), PdnPadSource.BoardNetlist),
                 ],
             });
 
@@ -230,9 +230,9 @@ public sealed class PdnDcSolveTests
             Shapes = [Rect(Top, 0, 0, Mm(30), Mm(0.4)), Rect(Bot, 0, 0, Mm(30), Mm(0.4))],
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2)),
-                new PdnPad("BT2", "1", "VDD", Mm(29.8), Mm(0.2)),
-                new PdnPad("U1", "VDD", "VDD", Mm(15.0), Mm(0.2)),
+                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PdnPad("BT2", "1", "VDD", Mm(29.8), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PdnPad("U1", "VDD", "VDD", Mm(15.0), Mm(0.2), PdnPadSource.BoardNetlist),
             ],
         });
 
@@ -320,10 +320,10 @@ public sealed class PdnDcSolveTests
                 ],
                 Pads =
                 [
-                    new PdnPad("BT1", "1", "VIN", Mm(0.25), w / 2),
-                    new PdnPad("U2", "IN", "VIN", Mm(19.75), w / 2),
-                    new PdnPad("U2", "OUT", "VOUT", Mm(22.25), Mm(0.25)),
-                    new PdnPad("U3", "VDD", "VOUT", Mm(41.75), Mm(0.25)),
+                    new PdnPad("BT1", "1", "VIN", Mm(0.25), w / 2, PdnPadSource.BoardNetlist),
+                    new PdnPad("U2", "IN", "VIN", Mm(19.75), w / 2, PdnPadSource.BoardNetlist),
+                    new PdnPad("U2", "OUT", "VOUT", Mm(22.25), Mm(0.25), PdnPadSource.BoardNetlist),
+                    new PdnPad("U3", "VDD", "VOUT", Mm(41.75), Mm(0.25), PdnPadSource.BoardNetlist),
                 ],
             });
         }
@@ -550,10 +550,10 @@ public sealed class PdnDcSolveTests
             Shapes = [Rect(Top, 0, 0, Mm(30), Mm(0.4)), Rect(Bot, 0, 0, Mm(30), Mm(0.4))],
             Pads =
             [
-                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2)),
-                new PdnPad("U1", "VDD", "VDD", Mm(10.0), Mm(0.2)),
-                new PdnPad("U2", "VDD", "VDD", Mm(20.0), Mm(0.2)),
-                new PdnPad("U3", "VDD", "VDD", Mm(29.8), Mm(0.2)),
+                new PdnPad("BT1", "1", "VDD", Mm(0.2), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PdnPad("U1", "VDD", "VDD", Mm(10.0), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PdnPad("U2", "VDD", "VDD", Mm(20.0), Mm(0.2), PdnPadSource.BoardNetlist),
+                new PdnPad("U3", "VDD", "VDD", Mm(29.8), Mm(0.2), PdnPadSource.BoardNetlist),
             ],
         });
 
@@ -635,8 +635,8 @@ public sealed class PdnDcSolveTests
                 ],
                 Pads =
                 [
-                    new PdnPad("BT1", "1", "VDD", Mm(0.1), w / 2),
-                    new PdnPad("U1", "VDD", "VDD", l - Mm(0.1), w / 2),
+                    new PdnPad("BT1", "1", "VDD", Mm(0.1), w / 2, PdnPadSource.BoardNetlist),
+                    new PdnPad("U1", "VDD", "VDD", l - Mm(0.1), w / 2, PdnPadSource.BoardNetlist),
                 ],
             });
 
@@ -687,10 +687,10 @@ public sealed class PdnDcSolveTests
             ],
             Pads =
             [
-                new PdnPad("BT1", "1", "VBAT", Mm(0.15), Mm(0.15)),
-                new PdnPad("Q1", "1", "VBAT", Mm(3.35), Mm(0.15)),
-                new PdnPad("Q1", "2", "VBAT", Mm(6.15), Mm(0.15)),
-                new PdnPad("U1", "VDD", "VBAT", Mm(55.85), Mm(0.15)),
+                new PdnPad("BT1", "1", "VBAT", Mm(0.15), Mm(0.15), PdnPadSource.BoardNetlist),
+                new PdnPad("Q1", "1", "VBAT", Mm(3.35), Mm(0.15), PdnPadSource.BoardNetlist),
+                new PdnPad("Q1", "2", "VBAT", Mm(6.15), Mm(0.15), PdnPadSource.BoardNetlist),
+                new PdnPad("U1", "VDD", "VBAT", Mm(55.85), Mm(0.15), PdnPadSource.BoardNetlist),
             ],
             SeriesElements =
             [

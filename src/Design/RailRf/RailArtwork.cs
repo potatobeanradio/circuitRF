@@ -17,9 +17,11 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Pdn;
 
 namespace CircuitRF.Design.RailRf;
 
@@ -279,6 +281,92 @@ public static class RailArtwork
                        "need reconciling, so it contributed no geometry to this board.");
 
         return flat.Shapes;
+    }
+
+    // ── R-ab1-5: ONE funnel for the pads ─────────────────────────────────────────────────────────
+    //
+    // Five places construct the board inputs and four of them took pads from PdnBoardPads; the bare
+    // `.clay` one took NONE AT ALL, which is the whole reported gap in one line. That is
+    // RebuildAvailableNets' scar verbatim — a derived list only one of two writers refreshed was
+    // wrong on the other path, silently — so the resolution goes HERE, beside FlattenedShapes, where
+    // neither surface owns it, and every site calls it. The same move this file itself was created
+    // by, for the same reason.
+
+    /// <summary>
+    /// What one board's pads are, and where each of them came from.
+    /// </summary>
+    /// <param name="Pads">The board netlist's, plus the artwork's for every part the netlist did not
+    /// name.</param>
+    /// <param name="NetPoints">What the connectivity walk can be seeded from, de-duplicated across
+    /// the two sources — an identical point from both is one seed, not two.</param>
+    /// <param name="FromBoardNetlist">How many pads the netlist stated.</param>
+    /// <param name="FromArtwork">How many were computed off the artwork.</param>
+    /// <param name="Notes">What could not be read. <b>Returned, never posted</b>.</param>
+    public sealed record RailPadResolution(
+        System.Collections.Generic.IReadOnlyList<PdnPad>      Pads,
+        System.Collections.Generic.IReadOnlyList<PdnNetPoint> NetPoints,
+        int                                                   FromBoardNetlist,
+        int                                                   FromArtwork,
+        System.Collections.Generic.IReadOnlyList<string>      Notes);
+
+    /// <summary>
+    /// The board's pads: the netlist's where it speaks, the artwork's everywhere else.
+    /// </summary>
+    /// <param name="view">The artwork as read, or null for a document that resolved none.</param>
+    /// <param name="clayPath">Where it was read from — an instance's <c>CellRef</c> is relative to
+    /// the layout folder holding it.</param>
+    /// <param name="technology">The root stackup.</param>
+    /// <param name="netlist">The board netlist, where one resolved.</param>
+    /// <param name="portNamesOf">The ports of the component a <c>SchematicId</c> names, in port
+    /// order — R-ab1-4's join. Null until brief 2 supplies it.</param>
+    /// <remarks>
+    /// <b>The board netlist wins, PER REFDES</b> (R-ab1-3a, R-ab1-3b). A netlist is written by the
+    /// tool that made the board and is evidence about it; artwork-derived pads are circuitRF's own
+    /// reading of the same board, so where the netlist speaks it is the statement of record. Per
+    /// refdes rather than per board, because whole-file precedence would throw away a correct pad
+    /// for one part because a DIFFERENT part was missing from a different file — and the
+    /// two-missing-parts case is the ordinary one on a board somebody edited after exporting.
+    ///
+    /// <para><b>A refused netlist contributes nothing</b> (R-ab1-3c) and the artwork then supplies
+    /// everything: <c>BoardNetlist.Refusal</c> non-null means nothing was read and nothing may be
+    /// used, which is the contract that type states.</para>
+    ///
+    /// <para><b>Where both name a refdes and they disagree about position, this takes the netlist
+    /// and says nothing</b> (R-ab1-3d). Reporting that divergence is brief 2's; it is not LVS and
+    /// nothing here ranks one reading against the other.</para>
+    /// </remarks>
+    public static RailPadResolution PadsFor(
+        LayoutView? view, string? clayPath, Technology? technology, BoardNetlist? netlist,
+        Func<string, System.Collections.Generic.IReadOnlyList<string>>? portNamesOf = null)
+    {
+        var notes = new System.Collections.Generic.List<string>();
+
+        var fromNetlist = PdnBoardPads.PadsOf(netlist);
+        var covered = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pad in fromNetlist)
+            if (pad.Refdes is { Length: > 0 } r) covered.Add(r);
+
+        var fromArtwork = view is null
+            ? []
+            : PdnLayoutPads.PadsOf(view, clayPath, technology, portNamesOf, notes)
+                           .Where(p => p.Refdes is not { Length: > 0 } r || !covered.Contains(r))
+                           .ToList();
+
+        var pads = new System.Collections.Generic.List<PdnPad>(fromNetlist.Count + fromArtwork.Count);
+        pads.AddRange(fromNetlist);
+        pads.AddRange(fromArtwork);
+
+        // De-duplicated because both sources legitimately describe the same stitching via: the
+        // netlist carries a record for it and the artwork carries the ViaShape itself. Two identical
+        // seeds are redundant rather than wrong, and dropping the duplicate keeps the count on the
+        // report equal to the number of distinct places a net was stated.
+        var points = new System.Collections.Generic.List<PdnNetPoint>();
+        var seen = new System.Collections.Generic.HashSet<PdnNetPoint>();
+        foreach (var pt in PdnBoardPads.NetPointsOf(netlist)) if (seen.Add(pt)) points.Add(pt);
+        if (view is not null)
+            foreach (var pt in PdnLayoutPads.NetPointsOf(view, fromArtwork)) if (seen.Add(pt)) points.Add(pt);
+
+        return new RailPadResolution(pads, points, fromNetlist.Count, fromArtwork.Count, notes);
     }
 
     /// <summary>The primary layout view of a cell folder, or null where it holds none.</summary>

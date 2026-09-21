@@ -278,6 +278,17 @@ internal static class Rail
             JsonRun.Note(CliDiagnostics.RailRunNote(d));
         }
 
+        // R-ab1-5c: the verb gets an authored board's pads for free, and that is a GATE rather than
+        // a side effect — `circuitrf rail board.clay --load U1.VDD=120mA` was refused before this
+        // call existed. RailArtwork owns the precedence; this prints what it had to say.
+        var resolvedPads = RailArtwork.PadsFor(board.View, board.ClayPath, board.Technology, netlist);
+        foreach (string d in resolvedPads.Notes)
+        {
+            if (board.FlattenNotes.Contains(d)) continue;
+            Console.Error.WriteLine("warning: " + d);
+            JsonRun.Note(CliDiagnostics.RailRunNote(d));
+        }
+
         var run = RailDcRun.Run(new RailDcRequest
         {
             Document       = doc,
@@ -286,8 +297,8 @@ internal static class Rail
             DbuPerMicron   = board.View.DbuPerMicron,
             LengthFormat   = board.LengthFormat,
             Model          = o.Model,
-            Pads           = PdnBoardPads.PadsOf(netlist),
-            NetPoints      = PdnBoardPads.NetPointsOf(netlist),
+            Pads           = resolvedPads.Pads,
+            NetPoints      = resolvedPads.NetPoints,
             ReferenceNet   = doc.ReferenceNet,
         });
 
@@ -313,7 +324,8 @@ internal static class Rail
         var wanted = chosen.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var results = run.Rails.Where(r => wanted.Contains(r.RailName)).ToList();
 
-        var provenance = Provenance(doc, o, board, input.DocumentPath, chosen, results);
+        var provenance = Provenance(
+            doc, o, board, input.DocumentPath, chosen, results, resolvedPads.Pads);
 
         Report(doc, run, results, order, provenance, o);
 
@@ -321,7 +333,7 @@ internal static class Rail
         // the shape a caller reads is the same either way.
         var data = Pack(results, provenance);
         JsonRun.Data = data;
-        JsonRun.Rail = RailJson(doc, run, results, order, provenance, o.Model);
+        JsonRun.Rail = RailJson(doc, run, results, order, provenance, o.Model, resolvedPads.Pads);
 
         if (o.Output is null) return 0;
 
@@ -418,9 +430,12 @@ internal static class Rail
     /// <param name="Technology">The stackup.</param>
     /// <param name="ClayPath">Where the artwork came from, for the report.</param>
     /// <param name="BaseDir">What an instance's <c>CellRef</c> resolves against.</param>
+    /// <param name="FlattenNotes">What the flatten had to say, already printed. Carried so the pad
+    /// resolution — which walks the same instance list and reports an unresolved one with the SAME
+    /// sentence (R-ab1-1c) — does not print it a second time.</param>
     private sealed record BoardInputs(
         LayoutView View, Technology Technology, string ClayPath, string BaseDir,
-        IReadOnlyList<LayoutShape> Shapes)
+        IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<string> FlattenNotes)
     {
         /// <summary>The artwork's own units — what every coordinate on this run's report reads in
         /// (owner, 2026-09-18). The `.clay`'s own display unit, which is what the layout editor shows
@@ -494,7 +509,8 @@ internal static class Rail
             JsonRun.Note(CliDiagnostics.RailRunNote(d));
         }
 
-        return (new BoardInputs(view, tech, clay, CellHierarchy.BaseDirOfDocument(clay), shapes), null);
+        return (new BoardInputs(
+            view, tech, clay, CellHierarchy.BaseDirOfDocument(clay), shapes, flattenNotes), null);
     }
 
     // ── step 3: the overrides (R-rail10-1) ───────────────────────────────────
@@ -906,7 +922,8 @@ internal static class Rail
 
     private static RailProvenance Provenance(
         RailDocument doc, Options o, BoardInputs? board, string documentPath,
-        IReadOnlyList<RailSpec> rails, IReadOnlyList<RailDcResult> results)
+        IReadOnlyList<RailSpec> rails, IReadOnlyList<RailDcResult> results,
+        IReadOnlyList<PdnPad> pads)
     {
         // Document-relative, like every other reference a `.crail` carries — and through the one
         // function the WINDOW's open calls, so the two surfaces cannot land on different files.
@@ -927,7 +944,8 @@ internal static class Rail
         return RailProvenance.Of(
             o.Model, doc, rails, results, library, libraryPath,
             board?.ClayPath ?? "(none)",
-            board is null ? "(none)" : board.Technology.Name);
+            board is null ? "(none)" : board.Technology.Name,
+            pads);
     }
 
     /// <summary>Said once, in <see cref="RailProvenance.ExtentText"/>, because the window prints
@@ -1150,7 +1168,8 @@ internal static class Rail
 
     private static RailReportJson RailJson(
         RailDocument doc, RailDcRunResult run, IReadOnlyList<RailDcResult> results,
-        RailOrderResult order, RailProvenance provenance, PdnModelKind model)
+        RailOrderResult order, RailProvenance provenance, PdnModelKind model,
+        IReadOnlyList<PdnPad> pads)
         => new(
             doc.Name,
             model == PdnModelKind.Accurate ? "accurate" : "fast",
@@ -1170,7 +1189,13 @@ internal static class Rail
                 r.ViaCheck.Transitions.Count,
                 r.ViaCheck.Flags.Count,
                 r.Findings))],
-            [.. run.Rails.Select(r => r.RailName)]);
+            [.. run.Rails.Select(r => r.RailName)],
+            // R-ab1-2c's third site. The COUNT and its split, so a caller with no terminal can tell
+            // a board whose parts the netlist named from one railRF read off the artwork itself —
+            // and so `--json` can be compared against the in-process answer (R-ab1-5c's gate).
+            pads.Count,
+            pads.Count(p => p.Source == PdnPadSource.BoardNetlist),
+            pads.Count(p => p.Source == PdnPadSource.Artwork));
 
     private static void Progress(string stage) => Console.Error.WriteLine($"[circuitRF] {stage}...");
 

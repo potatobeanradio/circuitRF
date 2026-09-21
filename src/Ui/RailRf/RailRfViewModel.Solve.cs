@@ -755,6 +755,12 @@ public sealed partial class RailRfViewModel
             if (PartsWithoutBiasCurve > 0)
                 parts.Add($"{PartsWithoutBiasCurve} part(s) with no bias curve");
 
+            // R-ab1-6c. The count AND where it came from — "142 pads: 128 from the board netlist,
+            // 14 from the artwork" is R-ab1-3b made visible, and it is the only way a user finds out
+            // their netlist is two parts stale. One spelling, shared with the export banner.
+            if (Board is { Pads.Count: > 0 } withPads)
+                parts.Add(PdnPadSummary.Describe(withPads.Pads));
+
             if (IsSolving) parts.Add(BusyText);
 
             return string.Join(" · ", parts);

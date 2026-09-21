@@ -154,13 +154,13 @@ public sealed class PdnDistributedTests
             OpenCircuitVoltageV = 3.7,
         });
 
-        var pads = new List<PdnPad> { new("BT1", "1", "VDD", source.X, source.Y) };
+        var pads = new List<PdnPad> { new("BT1", "1", "VDD", source.X, source.Y, PdnPadSource.BoardNetlist) };
 
         for (int k = 0; k < loads.Count; k++)
         {
             string refdes = $"U{k + 1}";
             rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = refdes, Pin = "VDD" } });
-            pads.Add(new PdnPad(refdes, "VDD", "VDD", loads[k].X, loads[k].Y));
+            pads.Add(new PdnPad(refdes, "VDD", "VDD", loads[k].X, loads[k].Y, PdnPadSource.BoardNetlist));
         }
 
         return new PdnExtractionRequest
@@ -534,8 +534,8 @@ public sealed class PdnDistributedTests
                 SearchRadiusMetres = 1e-6,          // the via must be ON the pad
                 Pads =
                 [
-                    new PdnPad("C1", "1", "VDD", Mm(5), Mm(5)),
-                    new PdnPad("C1", "2", "GND", Mm(5) + d, Mm(5)),
+                    new PdnPad("C1", "1", "VDD", Mm(5), Mm(5), PdnPadSource.BoardNetlist),
+                    new PdnPad("C1", "2", "GND", Mm(5) + d, Mm(5), PdnPadSource.BoardNetlist),
                 ],
             };
 
@@ -733,8 +733,8 @@ public sealed class PdnDistributedTests
         rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = "U1", Pin = "VDD" } });
 
         var pads = new List<PdnPad>();
-        foreach (var (x, y) in source) pads.Add(new PdnPad("BT1", "1", "VDD", x, y));
-        foreach (var (x, y) in pins) pads.Add(new PdnPad("U1", "VDD", "VDD", x, y));
+        foreach (var (x, y) in source) pads.Add(new PdnPad("BT1", "1", "VDD", x, y, PdnPadSource.BoardNetlist));
+        foreach (var (x, y) in pins) pads.Add(new PdnPad("U1", "VDD", "VDD", x, y, PdnPadSource.BoardNetlist));
 
         return new PdnExtractionRequest
         {
