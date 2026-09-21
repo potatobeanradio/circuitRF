@@ -1,0 +1,48 @@
+# Fails a change that leaves docs/user/ disagreeing with tools/DocGen.
+#
+# user-docs.yml PUBLISHES docs/user to Pages and checks nothing, so until this
+# existed the committed documentation could drift from the code indefinitely —
+# and it had. On 2026-09-21 a regeneration at a clean HEAD produced 54 changed
+# files, 41 of which were simply what the code draws and had been reverted by
+# hand on earlier commits. One page even inlined a NEWER copy of a figure than
+# the standalone .svg beside it, and both were live on the site.
+#
+# WHY macOS. The figures carry real text, and text metrics come from the
+# platform's own fonts — the run's substitution report names Lucida Grande,
+# Apple Symbols, Zapf Dingbats and Helvetica. A Linux runner would redraw every
+# label and report the whole set as changed, which is a red job nobody can act
+# on. Keep this on the same platform family the figures are generated on. If it
+# ever goes red purely on text metrics after a runner-image bump, PIN the image
+# (runs-on: macos-15) or retire the job — do NOT go back to reverting figures.
+name: Docs current
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tools/DocGen/**'
+      - 'examples/**'
+      - 'docs/user/**'
+      - '.github/workflows/docs-current.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-current-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The generator opens real workspaces and draws real views; it needs no
+      # display (Avalonia.Headless with UseHeadlessDrawing = false) but it does
+      # need the whole solution built.
+      - name: Check docs/user is what the generator produces
+        run: tools/DocGen/check-docs-current.sh

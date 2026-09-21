@@ -132,6 +132,69 @@ public static class SvgLint
 
     private static string Trim(string tag) => tag.Length <= 160 ? tag : tag[..157] + "...";
 
+    // ── The measurement lint ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Text a figure must never carry: a number that measures THIS MACHINE ON THIS RUN.
+    ///
+    /// <para>A solve count, a frame rate or an elapsed time is not a property of the thing being
+    /// documented — it is a property of the box the generator happened to run on. Committed, it
+    /// makes the figure differ on every regeneration with nothing to show for it: the harmonicaRF
+    /// instrument read <c>40 HB solves</c> on one run and <c>813 HB solves</c> on the next, and the
+    /// railRF status strip <c>414.9 ms</c> then <c>400.3 ms</c>. Eight figures and two pages churned
+    /// on every run for months because the only symptom is a diff nobody can attribute.</para>
+    ///
+    /// <para><b>Measured against the whole committed set before it was turned on</b>: these four
+    /// patterns match the eight offending figures and NOTHING else in 766 files, so there is no
+    /// allow-list and no false positive to argue about. A unit that is a SETTING rather than a
+    /// measurement (a rise time, a sweep step) is spelt in the document's own units and does not
+    /// reach these; if one ever does, fix the pattern rather than muting the lint.</para>
+    /// </summary>
+    private static readonly (string What, Regex Rx)[] MeasurementPatterns =
+    [
+        ("a solve count", new Regex(@"\d+\s*(?:HB\s+)?solves\b", RegexOptions.Compiled)),
+        ("a frame rate",  new Regex(@"\d+(?:\.\d+)?\s*fps\b",     RegexOptions.Compiled)),
+        ("an elapsed time", new Regex(@"\b\d+(?:\.\d+)?\s*ms\b", RegexOptions.Compiled)),
+        ("an elapsed time", new Regex(@"\b\d+(?:\.\d+)?\s*[\u00B5u]s\b", RegexOptions.Compiled)),
+    ];
+
+    private static readonly Regex TextNodeRx =
+        new(@"<text\b[^>]*>(?<body>.*?)</text>", RegexOptions.Compiled | RegexOptions.Singleline);
+
+    /// <summary>
+    /// Every run of text in <paramref name="svg"/> that states a measurement of the machine.
+    /// <see cref="Finding.Element"/> carries what kind it is; the snippet is the matched text.
+    /// </summary>
+    public static IReadOnlyList<Finding> Measurements(string svg)
+    {
+        var found = new List<Finding>();
+        foreach (Match t in TextNodeRx.Matches(svg))
+        {
+            // Skia splits one run across lines and escapes it; join and unescape before matching,
+            // or "400.3 ms" broken over two lines reads as two harmless fragments.
+            string body = Regex.Replace(t.Groups["body"].Value, @"\s+", " ").Trim();
+            body = body.Replace("&#181;", "\u00B5").Replace("&amp;", "&");
+            foreach (var (what, rx) in MeasurementPatterns)
+                foreach (Match m in rx.Matches(body))
+                    found.Add(new Finding(what, LineOf(svg, t.Index), Trim(m.Value)));
+        }
+        return found;
+    }
+
+    /// <summary>The blocking-failure message for <see cref="Measurements"/>.</summary>
+    public static string ExplainMeasurements(string file, IReadOnlyList<Finding> findings)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{file}: {findings.Count} MEASUREMENT(s) drawn into a committed figure.");
+        sb.AppendLine("A solve count, a frame rate or an elapsed time measures the machine this run");
+        sb.AppendLine("happened on, so the figure differs on every regeneration and its diff can");
+        sb.AppendLine("never be attributed. Fix: suppress the number while");
+        sb.AppendLine("UiArtworkGenerator.HeadlessCapture is set, the way the railRF status strip and");
+        sb.AppendLine("the harmonicaRF message line do. Text:");
+        foreach (var f in findings) sb.AppendLine($"  line {f.Line}: {f.Element} — \"{f.Snippet}\"");
+        return sb.ToString();
+    }
+
     /// <summary>The blocking-failure message: name the file, and name every element.</summary>
     public static string Explain(string file, IReadOnlyList<Finding> findings)
     {

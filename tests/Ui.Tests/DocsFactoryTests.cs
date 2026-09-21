@@ -947,4 +947,58 @@ public class DocsFactoryTests
         Assert.True(cards >= 0 && cards < hero && hero < prose,
             "The landing page's search box is not between the guide cards and \"What is circuitRF?\".");
     }
+
+    // ── The measurement lint (2026-09-21) ─────────────────────────────────────
+
+    /// <summary>
+    /// <b>No committed figure or page states a number that measures the machine.</b>
+    ///
+    /// <para>A solve count, a frame rate or an elapsed time is a property of the box the generator
+    /// ran on, so it differs on every regeneration and its diff can never be attributed. Eight
+    /// figures and two pages churned this way for months — the harmonicaRF instrument read
+    /// <c>40 HB solves</c> one run and <c>813 HB solves</c> the next, the railRF status strip
+    /// <c>414.9 ms</c> then <c>400.3 ms</c>. The generator now refuses to write one; this is the
+    /// gate that says none survived in the committed set, which is the part a capture-time check
+    /// cannot tell you.</para>
+    /// </summary>
+    [Fact]
+    public void NoCommittedFigureOrPageStatesAMeasurementOfTheMachine()
+    {
+        var offenders = new List<string>();
+        foreach (var f in AllSvgs().Concat(AllPages()))
+        {
+            var found = SvgLint.Measurements(File.ReadAllText(f));
+            if (found.Count > 0)
+                offenders.Add($"{Path.GetFileName(f)}: "
+                            + string.Join(", ", found.Select(x => $"\"{x.Snippet}\" ({x.Element})")));
+        }
+
+        Assert.True(offenders.Count == 0,
+            "These committed documents state a measurement of the machine, so they change on every "
+          + "regeneration:\n  " + string.Join("\n  ", offenders)
+          + "\nSuppress the number while UiArtworkGenerator.HeadlessCapture is set — see "
+          + "RailRfViewModel.StatusLine and HarmonicaView's idle summary.");
+    }
+
+    /// <summary>
+    /// The lint recognises the two shapes that actually churned, and leaves a number that is a
+    /// SETTING alone. A pattern that fired on "10 ms" in a rise-time field would be muted within a
+    /// week, so the distinction is the test.
+    /// </summary>
+    [Fact]
+    public void TheMeasurementLintCatchesASolveCountAndAnElapsedTimeAndNothingElse()
+    {
+        static string Svg(string text) =>
+            $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><text>{text}</text></svg>";
+
+        Assert.Single(SvgLint.Measurements(Svg("40 HB solves · 61 \u0393 points")));
+        Assert.Single(SvgLint.Measurements(Svg("Fast model · 414.9 ms · 20 \u00B0C")));
+        Assert.Single(SvgLint.Measurements(Svg("61 fps")));
+
+        // Skia breaks a run over lines; the lint joins before matching or it sees two fragments.
+        Assert.Single(SvgLint.Measurements(Svg("\n\t\tFast model \u00B7 414.9\n\t\tms\n")));
+
+        Assert.Empty(SvgLint.Measurements(Svg("Rise time")));
+        Assert.Empty(SvgLint.Measurements(Svg("1.5 GHz \u00B7 50 \u03A9 \u00B7 3 dB")));
+    }
 }

@@ -210,6 +210,14 @@ public static class UiArtworkGenerator
         if (findings.Count > 0 && !LintDiagnosticMode)
             throw new InvalidOperationException(SvgLint.Explain(Path.GetFileName(path), findings));
 
+        // A number that measures the machine makes this figure differ on every regeneration, and
+        // the diff is unattributable once it is committed. Blocking for the same reason the paint
+        // lint is: the only symptom is churn, and churn is what nobody investigates.
+        var measured = SvgLint.Measurements(svg);
+        if (measured.Count > 0 && !LintDiagnosticMode)
+            throw new InvalidOperationException(
+                SvgLint.ExplainMeasurements(Path.GetFileName(path), measured));
+
         File.WriteAllText(path, Banner(path) + svg + "\n");
         return path;
     }
@@ -261,8 +269,8 @@ public static class UiArtworkGenerator
     ///   <item><b>Keyframe animations</b> declared in a control theme (an Expander's chevron is the
     ///   one that bites here) cannot be cleared and do not care about the transition collection. They
     ///   are driven by the animation clock, and the clock is advanced by the RENDER TIMER — not by
-    ///   pumping the dispatcher. So the capture ticks the timer past the animation's duration, and
-    ///   the animation lands on its final keyframe. That value is the same on every machine and every
+    ///   pumping the dispatcher. So the capture makes REAL TIME PASS and then ticks the timer, which
+    ///   lands the animation on its final keyframe. That value is the same on every machine and every
     ///   run, which is the property that matters; the elapsed time it took to get there is not.</item>
     /// </list>
     ///
@@ -271,11 +279,19 @@ public static class UiArtworkGenerator
     /// bootstrap lives in <c>tools/DocGen</c> for exactly that reason (see
     /// <c>docs/design/user-docs-factory.md</c> §7). <see cref="AdvanceFrames"/> is the seam.</para>
     ///
-    /// <para><b>Three earlier attempts are recorded in <c>src/Ui/RESOLVED.md</c> and none of them was
-    /// this one</b>: clearing <c>Transitions</c> (a keyframe animation is not a transition), an
-    /// application-level style setting <c>Transitions</c> to null (a control theme's setters outrank
-    /// <c>Application.Styles</c>), and sleeping 450 ms (the clock does not advance on dispatcher
-    /// pumping alone — which is the observation that points straight at the render timer).</para>
+    /// <para><b>FOUR earlier attempts are recorded in <c>src/Ui/RESOLVED.md</c> and each had exactly
+    /// half of this one</b>: clearing <c>Transitions</c> (a keyframe animation is not a transition),
+    /// an application-level style setting <c>Transitions</c> to null (a control theme's setters
+    /// outrank <c>Application.Styles</c>), sleeping 450 ms with nothing ticking (the clock does not
+    /// advance on dispatcher pumping alone), and — the one that looked right for a year — ticking the
+    /// render timer 600 times with no time passing. <b>Ticking is not the same as advancing.</b>
+    /// <c>AvaloniaHeadlessPlatform.ForceRenderTimerTick(n)</c> calls the timer's <c>ForceTick</c>
+    /// n times, and <c>ForceTick</c> raises <c>tick(stopwatch.Elapsed)</c> — a REAL clock. Six
+    /// hundred ticks in a tight loop therefore all report the same instant and the animation clock
+    /// advances by nothing at all, so whether the chevron was settled came down to how much wall
+    /// time happened to have passed since the Expander was realised. That is the churn: the same
+    /// figure emits <c>translate(495 821)</c> on one run and <c>matrix(0.9949 0.1011 …)</c> on the
+    /// next. Sleeping supplies the time; ticking delivers it. Neither works alone.</para>
     /// </summary>
     private static void SettleAnimations(Visual root)
     {
@@ -287,20 +303,32 @@ public static class UiArtworkGenerator
 
         if (AdvanceFrames is { } advance)
         {
-            advance(SettleFrames);
+            // One tick to establish the clock's baseline, then real time, then a tick that reports
+            // it. The pair is the whole fix; see the remarks above for why either half is inert.
+            advance(1);
+            Pump();
+            System.Threading.Thread.Sleep(SettleDelay);
+            advance(SettleTicks);
             Pump();
         }
     }
 
     /// <summary>
-    /// How many render-timer frames a capture runs before it reads the tree.
+    /// How much REAL time a capture lets pass before it ticks the render timer and reads the tree.
     ///
     /// <para>Sized to overrun, not to match: the Fluent chevron animations are a quarter-second at
-    /// the longest, and an animation that has finished stays finished, so ticking well past the end
-    /// costs a fraction of a second per run and removes the need to know any control theme's
-    /// durations. Undershooting is the failure that does not announce itself.</para>
+    /// the longest, and an animation that has finished stays finished, so overshooting removes the
+    /// need to know any control theme's durations. Undershooting is the failure that does not
+    /// announce itself. It is charged once per captured scene, not per frame.</para>
     /// </summary>
-    private const int SettleFrames = 600;
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>
+    /// Ticks delivered after <see cref="SettleDelay"/>. More than one because an animator that
+    /// finishes on a pulse can leave a dependent property to be applied on the next one, and a tick
+    /// with no time attached to it is free.
+    /// </summary>
+    private const int SettleTicks = 3;
 
     /// <summary>
     /// Advances the animation clock by N frames. Set once by the headless bootstrap

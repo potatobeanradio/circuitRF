@@ -11,6 +11,7 @@ using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Pdn;
+using CircuitRF.Ui.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -807,7 +808,11 @@ public sealed partial class RailRfViewModel
         {
             var parts = new List<string>(6) { ModelKindText };
 
-            if (ElapsedText.Length > 0) parts.Add(ElapsedText);
+            // R-doc: the elapsed time measures the machine, not the design. It is the point of the
+            // strip on screen — the cost of Accuracy before it is pressed — and it is pure churn in
+            // a committed doc figure, which read 414.9 ms one regeneration and 400.3 ms the next.
+            // Suppressed only while the docs factory is capturing; SvgLint.Measurements is the gate.
+            if (ElapsedText.Length > 0 && !UiArtworkGenerator.HeadlessCapture) parts.Add(ElapsedText);
             parts.Add($"{_document.Settings.CopperTemperatureCelsius:0.#} °C");
             parts.Add("reference " + ExtentText(ReferenceExtent));
 

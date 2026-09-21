@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Harmonica;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
 using CircuitRF.Ui.Schematic;
@@ -210,8 +211,15 @@ public partial class HarmonicaView : UserControl
         // every case the owner can be inside. The line is restored by the very next Refresh after
         // release, so a solve error raised mid-drag is still reported — one frame later, when it can
         // be read.
+        // The solve count is a MEASUREMENT of this run, not of the instrument: how much of the
+        // background solve had finished when the tree was read. On screen that is exactly what a
+        // user wants; drawn into a committed doc figure it read 40 one regeneration and 813 the
+        // next, which is churn nobody can attribute. Everything else in the summary is a property
+        // of the frame and stays. SvgLint.Measurements is the gate that keeps it out.
+        string solves = UiArtworkGenerator.HeadlessCapture
+            ? "" : $"{h.LastSolveCount} HB solves · ";
         MessageText.Text = MessageLineText(Canvas.Gesture is { IsLive: true }, h.StatusMessage,
-            $"{h.LastSolveCount} HB solves · {h.Frame.SmithPower.GridPoints.Count} Γ points · " +
+            $"{solves}{h.Frame.SmithPower.GridPoints.Count} Γ points · " +
             $"{h.Frame.SmithPower.GridPoints.Count(p => p.IsHole)} holes · {h.Frame.Quality}");
 
         // §3 (R1C) — "Solving…" plus an inline bar, shown only for a frame that actually sweeps a

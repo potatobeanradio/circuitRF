@@ -3,6 +3,88 @@
 Same pattern as the other `RESOLVED.md` files in this repo: a completed investigation's detail lands
 here, and `CLAUDE.md` stays for durable, still-true conventions only.
 
+## Docs churn: 41 of 54 "drifted" files were not drift, and the workaround was the mechanism (2026-09-21)
+
+The owner's question was why a one-file change still prints a hundred-file docs diff, weeks after it
+was raised. Answered by measurement, not inspection: two full runs at a clean HEAD with **nothing
+changed**.
+
+| | files |
+|---|---|
+| differ from HEAD after one run | 54 (a second run: 56) |
+| differ between run 1 and run 2 — genuinely nondeterministic | **15** |
+| stable across runs but differ from HEAD — **stale committed output** | **41** |
+| pure Skia id-renumbering churn | **0** — `SvgPostPass.ScopeIds` works |
+
+**The 41 are the finding.** They are what HEAD's code draws, reverted by hand on earlier commits
+under the "classify the churn and put the rest back" workflow that the old `CLAUDE.md` note
+prescribed. Each revert makes that figure permanently stale, so it returns on every later run: the
+workaround does not reduce the diff, it *is* the diff, and it grows. HEAD's own commit `358e1322`
+says so in as many words — it added a Footprint button to the layout toolbar, committed
+`toolbar-layout*.svg` and `reference/layout-editor.html` with the new button, and put back
+`layout-editor.svg`, `layout-rulers.svg`, `wbond-layout.svg`, `wbond-editor.svg` and
+`drc-violations.svg`, the five window figures that draw that same toolbar.
+
+Worse than churn: the committed `reference/layout-editor.html` **inlines a newer copy of the
+layout-editor figure than the standalone `assets/figures/layout-editor.svg` beside it** — verified
+by extracting the inlined region and matching the new icon's path data (present in the page, absent
+in the file). Both are published to Pages, so the chapter shipped a screenshot that disagreed with
+the button table printed next to it.
+
+### The 15 that really were nondeterministic — three causes
+
+**ND-1, the Expander chevron** (`antenna-patch-em-setup{,-dark}`, `em-setup-loaded{,-dark}` and the
+two pages inlining them). `translate(495 821)` on one run, `matrix(0.9949 0.1011 …)` on the next.
+The fix that was already in the tree **cannot work**, and the reason is worth keeping:
+`UiArtworkGenerator.SettleAnimations` called `AvaloniaHeadlessPlatform.ForceRenderTimerTick(600)`
+believing it advanced 600 frames of animation time. Decompiled `Avalonia.Headless` 12.0.3:
+`ForceRenderTimerTick(n)` loops `ForceTick()` n times and `ForceTick` raises `tick(st.Elapsed)`,
+where `st` is a real `Stopwatch` started when the timer started. Six hundred ticks in a tight loop
+all report the same instant, so the animation clock advances by nothing. Whether the chevron was
+settled came down to how much wall time happened to have passed since the Expander was realised.
+The file's own remarks listed three earlier failed attempts including `Thread.Sleep(450)` — sleeping
+failed because nothing ticked, ticking fails because no time passes, and **nobody combined them**.
+Fixed by ticking once, sleeping 400 ms, then ticking again. `Avalonia.Animation.Clock`/`ClockBase`
+would be the clean way to control the time directly; both are `internal`, so this is the seam there
+is.
+
+**ND-2, a live solve count.** `harmonica-instrument{,-dark}` drew `40 HB solves` one run and
+`813 HB solves` the next — how much of the background solve had finished when the tree was read.
+
+**ND-3, a live elapsed time (new, never catalogued).** The railRF status strip drew `414.9 ms` then
+`400.3 ms`, in `railrf-window`, `railrf-impedance` and `railrf-classification`, both themes, plus
+`railrf.html`.
+
+ND-2 and ND-3 are one bug class — a figure stating a number that measures the machine — and neither
+had any fix at all. Both are now suppressed while `UiArtworkGenerator.HeadlessCapture` is set; the
+application keeps showing them, because on screen they are the point.
+
+The two nondeterministic families that did **not** reproduce: no `/var/folders` "Opened" row in the
+workspace figures, and no one-pixel drift anywhere.
+
+### What was changed
+
+1. **`SvgLint.Measurements` + `ExplainMeasurements`** — a blocking lint, beside the dropped-paint
+   one, over four patterns: a solve count, a frame rate, and an elapsed time in `ms` or `µs`.
+   **Validated before it was turned on**: those patterns match the eight offending figures and
+   nothing else in 766 committed files, so there is no allow-list to argue about. The next figure
+   that prints a measurement fails the run by name instead of arriving as unattributable churn.
+2. **`SettleAnimations`** — tick, sleep past the longest animation, tick. Costs 400 ms per captured
+   scene; the whole run measured **4 min 09 s** afterwards, at 25 % CPU.
+3. **The two measurements suppressed** at `HarmonicaView.axaml.cs`'s idle summary and
+   `RailRfViewModel.StatusLine`.
+4. **`check-docs-current.sh` rewritten** — it now also refuses a dirty tree, fails on anything
+   written OUTSIDE `docs/user` (the generator has rewritten `examples/**/*.csch` on the way out
+   before), fails on untracked output, and says in its failure text not to revert.
+5. **`.github/workflows/docs-current.yml`** — the check had never run anywhere.
+   `user-docs.yml` only *publishes* `docs/user`. It runs on **macOS on purpose**: the figures carry
+   real text and the substitution report names Lucida Grande, Apple Symbols, Zapf Dingbats and
+   Helvetica, so a Linux runner would redraw every label and report the whole set as changed. If a
+   runner-image bump ever turns it red purely on text metrics, pin the image or retire the job —
+   do not go back to reverting figures.
+6. **The 41 stale files regenerated and committed**, which is what makes the diff zero rather than
+   merely smaller.
+
 ## Smith Chart figures with no wires — not a figure bug, and not a stale page either (2026-09-20)
 
 The second "something is missing from a figure" report in three days, with the answer in a third
