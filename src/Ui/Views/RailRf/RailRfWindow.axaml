@@ -940,12 +940,24 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Where there is neither a board file nor a netlist, the pick is made on
-                                 the board itself. The GESTURE is the canvas's; this says so, because a
-                                 pane with no pick list and no sentence reads as a missing feature. -->
+                            <!-- Where nothing named a net, the pick is made on the board itself. The
+                                 GESTURE is the canvas's; this says so, because a pane with no pick
+                                 list and no sentence reads as a missing feature.
+
+                                 R-ab2-4b: CONDITIONAL. It must not be printed over a board whose
+                                 nets came from a schematic, because it is then a false statement
+                                 about the model — and nothing fails when a false sentence is
+                                 printed. -->
                             <TextBlock Classes="note" Margin="0,0,0,6"
                                        IsVisible="{Binding HasNoPickableNets}"
                                        Text="No board netlist named any nets, so pick the rail by clicking its pour on the board. railRF will not guess a net name."/>
+
+                            <!-- R-ab2-4d: where the names came from. A netlist, a schematic and a
+                                 stamp on the copper are three different claims, and a reader is
+                                 entitled to know which one the list above is. -->
+                            <TextBlock Classes="note" Margin="0,0,0,6"
+                                       IsVisible="{Binding HasNetOriginText}"
+                                       Text="{Binding NetOriginText}"/>
 
                             <!-- ── Sources: a LIST, with add and remove ───────────────── -->
                             <Border Classes="card">

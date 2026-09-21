@@ -56,15 +56,24 @@ public static class PdnLayoutPads
     /// written against a hand-placed part will spell.</param>
     /// <param name="notes">Appended with one sentence per instance that contributed nothing for a
     /// reason worth stating. <b>Returned, never posted</b> — this project's own rule.</param>
-    /// <remarks>
-    /// <b>Nets are not this brief's</b> (scope). Every pad here comes out with <c>Net</c> null, which
-    /// is already a representable state and is exactly what a board with placement and no netlist
-    /// produces today.
-    /// </remarks>
+    /// <param name="portNetsOf">The nets those same ports bind, IN THE SAME ORDER — brief 2's
+    /// R-ab2-1c, <c>Instance.NetBindings</c> verbatim. Supplied together with
+    /// <paramref name="portNamesOf"/> by one builder, so the "same order" contract is held at one
+    /// site rather than asserted at two.</param>
+    /// <param name="stamped">The board's copper partitioned and joined to the names its shapes
+    /// state — brief 2's R-ab2-2. Consulted only where the schematic did not answer, which is the
+    /// owner's rule of 2026-09-20 in one line of code.</param>
+    /// <param name="extents">Filled, when supplied, with each pad's own extent in DBU — the
+    /// footprint pin's stated width. It is a side channel rather than a seventh member of
+    /// <see cref="PdnPad"/> because a netlist pad has no extent to state, and the one consumer is
+    /// <c>PdnBoardDivergence</c>'s position comparison.</param>
     public static IReadOnlyList<PdnPad> PadsOf(
         LayoutView view, string? clayPath, Technology? tech,
         Func<string, IReadOnlyList<string>>? portNamesOf = null,
-        List<string>? notes = null)
+        List<string>? notes = null,
+        Func<string, IReadOnlyList<string>>? portNetsOf = null,
+        PdnCopperPieces? stamped = null,
+        IDictionary<PdnPad, long>? extents = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         if (view.Instances.Count == 0 || clayPath is not { Length: > 0 }) return [];
@@ -102,8 +111,11 @@ public static class PdnLayoutPads
             var pins = CellPins.Resolve(subView, tech);
             if (pins.Count == 0) continue;
 
-            var names = JoinPinsToPorts(inst, refdes, pins, portNamesOf, notes);
-            if (names is null) continue;   // a partial name match — refused, never filled in
+            IReadOnlyList<string> ports = Lookup(portNamesOf, inst.SchematicId);
+            IReadOnlyList<string> nets  = Lookup(portNetsOf,  inst.SchematicId);
+
+            var joined = JoinPinsToPorts(inst, refdes, pins, ports, nets.Count, notes);
+            if (joined is null) continue;   // a partial name match — refused, never filled in
 
             // R-ab1-1d. An ARRAY placement produces one pad per pin per cell, and the refdes is the
             // same on all of them. That is correct and worth stating, because a via fence placed as a
@@ -114,7 +126,27 @@ public static class PdnLayoutPads
             for (int i = 0; i < pins.Count; i++)
             {
                 var (x, y) = LayoutInstanceTransform.TransformPoint(pins[i].X, pins[i].Y, inst, r, c);
-                pads.Add(new PdnPad(refdes, names[i], null, x, y, PdnPadSource.Artwork));
+                int port = joined[i];
+
+                // The PORT's own spelling where it has one, so an anchor written against the
+                // schematic resolves whatever case the artwork used; the PIN's where it does not,
+                // because a nameless port has no name to give and `U1.1` is what an anchor written
+                // against a generated chip land will spell (R-ab1-4d's reasoning, per port).
+                string? name = port >= 0 && port < ports.Count && ports[port].Length > 0
+                    ? ports[port]
+                    : pins[i].Name is { Length: > 0 } pn ? pn : null;
+
+                // THE RULE, IN ONE LINE (brief 2 §0): the schematic's own binding where a schematic
+                // resolves, else the net stated on the copper this pad lands on — on its OWN layer
+                // (R-ab2-2d). A pad on unnamed copper stays unnamed, which is representable and is
+                // what a board with placement and no netlist produces today.
+                string? net = port >= 0 && port < nets.Count && nets[port] is { Length: > 0 } bound
+                    ? bound
+                    : stamped?.NameAt(x, y, pins[i].Layer);
+
+                var pad = new PdnPad(refdes, name, net, x, y, PdnPadSource.Artwork);
+                pads.Add(pad);
+                if (extents is not null && pins[i].WidthDbu > 0) extents[pad] = pins[i].WidthDbu;
             }
         }
 
@@ -131,10 +163,16 @@ public static class PdnLayoutPads
     /// point is how <c>PdnRailRegions</c> learns that a pour it reached is the rail's. The root's
     /// vias are in <see cref="LayoutView.Shapes"/> and need no transform.
     ///
-    /// <para>Until brief 2 names them, an artwork pad's <c>Net</c> is null, so on most boards this
-    /// returns the vias alone. That is the honest answer and not an empty one.</para>
+    /// <para><b>A via FOLLOWS ITS PIECE</b> (R-ab2-2e). Before brief 2 a via contributed a point
+    /// only where somebody had stamped that very via, which on a stitching fence means stamping
+    /// thirty of them; now naming the trace they land on names them all, which is what lets
+    /// <c>PdnRailRegions</c> recognise an inner-layer pour it reached. The via's OWN stamp still
+    /// wins where it has one — it is the more specific statement.</para>
     /// </remarks>
-    public static IReadOnlyList<PdnNetPoint> NetPointsOf(LayoutView view, IReadOnlyList<PdnPad> pads)
+    /// <param name="stamped">The partition, where one was built. Null leaves the pre-brief-2
+    /// behaviour exactly as it was.</param>
+    public static IReadOnlyList<PdnNetPoint> NetPointsOf(
+        LayoutView view, IReadOnlyList<PdnPad> pads, PdnCopperPieces? stamped = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(pads);
@@ -146,8 +184,13 @@ public static class PdnLayoutPads
                 points.Add(new PdnNetPoint(net, pad.X, pad.Y));
 
         foreach (var shape in view.Shapes)
-            if (shape is ViaShape via && via.Net is { Length: > 0 } viaNet)
-                points.Add(new PdnNetPoint(viaNet, via.X, via.Y));
+        {
+            if (shape is not ViaShape via) continue;
+            // Any layer, deliberately: a via IS the thing that joins them, so asking which one it is
+            // on is the wrong question.
+            string? net = via.Net is { Length: > 0 } own ? own : stamped?.NameAt(via.X, via.Y, null);
+            if (net is { Length: > 0 }) points.Add(new PdnNetPoint(net, via.X, via.Y));
+        }
 
         return points;
     }
@@ -161,40 +204,48 @@ public static class PdnLayoutPads
     // asymmetric part is a wrong inductance that looks entirely normal (overview §1c).
 
     /// <summary>
-    /// The name each pin's pad takes, in <paramref name="pins"/>' order, or <c>null</c> to contribute
-    /// nothing at all.
+    /// Which PORT each pin is, in <paramref name="pins"/>' order — <c>-1</c> where nothing answered,
+    /// or <c>null</c> to contribute nothing at all.
     /// </summary>
-    private static string?[]? JoinPinsToPorts(
+    /// <remarks>
+    /// <b>Indices rather than names</b> since brief 2: the pin's NAME and the pin's NET are two
+    /// answers off one join, and computing the join twice is how the two would come to disagree
+    /// about which pad is which port (<c>Instance.NetBindings</c> is in port order, so the net is
+    /// simply <c>nets[port]</c>).
+    /// </remarks>
+    /// <param name="portCount">How many ports the component has, which is the greater of the two
+    /// lists the caller supplied — a primitive declares no port NAMES and still binds a net per
+    /// port, and the index branch below needs the count either way.</param>
+    private static int[]? JoinPinsToPorts(
         LayoutInstance inst, string refdes, IReadOnlyList<LayoutPin> pins,
-        Func<string, IReadOnlyList<string>>? portNamesOf, List<string>? notes)
+        IReadOnlyList<string> ports, int netCount, List<string>? notes)
     {
-        IReadOnlyList<string> ports =
-            inst.SchematicId is { Length: > 0 } id && portNamesOf is not null
-                ? portNamesOf(id) ?? []
-                : [];
+        int portCount = Math.Max(ports.Count, netCount);
+
+        var idx = new int[pins.Count];
+        Array.Fill(idx, -1);
 
         // R-ab1-4d. No SchematicId, so no ports to join to: pads come out named by their PIN NAME
         // alone. `U1.1` resolves and `U1.VDD` does not, and that is honest — nothing on that board
         // ever said VDD.
-        if (ports.Count == 0) return ByPinName(pins);
+        if (portCount == 0) return idx;
 
         // R-ab1-4a. By NAME first — ordinal, case-insensitive, the comparison PdnMountingLoop already
         // uses for refdes and net.
-        var matched = new string?[pins.Count];
         int hits = 0;
         for (int i = 0; i < pins.Count; i++)
         {
-            foreach (string port in ports)
-                if (port.Length > 0 &&
-                    string.Equals(pins[i].Name, port, StringComparison.OrdinalIgnoreCase))
+            for (int p = 0; p < ports.Count; p++)
+                if (ports[p].Length > 0 &&
+                    string.Equals(pins[i].Name, ports[p], StringComparison.OrdinalIgnoreCase))
                 {
-                    matched[i] = port;   // the PORT's own spelling, so an anchor written against the
-                    hits++;              // schematic resolves whatever case the artwork used
+                    idx[i] = p;
+                    hits++;
                     break;
                 }
         }
 
-        if (hits == pins.Count) return matched;
+        if (hits == pins.Count) return idx;
 
         // R-ab1-4c. A PARTIAL name match is a REFUSAL, never a fill-in. Two pins named A and K
         // against ports named A and anode: one matches, one does not, and completing it by index is a
@@ -215,29 +266,26 @@ public static class PdnLayoutPads
         // Safe precisely because R-fp3-5 has already refused any instance whose counts differ; a
         // generated chip land (pins "1" and "2" against unnamed ports) takes this branch and it is
         // the common case.
-        if (ports.Count == pins.Count)
+        if (portCount == pins.Count)
         {
-            for (int i = 0; i < pins.Count; i++) matched[i] = ports[i].Length > 0 ? ports[i] : null;
-            return matched;
+            for (int i = 0; i < pins.Count; i++) idx[i] = i;
+            return idx;
         }
 
         // The counts disagree, which R-fp3-5 refuses at placement and which a hand-placed instance
         // can still carry. Index is not available and no name matched, so the pads are named by their
         // own pins and the disagreement is stated rather than resolved.
         notes?.Add(
-            $"{refdes} sits on a footprint with {pins.Count} pin(s) against {ports.Count} port(s) on " +
+            $"{refdes} sits on a footprint with {pins.Count} pin(s) against {portCount} port(s) on " +
             "the component it names, so its pads are named after the footprint's own pins rather " +
             "than after the component's ports.");
-        return ByPinName(pins);
+        return idx;
     }
 
-    private static string?[] ByPinName(IReadOnlyList<LayoutPin> pins)
-    {
-        var names = new string?[pins.Count];
-        for (int i = 0; i < pins.Count; i++)
-            names[i] = pins[i].Name is { Length: > 0 } n ? n : null;
-        return names;
-    }
+    /// <summary>The delegate's answer for one instance, or an empty list — never null.</summary>
+    private static IReadOnlyList<string> Lookup(
+        Func<string, IReadOnlyList<string>>? source, string? schematicId) =>
+        schematicId is { Length: > 0 } id && source is not null ? source(id) ?? [] : [];
 
     private static string Names(IReadOnlyList<LayoutPin> pins) =>
         string.Join(", ", pins.Select(p => p.Name is { Length: > 0 } n ? n : "(unnamed)"));

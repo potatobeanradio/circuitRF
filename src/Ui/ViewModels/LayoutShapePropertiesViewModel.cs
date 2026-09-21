@@ -308,11 +308,22 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    /// <summary>
+    /// Sets <c>Net</c> across the selection — one undo entry.
+    /// </summary>
+    /// <remarks>
+    /// <b>Through <see cref="LayoutEditorViewModel.SetNetOnShapes"/> rather than
+    /// <see cref="ApplyToEach{T}"/> since brief 2</b> (R-ab2-3a). The canvas's Name Net… gesture
+    /// writes the same field, and two writers of one field is how the panel and the gesture would
+    /// come to disagree about what one undo entry covers. The body is the same
+    /// <c>SetShapeFieldCommand</c>/<c>CompositeCommand</c> fold this method used before; it simply
+    /// lives where both callers can reach it.
+    /// </remarks>
     public void CommitNetText(string text)
     {
-        if (DragBlocksEdits()) return;
+        if (DragBlocksEdits() || _vm is null) return;
         string? newNet = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-        ApplyToEach<string?>("Net", s => s.Net, (s, v) => s.Net = v, newNet);
+        _vm.SetNetOnShapes(_selected, newNet);
         RefreshFromVm();
     }
 

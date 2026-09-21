@@ -281,7 +281,8 @@ internal static class Rail
         // R-ab1-5c: the verb gets an authored board's pads for free, and that is a GATE rather than
         // a side effect — `circuitrf rail board.clay --load U1.VDD=120mA` was refused before this
         // call existed. RailArtwork owns the precedence; this prints what it had to say.
-        var resolvedPads = RailArtwork.PadsFor(board.View, board.ClayPath, board.Technology, netlist);
+        var resolvedPads = RailArtwork.PadsFor(
+            board.View, board.ClayPath, board.Technology, netlist, null, board.Shapes);
         foreach (string d in resolvedPads.Notes)
         {
             if (board.FlattenNotes.Contains(d)) continue;

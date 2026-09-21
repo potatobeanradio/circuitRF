@@ -1,5 +1,64 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Authored board brief 2 — net identity, and the four things that were silent (2026-09-20)
+
+The window half — the pick list, the sentence that had to disappear and the gesture — is in
+`src/Ui/RESOLVED.md`. What is here is the design-layer side: `PdnLayoutNets`, the join that now
+carries two answers, and the four findings that are not in the brief.
+
+### "The ROOT's own shapes" cannot be a reference test, because the flatten hands back clones
+
+R-ab2-2a is the load-bearing rule of the stamped path: a land pattern is one cell shared by every
+placement of it, so a `Net` stamped inside `C0402`'s `.clay` would put thirteen capacitors on one
+net. The obvious implementation is a reference set of `view.Shapes` consulted while walking the
+copper — and the copper railRF partitions is the **flattened** artwork, whose root entries are
+CLONES. The set matches nothing, every stamp is discarded, and every pad comes back unnamed. It
+fails the way this series' own defects fail: the run completes, the answer is plausible, and
+nothing says a name was read and then dropped.
+
+`PdnCopperPieces.Build` takes the stamps as a **separate list** instead and locates each one in the
+partition by its own probe point. That is exact rather than merely safer — a root shape is in the
+root's coordinate frame whether or not somebody cloned it — and it makes the two questions the
+class answers independent: *which piece is this shape on* (indexed over `copper`) and *what is this
+piece called* (read off `stamps`).
+
+### The probe point is a VERTEX, and that is not a shortcut
+
+Locating a shape in the partition needs a point that is certainly on it, for every shape kind
+including a polygon with holes and a via. A centroid needs per-kind arithmetic and is wrong for a
+crescent; a vertex is on the BOUNDARY. `PdnRailRegions.Contains` clips against a 2 DBU square
+straddling the point rather than doing a winding test, for a reason its own note records — a drill
+coordinate is the centre of a HOLE in the copper — and that same property makes a boundary vertex
+meet the piece. So `ProbePointOf` takes the first vertex of the first path `DrcRegions.Expand`
+emits, and there is no per-kind branch anywhere in this file.
+
+### The partition is skipped outright where nothing was stamped, and the two callers differ
+
+`DrcConnectivity.Extract` over a whole flattened board is not free, and until a user stamps
+something there is no name for it to find. `RailArtwork.PadsFor` therefore tests
+`view.Shapes.Any(s => s.Net is { Length: > 0 })` first and hands back `PdnCopperPieces.Empty`, which
+makes brief 2 cost nothing at all on every board that shipped before it — including the Power Rail
+example, whose 58 shapes state no net.
+
+**The layout editor must not take that short cut**, and the reason is worth keeping: it asks the
+partition a different question. railRF asks *what is this piece called*, which is empty by
+inspection when nothing is named. Name Net… asks *what is joined to this*, whose answer is exactly
+as large on a board where nothing is named yet — which is the board the gesture exists for.
+
+### The pin/port join now carries two answers, so it returns INDICES
+
+Brief 1's `JoinPinsToPorts` returned the port NAME each pin takes. A pad's net is
+`NetBindings[port]`, so brief 2 needs the port INDEX as well, and computing the join twice is how
+the name and the net would come to disagree about which pad is which port — the exact swap
+`PdnMountingLoop` cannot detect. It returns `int[]` now, and both answers are read off it.
+
+One behaviour changed with it, deliberately: where a port has **no name**, the pad keeps its own
+PIN's name instead of coming out nameless. A primitive declares no port names at all, so the
+schematic path would otherwise have made `U1.1` stop resolving on every generated chip land the
+moment a schematic appeared beside the board. That is R-ab1-4d's reasoning applied per port rather
+than per instance.
+
+
 ## SMT footprints brief 2 — the `Footprint` parameter, the picker and the third label (2026-09-20)
 
 The schematic half: a stored reference, a combobox, a third label, and nothing electrical seeing

@@ -81,6 +81,21 @@ public sealed record RailBoardInputs
     /// <summary>The reference return's net, where one is named.</summary>
     public string? ReferenceNet { get; init; }
 
+    /// <summary>
+    /// Every net name this board RESOLVED, from all three claims together — the board netlist, the
+    /// schematic beside the artwork, and whatever a user stamped on the copper (R-ab2-4a).
+    /// </summary>
+    /// <remarks>
+    /// <b>The pick list is built from here and not from <c>BoardNetlist.Nets</c> alone.</b> A board
+    /// somebody DREW has always had net names and the window has never offered them — and then told
+    /// the user, in a sentence that nothing fails when it is wrong, that no board netlist had named
+    /// any and to click the pour instead.
+    /// </remarks>
+    public IReadOnlyList<string> Nets { get; init; } = [];
+
+    /// <summary>Which of the three claims named them — what the strip says (R-ab2-4d).</summary>
+    public PdnNetOrigin NetOrigin { get; init; } = PdnNetOrigin.None;
+
     /// <summary>The board outline. Required by <c>FilledToOutline</c>.</summary>
     public Paths64? BoardOutline { get; init; }
 

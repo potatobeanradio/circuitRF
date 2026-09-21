@@ -1358,6 +1358,26 @@ public sealed class LayoutCanvas : Control
             items.Add(refreshCache);
         }
 
+        // ── Name Net… (R-ab2-3a) ───────────────────────────────────────────────────────────────
+        //
+        // Click-target-scoped, the same shape as the bitmap and ruler rows above: present only when
+        // the right-click actually landed on a shape. It writes LayoutShape.Net through the ONE
+        // writer the Properties Inspector's own Net row uses, so the two are one undo entry and one
+        // behaviour — and it is here rather than only in that panel because the thing a user wants
+        // to say is "this pour is +3V3", which is a right-click on the pour and not a text box on a
+        // panel they opened for something else.
+        if (_viewModel.NetNameReachAt(wx, wy, HitTolDbu()) is { } reach)
+        {
+            if (items.Count > 0) items.Add(new Separator());
+            var nameNet = new MenuItem { Header = "Name Net…" };
+            // The reach on the tooltip as well as in the dialog: R-ab2-3c asks that the blast radius
+            // be visible before the gesture is committed to, and hovering the row is earlier than
+            // opening it.
+            ToolTip.SetTip(nameNet, reach.Sentence);
+            nameNet.Click += async (_, _) => await ShowNameNetDialogAsync(reach);
+            items.Add(nameNet);
+        }
+
         AddBooleanAndFlattenMenuItems(items, wx, wy);
         AddInstanceHierarchyMenuItems(items);
 
@@ -1662,6 +1682,24 @@ public sealed class LayoutCanvas : Control
         dialog.Closed += (_, _) => dialogVm.SetContext(null);   // unsubscribe from the layout VM
         if (owner is not null) dialog.Show(owner); else dialog.Show();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Asks for the name and commits it — R-ab2-3. The DIALOG is shown here, the reach was counted
+    /// in the view model, and the write is the view model's one <c>Net</c> writer: no part of this
+    /// gesture knows about another part's half.
+    /// </summary>
+    private async Task ShowNameNetDialogAsync(LayoutNetNameReach reach)
+    {
+        if (_viewModel is null) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var dialog = new Views.Dialogs.NameNetDialog(reach, _viewModel.NetNamesOnBoard());
+        var result = await dialog.ShowDialog<Views.Dialogs.NameNetResult?>(owner);
+        if (result is null) return;   // cancelled — and a cancel writes nothing, not an empty name
+
+        _viewModel.ApplyNetName(reach, result.Net);
+        InvalidateVisual();
     }
 
     private async Task ShowResolveBitmapPathDialogAsync(int shapeIndex)

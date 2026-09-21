@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.NameNetDialog"
+        Title="Name Net"
+        Width="360"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+
+            <!-- R-ab2-3c: the blast radius, BEFORE the commit. A gesture whose reach is invisible
+                 until afterwards is a gesture users stop trusting, and this one's reach is
+                 deliberately large. -->
+            <TextBlock x:Name="ReachText" FontSize="12" TextWrapping="Wrap"/>
+
+            <!-- R-ab2-3b: the names already on the board, plus whatever the user types. A free-text
+                 field over a board that already says +3V3 is how a board acquires +3v3. -->
+            <ComboBox x:Name="NetBox"
+                      IsEditable="True"
+                      FontSize="12"
+                      HorizontalAlignment="Stretch"
+                      KeyDown="OnKeyDown"/>
+
+            <!-- R-ab2-3d: naming a piece that already carries a different name ASKS, naming the
+                 existing one. Two names on one piece of metal is R-ab2-2c's refusal, and this is
+                 where a user finds that out rather than after the fact. -->
+            <TextBlock x:Name="ExistingWarning"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock Text="Clearing the name removes it from every shape this reaches."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Name Net" Width="90" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

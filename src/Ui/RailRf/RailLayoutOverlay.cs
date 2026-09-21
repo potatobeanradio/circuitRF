@@ -387,9 +387,11 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     /// What a left-click on the copper does, or null when clicking the pour means nothing here.
     /// </summary>
     /// <remarks>
-    /// Set by the view model, and only while <c>HasNoPickableNets</c> — the exact condition the
-    /// "pick the rail by clicking its pour" sentence is shown under. Returns true when it made a
-    /// rail, which is what consumes the press.
+    /// Set by the view model wherever a board is loaded (R-ab2-4c) — it is the gesture for THIS
+    /// COPPER HERE, and a board that names its own nets does not make it redundant. It used to be
+    /// armed only while <c>HasNoPickableNets</c>, which brief 2 would have silently taken away from
+    /// the drawn board this whole series is about. Returns true when it made a rail, which is what
+    /// consumes the press.
     /// </remarks>
     public Func<long, long, long, bool>? PourPick { get; set; }
 

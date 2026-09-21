@@ -156,21 +156,24 @@ public static class DocRailFixtures
 
         // R-ab1-5b: the one funnel, so the shipped figures are drawn off exactly the pads the window
         // and the verb resolve.
-        var resolvedPads = RailArtwork.PadsFor(view, clay, technology, netlist);
+        // Flattened, exactly as the window's own open does it: the parts on this board are
+        // instances of footprint cells and their lands are inside them.
+        var flattened = RailArtwork.FlattenedShapes(view, clay, technology);
+        var resolvedPads = RailArtwork.PadsFor(view, clay, technology, netlist, null, flattened);
 
         vm.ApplyImport(
             new RailImportOptions(),
             new RailBoardInputs
             {
-                // Flattened, exactly as the window's own open does it: the parts on this board are
-                // instances of footprint cells and their lands are inside them.
-                Shapes = RailArtwork.FlattenedShapes(view, clay, technology),
+                Shapes = flattened,
                 View = view,
                 Technology = technology,
                 DbuPerMicron = view.DbuPerMicron,
                 ArtworkCellRef = clay,
                 Pads = resolvedPads.Pads,
                 NetPoints = resolvedPads.NetPoints,
+                Nets = resolvedPads.Nets,
+                NetOrigin = resolvedPads.NetOrigin,
                 ReferenceNet = document.ReferenceNet,
             },
             placement: placement,

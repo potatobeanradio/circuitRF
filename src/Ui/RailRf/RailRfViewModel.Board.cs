@@ -162,23 +162,31 @@ public sealed partial class RailRfViewModel
         };
 
         // §2.3 step 2's SECOND route, which the window has always advertised and never wired
-        // (owner, 2026-09-19): with no netlist to name a net, the rail is picked by clicking its
-        // pour. Armed only in that state — see SyncPourPick — so a click on a board that HAS a
-        // pick list goes on reaching the canvas's own marquee and pan untouched.
+        // (owner, 2026-09-19): the rail is picked by clicking its pour. Armed wherever there is a
+        // board — R-ab2-4c — because it is the gesture for THIS COPPER HERE and a board that now
+        // names its nets does not make it redundant. See SyncPourPick.
         SyncPourPick();
     }
 
     /// <summary>
-    /// Arms or disarms the pour pick to match the sentence the specification column is showing.
+    /// Arms the pour pick wherever there is a board to click on.
     /// </summary>
     /// <remarks>
-    /// <b>One condition, read in one place.</b> The note that says "pick the rail by clicking its
-    /// pour on the board" is bound to <c>HasNoPickableNets</c>; this gate is the same property, so
-    /// the sentence and the gesture cannot come apart — which is exactly how they came apart in the
-    /// first place.
+    /// <b>It used to be armed only while <c>HasNoPickableNets</c></b>, so that the gesture and the
+    /// sentence advertising it could not come apart. Brief 2 makes the sentence conditional
+    /// (R-ab2-4b) and would have taken the gesture away with it: a board somebody DREW now resolves
+    /// its nets from the schematic beside it, and the very user this series is for would have lost
+    /// the click that used to work. So R-ab2-4c states the gesture outright — <b>click-the-pour
+    /// keeps working on a board with names and on one without</b>, because it is the gesture for
+    /// THIS COPPER HERE and a named board does not make it redundant.
+    ///
+    /// <para>What it costs is that a left click on a board with a pick list can now make a rail.
+    /// That is the same trade the assisted-Gerber path has always made and the same refusal guards
+    /// it — <see cref="TryPickPourAt"/> declines on bare substrate, and a click that hits nothing
+    /// goes on reaching the canvas's own marquee and pan untouched.</para>
     /// </remarks>
     private void SyncPourPick() =>
-        BoardOverlayLayer.PourPick = HasNoPickableNets ? TryPickPourAt : null;
+        BoardOverlayLayer.PourPick = Board is not null ? TryPickPourAt : null;
 
     /// <summary>
     /// Makes a rail out of the copper under a click, or declines.
@@ -197,7 +205,7 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     private bool TryPickPourAt(long xDbu, long yDbu, long tolDbu)
     {
-        if (!HasNoPickableNets || BoardLayout is not { } canvas) return false;
+        if (Board is null || BoardLayout is not { } canvas) return false;
 
         var hits = LayoutHitTest.HitStack(canvas.Model, canvas.Technology, xDbu, yDbu, tolDbu);
         if (hits.Count == 0) return false;

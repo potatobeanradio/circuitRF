@@ -114,7 +114,11 @@ public sealed partial class RailRfViewModel
                 // resolve its own pads here and in the verb and in the bare-`.clay` open, all three
                 // out of one answer. It applies R-ab1-3's per-refdes precedence, so a document that
                 // ships an `.ipc` is unchanged.
-                var resolvedPads = RailArtwork.PadsFor(view, found.ClayPath, tech, netlist);
+                // `shapes` rather than `view.Shapes`: brief 2's stamped-net partition is built
+                // over the FLATTENED copper, because a board whose parts are footprint cells keeps
+                // every land inside an instance and a pad standing on nothing takes no name.
+                var resolvedPads = RailArtwork.PadsFor(
+                    view, found.ClayPath, tech, netlist, null, shapes);
                 // An instance that does not resolve contributes neither geometry nor pads, and both
                 // walks report it with the SAME sentence (R-ab1-1c) — so it is said once.
                 foreach (string d in resolvedPads.Notes) if (!notes.Contains(d)) notes.Add(d);
@@ -128,6 +132,8 @@ public sealed partial class RailRfViewModel
                     ArtworkCellRef = found.ClayPath,
                     Pads           = resolvedPads.Pads,
                     NetPoints      = resolvedPads.NetPoints,
+                    Nets           = resolvedPads.Nets,
+                    NetOrigin      = resolvedPads.NetOrigin,
                     ReferenceNet   = _document.ReferenceNet,
                 };
                 break;

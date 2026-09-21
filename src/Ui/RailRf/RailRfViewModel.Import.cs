@@ -75,12 +75,14 @@ public sealed partial class RailRfViewModel
         // R-ab1-5b. The one funnel, so an IMPORTED board whose parts are footprint instances
         // resolves its own pads for every refdes the netlist did not name.
         var resolvedPads = RailArtwork.PadsFor(
-            board.View, board.ArtworkCellRef, board.Technology, netlist);
+            board.View, board.ArtworkCellRef, board.Technology, netlist, null, board.Shapes);
 
         Board = board with
         {
             Pads         = resolvedPads.Pads,
             NetPoints    = resolvedPads.NetPoints,
+            Nets         = resolvedPads.Nets,
+            NetOrigin    = resolvedPads.NetOrigin,
             ReferenceNet = _document.ReferenceNet,
         };
         Placement = placement;
@@ -162,18 +164,44 @@ public sealed partial class RailRfViewModel
     private void RebuildAvailableNets()
     {
         AvailableNets.Clear();
-        if (BoardNetlist is { Refusal: null } n)
-            foreach (string net in n.Nets.OrderBy(x => x, StringComparer.Ordinal))
-                AvailableNets.Add(new RailNetRowViewModel(net));
+
+        // ── R-ab2-4a: THE RESOLVED NET SET, NOT THE BOARD NETLIST ALONE ────────────────────────
+        //
+        // A drawn board with a schematic beside it now offers `+3V3` and `GND`, which is the whole
+        // reason a user drew it. `Board.Nets` is RailArtwork's own union of the three claims — the
+        // netlist, the schematic and whatever a user stamped on the copper — so this list and the
+        // pads below it cannot disagree about what the board is called.
+        //
+        // BoardNetlist stays a contributor rather than the source, because OnBoardNetlistChanged
+        // fires on an import before Board is assigned and a list that emptied itself in between
+        // would flicker the pick pane through its no-nets state.
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (string net in Board?.Nets ?? []) names.Add(net);
+        if (BoardNetlist is { Refusal: null } n) foreach (string net in n.Nets) names.Add(net);
+
+        foreach (string net in names) AvailableNets.Add(new RailNetRowViewModel(net));
 
         SelectedNet = null;
         OnPropertyChanged(nameof(HasPickableNets));
         OnPropertyChanged(nameof(HasNoPickableNets));
+        OnPropertyChanged(nameof(NetOriginText));
+        OnPropertyChanged(nameof(HasNetOriginText));
         RefreshNetMarks();
 
         // The gesture follows the sentence — see SyncPourPick's own note.
         SyncPourPick();
     }
+
+    /// <summary>
+    /// Where this board's net names came from — <i>"nets from the schematic"</i>, <i>"nets stated on
+    /// the artwork"</i>, <i>"nets from the board netlist"</i> (R-ab2-4d). Empty where nothing named
+    /// one.
+    /// </summary>
+    public string NetOriginText => PdnNetSummary.Describe(Board?.NetOrigin ?? PdnNetOrigin.None);
+
+    /// <summary>True while there is an origin to state — bound rather than a length, because an
+    /// empty row still takes a line of the strip.</summary>
+    public bool HasNetOriginText => NetOriginText.Length > 0;
 
     /// <summary>The net highlighted in the pick list, or null.</summary>
     [ObservableProperty]
@@ -213,6 +241,19 @@ public sealed partial class RailRfViewModel
     /// <summary>True once a board is loaded and NOTHING named a net, which is the assisted-Gerber
     /// path: the pick is made by clicking the pour instead, and the pane says so rather than showing
     /// an empty list.</summary>
+    /// <remarks>
+    /// <b>The sentence it gates is now CONDITIONAL, and that is R-ab2-4b</b>. It stays exactly as it
+    /// is for a board that names nothing. It must not be printed over a board whose nets came from a
+    /// schematic, because it is then a false statement about the model — and NOTHING FAILS WHEN A
+    /// FALSE SENTENCE IS PRINTED, which is railRF brief 25's R-rail25-4b trap in its second
+    /// instance. The condition needed no change: <see cref="AvailableNets"/> is built from the
+    /// RESOLVED net set now, so a board with schematic nets is no longer empty here. What needed a
+    /// test is the sentence's ABSENCE, and it would not have been missed any other way.
+    ///
+    /// <para><b>Click-the-pour keeps working either way</b> (R-ab2-4c). It is the gesture for
+    /// <i>this copper here</i>, and a named board does not make it redundant — see
+    /// <c>SyncPourPick</c>, which is what actually arms it.</para>
+    /// </remarks>
     public bool HasNoPickableNets => Board is not null && AvailableNets.Count == 0;
 
     /// <summary>True while a net is highlighted, which is the only state the pick button can act in.</summary>

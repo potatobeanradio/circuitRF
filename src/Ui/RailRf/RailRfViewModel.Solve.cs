@@ -66,7 +66,16 @@ public sealed partial class RailRfViewModel
         InvalidateNetWalks();
         OnPropertyChanged(nameof(HasBoard));
         AnnounceImpedanceMap();
-        OnPropertyChanged(nameof(HasNoPickableNets));
+
+        // ── THE SAME SCAR, A THIRD TIME ────────────────────────────────────────────────────────
+        //
+        // AvailableNets was rebuilt only by AdoptImport, so an OPENED document's pick list was
+        // empty; the fix was to rebuild it from the BoardNetlist setter. Brief 2 moves the net names
+        // onto the BOARD — a schematic beside the artwork, a stamp on the copper — and a board with
+        // no companion netlist never touches that setter, so opening a drawn board would have left
+        // the list empty again and printed the same false sentence over it. A derived list follows
+        // EVERY write to what derives it.
+        RebuildAvailableNets();
         SyncPourPick();
         OnPropertyChanged(nameof(TechnologyPath));
         OnPropertyChanged(nameof(HasTechnologyFile));
@@ -760,6 +769,11 @@ public sealed partial class RailRfViewModel
             // their netlist is two parts stale. One spelling, shared with the export banner.
             if (Board is { Pads.Count: > 0 } withPads)
                 parts.Add(PdnPadSummary.Describe(withPads.Pads));
+
+            // R-ab2-4d, beside it and in the same shape: a netlist, a schematic and a stamp on the
+            // copper are three different claims, and a reader of the numbers below is entitled to
+            // know which one named the rail they picked.
+            if (NetOriginText.Length > 0) parts.Add(NetOriginText);
 
             if (IsSolving) parts.Add(BusyText);
 

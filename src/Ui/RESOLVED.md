@@ -1,5 +1,44 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Authored board brief 2 — the window half of net identity (2026-09-20)
+
+The design-layer half — `PdnLayoutNets`, the partition and the pin/port join — is in
+`src/Design/RESOLVED.md`. Three window-side findings, two of which are the same scar in new places.
+
+### `AvailableNets` had a THIRD writer it did not follow
+
+The list was rebuilt only by `AdoptImport`, so an OPENED `.crail` had an empty pick list; that was
+fixed by rebuilding it from the `BoardNetlist` setter, on the rule that a derived list follows the
+write to what derives it. Brief 2 moves net names onto the **board** — a schematic beside the
+artwork, a stamp on the copper — and a board with no companion netlist never touches that setter.
+So the first drawn board opened with schematic nets resolved, pads named, and an empty pick list
+under the sentence saying no board netlist had named any nets. `OnBoardChanged` rebuilds it too
+now. Both writers, not one and then the other.
+
+### Making the sentence conditional would have silently removed the gesture
+
+`SyncPourPick` armed click-the-pour only while `HasNoPickableNets`, deliberately: the note
+advertising the gesture is bound to the same property, so the two could not come apart. Brief 2
+makes that property false for a drawn board — which is the whole point — and the gesture would have
+gone with it, for exactly the user this series is for. R-ab2-4c states it outright instead: the pour
+pick is armed wherever a board is loaded, because it is the gesture for *this copper here* and a
+board that names its nets does not make it redundant. `TryPickPourAt` still declines on bare
+substrate, so a click that hits nothing reaches the canvas's marquee and pan as before.
+
+`RailWindowTests.OpeningADocumentWhoseNetlistNamesNets_FillsThePickList` asserted the old gating
+directly and now asserts the new one, with the reason in place.
+
+### Name Net… needed no writer, because `CommitNetText`'s was moved rather than copied
+
+R-ab2-3a asks for one undo entry through the same setter. The gesture extends the selection over the
+connected piece and writes, which is the multi-select path the Properties Inspector's Net row has
+always used — so the fold of one `SetShapeFieldCommand` per shape into one `CompositeCommand` now
+lives on `LayoutEditorViewModel.SetNetOnShapes`, and the panel calls it. `ApplyToEach` is unchanged
+for every other field. Extending the SELECTION is also what makes the reach visible after the fact,
+which is the other half of R-ab2-3c's promise: the sentence says what it will touch, and the
+selection then shows what it did.
+
+
 ## railRF brief 23 — the mount gesture, and the baseline that makes Compare useful in one document (2026-09-20)
 
 The design-layer half — the flag, the format, the exclusion and the cross-check against Q2's own

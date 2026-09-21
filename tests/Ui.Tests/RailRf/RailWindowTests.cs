@@ -1930,10 +1930,14 @@ public class RailWindowTests
         // The other half, and it is the half the user actually saw.
         Assert.False(vm.HasNoPickableNets);
 
-        // AND THE GESTURE FOLLOWS THE SENTENCE. The pour pick is armed only in the state that note
-        // describes, so the two cannot come apart again — which is how they came apart: the note
-        // was shown on every opened document and the click it names was never wired at all.
-        Assert.Null(vm.BoardOverlayLayer.PourPick);
+        // AND THE GESTURE IS STILL THERE. It used to be armed only while HasNoPickableNets, so that
+        // it could not come apart from the note — which is how the two came apart in the first
+        // place: the note was shown on every opened document and the click it names was never wired
+        // at all. brief-authored-board-2 R-ab2-4c states the gesture outright instead: it is the
+        // gesture for THIS COPPER HERE, and a board that names its nets does not make it redundant
+        // — a drawn board resolving its nets from a schematic would otherwise have LOST the click
+        // that used to work on it.
+        Assert.NotNull(vm.BoardOverlayLayer.PourPick);
     }
 
     /// <summary>
