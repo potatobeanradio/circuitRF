@@ -3756,7 +3756,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         var comp = new EditableComponent
         {
             InstanceName = SchematicEditModel.NextAvailableName(
-                EditModel.Components, CellReferenceDesignator.PrefixFor(declaringCcell)),
+                TakenInstanceNames(), CellReferenceDesignator.PrefixFor(declaringCcell)),
             Symbol       = SymbolKind.Generic, // placeholder; rendering uses CellRef when set
             CellRef      = cellRef,
             // SL3 R-sl3-4/-6: the interface this component is being placed against. Recorded here,
@@ -3941,7 +3941,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         var newComp = new EditableComponent
         {
             InstanceName     = SchematicEditModel.NextAvailableName(
-                remaining, CellReferenceDesignator.PrefixFor(declaringCcell)),
+                TakenInstanceNames(remaining.Select(c => c.InstanceName)),
+                CellReferenceDesignator.PrefixFor(declaringCcell)),
             Symbol           = SymbolKind.Generic,   // placeholder; rendering uses CellRef
             CellRef          = cellRef,
             // Retyping into a cell instance IS a placement (R-sl3-6) — the user chose this cell now,
@@ -3982,7 +3983,56 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     private string GenerateInstanceName(SymbolKind symbol)
-        => SchematicEditModel.NextAvailableName(EditModel.Components, symbol);
+        => SchematicEditModel.NextAvailableName(
+            TakenInstanceNames(), ComponentTypeRegistry.InstancePrefix(symbol));
+
+    // ── One designator pool across the cell's two primary views (brief-footprint-6 R-fp6-4) ──────
+
+    /// <summary>
+    /// The OPEN primary layout's designators for a cell folder, or null when that document is not
+    /// open — set by <c>WorkspaceViewModel</c>, which owns both session registries (R-fp6-4c). Null
+    /// here (headless, an unsaved schematic, a session with no workspace) falls through to the cached
+    /// disk read.
+    /// </summary>
+    public Func<string, IReadOnlyList<string>?>? OpenSiblingLayoutDesignators { get; set; }
+
+    private readonly SiblingDesignatorCache _siblingDesignators = new();
+
+    /// <summary>How many times the sibling layout has been read off disk — the gate asserts a
+    /// counter, not a clock.</summary>
+    internal int SiblingDesignatorReads => _siblingDesignators.Reads;
+
+    /// <summary>
+    /// Every instance name already spoken for in this cell: this schematic's own components plus the
+    /// cell's primary LAYOUT (R-fp6-4a).
+    ///
+    /// <para>The union, because the design's stated position is that R1 in the layout IS R1 in the
+    /// schematic — <see cref="LayoutInstance.DisplayRefDes"/> prefers <c>SchematicId</c> — and two
+    /// independent pools contradict it. Scanning only <c>EditModel.Components</c> is how a schematic
+    /// placement could take a name a hand-placed part on the board was already silkscreened with, and
+    /// Update Layout would then put a second R1 beside it.</para>
+    ///
+    /// <para><b>A cell with no layout loses nothing</b> (R-fp6-4f): the absent side contributes an
+    /// empty set and this behaves exactly as <c>EditModel.Components</c> alone did.</para>
+    /// </summary>
+    internal IEnumerable<string> TakenInstanceNames()
+        => TakenInstanceNames(EditModel.Components.Select(c => c.InstanceName));
+
+    /// <summary>The same union over an explicit own-side set — for the retype path, which must NOT
+    /// count the component it is replacing.</summary>
+    internal IEnumerable<string> TakenInstanceNames(IEnumerable<string> own)
+    {
+        if (EditModel.SchematicDirectory is not { Length: > 0 } dir) return own;
+
+        string? cellDir;
+        try { cellDir = Path.GetDirectoryName(Path.GetFullPath(dir)); }
+        catch { return own; }
+        if (cellDir is not { Length: > 0 }) return own;
+
+        var sibling = OpenSiblingLayoutDesignators?.Invoke(cellDir)
+                   ?? _siblingDesignators.Get(cellDir, ViewType.Layout);
+        return own.Concat(sibling);
+    }
 
     // When a PnTone is placed and a multi-tone HB analysis already exists, copy that analysis's
     // tone frequencies (expression + unit, preserving vars/expressions) into the PnTone's Freq[i].
@@ -4547,7 +4597,8 @@ public sealed partial class SchematicViewModel : ObservableObject
                     // Exclude the old component from naming so its slot is treated as free.
                     string prefix    = ComponentTypeRegistry.InstancePrefix(newKind);
                     var    remaining = EditModel.Components.Where(c => c.Id != comp.Id);
-                    string newName   = SchematicEditModel.NextAvailableName(remaining, prefix);
+                    string newName   = SchematicEditModel.NextAvailableName(
+                        TakenInstanceNames(remaining.Select(c => c.InstanceName)), prefix);
                     // Use parsed port count N for variadic types; fall back to SymbolPortDefs for fixed-pin types.
                     int    portCount = parsedPortCount > 0 ? parsedPortCount : SymbolPortDefs.For(newKind).Length;
                     var    typeInfo  = ComponentTypeRegistry.Get(newKind);

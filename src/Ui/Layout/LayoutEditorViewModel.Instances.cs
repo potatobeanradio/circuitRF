@@ -470,8 +470,13 @@ public sealed partial class LayoutEditorViewModel
     /// Zero for every caller that has no ghost to aim — a drop from the project tree, and the
     /// re-entry after a technology remedy — so the shape this builds is unchanged for them.</param>
     /// <param name="mirrorX">Its handedness, on the same terms.</param>
+    /// <param name="partKind">brief-footprint-6 R-fp6-2d: what this placement IS, when the gesture
+    /// that made it knows — a component dropped from the Library palette. Null for every other
+    /// caller, which is every placement of artwork: a land pattern put down by the Footprint tool is
+    /// copper the user drew, and nothing may invent a part behind it (R-fp6-1a).</param>
     private bool TryPlaceNewInstance(
-        string cellRef, long x, long y, double rotationDegrees = 0, bool mirrorX = false)
+        string cellRef, long x, long y, double rotationDegrees = 0, bool mirrorX = false,
+        SymbolKind? partKind = null)
     {
         if (!CheckNotCyclic(cellRef)) return false;
         // Where to put it if a technology remedy has to be applied first — the ONE placement path is
@@ -487,6 +492,10 @@ public sealed partial class LayoutEditorViewModel
             // because this is the ONE commit path for a brand-new instance. The two ghosts above are
             // previews and record nothing — nothing is stored until this runs.
             CellInterfaceHash = PlacedCellRef.HashFor(cellRef, InstanceBaseDir),
+            // R-fp6-2d: on the PLACEMENT, never on the shared land-pattern cell — two 0402 resistors
+            // and an 0402 capacitor are three instances of ONE cell, which is what keeps re-pointing,
+            // DRC, flatten and every export working unchanged.
+            PartKind = partKind is { } k ? LayoutPartKind.Name(k) : null,
         };
         // brief-footprint-4b R-fp4b-8c: a HAND-placed instance corresponds to no schematic component,
         // so it owns its designator (R-fp4b-1b) — seeded from the part's own declared prefix where it

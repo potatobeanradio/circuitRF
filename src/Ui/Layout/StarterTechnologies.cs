@@ -43,6 +43,7 @@ public static class StarterTechnologies
         var silkBottom = new LayerKey(6, 0);
         var drill   = new LayerKey(7, 0);
         var outline = new LayerKey(8, 0);
+        var courtyardTop = new LayerKey(9, 0);
 
         var tech = new Technology
         {
@@ -73,6 +74,12 @@ public static class StarterTechnologies
                 // so it already matches this layer by name with nothing declared.
                 new LayerDef { Key = drill,   Name = "Drill",   Color = new Rgba(0x20, 0x20, 0x20), ZOrder = 2, Purpose = "drawing" },
                 new LayerDef { Key = outline, Name = "Outline", Color = new Rgba(0xFF, 0xD5, 0x00), ZOrder = 1, Purpose = "drawing", Interchange = Pcb("Edge.Cuts") },
+                // The courtyard a generated land pattern draws its keepout rectangle on. Without it
+                // every part placed on this technology reported the role as missing — which was every
+                // board circuitRF shipped, so the note could not be acted on and could not be avoided
+                // (reported from the field, 2026-09-21). Above the copper, as an assembly outline is
+                // drawn everywhere; it is a 0.05 mm line, not a fill.
+                new LayerDef { Key = courtyardTop, Name = "Courtyard Top", Color = new Rgba(0xC6, 0x78, 0xDD), ZOrder = 9, Purpose = "drawing", Interchange = Pcb("F.CrtYd") },
             ],
             Stackup = new Stackup
             {

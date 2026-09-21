@@ -351,11 +351,135 @@ public sealed partial class LayoutEditorViewModel
     /// <c>C</c> gives <c>C1</c>, then <c>C2</c>. <b>A part with no prefix gets no designator, not an
     /// invented one</b>: an instance corresponding to no schematic component must not be given a
     /// fabricated identity (R-fp3-6c).
+    ///
+    /// <para>There are two sources for that prefix and they are not interchangeable. A placement that
+    /// declares what it IS — a component dropped from the Library palette (R-fp6-2f) — takes the
+    /// registry's own prefix for that kind, so a dropped resistor is R1 whatever cell its artwork
+    /// happens to live in. Everything else asks the CELL, where an imported part states its
+    /// <c>Reference</c>; a generated land pattern declares none, which is why one placed by the
+    /// Footprint tool still gets no designator at all (R-fp6-1a, guarding §1d).</para>
     /// </summary>
     private void SeedDesignator(LayoutInstance inst)
     {
         if (inst.SchematicId is { Length: > 0 }) return;   // derived — it has one already
-        string? cellDir = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).ResolvedCellDir;
-        inst.RefDes = FootprintLabel.SeedDesignator(Model, FootprintLabel.PrefixOfCell(cellDir));
+
+        string? prefix = LayoutPartKind.Of(inst) is { } kind
+            ? ComponentTypeRegistry.InstancePrefix(kind)
+            : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).ResolvedCellDir);
+
+        inst.RefDes = FootprintLabel.SeedDesignator(TakenDesignators(), prefix);
+    }
+
+    /// <summary>
+    /// <b>Re-mints the identity of instances being PASTED or DUPLICATED, and only where it would
+    /// COLLIDE</b> — reported from the field, 2026-09-21: copy/paste an MLIN and the copy carried the
+    /// source's name, so Update Schematic from Layout saw it as already linked to <c>ML1</c> and
+    /// created nothing for it.
+    ///
+    /// <para>It is the same shape as <see cref="ResolvePortNumbers"/> beside it, for the same reason:
+    /// the taken set is seeded from the DESTINATION and updated between pasted instances, so an
+    /// intra-batch collision (two parts copied together) is prevented as well as a collision with
+    /// what was already there. And copy/paste is the one gesture that produces the clash by
+    /// construction — <c>LayoutGeometry.Clone</c> carries <see cref="LayoutInstance.SchematicId"/>
+    /// and <c>RefDes</c> because it must for an EDIT (a move, a properties change, a footprint
+    /// re-point are all the SAME instance), and a paste is the case where that is wrong.</para>
+    ///
+    /// <para><b>Only on a collision, which is what keeps Cut-and-Paste working.</b> Cutting an
+    /// instance and pasting it back is a move: the source is gone, nothing claims its name, and
+    /// stripping the link would orphan artwork the schematic still owns — the next Update Layout
+    /// would then place a SECOND copy of it. So an identity nothing else claims is left exactly as it
+    /// was, and only a genuine duplicate is re-minted.</para>
+    ///
+    /// <para><see cref="LayoutInstance.PartKind"/> is deliberately kept: a copy of a resistor is
+    /// still a resistor. What it loses is only WHICH resistor it is.</para>
+    ///
+    /// <para><b>The copy is NAMED, not merely unlinked</b> (reported 2026-09-21, the second half of
+    /// the same report): a paste that strips the identity and seeds nothing leaves a part on the
+    /// board with no designator at all, which is worse than the duplicate it replaced — the duplicate
+    /// was at least visible. <see cref="PastePrefixFor"/> is where the replacement name comes
+    /// from.</para>
+    /// </summary>
+    private void ResolvePastedInstanceIdentities(IReadOnlyList<LayoutInstance> instances)
+    {
+        if (instances.Count == 0) return;
+
+        var taken = new HashSet<string>(TakenDesignators(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var inst in instances)
+        {
+            if (inst.DisplayRefDes is not { Length: > 0 } existing) continue;   // nothing to collide
+            if (taken.Add(existing)) continue;                                  // free — a Cut, or a foreign document
+
+            inst.SchematicId = null;   // it is NOT the component the source is; the source still is
+            inst.RefDes      = FootprintLabel.SeedDesignator(taken, PastePrefixFor(inst, existing));
+            if (inst.DisplayRefDes is { Length: > 0 } minted) taken.Add(minted);
+        }
+    }
+
+    /// <summary>
+    /// The prefix a pasted instance's replacement designator grows from.
+    ///
+    /// <para><b><paramref name="replaced"/> is the third source, and it is the one that matters
+    /// here.</b> A part that came from the schematic carries its identity ENTIRELY in
+    /// <see cref="LayoutInstance.SchematicId"/> — <c>R1</c>, <c>ML1</c> — and its cell is a generated
+    /// land pattern or microstrip, which declares no <c>Reference</c> prefix of its own. So the two
+    /// sources <see cref="SeedDesignator"/> knows about are both empty for the commonest instance on
+    /// any board, and seeding from them alone produced NO name: the prefix was living in the very
+    /// string the paste had just thrown away.</para>
+    ///
+    /// <para><b>This is not R-fp6-2e coming back.</b> That rule refuses to infer what a part IS from
+    /// its designator prefix, because a user may rename <c>R1</c> to <c>Rin</c> and a capacitor would
+    /// then read as a resistor. Nothing here asks what the part is — <see cref="LayoutPartKind"/>
+    /// still answers that, first, and this is only consulted when it has no answer. The question here
+    /// is what to CALL a copy of something called <c>ML1</c>, and the honest answer is the next free
+    /// <c>ML</c>. A renamed <c>Rin</c> copies to <c>Rin1</c>, which is a name a user can read and
+    /// change rather than an absence they have to notice.</para>
+    /// </summary>
+    private string? PastePrefixFor(LayoutInstance inst, string replaced)
+        => LayoutPartKind.Of(inst) is { } kind ? ComponentTypeRegistry.InstancePrefix(kind)
+         : PrefixOfDesignator(replaced) is { Length: > 0 } fromName ? fromName
+         : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).ResolvedCellDir);
+
+    /// <summary>The leading non-digit run of a designator — <c>ML1</c> gives <c>ML</c>, <c>R12</c>
+    /// gives <c>R</c>, <c>Rin</c> gives <c>Rin</c>. Null for an all-digit name, which has no prefix to
+    /// grow and falls through to the cell.</summary>
+    private static string? PrefixOfDesignator(string name)
+    {
+        int end = name.Length;
+        while (end > 0 && char.IsAsciiDigit(name[end - 1])) end--;
+        return end > 0 ? name[..end] : null;
+    }
+
+    // ── One designator pool across the cell's two primary views (R-fp6-4) ───────────────────────
+
+    /// <summary>
+    /// The OPEN primary schematic's component names for a cell folder, or null when that document is
+    /// not open — set by <c>WorkspaceViewModel</c>, which owns both session registries (R-fp6-4c).
+    /// Null here (headless, a scratch document, a torn-off session with no workspace) falls through
+    /// to the cached disk read, which is the same answer one file behind.
+    /// </summary>
+    public Func<string, IReadOnlyList<string>?>? OpenSiblingSchematicNames { get; set; }
+
+    private readonly SiblingDesignatorCache _siblingDesignators = new();
+
+    /// <summary>How many times the sibling schematic has been read off disk — the gate asserts a
+    /// counter, not a clock.</summary>
+    internal int SiblingDesignatorReads => _siblingDesignators.Reads;
+
+    /// <summary>
+    /// Every designator already spoken for in this cell: this layout's own placements plus the cell's
+    /// primary SCHEMATIC (R-fp6-4a). The union, because <see cref="LayoutInstance.DisplayRefDes"/>
+    /// prefers <see cref="LayoutInstance.SchematicId"/> — the design's own statement that R1 here is
+    /// R1 there — and two independent pools contradict it.
+    /// </summary>
+    private IEnumerable<string> TakenDesignators()
+    {
+        var own = DesignatorPool.NamesIn(Model);
+        string? cellDir = CurrentCellDir;
+        if (cellDir is not { Length: > 0 }) return own;
+
+        var sibling = OpenSiblingSchematicNames?.Invoke(cellDir)
+                   ?? _siblingDesignators.Get(cellDir, ViewType.Schematic);
+        return own.Concat(sibling);
     }
 }

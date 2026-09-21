@@ -39,8 +39,32 @@ public sealed partial class LayoutEditorViewModel
     {
         ArgumentNullException.ThrowIfNull(reference);
         ReportMissingLandPatternRoles();
+        LastFootprintChoice = reference;
         return BeginPCellPlacement(reference.ToString(), new Dictionary<string, PCellValue>());
     }
+
+    /// <summary>
+    /// The case size this document is currently working in — the last one chosen through the
+    /// Footprint picker, by either of its two gestures, and null until one is.
+    ///
+    /// <para><b>What it is for:</b> a palette drop places a PART at a case size, and the fixed
+    /// <c>FootprintDefaults.For</c> default is 0201 for every one of the nine kinds. So a board being
+    /// built in 0603 had no single gesture that put a part down in 0603 — the Footprint tool takes a
+    /// case and produces artwork with no part behind it, and the palette takes a kind and always
+    /// landed on 0201. Reported from the field, 2026-09-21, as the re-point that follows every drop.
+    /// Choosing a case once now carries to the drops after it.</para>
+    ///
+    /// <para><b>It narrows nothing.</b> Whether a kind may be dropped at all, and whether this
+    /// technology has a board to drop it onto, are still <c>FootprintDefaults.For</c>'s answers and
+    /// are asked first (R-fp6-2a/2b) — this only chooses WHICH case a part that is already droppable
+    /// lands on.</para>
+    ///
+    /// <para><b>Per SESSION, and deliberately not persisted.</b> It is an authoring preference, not
+    /// design data: writing it into the <c>.clay</c> would put a transient choice in the file format,
+    /// and a per-user setting would carry a dense board's case size onto the next design. Reopening
+    /// the document starts at the 0201 default again, which is one pick to correct.</para>
+    /// </summary>
+    public FootprintRef? LastFootprintChoice { get; private set; }
 
     /// <summary>
     /// Says which of a land pattern's four roles this technology has no layer for, <b>every time a
@@ -73,7 +97,9 @@ public sealed partial class LayoutEditorViewModel
         var roles = LandPatternLayers.Resolve(Technology, PCellLayerSelection.Default, diagnostics);
         if (roles.Copper is null) return;
 
-        foreach (string d in diagnostics) sink.Warning(d);
+        foreach (string d in diagnostics)
+            if (LandPatternLayers.IsInformational(d)) sink.Info(d);
+            else                                     sink.Warning(d);
 
         // The CONSEQUENCE, once, in the terms a user placing a part on a board actually experiences
         // it — the role sentences above each name a layer and an omission, which is precise and does
@@ -100,6 +126,7 @@ public sealed partial class LayoutEditorViewModel
         ArgumentNullException.ThrowIfNull(reference);
         if (SingleSelectedInstance is null) return false;
         if (ResolveFootprintCellRef(reference) is not { } cellRef) return false;
+        LastFootprintChoice = reference;
         RetargetSelectedInstance(cellRef);
         return true;
     }

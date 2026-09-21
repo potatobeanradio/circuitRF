@@ -826,6 +826,29 @@ public sealed class LayoutInstance
     public string? RefDes { get; set; }
 
     /// <summary>
+    /// <b>The component this placement IS</b>, for an instance that corresponds to no schematic
+    /// component yet — brief-footprint-6 R-fp6-2d. A resistor dropped into a board straight from the
+    /// Library palette is a PART, not a piece of copper, and this is the only honest place to say so:
+    /// the land-pattern cell is shared by every 0402 on the board (a resistor and a capacitor at one
+    /// case size are one cell, correctly), so what the part is cannot live on the cell.
+    ///
+    /// <para>Null on every instance that has a <see cref="SchematicId"/> — the schematic knows — and
+    /// null on every land pattern placed by the Footprint tool, where nothing knows and nothing may
+    /// invent one (R-fp6-1a). Update Schematic from Layout clears it as it links (R-fp6-3d), for the
+    /// reason <see cref="RefDes"/> is cleared with it: two fields with one meaning drift.</para>
+    ///
+    /// <para>Stored as the kind's NAME, never the enum's number, and read back through
+    /// <c>LayoutPartKind.Of</c> — which treats an unrecognised value as ABSENT rather than as an
+    /// error, so a <c>.clay</c> written by a later version naming a part this one has never heard of
+    /// still opens, and degrades to the bare-land-pattern case.</para>
+    ///
+    /// <para>Nullable and omitted when null, so no <c>FormatVersion</c> bump: the same additive
+    /// convention every field in this block already follows.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PartKind { get; set; }
+
+    /// <summary>
     /// Where the designator sits relative to this instance's own origin, <b>in the instance's placed
     /// frame and in the PARENT's DBU</b> (R-fp4b-2b) — so it moves and rotates with its part, which
     /// is what a user who dragged it there meant, and so a drag stores the delta in the frame the

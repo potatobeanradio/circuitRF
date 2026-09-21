@@ -156,9 +156,11 @@ then its name:
 <p>A silkscreen outline drawn on Soldermask Top because the technology has no silk is worse than no
 outline at all: the mask layer is manufacturing data, and a stray rectangle in it is a defect nobody
 sees until fabrication. The same goes for the courtyard, which is <strong>never</strong> drawn on the
-board outline — a courtyard rectangle on <code>Edge.Cuts</code> is a routed slot. <strong>No shipped
-technology declares a courtyard layer</strong>, so courtyards are omitted unless you add one; that is
-the note you will see in Messages the first time you generate a pattern.</p>
+board outline — a courtyard rectangle on <code>Edge.Cuts</code> is a routed slot. Every shipped board
+technology declares <code>Courtyard Top</code> (<code>F.CrtYd</code>); a technology that does not —
+one you wrote, or one imported from a Gerber set — omits the courtyard and says so in Messages, at
+<strong>Info</strong> rather than Warning, because a courtyard is placement metadata that never
+reaches the fabricated board. A missing soldermask or silkscreen is a warning, because both do.</p>
 </div>
 
 **A pattern is centred on its body, not on pin 1.** That is the opposite of the convention the

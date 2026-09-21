@@ -252,6 +252,12 @@ public static class LayoutGeometry
         // comes through here, and dropping it would silently send a dragged designator home.
         RefDes = inst.RefDes, LabelDx = inst.LabelDx, LabelDy = inst.LabelDy,
         LabelRotDeg = inst.LabelRotDeg, LabelHeight = inst.LabelHeight, ShowRefDes = inst.ShowRefDes,
+        // brief-footprint-6: and WHAT THE PART IS, for the third time and the same reason. Re-pointing
+        // a dropped 0201 resistor at an 0603 runs through here (RetargetSelectedInstance clones, then
+        // rewrites CellRef), and a clone that dropped this would turn a part back into bare copper on
+        // an ordinary edit — after which Update Schematic from Layout creates nothing for it and the
+        // only trace is a designator with nothing behind it.
+        PartKind = inst.PartKind,
     };
 
     /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape

@@ -25,11 +25,53 @@ public sealed partial class LayoutEditorViewModel
     private LayoutView? _paletteDragGhostView;
     private (long X, long Y)? _paletteDragPoint;
 
-    /// <summary>R-L5-8: true only when <paramref name="kind"/> has a registered PCell generator — the
-    /// canvas's DragOver handler sets <c>DragEffects = None</c> otherwise, before the drop, so the
-    /// cursor itself says no for a <c>Term</c> or a <c>Var</c>.</summary>
+    /// <summary>R-L5-8: true only when <paramref name="kind"/> resolves to a generator the drop can
+    /// place — the canvas's DragOver handler sets <c>DragEffects = None</c> otherwise, before the
+    /// drop, so the cursor itself says no for a <c>Term</c> or a <c>Var</c>.</summary>
     public bool CanDropPaletteComponent(SymbolKind kind, int portCount) =>
-        SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out _);
+        TryResolveDropGenerator(kind, portCount, out _, out _);
+
+    /// <summary>
+    /// The generator a palette tile of <paramref name="kind"/> places in THIS layout, and whether
+    /// what lands is a PART rather than a piece of artwork — brief-footprint-6 R-fp6-2.
+    ///
+    /// <para>A microstrip answers with its own PCell generator, exactly as it always has. A discrete
+    /// RLC has no such generator — which is the whole reason the cursor used to say no to a
+    /// resistor — so it answers with its default LAND PATTERN, through
+    /// <see cref="FootprintDefaults.For"/>: the same function the schematic placement path calls
+    /// (<c>SchematicViewModel.ApplyDefaultFootprint</c>), so a resistor placed in the schematic and
+    /// one dropped in the layout land on the same case size on the same board. <b>The droppable set
+    /// is that function's own allow-list, called rather than restated</b> (R-fp6-2a) — a second list
+    /// here would be a second list to keep in step with the first.</para>
+    ///
+    /// <para><b>Null from it is a REFUSAL, not a fallback</b> (R-fp6-2b): on a non-board technology
+    /// there is no land pattern to give, so the cursor says no before release and an MMIC die design
+    /// does not silently sprout chip resistors.</para>
+    /// </summary>
+    private bool TryResolveDropGenerator(SymbolKind kind, int portCount, out string generatorId, out bool isPart)
+    {
+        if (SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out generatorId))
+        {
+            isPart = false;
+            return true;
+        }
+
+        if (FootprintDefaults.For(kind, Technology) is { Length: > 0 } footprint)
+        {
+            // The case this document is being built in, when the user has picked one
+            // (<see cref="LastFootprintChoice"/>) — otherwise the fixed default. Asked AFTER
+            // FootprintDefaults.For, never instead of it: that call is what decides whether this kind
+            // may be dropped at all and whether this technology has a board to drop it onto, and a
+            // remembered case must not be able to answer either question.
+            generatorId = LastFootprintChoice?.ToString() ?? footprint;
+            isPart = true;
+            return true;
+        }
+
+        generatorId = "";
+        isPart = false;
+        return false;
+    }
 
     /// <summary>True when <paramref name="generatorId"/> is registered — the drag-over cursor's own
     /// yes/no for a tile that places a parametric cell by id rather than by <see cref="SymbolKind"/>.</summary>
@@ -102,7 +144,7 @@ public sealed partial class LayoutEditorViewModel
     /// position, never re-invoking it.</summary>
     public void UpdatePaletteDragGhost(SymbolKind kind, int portCount, long x, long y)
     {
-        if (!SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out var generatorId))
+        if (!TryResolveDropGenerator(kind, portCount, out var generatorId, out bool isPart))
         {
             CancelPaletteDragGhost();
             return;
@@ -111,7 +153,12 @@ public sealed partial class LayoutEditorViewModel
         if (_paletteDragGhostView is null || !string.Equals(_paletteDragGeneratorId, generatorId, StringComparison.Ordinal))
         {
             if (!PCellRegistry.TryGet(generatorId, out var generator)) { CancelPaletteDragGhost(); return; }
-            var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
+            // R-fp6-2g: the ghost for a dropped PART is its LAND PATTERN, through this same cache
+            // keyed on the resolved generator id — a dropped component and a dropped footprint of the
+            // same case show the same ghost because they are the same artwork.
+            var defaults = isPart
+                ? PaletteDropParameters(generatorId)
+                : SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
             var result = _paletteDragGeometryCache.GetOrGenerate(generatorId, generator, defaults, Technology, PCellLayerSelection.Default);
 
             var ghostView = new LayoutView();
@@ -146,9 +193,24 @@ public sealed partial class LayoutEditorViewModel
     {
         CancelPaletteDragGhost();
 
-        return SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out var generatorId)
-            && PlacePCell(generatorId, SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology), x, y);
+        if (!TryResolveDropGenerator(kind, portCount, out var generatorId, out bool isPart)) return false;
+
+        // R-fp6-2c: the cell is the SHARED land-pattern cell, resolved through the same
+        // content-addressed store a schematic-driven Update Layout writes into, so a resistor dropped
+        // here and one placed from the schematic land on one cell rather than on two identical ones.
+        // Nothing in this brief mints a per-component cell; what the part IS rides on the placement.
+        var defaults = isPart
+            ? PaletteDropParameters(generatorId)
+            : SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
+
+        return PlacePCell(generatorId, defaults, x, y, isPart ? kind : null);
     }
+
+    /// <summary>A land pattern's parameters: none. Its case and its density ARE its identity, which
+    /// is what <c>FootprintGeneratorResolver.DeclaredDefaults</c> already says by answering with an
+    /// empty set.</summary>
+    private static IReadOnlyDictionary<string, PCellValue> PaletteDropParameters(string generatorId)
+        => PCellRegistry.DeclaredDefaults(generatorId) ?? new Dictionary<string, PCellValue>();
 
     /// <summary>
     /// Places a generated cell by GENERATOR ID and an explicit parameter set — the one placement
@@ -162,8 +224,12 @@ public sealed partial class LayoutEditorViewModel
     /// resolve their id and defaults exactly as before) and is the whole difference between a kit
     /// whose cells resolve and a kit whose cells can be used.</para>
     /// </summary>
-    public bool PlacePCell(string generatorId, IReadOnlyDictionary<string, PCellValue> defaults, long x, long y)
-        => ResolvePCellCellRef(generatorId, defaults) is { } cellRef && TryPlaceNewInstance(cellRef, x, y);
+    /// <param name="partKind">brief-footprint-6 R-fp6-2d: what the placement IS, when the gesture
+    /// knows. Null for every artwork placement, which is every other caller.</param>
+    public bool PlacePCell(string generatorId, IReadOnlyDictionary<string, PCellValue> defaults, long x, long y,
+                           SymbolKind? partKind = null)
+        => ResolvePCellCellRef(generatorId, defaults) is { } cellRef
+        && TryPlaceNewInstance(cellRef, x, y, partKind: partKind);
 
     /// <summary>
     /// Arms the ordinary instance-placement gesture for a generated cell — the user gets the same
@@ -224,7 +290,12 @@ public sealed partial class LayoutEditorViewModel
 
         GeneratedCellStore.RecordSnapshot(Model, cellDir, generatorId, defaults, ResolvedTechPath, PCellLayerSelection.Default);
         if (diagnostics is { Count: > 0 })
-            foreach (var d in diagnostics) _messageSink?.Warning(d);
+            foreach (var d in diagnostics)
+                // A missing COURTYARD is the one of these that breaks nothing — see
+                // LandPatternLayers.IsInformational. At Warning it was noise on every part placed on
+                // every board technology circuitRF ships, beside the two roles that do matter.
+                if (LandPatternLayers.IsInformational(d)) _messageSink?.Info(d);
+                else                                     _messageSink?.Warning(d);
 
         string cellRef;
         try { cellRef = RefPath.ToStored(Path.GetRelativePath(InstanceBaseDir, cellDir)); }

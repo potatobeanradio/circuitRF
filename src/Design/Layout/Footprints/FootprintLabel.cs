@@ -277,30 +277,40 @@ public static class FootprintLabel
     }
 
     /// <summary>
-    /// <paramref name="prefix"/> plus <b>the lowest free number among <paramref name="view"/>'s own
-    /// instances</b> — <c>C</c> gives <c>C1</c>, then <c>C2</c> (R-fp4b-8c). Null prefix gives null:
-    /// nothing here invents an identity.
+    /// <paramref name="prefix"/> plus <b>the lowest free number among <paramref name="taken"/></b> —
+    /// <c>C</c> gives <c>C1</c>, then <c>C2</c> (R-fp4b-8c). Null prefix gives null: nothing here
+    /// invents an identity.
     ///
     /// <para>Lowest FREE rather than highest-plus-one, so deleting C2 and placing another capacitor
     /// reuses C2 instead of leaving a permanent gap. Nothing renumbers anything that already exists
     /// (R-fp4b-8d) — this only chooses a name for the part being placed right now.</para>
+    ///
+    /// <para><b>The taken-set is a PARAMETER, not this function's own scan</b> (R-fp6-4b). It used to
+    /// walk one <see cref="LayoutView"/>, which is one of the cell's two name pools, and the design's
+    /// stated position is that they are one pool: <see cref="LayoutInstance.DisplayRefDes"/> prefers
+    /// <see cref="LayoutInstance.SchematicId"/>, so R1 on the board IS R1 on the schematic.
+    /// <see cref="DesignatorPool"/> assembles the union; this only chooses.</para>
     /// </summary>
-    public static string? SeedDesignator(LayoutView? view, string? prefix)
+    public static string? SeedDesignator(IEnumerable<string> taken, string? prefix)
     {
         if (prefix is not { Length: > 0 } p) return null;
 
-        var taken = new HashSet<int>();
-        if (view is not null)
-            foreach (var inst in view.Instances)
-                if (inst.DisplayRefDes is { Length: > 0 } d &&
-                    d.StartsWith(p, StringComparison.OrdinalIgnoreCase) &&
-                    int.TryParse(d.AsSpan(p.Length), out int n))
-                    taken.Add(n);
+        var used = new HashSet<int>();
+        foreach (string d in taken)
+            if (d is { Length: > 0 } &&
+                d.StartsWith(p, StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(d.AsSpan(p.Length), out int n))
+                used.Add(n);
 
         int next = 1;
-        while (taken.Contains(next)) next++;
+        while (used.Contains(next)) next++;
         return p + next.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    /// <summary>The single-document overload — <paramref name="view"/>'s own placements and nothing
+    /// else. For a caller with no sibling to consult.</summary>
+    public static string? SeedDesignator(LayoutView? view, string? prefix)
+        => SeedDesignator(DesignatorPool.NamesIn(view), prefix);
 
     /// <summary>
     /// Every designator <paramref name="view"/>'s OWN instances draw, as artwork on

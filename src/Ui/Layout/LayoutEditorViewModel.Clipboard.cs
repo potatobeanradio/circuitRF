@@ -355,6 +355,11 @@ public sealed partial class LayoutEditorViewModel
         if (shapes.Count == 0 && instances.Count == 0 && rulers.Count == 0) return;
 
         ResolvePortNumbers(shapes);
+        // The instance analogue, and for the identical reason — see its own doc comment. A pasted
+        // instance that kept the source's SchematicId is a second placement claiming to BE the same
+        // schematic component, which Update Schematic from Layout reads as "already linked" and
+        // silently creates nothing for.
+        ResolvePastedInstanceIdentities(instances);
 
         int shapeInsertAt = Model.Shapes.Count;
         int instanceInsertAt = Model.Instances.Count;

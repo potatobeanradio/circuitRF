@@ -1208,7 +1208,7 @@ under it, and a label on the top silk:
 **What may I ask for with `--layers`?** The technology defines eight; this document uses three.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Amp/Stage1/layout/Stage1.clay --layers
-<span class="output">  layers       PCB 2-Layer FR-4 (70mil, 1oz) — 8 defined, 3 used
+<span class="output">  layers       PCB 2-Layer FR-4 (70mil, 1oz) — 9 defined, 3 used
     Top Copper           1/0      #c87a3e  solid       purpose=drawing   1 shape(s)
     Bottom Copper        2/0      #8a5028  solid       purpose=drawing   1 shape(s)
     Soldermask Top       3/0      #1e6b3c  solid       purpose=drawing   0 shape(s)
@@ -1435,7 +1435,7 @@ which are hidden by default exactly as the project tree hides them. This is the 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.clay --layers
 <span class="output">  technology   /home/you/designs/Amp/tech/pcb-2layer_FR-4_70mil_1oz.ctech
                via the workspace's DefaultTechRef — the layout states none
-  layers       PCB 2-Layer FR-4 (70mil, 1oz) — 8 defined, 3 used
+  layers       PCB 2-Layer FR-4 (70mil, 1oz) — 9 defined, 3 used
     Top Copper           1/0      #c87a3e  solid       purpose=drawing   1 shape(s)
     Bottom Copper        2/0      #8a5028  solid       purpose=drawing   1 shape(s)
     Soldermask Top       3/0      #1e6b3c  solid       purpose=drawing   0 shape(s)

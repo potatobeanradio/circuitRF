@@ -147,11 +147,14 @@ will bite: **an `SnP` with `RefNode` set has one more port than its file has** �
 | 4 | [one picker](brief-footprint-4-picker-and-import.md) | built-ins + workspace cells + Custom in one list; the Component Import reconciliation; the BOM column |
 | 4b | [designators](brief-footprint-4b-designators.md) | the refdes a placement owns, drawn on silk, movable and resettable; three interchange sites stop discarding it |
 | 5 | [the example](brief-footprint-5-power-rail-example.md) | Power Rail rebuilt on real footprints — silkscreen, refdes, re-spaced, every number re-measured |
+| 6 | [layout-first parts](brief-footprint-6-layout-first-parts.md) | a component dropped from the palette into a `.clay` becomes a named part; Update Schematic from Layout creates the component; one designator pool across a cell's two primary views |
 
 Briefs 1-2 are independent. 3 depends on 1 and 2. 4 depends on 3. **4b depends on 3 and 4, and
 blocks 5** — brief 5's R-fp5-2c is written as though a per-placement designator already exists, and
 at HEAD nothing in the model or the renderer provides one. 5 depends on 4b and on
-[railRF brief 23](brief-railrf-23-mount-and-unmount.md).
+[railRF brief 23](brief-railrf-23-mount-and-unmount.md). **6 depends on 2, 3 and 4b** and is the
+series' only brief that runs the flow backwards — it is what makes a board a user DREW reach a
+schematic, and it takes the narrowest part of the auto-annotation question 4b deferred.
 
 ---
 

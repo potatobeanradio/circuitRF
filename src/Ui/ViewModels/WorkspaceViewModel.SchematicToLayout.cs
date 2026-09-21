@@ -453,11 +453,22 @@ public partial class WorkspaceViewModel
     {
         foreach (var w in extraWarnings) Messages.Warning(w);
 
+        // brief-footprint-6 R-fp6-1b/1c: a line with no instance name is about the RUN — an aggregate
+        // count, or the closing statement of what the command did and did not do — and is posted
+        // whether or not anything changed. The case that needs it is a board of hand-placed land
+        // patterns, where Update Schematic from Layout correctly creates NOTHING: a command that then
+        // says nothing at all is indistinguishable from a command that is broken.
+        foreach (var line in lines)
+            if (string.IsNullOrEmpty(line.InstanceName))
+                Messages.Post(line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                                  ? MessageLevel.Warning : MessageLevel.Info, line.Text);
+
         if (command is null)
             return; // R-L5-14 — nothing changed, say nothing (the extra warnings above, if any, are a
                      // separate, persistent concern and are not silenced by "nothing changed this run").
 
         var byInstance = lines
+            .Where(l => !string.IsNullOrEmpty(l.InstanceName))
             .GroupBy(l => l.InstanceName)
             .ToList();
 

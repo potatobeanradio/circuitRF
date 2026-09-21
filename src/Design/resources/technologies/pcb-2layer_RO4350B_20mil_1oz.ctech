@@ -172,6 +172,27 @@
       "Interchange": {
         "PcbLayerName": "Edge.Cuts"
       }
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Courtyard Top",
+      "Color": {
+        "r": 198,
+        "g": 120,
+        "b": 221,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 9,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.CrtYd"
+      }
     }
   ],
   "Stackup": {

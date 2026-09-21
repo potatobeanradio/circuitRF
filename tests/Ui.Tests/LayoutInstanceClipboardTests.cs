@@ -226,6 +226,95 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
         Assert.NotEqual(CellLayoutState.Resolved, resolution.State); // broken — reported, not thrown, not vanished
     }
 
+    // ── A pasted instance is a NEW instance (2026-09-21, reported from the field) ────────────────
+
+    /// <summary>
+    /// Copy/paste an instance the schematic owns and the copy used to carry the source's
+    /// <c>SchematicId</c> — so Update Schematic from Layout read it as already linked and created
+    /// nothing for it, which is how a duplicated MLIN went missing from the schematic.
+    /// </summary>
+    [Fact]
+    public void DuplicatingALinkedInstance_DoesNotCopyItsSchematicIdentity()
+    {
+        CreateCell("Leaf");
+        var vm = MakeVmAt("Doc");
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0, SchematicId = "ML1" });
+        SelectFirstInstance(vm);
+
+        vm.Duplicate();
+
+        Assert.Equal(2, vm.Model.Instances.Count);
+        Assert.Equal("ML1", vm.Model.Instances[0].SchematicId);   // the source still IS ML1
+        Assert.Null(vm.Model.Instances[1].SchematicId);           // the copy is not
+
+        // And it is NAMED. Unlinking without naming leaves a part on the board with no designator at
+        // all, which is worse than the duplicate it replaced — that at least was visible. The prefix
+        // comes from the identity being replaced, because a schematic-owned instance keeps its whole
+        // identity in SchematicId and its generated cell declares no Reference of its own.
+        Assert.Equal("ML2", vm.Model.Instances[1].DisplayRefDes);
+    }
+
+    /// <summary>A hand-renamed designator copies to a readable sibling rather than to nothing.</summary>
+    [Fact]
+    public void DuplicatingAHandRenamedPartGrowsFromTheNameTheUserGaveIt()
+    {
+        CreateCell("Leaf");
+        var vm = MakeVmAt("Doc");
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0, RefDes = "Rin" });
+        SelectFirstInstance(vm);
+
+        vm.Duplicate();
+
+        Assert.Equal("Rin", vm.Model.Instances[0].DisplayRefDes);
+        Assert.Equal("Rin1", vm.Model.Instances[1].DisplayRefDes);
+    }
+
+    /// <summary>A copy of a resistor is still a resistor — it loses only WHICH resistor it is — and
+    /// two parts pasted together do not collide with each other (the intra-batch half).</summary>
+    [Fact]
+    public void DuplicatingPartsGivesEachAFreeDesignatorAndKeepsWhatTheyAre()
+    {
+        CreateCell("Leaf");
+        var vm = MakeVmAt("Doc");
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0, RefDes = "R1", PartKind = "Resistor" });
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 500, Y = 0, Mag = 1.0, RefDes = "R2", PartKind = "Resistor" });
+        vm.SelectAllCommand.Execute(null);
+
+        vm.Duplicate();
+
+        Assert.Equal(4, vm.Model.Instances.Count);
+        Assert.Equal(["R1", "R2", "R3", "R4"], vm.Model.Instances.Select(i => i.DisplayRefDes));
+        Assert.All(vm.Model.Instances, i => Assert.Equal("Resistor", i.PartKind));
+    }
+
+    /// <summary>
+    /// <b>Cut and paste is a MOVE, and must keep the link.</b> The identity is re-minted only where
+    /// it would collide — an instance whose name nothing else claims is left exactly as it was.
+    /// Stripping it unconditionally would orphan artwork the schematic still owns, and the next
+    /// Update Layout from Schematic would place a SECOND copy of it.
+    /// </summary>
+    [Fact]
+    public void CutThenPasteKeepsTheSchematicLink_BecauseNothingElseClaimsTheName()
+    {
+        CreateCell("Leaf");
+        var vm = MakeVmAt("Doc");
+        vm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0, SchematicId = "ML1" });
+
+        // What Cut leaves behind: the instance is gone from the model, and the fragment is in hand.
+        var cut = new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0, SchematicId = "ML1" };
+        vm.Model.Instances.Clear();
+
+        vm.PasteInstancesInPlace([cut]);
+
+        Assert.Equal("ML1", Assert.Single(vm.Model.Instances).SchematicId);
+    }
+
+    private static void SelectFirstInstance(LayoutEditorViewModel vm)
+    {
+        vm.OnPointerPressed(50, 50, Avalonia.Input.KeyModifiers.None, hitTolDbu: 10);
+        vm.OnPointerReleased(50, 50, Avalonia.Input.KeyModifiers.None);
+    }
+
     [Fact]
     public void Duplicate_SelectedInstance_OffsetsByOneSnapStep_KeepsCellRef()
     {

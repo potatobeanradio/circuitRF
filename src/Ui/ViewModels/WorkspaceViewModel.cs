@@ -4424,6 +4424,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.Model.Changed += (_, _) => NotifyEmSetupsLayoutChanged(vm.CurrentLayoutPath);
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
+        vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
         WireRetargetSeam(vm);
         var doc = new LayoutDocument(title, vm) { Hierarchy = this };  // filePath = null → scratch
         _scratchLayouts.Add(doc);
@@ -11088,8 +11089,37 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.OpenSiblingLayoutDesignators = OpenLayoutDesignatorsFor;
         return vm;
     }
+
+    // ── The other half of a cell's designator pool (brief-footprint-6 R-fp6-4c) ──────────────────
+    //
+    // A cell's schematic and its layout share ONE name pool, so each chooser has to see the other
+    // document. When that document is already OPEN this is free and, more to the point, CORRECT: the
+    // session holds unsaved edits the file on disk does not, and a name chosen against the file would
+    // collide with a part the user placed a minute ago. When it is not open, the view model falls
+    // back to its own cached read of the file.
+    //
+    // Answered HERE because this is the object that owns both session registries; neither view model
+    // knows the other exists, which is the property that keeps the layout editor free of any
+    // reference to a schematic at all (R-fp3-6d).
+
+    /// <summary>The designators an OPEN primary layout of <paramref name="cellDir"/> draws, or null
+    /// when it is not open — which means "ask the file", not "there are none".</summary>
+    private IReadOnlyList<string>? OpenLayoutDesignatorsFor(string cellDir)
+        => DesignatorPool.PrimaryViewPath(cellDir, ViewType.Layout) is { Length: > 0 } path
+        && _layoutRegistry.TryGet(Path.GetFullPath(path), out var vm) && vm is not null
+            ? [.. DesignatorPool.NamesIn(vm.Model)]
+            : null;
+
+    /// <summary>The instance names an OPEN primary schematic of <paramref name="cellDir"/> holds, on
+    /// the same terms.</summary>
+    private IReadOnlyList<string>? OpenSchematicNamesFor(string cellDir)
+        => DesignatorPool.PrimaryViewPath(cellDir, ViewType.Schematic) is { Length: > 0 } path
+        && _registry.TryGet(Path.GetFullPath(path), out var vm) && vm is not null
+            ? [.. DesignatorPool.NamesIn(vm.EditModel)]
+            : null;
 
     /// <summary>
     /// The workspace technology's own display unit, or null when nothing resolves — the <c>.ctech</c>'s
@@ -11242,6 +11272,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.Model.Changed += (_, _) => NotifyEmSetupsLayoutChanged(vm.CurrentLayoutPath);
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
+        vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
         WireRetargetSeam(vm);
 
         // WB40 — a wirebond cell holds a `.wBond` beside its `.clay`, and its wires ride over the

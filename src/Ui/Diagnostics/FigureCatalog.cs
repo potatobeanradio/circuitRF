@@ -399,9 +399,9 @@ public static class FigureCatalog
 
         new("footprint-case-sizes", DocFootprintFixtures.CaseSizes, 704, 146, null,
             "Four generated land patterns at the nominal density, all at one scale: 0402, 0805, "
-          + "1206 and the 3216-18 moulded tantalum. Copper lands, their soldermask openings and the "
-          + "two silkscreen lines, on the shipped 2-layer PCB technology — which declares no "
-          + "courtyard layer, so no courtyard is drawn and Messages says so."),
+          + "1206 and the 3216-18 moulded tantalum. Copper lands, their soldermask openings, the "
+          + "two silkscreen lines and the courtyard rectangle, on the shipped 2-layer PCB "
+          + "technology."),
 
         new("footprint-densities", DocFootprintFixtures.Densities, 482, 132, null,
             "One case, 0805, at the three IPC-7351B density levels. The part is the same in all "

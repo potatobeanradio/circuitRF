@@ -29,6 +29,17 @@ public static class SchematicToLayoutGenerator
 {
     public enum ReportSeverity { Info, Warning }
 
+    /// <summary>
+    /// One line of a change report. <paramref name="InstanceName"/> names the instance the line is
+    /// about, and the caller groups and caps on it.
+    ///
+    /// <para><b>An EMPTY <paramref name="InstanceName"/> means the line is about the RUN, not about
+    /// an instance</b> (brief-footprint-6 R-fp6-1b) — an aggregate count, or the closing statement of
+    /// what the command did and did not do. A run-level line is posted whether or not anything
+    /// changed, and is outside the per-instance cap: R-L5-14's "nothing changed, say nothing" is a
+    /// rule about per-instance noise, and a run that deliberately created nothing and said so is the
+    /// one case where silence is indistinguishable from a broken command.</para>
+    /// </summary>
     public sealed record ReportLine(string InstanceName, string Text, ReportSeverity Severity);
 
     /// <summary>
@@ -205,7 +216,8 @@ public static class SchematicToLayoutGenerator
             // this instance's own add/update line, rather than dropping them silently.
             if (pcellDiagnostics is { Count: > 0 })
                 foreach (var d in pcellDiagnostics)
-                    lines.Add(new ReportLine(schematicId, $"{schematicId} — {d}", ReportSeverity.Warning));
+                    lines.Add(new ReportLine(schematicId, $"{schematicId} — {d}",
+                        LandPatternLayers.IsInformational(d) ? ReportSeverity.Info : ReportSeverity.Warning));
 
             bool hasExisting = existingBySchematicId.TryGetValue(schematicId, out var existing);
 

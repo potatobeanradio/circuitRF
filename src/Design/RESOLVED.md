@@ -9704,3 +9704,54 @@ here IS an instance's own origin, which is the footprint cell's frame origin. De
 centre" because the shipped land patterns happen to be centred on their bodies would be true of
 those cells and false of the first imported one — and the whole reason the writer declares an origin
 at all is that an unstated one is a refusal in the import dialog.
+
+## `PartKind` — what a layout-first placement IS (2026-09-21, brief-footprint-6)
+
+**A land pattern is artwork. A part is a land pattern plus an identity, and the identity lives on the
+PLACEMENT.** That is brief 4b's designator rule applied one level further, and the reason is the same
+one that makes it true of the designator: the land-pattern cell is SHARED. An 0402 resistor and an
+0402 capacitor are two instances of one content-addressed cell, correctly — the artwork is identical
+— so the cell cannot be asked what the part is without minting one cell per component and losing
+re-pointing, DRC, flatten and every export along with it.
+
+**It is not `LayoutInstance.RefDes` parsed backwards.** Within the discrete RLC nine the prefixes
+happen to be distinct (`R`, `L`, `C`, `SRL`, `SRC`, `SLC`, `PRL`, `PRC`, `PLC`), so parsing them back
+WOULD work — right up until a user renames `R1` to `Rin`, which is an ordinary thing to do to a board
+and which `CommitSelectedInstanceRefDes` permits. The prefix seeds the NAME; it is not the record of
+what the part is, because it is a string the user owns.
+
+**The conversion lives in `LayoutPartKind`, not on `LayoutInstance`, and that is not tidiness.**
+`LayoutModel.cs`'s own first lines say the layout model references no Schematic types ("layout borrows
+patterns from Schematic, not types"). A `SymbolKind?` property on the instance would have made that
+comment false. The FIELD is a string, which is what the file stores; `LayoutPartKind` is the one place
+that string becomes a kind again, so there is one answer to what an unreadable value means — ABSENT,
+never an error, so a `.clay` naming a part this build has never heard of still opens and degrades to
+the bare-land-pattern case. A bare NUMBER is refused too, though `Enum.TryParse` accepts one: a file
+stating `"7"` was written by something that did not follow the rule, and its meaning would move the
+next time the enum does.
+
+## `DesignatorPool` — a cell's two primary views are ONE name pool (2026-09-21, brief-footprint-6)
+
+`LayoutInstance.DisplayRefDes` prefers `SchematicId` over `RefDes`. That IS the design stating that R1
+in the layout is R1 in the schematic — and two independent name pools contradict it. Both collisions
+were reachable: a schematic holding an unpushed R1 while a hand placement in the layout takes R1, and
+a layout holding a hand-placed R1 while a schematic placement takes R1. Either way Update Layout then
+puts a second R1 on the board, silently, and the board stops matching its BOM.
+
+**Neither chooser grew a copy of the other's scan.** `SchematicEditModel.NextAvailableName` already
+took an `IEnumerable<string>`; `FootprintLabel.SeedDesignator` was changed to, with its old
+single-view signature kept as a one-line overload. `DesignatorPool` is the only thing that knows both
+documents exist.
+
+**PRIMARY views only.** A non-primary layout view is a variant land pattern and is not on the board,
+and an instance draws its cell's primary view regardless. A cell with several views and no named
+primary contributes nothing, which is the same answer every other consumer of
+`CellFolder.ResolvePrimary` gives that state — and a cell with only one of the two views contributes
+an empty set, which is what keeps this from being a change to every schematic that has no layout.
+
+**The sibling cache is keyed on the file's own write time, not invalidated by an event.** Placing
+twenty parts must not parse the sibling twenty times, and "invalidated on save and on external change"
+is then a property of the KEY rather than of a subscription somebody can forget to wire: a save made
+in the other window and a file rewritten by another process both move the stamp. The stat is one
+call per placement; the parse is what the cache exists to avoid, and `SiblingDesignatorCache.Reads`
+counts parses so the gate can assert a counter rather than a clock.

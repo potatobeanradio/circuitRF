@@ -33743,3 +33743,209 @@ in `src/Ui/Diagnostics/RESOLVED.md`.
 
 One thing the regeneration fixed for free: the Layout Editor chapter's toolbar table had never
 listed the `Footprint…` button, which shipped with brief-footprint-3.
+
+## A part dropped into a layout is a part, not a piece of copper (2026-09-21, brief-footprint-6)
+
+The gap was narrower than it looked: the palette drop into a layout is a complete gesture already, and
+`CanDropPaletteComponent` refused `R`/`L`/`C` for exactly one reason — `HasPCellGenerator` finds no
+generator id for them. So this added a BRANCH to an existing gesture and touched neither canvas: every
+call site the feature needed (`CanDropPaletteComponent`, `UpdatePaletteDragGhost`, `CommitPaletteDrop`)
+was already the view model's, and `LayoutCanvas` needed no edit at all.
+
+**The droppable set is `FootprintDefaults.For` CALLED, not restated.** That one function already
+answers both questions the drop has to ask — is this kind a chip part, and does this technology have a
+board to put it on — and it is the same function `SchematicViewModel.ApplyDefaultFootprint` calls, so a
+resistor placed in the schematic and one dropped in the layout land on the same case size on the same
+board. Null from it is a REFUSAL, not a fallback: an MMIC die design does not silently sprout chip
+resistors, and the cursor says so before release.
+
+**The one thing the brief's own gate got wrong.** §6.3 expects two resistors and a capacitor to resolve
+to "two cell folders — one per case size". They resolve to ONE: `FootprintDefaults.For` gives every one
+of the nine discrete RLC kinds the same `smt:0201@N`, as §1b of the same brief states. The property
+being gated is right and the number was not, so the test asserts one folder, that it is byte-identically
+the folder `SchematicToLayoutGenerator`'s own `GeneratedCellStore.GetOrCreate` produces for that case,
+and that a DIFFERENT case is a different folder — which is what "per case size, not per component"
+actually means.
+
+### The aggregate line was being assembled and then dropped on the floor
+
+`ReportGenerationResult` returns early when `command is null` — R-L5-14's "nothing changed, say
+nothing". That is right for per-instance noise and exactly wrong for the line this brief adds: a board
+of hand-placed land patterns correctly creates NOTHING, so the command would have gone on saying
+nothing at all, which is the failure R-fp6-1c names — indistinguishable from a broken command.
+
+Fixed by giving `ReportLine` a scope it did not have: **an EMPTY `InstanceName` means the line is about
+the RUN**, so it is posted before the early return and sits outside the per-instance cap. The two
+run-level lines are the land-pattern count (Info — nothing is wrong, the user placed artwork and got
+artwork) and the closing statement that N components were created and **no nets were derived from the
+copper**, which is the part a user must be told rather than discover. One existing line passes
+`inst.SchematicId ?? ""`, but it is only ever produced for instances the command just placed, so it is
+never actually empty and never reached the new branch.
+
+### Three answers where there used to be one silent `continue`
+
+`LayoutToSchematicGenerator` skipped every generated cell that neither a built-in microstrip nor a kit
+part claimed, with no report line. That one `continue` was covering three genuinely different cases,
+and separating them is most of this change:
+
+- **artwork this schematic already owns** — every SMT part Update Layout has ever placed is an instance
+  of a bare land-pattern cell, so this was the common case and it was not even counted as *unchanged*;
+- **a part the placement declares itself to be** — created, at its OWN `RefDes`, never by `ClaimName`:
+  the board already draws that name on silkscreen and renumbering it produces a schematic that
+  disagrees with copper the user is looking at. A name that is somehow not free is REPORTED and the
+  instance is left alone, never renamed (R-fp4b-8d's rule, unchanged);
+- **a bare land pattern nothing claims** — still creates nothing, and is now counted and said once.
+
+**Linking transfers the name; it does not copy it.** On creation the instance takes `SchematicId` and
+its `RefDes` and `PartKind` are cleared — two fields with one meaning drift, and `DisplayRefDes` then
+draws the same string from the schematic side, so nothing on the board changes appearance at the moment
+of linking. Deliberately NOT done for the ordinary-cell create path beside it, which names its component
+`X1` rather than from the instance: clearing a `RefDes` there would change what the board draws.
+
+### The sibling document, and who is allowed to know it exists
+
+The layout editor holds no reference to a schematic (R-fp3-6d) and that stays true. `WorkspaceViewModel`
+owns both session registries, so it is the one object that can answer "is the other view open, and what
+names does it hold" — installed as a provider on each session exactly like `WorkspaceRootProvider` and
+`CellResolverProvider` beside it. When the sibling IS open the session's answer is not merely cheaper
+but more correct: it holds unsaved edits the file does not, and a name chosen against the file would
+collide with a part the user placed a minute ago. Null (headless, a scratch document, no workspace)
+falls through to the view model's own cached read, which is the same answer one save behind. The rest —
+which view counts, and the cache — is in `src/Design/RESOLVED.md`.
+
+### A dropped part turned back into bare copper on the first ordinary edit
+
+Found from a field report the same day ("I performed an Update Schematic from Layout but did not see
+my L1 component in the schematic"), while reading the reporter's own `.clay`. `LayoutGeometry.Clone`
+did not carry `PartKind`. Every properties-panel edit, every move drag, every paste and every
+footprint RE-POINT goes through that method, so a part dropped from the palette lost what it was on
+the first thing the user did to it — after which Update Schematic from Layout correctly creates
+nothing for it, and the only trace left is a designator with nothing behind it.
+
+The same two comments already sitting above that line, for `CellInterfaceHash` and for the
+designator's stored placement, say exactly this in exactly these words. A field added to
+`LayoutInstance` has three obligations, not two: the file, the clone, and whatever reads it. Missing
+the clone is the one that fails silently and only on the SECOND interaction.
+
+**The re-point is not an incidental caller — it is the only route to the case size a user wants.**
+The Footprint tool takes a CASE and produces artwork with no part behind it; the palette drop takes a
+KIND and always lands on the `smt:0201@N` default. So "an inductor in an 0603" is: drop the part, then
+re-point it — which is precisely the gesture the missing clone field broke. That path is now gated
+(`LayoutFirstPartTests.RePointingADroppedPartToAnotherCaseKeepsItsIdentityAndItStillBackAnnotates`),
+and the gate was checked against the defect rather than assumed: commenting the one line out turns it
+red.
+
+**A diagnosis that was wrong, and the clue that should have prevented it.** The `.clay` showed the L1
+as an `smt:0603@N` with no `PartKind`, and it was first read as a Footprint-tool placement named by
+hand — which would correctly create nothing (R-fp6-1a). It was not. `RefDes: "L1"` can only have been
+SEEDED, and only the palette drop seeds one: a Footprint-tool placement of a generated land pattern
+gets no designator at all, because the generated cell declares no `Reference` prefix. That single
+field distinguishes the two origins and it was read and then reasoned past, in favour of the case
+size — which the re-point explains. **When two paths differ in what they write, the field only one of
+them writes is the evidence; the field both of them change is not.**
+
+## The palette drop lands on the case the board is being built in (2026-09-21)
+
+Straight out of the same report: drop the part, then immediately re-point it, every time. A drop
+places a PART at a case size and `FootprintDefaults.For` answers 0201 for all nine kinds, so a board
+being built in 0603 had NO single gesture that put a part down in 0603 — the Footprint tool takes a
+case and gives artwork with no part behind it; the palette takes a kind and always landed on 0201.
+
+`LayoutEditorViewModel.LastFootprintChoice` records whichever case the Footprint picker last settled,
+through EITHER of its gestures — placing one by hand, and re-pointing one — and the drop uses it.
+Re-pointing counts because that is the gesture the report actually arrived as.
+
+**It is asked AFTER `FootprintDefaults.For`, never instead of it.** That call is what decides whether
+a kind may be dropped at all and whether this technology has a board to drop it onto; a remembered
+case must not be able to answer either question, or picking an 0603 once would make chip resistors
+droppable onto an MMIC die. The remembered case only chooses WHICH case an already-droppable part
+lands on, and the gate asserts both refusals still hold with one remembered.
+
+**Per session, and deliberately not persisted.** It is an authoring preference, not design data:
+writing it into the `.clay` would put a transient choice into the file format, and a per-user setting
+would carry a dense board's case size onto the next design. Reopening starts at 0201, which is one
+pick to correct.
+
+## A pasted instance claimed to BE the instance it was copied from (2026-09-21)
+
+Reported from the field the same day: copy/paste an MLIN in the layout editor and the copy carried
+the source's name, so Update Schematic from Layout created nothing for it and the second MLIN was
+simply missing from the schematic.
+
+`LayoutGeometry.Clone` carries `SchematicId` and `RefDes`, and it **must** — a move drag, a
+properties edit and a footprint re-point are all the SAME instance, and dropping either field there
+is the defect fixed one entry above. A PASTE is the case where carrying them is wrong: the copy is a
+new instance, and an identity is not a property of the geometry.
+
+Fixed in `InsertPastedMixed`, the shared commit for Paste / Paste in Place / Duplicate, **beside
+`ResolvePortNumbers`, which already did exactly this for EM port numbers and for exactly this
+reason** — copy/paste is the one gesture that produces the clash by construction, and the taken set
+is seeded from the DESTINATION and updated between pasted items so an intra-batch collision (two
+parts copied together) is prevented as well as a collision with what was already there. That an
+identical fix already existed one line above the bug is the useful part: **when a new field joins
+`LayoutInstance`, the paste funnel is a third obligation beside the file and the clone.**
+
+**And the copy is NAMED, not merely unlinked** — the second half of the same report, an hour later:
+the first fix stripped the identity and seeded nothing, so a pasted part arrived with NO designator
+at all, which is worse than the duplicate it replaced because the duplicate was at least visible.
+
+The cause is worth keeping. `SeedDesignator` knows two prefix sources — `PartKind`, and the cell's
+own declared `Reference` — and **both are empty for the commonest instance on any board.** A part
+that came from the schematic keeps its whole identity in `SchematicId` (`R1`, `ML1`) and its cell is
+a generated land pattern or microstrip, which declares no `Reference`. So the prefix was living in
+the very string the paste had just thrown away, and `PastePrefixFor` now reads it back out of it
+(`ML1` → `ML`, `Rin` → `Rin`) as a third source, consulted only when the first two have no answer.
+
+**That is not R-fp6-2e coming back.** That rule refuses to infer what a part IS from its designator
+prefix, because a renamed `R1` → `Rin` would make a capacitor read as a resistor. Nothing here asks
+what the part is; `LayoutPartKind` still answers that, first. The question is what to CALL a copy of
+something called `ML1`, and the honest answer is the next free `ML`.
+
+One consequence had to be closed with it: a pasted instance now arrives carrying a seeded `RefDes`
+whatever kind it is, so `LayoutToSchematicGenerator` clears `RefDes` on EVERY link rather than only
+for a layout-first part. That is safe by construction — `DisplayRefDes` already prefers `SchematicId`,
+so clearing it cannot change what is drawn; it only removes data that could later disagree.
+
+**Re-minted only on a COLLISION, which is what keeps Cut-and-Paste working.** Cutting an instance and
+pasting it back is a MOVE: the source is gone, nothing claims its name, and stripping the link would
+orphan artwork the schematic still owns — after which the next Update Layout from Schematic places a
+second copy of it. So an identity nothing else claims is left exactly as it was, and the rule reads
+as "a duplicate is re-minted" rather than "a paste is anonymised". `PartKind` is kept either way: a
+copy of a resistor is still a resistor, and what it loses is only WHICH resistor it is.
+
+## Every shipped board technology now declares a courtyard layer (2026-09-21)
+
+Reported from the field: changing a part's footprint raised
+
+> technology 'PCB 2-Layer RO4350B (20mil, 1oz)' declares no courtyard/assembly layer (F.CrtYd or
+> F.Fab), so the courtyard outline was omitted …
+
+The sentence was true. What was wrong is that **no board technology circuitRF shipped declared one** —
+all four `pcb-*.ctech` files carried copper, mask, silk, drill and outline and nothing else. So the
+warning fired for every part on every board, the user could neither act on it nor avoid it, and it
+sat beside the silkscreen warning, which is the one that matters. Constant unavoidable noise next to
+a real warning is how people learn to ignore the Messages panel.
+
+Two halves, because there are **two definitions of the PCB technology** and only fixing one would
+have left the other broken: the shipped `resources/technologies/pcb-*.ctech` files, and
+`StarterTechnologies.Pcb2Layer()`, which is what **New Technology** hands out. That file's own
+comment already claimed the aliases were declared "identically" in both; nothing held it to that, so
+`LandPatternRoleSeverityTests` now does.
+
+**And the note itself is Info, not Warning** (`LandPatternLayers.IsInformational`). A missing
+soldermask or silkscreen is a statement about the board a user will hold — a pad that cannot be
+soldered, a part that cannot be identified once populated. A courtyard is placement metadata that
+never reaches the fabricated board and nothing in the DRC reads it. Saying so is still worth one
+line, because R-fp1-3c's rule (it is NOT relocated to the board outline) is exactly what someone
+would otherwise assume had happened.
+
+**The match is on the layer ALIASES, not the prose.** `"F.CrtYd or F.Fab"` is the technology
+contract; the rest of the sentence is wording. The gate asserts the REAL produced sentence against
+the predicate, so rewording it and dropping the aliases turns red instead of silently re-promoting
+the line to a warning.
+
+**What it touched downstream, all of it regenerated rather than reverted:** the `footprint-case-sizes`
+and `footprint-densities` figures now draw the courtyard (verified by counting `#C678DD` in the
+emitted SVG — 0 before, 8 and 6 after — not by eye), `cli.md`'s worked `explain` output reads
+"9 defined" where it read 8, `TechPersistenceTests.Pcb2Layer_MatchesTableDefaults` expects 9 layers,
+and the footprints chapter's callout no longer says no shipped technology declares one.

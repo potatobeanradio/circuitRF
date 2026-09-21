@@ -62,7 +62,7 @@ public static class LandPatternLayers
         var assembly = ResolveOptional(technology, "F.CrtYd", ["courtyard", "assembly"], "courtyard")
                     ?? ResolveOptional(technology, "F.Fab", ["fabrication"], "assembly");
         if (assembly is null)
-            diagnostics.Add(Missing(technology, "courtyard/assembly", "F.CrtYd or F.Fab",
+            diagnostics.Add(Missing(technology, "courtyard/assembly", CourtyardAliases,
                                     "the courtyard outline was omitted — it is NOT drawn on the board outline"));
 
         return new LandPatternRoles(copper, mask, silk, assembly);
@@ -185,4 +185,29 @@ public static class LandPatternLayers
     private static string Missing(Technology technology, string role, string alias, string consequence)
         => $"technology '{technology.Name}' declares no {role} layer ({alias}), so {consequence}. " +
            "Nothing was drawn on another layer in its place.";
+
+    /// <summary>The aliases the courtyard sentence names — and the one part of it that is a CONTRACT
+    /// rather than prose, which is why <see cref="IsInformational"/> keys on it.</summary>
+    private const string CourtyardAliases = "F.CrtYd or F.Fab";
+
+    /// <summary>
+    /// True when <paramref name="diagnostic"/> is one this class emits at <b>Info</b> rather than
+    /// Warning — the missing-courtyard sentence, and only it.
+    ///
+    /// <para><b>Why that one is different.</b> A missing soldermask or silkscreen is a statement
+    /// about the board a user will hold: no mask opening is a pad that cannot be soldered, and no
+    /// silk is a part you cannot identify once it is populated — which is the report
+    /// <c>ReportMissingLandPatternRoles</c> exists for. A courtyard is placement and assembly
+    /// metadata; it is invisible on the fabricated board and nothing in circuitRF's DRC reads it, so
+    /// its absence breaks nothing. Saying so is still worth one line, because R-fp1-3c's rule (it is
+    /// NOT relocated to the board outline) is exactly the thing someone would otherwise assume had
+    /// happened — but at Warning it was noise beside the two that matter.</para>
+    ///
+    /// <para>Matched on the layer ALIASES rather than on the prose: those two names are the
+    /// technology contract and the rest of the sentence is wording. <c>LandPatternRoleSeverityTests</c>
+    /// asserts the real produced sentence against this, so rewording it and dropping the aliases
+    /// turns red rather than silently re-promoting the line to a warning.</para>
+    /// </summary>
+    public static bool IsInformational(string? diagnostic)
+        => diagnostic is not null && diagnostic.Contains(CourtyardAliases, StringComparison.Ordinal);
 }

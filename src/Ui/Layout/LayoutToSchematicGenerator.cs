@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Layout.PCells;
@@ -102,6 +103,11 @@ public static class LayoutToSchematicGenerator
         IUiCommand? chain = null;
         int created = 0, updated = 0, unchanged = 0, overwritten = 0;
 
+        // brief-footprint-6 R-fp6-1b: placements that ARE bare land patterns. Counted rather than
+        // listed — a hand-authored board can hold a hundred of them, and a hundred identical lines is
+        // a report nobody reads.
+        int landPatterns = 0;
+
         var bySchematicId = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
         foreach (var c in schematic.Components)
             if (!string.IsNullOrEmpty(c.InstanceName) && !bySchematicId.ContainsKey(c.InstanceName))
@@ -169,8 +175,40 @@ public static class LayoutToSchematicGenerator
             // no push-back onto one already linked.
             bool builtIn = ReverseGeneratorMap.TryGetValue(origin.GeneratorId, out var kind);
             string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(wsRoot, origin.GeneratorId);
+
+            // brief-footprint-6 §2/§4. A generated cell that neither a built-in nor a kit claims is
+            // one of three things, and the three answers are genuinely different:
+            //
+            //   - artwork this schematic already owns — every SMT part Update Layout has ever placed
+            //     is an instance of a bare land-pattern cell, and a land pattern has no parameters, so
+            //     there is nothing to push back and the instance is UNCHANGED;
+            //   - a PART this placement declares itself to be (R-fp6-2d) — a component dropped into
+            //     the board from the Library palette, which is what this brief creates;
+            //   - a bare land pattern nothing claims — artwork the user drew, exactly as a drawn
+            //     polygon is, and Update Schematic from Layout has never invented a component for a
+            //     polygon (R-fp6-1a). Nothing is created; it is COUNTED and said once (R-fp6-1b).
+            //
+            // Until this brief all three fell through one silent `continue`, so the command reported
+            // success having ignored every one of them — the same failure the ordinary-cell path above
+            // was fixed for in 2026-08-17.
+            SymbolKind? layoutFirstPart = null;
             if (!builtIn && kitRef is null)
-                continue; // a foreign generator no part claims — nothing to name it after
+            {
+                if (inst.SchematicId is { Length: > 0 } landSid && bySchematicId.ContainsKey(landSid))
+                {
+                    unchanged++;
+                    continue;
+                }
+
+                if (LayoutPartKind.Of(inst) is not { } declared)
+                {
+                    landPatterns++;
+                    continue;
+                }
+
+                layoutFirstPart = declared;
+                kind = declared;
+            }
 
             bool linked = inst.SchematicId is { Length: > 0 } sid0 && bySchematicId.TryGetValue(sid0, out _);
             var comp = linked ? bySchematicId[inst.SchematicId!] : null;
@@ -190,13 +228,38 @@ public static class LayoutToSchematicGenerator
                     continue;
                 }
 
+                // R-fp6-3a: a layout-first PART is named by its OWN RefDes, not by ClaimName. The
+                // board already draws that name on silkscreen, and a back-annotation that renumbers it
+                // produces a schematic that disagrees with copper the user is looking at. Keeping the
+                // name free is R-fp6-4's job; if it was not free anyway, the collision is reported and
+                // the instance is LEFT ALONE rather than renamed.
+                string instanceName;
+                if (layoutFirstPart is not null && inst.RefDes is { Length: > 0 } ownName)
+                {
+                    if (bySchematicId.ContainsKey(ownName) || claimed.Contains(ownName))
+                    {
+                        lines.Add(new SchematicToLayoutGenerator.ReportLine(ownName,
+                            $"{ownName} is already a component in this schematic, so the part drawn as " +
+                            $"{ownName} on the board was left alone — nothing was created and nothing " +
+                            "was renamed. Rename one of the two and run this again.",
+                            SchematicToLayoutGenerator.ReportSeverity.Warning));
+                        continue;
+                    }
+                    claimed.Add(ownName);
+                    instanceName = ownName;
+                }
+                else
+                {
+                    instanceName = ClaimName(kitRef is not null ? "X" : ComponentTypeRegistry.InstancePrefix(kind));
+                }
+
                 // R-L5-20: create half — writes SchematicId as it goes.
                 comp = kitRef is not null
-                    ? NewCellComponent(kitRef, schematic, ClaimName("X"))
+                    ? NewCellComponent(kitRef, schematic, instanceName)
                     : new EditableComponent
                       {
                           Symbol       = kind,
-                          InstanceName = ClaimName(ComponentTypeRegistry.InstancePrefix(kind)),
+                          InstanceName = instanceName,
                       };
                 comp.X = (newSlot % GridCols) * GridPitchSchematic;
                 comp.Y = (newSlot / GridCols) * GridPitchSchematic;
@@ -210,10 +273,30 @@ public static class LayoutToSchematicGenerator
                         });
                 ApplyPCellParamsToComponent(comp, origin.Parameters, technology);
 
+                // R-fp6-3c: the artwork it already has. Without it the very next Update Layout from
+                // Schematic would report the brand-new component as having no artwork — while its
+                // artwork sits on the board. The value is the land pattern's own generator id, which
+                // is exactly the spelling a Footprint parameter takes.
+                if (layoutFirstPart is not null)
+                    comp.Parameters.Add(new EditableParameter
+                    {
+                        Name            = ArtworkParameters.FootprintName,
+                        Expression      = origin.GeneratorId,
+                        ShowOnSchematic = false,
+                    });
+
                 chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, comp));
                 inst.SchematicId = comp.InstanceName; // bookkeeping — not part of the undo entry, mirrors
                                                        // SchematicPCellSnapshots below (R-L5-13's own note:
                                                        // "what is reported is what happened").
+                // R-fp6-3d: linking TRANSFERS the name, it does not copy it. An instance with a
+                // SchematicId stores no RefDes (R-fp4b-1a) — two fields with one meaning drift — and
+                // DisplayRefDes ALREADY prefers SchematicId, so clearing this changes nothing that is
+                // drawn and only removes data that could later disagree. Unconditional, because a
+                // PASTED instance now arrives carrying a seeded RefDes whatever kind it is.
+                inst.RefDes = null;
+                // PartKind goes with it on a part, for the same reason: the schematic now knows.
+                if (layoutFirstPart is not null) inst.PartKind = null;
                 created++;
                 lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
                     $"{comp.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info));
@@ -278,6 +361,28 @@ public static class LayoutToSchematicGenerator
                 unchanged++;
             }
         }
+
+        // R-fp6-1b/1c: ONE aggregate line, at Info. Nothing is wrong — the user placed artwork and got
+        // artwork — but "nothing happened and nothing was said" is indistinguishable from a broken
+        // command, which is the failure the forward direction's own skip report already exists to
+        // prevent.
+        if (landPatterns > 0)
+            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+                $"{landPatterns} placement{(landPatterns == 1 ? " is a land pattern" : "s are land patterns")} " +
+                "with no part behind them, so no components were created for them. Drop a component from " +
+                "the Library palette to place a part that has one.",
+                SchematicToLayoutGenerator.ReportSeverity.Info));
+
+        // R-fp6-3f: R-L5-19 stands — this command places and updates components and draws no wires, so
+        // a layout-first board back-annotates to correctly named, correctly footprinted, UNCONNECTED
+        // parts. That is a BOM round trip, not yet a design flow, and the user is told rather than left
+        // to discover it. Deriving nets from copper belongs to brief-authored-board-2.
+        if (created > 0)
+            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+                $"{created} component{(created == 1 ? " was" : "s were")} created from this layout. " +
+                "No nets were derived from the copper — this command places and updates components and " +
+                "draws no wires, so the parts it created are unconnected.",
+                SchematicToLayoutGenerator.ReportSeverity.Info));
 
         return new GenerationResult(chain, lines, created, updated, unchanged, overwritten, noSymbol);
     }
