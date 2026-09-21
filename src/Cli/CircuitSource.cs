@@ -10,24 +10,15 @@ namespace CircuitRF.Cli;
 /// The <c>(Library, TestBench)</c> a document holds — read the way the APPLICATION reads it, which
 /// for a schematic is not the obvious way.
 ///
-/// <para><b>A `.csch` goes through the `.cnl` on its way to the elaborator, and that round trip is
-/// load-bearing.</b> The GUI's Simulate is
-/// <c>NetExtractor.Extract → CnlWriter.Write → CnlReader.Read → Elaborator</c>
-/// (<c>WorkspaceViewModel.WriteNetlist</c> then <c>SchematicRunService.Prepare</c>), and the two
-/// readers do NOT agree about bare words: a schematic parameter is an EXPRESSION, so
-/// <c>BiasTee=on</c> read straight out of extraction fails elaboration with "Unresolved name 'on'",
-/// while the same value written to a `.cnl` and read back is quoted by <c>CnlReader</c> and
-/// elaborates. Four of the shipped example schematics carry exactly that value.</para>
+/// <para><b>The schematic half is <see cref="SchematicCircuit"/> and this file keeps no copy of
+/// it.</b> It lived here until brief-lvs-4-schematic-netlist.md; it moved to <c>src/Design</c>
+/// because LVS reads a schematic too and cannot reference <c>src/Cli</c>, and a second copy of
+/// <c>NetExtractor.Extract → CnlWriter.Write → CnlReader.Read</c> would eventually mean the
+/// netlist LVS compares is not the netlist the design runs as. That type's own remarks say why
+/// the round trip is load-bearing and why nothing is written.</para>
 ///
-/// <para>So a <c>check</c> that skipped the round trip would report four errors the application does
-/// not have — which is the precise failure R-aut4-2 exists to prevent, in the other direction: not a
-/// rule the GUI does not enforce, but a rule the GUI does not APPLY. The finding is recorded in
-/// <c>src/Cli/RESOLVED.md</c>; what this file does is refuse to have a second opinion about it.</para>
-///
-/// <para><b>Nothing is written</b> (R-aut4-6). The `.cnl` exists as a string and is handed straight
-/// to <c>CnlReader.Read</c> with the schematic's own directory as the source directory — the same
-/// argument <c>CnlReader.ReadFile</c> derives from a real path, so relative SnP and model references
-/// resolve identically.</para>
+/// <para>What is left here is what a CLI VERB needs on top of it: classification by document kind,
+/// a run verb's refusal, and the "does this bench declare anything runnable" question.</para>
 /// </summary>
 internal static class CircuitSource
 {
@@ -73,79 +64,21 @@ internal static class CircuitSource
         }
     }
 
-    /// <summary>
-    /// Extraction, then the `.cnl` round trip — see this type's own remarks for why the second half
-    /// is not optional.
-    /// </summary>
+    /// <inheritdoc cref="SchematicCircuit.FromSchematic(string)"/>
     public static (Library Lib, TestBench Tb) FromSchematic(string cschPath)
-    {
-        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-        return FromSchematic(model, Path.GetFileNameWithoutExtension(cschPath),
-                             ReferenceBaseOf(cschPath));
-    }
+        => SchematicCircuit.FromSchematic(cschPath);
 
-    /// <summary>
-    /// What a relative file reference inside a document resolves against: <b>the workspace root</b>,
-    /// and the document's own folder only when it belongs to no workspace.
-    ///
-    /// <para><b>This is the GUI's base, not a headless one</b> (<c>SnpPathPolicy</c> states the rule
-    /// and <c>MoveRefRegistry</c> repairs against it). Simulate writes <c>netlist.cnl</c> at the
-    /// workspace root and elaborates from there, so an SnP's <c>File</c> is stored relative to the
-    /// root — and a run verb that used the schematic's own folder instead answered differently about
-    /// the same design. The shipped S-Parameters example is where that surfaced: it ran headlessly
-    /// and, opened, reported its Touchstone file missing at the workspace root. Which of the two was
-    /// wrong was not the interesting part — that they disagreed at all is what made a verb's answer
-    /// stop meaning anything about the window.</para>
-    ///
-    /// <para>The no-workspace fallback is the document's own folder, which is the only base a loose
-    /// <c>.csch</c> can reasonably have, and the same fallback <c>SnpPathPolicy.Resolve</c> takes.</para>
-    /// </summary>
-    internal static string? ReferenceBaseOf(string documentPath)
-    {
-        string? own = Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        return WorkspaceRootFinder.WorkspaceDirOf(own) ?? own;
-    }
-
-    /// <inheritdoc cref="FromSchematic(string)"/>
+    /// <inheritdoc cref="SchematicCircuit.FromSchematic(SchematicEditModel, string, string?)"/>
     public static (Library Lib, TestBench Tb) FromSchematic(
         SchematicEditModel model, string testBenchName, string? sourceDir)
-    {
-        var (lib, tb) = new CnlReader().Read(CnlTextOf(model, testBenchName), testBenchName, sourceDir);
-        return (lib, tb);
-    }
+        => SchematicCircuit.FromSchematic(model, testBenchName, sourceDir);
 
-    /// <summary>
-    /// The `.cnl` text a schematic extracts to — the FIRST half of the round trip above, on its own
-    /// (R-aut11-1).
-    ///
-    /// <para><b>There is one extraction and this is it.</b> <c>circuitrf netlist</c> writes exactly
-    /// this string and every run verb reads exactly this string, so the file a caller is handed is
-    /// not merely equivalent to what a run consumed — it is the same bytes. A second writer here,
-    /// with its own provenance line or its own ordering, would give a caller a netlist that runs
-    /// differently from the schematic it came out of, and nothing would say so.</para>
-    ///
-    /// <para>The provenance comment is deliberately constant: a timestamp or a verb name in it would
-    /// make two extractions of one schematic differ, which is precisely what the byte-for-byte gate
-    /// exists to detect.</para>
-    /// </summary>
+    /// <inheritdoc cref="SchematicCircuit.CnlTextOf(SchematicEditModel, string)"/>
     public static string CnlTextOf(SchematicEditModel model, string testBenchName)
-    {
-        // DiskCellResolver, never null. A null resolver tells NetExtractor the caller is flat, and it
-        // answers by SKIPPING every cell instance with no conflict note — so a design whose device
-        // lives in a sub-cell extracted to the passive network around the hole, ran, converged on
-        // every point, and reported nothing. The window has always passed its own resolver; this is
-        // that same descent, reading the cell folder rather than an open session.
-        var extracted = NetExtractor.Extract(model, testBenchName, DiskCellResolver.Instance);
-        return CnlWriter.Write(extracted.TestBench, extracted.Library,
-                               $"extracted from {testBenchName}");
-    }
+        => SchematicCircuit.CnlTextOf(model, testBenchName);
 
-    /// <inheritdoc cref="CnlTextOf(SchematicEditModel, string)"/>
-    public static string CnlTextOf(string cschPath)
-    {
-        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-        return CnlTextOf(model, Path.GetFileNameWithoutExtension(cschPath));
-    }
+    /// <inheritdoc cref="SchematicCircuit.CnlTextOf(string)"/>
+    public static string CnlTextOf(string cschPath) => SchematicCircuit.CnlTextOf(cschPath);
 
     /// <summary>
     /// A run verb's input: a `.cnl` read as itself, or a `.csch` EXTRACTED in memory (R-aut11-1).

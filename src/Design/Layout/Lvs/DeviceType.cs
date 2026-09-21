@@ -1,12 +1,18 @@
 // What kind of device something is, named once for both sides — brief-lvs-4-schematic-netlist.md
 // R-lvs4-5, started here because brief 3 cannot emit an LvsDevice without it.
 //
-// ── WHAT IS HERE AND WHAT BRIEF 4 STILL OWES ──────────────────────────────────────────────────
+// ── BOTH SIDES ARE HERE ───────────────────────────────────────────────────────────────────────
 //
-// HERE: the type, the kinds, the generator map, and OfLayout — the layout side, which is what
-// brief 3 needs. Brief 4 adds OfSchematic, completes the generator map against the whole
-// PCellRegistry with the build-time completeness test R-lvs4-5c asks for, and folds PartKind and
-// the built-in kinds in behind it.
+// Brief 3 landed the type, the kinds, the generator map and OfLayout. Brief 4 adds OfSchematic and
+// names the remaining SymbolKinds, so the two sides answer through ONE switch: a layout placement
+// declares its kind as a SymbolKind (LayoutPartKind) and a schematic component IS one, which is
+// why the classifier takes a SymbolKind and there is no second table to keep in step.
+//
+// R-lvs4-5c's completeness is a TEST over PCellRegistry's own registration list, in
+// tests/Ui.Tests/Lvs/SchematicNetlistTests.cs — it lives there because PCellRegistry is in src/Ui
+// and this file is below the firewall. It FAILS on a new generator with no entry here rather than
+// letting one fall back at runtime: a silent fallback produces two devices of "unknown" type that
+// then match each other.
 //
 // THE MAP IS NOT COPIED. LayoutToSchematicGenerator's ReverseGeneratorMap was the seed and it now
 // CALLS this one rather than keeping its own: two maps with one meaning drift, which is this
@@ -151,13 +157,59 @@ public static class DeviceTypes
     }
 
     /// <summary>
-    /// The coarse kind of a <see cref="SymbolKind"/>.
+    /// The canonical type of a schematic component — R-lvs4-5b's precedence, schematic side
+    /// (R-lvs4-5a).
+    /// </summary>
+    /// <param name="comp">The placed component.</param>
+    /// <param name="schematicDir">The folder the `.csch` holding it lives in. A <c>CellRef</c> is
+    /// relative to that folder, so with no directory nothing resolves and the kind alone answers.</param>
+    /// <remarks>
+    /// <b>The resolved cell DIRECTORY comes first</b>, and it is resolved through
+    /// <c>ExternalCellRef.ResolveCellDir</c> — the same function <c>CellLayoutResolver</c> calls on
+    /// the layout side, so the two produce the same spelling of the same folder and an absolute
+    /// path can be compared as an identity. Resolving it a second way here would be a path that
+    /// differs by a separator or a <c>..</c> and matches nothing, on designs that are correct.
+    ///
+    /// <para>There is no generator id and no <c>PartKind</c> on this side: the component's
+    /// <see cref="SymbolKind"/> IS the declaration those two are trying to recover, so the
+    /// precedence collapses to "directory, then kind".</para>
+    /// </remarks>
+    public static DeviceType OfSchematic(EditableComponent comp, string? schematicDir)
+    {
+        ArgumentNullException.ThrowIfNull(comp);
+
+        string? cellDir = comp.CellRef is { Length: > 0 } cellRef
+            ? CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir)
+            : null;
+
+        string? name = cellDir is { Length: > 0 } dir
+            ? new System.IO.DirectoryInfo(dir).Name
+            : comp.CellRef is { Length: > 0 } r ? r.Split('/', '\\').LastOrDefault()
+            : comp.Symbol.ToString();
+
+        // A cell instance whose kind says nothing more specific is a CELL — the layout side reaches
+        // the same answer through the same last clause, which is what makes an imported component,
+        // a kit part and a hand-drawn cell all work with nothing registered anywhere.
+        var kind = Of(comp.Symbol);
+        if (kind == DeviceKind.Unknown && comp.CellRef is { Length: > 0 }) kind = DeviceKind.Cell;
+
+        return new DeviceType(kind, cellDir, name);
+    }
+
+    /// <summary>
+    /// The coarse kind of a <see cref="SymbolKind"/> — <b>the one classifier both sides use</b>.
     /// </summary>
     /// <remarks>
-    /// <b>A kind this does not name is <see cref="DeviceKind.Unknown"/>, not an error.</b> Unknown
-    /// matches anything, so a symbol kind nobody has classified costs a missed TYPE veto and never
-    /// a wrong match — where refusing would have made the whole design unreadable. Brief 4 is
-    /// where the remaining kinds are named.
+    /// A layout placement states its kind as a <see cref="SymbolKind"/> too
+    /// (<c>LayoutPartKind</c>), so there is no second table and no way for the two to disagree.
+    ///
+    /// <para><b>A kind this does not name is <see cref="DeviceKind.Unknown"/>, not an error.</b>
+    /// Unknown matches anything, so a symbol kind nobody has classified costs a missed TYPE veto
+    /// and never a wrong match — where refusing would have made the whole design unreadable. What
+    /// is deliberately left Unknown is what has no coarse kind to have: an <c>SnP</c>, an
+    /// <c>SDD</c>, a Verilog-A or SPICE model, a <c>Match</c>, a <c>wBond</c>, the composite RLCs
+    /// and the system blocks are each a BOX whose contents the file names, and calling a two-pin
+    /// <c>Srlc</c> a "Resistor" would veto a correct pairing.</para>
     /// </remarks>
     public static DeviceKind Of(SymbolKind kind) => kind switch
     {
@@ -165,12 +217,38 @@ public static class DeviceTypes
         SymbolKind.Capacitor => DeviceKind.Capacitor,
         SymbolKind.Inductor  => DeviceKind.Inductor,
 
+        // Every microstrip element, plus the ideal line: one kind, because the artwork does not
+        // distinguish them either — what tells a tee from a cross is its terminal COUNT, which the
+        // comparison already has.
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf
+            or SymbolKind.Tline
             => DeviceKind.TransmissionLine,
 
-        SymbolKind.Vdc or SymbolKind.ToneSource or SymbolKind.Term
-            or SymbolKind.P1Tone or SymbolKind.ZPort
+        SymbolKind.Diode => DeviceKind.Diode,
+
+        // Anything with a control terminal. The five MESFET laws, the three p-channel ones, the
+        // MOS and JFET pairs, the IGBTs, the vertical power MOSFETs and both BJT polarities are
+        // one kind here for the reason the microstrip family is: the artwork of a transistor does
+        // not say which drain-current law was fitted to it, so a finer kind would turn a correct
+        // design into a type mismatch.
+        SymbolKind.FetCurtice or SymbolKind.FetCurticeCubic or SymbolKind.FetStatz
+            or SymbolKind.FetMaterka or SymbolKind.FetAngelov
+            or SymbolKind.PFetCurtice or SymbolKind.PFetStatz or SymbolKind.PFetMaterka
+            or SymbolKind.Mos1N or SymbolKind.Mos1P or SymbolKind.Mos3N or SymbolKind.Mos3P
+            or SymbolKind.VdmosN or SymbolKind.VdmosP
+            or SymbolKind.JfetN or SymbolKind.JfetP
+            or SymbolKind.IgbtN or SymbolKind.IgbtP
+            or SymbolKind.BjtNpn or SymbolKind.BjtPnp
+            => DeviceKind.Transistor,
+
+        // The FIXTURE (R-lvs4-4c): sources, terminations, ports and the tuner family. Excluded
+        // from the default comparison and named here so the exclusion can be STATED rather than
+        // guessed at by a second list somewhere else.
+        SymbolKind.Vdc or SymbolKind.ToneSource or SymbolKind.CurrentToneSource
+            or SymbolKind.Term or SymbolKind.TermG or SymbolKind.ZPort
+            or SymbolKind.P1Tone or SymbolKind.PnTone
+            or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
             => DeviceKind.Fixture,
 
         _ => DeviceKind.Unknown,

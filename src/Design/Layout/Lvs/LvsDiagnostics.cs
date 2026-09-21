@@ -137,6 +137,52 @@ public static class LvsDiagnostics
         + "your drawing shows this connection.",
         ("stackupEntry", stackupEntry), ("vias", vias));
 
+    // ── The schematic side (brief-lvs-4-schematic-netlist.md) ────────────────
+
+    /// <summary>
+    /// R-lvs4-2c. <b>A refusal, not a partial comparison.</b> A design whose parameters do not
+    /// resolve has no values to compare and its topology may depend on them — an <c>if()</c> in a
+    /// sub-cell's parameter decides which of two branches gets stamped. The sentence is the
+    /// elaborator's OWN, unmodified: it already names the variable, the cycle or the cell, and
+    /// rewording it would mean the same failure reads two different ways depending on which door
+    /// the user came in through.
+    /// </summary>
+    public static Diagnostic ElaborationFailed(string document, string detail) => Diagnostic.Create(
+        "lvs.schematic.elaboration-failed", DiagnosticSeverity.Error,
+        "'{document}' does not elaborate, so it has no resolved values to compare: {detail}",
+        ("document", document), ("detail", detail));
+
+    /// <summary>The `.cnl` round trip or the read itself failed. Its own sentence, given an id —
+    /// distinct from <see cref="ElaborationFailed"/> because it happens one step earlier and the
+    /// two have different fixes.</summary>
+    public static Diagnostic SchematicUnreadable(string document, string detail) => Diagnostic.Create(
+        "lvs.schematic.unreadable", DiagnosticSeverity.Error,
+        "'{document}' could not be read as a circuit: {detail}",
+        ("document", document), ("detail", detail));
+
+    /// <summary>Everything <c>NetExtractor</c> had to say about this schematic — two labels on one
+    /// physical net, a cell whose pin count disagrees with its interface, a Pin <c>Num</c> gap.
+    /// Carried verbatim, because extraction authored the sentence and it is the same one the
+    /// window shows.</summary>
+    public static Diagnostic ExtractionNote(string detail) => Diagnostic.Create(
+        "lvs.schematic.extraction-note", DiagnosticSeverity.Warning, "{detail}", ("detail", detail));
+
+    /// <summary>
+    /// R-lvs4-4d. A testbench cell compared without <c>--testbench</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Info, and it names the flag.</b> The default unit of comparison is the CELL, so a
+    /// testbench's sources, terminations and tuners are excluded and their nets become boundary
+    /// nets — which on a bench that is nothing BUT fixture leaves very little to compare.
+    /// "Nothing matched" on a testbench would otherwise be a mystery with no visible cause.
+    /// </remarks>
+    public static Diagnostic TestBenchExcluded(string document, int excluded) => Diagnostic.Create(
+        "lvs.scope.testbench-excluded", DiagnosticSeverity.Info,
+        "'{document}' is a testbench and {excluded} fixture component(s) — sources, terminations, "
+        + "ports and tuners — were excluded; their nets are boundary nets. Pass --testbench to "
+        + "compare them as devices.",
+        ("document", document), ("excluded", excluded));
+
     // ── The whole run (R-lvs3-2c) ────────────────────────────────────────────
 
     /// <summary>

@@ -186,8 +186,9 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
-    /// R-aut11-1's "no second copy of the extraction". Across the whole CLI, exactly one file turns
-    /// a schematic into netlist TEXT, and it is the one the verb and every run verb go through.
+    /// R-aut11-1's "no second copy of the extraction". Across the whole application, exactly one
+    /// file turns a schematic into netlist TEXT, and it is the one the verb and every run verb go
+    /// through.
     ///
     /// <para>The scan is on <c>CnlWriter.Write</c> rather than on <c>NetExtractor.Extract</c>
     /// because those are two different claims. <c>check</c> legitimately calls the extractor on its
@@ -195,9 +196,14 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
     /// reported, and nothing else in the tree reports it — and then goes through
     /// <see cref="CircuitSource"/> for the netlist half like everyone else. What must not exist
     /// twice is the WRITE, because that is what decides the bytes.</para>
+    ///
+    /// <para><b>The one file is <c>src/Design/Schematic/SchematicCircuit.cs</c> and no longer
+    /// <c>CircuitSource</c></b> (brief-lvs-4-schematic-netlist.md R-lvs4-1a). It moved below the
+    /// firewall because LVS reads a schematic too and cannot reference <c>src/Cli</c>. So the CLI
+    /// now names it ZERO times — the claim is the same one, one level stronger.</para>
     /// </summary>
     [Fact]
-    public void TheExtractionToNetlistText_ExistsInExactlyOnePlaceInTheCli()
+    public void TheExtractionToNetlistText_ExistsInExactlyOnePlace()
     {
         var naming = new List<string>();
         foreach (string file in Directory.GetFiles(
@@ -209,7 +215,11 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
                 naming.Add(Path.GetFileName(file));
         }
 
-        Assert.Equal(["CircuitSource.cs"], naming);
+        Assert.Equal([], naming);
+
+        // And the function every one of them calls instead is the one below the firewall.
+        Assert.Contains("CnlWriter.Write(", StripComments(File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "Design", "Schematic", "SchematicCircuit.cs"))), StringComparison.Ordinal);
     }
 
     [Fact]

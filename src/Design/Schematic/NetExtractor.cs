@@ -287,11 +287,10 @@ public static class NetExtractor
 
         foreach (var comp in model.Components)
         {
-            if (comp.Disable is DisableState.Open or DisableState.Short) continue;
-            if (comp.Symbol == SymbolKind.Ground) continue;
-            if (comp.Symbol == SymbolKind.Pin)    continue;
-            if (comp.Symbol == SymbolKind.Var)    continue;  // VAR rows routed to Variables, not instances
-            if (comp.Symbol == SymbolKind.Meas)   continue;  // MEAS rows routed to Measurements, not instances
+            // R-lvs4-3b. The list is SchematicExclusions' and not this loop's: LVS reads the same
+            // one, and a component that is electrical to one of the two and not the other produces
+            // a mismatch whose cause is in neither document.
+            if (SchematicExclusions.IsExcluded(comp)) continue;
 
             // A VProbe touching nothing would otherwise be emitted against its own auto-named net —
             // a row in the results that reads a plausible number for a point in the circuit the user

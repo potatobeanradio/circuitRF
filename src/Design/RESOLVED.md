@@ -10304,3 +10304,74 @@ Gate: `tests/Ui.Tests/RailRf/GerberSetToACurveTests.cs`, whose first test perfor
 with no display: import the set, answer the layer question, open the board, be refused on the ground
 pour, confirm the reference, be offered the two capacitors, name the part, and end with a curve whose
 series resonance is the part's own.
+
+## The schematic netlist, and one classifier for both sides (2026-09-21, brief-lvs-4)
+
+`brief-lvs-4-schematic-netlist.md`. `SchematicRead` turns a `.csch` into the same `LvsNetlist`
+`LayoutRead` builds from a `.clay`. Five things came out of building it that the brief did not say.
+
+### The `.cnl` round trip had to leave `src/Cli`, and the CLI's own gate changed shape
+
+R-lvs4-1a says the read goes "via `src/Cli/CircuitSource.cs`". It cannot: `SchematicRead` lives in
+`src/Design`, and `src/Design` does not reference `src/Cli`. The alternative was a second copy of
+`NetExtractor.Extract → CnlWriter.Write → CnlReader.Read`, which is the failure the requirement
+exists to prevent — a drift there means the netlist LVS compares is not the netlist the design runs
+as, with nothing to say so.
+
+So the round trip moved to `src/Design/Schematic/SchematicCircuit.cs` and `CircuitSource` calls it
+and keeps no copy. `MissingVerbsCliTests.TheExtractionToNetlistText_ExistsInExactlyOnePlace` asserted
+`["CircuitSource.cs"]`; it now asserts **zero** files under `src/Cli` name `CnlWriter.Write(`, plus
+that `SchematicCircuit.cs` does — the same claim, one level stronger.
+
+**Two other writers exist and were left alone**: `WorkspaceViewModel.WriteNetlist` (Simulate's own
+write, with its own header text) and `Diagnostics/Fixtures/DocRunData.cs`. Both are in `src/Ui` and
+both pass a different provenance header, so folding them in would change bytes the byte-for-byte
+gates pin. Worth knowing before anyone widens that scan to all of `src` — it will fail, and the
+failure is not a defect.
+
+### `PartKind` is a `SymbolKind`, so R-lvs4-5b's four-level precedence is really two
+
+The brief names four namespaces: `SymbolKind`, `CellRef`, `PCellOrigin.GeneratorId`, `PartKind`.
+Three of them resolve to the first one — `LayoutPartKind.Parse` returns a `SymbolKind`, and the
+generator map's whole job is to produce one. So `DeviceTypes.Of(SymbolKind)` is the single
+classifier both sides go through, and the precedence that survives is just **resolved cell
+directory, then kind**. There is no second table to keep in step, which is the thing the
+requirement was actually protecting.
+
+### What is deliberately left `DeviceKind.Unknown`
+
+`Unknown` matches anything, so a kind nobody has classified costs a missed TYPE veto and never a
+wrong match. An `SnP`, an `SDD`, a Verilog-A or SPICE model, a `Match`, a `wBond`, the composite
+RLC tiles (`Srlc`, `Prlc`, …) and the ten system blocks are each a BOX whose contents a file names.
+Calling a two-pin `Srlc` a "Resistor" would veto a pairing that is correct, which is worse than
+saying nothing: a missed veto costs one unchecked assumption, a wrong veto costs a false finding on
+a design that is right.
+
+### Only an ANCHORED net name becomes an `LvsNet.Label`
+
+Every schematic net has a name; most of them are auto-generated (`n7`) and mean nothing outside one
+extraction. A label is what brief 7 ANCHORS on, so carrying an auto-name as one would offer the
+comparison a name the artwork could never have — and, worse, one it could coincidentally match if
+someone ever stamps `n7` on copper. What is kept is ground, every user-placed net label
+(`TestBench.LabeledNets`, which is extraction's own provenance set) and every cell port name. The
+layout side already answers `null` for unnamed copper, so the two agree about what "unnamed" means.
+
+### `ElaboratedNetlist` is `IDisposable` and owns its device models
+
+It has to be read INSIDE its own `using`. An external device model owns a worker process, so
+keeping `ElaboratedComponent` references and asking them for parameters afterwards is a use of a
+disposed model — which on the external-device path is a use of a process that has exited.
+`SchematicRead` copies the values and the terminal names out into a plain record before the block
+closes. Nothing failed while building this; it is written down because the shape that fails is the
+obvious one to write.
+
+### Two fixture traps, for whoever writes the next test here
+
+`CnlWriter` writes `BiasTee=on` **unquoted** — it is `CnlReader` that reads a bare word as a string,
+which is why the round trip fixes it and why scanning the emitted text for quotes proves nothing.
+
+And a `Tuner` carrying `BiasTee=on` does not on its own demonstrate the bare-word failure: a Tuner
+also requires `Z[1]` or `G[1]`, and without one the elaboration fails for that reason instead,
+masking the one under test. The negative half of
+`TheQuotedParameterSurvivesTheRoundTripAndFailsWithoutIt` was passing for the wrong reason until the
+termination was added.

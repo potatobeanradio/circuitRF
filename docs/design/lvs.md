@@ -524,8 +524,13 @@ it, resolves every parameter top-down, and numbers nodes.
 
 **R-lvs-26. LVS reads the schematic through the same `.cnl` round trip the GUI's Simulate performs**
 — `NetExtractor.Extract → CnlWriter.Write → CnlReader.Read`, in memory, via
-`src/Cli/CircuitSource.cs`. §10.3's finding binds here verbatim: skipping it reports errors the
-application does not have, because the two readers disagree about bare words.
+`src/Design/Schematic/SchematicCircuit.cs`. §10.3's finding binds here verbatim: skipping it reports
+errors the application does not have, because the two readers disagree about bare words.
+
+> That round trip lived in `src/Cli/CircuitSource.cs` until brief 4. It moved below the firewall
+> because LVS reads a schematic too and `src/Design` cannot reference `src/Cli`; `CircuitSource`
+> calls it and keeps no copy, so there is still exactly one function that turns a schematic into
+> netlist text and the file a caller is handed is still the bytes a run consumes.
 
 **R-lvs-27. The comparison runs on the DESIGN model, not on the elaborated netlist**, with the
 elaborated one used only to resolve parameter values. The elaborator uniquifies nets by instance
@@ -551,8 +556,8 @@ the designer who has actually drawn the launches.
 
 Four namespaces name device types today: `SymbolKind` (schematic built-ins), `CellRef` (both sides),
 `PCellOrigin.GeneratorId` (layout PCells), and `PartKind` / `FootprintRef` (board parts).
-`LayoutToSchematicGenerator.ReverseGeneratorMap` is the seed of a bridge and covers six microstrip
-generators.
+`LayoutToSchematicGenerator.ReverseGeneratorMap` was the seed of a bridge; it is gone, and
+`DeviceTypes` in `src/Design/Layout/Lvs/DeviceType.cs` is the one map both sides call.
 
 **R-lvs-30. One function resolves a canonical `DeviceType` for either side, and both sides call it.**
 Precedence: the resolved **cell directory** where both sides reference a cell (an absolute path is
