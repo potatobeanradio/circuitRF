@@ -1,5 +1,65 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The Library palette's column count is the pointer's answer, not the layout's (2026-09-21)
+
+Owner: the docked Library is meant to open two component-glyph columns wide, and resizing the
+workspace window can still change how many columns it shows — reported against the build that
+followed the scrollbar work below.
+
+**`PaletteColumnPin` held a LATCH and inferred when to re-read it, and the inference was the bug.**
+The count it enforces was re-read on any layout pass in which the pool the columns divide up had not
+changed, on the reasoning that such a pass must be a splitter drag. It need not be. *Anything* that
+moves the tile area without moving the window moves the count — and because the count is a latch, a
+single wrong read sticks: the pin then enforces the smaller number and widening the window back does
+not bring the column back.
+
+**Reproduced headlessly** (Avalonia 12.0.3, the real `ProportionalStackPanel` and the real
+`PaletteColumnPin`, the shipped `ProjectTreeAndLibrary` proportions, a window at 1200x800), with a
+scrollbar that reserves its column instead of floating:
+
+| window height | tile area | glyph columns | latched count |
+|---|---|---|---|
+| 800, 600, 400 | 187 px | 3 | 3 |
+| **300** — the bar appears | **175 px** | **2** | **2**, and it stays 2 |
+
+A window-HEIGHT change alone, which the palette's width knows nothing about. The same shape is
+available from a density change, a font change, or any other scroller appearing beside the tiles, so
+the fix is the gate rather than a special case for scrollbars:
+
+- **The count changes only while a splitter is under the pointer.** `PointerPressed` on (or inside) a
+  `ProportionalStackPanelSplitter` arms `_dragging`; any release disarms it, and so does a
+  `PointerCaptureLost` — that one is raised DIRECTLY on the splitter and never routes through the
+  panel, so it is handled on the splitters themselves or a drag that ended by leaving the window
+  would leave the pin suspended. The press handlers are tunnel AND bubble with `handledEventsToo`,
+  because the splitter marks its own press handled.
+- **Outside a drag the pin no longer asks whether the window moved — it holds the width on every
+  pass.** It compares the column against `TargetWidth(measured chrome, count)` and re-proportions when
+  they differ; `TryPin` writes nothing inside half a pixel, so an untouched window costs one
+  comparison per layout pass. Because the chrome is MEASURED, a reserving scrollbar now widens the
+  column by its own width instead of eating a glyph column: the same reproduction above holds 2
+  columns at every height, the column going 127 -> 139 px as the bar appears.
+- **`_hasRoom` is gone**, not weakened: it existed to stop a still-pass read of a width the row had no
+  room to give, and nothing is read outside a drag any more. `PaletteColumnWidth.HasRoomFor` still
+  backs `TryPin` and still has its own tests.
+
+**The drag itself still goes anywhere**, which is the one thing this must not break — verified in the
+same harness with real pointer events: press the splitter, drag 130 px, release at a tile area of
+254 px, and the pin latches 4 columns, tightens to exactly 4 (the 6 px left over being a strip no
+glyph was in) and holds 4 through window widths from 1000 to 1600 px.
+
+**The scrollbar change below is not the trigger, and that was measured rather than assumed.** With
+the real `CircuitRfStyles.axaml` loaded from the built `CircuitRF.Ui` assembly, a
+`Classes="overlay-scroll"` viewer gets `Grid.ColumnSpan=2` back: viewport 200 px of a 200 px viewer
+with the bar visible, against 188 px without the class. The palette's tile area is therefore exactly
+what it was before that work. What could not be reproduced here is the owner's own trigger — the
+mechanism above is of the reported shape and is now impossible, but if the count still moves on their
+machine the next thing to ask for is the `.cws` and the arrangement it opens in.
+
+**Gate:** `PaletteColumnWidthTests.ThePin_ReadsTheCountOnlyWhenTheUserHasTheSplitter` — a
+comment-stripped source scan for exactly three reads (first measurement of a new arrangement, the
+passes during a drag, the one pass after it ends), for the pointer answering the question, and for
+`poolChanged` being gone. A scan, because this project has no Avalonia platform to lay a dock out on.
+
 ## "Include beta releases" now defaults ON, and it reaches existing installations (2026-09-21)
 
 While circuitRF itself ships as a beta, the releases that exist to be run ARE the prereleases, so the

@@ -5,6 +5,8 @@ using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
 using Dock.Controls.ProportionalStackPanel;
@@ -13,7 +15,7 @@ namespace CircuitRF.Ui.Views.Palette;
 
 /// <summary>
 /// Keeps a docked Library palette showing the number of component-glyph columns it is showing now,
-/// whatever the user has dragged that to, while the workspace window is resized.
+/// whatever the user has dragged that to, whatever happens to the workspace window around it.
 ///
 /// <para><b>Why this is not just a better default number.</b> Dock sizes a column as a FRACTION of
 /// the window, so a palette that is two glyphs wide at 1200 px is two and a half at 1500 and three
@@ -22,46 +24,47 @@ namespace CircuitRF.Ui.Views.Palette;
 /// recomputed from the pixel width every time the pool it divides changes, which is what this
 /// does.</para>
 ///
-/// <para><b>The count is read off the palette, never assumed.</b> It is whatever whole number of
-/// glyph columns the tile area is showing (<see cref="PaletteColumnWidth.GlyphColumnsIn"/>), re-read
-/// on every layout pass in which the window has not moved — so dragging the splitter to a three- or
-/// five-glyph palette is all it takes to make the window keep it at three or five. Only a palette
-/// too narrow to show one whole column has no count to preserve, and that one is left to scale as it
-/// always did.</para>
+/// <para><b>The count is read off the palette, never assumed</b> — whatever whole number of glyph
+/// columns the tile area is showing (<see cref="PaletteColumnWidth.GlyphColumnsIn"/>), so dragging
+/// the splitter to a three- or five-glyph palette is all it takes to make the window keep it at
+/// three or five. Only a palette too narrow to show one whole column has no count to preserve, and
+/// that one is left to scale as it always did.</para>
 ///
-/// <para><b>Two things must never be mistaken for the user choosing a narrower palette, because the
-/// count is a LATCH and a wrong read of it does not wash out</b> (owner, 2026-09-14: the docked
-/// Library sometimes dropped from two columns to one on a window resize, noticeably more often in a
-/// Debug build, where layout is the slower half of the race). Once the latch reads one, the pin
-/// holds one, and widening the window back does not bring the second column back — so both of these
-/// are refusals to read rather than corrections after the fact:</para>
+/// <para><b>The count changes only while the SPLITTER IS UNDER THE POINTER, and that is the whole of
+/// it</b> (owner, 2026-09-21: resizing the workspace window could still change how many columns the
+/// docked Library showed). The count is a LATCH — once it reads one, the pin *enforces* one, and
+/// widening the window back does not bring the second column back — so the question "has the user
+/// chosen a new width?" must be answered by the pointer, not inferred from the layout. It used to be
+/// inferred: a layout pass in which the pool had not changed was taken for a splitter drag, and any
+/// pass that moved the tile area for some other reason was therefore read as a narrower palette the
+/// user had asked for. Reproduced headlessly with a scrollbar that reserves its column rather than
+/// floating: shortening the window makes the bar appear, the tile area loses the bar's width on a
+/// pass the window's own width did not move, and a three-column palette latches two. Every other
+/// pass that can move that width — a theme or density change, a font change, a scroller appearing —
+/// is the same bug wearing different clothes, which is why the fix is the gate and not a special
+/// case for scrollbars.</para>
 ///
-/// <list type="bullet">
-/// <item><description>A pass that belongs to a window resize. The pool is compared against the last
-/// MEASUREMENT, never against the prediction <see cref="OnWindowPropertyChanged"/> acts on — see the
-/// note there for why storing the prediction quietly turned most resize passes into still
-/// ones.</description></item>
-/// <item><description>A pass in which the pin asked for a width the row could not give
-/// (<see cref="PaletteColumnWidth.HasRoomFor"/>). The palette is then scaled to its share of a
-/// too-narrow window, which is not a width anybody chose.</description></item>
-/// </list>
-///
-/// <para><b>The splitter still goes anywhere, because nothing is applied DURING a drag.</b> The pin
-/// acts when the pool the columns divide up changes — that is, when the window is resized — and never
-/// merely because the column width did. Re-applying on every layout pass would peg the splitter to
-/// whole glyph slots and make every width between them unreachable, which is the one thing this must
-/// not break. The consequence, and it is deliberate: a palette dragged to four columns and a bit
-/// tightens to exactly four the first time the window moves, because the bit is a strip no glyph was
+/// <para><b>Outside a drag the pin simply holds the width, on every pass.</b> It does not ask whether
+/// the window moved: it asks whether the column is the width the count calls for, and re-proportions
+/// it when it is not. That is what makes it robust to a pass nobody predicted — including one where
+/// the chrome around the tile area changes, since <see cref="PaletteColumnWidth.TargetWidth"/> is
+/// measured chrome plus whole glyph slots, so the tile area comes back to the same N slots and the
+/// count is still the count. <b>Nothing is applied DURING a drag</b>, which is the one thing this
+/// must not break: a pin that snapped back mid-drag would peg the splitter to whole glyph slots and
+/// make every width between them unreachable. The consequence, and it is deliberate: a palette let
+/// go of at four columns and a bit tightens to exactly four, because the bit is a strip no glyph was
 /// in.</para>
 ///
-/// <para><b>The window's ClientSize is the trigger, not the layout that follows it.</b> Avalonia
+/// <para><b>The window's ClientSize is a trigger as well as the layout that follows it.</b> Avalonia
 /// publishes the new client size and then runs the layout pass, so re-proportioning there lands
 /// before anything is arranged and the palette never flashes at the scaled width — which it would if
-/// the correction were made after the fact, most visibly on a maximise, where one frame's worth of
-/// scaling is the whole jump. <see cref="OnPanelLayoutUpdated"/> then re-applies against the width
-/// the pass actually produced — always, since the prediction is never written into the measurement —
-/// which is what catches any case where the panel's width does not track the window's
-/// one-for-one.</para>
+/// the correction were only made after the fact, most visibly on a maximise, where one frame's worth
+/// of scaling is the whole jump. The prediction it acts on is kept apart from <c>_pool</c>, which is
+/// only ever a MEASUREMENT: several ClientSize changes can arrive between two layout passes (a fast
+/// drag, and a Debug build where layout is the slower half), so the deltas accumulate against the
+/// prediction rather than each being added to a measurement that is by then several steps stale.
+/// <see cref="OnPanelLayoutUpdated"/> then re-applies against the width the pass actually
+/// produced.</para>
 /// </summary>
 public sealed class PaletteColumnPin
 {
@@ -80,7 +83,8 @@ public sealed class PaletteColumnPin
     private double _chrome;                   // column width less tile-area width, as last measured
     private double _pool;                     // the panel width proportions divide up — MEASURED, only ever
     private double _predicted;                // that width as predicted since the last pass; 0 = none pending
-    private bool   _hasRoom = true;           // the last Apply could get the width it asked for
+    private bool   _dragging;                 // a splitter is under the pointer: this width is the user's
+    private bool   _readAfterDrag;            // take the width they let go of, once
     private double _clientWidth;
 
     private PaletteColumnPin(Window window)
@@ -135,29 +139,79 @@ public sealed class PaletteColumnPin
                 _column = presenter;
                 _panel  = row;
                 _panel.LayoutUpdated += OnPanelLayoutUpdated;
+
+                // The pointer, not the layout, is what says the user is choosing a width. Tunnel AND
+                // bubble with handledEventsToo, because the splitter handles its own press and marks
+                // it; a press that never reaches a handler is a drag the pin would apply over.
+                _panel.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed,
+                                  RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+                _panel.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased,
+                                  RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+
+                // A pointer capture lost without a release — the pointer leaves the window mid-drag —
+                // is raised DIRECTLY on the splitter and never routes through the panel, so it is
+                // taken there. Without it a drag that ended that way would leave the pin suspended
+                // until the next press anywhere in the row.
+                foreach (var splitter in SplittersIn(row))
+                    splitter.AddHandler(InputElement.PointerCaptureLostEvent, OnPointerCaptureLost,
+                                        RoutingStrategies.Direct, handledEventsToo: true);
                 break;
             }
         }
 
-        _settled   = false;
-        _columns   = 0;
-        _pool      = 0.0;
-        _predicted = 0.0;
-        _hasRoom   = true;
+        _settled       = false;
+        _columns       = 0;
+        _pool          = 0.0;
+        _predicted     = 0.0;
+        _dragging      = false;
+        _readAfterDrag = false;
     }
 
     private void Release(PaletteToolView? view)
     {
         if (view is not null && !ReferenceEquals(view, _view)) return;
-        if (_panel is not null) _panel.LayoutUpdated -= OnPanelLayoutUpdated;
-        _panel     = null;
-        _column    = null;
-        _view      = null;
-        _settled   = false;
-        _columns   = 0;
-        _predicted = 0.0;
-        _hasRoom   = true;
+        if (_panel is not null)
+        {
+            _panel.LayoutUpdated -= OnPanelLayoutUpdated;
+            _panel.RemoveHandler(InputElement.PointerPressedEvent,  OnPointerPressed);
+            _panel.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
+            foreach (var splitter in SplittersIn(_panel))
+                splitter.RemoveHandler(InputElement.PointerCaptureLostEvent, OnPointerCaptureLost);
+        }
+        _panel         = null;
+        _column        = null;
+        _view          = null;
+        _settled       = false;
+        _columns       = 0;
+        _predicted     = 0.0;
+        _dragging      = false;
+        _readAfterDrag = false;
     }
+
+    // ── Is the user choosing a width? ─────────────────────────────────────────
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+        => _dragging = IsOnSplitter(e.Source as Visual);
+
+    // Any release ends the drag, not only one on the splitter: the pointer can be let go anywhere
+    // once the splitter has captured it, and a latch left standing would suspend the pin.
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e) => _dragging = false;
+
+    private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) => _dragging = false;
+
+    private static bool IsOnSplitter(Visual? source)
+    {
+        for (Visual? v = source; v is not null; v = v.GetVisualParent())
+            if (v is ProportionalStackPanelSplitter) return true;
+        return false;
+    }
+
+    private static IEnumerable<ProportionalStackPanelSplitter> SplittersIn(ProportionalStackPanel panel)
+        => panel.Children
+                .Select(c => c as ProportionalStackPanelSplitter
+                          ?? (c as ContentPresenter)?.Child as ProportionalStackPanelSplitter)
+                .Where(s => s is not null)
+                .Select(s => s!);
 
     // ── The two triggers ──────────────────────────────────────────────────────
 
@@ -169,27 +223,15 @@ public sealed class PaletteColumnPin
         double delta = width - _clientWidth;
         _clientWidth = width;
 
-        if (_columns <= 0 || !_settled || _panel is null || Math.Abs(delta) < 0.5) return;
+        if (_columns <= 0 || !_settled || _dragging || _panel is null || Math.Abs(delta) < 0.5) return;
 
         // The pool has not been re-measured yet — the layout pass this change is about to start is
         // what does that. Every column in the row is inside the window and none of the chrome around
         // them is elastic, so the pool moves with the window pixel for pixel; OnPanelLayoutUpdated
-        // checks the answer once the pass has run.
+        // re-applies against the answer once the pass has run.
         //
-        // **The prediction is kept apart from _pool, and that is the whole of it.** _pool is what
-        // OnPanelLayoutUpdated compares against to decide whether the window has moved, and writing
-        // the prediction into it made a resize pass look STILL whenever the prediction was right —
-        // which is most of the time. The count was then re-read from a width the pin had only just
-        // asked for and the pass had not necessarily delivered, and a width one pixel short of two
-        // glyph slots reads as one column. That read latches: the pin holds the smaller number from
-        // then on, and widening the window back does not bring the column back. Leaving _pool a
-        // MEASUREMENT means every pass that follows a resize takes the poolChanged branch, which
-        // re-applies against the real width and never re-reads the count — which is what the note
-        // below, and this class's whole contract, already said happens.
-        //
-        // Several ClientSize changes can arrive between two layout passes (a fast drag, and a Debug
-        // build where layout is the slower half), so the deltas accumulate here rather than each
-        // being added to a measurement that is by then several steps stale.
+        // The prediction is kept apart from _pool, which is only ever a MEASUREMENT, and the deltas
+        // accumulate here because several ClientSize changes can arrive between two layout passes.
         double pool = (_predicted > 0.0 ? _predicted : _pool) + delta;
         if (pool <= 0.0) return;
 
@@ -206,9 +248,7 @@ public sealed class PaletteColumnPin
         double tileArea    = _view.TileAreaWidth;
         if (!(pool > 0.0) || !(columnWidth > 0.0) || !(tileArea > 0.0)) return;
 
-        _chrome = columnWidth - tileArea;
-
-        bool poolChanged = Math.Abs(pool - _pool) > 0.5;
+        _chrome    = columnWidth - tileArea;
         _pool      = pool;
         _predicted = 0.0;
 
@@ -239,25 +279,27 @@ public sealed class PaletteColumnPin
             return;
         }
 
-        if (poolChanged)
+        if (_dragging)
         {
-            // The window moved. The count is the one from BEFORE it moved — re-reading it here would
-            // read it off the width that has just scaled, which is the very thing being corrected.
-            if (_columns > 0) Apply(pool);
+            // The user has the splitter. Whatever they are landing on is the count to keep, and
+            // nothing is applied — see the class note on why a pin that snapped back mid-drag would
+            // be a bug.
+            _columns       = PaletteColumnWidth.GlyphColumnsIn(tileArea);
+            _readAfterDrag = true;
             return;
         }
 
-        // The pin asked for a width this row could not give — the window is too narrow to hold the
-        // count the user set beside a document column that still has something in it. The palette is
-        // scaled to its share of that window, which is NOT the count they set, so there is nothing
-        // here to read. Reading it anyway is a one-way ratchet: the smaller number becomes the one
-        // the pin holds, and their columns do not come back when the window is widened again.
-        if (!_hasRoom) return;
+        if (_readAfterDrag)
+        {
+            // The first pass after they let go: the width they left it at is the one to keep.
+            _readAfterDrag = false;
+            _columns       = PaletteColumnWidth.GlyphColumnsIn(tileArea);
+        }
 
-        // Same window, different column: the user moved the splitter, and the count they have landed
-        // on is the one to keep. Nothing is applied — see the class note on why a pin that snapped
-        // back mid-drag would be a bug.
-        _columns = PaletteColumnWidth.GlyphColumnsIn(tileArea);
+        // Not a drag, so this width is not a choice — hold the count, whatever moved. Apply writes
+        // nothing when the column is already within half a pixel of its target, so an untouched
+        // window costs one comparison per layout pass and no layout of its own.
+        if (_columns > 0) Apply(pool);
     }
 
     // ── Doing it ──────────────────────────────────────────────────────────────
@@ -273,10 +315,9 @@ public sealed class PaletteColumnPin
         double target  = PaletteColumnWidth.TargetWidth(_chrome, _columns);
         var    current = columns.Select(ProportionalStackPanel.GetProportion).ToArray();
 
-        // Recorded rather than inferred from the refusal below, which also refuses a column that is
-        // already exactly where it should be — the opposite case entirely.
-        _hasRoom = PaletteColumnWidth.HasRoomFor(current, index, pool, target);
-
+        // TryPin refuses a row with no room for the target as well as a column already at it: the
+        // palette then stays at its scaled share of a too-narrow window, which is not a count anybody
+        // chose — and is not read as one either, since nothing is read outside a drag.
         if (!PaletteColumnWidth.TryPin(current, index, pool, target, out var pinned)) return;
 
         // Set on the PRESENTER, at local value, which is where Dock itself writes a resize: the

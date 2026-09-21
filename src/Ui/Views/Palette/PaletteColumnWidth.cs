@@ -117,12 +117,11 @@ public static class PaletteColumnWidth
     /// <see cref="TryPin"/>'s refusal test, minus the one refusal that is not a refusal (a column
     /// already at its target has room by definition, and returns true here).
     ///
-    /// <para><b>The difference matters to the caller, which is why it is asked separately.</b> A pin
-    /// that is REFUSED for want of room leaves the palette scaled to whatever share of a too-narrow
-    /// window it had — a width that is not the count the user set, and so a width the count must not
-    /// be re-read from. Re-reading it there is a one-way ratchet: the smaller count becomes the one
-    /// the pin then holds, and the user's two or three columns do not come back when the window is
-    /// widened again. <c>PaletteColumnPin</c> asks this so it can keep the count instead.</para>
+    /// <para><b>The difference matters, which is why the test is separable.</b> A pin REFUSED for
+    /// want of room leaves the palette scaled to whatever share of a too-narrow window it had — a
+    /// width that is not the count the user set. <c>PaletteColumnPin</c> reads no count outside a
+    /// splitter drag, so that width is never mistaken for one; when the window is widened again the
+    /// count it still holds is applied and the columns come back.</para>
     /// </summary>
     public static bool HasRoomFor(
         IReadOnlyList<double> proportions, int index, double available, double targetWidth)

@@ -317,25 +317,40 @@ public sealed class PaletteColumnWidthTests
     // ── What the pin must not do with the count ───────────────────────────────
 
     /// <summary>
-    /// The count is a LATCH, and the two reads that must not happen are what this whole exercise
-    /// turned on. <c>PaletteColumnPin</c> itself needs a laid-out dock, which this project has no
-    /// platform for, so the guards are held here as a source scan — the alternative is nothing at
-    /// all, and both were removable without a single test going red.
+    /// The count is a LATCH, so the only thing allowed to change it is the POINTER on the splitter
+    /// (owner, 2026-09-21: a window resize could still change how many columns the docked Library
+    /// showed). Every read outside a drag is a bug of the same shape, whatever moved the tile area —
+    /// a scrollbar that reserves its column, a density change, a font change — because once the
+    /// latch reads one the pin enforces one and widening the window back does not undo it.
+    ///
+    /// <para><c>PaletteColumnPin</c> needs a laid-out dock, which this project has no platform for,
+    /// so the gate is held here as a source scan; it was measured in a headless host, where the
+    /// former "a pass in which the pool did not change is a splitter drag" inference turned a
+    /// three-column palette into a two-column one on a window-HEIGHT change alone.</para>
     /// </summary>
     [Fact]
-    public void ThePin_NeverReadsTheCountFromAResizeOrFromAPinItCouldNotApply()
+    public void ThePin_ReadsTheCountOnlyWhenTheUserHasTheSplitter()
     {
         string pin = Src("src/Ui/Views/Palette/PaletteColumnPin.cs");
+        pin = Regex.Replace(pin, @"/\*.*?\*/", "", RegexOptions.Singleline);   // block comments
+        pin = Regex.Replace(pin, @"//[^\n]*", "");                             // and line comments,
+                                                                               // which the doc uses
 
-        // The ClientSize handler predicts a pool to act on before the pass runs. Writing that
-        // prediction into the MEASUREMENT the layout pass compares against made a resize pass look
-        // still whenever the prediction was right, and the count was then re-read off a width the
-        // pin had only just asked for — one pixel short of two glyph slots reads as one column.
-        Assert.DoesNotContain("_pool = pool;\n        Apply(pool);", pin.Replace("\r\n", "\n"));
+
+        // Three reads, and three only: the first measurement of a new arrangement, the passes during
+        // a drag, and the one pass after it ends.
+        Assert.Equal(3, Regex.Matches(pin, @"PaletteColumnWidth\.GlyphColumnsIn\(").Count);
+        Assert.Contains("if (!_settled)", pin);
+        Assert.Contains("if (_dragging)", pin);
+        Assert.Contains("if (_readAfterDrag)", pin);
+
+        // And the drag is the pointer's own answer, not one inferred from the layout.
+        Assert.Contains("_dragging = IsOnSplitter(e.Source as Visual);", pin);
+        Assert.DoesNotContain("poolChanged", pin);
+
+        // The ClientSize handler predicts a pool to act on before the pass runs, so the palette never
+        // flashes at the scaled width. That prediction must stay out of the MEASUREMENT.
         Assert.Contains("_predicted = pool;", pin);
-
-        // A pin the row had no room for leaves the palette at a width nobody chose.
-        Assert.Contains("PaletteColumnWidth.HasRoomFor(", pin);
-        Assert.Contains("if (!_hasRoom) return;", pin);
+        Assert.DoesNotContain("_pool = pool;\n        Apply(pool);", pin.Replace("\r\n", "\n"));
     }
 }
