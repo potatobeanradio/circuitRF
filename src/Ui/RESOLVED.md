@@ -33263,3 +33263,39 @@ model's spreading refusal was reading a **millimetre** size against a **DBU** ve
 Gate: `RailReadingUnitTests`, three tests — the opened example takes the artwork's unit, an
 unreferenced rail elsewhere flags the selector, and the selected rail's own unconfirmed reference
 flags the combo.
+
+## Layout Properties Inspector — the Footprint row (2026-09-20)
+
+Two owner reports on the same two controls, and they were two different faults.
+
+**A microstrip was being offered a case size and a land-protrusion level.** The Footprint row was
+unconditional on any single-instance selection, so an MLIN — a PCell that generates its own artwork
+from its width and its length — read a combobox of SMT cases and an IPC-7351B density beside it.
+Neither describes such a part, and selecting either would have re-pointed the instance at a pad pair.
+`ShowInstanceFootprintRow` now hides both together whenever the selected instance resolves to a
+`PCellOrigin` whose `GeneratorId` is **not** a `FootprintRef`. A cell with no `PCellOrigin` at all —
+hand-drawn, imported — keeps the row, because re-pointing one at a built-in land pattern is a real
+edit and row 0 already names the cell it is drawing today.
+
+**The value read "(no cell)" for the whole of a move drag.** `RefreshInstanceFootprint` was the last
+place in the panel still reading `LayoutEditorViewModel.SingleSelectedInstance`, which **deliberately
+returns null while `Overlay.InstanceDragOverrides` is non-empty** (the preview clones are not objects
+the model has seen, so an edit committed against one would write to nothing). The panel refreshes on
+every drag frame, so from press to release row 0 fell to the `inst is null` branch and printed
+"(no cell)"; the release emptied the dictionary and the next refresh put the case back. This is the
+same shape as the R-pch-4b grip-drag defect recorded in `SingleSelectedInstance`'s own comment —
+**that accessor is a guard for EDITS, and using it to read a DISPLAY value blanks the display for the
+length of a gesture.** `RefreshInstanceContext` already had the right object in hand
+(`EffectiveInstanceAt`, which reads through the override), so the method now takes the instance and
+its `CellLayoutResolution` as arguments and derives the current `FootprintRef` from
+`PCellOrigin.GeneratorId` itself rather than going back through `_vm.SelectedInstanceFootprint`,
+which has the same null-during-drag behaviour for the same reason.
+
+*Trap worth recording for any future test here:* a generated land-pattern cell is **empty on the MMIC
+technology** — `ShippedTechnologies.All[0]` is `mmic-GaAs_2LM_100um`, which has none of the layers a
+land pattern draws on, so `GeneratedCellStore.GetOrCreate` returns a cell with zero shapes and there
+is nothing on the canvas to press. The four `pcb-` technologies give the expected 8.
+
+Gate: `tests/Ui.Tests/Footprints/FootprintRowVisibilityAndDragTests.cs`, two tests — the row is shown
+for a land pattern and hidden for an MLIN, and a real press/move/release gesture on a pad leaves the
+case unchanged throughout. The second was confirmed to fail against the old two-line reading.

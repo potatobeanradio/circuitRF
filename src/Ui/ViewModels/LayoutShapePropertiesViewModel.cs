@@ -1128,6 +1128,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     [ObservableProperty] private int _instanceFootprintIndex;
     [ObservableProperty] private int _instanceFootprintDensityIndex;
 
+    /// <summary>False for a PCell that draws its own artwork and is not a land pattern — MLIN, a
+    /// coupled line, a via array. Both the case picker and the density picker go away with it,
+    /// because neither describes such a part: a microstrip's outline comes from its width and
+    /// length, and IPC-7351B land protrusion has nothing to protrude from. Everything else keeps
+    /// the row, including a hand-drawn or imported cell, where re-pointing at a built-in land
+    /// pattern is a real edit (row 0 names the cell it is drawing today).</summary>
+    [ObservableProperty] private bool _showInstanceFootprintRow = true;
+
     /// <summary>True when row 0 is the "this is not a built-in" row, i.e. when the case rows start at
     /// index 1. Kept rather than re-derived so the two handlers below cannot disagree about it.</summary>
     private bool _instanceFootprintHasCurrentRow;
@@ -1160,17 +1168,28 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// <summary>Rebuilds the rows and THEN sets the selection, in that order — the wBond round-6
     /// defect is exactly this control shape, and a selection assigned before the collection is
     /// populated is silently dropped and reads blank.</summary>
-    private void RefreshInstanceFootprint()
+    private void RefreshInstanceFootprint(LayoutInstance inst, CellLayoutResolution resolution)
     {
-        var current = _vm?.SelectedInstanceFootprint;
+        // Read the instance the CALLER resolved, not SingleSelectedInstance — that property is null
+        // for the whole of a move drag (it refuses to answer while InstanceDragOverrides is
+        // non-empty), and the panel refreshes on every drag frame, so row 0 read "(no cell)" from
+        // press to release and reverted on commit. The footprint is a property of the cell, which a
+        // drag does not touch; there is nothing here to protect from a preview clone.
+        var origin = resolution is { State: CellLayoutState.Resolved, View.PCellOrigin: { } o } ? o : null;
+        FootprintRef? current = origin is not null
+                                && FootprintRef.TryParse(origin.GeneratorId, out var parsed, out _)
+            ? parsed : null;
+
+        // A generated cell that is NOT a land pattern has neither a case nor a density, so the whole
+        // row goes away rather than offering to re-point a microstrip at an 0402 pad pair.
+        ShowInstanceFootprintRow = origin is null || current is not null;
 
         InstanceFootprintOptions.Clear();
         _instanceFootprintHasCurrentRow = current is null;
 
         if (_instanceFootprintHasCurrentRow)
         {
-            var inst = SingleSelectedInstance;
-            string name = inst?.CellRef is { Length: > 0 } r
+            string name = inst.CellRef is { Length: > 0 } r
                 ? System.IO.Path.GetFileName(r.TrimEnd('/', '\\'))
                 : "(no cell)";
             InstanceFootprintOptions.Add(name);
@@ -1403,7 +1422,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             long count = (long)rows * cols;
             InstanceArrayCountText = count > 1 ? $"{rows} × {cols} = {count:N0} placements" : "";
 
-            RefreshInstanceFootprint();
+            RefreshInstanceFootprint(inst, resolution);
         }
         else
         {
@@ -1424,6 +1443,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
             InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
             InstanceFootprintOptions.Clear(); _instanceFootprintHasCurrentRow = false;
+            ShowInstanceFootprintRow = true;
         }
 
         _isRefreshing = false;

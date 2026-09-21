@@ -163,8 +163,13 @@
                  pattern. ItemsSource is declared BEFORE SelectedIndex, deliberately —
                  a ComboBox whose selection is assigned before its items binding
                  attaches silently drops it and reads blank (the wBond round-6
-                 defect). Every row reads its metric twin and its millimetres. -->
-            <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="4">
+                 defect). Every row reads its metric twin and its millimetres.
+
+                 Hidden for a PCell that draws its own artwork and is not a land pattern (MLIN, a
+                 coupled line, a via array): neither a case size nor an IPC-7351B density level
+                 describes such a part. -->
+            <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="4"
+                  IsVisible="{Binding ShowInstanceFootprintRow}">
                 <TextBlock Grid.Column="0" Text="Footprint" VerticalAlignment="Center" FontSize="11"
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                 <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
