@@ -34277,3 +34277,61 @@ zeros with nothing saying the document was the reason. One line, and the seeded-
 status strip covers it exactly as it covers a dropped source.
 
 Gate: `tests/Ui.Tests/RailRf/GerberSetToACurveTests.cs`.
+
+---
+
+## Smith Chart: discrete component values (2026-09-21)
+
+Owner instruction: a toolbar toggle restricting component values to a discrete ladder, with the
+list editable and revertible. Design detail is `docs/design/smith-chart.md` §5.6a; what follows is
+the four things that were learnt building it, none of which is guessable from the finished code.
+
+### `MatchValueFormat` does not take a decimal comma, so no element value field does
+
+Measured, not assumed: `MatchValueFormat.TryParseWithUnit("2,2 nH", Inductance, "nH", …)` returns
+**false**; `"2.2 nH"` returns true. It parses with a bare `double.TryParse(…, InvariantCulture)` and
+never calls `NumericText`. So the 2026-09-21 "accept a decimal comma in every input field" change
+does **not** reach any value field that goes through this type — every Smith Chart slider row, the
+Match Designer's specification pane and harmonicaRF's readout among them. That is a gap in that
+feature rather than a defect in this one, and it is untouched here because it is not this change's
+to make.
+
+*What IS this change's:* the preferred-value list box deliberately keeps the comma as a
+**separator**, which is the decimal-comma rule's own stated exception
+(`NumericText.NormalizeDecimalSeparator`: "any field whose own grammar separates values with commas …
+must never be passed through here"). `1,2` in that box is 1 pF and 2 pF.
+
+### The Auto unit ladder spells 0.1 pF as `100 fF`
+
+`MatchValueFormat`'s Auto prefix is the largest that leaves the value at or above 1, which is right
+for a readout and wrong for a parts list: the bottom decade of the capacitor ladder came out
+`100 fF … 820 fF`. `SmithPreferredValues.FormatOne` therefore floors the unit at **pF** (or **nH**)
+and lets Auto take over above it, so the list reads `0.1 pF … 100 nF` rather than either
+`100 fF …` or `… 100000 pF`. The floor unit and the bare-number parse unit are one function
+(`BareUnit`), so the hint, the parse and the spelling cannot drift apart.
+
+### An editor that commits both lists must not store the one nobody edited
+
+The dialog applies capacitors and inductors together, because a half-applied pair leaves one list
+replaced and the other not with a single message to explain it. But the untouched list is re-parsed
+from its own five-significant-digit text, which does not return the same `double` — so storing it
+marked a list the user never edited as *customized*, freezing them on today's shipped table forever.
+`SmithPreferredValueStore.Set` compares by **ratio** against the shipped ladder and writes **null**
+when they match. Null-is-shipped is also the whole of *Revert*: nothing ever copies the shipped
+numbers into `preferences.json`, so a user who reverts picks up a later circuitRF's ladder.
+
+### Two window-shaped gates, both worth knowing before writing a dialog here
+
+- **`R-smith4-1`: no `Window` subclass under `src/Ui/Views/Smith`** — the Smith Chart is a document,
+  and a window class there would mean it had become an application again. The gate
+  (`SmithWindowTests.NoBareTextBoxInTheSmithViews_…`) catches it on a comment-stripped source scan.
+  The list editor is an ordinary dialog and belongs in `Views/Dialogs` beside the VAR editor, which
+  also puts its plain `TextBox`es correctly outside `R-smith4-5`'s "every editable value is an
+  `InlineEditText`" rule — that rule is about the document's own design values.
+- **`Magnet`/`MagnetOn` is already taken**, by "snap the drawing to a grid" in the layout editor and
+  in wBond. This snaps VALUES, so it uses `Stairs` — a quantized ramp. One glyph carrying two
+  meanings in one application is how a toolbar stops being readable.
+
+Gate: `tests/Ui.Tests/Smith/SmithPreferredValuesTests.cs`, which is in
+`UserStateDirectoryCollection` because the ladders are per-user state and a test reading the real
+preferences file would answer differently on a machine whose owner had edited their own list.

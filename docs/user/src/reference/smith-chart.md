@@ -195,6 +195,70 @@ you retuned would be a different physical line each time, and the per-frequency 
 meaning anything. It is an editable field on the element's row, so you can move it deliberately.</p>
 </div>
 
+### Discrete component values {#discrete}
+
+The sliders and the grippers are continuous, so a two-element match lands on something like 2.37&nbsp;nH
+and 1.64&nbsp;pF &mdash; values nobody can order. The **staircase** button on the strip's toolbar
+restricts every inductance and capacitance in the design to a list of values you can actually buy, and
+**snaps the ones already there** when you switch it on.
+
+With it on, every edit lands on the list: a slider drag steps from value to value, a gripper on the
+chart steps with it, and a number you type is taken to the nearest entry. **Turning it on is one undo
+entry** &mdash; the flag and the values it moved come back together &mdash; and the strip says how many
+values moved. Turning it off moves nothing: the list values *are* the design now, and the way back is
+undo.
+
+**Inductance and capacitance only.** A resistance in this vocabulary is as often a parasitic as a part
+&mdash; the **R** of an SRLC, an SRL or a PRC is an ESR or a leakage term, something you measure rather
+than order &mdash; so putting it on a preferred-value ladder would state something untrue about the
+design. A line's Z<sub>0</sub>, an electrical length and a Z1P's two parts are continuous quantities by
+construction and are not on any list.
+
+<div class="callout note">
+<span class="label">Nearest is nearest by ratio, not by difference</span>
+<p>The gap from 1.0 to 1.2&nbsp;pF is 0.2&nbsp;pF and the gap from 68 to 82&nbsp;pF is 14&nbsp;pF, so a
+list like this is a <i>ratio</i> scale &mdash; which is also why a component tolerance is &plusmn;5&nbsp;%
+and not &plusmn;5&nbsp;pF. The value halfway between two entries is their geometric mean, so 1.09&nbsp;pF
+snaps <i>down</i> to 1.0 and 1.11&nbsp;pF snaps up to 1.2. A value past either end of the list lands on
+that end.</p>
+</div>
+
+#### Editing the list {#preferred-values}
+
+**Right-click the staircase button** and choose *Preferred values…*, whether the toggle is on or off.
+
+What ships is **E12**, the IEC&nbsp;60063 preferred numbers &mdash; twelve values per decade, 1.0, 1.2,
+1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2 &mdash; running 0.1&nbsp;pF to 100&nbsp;nF for
+capacitors and 0.1&nbsp;nH to 100&nbsp;&micro;H for inductors. If the range you buy from is stocked on
+something else, replace it.
+
+| | |
+|---|---|
+| **Capacitors** / **Inductors** | The two lists. Both are committed together by **Apply**. |
+| **Text** | The whole list at once. Paste a column out of a spreadsheet, or a comma-separated row, or type it. A `#` starts a comment. |
+| **Rows** | One value at a time, with an **&times;** to remove and **+ Add value** to append. A row commits when it loses focus or you press Enter. |
+| **Tidy** | Sorts, drops duplicates and re-spells every entry with its unit &mdash; the same tidying **Apply** does, run early so a pasted column can be checked first. |
+| **Apply** | Stores both lists. A design with the toggle on is re-snapped onto them, as one undo entry. |
+| **Revert to shipped values** | Both lists back to the E12 ladders above, at once. |
+
+A bare number is read as **pF** in the capacitor list and **nH** in the inductor list; anything else
+needs its unit, and a unit from the wrong list (`2.2 nH` among the capacitors) is refused rather than
+quietly ignored. An empty list is refused too &mdash; it would leave the toggle switched on and doing
+nothing, with nothing on screen to say why.
+
+<div class="callout note">
+<span class="label">A comma separates values here; it is not a decimal point</span>
+<p>circuitRF accepts <code>1,5</code> for one and a half in every field whose grammar leaves the comma
+free, and this field's does not: <code>1,2</code> in a list is either two values or one, and nothing in
+the text says which. In this box it is two &mdash; 1&nbsp;pF and 2&nbsp;pF. Write the decimal point as a
+point.</p>
+</div>
+
+The list is **yours, not the document's**. It describes the parts you buy from, so it follows you
+between designs rather than travelling inside a `.csmith` &mdash; a file carrying its own copy would
+open on somebody else's machine snapping to a parts drawer they never chose. What the `.csmith` stores
+is whether the toggle is on.
+
 ### Mirroring the drawing {#mirror}
 
 The **&#8646;** button on the strip's toolbar (**M**) flips the drawing so the generator sits on the

@@ -763,6 +763,101 @@ Each row is a label, a compact slider and an `InlineEditText` showing the value 
   The active row is marked, so the connection between "the slider I just used" and "the handle on the
   chart" is visible rather than remembered.
 
+### 5.6a Discrete component values — owner instruction, 2026-09-21
+
+A toolbar toggle in the network strip, **to the left of Help**, restricts every inductance and
+capacitance in the design to a ladder of buyable values. The sliders and the grippers are continuous,
+so a two-element match lands on 2.37 nH and 1.64 pF — values nobody can order, and therefore a chart of
+a circuit nobody will build.
+
+**It constrains what an EDIT produces and stores the result.** It is not a lens: a design with the
+toggle on holds ladder values, so the file, the chart, the readout and §6.1's copy into a real
+schematic all see the same number. Storing a continuous value and drawing a snapped one would make the
+picture and the document disagree about what the circuit is, and the disagreement would surface only in
+whatever read the file next.
+
+- **Two write doors, and there is no third**: `SetElementValue` (a slider drag, a keyboard step, a
+  typed value) and `DragGripperTo` (a handle on the chart). Both ask `SnapIfEnabled` on the way past.
+  A typed value is snapped along with a dragged one — with the toggle on, "2.37 nH" is an instruction
+  to use the nearest value that can be bought.
+- **Turning it ON snaps what is already there**, and the flag and the snap are **one undo entry**
+  because they are one gesture. A toggle that only constrained the next edit would leave the window
+  claiming a discrete design while showing 2.37 nH; splitting the entry would let an undo take the flag
+  off and leave the values moved. Turning it OFF moves nothing — the ladder values are the design now,
+  and the way back is the undo stack. The strip reports how many values moved.
+- **L and C only.** A resistance here is as often a parasitic as a part: the `R` of an `SRLC`, an `SRL`
+  or a `PRC` is an ESR or a leakage term, measured rather than ordered, and a preferred-value ladder
+  would state something untrue about it. `Z0`, an electrical length and a `Z1P`'s two parts are
+  continuous by construction. The rule is written once, in `SmithPreferredValues.LadderFor`, so a
+  vocabulary that grows a member cannot grow a snap nobody decided on.
+- **Nearest is by RATIO.** A ladder is geometric — 1.0 to 1.2 pF is 0.2 pF and 68 to 82 pF is 14 pF —
+  so the midpoint between two rungs is their geometric mean, which is what a ±5 % tolerance is
+  symmetric about. 1.09 pF snaps down to 1.0 and 1.11 pF up to 1.2. A value past either end lands ON
+  that end; a value that is not strictly positive is left alone, because zero henries is a wire and
+  zero farads an open circuit — both meaningful, neither a small part.
+- **The glyph is the staircase and not the magnet.** `Magnet`/`MagnetOn` already mean "snap the drawing
+  to a grid" in the layout editor and in wBond; one glyph for two meanings is how a toolbar stops being
+  readable. A staircase is a quantized ramp, which is what a value ladder is.
+
+#### What ships
+
+**E12 — IEC 60063's twelve-per-decade preferred numbers** (owner decision): `1.0 1.2 1.5 1.8 2.2 2.7
+3.3 3.9 4.7 5.6 6.8 8.2`, running **0.1 pF … 100 nF** for capacitors and **0.1 nH … 100 µH** for
+inductors. 0.1 pF is the owner's own floor — where an RF chip capacitor range starts, and below which a
+matching element stops being a part and becomes a layout feature.
+
+E12 is the right thing to ship for two reasons. It is a **published international standard**, so it is
+stateable in full here without naming anything proprietary — `CLAUDE.md`'s standing rule, which applies
+to a shipped data table exactly as it applies to prose. And it is the series a **narrow** RF part range
+is stocked on, which is the case this tool is for: twelve rungs a decade is close enough that snapping
+costs little and coarse enough that the value you land on is one somebody carries.
+
+**The list being editable is what makes that choice cheap.** Anyone stocked on something else replaces
+it, once, and every design they open afterwards is measured against their own list.
+
+#### The list is per-USER, and the toggle is per-DOCUMENT
+
+`SmithDesign.SnapToPreferredValues` is in the `.csmith`; the ladders are in `preferences.json`
+(`SmithPreferredValueStore`). A `.csmith` carrying its own copy would open on another machine snapping
+to a parts drawer its owner never chose, with nothing on screen to tell it from their own — so the file
+stores whether, and the installation stores what.
+
+**A preference of null IS the shipped ladder, and that is the whole of *Revert*.** Nothing copies the
+shipped tables into the preferences file on first run, so reverting writes null and a user who reverts
+picks up whatever a later circuitRF ships. `Set` also writes null when what it is handed already equals
+the shipped ladder — the editor commits both lists on every Apply, so a capacitor edit re-commits the
+untouched inductors, and storing those would silently freeze that user on today's table.
+
+#### The editor — the VAR dialog's own two modes
+
+Right-click the toggle (the slider rows' own *right-click ▸ Set range…* idiom one control along), which
+works whether it is on or off. **Text** pastes a whole column or a comma-separated row; **Rows** edits
+one value at a time with an `×` and an *Add value*, committing on focus loss or Enter — the VAR
+editor's contract, taken rather than invented, because the owner asked for that pair by name. It is a
+`Window` and therefore lives in `Views/Dialogs` and not in `Views/Smith`, which R-smith4-1's own gate
+forbids a window class in.
+
+**Nothing is stored until Apply**, and Apply commits both ladders or neither: writing through on every
+committed row would put a preferences write and an undo entry on the open design behind every keystroke
+of a table edit, which is the Match Designer's entry-per-notification defect wearing a different hat,
+and a half-applied pair would leave the capacitors replaced and the inductors not with one message to
+explain it. Applying **re-snaps an open design that has the toggle on**, as its own single undo entry —
+otherwise the toggle would go on claiming every value is on the ladder while the ladder had just been
+replaced under it.
+
+**The comma is a SEPARATOR in this field and never a decimal point.** That is not an exception to
+circuitRF's decimal-comma rule but a case the rule itself names:
+`NumericText.NormalizeDecimalSeparator` says "any field whose own grammar separates values with commas
+… must never be passed through here", and a `.cnl`'s `Values=` list settled the same question the same
+way. `1,2` here is 1 pF and 2 pF. A bare number is read as pF or nH; a unit from the wrong ladder is a
+refusal rather than a token to discard; an empty list is refused, because it would leave the toggle on
+and inert with no symptom at all.
+
+**The list is formatted with a unit FLOOR at pF/nH.** The Auto ladder picks the largest prefix that
+leaves the value at or above 1, which spells the bottom of the capacitor list `100 fF … 820 fF` —
+arithmetically right, and not how anybody writes an RF capacitor. Above the floor Auto takes over, so
+the top reads `100 nF` rather than `100000 pF`.
+
 ### 5.7 Overlays
 
 Additional data on the chart, added **the way it is added to a Smith chart on a Data Display**: pick a
@@ -968,6 +1063,9 @@ SmithDesign
                          ImpedanceOhm{Re,Im} },   FileRef (relative, S1P/S2P only),
                  SliderRange{ Min, Max } per parameter
   ConstantQ    : Enabled, Q
+  SnapToPreferredValues : bool, written only when ON (§5.6a). The LADDER is not here — it is
+                          per-user state, so a document carrying a copy would snap to somebody
+                          else's parts drawer on somebody else's machine.
   Overlays[]   : the Data Display TraceConfig shape, verbatim — one per overlay, opaque JSON
   Markers[]    : the Data Display Marker shape, verbatim
   View         : splitter positions, network scroll/zoom, MirrorNetwork

@@ -804,6 +804,34 @@
                             <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
                         </Button>
 
+                        <!-- ── DISCRETE COMPONENT VALUES (owner instruction, 2026-09-21) ───
+                             The sliders and the grippers are continuous, so a two-element match
+                             lands on 2.37 nH and 1.64 pF — values nobody can order, and a chart of
+                             a circuit nobody will build. On, every L and C an edit produces lands
+                             on a ladder of buyable values instead, and the ones already in the
+                             design are snapped as part of the same undo entry.
+
+                             THE STAIRCASE AND NOT THE MAGNET. `Magnet`/`MagnetOn` already mean
+                             "snap the drawing to a grid" in the layout editor and in wBond, and
+                             this snaps VALUES rather than geometry — one glyph for two meanings is
+                             how a toolbar stops being readable. A staircase is a quantized ramp,
+                             which is exactly what a value ladder is.
+
+                             RIGHT-CLICK EDITS THE LIST, the slider rows' own "right-click ▸ Set
+                             range…" idiom one control along, so the list is reachable whether the
+                             toggle is on or off. -->
+                        <Button Name="DiscreteValuesButton" Classes="SelectionBtn" Padding="6,3"
+                                Classes.ToolActive="{Binding ViewModel.SnapToPreferredValues}"
+                                Command="{Binding ViewModel.ToggleSnapToPreferredValuesCommand}"
+                                ToolTip.Tip="Discrete values — restricts every inductance and capacitance to a list of buyable values, and snaps the ones already here. Resistance, Z₀ and electrical length are left continuous. Right-click to edit the list.">
+                            <mi:MaterialIcon Kind="Stairs" Width="16" Height="16"/>
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Preferred values…" Click="OnEditPreferredValues"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+
                         <!-- HELP (R-smith11-4). railRF, harmonicaRF, wBond and the Match Designer
                              each carry one of these and this window did not, so the chapter written
                              for it was reachable only by knowing it existed. A docked document has

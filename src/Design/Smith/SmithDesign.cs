@@ -682,6 +682,27 @@ public sealed class SmithDesign
 
     public SmithConstantQ ConstantQ { get; set; } = new();
 
+    /// <summary>
+    /// Restrict every inductance and capacitance in the cascade to a ladder of buyable values
+    /// (<see cref="SmithPreferredValues"/>; §5.6a). <b>Off by default.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>It constrains what an EDIT produces, and it is not a lens over the numbers.</b> A design
+    /// with this on holds ladder values, full stop — the file, the chart, the readout and brief 7's
+    /// copy into a real schematic all see the same number, and turning the toggle back off leaves
+    /// them exactly where they are. The alternative, storing a continuous value and drawing a
+    /// snapped one, would make the picture and the document disagree about what the circuit is, and
+    /// the disagreement would only surface in whatever read the file next.
+    ///
+    /// <para><b>The ladder itself is NOT in this document</b>, deliberately. It is what a user's
+    /// parts drawer holds rather than what this design is, so it is per-user state that every
+    /// `.csmith` they open is measured against — see the editor in <c>src/Ui/Smith</c>, and
+    /// <see cref="SmithPreferredValues.ShippedCapacitorsFarad"/> for what ships. A `.csmith` that
+    /// carried its own copy would open on someone else's machine snapping to a ladder they never
+    /// chose, and there would be no way to tell it from their own.</para>
+    /// </remarks>
+    public bool SnapToPreferredValues { get; set; }
+
     // ── the design frequency, DERIVED (owner instruction, 2026-09-19) ────────
 
     /// <summary>

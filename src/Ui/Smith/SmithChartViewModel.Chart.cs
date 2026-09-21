@@ -287,7 +287,10 @@ public sealed partial class SmithChartViewModel
             return;
         }
 
-        SmithInverse.Apply(_design.Elements[_dragElement], _dragParameter, result.Value);
+        // The second discrete-value door (§5.6a) — the handle steps from rung to rung, which is what
+        // makes the toggle visible on the chart rather than only in the value box.
+        SmithInverse.Apply(_design.Elements[_dragElement], _dragParameter,
+                           SnapIfEnabled(_dragParameter, result.Value));
         DragPin = result.PinReason;
         RefreshDerived();
     }

@@ -665,6 +665,13 @@ public sealed partial class SmithChartViewModel
         if (ElementAt(elementIndex) is not { } e) return;
         if (!double.IsFinite(value)) return;
 
+        // THE DISCRETE-VALUE DOOR (§5.6a). One of two — the other is DragGripperTo — and both are
+        // here rather than inside SmithInverse.Apply, which is below the firewall and has no view of
+        // the per-user ladders. A typed value is snapped along with a dragged one on purpose: the
+        // toggle says the design holds buyable values, and a typed 2.37 nH that stayed would make
+        // that false with no symptom but the number itself.
+        value = SnapIfEnabled(p, value);
+
         if (_sliderDragBefore is not null)
         {
             e.ActiveParameter = p;

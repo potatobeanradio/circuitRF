@@ -1,0 +1,187 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:smith="using:CircuitRF.Ui.Smith"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SmithPreferredValuesDialog"
+        x:DataType="smith:SmithPreferredValuesViewModel"
+        Title="Preferred Values"
+        Width="380"
+        Height="520"
+        MinWidth="320"
+        MinHeight="360"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!-- ══ The preferred-value list editor (docs/design/smith-chart.md §5.6a) ═══════════════════
+         IN Views/Dialogs AND NOT IN Views/Smith. R-smith4-1's own gate forbids a `Window` subclass
+         under Views/Smith, because the Smith Chart is a DOCUMENT and a window class there would mean
+         it had become an application again. This is an ordinary dialog like the VAR editor beside
+         it, and that is where it goes — which also puts its plain TextBoxes outside R-smith4-5's
+         "every editable value is an InlineEditText" scan, correctly: that rule is about the
+         document's own design values, and this is a table of text.
+
+         THE VAR EDITOR'S OWN TWO MODES, taken rather than invented: Text pastes a whole column in
+         at once and Rows edits one value at a time. The owner asked for exactly that pair, by name,
+         and a third shape would be a third thing to learn for the same job.
+
+         ONE APPLY FOR BOTH LADDERS. Capacitors and inductors are two buffers behind one editor, and
+         Apply commits both — see the view model for why a half-applied pair is worse than a
+         refusal. -->
+
+    <Window.Styles>
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="Button.mode-btn">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+        </Style>
+        <Style Selector="Button.mode-btn.active">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="8">
+
+        <!-- ── Which ladder ──────────────────────────────────────────────────── -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                <Button Content="Capacitors"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsCapacitors}"
+                        Command="{Binding ShowCapacitorsCommand}"
+                        CornerRadius="4,0,0,4"/>
+                <Button Content="Inductors"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsInductors}"
+                        Command="{Binding ShowInductorsCommand}"
+                        CornerRadius="0,4,4,0"/>
+            </StackPanel>
+
+            <!-- Text or Rows — the VAR editor's pair, same place on the header row. -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                <Button Content="Text"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsTextMode}"
+                        Command="{Binding SetTextModeCommand}"
+                        CornerRadius="4,0,0,4"/>
+                <Button Content="Rows"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsRowsMode}"
+                        Command="{Binding SetRowsModeCommand}"
+                        CornerRadius="0,4,4,0"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── What the field takes, and how many it currently holds ─────────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+            <TextBlock Grid.Column="0" Text="{Binding Hint}" FontSize="10" Opacity="0.55"
+                       TextWrapping="Wrap"/>
+            <TextBlock Grid.Column="1" Text="{Binding RowCountLabel}" FontSize="10" Opacity="0.55"
+                       VerticalAlignment="Bottom" Margin="6,0,0,0"/>
+        </Grid>
+
+        <!-- ── The refusal, when there is one ────────────────────────────────── -->
+        <Border Grid.Row="2"
+                IsVisible="{Binding HasError}"
+                Background="{DynamicResource SystemChromeMediumColor}"
+                BorderBrush="{DynamicResource CrfWarningBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4"
+                Margin="0,0,0,4">
+            <TextBlock Text="{Binding Error}" FontSize="10"
+                       Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- ── The body ──────────────────────────────────────────────────────── -->
+        <Grid Grid.Row="3">
+
+            <!-- Text: paste a column, a comma-separated row, or type it. -->
+            <TextBox IsVisible="{Binding IsTextMode}"
+                     Text="{Binding Buffer}"
+                     AcceptsReturn="True"
+                     AcceptsTab="False"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     FontFamily="{DynamicResource IBMPlexMono}"
+                     FontSize="11"
+                     Padding="6"
+                     VerticalAlignment="Stretch"
+                     VerticalContentAlignment="Top"
+                     PlaceholderText="0.1 pF&#10;0.12 pF&#10;0.15 pF&#10;# or: 0.1, 0.12, 0.15"/>
+
+            <!-- Rows: one value at a time, the VAR editor's own row shape. -->
+            <DockPanel IsVisible="{Binding IsRowsMode}">
+                <Button DockPanel.Dock="Bottom"
+                        Content="+ Add value"
+                        Command="{Binding AddRowCommand}"
+                        HorizontalAlignment="Left"
+                        Margin="0,4,0,0"
+                        FontSize="11"
+                        Padding="8,3"
+                        MinHeight="0"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="smith:SmithPreferredValueRowViewModel">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding Entry}"
+                                             Margin="0,0,3,0"
+                                             LostFocus="OnRowLostFocus"
+                                             KeyDown="OnRowKeyDown"
+                                             ToolTip.Tip="A value with its unit, or a bare number."/>
+                                    <Button Grid.Column="1"
+                                            Command="{Binding RemoveCommand}"
+                                            Content="×"
+                                            FontSize="12"
+                                            Padding="4,0"
+                                            MinHeight="0"
+                                            Height="22"
+                                            VerticalAlignment="Center"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            ToolTip.Tip="Remove this value"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+
+        <!-- ── Footer ────────────────────────────────────────────────────────── -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0">
+            <!-- REVERT ON THE LEFT, away from Apply and Close. It is the escape hatch, and a button
+                 that undoes an afternoon's editing does not belong under the pointer that is about
+                 to press Apply. -->
+            <Button Grid.Column="0"
+                    Content="Revert to shipped values"
+                    Command="{Binding RevertToShippedCommand}"
+                    FontSize="11" Padding="10,4" MinHeight="0"
+                    ToolTip.Tip="Puts both lists back to the E12 (IEC 60063) ladders circuitRF ships — 0.1 pF to 100 nF, and 0.1 nH to 100 µH. Takes effect at once."/>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <Button Content="Tidy"
+                        Command="{Binding TidyCommand}"
+                        FontSize="11" Padding="10,4" MinHeight="0"
+                        ToolTip.Tip="Sorts the list, drops duplicates and re-spells every entry with its unit — the same tidying Apply does, run early so a pasted column can be checked first."/>
+                <Button Content="Apply"
+                        Command="{Binding ApplyCommand}"
+                        FontSize="11" Padding="10,4" MinHeight="0"
+                        ToolTip.Tip="Stores both lists. A design with the discrete toggle on is re-snapped onto them, as one undo entry."/>
+                <Button Content="Close"
+                        FontSize="11" Padding="10,4" MinHeight="0"
+                        Click="OnCloseClick"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

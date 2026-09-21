@@ -144,6 +144,9 @@ public static class SmithDesignIo
         ConstantQ = IsDefault(d.ConstantQ)
                         ? null
                         : new CsmithConstantQ { Enabled = d.ConstantQ.Enabled, Q = d.ConstantQ.Q },
+        // Written only when it is ON, so no existing document changes and a `.csmith` from before
+        // the feature reads as off — which is what it was.
+        SnapToPreferredValues = d.SnapToPreferredValues ? true : null,
         // THE TRACE CONFIGS, VERBATIM (R-smith12-4b). They arrived as JSON and they leave as JSON;
         // nothing here knows what a trace is. The LEGACY block is not written at all — a document
         // read in the old shape and written back is written in the new one, which is what makes the
@@ -251,6 +254,7 @@ public static class SmithDesignIo
                 Enabled = f.ConstantQ?.Enabled ?? false,
                 Q       = f.ConstantQ?.Q       ?? 1.0,
             },
+            SnapToPreferredValues = f.SnapToPreferredValues ?? false,
             View = new SmithView
             {
                 SplitterMain   = f.View?.SplitterMain   ?? 0.65,
@@ -412,6 +416,12 @@ public static class SmithDesignIo
         /// asked for: <c>JsonSerializerOptions</c> here ignores a member the model does not
         /// declare, so an old file opens and the next save writes the new shape.</para></summary>
         public CsmithConstantQ?       ConstantQ     { get; set; }
+
+        /// <summary>Restrict L and C to the preferred-value ladders (<c>SmithPreferredValues</c>).
+        /// Absent is off. <b>The ladder itself is not here</b> — it is per-user state, so a document
+        /// carrying a copy would snap to somebody else's parts drawer on somebody else's
+        /// machine.</summary>
+        public bool?                  SnapToPreferredValues { get; set; }
 
         /// <summary>One Data Display <c>TraceConfig</c> per overlay, opaque here — see
         /// <see cref="SmithDesign.Overlays"/>. A `.csmith` written before 2026-09-19 carries

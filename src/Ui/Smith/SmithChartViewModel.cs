@@ -528,6 +528,10 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // UNDO of a Q drag move the button's latched state as well as the arcs.
         OnPropertyChanged(nameof(ConstantQEnabled));
         OnPropertyChanged(nameof(ConstantQEntry));
+
+        // The discrete-value toggle (§5.6a), on the same channel and for the same reason: an undo of
+        // "Snap to preferred values" has to take the button's latched state back with the values.
+        OnPropertyChanged(nameof(SnapToPreferredValues));
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
         foreach (var row in GeneratorRows) row.NotifyAll();
         RefreshLoadRows();

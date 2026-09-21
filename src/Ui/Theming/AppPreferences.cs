@@ -525,6 +525,36 @@ public sealed class AppPreferences
     [JsonPropertyName(CircuitRF.Design.Layout.TechnologyCatalog.DefaultIdPreferenceKey)]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DefaultTechnologyId { get; set; }
+
+    /// <summary>
+    /// The Smith Chart tool's discrete capacitor ladder, <b>in FARADS</b> — what
+    /// <c>SmithDesign.SnapToPreferredValues</c> snaps a capacitance onto.
+    /// </summary>
+    /// <remarks>
+    /// <b>Null means the shipped ladder</b> (<see cref="CircuitRF.Design.Smith.SmithPreferredValues"/>
+    /// — E12, 0.1 pF … 100 nF), and that is what makes <i>Revert to shipped values</i> a one-line
+    /// operation rather than a second copy of the table: reverting writes null here, so a user who
+    /// reverts then picks up whatever a later circuitRF ships instead of being frozen on today's
+    /// list. An empty list is never stored — the editor refuses one, because a ladder with nothing
+    /// on it leaves the toggle switched on and doing nothing with no symptom at all.
+    ///
+    /// <para><b>Base SI, and the field name carries the unit</b> — the `.csmith`'s own convention
+    /// and, one level up, <c>src/Engine/RESOLVED.md</c>'s sweep-unit trap: a mark read without its
+    /// scale once produced a run at 2 Hz that looked entirely normal. A list of bare picofarads
+    /// here would be four orders of magnitude of silence.</para>
+    ///
+    /// <para><b>It is per-USER and not per-workspace</b>, on purpose: it describes the parts drawer
+    /// somebody buys out of, which does not change when they open a different design.</para>
+    /// </remarks>
+    [JsonPropertyName("smith_preferred_capacitors_farad")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? SmithPreferredCapacitorsFarad { get; set; }
+
+    /// <summary>The same for inductance, <b>in HENRIES</b>. Null is the shipped ladder — E12,
+    /// 0.1 nH … 100 µH. See <see cref="SmithPreferredCapacitorsFarad"/>.</summary>
+    [JsonPropertyName("smith_preferred_inductors_henry")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? SmithPreferredInductorsHenry { get; set; }
 }
 
 public static class AppPreferencesIo

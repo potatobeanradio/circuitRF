@@ -140,6 +140,26 @@ public partial class SmithChartView : UserControl
         => DocLauncher.Open("reference/smith-chart.html");
 
     /// <summary>
+    /// The preferred-value list editor (§5.6a) — the discrete-values button's context menu.
+    /// </summary>
+    /// <remarks>
+    /// <b>Modeless, and it re-snaps the open design when it applies.</b> A list edit that left the
+    /// document alone would leave the toggle claiming every value is on the ladder while the ladder
+    /// had just been replaced under it; <c>ReapplyPreferredValues</c> is that re-snap, and it is one
+    /// undo entry with the toggle on and nothing at all with it off.
+    /// </remarks>
+    private void OnEditPreferredValues(object? sender, RoutedEventArgs e)
+    {
+        if (_doc is null || TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        var dialog = new Dialogs.SmithPreferredValuesDialog
+        {
+            DataContext = new SmithPreferredValuesViewModel(_doc.ViewModel.ReapplyPreferredValues),
+        };
+        dialog.Show(owner);
+    }
+
+    /// <summary>
     /// Takes the keyboard for this document.
     /// </summary>
     /// <remarks>
