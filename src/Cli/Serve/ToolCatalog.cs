@@ -108,9 +108,9 @@ internal sealed record ToolSpec(
 /// <summary>
 /// The tool surface, and the ONLY thing that translates a tool call into a command line.
 ///
-/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> TWELVE tools, not one per verb — the eleven here
-/// plus <c>HistoryBatch</c>'s, which is advertised beside them because it is the one tool that is not
-/// a command line. A client that discovers tools up front carries every description for the whole
+/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> FOURTEEN tools, not one per verb — the thirteen
+/// here plus <c>HistoryBatch</c>'s, which is advertised beside them because it is the one tool that is
+/// not a command line. A client that discovers tools up front carries every description for the whole
 /// session whether or not it calls one, so the surface is a standing cost paid on every interaction.
 /// <c>run</c> selects its analysis with an argument rather than being six tools; <c>create</c>,
 /// <c>import</c> and <c>history</c> each carry the noun the CLI verb already takes; and RND-5's
@@ -654,6 +654,43 @@ internal static class ToolCatalog
                             "How many levels below the root a workspace is looked for. Default 4, at most 12."),
                         new("noAnalyses", "--no-analyses", OptKind.Flag,
                             "Skip the analyses, which cost one extraction per cell."),
+                    ],
+                    ""),
+            ]),
+
+        // R-lvs11-5a/5b: `lvs` falls out of the verb with no second implementation, which is the
+        // whole point of the automation architecture. It matters more here than almost anywhere
+        // else in this table, because an agent that wrote a `.clay` CANNOT LOOK AT THE SCREEN —
+        // asking whether the artwork it just authored implements the drawing is the only way it
+        // can find out, and the answer comes back as typed findings it can act on.
+        new("lvs",
+            "Compare a cell's layout against its schematic: does the artwork implement the drawing? "
+          + "Reports every divergence as a typed lvs. finding with the objects it is about. Runs no "
+          + "analysis and writes nothing unless output is given.",
+            null, null,
+            [
+                new("", [ "lvs" ],
+                    [new("path", true, "A cell folder, a workspace, a .clay or a .csch. A workspace "
+                       + "compares every cell holding both views; one holding a single view is "
+                       + "reported and skipped.")],
+                    [
+                        new("output", "-o", OptKind.Path,
+                            "Write the human report here. Nothing is written without it."),
+                        new("flat", "--flat", OptKind.Flag,
+                            "Read every placed cell as a leaf: its copper joins one partition and "
+                          + "nothing is descended into."),
+                        new("flattenCell", "--flatten-cell", OptKind.StrRepeat,
+                            "Flatten this one cell, by cell folder name. Repeatable."),
+                        new("testbench", "--testbench", OptKind.Flag,
+                            "Compare the fixture too — ports, terminations, sources and tuners. By "
+                          + "default the unit of comparison is the cell, which is what a layout draws."),
+                        new("noReduce", "--no-reduce", OptKind.Flag,
+                            "Do not collapse series, parallel or jumper groups on either side."),
+                        Set,
+                        new("severity", "--severity", OptKind.Str,
+                            "What decides the exit code: warning or error. Default error; warnings "
+                          + "are reported either way."),
+                        Summary,
                     ],
                     ""),
             ]),

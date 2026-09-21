@@ -44,7 +44,7 @@ document kind is a refusal naming what the path holds — `cli.input.wrong-kind`
 to `CnlReader`, which parsed the JSON as netlist text and reported its first key as a missing cell
 name.
 
-Twelve verbs run no analysis, so none of §3-§6 applies to them and §7's exit codes reduce to 0-or-1:
+Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exit codes reduce to 0-or-1:
 
 | Verb | Input | Does | Writes |
 |---|---|---|---|
@@ -59,6 +59,7 @@ Twelve verbs run no analysis, so none of §3-§6 applies to them and §7's exit 
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
 | `find` | a directory | enumerates the workspaces, cells, views and analyses under it | **nothing** — §16 |
+| `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | compares the artwork against the drawing, through `LvsRun.Run` | **nothing** unless `-o` names a report — §19 |
 | `serve` | `--root <dir>` | a protocol server on stdin/stdout — §11 | whatever the tool it was asked for writes |
 
 **`convert`'s `clay` target is a directory, and a file-shaped path there is a refusal** (R-aut12-4).
@@ -392,7 +393,7 @@ symptom and not the cause.
 | 0 | ran, and produced something usable |
 | 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
-| 130 | stopped — `em`, `render` and `rail`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5). All three write NOTHING on a cancellation |
+| 130 | stopped — `em`, `render`, `rail`, `smith` and `lvs`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4). All of them write NOTHING on a cancellation |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
@@ -594,6 +595,13 @@ a refusal exits 1 with the run service's own sentence, a cancellation exits 130 
 (§12). Its §5 analogue is R-aut6-7: **it transcribes nothing.** The prose half is the authored page,
 embedded; the component half is generated from the live registries at every call. A fact typed into
 that verb is a fact that will disagree with the code the first time either changes.
+
+`lvs` follows 1, 4, 5, 6, 7 and 8 and is outside 2, 3 and 5: it reads a cell's two views rather than a
+`.cnl`, so there is no chain to select. Its §5 analogue is the authoring verbs' and `render`'s in one:
+**it owns no comparison** (§19.1). Every finding comes out of `LvsRun.Run` in `src/Design/Layout/Lvs`,
+which is the function the GUI panel calls, so "a design that passes headlessly passes when it is
+opened" is true by construction. Its §7 rule is `check`'s with `em`'s cancellation on the end: 0 unless
+something at or above `--severity` was found, 1 on a refusal, 130 on a cancellation, and never 2.
 
 `serve` follows 1, 7 and 8 and is outside all the rest, because it is not a verb that does work: it is
 the one adapter that dispatches to the others (§11). Its §4 analogue is the inversion of §3.1 —
@@ -1035,10 +1043,11 @@ was checked rather than assumed.
 
 ### 11.3 The tool surface
 
-**Ten tools, and the count is the point** (R-aut-9). A client that discovers tools up front carries
-every description for the whole session whether or not it calls one, so the surface is a standing
-cost paid on every interaction. Nine come out of `ToolCatalog`'s one table; the tenth, `batch`, is
-advertised beside them by `HistoryBatch` because it is the only one that is not a command line.
+**Fourteen tools, and the count is the point** (R-aut-9). A client that discovers tools up front
+carries every description for the whole session whether or not it calls one, so the surface is a
+standing cost paid on every interaction. Thirteen come out of `ToolCatalog`'s one table; the
+fourteenth, `batch`, is advertised beside them by `HistoryBatch` because it is the only one that is
+not a command line.
 
 | Tool | Becomes |
 |---|---|
@@ -1048,6 +1057,10 @@ advertised beside them by `HistoryBatch` because it is the only one that is not 
 | `create` | `new workspace` / `new cell` |
 | `import` | `import part` / `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |
+| `netlist` | `netlist` — the extraction Simulate performs, as a document |
+| `plot` | `plot` — one picture out of a result file, with no `.cdd` to author first |
+| `find` | `find` — what is here: workspaces, cells, views, analyses |
+| `lvs` | `lvs` — one tool over every document kind, as the verb is. **The capability an out-of-process author needs most**: an agent that wrote a `.clay` cannot look at the screen |
 | `read` | `read` |
 | `history` | `history checkpoint` / `list` / `restore` (RC-5, `revision-control.md` §5.3d) |
 | `reference` | `reference` — the same bytes the resources below serve, for a client that does not surface resources to the model |
@@ -2275,3 +2288,123 @@ gates allow for. Its `.s1p` carries `SmithReadings`' own Γ and is reproducible 
 them: the source scan, the three refusals by kind, `--at` against the span and its one-row exception,
 the `--set` refusal, exit 130 writing nothing with its vacuity guard, and `--json` co-existing with the
 picture.
+
+## 19. `lvs` — does the artwork implement the drawing?
+
+`brief-lvs-11-cli-verb.md`; `docs/design/lvs.md` §8.3.
+
+```
+circuitrf lvs <path> [--flat] [--flatten-cell <name>] [--testbench] [--no-reduce]
+                     [--set var=expr] [--severity warning|error] [--json] [-o report.txt]
+```
+
+It answers the one question a headless client cannot answer any other way: **the design was drawn
+twice — as a netlist and as artwork — and do the two say the same thing?** An agent that authored a
+`.clay` cannot look at the screen.
+
+### 19.1 It owns no comparison, and that is the whole design
+
+`src/Cli/Lvs.cs` is argument parsing, refusals, reporting and **one call** into `LvsRun.Run`
+(R-lvs11-1a) — the same function the GUI panel calls, with the same arguments. §9's rule for the
+authoring verbs, unchanged: *an operation that lives only in a verb is not a capability, and a verb
+that re-implements one diverges from it silently.* A second extraction, partition, terminal
+derivation or correspondence in `src/Cli` would mean a design passed headlessly and was refused when
+somebody opened it, and nothing would report the drift. The gate is a comment-stripped source scan
+over the whole of `src/Cli` for any of them, plus the assertion that `LvsRun.Run(` appears exactly
+once — two calls would be two sets of defaults.
+
+**It is its own verb and is NOT folded into `check`** (R-lvs11-1c, note R-lvs-54). §10's rule is
+that `check` must be cheap enough to call after every edit and stops at elaboration; an LVS on a
+real board is seconds rather than milliseconds, and a `check` that had become slow is a `check`
+people stop running. What `check` *did* gain from that series is the terminal-map validation, which
+is cheap and static and which the GUI enforces too.
+
+### 19.2 One verb over the kinds it can answer for
+
+The kind comes from the path through `DocumentKinds.Classify`, exactly as `check` and `render` infer
+it (R-lvs11-2a).
+
+| Path | Compared |
+|---|---|
+| a **cell folder** | its primary schematic against its primary layout — **the default unit** |
+| a **workspace** | every cell holding both views; one holding a single view is reported at info and skipped |
+| a **`.clay`** | its sibling schematic, in the cell folder that holds it |
+| a **`.csch`** | its sibling layout, likewise |
+
+A view file names the CELL, because the cell is the unit of comparison — so all four spellings reach
+the same one call.
+
+**A cell with only one of the two views is not an error** (R-lvs11-2b). It is the ordinary mid-design
+state, and a verb that failed on it would be a verb nobody runs while a design is being drawn. A
+workspace of nothing but land patterns therefore exits 0 and says, per cell, which view is missing.
+
+**Any other kind is a refusal BY KIND** (R-lvs11-2c) — `render`'s own rule: the sentence names what
+the path *is*, because "circuitRF cannot read this" and "circuitRF reads this and `lvs` does not
+compare it" are different answers and only one of them says what to do next. A foreign extension
+goes through `convert`'s own content classifier first, so a GDSII or Gerber file is named rather than
+called unknown.
+
+**`--set var=expr` lands in the design's own scope before elaboration**, exactly as §5 spells it for
+every run verb. It is here because a design whose component values depend on a configured global has
+more than one correct layout, and a caller must be able to say which. It reaches the SCHEMATIC side
+and, there, the resolved parameter values the property pass compares: LVS reads its topology from
+the drawing's own instances and nets rather than from the elaborated netlist, and the artwork is
+already drawn.
+
+### 19.3 What it writes, and what it does not
+
+**stdout is the result and the result is the report** (R-lvs11-3a/3b): a summary line per cell, then
+the findings grouped by severity, each naming the designer's own objects — un-reduced, so a
+collapsed four-finger device names all four — with the technology, the reduction mode and both
+sides' counts on the face of it. Progress and refusals go to stderr.
+
+`--json` projects `LvsRunResult` and **adds nothing** (R-lvs11-3c). Every finding travels as its
+`Diagnostic`: a stable `lvs.` id and typed arguments, so a caller reads the layer, the coordinate or
+the two values **without parsing the sentence back apart**. The id is the contract; the sentence is
+not. The findings are in the document's own `diagnostics` array as well, which is where a caller
+that does not care which cell produced what reads them; `result.lvs` carries the per-cell structure,
+the marker box and the waiver state, which a flat array cannot.
+
+**`-o report.txt` is the only thing this verb ever writes, and with no `-o` it writes nothing at
+all** (R-lvs11-3d). LVS is read-only on §10.1's terms, so it runs on a read-only tree and on a
+workspace another process has open — asserted by mtime over a copy of a whole workspace, which
+catches a re-save that happened to write identical bytes.
+
+**It honours waivers and does not create them.** A waiver is a deliberate, reasoned act with a
+sentence attached, written in the editor beside the thing being waived; a waived finding is still
+reported here and merely not counted.
+
+### 19.4 Exit codes
+
+**0** when nothing at or above `--severity` was found, **1** otherwise; the default threshold is
+`error`. A run holding warnings and no errors **exits 0 and still reports them** — §10's rule for its
+reason: the alternative makes the exit code useless in CI. A refusal exits 1 with the producing
+component's own sentence and carries **no `lvs` payload at all**, so a run that could not happen
+cannot be read as one that concluded something with a note attached. **130** on a cancellation,
+through `RunHost`'s `RunControl` like `em` and `render`, and nothing is written.
+
+**There is no 2.** Nothing here converges; LVS runs no solve, ever.
+
+### 19.5 `serve`
+
+The tool falls out of the verb with no second implementation, and its result is the `--json`
+projection (R-lvs11-5a/5b). This is the surface the capability matters most on, for the reason at the
+top of this section.
+
+### 19.6 The gate
+
+`tests/Ui.Tests/Lvs/LvsCliVerbTests.cs`. The one that matters is the first: the verb run as a
+PROCESS reports exactly what an in-process `LvsRun.Run` reports — same findings, same ids, same
+objects, same order — which is what makes *"a design that passes headlessly passes when it is
+opened"* true rather than hoped for. Beside it: the correct board clean and the six-fault board
+naming all six, warnings-only exiting 0 with `--severity warning` flipping it to 1 and changing
+nothing else, all four document kinds resolving to one comparison, the single-view cell skipped at
+info, three refusals by kind, the mtime proof that nothing is written, 130 with its vacuity guard,
+the typed arguments read as values, `--set` distinguishing three answers on one board, the source
+scan, and `serve` returning the identical payload.
+
+**One measured correction to the brief.** Its gate 11 asks that `--no-reduce` and `--flat` *change
+the counts* on the correct board. They do not, and cannot: nothing on either example board collapses
+and the MMIC's only sub-cells are leaf parts, so both flags leave every count identical. What they
+do change is what the run SAYS it did — the mode is on the face of the human report and of the
+document, both sides, every run — and that is what the gate pins instead.

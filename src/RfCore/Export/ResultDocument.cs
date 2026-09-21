@@ -152,7 +152,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         RailReportJson? Rail = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        SmithReportJson? Smith = null);
+        SmithReportJson? Smith = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        LvsReportJson? Lvs = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -474,6 +476,113 @@ namespace RfCore.Export
         IReadOnlyList<SmithNodeJson>  Nodes,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         SmithBandJson?                Band);
+
+    // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
+    //
+    // A PROJECTION of `LvsRunResult` and nothing else. Every number below is a field or a derived
+    // accessor of that record, unrounded and unrenamed; nothing here decides anything, counts
+    // anything a second time, or invents a verdict the run did not reach. That is the whole of
+    // R-lvs11-3c: a second tally computed on the way out is a second answer to "what did the
+    // comparison find", differing in what it counted, and nothing would report the drift.
+
+    /// <summary>One side's tally, before and after the collapse — <c>LvsSideCounts</c> verbatim.</summary>
+    /// <remarks>
+    /// <b>Both numbers, always.</b> A caller reading <i>32 devices</i> against <i>8</i> needs to see
+    /// the merge that explains it, and a document carrying only the compared count cannot say
+    /// whether the reduction did anything at all.
+    /// </remarks>
+    public sealed record LvsSideCountsJson(
+        int DevicesBefore, int DevicesAfter, int NetsBefore, int NetsAfter);
+
+    /// <summary>
+    /// One line of the report.
+    /// </summary>
+    /// <remarks>
+    /// <b>The id is the contract and the sentence is not</b> (R-lvs8-2a): <paramref name="Id"/> and
+    /// <paramref name="Arguments"/> are what a caller keys on and reads values out of, and
+    /// <paramref name="Message"/> is the same English sentence the human report printed. A caller
+    /// matching on the sentence is doing the thing this shape exists to make unnecessary.
+    ///
+    /// <para>Every finding is ALSO in the document's own <c>diagnostics</c> array, which is where a
+    /// caller that does not care which cell produced what reads them. What this carries and that
+    /// cannot is the rest of <c>LvsFinding</c>: the designer's own object names, the waiver state,
+    /// and somewhere to look.</para>
+    /// </remarks>
+    /// <param name="Objects">The designer's own names for what this is about, <b>un-reduced</b>
+    /// (R-lvs8-2b) — a collapsed four-finger device names all four. Empty on a run-level line.</param>
+    /// <param name="Waived">A waived finding is <b>still reported</b> and merely not counted
+    /// (R-lvs8-1a).</param>
+    /// <param name="Marker">Where to look: <c>[minX, minY, maxX, maxY]</c> in the layout's own DBU.
+    /// Absent where there is nothing to point at — a device the artwork does not have has no
+    /// artwork to mark, and that absence IS the finding (R-lvs8-2c).</param>
+    public sealed record LvsFindingJson(
+        string                                Id,
+        string                                Severity,
+        string                                Message,
+        IReadOnlyList<string>                 Objects,
+        bool                                  Waived,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                               WaiverReason,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long[]?                               Marker,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyDictionary<string, object?>? Arguments);
+
+    /// <summary>One cell compared — or one skipped, which is a different answer and is said rather
+    /// than omitted (R-lvs11-2b).</summary>
+    /// <param name="Compared">False for a cell holding only one of the two views. The ordinary
+    /// mid-design state: <b>info, not an error</b>, and the reason travels as an <c>lvs.</c>
+    /// diagnostic beside it.</param>
+    /// <param name="Technology">Which process the layout was read against (R-lvs8-1a) — a workspace
+    /// holding two has a default that may not be the one the designer has in mind.</param>
+    /// <param name="Reduction"><c>on</c> or <c>off</c>. On the face of the result either way
+    /// (R-lvs8-1d), because a result whose reduction mode is not stated is one two people can read
+    /// differently.</param>
+    /// <param name="SubCells">Every distinct sub-cell this design placed and compared on its own
+    /// account — one entry per CELL, not per placement (R-lvs9-1a). Their findings are already in
+    /// <paramref name="Findings"/>, re-reported under the placement that put them there.</param>
+    public sealed record LvsCellJson(
+        string                          Path,
+        string                          Name,
+        bool                            Compared,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                         Technology,
+        string                          Reduction,
+        LvsSideCountsJson               Schematic,
+        LvsSideCountsJson               Layout,
+        int                             Errors,
+        int                             Warnings,
+        int                             Waived,
+        bool                            Clean,
+        int                             Extractions,
+        int                             CacheHits,
+        IReadOnlyList<string>           SubCells,
+        IReadOnlyList<LvsFindingJson>   Findings);
+
+    /// <summary>
+    /// What <c>lvs</c> compared, and what it concluded.
+    /// </summary>
+    /// <param name="Severity">The threshold the exit code was decided at — <c>warning</c> or
+    /// <c>error</c>. Carried for <c>check</c>'s own reason: a document holding warnings and
+    /// <c>exitCode: 0</c> is only readable next to the threshold that made it so.</param>
+    /// <param name="Flat"><c>--flat</c>: every placed cell read as a leaf (R-lvs9-4a).</param>
+    /// <param name="Reduce">False for <c>--no-reduce</c>. Stated at the run level as well as per
+    /// cell, because it is what a caller comparing two runs' counts needs first.</param>
+    /// <param name="Skipped">How many cells held only one of the two views.</param>
+    public sealed record LvsReportJson(
+        string                      Root,
+        string                      Kind,
+        string                      Severity,
+        bool                        Flat,
+        bool                        Reduce,
+        bool                        Testbench,
+        int                         Compared,
+        int                         Skipped,
+        int                         Errors,
+        int                         Warnings,
+        int                         Waived,
+        bool                        Clean,
+        IReadOnlyList<LvsCellJson>  Cells);
 
     /// <summary>
     /// One step of a resolution walk: what was being resolved, what it started from, what it landed

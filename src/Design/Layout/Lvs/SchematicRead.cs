@@ -55,9 +55,19 @@ public static class SchematicRead
     /// </param>
     /// <param name="isTestBenchCell">Whether the owning <c>.ccell</c> sets <c>IsTestBench</c>, for
     /// R-lvs4-4d's info finding. Nothing else reads it.</param>
+    /// <param name="overrides">
+    /// <c>--set var=expr</c> (R-lvs11-2d) — globals REPLACED in the bench's own scope immediately
+    /// before elaboration, so everything derived from one re-derives.
+    ///
+    /// <para><b>Here and not at the elaborator</b>, which is <c>cli.md</c> §5's rule in the shape it
+    /// takes on this side: the scope is what an expression is evaluated in, so an override handed
+    /// past it would change one value and leave every expression written in terms of it reading the
+    /// old one.</para>
+    /// </param>
     public static LvsNetlist Read(
         SchematicEditModel model, string cschPath,
-        bool includeFixture = false, bool isTestBenchCell = false)
+        bool includeFixture = false, bool isTestBenchCell = false,
+        IReadOnlyList<LvsGlobalOverride>? overrides = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -95,6 +105,15 @@ public static class SchematicRead
         // Not a partial comparison. A design whose parameters do not resolve has no values to
         // compare AND its topology may depend on them — an if() in a cell parameter decides which
         // branch gets stamped. The elaborator's own sentence is carried unmodified.
+        // R-lvs11-2d. Before the elaborator and after the round trip — the bench the round trip
+        // produced is the scope every cell parameter and every component value is evaluated in.
+        if (overrides is { Count: > 0 })
+            foreach (var (name, expression) in overrides)
+            {
+                tb.GlobalVariables.RemoveAll(v => v.Name == name);
+                tb.GlobalVariables.Add(new Variable(name, expression));
+            }
+
         IReadOnlyDictionary<string, Resolved> resolved;
         try
         {

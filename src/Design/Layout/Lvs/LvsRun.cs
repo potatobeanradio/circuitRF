@@ -27,6 +27,16 @@ using CircuitRF.Engine;
 
 namespace CircuitRF.Design.Layout.Lvs;
 
+/// <summary>
+/// One global variable, replaced before the schematic is elaborated — <c>--set var=expr</c>
+/// (R-lvs11-2d).
+/// </summary>
+/// <param name="Name">The variable, as the design spells it.</param>
+/// <param name="Expression">What it becomes, as an EXPRESSION rather than a number: it is parsed
+/// by the one expression engine in the design's own scope, exactly as the run verbs' own
+/// <c>--set</c> is (<c>cli.md</c> §5).</param>
+public readonly record struct LvsGlobalOverride(string Name, string Expression);
+
 /// <summary>What was asked for — <b>one object, passed to both sides</b> (R-lvs6-1a).</summary>
 public sealed record LvsRunOptions
 {
@@ -75,6 +85,24 @@ public sealed record LvsRunOptions
 
     /// <summary>R-lvs9-5d's ceiling. See <see cref="LvsHierarchyContext.MaxDevices"/>.</summary>
     public long MaxDevices { get; init; } = LayoutDesignFlatten.HardCeiling;
+
+    /// <summary>
+    /// <c>--set var=expr</c> (R-lvs11-2d) — globals REPLACED in the schematic's own scope before it
+    /// is elaborated, in the order given.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why LVS takes an override at all.</b> A design whose component values depend on a swept
+    /// or configured global has more than one correct layout, and a caller comparing the artwork of
+    /// one corner against a drawing that defaults to another must be able to say which. The override
+    /// lands in the same place every run verb's does — the <c>TestBench</c>'s own globals, before
+    /// elaboration — so everything derived from it re-derives.
+    ///
+    /// <para><b>It reaches the SCHEMATIC side only</b>, and it reaches the resolved parameter VALUES
+    /// brief 10 compares rather than the topology: LVS reads its topology from the drawing's own
+    /// instances and nets, never from the elaborated netlist (R-lvs4-2a). Nothing here is applied to
+    /// the artwork, which is already drawn.</para>
+    /// </remarks>
+    public IReadOnlyList<LvsGlobalOverride> Set { get; init; } = [];
 }
 
 // The result model moved to LvsRunResult.cs when brief 8 landed: one comparison produces ONE
@@ -173,7 +201,7 @@ public static class LvsRun
 
         control?.BeginStage("Reading the schematic");
         var schematicNetlist = SchematicRead.Read(
-            schematic, cschPath, options.IncludeFixture, isTestBenchCell);
+            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set);
         control?.ThrowIfCancellationRequested();
 
         // R-lvs3-3d's dangling SchematicId needs the other side's names, and NOTHING else here

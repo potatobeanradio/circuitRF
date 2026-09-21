@@ -2836,4 +2836,59 @@ internal static class CliDiagnostics
     public static Diagnostic SmithCancelled() => new(
         "smith.cancelled", DiagnosticSeverity.Error,
         "smith: cancelled. Nothing was written.");
+
+    // ── lvs (brief-lvs-11-cli-verb.md) ───────────────────────────────────────
+    //
+    // Every id here is a REFUSAL of this verb's own — an argument it cannot read, a path it cannot
+    // compare, a file it could not write. Not one of them is a finding: the findings are the
+    // `lvs.` catalogue in `src/Design/Layout/Lvs/LvsFindings.cs`, which is the contract the panel
+    // and `--json` share, and a refusal reported as a finding would make a run that could not
+    // happen look like one that concluded something (R-lvs11-4c).
+
+    public static Diagnostic LvsPathRequired() => new(
+        "lvs.args.path-required", DiagnosticSeverity.Error,
+        "lvs: a path is required — a cell folder, a workspace, a .clay or a .csch.");
+
+    public static Diagnostic LvsUnknownOption(string option) => Diagnostic.Create(
+        "lvs.args.unknown-option", DiagnosticSeverity.Error,
+        "lvs: unknown option '{option}'.", ("option", option));
+
+    public static Diagnostic LvsMultiplePaths() => new(
+        "lvs.args.multiple-paths", DiagnosticSeverity.Error,
+        "lvs: one path at a time. A workspace compares every cell in it.");
+
+    public static Diagnostic LvsUnknownSeverity(string text) => Diagnostic.Create(
+        "lvs.args.unknown-severity", DiagnosticSeverity.Error,
+        "lvs: --severity takes warning or error, got '{text}'.", ("text", text));
+
+    public static Diagnostic LvsPathNotFound(string path) => Diagnostic.Create(
+        "lvs.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    /// <summary>A path circuitRF can read but cannot COMPARE — a `.cem`, a `.ctech`, a GDSII file,
+    /// a plain folder. Named rather than called unreadable (R-lvs11-2c): `check` reads several of
+    /// those and `convert` reads the rest, and a refusal that says which is a refusal a caller can
+    /// act on.</summary>
+    public static Diagnostic LvsNotComparable(string path, string kind) => Diagnostic.Create(
+        "lvs.path.not-comparable", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and lvs compares a cell's layout against its schematic. Give a cell "
+      + "folder, a workspace, a .clay or a .csch.",
+        ("path", path), ("kind", kind));
+
+    /// <summary>A view document that is not inside a cell folder. The unit of comparison is the
+    /// CELL (note R-lvs-29) — a `.clay` is compared against its SIBLING schematic — so a drawing
+    /// with no cell around it has no other half to be compared with.</summary>
+    public static Diagnostic LvsNotInACellFolder(string path, string kind) => Diagnostic.Create(
+        "lvs.path.no-cell-folder", DiagnosticSeverity.Error,
+        "'{path}' is {kind} but is not inside a cell folder, so there is no sibling view to "
+      + "compare it against.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic LvsOutputFailed(string path, string why) => Diagnostic.Create(
+        "lvs.output.write-failed", DiagnosticSeverity.Error,
+        "lvs: '{path}' was not written: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic LvsCancelled() => new(
+        "lvs.cancelled", DiagnosticSeverity.Error,
+        "lvs: cancelled. Nothing was written.");
 }

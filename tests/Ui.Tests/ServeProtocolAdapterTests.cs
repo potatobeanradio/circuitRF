@@ -785,8 +785,12 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // SESSION state — opened before an agent's first modification, closed when it is done — and a
         // process that exits after one command cannot hold that, which is why the architecture puts
         // it on this server and leaves the other three history nouns as verbs.
+        //
+        // `lvs` is brief-lvs-11-cli-verb.md's, and it is the one whose value here is greater than on
+        // a command line: an agent that has just written a `.clay` CANNOT LOOK AT THE SCREEN, so
+        // asking whether the artwork implements the drawing is the only way it can find out.
         Assert.Equal(["run", "check", "explain", "create", "import", "render", "netlist", "plot",
-                      "find", "read", "history", "reference", "batch"],
+                      "find", "lvs", "read", "history", "reference", "batch"],
                      tools);
 
         Assert.Equal(0, server.Close());
@@ -869,6 +873,9 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // RND-5's one new tool. Single-mode for R-rnd5-2's reason: the document kind comes from
             // the path exactly as `check`'s does, so there is no selector to key on.
             ["render/"]           = ["path"],
+            // brief-lvs-11-cli-verb.md R-lvs11-5a. Single-mode, like `check` and `render`: the
+            // document kind comes from the path, so there is no selector to key on.
+            ["lvs/"]              = ["path"],
             // `reference` has no REQUIRED positional at all: its no-argument form is the topic list,
             // which is a real answer rather than a usage error. Both of its positionals are therefore
             // probed as arguments below, which is what this gate is for.

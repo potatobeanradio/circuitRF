@@ -160,6 +160,11 @@ return JsonRun.Finish(JsonRun.Verb switch
     // RC-5 adds `list` and `restore`, RC-7 `commit` (R-rc0-19).
     "history" => CircuitRF.Cli.History.Run(args[1..]),
     "explain" => CircuitRF.Cli.Explain.Run(args[1..]),
+    // R-lvs11-1c: LVS is its own verb and is NOT a mode of `check`. `check` must stay cheap enough
+    // to call after every edit and stops at elaboration; a comparison on a real board is seconds,
+    // and a `check` that had become slow is a `check` people stop running. It owns no comparison —
+    // every finding comes out of `LvsRun.Run`, which is what the GUI panel calls.
+    "lvs"     => CircuitRF.Cli.Lvs.Run(args[1..]),
     // The one output the command line did not have: a picture (brief-render-2-render-verb.md). It
     // owns no rendering — every pixel comes out of the same CircuitRF.Render the application draws
     // each frame with, which is the whole reason RND-1 put that project below the firewall.
@@ -2131,6 +2136,7 @@ static int PrintHelp()
     Console.WriteLine("  import part <file>     (a footprint and its symbol, as a cell)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
+    Console.WriteLine("  lvs     <path>         (does the artwork implement the drawing?)");
     Console.WriteLine("  render  <path> -o out.svg  (a schematic, symbol or layout as a picture)");
     Console.WriteLine("  read    <path>         (a result file as cubes, or a document as its own text)");
     Console.WriteLine("  plot    <result> -o out.svg --trace cube=S,i=2,j=1,y=db   (one picture, no .cdd)");
@@ -2181,6 +2187,16 @@ static int PrintHelp()
     Console.WriteLine("  -o out.s1p              the load reflection coefficient as Touchstone");
     Console.WriteLine("  -o out.{svg,pdf,png}    the chart, drawn by the renderer the window draws with");
     Console.WriteLine("  --size WxH  --scale N | --dpi N  --background opaque|transparent  --dark");
+    Console.WriteLine();
+    Console.WriteLine("lvs options:   <path> is a cell folder, a workspace, a .clay or a .csch");
+    Console.WriteLine("  --flat                  every placed cell as a leaf; nothing is descended into");
+    Console.WriteLine("  --flatten-cell <name>   flatten this one cell. Repeatable.");
+    Console.WriteLine("  --testbench             compare the fixture too (ports, sources, tuners)");
+    Console.WriteLine("  --no-reduce             do not collapse series/parallel/jumpers");
+    Console.WriteLine("  --set <var=expr>        override a global before elaboration. Repeatable.");
+    Console.WriteLine("  --severity warning|error   what decides the exit code. Default error;");
+    Console.WriteLine("                          warnings are reported either way.");
+    Console.WriteLine("  -o report.txt           the human report. With no -o nothing is written.");
     Console.WriteLine();
     Console.WriteLine("convert options:");
     Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");

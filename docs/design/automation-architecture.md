@@ -345,6 +345,15 @@ removing the single largest piece of incidental work an exercise measured: autho
 display to draw one trace. All three are ONE tool each, with the document kind inferred from the path
 rather than spelled as a mode, which is the same rule that kept `render` from being three.
 
+**`lvs` joined them on 2026-09-21** (`brief-lvs-11-cli-verb.md`, `cli.md` §19), and of every tool on
+this surface it is the one whose value is highest HERE rather than on a command line. A person who
+has just drawn a board can look at it; **an out-of-process author cannot**. Asking whether the
+artwork implements the drawing is the only way an agent that wrote a `.clay` can find out whether it
+wrote the right one, and the answer comes back as typed `lvs.` findings with the designer's own
+object names on them — actionable without parsing an English sentence back apart. It is one tool
+over four document kinds, inferred from the path, by the same rule as the three above; it costs no
+second implementation, because it is a command line onto the same `LvsRun.Run` the GUI panel calls.
+
 **Status, 2026-09-07 (AUT-9 R-aut9-8 through R-aut9-12).** The measured payloads that produced these
 requirements: `reference components` 297 KB, a 551-point two-port `run sparam` **173 KB returned
 inline**, and `import convert --list-cells`, **whose answer is one cell name**, 30 KB. Four

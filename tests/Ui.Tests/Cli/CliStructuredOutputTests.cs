@@ -619,6 +619,17 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "lp.export.no-surface",
         "lp.nothing-converged",
         "lp.tickle-gap",
+        // brief-lvs-11-cli-verb.md. Every one is a REFUSAL of the verb's own — the findings are the
+        // `lvs.` catalogue in `LvsFindingIds`, which `FindingsTests` gates in both directions.
+        "lvs.args.multiple-paths",
+        "lvs.args.path-required",
+        "lvs.args.unknown-option",
+        "lvs.args.unknown-severity",
+        "lvs.cancelled",
+        "lvs.output.write-failed",
+        "lvs.path.no-cell-folder",
+        "lvs.path.not-comparable",
+        "lvs.path.not-found",
         // AUT-11 R-aut11-1: `netlist`, the extraction the GUI's own Simulate performs, as a
         // document. Without it nothing headless could simulate a design anyone had drawn.
         "netlist.args.multiple-paths",

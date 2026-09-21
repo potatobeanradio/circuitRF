@@ -52,7 +52,7 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - Run CLI: `dotnet run --project src/Cli -- <args>`
   Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, **`convert`**, **`new`**,
   **`import`**, **`check`**, **`explain`**, **`history`**, **`render`**, **`netlist`**, **`plot`**,
-  **`find`**, **`rail`**, **`smith`**, `elab`. **The CLI has its own design doc —
+  **`find`**, **`rail`**, **`smith`**, **`lvs`**, `elab`. **The CLI has its own design doc —
   `docs/design/cli.md`** — covering the five-step anatomy of a run verb, the stdout/stderr split, and
   the rules below; read it before adding a verb. `hb`/`lp`/`lpp` run the netlist's harmonic-balance,
   loadpull and loadpull-pursuit analyses, and each runs the whole sweep when a `parametric_sweep`
@@ -203,6 +203,14 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   walk is bounded and **says when it stopped short**; a directory symlink is never followed. Gate for
   all three: `tests/Ui.Tests/Cli/MissingVerbsCliTests.cs`; detail in `src/Cli/RESOLVED.md` and
   `cli.md` §14-16. `new workspace` also creates missing PARENT directories now.
+  **`lvs <path>` compares a cell's layout against its schematic** (2026-09-21) — a cell folder, a
+  workspace, a `.clay` or a `.csch`, the kind inferred as `check` infers it. It **owns no
+  comparison**: every finding comes out of `LvsRun.Run` in `src/Design/Layout/Lvs`, the function the
+  GUI panel calls, so a design that passes headlessly passes when it is opened. Read-only on
+  `check`'s terms — `-o report.txt` is the only thing it ever writes. A cell with one of the two
+  views is INFO and skipped, not a refusal: that is the ordinary mid-design state. Exit 0/1 on
+  `--severity` (default `error`; warnings always reported), 130 on cancellation, and never 2 —
+  nothing here solves. `cli.md` §19; gate `tests/Ui.Tests/Lvs/LvsCliVerbTests.cs`.
 - Package: **exactly one script per platform, and each builds everything that platform ships** —
   `packaging/windows/build-windows.ps1` (9 files: `.msi` x64/arm64/x86 in both install scopes, plus
   the `.zip` the updater fetches), `packaging/macos/build-macos.sh` (2 `.dmg`s, both architectures;

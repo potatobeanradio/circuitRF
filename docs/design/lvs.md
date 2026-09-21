@@ -797,8 +797,13 @@ LVS has matched R7 to R7, selecting one selects the other.
 
 ```
 circuitrf lvs <path> [--flat] [--flatten-cell <name>] [--testbench] [--no-reduce]
-                     [--severity warning|error] [--json] [-o report.txt]
+                     [--set var=expr] [--severity warning|error] [--json] [-o report.txt]
 ```
+
+**Built** (`brief-lvs-11-cli-verb.md`). Its contract lives in [`cli.md`](cli.md) §19 with every other
+verb's: the four document kinds it takes, the refusals, the stdout/stderr split, `--json`'s
+projection and the exit codes. `--set` is on it because a design whose component values depend on a
+configured global has more than one correct layout, and a caller must be able to say which.
 
 **R-lvs-54. LVS is its own verb and is NOT folded into `check`.** R-aut4-1 is explicit that `check`
 must be cheap enough to call after every edit and stops at elaboration; an LVS on a real board is

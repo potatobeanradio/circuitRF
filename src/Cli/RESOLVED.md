@@ -2585,3 +2585,44 @@ the tool did not offer, so the refusal was a dead end rather than an instruction
 
 The three are declared individually rather than folded into `-o` for the reason the refusal itself
 gives: two of the three tables are `.csv` and the extension cannot say which.
+
+---
+
+## `lvs` — the verb, and the two things the brief could not have known (2026-09-21)
+
+`brief-lvs-11-cli-verb.md`. The verb itself is unremarkable by design — argument parsing, refusals,
+reporting and one call into `LvsRun.Run` — which is the point. Contract in `cli.md` §19. Three
+findings are worth keeping.
+
+**`--set` had nowhere to land, and adding it to the CLI would have been the wrong place.**
+`LvsRunOptions` carried no override and `SchematicRead.Read` took none, so the only way to honour
+R-lvs11-2d from inside `src/Cli` would have been to load the `.csch`, round-trip it and elaborate it
+here — which is exactly the second comparison the brief's own source scan exists to forbid. The
+override is a field on `LvsRunOptions` instead (`Set`), applied in `SchematicRead` immediately after
+the round trip and immediately before the elaborator, so **the GUI panel gets it for free and the two
+surfaces cannot diverge**. Worth knowing where it does and does not reach: it changes the resolved
+parameter VALUES brief 10 compares, and it does not change topology, because LVS reads its topology
+from the drawing's own instances and nets rather than from the elaborated netlist (R-lvs4-2a).
+
+**A global the design never declared is still settable, and that is what makes the gate sharp.** The
+apply is `RemoveAll` then `Add`, so `--set Rshunt=294` binds a name nothing declared. The gate uses
+it: a copy of the correct board with R3's value re-pointed at `Rshunt` gives three distinguishable
+answers from one design — no flag is `lvs.schematic.elaboration-failed`, `Rshunt=294` matches,
+`Rshunt=150` is `lvs.property.mismatch` with both values typed. A fixture whose two answers were
+"clean" and "clean" would have proved nothing.
+
+**Brief gate 11's premise does not survive the fixture, and the gate was rewritten rather than
+tuned.** It asks that `--no-reduce` and `--flat` *change the counts* on the correct board. Measured:
+they change nothing at all. Neither example board has a series or parallel group to collapse, and the
+MMIC's only sub-cells are leaf parts, so every count is identical in all four combinations. What both
+flags DO change is what the run says it did — `lvs.reduce.mode` on both sides, the `reduction` field
+per cell, and the word in the human report — and that is what `LvsCliVerbTests` pins. The half of the
+requirement that had a real fixture behind it (R-lvs6-5c: the mode is on the face of the result
+either way) is fully covered; the half that did not is recorded here rather than faked with a
+purpose-built board nobody else uses.
+
+**A refusal carries no `lvs` payload, deliberately.** R-lvs11-4c says a refusal must not be reported
+as a clean run with a note, and under `--json` the way to make that structural rather than a habit is
+for `JsonRun.Lvs` to stay null: the document then has no `result.lvs` key at all, so a caller cannot
+read a run that could not happen as one that concluded something. The gate asserts the absence, not
+just the exit code.
