@@ -593,6 +593,12 @@ public partial class SchematicView : UserControl
         CtxShowTypeLabel.Icon    = MakeEyeIcon(typeLabelVisible);
         CtxShowInstanceName.Icon = MakeEyeIcon(instanceNameVisible);
 
+        // Hidden rather than greyed on a component with no footprint, for the same reason Pin Names
+        // is: it is not an action that exists there — nothing would be drawn either way.
+        bool hasFootprint = comp?.Footprint is { Length: > 0 };
+        CtxShowFootprintLabel.IsVisible = hasFootprint;
+        if (hasFootprint) CtxShowFootprintLabel.Icon = MakeEyeIcon(comp!.ShowFootprintLabel);
+
         // Pin names — a resolved cell instance only. Hidden rather than greyed for the same reason
         // Re-reference and Flatten are: it is not an action that exists for a resistor, whose pin
         // labels are drawn as part of its artwork.
@@ -717,6 +723,12 @@ public partial class SchematicView : UserControl
     {
         var id = SchematicCanvasCtrl.ContextMenuTargetId;
         if (id is not null) Vm?.ToggleLabelVisibility(id, isTypeLabel: false);
+    }
+
+    private void OnCtxShowFootprintLabel(object? sender, RoutedEventArgs e)
+    {
+        var id = SchematicCanvasCtrl.ContextMenuTargetId;
+        if (id is not null) Vm?.ToggleFootprintLabel(id);
     }
 
     private void OnCtxShowPinNames(object? sender, RoutedEventArgs e)

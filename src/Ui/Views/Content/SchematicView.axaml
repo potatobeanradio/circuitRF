@@ -543,6 +543,13 @@
                             <MenuItem x:Name="CtxShowInstanceName"
                                       Header="Show Name"
                                       Click="OnCtxShowInstanceName"/>
+                            <!-- The footprint's case code, drawn AFTER the parameter labels
+                                 (brief-footprint-2 R-fp2-5). Hidden on a component carrying no
+                                 footprint: nothing would be drawn either way. -->
+                            <MenuItem x:Name="CtxShowFootprintLabel"
+                                      Header="Show Footprint"
+                                      IsVisible="False"
+                                      Click="OnCtxShowFootprintLabel"/>
                             <!-- A cell instance only. A built-in draws its pin labels as text inside
                                  its own artwork, so there is nothing here for this to turn off. -->
                             <MenuItem x:Name="CtxShowPinNames"

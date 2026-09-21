@@ -87,6 +87,23 @@ public static class LandPatternLayers
     /// refused; every PCB technology's top copper sits on its prepreg or core, and is not — including
     /// the Power Rail example's, whose layers carry no interchange aliases at all.</para>
     /// </summary>
+    /// <summary>
+    /// True when <paramref name="technology"/> is a BOARD technology — one a chip component can
+    /// actually be soldered to, which is exactly "<see cref="Resolve"/> finds a front copper".
+    ///
+    /// <para>brief-footprint-2 R-fp2-3b asks for this as the gate on the 0201 default, and spells
+    /// it "a conductor whose drawing layer carries an <c>Interchange.PcbLayerName</c>". That
+    /// spelling is narrower than the rule this file already implements and would get the Power Rail
+    /// example wrong: its technology carries no interchange aliases at all and is unambiguously a
+    /// board. So the question is asked of the one function that already answers it, rather than
+    /// answered a second time — and a default is then offered exactly where a land pattern can be
+    /// generated, which is the property that actually matters. Not a name match on the
+    /// technology's title, which is a string a user owns.</para>
+    /// </summary>
+    public static bool IsBoardTechnology(Technology? technology)
+        => technology is not null
+           && ResolveCopper(technology, PCellLayerSelection.Default, []) is not null;
+
     private static LayerKey? ResolveCopper(
         Technology technology, PCellLayerSelection layerSelection, List<string> diagnostics)
     {

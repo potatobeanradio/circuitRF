@@ -40,6 +40,7 @@ public partial class ParameterEditorView : UserControl
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
             vm.PickSpiceFileAsync     = PickSpiceFileAsync;
+            vm.PickFootprintFileAsync = PickFootprintFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
             vm.PickModelParameterAsync = PickModelParameterAsync;
             vm.PickParameterSetFileAsync = PickParameterSetFileAsync;
@@ -94,6 +95,32 @@ public partial class ParameterEditorView : UserControl
                                 "*.S1P","*.S2P","*.S3P","*.S4P","*.S5P","*.S6P","*.S7P","*.S8P",
                                 "*.S9P","*.S10P","*.S11P","*.S12P","*.SNP"],
                 },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>
+    /// Picks the <c>.clay</c> the footprint combobox's <b>Custom…</b> row points at
+    /// (brief-footprint-2 R-fp2-4a).
+    ///
+    /// <para>Custom means "point at one", never "draw one here" — the series is not a footprint
+    /// editor, and a land pattern is a <c>.clay</c> the layout editor already edits.</para>
+    /// </summary>
+    private async Task<string?> PickFootprintFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Choose a Land Pattern",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Layout view (*.clay)") { Patterns = ["*.clay", "*.CLAY"] },
                 FilePickerFileTypes.All,
             ],
         });

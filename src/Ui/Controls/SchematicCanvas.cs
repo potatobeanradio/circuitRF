@@ -471,7 +471,8 @@ public sealed class SchematicCanvas : Control
                 if (hit.Kind is SchematicHitTest.HitKind.Component
                     or SchematicHitTest.HitKind.ComponentType
                     or SchematicHitTest.HitKind.ComponentName
-                    or SchematicHitTest.HitKind.ComponentParam)
+                    or SchematicHitTest.HitKind.ComponentParam
+                    or SchematicHitTest.HitKind.ComponentFootprint)
                 {
                     ContextMenuTargetId = hit.Id;
                     // Also select the right-clicked component if not already selected
@@ -584,6 +585,11 @@ public sealed class SchematicCanvas : Control
             case SchematicHitTest.HitKind.ComponentParam:
                 RaiseLabelDoubleTap(hit);
                 break;
+            // The footprint label is a READOUT of a choice made from a closed list, so the inline
+            // text editor is the wrong gesture for it entirely — a typed `smt:0403` would be a
+            // stored reference nothing can resolve. Double-tapping it opens the same dialog
+            // double-tapping the body does, which is where the picker is.
+            case SchematicHitTest.HitKind.ComponentFootprint:
             case SchematicHitTest.HitKind.Component:
             {
                 var comp = _editContext.EditModel.FindComponent(hit.Id);

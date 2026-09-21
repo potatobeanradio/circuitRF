@@ -5,6 +5,7 @@ using CircuitRF.WBond;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout.Footprints;
 namespace CircuitRF.Design.Schematic;
 
 // `CircuitRF.Design.Symbol` is BOTH a namespace and, inside it, the type `Symbol`
@@ -654,6 +655,71 @@ public sealed class EditableComponent
     public bool ShowInstanceName { get; set; } = true;
 
     /// <summary>
+    /// Whether to draw this instance's FOOTPRINT as a third label — brief-footprint-2 R-fp2-5a.
+    ///
+    /// <para><b>Default false</b>, and persisted only when explicitly toggled, so a <c>.csch</c>
+    /// gains nothing until somebody asks for it. Nothing is drawn when the footprint is None,
+    /// whatever this says (R-fp2-5d) — a label reading nothing is still a row that would push the
+    /// block down.</para>
+    ///
+    /// <para>The row goes on the END, after the parameter labels, and that is the whole reason it
+    /// exists as a separate flag rather than as a parameter with <c>ShowOnSchematic</c>: the label
+    /// convention is index 0 = type, 1 = name, 2+ = params, and a footprint parameter appearing
+    /// among the params would shift every stored parameter-label offset in every existing
+    /// <c>.csch</c>, moving every hand-placed label on every drawing anyone has made (R-fp2-5c).</para>
+    /// </summary>
+    public bool ShowFootprintLabel { get; set; }
+
+    /// <summary>
+    /// The stored <c>Footprint</c> reference — <c>smt:&lt;case&gt;@&lt;density&gt;</c>, a relative
+    /// path, or null for None. Read through the established accessor shape, and NEVER normalised,
+    /// rewritten or re-derived (R-fp2-1c): a stored reference the application rewrites is a
+    /// reference that changes under a user who did not change it.
+    /// </summary>
+    public string? Footprint
+    {
+        get
+        {
+            var p = Parameters.FirstOrDefault(q =>
+                q.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
+            return string.IsNullOrWhiteSpace(p?.Expression) ? null : p!.Expression;
+        }
+    }
+
+    /// <summary>
+    /// What the third label reads: the case code alone (<c>0402</c>), a Custom <c>.clay</c>'s file
+    /// name without its extension, or a workspace cell's folder name. Empty when there is nothing
+    /// to draw — no footprint, or the label turned off.
+    ///
+    /// <para>R-fp2-5b: NOT the whole reference string and not the density. <c>smt:0402@N</c> is
+    /// machine spelling on a human drawing.</para>
+    /// </summary>
+    public string FootprintLabelText()
+    {
+        if (!ShowFootprintLabel) return "";
+        return FootprintDisplayName(Footprint);
+    }
+
+    /// <summary>The human spelling of one footprint reference, with no instance in hand — shared by
+    /// the label and by anything else that has to show a stored choice as a person wrote it.</summary>
+    public static string FootprintDisplayName(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference)) return "";
+
+        if (FootprintRef.IsBuiltInReference(reference))
+            return FootprintRef.TryParse(reference, out var parsed, out _)
+                ? parsed!.Case.Code
+                // A malformed or unknown built-in is shown AS ITSELF rather than hidden, for the
+                // same reason the picker keeps an unresolvable row (R-fp2-4e).
+                : reference.Trim();
+
+        string name = reference.Replace('\\', '/').TrimEnd('/');
+        int slash = name.LastIndexOf('/');
+        if (slash >= 0) name = name[(slash + 1)..];
+        return name.EndsWith(".clay", StringComparison.OrdinalIgnoreCase) ? name[..^5] : name;
+    }
+
+    /// <summary>
     /// Whether to draw this instance's PIN names beside its pins. <b>Three-state, and null is the
     /// ordinary case</b>: null lets the symbol decide — each pin that carries a stated name rather
     /// than its own ordinal draws it (<see cref="SymbolPinNames"/>) — while true draws every pin's
@@ -821,7 +887,16 @@ public sealed class EditableComponent
     /// <c>ShowOnSchematic = true</c> on three of them in its own file.</para>
     /// </summary>
     public IEnumerable<EditableParameter> LabelParameters()
-        => Symbol == SymbolKind.Match ? [] : Parameters.Where(p => p.ShowOnSchematic);
+        => Symbol == SymbolKind.Match
+            ? []
+            // `Footprint` never draws as a parameter line, whatever its ShowOnSchematic says. It has
+            // exactly one drawn form — the third label, reading the case code alone (R-fp2-5b) — and
+            // a second one reading `Footprint = smt:0402@N` is the machine spelling the brief calls a
+            // defect. Nothing in the application writes it with the flag set (both the placement
+            // path and the picker clear it), but EditableParameter's own default is true, so a
+            // hand-written .csch or an import would reach exactly that.
+            : Parameters.Where(p => p.ShowOnSchematic &&
+                                    !ArtworkParameters.IsArtworkOnly(p.Name));
 
     /// <summary>
     /// Number of schematic ports on this symbol.
@@ -993,6 +1068,11 @@ public sealed class EditableComponent
             string val = string.IsNullOrEmpty(p.Unit) ? p.Expression : $"{p.Expression} {p.Unit}";
             labels.Add(string.IsNullOrEmpty(p.Name) ? val : $"{p.Name} = {val}");
         }
+        // R-fp2-5c: APPENDED, never inserted at 2. The existing convention is 0 = type, 1 = name,
+        // 2+ = params, and putting the footprint among them would shift every stored
+        // parameter-label offset in every .csch ever written by one row.
+        string footprintLabel = FootprintLabelText();
+        if (footprintLabel.Length > 0) labels.Add(footprintLabel);
 
         var bb = GetBoundingBox();
         var (glyphMinX, glyphMinY, glyphMaxX, glyphMaxY) = cellRefPrimitives is not null
@@ -1104,6 +1184,7 @@ public sealed class EditableComponent
             X = X, Y = Y, Rotation = Rotation, MirrorX = MirrorX, Disable = Disable,
             ShowTypeLabel    = ShowTypeLabel,
             ShowInstanceName = ShowInstanceName,
+            ShowFootprintLabel = ShowFootprintLabel,
             ShowPinNames     = ShowPinNames,
             CellRef          = CellRef,
             // SL3 R-sl3-10: a clone carries the recorded interface hash, and it must. Copy/paste,

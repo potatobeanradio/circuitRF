@@ -1,5 +1,57 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## SMT footprints brief 2 — the `Footprint` parameter, the picker and the third label (2026-09-20)
+
+The schematic half: a stored reference, a combobox, a third label, and nothing electrical seeing
+it. The elaborator side is in `src/Core/RESOLVED.md`. Four findings that are not in the brief.
+
+### R-fp2-3b's spelling of "PCB-class" would get the shipped example wrong
+
+The brief defines a board technology as one with "a conductor whose drawing layer carries an
+`Interchange.PcbLayerName`". `examples/Power Rail/tech/pcb-4layer-1p6mm` carries no interchange
+aliases at all and is unambiguously a board — so that test would have given **None** on the very
+example brief 5 rebuilds on footprints.
+
+`FootprintDefaults` asks `LandPatternLayers.IsBoardTechnology` instead, which is brief 1's own
+copper-role resolution asked as a yes/no. That makes the default appear exactly where a land
+pattern can actually be generated, which is the property that matters, and it keeps one rule rather
+than two that can disagree. It is also not a name match on the technology's title, which R-fp2-3b
+is right to forbid: that string is a user's.
+
+### `EditableParameter.ShowOnSchematic` defaults to TRUE, so the footprint drew twice
+
+The first run of gate 7 read
+
+```
+["R", "R1", "R = 50 Ohm", "Footprint = smt:0402@N", "0402"]
+```
+
+— the machine spelling R-fp2-5b exists to keep off a human drawing, immediately above the label
+that replaces it. Nothing in the application writes it that way (the placement path and the picker
+both clear the flag), but the model's own default is `true`, so a hand-written `.csch`, an import,
+or anything that copies a parameter list would land exactly there.
+
+`LabelParameters()` — the single definition of which parameters are drawn, shared by the renderer
+and the hit test — now excludes every artwork-only name outright, whatever the flag says. A
+footprint has exactly one drawn form.
+
+### The exclusion list R-fp2-3c asks for is already implied by the allow-list
+
+R-fp2-3c enumerates what must NOT get a default: a `CellRef`, a registered PCell generator, a kit
+part, an `SnP`, a source, a port, wBond, Match, the system blocks. None of them needed stating: a
+placed cell and a kit part both carry the placeholder kind `Generic`, and every other one is its
+own `SymbolKind`, so none is in the nine-member discrete-RLC set. Writing the exclusions out would
+have been a second list to keep in step with the first — and `Generic` is the row a reader will not
+guess, which is why the gate's table names it.
+
+### One of the brief's four placement paths does not exist
+
+R-fp2-3e lists "palette drop, paste, duplicate, `.cnl` import". There is no `.cnl`-to-schematic
+importer in the repository. Paste and duplicate go through `EditableComponent.Clone`, which copies
+the parameter list and therefore carries whatever the original had — including the answer *None* —
+so neither may consult the default at all. That leaves two live call sites: `CommitPlacement`, and
+the inline type-change that builds a fresh component from the registry's defaults.
+
 ## SMT footprints brief 1 — the land-pattern generator (2026-09-20)
 
 `src/Design/Layout/Footprints/` — the case table, the IPC-7351B density arithmetic, layers by role,

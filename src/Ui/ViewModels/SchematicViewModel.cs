@@ -2999,7 +2999,8 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (hit.Kind is not (SchematicHitTest.HitKind.Component
                     or SchematicHitTest.HitKind.ComponentType
                     or SchematicHitTest.HitKind.ComponentName
-                    or SchematicHitTest.HitKind.ComponentParam))
+                    or SchematicHitTest.HitKind.ComponentParam
+                    or SchematicHitTest.HitKind.ComponentFootprint))
                 {
                     _messageSink?.Info("Click on a component or its label to move labels, Esc to cancel");
                     return;
@@ -3038,7 +3039,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY, modifiers);
         var snaps = _moveLabelComps.Select(c =>
         {
-            int labelCount = 2 + c.LabelParameters().Count();
+            // The footprint row (R-fp2-5c) is the last one when it is drawn, so it is part of the
+            // block the Move Labels gesture moves. Left out, it would stay where it was while
+            // everything else moved.
+            int labelCount = 2 + c.LabelParameters().Count() + (c.FootprintLabelText().Length > 0 ? 1 : 0);
             var oldOffsets = new List<(double DX, double DY)>(c.LabelOffsets);
             // Pad a row added since the last move with the LAST stored offset, not (0,0) — that is
             // where it is already being drawn, and padding with zero would snap it back to the
@@ -3418,6 +3422,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
             MicrostripSubstrateInjection.ApplyTechnologyDefaults(comp.Parameters, EditModel.SchematicDirectory, kind);
 
+        ApplyDefaultFootprint(comp);
+
         // Auto-assign next-free Num for Term/TermG/P1Tone (Num placeholder "1" from DefaultParameters
         // is overwritten here with the actual next-free integer among existing pool members). TermG
         // is the same s-param port as Term (R-hk-6); P1Tone shares the identical pool so the two
@@ -3447,6 +3453,38 @@ public sealed partial class SchematicViewModel : ObservableObject
         Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
         SelectPlacedPart(comp.Id);
         ComponentPlaced?.Invoke(kind);
+    }
+
+    /// <summary>
+    /// Gives a FRESHLY BUILT component its default <c>Footprint</c>, if its kind and the placing
+    /// workspace's technology call for one — brief-footprint-2 R-fp2-3.
+    ///
+    /// <para><b>At placement only, and never anywhere else</b> (R-fp2-3d). Both callers are building
+    /// a component from the registry's own defaults and have not yet executed a command, so this
+    /// lands inside the one undoable step that places the part. A paste, a duplicate and a load
+    /// carry a component that already has its answer — including the answer <i>None</i> — and must
+    /// never come through here: a default that follows the technology around is a design that
+    /// changes when you open it somewhere else.</para>
+    ///
+    /// <para>The decision itself lives in <see cref="FootprintDefaults.For"/>, not here, because
+    /// there is more than one placement path and a literal in one of them is a default that depends
+    /// on how the part got there.</para>
+    /// </summary>
+    private void ApplyDefaultFootprint(EditableComponent comp)
+    {
+        var technology = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(EditModel.SchematicDirectory);
+        if (FootprintDefaults.For(comp.Symbol, technology) is not { Length: > 0 } value) return;
+        if (comp.Parameters.Any(p => p.Name.Equals(ArtworkParameters.FootprintName,
+                                                   StringComparison.OrdinalIgnoreCase))) return;
+
+        comp.Parameters.Add(new EditableParameter
+        {
+            Name            = ArtworkParameters.FootprintName,
+            Expression      = value,
+            // Off: the footprint gets its own label row (R-fp2-5), not a "Footprint = smt:0201@N"
+            // parameter line, and a parameter row here would shift every stored label offset.
+            ShowOnSchematic = false,
+        });
     }
 
     /// <summary>
@@ -4254,6 +4292,14 @@ public sealed partial class SchematicViewModel : ObservableObject
         Execute(new SetLabelVisibilityCommand(EditModel, comp, isTypeLabel, !current));
     }
 
+    /// <summary>Toggles the footprint label on a single component (undoable) — R-fp2-5a.</summary>
+    public void ToggleFootprintLabel(string compId)
+    {
+        var comp = EditModel.FindComponent(compId);
+        if (comp is null) return;
+        Execute(new SetFootprintLabelVisibilityCommand(EditModel, comp, !comp.ShowFootprintLabel));
+    }
+
     /// <summary>
     /// Whether pin names are on screen for this instance RIGHT NOW — the answer the context menu's
     /// eye icon shows and the toggle flips.
@@ -4534,6 +4580,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                         var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
                         if (np is not null) np.Expression = NextFreePinNum(EditModel).ToString();
                     }
+                    ApplyDefaultFootprint(newComp);
                     Execute(new ChangeComponentTypeCommand(EditModel, comp, newComp));
 
                 }

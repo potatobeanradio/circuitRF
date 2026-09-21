@@ -81,6 +81,13 @@ public sealed class CschComponent
     public bool? ShowInstanceName { get; set; }
 
     /// <summary>
+    /// Whether to render the footprint as a third label; omitted (null) when false, which is the
+    /// default (brief-footprint-2 R-fp2-5a). Written only when somebody turned it on, so a
+    /// <c>.csch</c> that never touches footprints stays byte-identical.
+    /// </summary>
+    public bool? ShowFootprintLabel { get; set; }
+
+    /// <summary>
     /// An explicit per-instance override of pin-name visibility, or null — which is BOTH the file's
     /// default and the model's, and means "let the symbol decide" rather than any particular answer.
     /// Written only when the user has toggled it, so a schematic that never touches it stays
@@ -453,6 +460,8 @@ public static class SchematicPersistence
             // Omit when true (the default) to keep files compact.
             if (!c.ShowTypeLabel)    cc.ShowTypeLabel    = false;
             if (!c.ShowInstanceName) cc.ShowInstanceName = false;
+            // Omit when false (the default) for the same reason: an untouched file gains nothing.
+            if (c.ShowFootprintLabel) cc.ShowFootprintLabel = true;
             // Null is the default AND a meaningful state ("follow the symbol"), so this one is
             // written whenever it is set — either way round.
             if (c.ShowPinNames is bool spn) cc.ShowPinNames = spn;
@@ -542,6 +551,7 @@ public static class SchematicPersistence
             // Null means "not written" → use the persisted default (true).
             if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
             if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
+            if (cc.ShowFootprintLabel is bool sfl) c.ShowFootprintLabel = sfl;
             c.ShowPinNames = cc.ShowPinNames;
             if (cc.CellRef is not null) c.CellRef = cc.CellRef;
             if (cc.CellInterfaceHash is not null) c.CellInterfaceHash = cc.CellInterfaceHash;

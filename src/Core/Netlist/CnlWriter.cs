@@ -293,6 +293,16 @@ public static class CnlWriter
             && ov.Expression.TrimStart().StartsWith('{'))
             return $"{ov.Name}={Matching.MatchEmbedding.ToToken(ov.Expression)}";
 
+        // A `Footprint` is a reference, not a value (ArtworkParameters) — `smt:0402@N`, or a
+        // relative path to a .clay. The built-in spelling is a single token and needs nothing; a
+        // PATH may well have a space in it, and a .cnl is whitespace-delimited, so an unquoted one
+        // would make the reader treat its tail as a unit and refuse the whole line. Quoted only
+        // when it has to be, so the common case still reads as itself.
+        if (ArtworkParameters.IsArtworkOnly(ov.Name)
+            && !IsQuoted(ov.Expression)
+            && ov.Expression.AsSpan().ContainsAny(' ', '\t'))
+            return $"{ov.Name}=\"{ov.Expression}\"";
+
         if (!string.IsNullOrEmpty(ov.Unit))
             return $"{ov.Name}={ov.Expression} {ov.Unit}";
         return $"{ov.Name}={ov.Expression}";

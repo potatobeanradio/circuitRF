@@ -761,8 +761,17 @@ public sealed class Elaborator
         // arbitrary. If ever built, this is the hook: a single switch on the analysis (not a
         // per-component flag), classifying junctions by arm count as this per-instance walk
         // already visits every net binding — 2 = step, 3 = tee, 4 = cross. Revisit after L8.
-        foreach (var inst in instances)
+        foreach (var declaredInstance in instances)
         {
+            // R-fp2-6a: artwork-only overrides are dropped HERE, once, before anything reads them —
+            // not in ResolveParameters, which is a dozen per-family methods, and not in any one of
+            // them, which is how a parameter comes to leak on the thirteenth family. This is the
+            // single point every instance at every level of the hierarchy passes through, so the
+            // drop covers the primitive branch (ResolveParameters) and the sub-cell branch
+            // (BuildCellScope's overrides) alike. See ArtworkParameters for why `Footprint` is not
+            // a value and must never reach the evaluator.
+            var inst = ArtworkParameters.WithoutArtworkOverrides(declaredInstance);
+
             var childPath = instancePathPrefix.Length == 0
                 ? inst.InstanceName
                 : $"{instancePathPrefix}.{inst.InstanceName}";

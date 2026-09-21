@@ -69,6 +69,11 @@ public static class SchematicToLayoutGenerator
         {
             "SignalLayer", "GroundReference", "CvData", "ShowBias",
             PdkPartInstaller.ModelLibraryParameter,
+            // `Footprint` is artwork, but it is not a DIMENSION — it names which land pattern this
+            // instance is, which is this generator's own business and never a generator's input
+            // (brief-footprint-2 R-fp2-6c). Without this an MLIN carrying a stray footprint would
+            // hand `smt:0402@N` to MlinPCell as a parameter, which reads it as a real and gets zero.
+            ArtworkParameters.FootprintName,
         };
 
     private const int GridCols = 8;

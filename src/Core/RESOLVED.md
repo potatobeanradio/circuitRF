@@ -5,6 +5,52 @@ Going forward, a completed brief's detail lands here instead — one `##` sectio
 only for findings that are still true, still surprising, and would cost someone real time to
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## SMT footprints brief 2 — dropping an artwork parameter before resolution (2026-09-20)
+
+`Footprint` is an ordinary instance parameter that must never reach the evaluator: `smt:0402@N` is
+not an expression, and the resolver reads it as an identifier and fails. `ArtworkParameters` is the
+one place the name lives and the one place the drop happens. Four things about where it could go.
+
+### The drop cannot live in `Instance`'s constructor, which is the obvious place
+
+`Instance.Overrides` is what `CnlWriter` writes FROM. A filter in the constructor would therefore
+have deleted the footprint from every `.cnl` the application emits — and `circuitrf netlist` writes
+the netlist a run consumes, so a headless Update Layout would have had nothing to read (R-fp2-6d).
+The parameter has to travel in the netlist and be ignored at elaboration, which are two different
+points.
+
+### …and it cannot live in `ResolveParameters` either, which is the second obvious place
+
+That method is a dispatcher over a dozen per-family `Resolve…Parameters` methods, each of which
+reads `inst.Overrides` for itself. Dropping at the top means reconstructing the instance anyway, and
+dropping inside them means doing it a dozen times — which is exactly the shape of
+`_snpStringParams`, the per-family list the brief says not to copy.
+
+It went at the head of `FlattenInstances`' own `foreach`, which is the single point every instance
+at every level passes through. That placement is also what covers the SUB-CELL branch: a footprint
+on a cell instance would otherwise have been pushed into the child's scope by `BuildCellScope` as a
+variable, which `ResolveParameters` never sees at all.
+
+### `Instance.RefNetBinding` is `init`-only and the constructor does not carry it
+
+Rebuilding an `Instance` to filter its overrides drops it silently, and it is the whole N-or-N+1
+rule: an SnP with an external reference pin would have been re-grounded by an unrelated change to
+its footprint. `WithoutArtworkOverrides` copies it explicitly, and returns the original instance
+untouched when there is nothing to drop — which is every instance in every design that has no
+footprints, so the ordinary path allocates nothing.
+
+### None must REMOVE the parameter, never blank it
+
+The picker's **None** row deletes the `Footprint` entry rather than setting it to `""`. A blank
+would be emitted as `Footprint=` with nothing after it, and this reader glues the next token on as
+the value and silently eats the parameters behind it — the empty-parameter-value trap already
+recorded in `src/Core/HISTORY.md`. Absent is also what None already MEANS on load (R-fp2-1b), so
+removing keeps the two spellings of None one spelling.
+
+A footprint that is a relative PATH may carry a space, and a `.cnl` is whitespace-delimited, so
+`CnlWriter` quotes an artwork value only when it has one and `CnlReader` takes the quotes back off.
+Unquoted, the tail would have been read as a unit and the whole line refused — loud, but wrong.
+
 ## The RLC family grew from two parts to nine, and `C = ∞` is a NaN (2026-09-20)
 
 Owner: add `SRL`, `PRL`, `SRC`, `PRC`, `SLC` and `PLC` beside the existing `SRLC` and `PRLC`.

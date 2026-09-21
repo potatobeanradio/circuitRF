@@ -1706,6 +1706,14 @@ public sealed class CnlReader
                     pexpr = "\"" + resolvedPath.Replace('\\', '/') + "\"";
                 }
 
+                // An artwork-only reference is stored as itself. CnlWriter quotes one only when it
+                // carries whitespace, so the quotes are transport and are taken off here — the
+                // symmetric half of that rule, and the reason a .cnl round trip returns the string
+                // that was chosen rather than a quoted copy of it.
+                if (ArtworkParameters.IsArtworkOnly(pname)
+                    && pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
+                    pexpr = pexpr[1..^1];
+
                 string? unit = null;
                 bool isStringLit = pexpr.Length >= 2 && pexpr[0] == '"';
                 // Unit as a separate token: "C=1 uF" or "Pavl=Pin dBm" or "Vdc=-3.05 V".

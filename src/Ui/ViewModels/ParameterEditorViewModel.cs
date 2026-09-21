@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using RfCore;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
@@ -210,6 +211,225 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         else updated.Add(new EditableParameter { Name = name, Expression = value, ShowOnSchematic = false });
 
         _schematicVm!.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
+    // ── Footprint (brief-footprint-2 R-fp2-4) ─────────────────────────────────
+    //
+    // A first-class row on EVERY component, in the same shape as SnP's PinConfig and Pitch: a
+    // declared option list, an [ObservableProperty] int index, and an On…IndexChanged partial that
+    // writes the parameter through the ordinary Apply…Param path. There is no second write path, so
+    // it undoes, redoes, dirties and persists with everything else (R-fp2-1a).
+    //
+    // R-fp2-2: no allow-list of component kinds. An S2P standing in for a capacitor, an SRLC and an
+    // S4P standing in for a hybrid coupler all have a layout view to place. What is GATED is the
+    // DEFAULT (FootprintDefaults) and, from brief 4, what is OFFERED.
+
+    /// <summary>The <b>None</b> row — index 0, always.</summary>
+    public const string FootprintNoneRow = "None";
+
+    /// <summary>The <b>Custom…</b> row — always LAST, so brief 4's workspace cells can be inserted
+    /// before it without moving it.</summary>
+    public const string FootprintCustomRow = "Custom…";
+
+    /// <summary>
+    /// The rows of the footprint combobox, in order: None, the built-in case sizes, an extra row for
+    /// a stored value that is not in the list (R-fp2-4e), then Custom….
+    ///
+    /// <para>Every case row reads its metric twin and its millimetres — <c>SmtCase.Display</c>, the
+    /// overview's §1e spelling. That is not decoration: <c>0201</c> imperial and <c>0201</c> metric
+    /// are two real case sizes differing by 2.4x, and a row reading only <c>0402</c> is the
+    /// defect.</para>
+    /// </summary>
+    public ObservableCollection<string> FootprintOptions { get; } = [];
+
+    /// <summary>IPC-7351B density levels, in the order a picker reads them. Nominal is the default
+    /// and is pre-selected.</summary>
+    public static string[] FootprintDensityOptions { get; } = ["Nominal", "Most", "Least"];
+
+    [ObservableProperty] private int  _footprintIndex;
+    [ObservableProperty] private int  _footprintDensityIndex;
+    [ObservableProperty] private bool _isFootprintDensityEnabled;
+
+    /// <summary>What the picker's own row is describing right now — the stored reference itself,
+    /// blank when there is none. Shown as the row's tooltip, so the machine spelling is available
+    /// without putting it on the schematic (R-fp2-5b).</summary>
+    [ObservableProperty] private string _footprintTooltip = "";
+
+    /// <summary>Set by the view so the Custom… row can open a picker over <c>.clay</c> files. A
+    /// separate seam from the Touchstone and SPICE ones for the same reason those are separate: the
+    /// FILTER differs.</summary>
+    public Func<Task<string?>>? PickFootprintFileAsync { get; set; }
+
+    /// <summary>The value stored on the target when the panel was last refreshed. The Custom… row
+    /// restores it when the picker is cancelled (R-fp2-4a), and the unresolved row writes it back
+    /// unchanged (R-fp2-4e).</summary>
+    private string? _footprintStored;
+
+    /// <summary>The index of the extra row that shows a stored value the list cannot otherwise
+    /// display, or -1 when there is none.</summary>
+    private int _footprintExtraRow = -1;
+
+    /// <summary>Whether this instance draws its footprint as a third schematic label. Default
+    /// false; nothing is drawn when the footprint is None whatever this says (R-fp2-5d).</summary>
+    [ObservableProperty] private bool _showFootprintLabel;
+
+    partial void OnShowFootprintLabelChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        _schematicVm.Execute(new SetFootprintLabelVisibilityCommand(_schematicVm.EditModel, _target, newValue));
+    }
+
+    partial void OnFootprintIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        // Custom… is a gesture, not a value: it opens a picker and either writes what was chosen or
+        // leaves the previous value exactly as it was.
+        if (newValue == FootprintOptions.Count - 1 && FootprintOptions.Count > 1)
+        {
+            _ = PickFootprintFileAndApplyAsync(oldValue);
+            return;
+        }
+
+        if (newValue == 0) { ApplyFootprint(null); return; }
+
+        // The extra row IS the stored value. Selecting it writes back what is already there, which
+        // is the one thing a picker showing an unresolvable choice must not turn into a reset.
+        if (newValue == _footprintExtraRow) { ApplyFootprint(_footprintStored); return; }
+
+        int caseIndex = newValue - 1;
+        if ((uint)caseIndex >= (uint)SmtCaseTable.All.Count) return;
+        ApplyFootprint(FootprintRef.For(SmtCaseTable.All[caseIndex], DensityAt(FootprintDensityIndex)).ToString());
+    }
+
+    partial void OnFootprintDensityIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        // R-fp2-4c: the density writes the '@' suffix of the SAME parameter. There is no second one.
+        int caseIndex = FootprintIndex - 1;
+        if ((uint)caseIndex >= (uint)SmtCaseTable.All.Count) return;
+        ApplyFootprint(FootprintRef.For(SmtCaseTable.All[caseIndex], DensityAt(newValue)).ToString());
+    }
+
+    private static DensityLevel DensityAt(int index) => index switch
+    {
+        1 => DensityLevel.Most,
+        2 => DensityLevel.Least,
+        _ => DensityLevel.Nominal,
+    };
+
+    private async Task PickFootprintFileAndApplyAsync(int previousIndex)
+    {
+        string? path = PickFootprintFileAsync is null ? null : await PickFootprintFileAsync();
+        if (path is null)
+        {
+            // Cancelled: the previous value is untouched, and so is the combobox.
+            _isRefreshing = true;
+            FootprintIndex = previousIndex;
+            _isRefreshing = false;
+            return;
+        }
+        // Workspace-relative where it can be, which is the same portability rule every other stored
+        // file reference in a .csch follows.
+        ApplyFootprint(SnpPathPolicy.ToStored(path, _schematicVm?.WorkspaceRoot));
+    }
+
+    /// <summary>
+    /// Writes (or clears) the target's <c>Footprint</c> through the ordinary parameter command.
+    ///
+    /// <para><b>None REMOVES the parameter rather than blanking it.</b> A blank expression would be
+    /// emitted into the <c>.cnl</c> as <c>Footprint=</c> with nothing after it, and that reader
+    /// glues the next token on as the value and silently eats the parameters behind it — the
+    /// empty-parameter-value trap already recorded in <c>src/Core/CLAUDE.md</c>. Absent is also what
+    /// None already MEANS on load (R-fp2-1b), so the two spellings of None stay one spelling.</para>
+    /// </summary>
+    private void ApplyFootprint(string? value)
+    {
+        var updated = _target!.Parameters.Select(p => p.Clone()).ToList();
+        updated.RemoveAll(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
+        if (value is { Length: > 0 })
+            updated.Add(new EditableParameter
+            {
+                Name            = ArtworkParameters.FootprintName,
+                Expression      = value,
+                ShowOnSchematic = false,
+            });
+
+        _schematicVm!.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
+    /// <summary>
+    /// Rebuilds the rows and then sets the selection — in that order, once (R-fp2-4d).
+    ///
+    /// <para>The wBond round-6 defect is exactly this control shape: a <c>ComboBox</c> whose
+    /// selection was assigned before its <c>ItemsSource</c> binding attached silently dropped it and
+    /// read blank. Here the collection is mutated first and the index second, and the XAML declares
+    /// <c>ItemsSource</c> before <c>SelectedIndex</c> so the same order holds on the view side.</para>
+    /// </summary>
+    private void RefreshFootprintPanel()
+    {
+        if (_target is null) return;
+
+        string? stored = _target.Footprint;
+        _footprintStored = stored;
+
+        bool wasRefreshing = _isRefreshing;
+        _isRefreshing = true;
+
+        FootprintOptions.Clear();
+        FootprintOptions.Add(FootprintNoneRow);
+        foreach (var c in SmtCaseTable.All) FootprintOptions.Add(c.Display);
+
+        int index = 0;
+        var density = FootprintRef.DefaultDensity;
+        bool isBuiltIn = false;
+        _footprintExtraRow = -1;
+
+        if (stored is { Length: > 0 })
+        {
+            if (FootprintRef.TryParse(stored, out var parsed, out _))
+            {
+                int caseIndex = IndexOfCase(parsed!.Case.Code);
+                if (caseIndex >= 0) { index = caseIndex + 1; density = parsed.Density; isBuiltIn = true; }
+            }
+
+            if (!isBuiltIn)
+            {
+                // R-fp2-4e: shown AS ITSELF, as an extra row, marked unresolved when it claimed to be
+                // a built-in and is not. Never silently reset to None — a design's stored choice is
+                // the design's, and a picker that erases what it cannot display is a picker that
+                // loses work.
+                FootprintOptions.Add(FootprintRef.IsBuiltInReference(stored)
+                    ? $"{stored}   (unresolved)"
+                    : stored);
+                _footprintExtraRow = FootprintOptions.Count - 1;
+                index = _footprintExtraRow;
+            }
+        }
+
+        FootprintOptions.Add(FootprintCustomRow);
+
+        FootprintIndex             = index;
+        FootprintDensityIndex      = density switch
+        {
+            DensityLevel.Most  => 1,
+            DensityLevel.Least => 2,
+            _ => 0,
+        };
+        // R-fp2-4c: the density is meaningless for None, a workspace cell and Custom, so it is
+        // disabled there rather than reading a value that writes nothing.
+        IsFootprintDensityEnabled = isBuiltIn;
+        FootprintTooltip          = stored ?? "";
+        ShowFootprintLabel        = _target.ShowFootprintLabel;
+
+        _isRefreshing = wasRefreshing;
+    }
+
+    private static int IndexOfCase(string code)
+    {
+        for (int i = 0; i < SmtCaseTable.All.Count; i++)
+            if (string.Equals(SmtCaseTable.All[i].Code, code, StringComparison.OrdinalIgnoreCase)) return i;
+        return -1;
     }
 
     // ── SnP panel ─────────────────────────────────────────────────────────────
@@ -579,6 +799,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
+                // The footprint row above owns `Footprint`, for the same reason the VerilogA panel
+                // owns `OpVars`: it is a choice from a closed list, not a value, and a text box for
+                // it is a box where `smt:0403` can be typed. Offered in one place so the two cannot
+                // disagree — and a generic row would also be a SECOND write path, which R-fp2-1a
+                // says there is not.
+                if (ArtworkParameters.IsArtworkOnly(param.Name)) continue;
+
                 // A wBond's own panel owns the parameters that are not text — see
                 // IsWBondPanelParameter for the list and the reason each is on it. `Temp` and the
                 // unsuffixed `LoopHeight`/`Diameter` are ordinary expression values and stay as
@@ -655,6 +882,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         NotifyMklopfState();
         RefreshMicrostripSubstrate();
         UpdateCanRemoveTopGroup();
+        RefreshFootprintPanel();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
@@ -1513,6 +1741,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         foreach (var row in Rows)
             row.RefreshFromModel();
         _isRefreshing = false;
+        // A READOUT of the instance, so it follows every change to it — including an undo of a
+        // footprint change, and including the Custom… picker's own write.
+        RefreshFootprintPanel();
         if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
         if (_target.Symbol == SymbolKind.VerilogA) RefreshVerilogAPanel();
         // The Match panel is a READOUT of the design, so it has to follow every change to it —
