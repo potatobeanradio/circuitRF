@@ -33949,3 +33949,19 @@ and `footprint-densities` figures now draw the courtyard (verified by counting `
 emitted SVG — 0 before, 8 and 6 after — not by eye), `cli.md`'s worked `explain` output reads
 "9 defined" where it read 8, `TechPersistenceTests.Pcb2Layer_MatchesTableDefaults` expects 9 layers,
 and the footprints chapter's callout no longer says no shipped technology declares one.
+
+## A restored revision closed a part-library tab and did not bring it back (2026-09-21)
+
+Three places have to agree on the document KINDS the `.cws` writer emits: `DocumentPathAndKind`
+produces them, `RestoreOpenDocumentsAsync` reopens them when a workspace is opened, and
+`ReloadChangedDocuments` reopens them after History ▸ restore closes them to re-read from disk.
+`"partlibrary"` was added to the first two and not the third, so a `.crlib` editor open over a
+restore was force-closed and hit the `default: continue` arm — the tab simply disappeared, with no
+message, and the file was fine.
+
+`WorkspaceSessionPersistedOnLeaveTests.TheRestoreSwitch_HandlesEveryKindTheWriterCanEmit` exists for
+exactly this and was failing deterministically: it reads the kinds out of the producer and asserts a
+`case` for each in both consumers, and its explicit expected list is the second half — a kind added
+to all three would still have to be spelled there, so nobody adds one without reading the rule. Both
+halves updated together; the reload arm is the one-line synchronous open, since a part library is a
+small file and `OpenOrActivatePartLibrary` is not async.

@@ -878,6 +878,9 @@ public partial class WorkspaceViewModel
                 case "layout":      await OpenOrActivateLayoutAsync(docPath); break;
                 case "tech":        OpenOrActivateTech(docPath); break;
                 case "emsetup":     OpenOrActivateEmSetup(docPath); break;
+                // Read unvalidated on the ordinary open path too, so a restored library that is
+                // malformed comes back in the one editor that can correct it rather than not at all.
+                case "partlibrary": OpenOrActivatePartLibrary(docPath); break;
                 // A README the restore rewrote. Nothing is dirty and nothing is being
                 // discarded — the document holds the text it parsed, so the only way to show
                 // the restored file is to read it again.
