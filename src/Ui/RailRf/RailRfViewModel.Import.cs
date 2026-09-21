@@ -307,7 +307,9 @@ public sealed partial class RailRfViewModel
         // says why is an answer, a missing row is a second mystery.
         if (row.IsReferenceReturn && SelectedRail?.ReferenceLayer is { } layer)
         {
-            string name = ReferenceLayerOptions.FirstOrDefault(o => o.Key == layer)?.Name
+            // SELECTABLE rows only, for RebuildReferenceOptions' reason: a conductor with no drawing
+            // layer is listed with `default` as its key and would answer for a rail naming 0/0.
+            string name = ReferenceLayerOptions.FirstOrDefault(o => o.IsSelectable && o.Key == layer)?.Name
                        ?? $"{layer.Layer}/{layer.Datatype}";
             Refusal = new RailRefusal(
                 ReferenceReturnRefusal(row.Name, name), RailRefusalControl.ReferenceLayer);

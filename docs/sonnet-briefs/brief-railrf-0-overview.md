@@ -190,6 +190,8 @@ unusable.
 | [23 — mount and unmount](brief-railrf-23-mount-and-unmount.md) | depopulate without touching the `.clay`, and compare against the run you just did | cross-checked against Q2's own removal ranking |
 | [24 — the part library](brief-railrf-24-part-library-editor.md) | `.crlib` becomes a document that can be opened | it opens — which it does not today |
 | [25 — a series element](brief-railrf-25-series-element.md) | a ferrite in the middle of a rail: **a second rail node**, partitioned off the artwork | a closed-form oracle, and every existing answer unchanged bit for bit |
+| [26 — parts from the board](brief-railrf-26-parts-from-the-board.md) | **the parts table has no producer** — nothing in circuitRF ever makes a part row, so a board whose parts are placed footprints shows an empty pane | a load, a series element and a part off the rail must never become a shunt capacitor |
+| [27 — a Gerber set to a curve](brief-railrf-27-gerber-set-to-a-curve.md) | the four steps still standing behind 26: copper that never reached the stackup, a rail picked on its own reference, rows with no value, a source with no voltage | ONE end-to-end test: fab set in, curve out, no display and no hand-edited JSON |
 
 **19-24 are window-level and independent of each other.** 25 is a model change and is the largest
 of the seven; it blocks

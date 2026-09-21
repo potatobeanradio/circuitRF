@@ -471,6 +471,90 @@ public static class RailArtwork
             stamped, schematic);
     }
 
+    // ── THE WRITING HALF OF THE SAME WALK (owner, 2026-09-21) ────────────────────────────────────
+    //
+    // Every reference a `.crail` carries is documented as document-relative — five times, on
+    // `RailDocument`'s own fields, "so an archived workspace still resolves". Nothing wrote them
+    // that way. The window set `ArtworkCellRef`, `BoardNetlistRef` and `PlacementRef` to the
+    // ABSOLUTE path it had just opened or imported, and `SaveToFile` wrote that path out; only
+    // `PartLibraryRef` was ever relativized, by the one site that happened to do it by hand.
+    //
+    // A document whose references are absolute resolves perfectly on the machine that wrote it and
+    // on no other, which is why this survived: it fails for the recipient of a workspace, never for
+    // its author. Found on a field report's own workspace, whose `.crail` names
+    // `C:\Users\…\layout\board.clay`; opened anywhere else, RefPath.Resolve treats that string as a
+    // relative name (it is not rooted off Windows), lands on a path that has never existed, and the
+    // window says the artwork was not found — with the file sitting right beside the document.
+    //
+    // It is a WRITE-side rule rather than a read-side one on purpose. Reading stays tolerant —
+    // RefPath.Resolve already accepts a rooted ref and wins over the base, so every `.crail` written
+    // before this goes on opening on its author's machine — and what changes is that saving one puts
+    // it right.
+
+    /// <summary>
+    /// Rewrites every reference this document carries so it is relative to where the document is
+    /// about to be WRITTEN — the contract each of those fields states, applied at the one moment the
+    /// destination is known.
+    /// </summary>
+    /// <param name="document">The document. Its reference fields are rewritten in place.</param>
+    /// <param name="fromDocumentPath">Where the document's references are currently relative to —
+    /// the path it was last read from or written to, or null for one that has never been either.
+    /// <b>A relative reference with no base is left exactly as it is</b>: nothing here can know what
+    /// it was relative to, and a guess would repoint it at a file nobody named.</param>
+    /// <param name="toDocumentPath">Where it is being written.</param>
+    /// <remarks>
+    /// <b>Save and Save as… are one operation here</b>, which is what makes moving a document keep
+    /// its board: an absolute reference needs no base at all, and a reference that was already
+    /// relative is resolved against the OLD document's folder before being re-stated against the new
+    /// one. Writing a `.crail` into another folder without that step would leave every reference
+    /// pointing one directory hop away from the file it names.
+    ///
+    /// <para><b>Stored form, not native form</b> — <c>RefPath.ToStored</c>, so a Windows-authored
+    /// document opens on macOS and Linux. A reference on another volume has no relative spelling and
+    /// <c>Path.GetRelativePath</c> hands back the absolute path unchanged, which is the honest
+    /// answer rather than a failure.</para>
+    /// </remarks>
+    public static void RebaseReferences(
+        RailDocument document, string? fromDocumentPath, string toDocumentPath)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(toDocumentPath);
+
+        string? fromDir = fromDocumentPath is { Length: > 0 } f
+            ? Path.GetDirectoryName(Path.GetFullPath(f))
+            : null;
+        string toDir = Path.GetDirectoryName(Path.GetFullPath(toDocumentPath)) ?? "";
+
+        document.ArtworkCellRef  = Rebased(document.ArtworkCellRef,  fromDir, toDir);
+        document.TechnologyRef   = Rebased(document.TechnologyRef,   fromDir, toDir);
+        document.PartLibraryRef  = Rebased(document.PartLibraryRef,  fromDir, toDir);
+        document.BoardNetlistRef = Rebased(document.BoardNetlistRef, fromDir, toDir);
+        document.PlacementRef    = Rebased(document.PlacementRef,    fromDir, toDir);
+    }
+
+    /// <summary>One reference, re-stated against <paramref name="toDir"/>.</summary>
+    private static string? Rebased(string? reference, string? fromDir, string toDir)
+    {
+        if (reference is not { Length: > 0 } r) return reference;
+
+        // A rooted reference carries its own base and is the whole point of this; a relative one
+        // needs the document it was relative to, and with none it is left alone rather than guessed.
+        string native = Core.RefPath.ToNative(r);
+        if (!Path.IsPathRooted(native))
+        {
+            if (fromDir is not { Length: > 0 }) return reference;
+            native = Path.Combine(fromDir, native);
+        }
+
+        try
+        {
+            return Core.RefPath.ToStored(Path.GetRelativePath(toDir, Path.GetFullPath(native)));
+        }
+        catch (ArgumentException)       { return reference; }
+        catch (PathTooLongException)    { return reference; }
+        catch (NotSupportedException)   { return reference; }
+    }
+
     /// <summary>The primary layout view of a cell folder, or null where it holds none.</summary>
     public static string? LayoutOf(string cellDir)
     {

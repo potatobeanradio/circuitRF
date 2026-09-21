@@ -77,6 +77,21 @@ public partial class RailRfWindow : ICrfDocumentWindow
             return;
         }
 
+        // ── EVERY REFERENCE IS RESTATED AGAINST THE DESTINATION (owner, 2026-09-21) ────────────
+        //
+        // `RailDocument` documents all five of them as document-relative "so an archived workspace
+        // still resolves", and until this line nothing wrote them that way: the open and the import
+        // both hand the document the ABSOLUTE path they just read, and it went to disk unchanged. A
+        // `.crail` like that opens for its author and for nobody else — which is why it lasted, and
+        // how it was found (a field report's own workspace, whose artwork reference is a
+        // `C:\Users\…` path that resolves to nothing anywhere else).
+        //
+        // Here rather than inside SaveToFile, because rebasing needs the OLD base as well as the new
+        // one and this is the half that knows both. Save and Save as… go through it together, so
+        // writing a document into another folder keeps its board instead of pointing one hop away
+        // from it.
+        RailArtwork.RebaseReferences(vm.Document, vm.DocumentPath, path);
+
         try
         {
             RailDocumentIo.SaveToFile(path, vm.Document);

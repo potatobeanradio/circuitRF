@@ -33965,3 +33965,46 @@ exactly this and was failing deterministically: it reads the kinds out of the pr
 to all three would still have to be spelled there, so nobody adds one without reading the rule. Both
 halves updated together; the reload arm is the one-line synchronous open, since a part library is a
 small file and `OpenOrActivatePartLibrary` is not async.
+
+## The reference combo hid the conductor the designer had just added (2026-09-21)
+
+Reported from the field: the stackup of an imported board was edited to add the inner ground plane
+the board actually returns on — *neither the top nor the bottom layer* — and afterwards railRF's
+**Rail Ref.** combobox still offered only the two outer layers, with nothing anywhere saying why.
+
+**`ConductorOptions` enumerated conductor stackup entries × their attached DRAWING layers**, so a
+conductor with none contributed zero rows and simply was not there. That is not a wrong rule — a
+reference IS a drawing layer (`RailSpec.ReferenceLayer` is a `LayerKey`, and
+`PdnStackupGeometry.ConductorOf` finds a conductor's z by that key) — but it is a rule the window
+kept silently, on the one screen where the user had just made the change it was rejecting.
+
+Worse, `ProposeReference` filtered on `DrawingLayers.Count > 0` first and then said **"This stackup
+marks no conductor as a ground reference"** — to somebody whose stackup marked one, on a row they had
+ticked themselves. It sent them to look for a fault in the flag; the only thing missing was the layer.
+
+Three changes, all in `RailRfViewModel`:
+
+- **Every conductor is listed.** One with no drawing layer comes back as a `RailLayerOption` carrying
+  `Unavailable`, rendered `"GND — no drawing layer"` and disabled through the combo's
+  `ItemContainerTheme` (the `PlotInspectorView` pattern). Its `Key` is `default`, so the stated-layer
+  lookup and `ConfirmReference` both check `IsSelectable` — otherwise a rail genuinely naming layer
+  0/0 would match it, and confirming it would point the rail at a layer the board does not have.
+- **The proposal sentence tells the truth** and names the remedy: the conductor, and *press Edit
+  Technology and attach the layer that carries that plane's copper*. Said even when a proposal EXISTS,
+  because "or pick another" is only true of the layers the combo can offer.
+- Gate: `tests/Ui.Tests/RailRf/RailRfImportedBoardTests`.
+
+**What the board in the report actually needed** was one attachment, and the CLI already said so
+while the window could not: that technology's Gerber import had classified the inner copper file as
+purpose `drawing` (its name matched no copper pattern in `GerberLayerIdentity`), so the 328 shapes on
+it belonged to no stackup conductor. `circuitrf rail --reference gnd` refuses with *"The rail reaches
+layer 3/0, which no Conductor entry of the stackup claims. Map that drawing layer onto a conductor in
+the technology's stackup"* — the verb accepts any technology layer by name, the window offered only
+attached ones, and the two surfaces disagreed about one document. Attaching layer 3/0 to that
+conductor makes the same file run.
+
+**Not fixed here, and worth knowing:** a Gerber file named for the NET its plane carries (`…GND…`)
+is not recognised as copper — `GerberLayerIdentity`'s copper rows match `copper`, `top/bottom layer`,
+`inner`, and a numbered `layer n`. Adding net-name spellings is a classification guess and belongs in
+its own change; what makes it survivable today is that the extraction already reports every drawing
+layer carrying geometry no conductor claims, and that report now has a combo that can act on it.

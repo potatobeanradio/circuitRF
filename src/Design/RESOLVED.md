@@ -9824,3 +9824,49 @@ widest level circuitRF generates for an 0402 is a 1.45 mm span against the board
 is missing is any way to state a land pattern directly, or to take one off a board being imported**,
 and that is a feature rather than a bug fix. Recorded here so the next person measuring the same
 thing does not re-derive it.
+
+## A `.crail` wrote ABSOLUTE references, against its own stated contract (2026-09-21)
+
+`RailDocument` documents all five of its reference fields as document-relative — `ArtworkCellRef`,
+`TechnologyRef`, `PartLibraryRef`, `BoardNetlistRef`, `PlacementRef`, each carrying some spelling of
+*"relative to the document, so an archived workspace still resolves"*. **Nothing wrote them that
+way.** `RailRfWindow.OpenLayout` and `RailRfWindow.Import` both set `ArtworkCellRef` to the absolute
+path they had just opened, `ApplyImport` did the same for the netlist and the placement, and
+`SaveToFile` wrote whatever was there. Only `PartLibraryRef` was ever relativized, by the one call
+site (`AdoptPartLibrary`) that happened to do it by hand.
+
+**It fails for the recipient of a workspace and never for its author**, which is why it survived:
+the absolute path is correct on the machine that wrote it. A `.crail` from a field report names
+`C:\Users\…\layout\board.clay`; opened anywhere else that string is not even ROOTED, so
+`RefPath.Resolve` treats it as a relative name, lands on `<workspace>/C:/Users/…`, and the window
+says the artwork is not there — with the file sitting two folders away.
+
+`RailArtwork.RebaseReferences(document, fromDocumentPath, toDocumentPath)` is the writing half of the
+walks that file already owns. **Save and Save as… go through it together**: a rooted reference
+carries its own base and needs none, and a reference that was already relative is resolved against
+the OLD document's folder before being restated against the new one — without that second half,
+writing a document into another folder leaves every reference pointing one hop away from the file it
+names. A relative reference with NO old base (a window that has never been saved, holding a pasted
+document) is left exactly as it is rather than guessed at.
+
+**Reading stays tolerant.** `RefPath.Resolve` already lets a rooted ref win over the base, so every
+`.crail` written before this goes on opening on its author's machine; what changed is that saving one
+puts it right. Gate: `tests/Ui.Tests/RailRf/RailRfImportedBoardTests`, which asserts the STORED text
+and then the resolution — the defect is invisible in the resolution alone, on the machine that wrote
+the file.
+
+**The archive was the other half, and it is closed too** (same day): `DocumentFileRefs.Extensions`
+did not list `.crail`, so the scan never walked one and the writer never repointed one — an archive
+carried the railRF document and left the board it names behind, which is the `.cdd` failure of
+2026-09-01 in a second place. Adding the extension was the whole change, because all five references
+are document-relative and that is already the default base. Two things came with it:
+
+- **A reference naming a cell FOLDER is still invisible.** `RailArtwork.Resolve` accepts one,
+  `DocumentFileRefs.TryResolve` is a `File.Exists` test with an extension-length floor, so a
+  folder-shaped ref resolves to nothing and is left untouched. Everything circuitRF writes is the
+  file, so this reaches only a hand-edited document whose artwork is also outside the workspace.
+- **`BaseForOpaqueRef`'s "a parameter named File is workspace-relative" rule now checks that the
+  object IS a parameter** (it carries `Expression` or `Value` — `SchematicPersistence` writes
+  exactly one of the two). `Name` is also a top-level property of a `.crail`, so a railRF document
+  somebody called "File" would have sent every absolute reference in it down the workspace-relative
+  path. Gate: `tests/Ui.Tests/WorkspaceArchiveTests.ARailRfDocumentsArtwork_IsFoundAndRepointed`.

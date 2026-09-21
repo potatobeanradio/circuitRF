@@ -7858,6 +7858,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             document.PartLibraryRef = reference;
+
+            // The OTHER four references get the same treatment on the way out, which is this
+            // writer's share of the rule stated in RailArtwork.RebaseReferences: a document being
+            // written in place is being written against the folder it already sits in, so this
+            // changes nothing except an absolute reference an older circuitRF left in it.
+            RailArtwork.RebaseReferences(document, crail, crail);
             RailDocumentIo.SaveToFile(crail, document);
         }
         catch (Exception ex)

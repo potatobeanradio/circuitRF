@@ -939,13 +939,27 @@
 
                                 <TextBlock Grid.Row="1" Classes="detailLabel rowlbl" Text="Ref."
                                            Margin="0,3,0,0"/>
+                                <!-- EVERY CONDUCTOR OF THE STACKUP IS IN THIS LIST, and the ones that
+                                     claim no drawing layer are in it DISABLED (owner, 2026-09-21). A
+                                     reference is named by a drawing layer, so such a conductor cannot
+                                     be chosen — but leaving it out is what was reported: an inner
+                                     ground plane added to the stackup, and a combo that went on
+                                     offering the two outer layers with nothing anywhere to say why.
+                                     The row says what is missing and the note under the combo says
+                                     where to fix it. -->
                                 <ComboBox Grid.Row="1" Grid.Column="1" Name="ReferenceSelector"
                                           FontSize="10" Margin="0,3,0,0"
                                           MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
                                           Classes.flagged="{Binding IsReferenceLayerFlagged}"
                                           ItemsSource="{Binding ReferenceLayerOptions}"
                                           SelectedItem="{Binding SelectedReferenceLayer, Mode=TwoWay}"
-                                          ToolTip.Tip="The layer this rail's current returns on — usually the ground plane under it. railRF suggests one and never assumes it, so Run stays off until you confirm."/>
+                                          ToolTip.Tip="The layer this rail's current returns on — usually the ground plane under it. railRF suggests one and never assumes it, so Run stays off until you confirm.">
+                                    <ComboBox.ItemContainerTheme>
+                                        <ControlTheme TargetType="ComboBoxItem">
+                                            <Setter Property="IsEnabled" Value="{ReflectionBinding IsSelectable}"/>
+                                        </ControlTheme>
+                                    </ComboBox.ItemContainerTheme>
+                                </ComboBox>
                             </Grid>
 
                             <!-- The PROPOSAL and its REASON, together. A proposal with no reason is

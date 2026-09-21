@@ -63,11 +63,34 @@ public enum RailResultsTab
 }
 
 /// <summary>One entry of the reference-layer combo: the drawing layer, and what it is called.</summary>
-/// <param name="Key">The drawing layer, which is what <see cref="RailSpec.ReferenceLayer"/> holds.</param>
+/// <param name="Key">The drawing layer, which is what <see cref="RailSpec.ReferenceLayer"/> holds.
+/// <see cref="LayerKey"/>'s own default where <see cref="Unavailable"/> says there is none.</param>
 /// <param name="Name">The technology's own name for it.</param>
 public sealed record RailLayerOption(LayerKey Key, string Name)
 {
-    public override string ToString() => Name;
+    /// <summary>
+    /// Why this row cannot be chosen, or null for an ordinary one.
+    /// </summary>
+    /// <remarks>
+    /// <b>A conductor the stackup declares and attaches no DRAWING LAYER to</b> (owner, 2026-09-21).
+    /// A reference is named by a drawing layer — <see cref="RailSpec.ReferenceLayer"/> is a
+    /// <see cref="LayerKey"/>, and <c>PdnStackupGeometry.ConductorOf</c> finds a conductor's z by
+    /// that key — so such a conductor has nothing to be named by and cannot be a reference until
+    /// somebody attaches one in the technology editor.
+    ///
+    /// <para><b>It is LISTED and disabled rather than left out.</b> Leaving it out is what was
+    /// reported: a designer added an inner ground plane to the stackup, came back to railRF, and the
+    /// combo offered the same two outer layers as before with nothing anywhere to say why — the
+    /// stackup in front of them plainly had three conductors in it. A row that is present, greyed
+    /// and says what is missing is the difference between a tool that cannot do something and a tool
+    /// that looks broken.</para>
+    /// </remarks>
+    public string? Unavailable { get; init; }
+
+    /// <summary>True for a row that can be chosen — every row with a drawing layer behind it.</summary>
+    public bool IsSelectable => Unavailable is null;
+
+    public override string ToString() => Unavailable is { Length: > 0 } why ? $"{Name} — {why}" : Name;
 }
 
 /// <summary>
@@ -459,6 +482,13 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     {
         if (SelectedRail is not { } rail || SelectedReferenceLayer is not { } option) return;
 
+        // A row that names a conductor with no drawing layer confirms NOTHING (owner, 2026-09-21).
+        // Its Key is `default`, so taking it would set the rail's reference to layer 0/0 — a layer
+        // most boards do not have, and one the extraction would then refuse for a reason that names
+        // the wrong thing. The row is in the list to be READ, and the sentence under the combo says
+        // what to do about it.
+        if (!option.IsSelectable) return;
+
         rail.ReferenceLayer = option.Key;
         IsReferenceConfirmed = true;
 
@@ -495,9 +525,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             // it falls back to the proposal; calling that CONFIRMED would leave the window showing
             // one layer while the document held another, and Run would then solve against the one
             // nobody could see. An unresolvable reference is an unconfirmed one, and costs the click.
+            // SELECTABLE rows only: a conductor with no drawing layer is listed with `default` as
+            // its key, which would otherwise match a rail that genuinely names layer 0/0.
             var stated = SelectedRail?.ReferenceLayer;
             var statedOption = stated is { } key
-                ? ReferenceLayerOptions.FirstOrDefault(o => o.Key == key)
+                ? ReferenceLayerOptions.FirstOrDefault(o => o.IsSelectable && o.Key == key)
                 : null;
             SelectedReferenceLayer = statedOption ?? proposal;
             IsReferenceConfirmed = statedOption is not null;
@@ -509,11 +541,30 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         RefreshNetMarks();
     }
 
+    /// <summary>
+    /// Every conductor of the stackup — <b>including the ones that claim no drawing layer</b>, which
+    /// are listed disabled and say so.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="RailLayerOption.Unavailable"/> for the report this answers. The rule the combo
+    /// keeps is that it shows the STACKUP: a conductor that is in the stackup and not in this list
+    /// is a conductor a user can see in one window and not in the other.
+    /// </remarks>
     private static IEnumerable<RailLayerOption> ConductorOptions(Technology tech)
     {
         foreach (var entry in tech.Stackup.Layers)
         {
             if (entry.Kind != StackupKind.Conductor) continue;
+
+            if (entry.DrawingLayers.Count == 0)
+            {
+                yield return new RailLayerOption(default, entry.Name)
+                {
+                    Unavailable = NoDrawingLayer,
+                };
+                continue;
+            }
+
             foreach (var key in entry.DrawingLayers)
             {
                 string name = tech.Layers.FirstOrDefault(l => l.Key == key)?.Name ?? entry.Name;
@@ -521,6 +572,24 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             }
         }
     }
+
+    /// <summary>What a conductor with no drawing layer reads in the combo. One spelling, so the row
+    /// and the sentence under it cannot come to say different things.</summary>
+    internal const string NoDrawingLayer = "no drawing layer";
+
+    /// <summary>The sentence that names the remedy, for a stackup holding such a conductor.</summary>
+    /// <remarks>
+    /// <b>It names the ACTION and the window it is in.</b> "Attach a drawing layer" is not something
+    /// anybody guesses from a combo that simply does not list their plane; Edit Technology is the
+    /// button beside the board, which is why it is named here rather than described.
+    /// </remarks>
+    internal static string UnmappedConductorLine(IReadOnlyList<string> names) =>
+        names.Count == 0 ? ""
+        : $"{(names.Count == 1 ? "Conductor" : "Conductors")} {string.Join(", ", names.Select(n => $"'{n}'"))} " +
+          $"{(names.Count == 1 ? "is" : "are")} in this stackup with no drawing layer attached, so " +
+          $"{(names.Count == 1 ? "it cannot" : "they cannot")} be named as a reference — a reference " +
+          "is a drawing layer. Press Edit Technology and attach the layer that carries that plane's " +
+          "copper.";
 
     /// <summary>
     /// The reference railRF proposes for <paramref name="rail"/>, and why.
@@ -543,9 +612,33 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             .Where(l => l.Kind == StackupKind.Conductor && l.IsGroundReference && l.DrawingLayers.Count > 0)
             .ToList();
 
+        // ── A MARKED CONDUCTOR WITH NO DRAWING LAYER IS NOT "NO MARKED CONDUCTOR" ───────────────
+        //
+        // (owner, 2026-09-21.) The filter above needs the drawing layer, because a proposal is a
+        // LayerKey and such a conductor has none — but saying "this stackup marks no conductor as a
+        // ground reference" to somebody whose stackup marks one, on the row they ticked themselves,
+        // sends them to look for a fault in the flag. The one thing actually missing is the layer,
+        // so that is what the sentence asks for.
+        var unmapped = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Count == 0)
+            .Select(l => l.Name)
+            .ToList();
+
         if (marked.Count == 0)
-            return (null, "This stackup marks no conductor as a ground reference, so railRF proposes "
-                        + "none — it never infers one. Name the reference return's drawing layer.");
+        {
+            bool marksOne = tech.Stackup.Layers.Any(
+                l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+
+            if (marksOne)
+                return (null, "This stackup marks a ground reference and it has no drawing layer, so "
+                            + "railRF cannot propose it. " + UnmappedConductorLine(unmapped));
+
+            string none = "This stackup marks no conductor as a ground reference, so railRF proposes "
+                        + "none — it never infers one. ";
+            return (null, unmapped.Count > 0
+                ? none + UnmappedConductorLine(unmapped)
+                : none + "Name the reference return's drawing layer.");
+        }
 
         var chosen = marked[0];
         var key = chosen.DrawingLayers[0];
@@ -556,6 +649,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
             + "or pick another — railRF proposes and never assumes."
             : $"'{name}' is the first of {marked.Count} conductors this stackup marks as a ground "
             + "reference. Confirm it, or pick another — railRF proposes and never assumes.";
+
+        // Said even when there IS a proposal: "pick another" is only true of the layers the combo can
+        // offer, and a plane that is missing from it is exactly the one somebody would go looking for.
+        if (unmapped.Count > 0) reason += " " + UnmappedConductorLine(unmapped);
 
         return (new RailLayerOption(key, name), reason);
     }

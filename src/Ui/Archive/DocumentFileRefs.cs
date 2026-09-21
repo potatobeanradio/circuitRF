@@ -56,7 +56,21 @@ public enum RefBase
 public static class DocumentFileRefs
 {
     /// <summary>Document types whose contents this understands.</summary>
-    public static readonly string[] Extensions = [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl"];
+    /// <remarks>
+    /// <b><c>.crail</c> joined them on 2026-09-21</b>, and it is the same omission this class's own
+    /// header describes for `.cdd`: a railRF document names an artwork cell, a stackup, a part
+    /// library, a board netlist and a placement table, and none of the five was ever offered by the
+    /// dialog or repointed by the writer. All five are document-relative, which is the default base,
+    /// so nothing else here needed changing.
+    ///
+    /// <para><b>What it still cannot see is a reference naming a cell FOLDER</b> rather than the
+    /// view file inside it — <c>RailArtwork.Resolve</c> accepts both, and <see cref="TryResolve"/>
+    /// is a <c>File.Exists</c> test with an extension length floor, so a folder-shaped ref resolves
+    /// to nothing and is left untouched. Every reference circuitRF WRITES is the file, so this bites
+    /// only a hand-edited document whose artwork also sits outside the workspace.</para>
+    /// </remarks>
+    public static readonly string[] Extensions =
+        [".csch", ".csym", ".clay", ".cdd", ".ccell", ".cnl", ".crail"];
 
     public static bool IsDocument(string path) =>
         Array.Exists(Extensions, e => string.Equals(Path.GetExtension(path), e, StringComparison.OrdinalIgnoreCase));
@@ -187,9 +201,16 @@ public static class DocumentFileRefs
     /// </summary>
     private static RefBase BaseForOpaqueRef(JsonObject? owner, RefContext ctx)
     {
+        // AN SnP COMPONENT PARAMETER — `{ "Name": "File", "Expression": "…s2p" }`, or the same row
+        // with `Value` instead (`SchematicPersistence`: exactly one of the two is written and the
+        // reader accepts either). The value test is not decoration: `Name` is also a TOP-LEVEL
+        // property of a `.crail`, so a railRF document a user called "File" would otherwise send
+        // every absolute reference in it down the workspace-relative path. The rule is about a
+        // parameter object, so it asks whether this IS one.
         if (owner?["Name"]?.GetValue<string>() is { } name &&
-            string.Equals(name, "File", StringComparison.OrdinalIgnoreCase))
-            return RefBase.Workspace;                                   // an SnP component parameter
+            string.Equals(name, "File", StringComparison.OrdinalIgnoreCase) &&
+            (owner.ContainsKey("Expression") || owner.ContainsKey("Value")))
+            return RefBase.Workspace;
 
         if (string.Equals(ctx.Extension, ".cdd", StringComparison.OrdinalIgnoreCase))
             return RefBase.Results;                                     // a Data Display data source

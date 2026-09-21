@@ -510,6 +510,38 @@ public sealed class WorkspaceArchiveTests : IDisposable
         Assert.Equal("measured", cdd["SourceAliases"]!["../external/meas.s2p"]!.GetValue<string>());
     }
 
+    /// <summary>
+    /// <b>A railRF document's five references are found and repointed like any other document's.</b>
+    /// </summary>
+    /// <remarks>
+    /// `.crail` was missing from <c>DocumentFileRefs.Extensions</c> until 2026-09-21, so an archive
+    /// carried the railRF document and left the board it names behind — the same shape as the `.cdd`
+    /// case above. The artwork here sits outside the workspace, which is the only case that costs
+    /// anything: a board inside the workspace travels anyway, and its reference is already relative.
+    /// </remarks>
+    [Fact]
+    public void ARailRfDocumentsArtwork_IsFoundAndRepointed()
+    {
+        var board = File_("elsewhere/board.clay", "{\"FormatVersion\":1,\"Shapes\":[]}");
+        var ws    = BuildWorkspace();
+        File_("ws/board.crail",
+            "{\"FormatVersion\":1,\"Name\":\"board\",\"ArtworkCellRef\":\"../elsewhere/board.clay\",\"Rails\":[]}");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+
+        Assert.Single(plan.ExternalFiles, e => e.SourcePath == board);
+
+        var zip = Path.Combine(_root, "out.zip");
+        var result = WorkspaceArchiveWriter.Write(plan, zip);
+
+        Assert.Contains("ws/external/board.clay", EntryNames(zip));
+        Assert.Contains("board.crail", result.Repointed);
+
+        // Document-relative, which is what every reference a `.crail` carries is read against.
+        var crail = JsonNode.Parse(ReadEntry(zip, "ws/board.crail"))!.AsObject();
+        Assert.Equal("external/board.clay", crail["ArtworkCellRef"]!.GetValue<string>());
+    }
+
     [Fact]
     public void AResultTheUserUnticked_ButADisplayPlots_IsReportedRatherThanSilentlyMissing()
     {
