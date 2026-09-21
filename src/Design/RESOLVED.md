@@ -10375,3 +10375,43 @@ also requires `Z[1]` or `G[1]`, and without one the elaboration fails for that r
 masking the one under test. The negative half of
 `TheQuotedParameterSurvivesTheRoundTripAndFailsWithoutIt` was passing for the wrong reason until the
 termination was added.
+
+## `DeviceType.CouldBe` vetoes the ordinary board flow (2026-09-21, found by brief 5's fixture)
+
+Found by building `examples/LVS/` — the LVS series' own oracle — and worth having somewhere a
+reader of `Lvs/DeviceType.cs` will see it. **Not fixed here:** the series' scope says it changes no
+comparison semantics before brief 7 exists to measure the change, and this is brief 7's call.
+
+**The flow.** A designer draws a resistor with a `Footprint` parameter and runs Update Layout. The
+placement it writes carries a `SchematicId` and its `CellRef` resolves to a land-pattern cell.
+`LayoutInstance.PartKind`'s own doc says it is "null on every instance that has a `SchematicId` —
+the schematic knows", and `SchematicToLayoutGenerator` accordingly writes none.
+
+**What the two sides then answer.** `DeviceTypes.OfLayout` has no generator id and no `PartKind`,
+so it reaches its last clause and returns `DeviceKind.Cell` with the land pattern's directory.
+`DeviceTypes.OfSchematic` sees a `Resistor` symbol and no `CellRef`, so it returns
+`DeviceKind.Resistor` with no directory.
+
+**`CouldBe` then vetoes them.** Only one side has a `CellDir`, so the kinds decide; neither is
+`Unknown`; `Cell != Resistor`. Every part on a board drawn the ordinary way is type-incompatible
+with its own schematic component, which is the one pairing that must never be refused.
+
+**Two candidate fixes, both small.**
+
+1. Treat `DeviceKind.Cell` the way `Unknown` is already treated when only ONE side resolved a
+   directory. `Cell` there means *nothing more specific was said*, which is exactly `Unknown`'s
+   documented meaning — "the kind is a veto, not evidence". The asymmetric case is the only one
+   affected: where BOTH sides resolve a directory, the directory still decides, which is the rule
+   `CouldBe` is built on.
+2. Have `OfLayout` read the kind through the resolved cell — a land pattern with no symbol view
+   says nothing about what the part is, so it should answer `Unknown` rather than `Cell`.
+
+(1) is the narrower change and keeps `OfLayout` a pure reading of the placement. Either way the
+gate is `ProvingDesignTests`' correct board comparing with zero findings, which is brief 5's gate 5
+and cannot run until brief 7 lands.
+
+**Unrelated but adjacent, from the same afternoon:** a kit-generated PCell cell under
+`.generated-cells/` has a layout and a `.ccell` and **no symbol view**, so `TerminalMap.Resolve`
+returns `None` and every placed kit part in the repository is unmatchable by LVS today. That is
+brief 1's R-lvs1-5b, unimplemented; `examples/RESOLVED.md` records what the MMIC fixture does
+instead and what will prove the writer when it lands.

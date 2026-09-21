@@ -1,0 +1,166 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 5,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../../tech/mmic-GaAs_2LM_100um.ctech",
+  "PCellOrigin": {
+    "GeneratorId": "LVSKIT_SPIRAL",
+    "Parameters": {
+      "Width": 9.999999999999999e-06,
+      "Space": 6e-06,
+      "Inner": 5.65e-05,
+      "Turns": 3,
+      "L": 1.199849896875739e-09
+    },
+    "ComputedParameters": [
+      "L"
+    ]
+  },
+  "Pins": [
+    {
+      "Name": "1",
+      "X": -106250,
+      "Y": 0,
+      "WidthDbu": 10000,
+      "OutwardDeg": 180,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "2",
+      "X": 106250,
+      "Y": 0,
+      "WidthDbu": 10000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [
+    {
+      "$type": "Path",
+      "Xy": [
+        33250,
+        0,
+        33250,
+        33250,
+        -33250,
+        33250,
+        -33250,
+        -33250,
+        49250,
+        -33250,
+        49250,
+        49250,
+        -49250,
+        49250,
+        -49250,
+        -49250,
+        65250,
+        -49250,
+        65250,
+        65250,
+        -65250,
+        65250,
+        -65250,
+        -65250,
+        81250,
+        -65250
+      ],
+      "Width": 10000,
+      "End": "Flush",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 81250,
+      "Y1": -70250,
+      "X2": 96250,
+      "Y2": -60250,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    },
+    {
+      "$type": "Rect",
+      "X1": 86250,
+      "Y1": -70250,
+      "X2": 96250,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    },
+    {
+      "$type": "Rect",
+      "X1": 86250,
+      "Y1": -5000,
+      "X2": 111250,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    },
+    {
+      "$type": "Rect",
+      "X1": 28250,
+      "Y1": -5000,
+      "X2": 38250,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": -96250,
+      "Y1": -7000,
+      "X2": 38250,
+      "Y2": 7000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": -96250,
+      "Y1": -5000,
+      "X2": -86250,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": -111250,
+      "Y1": -5000,
+      "X2": -86250,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "1"
+    }
+  ],
+  "Instances": []
+}

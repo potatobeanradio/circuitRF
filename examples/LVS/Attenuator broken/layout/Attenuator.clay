@@ -1,0 +1,331 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 25000,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/pcb-2layer-lvs.ctech",
+  "Pins": [
+    {
+      "Name": "IN",
+      "X": 500000,
+      "Y": 6000000,
+      "WidthDbu": 500000,
+      "OutwardDeg": 180,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "OUT",
+      "X": 19500000,
+      "Y": 6000000,
+      "WidthDbu": 500000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [
+    {
+      "$type": "Path",
+      "Xy": [
+        0,
+        0,
+        20000000,
+        0,
+        20000000,
+        12000000,
+        0,
+        12000000,
+        0,
+        0
+      ],
+      "Width": 150000,
+      "End": "Flush",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 400000,
+      "Y1": 5750000,
+      "X2": 9100000,
+      "Y2": 6250000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 9000000,
+      "Y1": 5875000,
+      "X2": 9400000,
+      "Y2": 6125000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 12000000,
+      "Y1": 5750000,
+      "X2": 19600000,
+      "Y2": 6250000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 5875000,
+      "Y1": 6200000,
+      "X2": 6125000,
+      "Y2": 6500000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 5875000,
+      "Y1": 7700000,
+      "X2": 6125000,
+      "Y2": 8450000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 13875000,
+      "Y1": 6200000,
+      "X2": 14125000,
+      "Y2": 6500000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 13875000,
+      "Y1": 7700000,
+      "X2": 14125000,
+      "Y2": 8450000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 6475000,
+      "Y1": 4900000,
+      "X2": 6725000,
+      "Y2": 5800000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 7550000,
+      "Y1": 4450000,
+      "X2": 12600000,
+      "Y2": 4700000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 12350000,
+      "Y1": 4600000,
+      "X2": 12600000,
+      "Y2": 5800000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 600000,
+      "Y1": 1000000,
+      "X2": 19400000,
+      "Y2": 3600000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 600000,
+      "Y1": 8400000,
+      "X2": 9600000,
+      "Y2": 11000000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 10400000,
+      "Y1": 8400000,
+      "X2": 19400000,
+      "Y2": 11000000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 200000,
+      "Y1": 200000,
+      "X2": 19800000,
+      "Y2": 11800000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Net": "0"
+    },
+    {
+      "$type": "Via",
+      "X": 2000000,
+      "Y": 2300000,
+      "PadSize": 600000,
+      "DrillSize": 300000,
+      "LandingLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Layer": {
+        "Layer": 5,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Via",
+      "X": 18000000,
+      "Y": 2300000,
+      "PadSize": 600000,
+      "DrillSize": 300000,
+      "LandingLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Layer": {
+        "Layer": 5,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Via",
+      "X": 18000000,
+      "Y": 9700000,
+      "PadSize": 600000,
+      "DrillSize": 300000,
+      "LandingLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Layer": {
+        "Layer": 5,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 10600000,
+      "Y1": 5875000,
+      "X2": 10850000,
+      "Y2": 8450000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 1400000,
+      "Y1": 3550000,
+      "X2": 1600000,
+      "Y2": 5800000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Instances": [
+    {
+      "CellRef": "../../footprints/R0402-17R4",
+      "X": 10000000,
+      "Y": 6000000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "R2"
+    },
+    {
+      "CellRef": "../../footprints/R0402-294R",
+      "X": 6000000,
+      "Y": 7100000,
+      "Rot": "R90",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "R1"
+    },
+    {
+      "CellRef": "../../footprints/R0402-150R",
+      "X": 14000000,
+      "Y": 7100000,
+      "Rot": "R90",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "R3"
+    },
+    {
+      "CellRef": "../../footprints/R0402-294R",
+      "X": 17000000,
+      "Y": 4700000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "RefDes": "R4"
+    }
+  ]
+}

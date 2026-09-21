@@ -1,0 +1,265 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Attenuator",
+  "GridSize": 100,
+  "GridSnap": false,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "P1",
+      "Symbol": "Pin",
+      "X": -300,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "IN",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Pin",
+      "X": 2000,
+      "Y": 0,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "OUT",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R2",
+      "Symbol": "Resistor",
+      "X": 500,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "17.4",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../footprints/R0402-17R4",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 0,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "294",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../footprints/R0402-294R",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R3",
+      "Symbol": "Resistor",
+      "X": 1000,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "294",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../footprints/R0402-294R",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 500,
+      "Y": -400,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../footprints/C0402-1P0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R1_GND",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "R3_GND",
+      "Symbol": "Ground",
+      "X": 1000,
+      "Y": 600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -200,
+          0
+        ],
+        [
+          300,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          700,
+          0
+        ],
+        [
+          1900,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          0
+        ],
+        [
+          1000,
+          200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          300,
+          0
+        ],
+        [
+          300,
+          -400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          700,
+          0
+        ],
+        [
+          700,
+          -400
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  }
+}

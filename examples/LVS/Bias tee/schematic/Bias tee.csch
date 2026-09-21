@@ -1,0 +1,266 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Bias tee",
+  "GridSize": 100,
+  "GridSnap": false,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "RF1",
+      "Symbol": "Pin",
+      "X": -300,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "RF1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "RF2",
+      "Symbol": "Pin",
+      "X": 1600,
+      "Y": 0,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "RF2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "VG",
+      "Symbol": "Pin",
+      "X": 2000,
+      "Y": 800,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "VG",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 500,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "0.8",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../parts/MIM-0P8P",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Inductor",
+      "X": 1100,
+      "Y": 600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "1.2",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../parts/SPIRAL-1N2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C2",
+      "Symbol": "Capacitor",
+      "X": 1100,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "4",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../parts/MIM-4P0P",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 1700,
+      "Y": 800,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "62",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "../../parts/TFR-62R",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C2_GND",
+      "Symbol": "Ground",
+      "X": 1100,
+      "Y": 1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -200,
+          0
+        ],
+        [
+          300,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          700,
+          0
+        ],
+        [
+          1500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          0
+        ],
+        [
+          1100,
+          400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          800
+        ],
+        [
+          1100,
+          1000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          800
+        ],
+        [
+          1500,
+          800
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  }
+}

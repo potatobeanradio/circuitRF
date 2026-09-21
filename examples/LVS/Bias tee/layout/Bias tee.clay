@@ -1,0 +1,349 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 5,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/mmic-GaAs_2LM_100um.ctech",
+  "Pins": [
+    {
+      "Name": "RF1",
+      "X": 20000,
+      "Y": 280000,
+      "WidthDbu": 60000,
+      "OutwardDeg": 180,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "RF2",
+      "X": 390000,
+      "Y": 280000,
+      "WidthDbu": 60000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "VG",
+      "X": 787250,
+      "Y": 630000,
+      "WidthDbu": 60000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "X1": 0,
+      "Y1": 240000,
+      "X2": 80000,
+      "Y2": 320000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 70000,
+      "Y1": 270000,
+      "X2": 165000,
+      "Y2": 290000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 225750,
+      "Y1": 268000,
+      "X2": 262000,
+      "Y2": 292000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 258000,
+      "Y1": 268000,
+      "X2": 282000,
+      "Y2": 292000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 258000,
+      "Y1": 268000,
+      "X2": 282000,
+      "Y2": 292000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 263000,
+      "Y1": 273000,
+      "X2": 277000,
+      "Y2": 287000,
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 264000,
+      "Y1": 270000,
+      "X2": 340000,
+      "Y2": 290000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 330000,
+      "Y1": 240000,
+      "X2": 410000,
+      "Y2": 320000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 340000,
+      "Y1": 310000,
+      "X2": 360000,
+      "Y2": 470000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 340000,
+      "Y1": 455000,
+      "X2": 365000,
+      "Y2": 475000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 552500,
+      "Y1": 455000,
+      "X2": 652500,
+      "Y2": 475000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 772750,
+      "Y1": 453000,
+      "X2": 822750,
+      "Y2": 477000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 800750,
+      "Y1": 453000,
+      "X2": 824750,
+      "Y2": 477000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 800750,
+      "Y1": 453000,
+      "X2": 824750,
+      "Y2": 477000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 805750,
+      "Y1": 458000,
+      "X2": 819750,
+      "Y2": 472000,
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 800750,
+      "Y1": 420000,
+      "X2": 1002750,
+      "Y2": 520000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Via",
+      "X": 852750,
+      "Y": 470000,
+      "PadSize": 80000,
+      "DrillSize": 60000,
+      "LandingLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Layer": {
+        "Layer": 8,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Via",
+      "X": 952750,
+      "Y": 470000,
+      "PadSize": 80000,
+      "DrillSize": 60000,
+      "LandingLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Layer": {
+        "Layer": 8,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 572500,
+      "Y1": 470000,
+      "X2": 592500,
+      "Y2": 640000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 572500,
+      "Y1": 620000,
+      "X2": 622500,
+      "Y2": 640000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 657250,
+      "Y1": 620000,
+      "X2": 727250,
+      "Y2": 640000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 717250,
+      "Y1": 590000,
+      "X2": 797250,
+      "Y2": 670000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Instances": [
+    {
+      "CellRef": "../../parts/MIM-0P8P",
+      "X": 200000,
+      "Y": 280000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "C1"
+    },
+    {
+      "CellRef": "../../parts/SPIRAL-1N2",
+      "X": 456250,
+      "Y": 465000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "L1"
+    },
+    {
+      "CellRef": "../../parts/MIM-4P0P",
+      "X": 715125,
+      "Y": 465000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "C2"
+    },
+    {
+      "CellRef": "../../parts/TFR-62R",
+      "X": 639875,
+      "Y": 630000,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1.0,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0,
+      "SchematicId": "R1"
+    }
+  ]
+}

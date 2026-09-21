@@ -1,0 +1,225 @@
+{
+  "FormatVersion": 1,
+  "Name": "PCB 2-Layer FR-4 (0.8mm, 1oz) - LVS example",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 25000,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 700000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Silk Top",
+      "Color": {
+        "r": 242,
+        "g": 242,
+        "b": 242,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Outline",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "FR-4",
+        "ThicknessDbu": 800000,
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Plated Through-Hole",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 5,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top Copper (1 oz)",
+        "SpanToLayer": "Bottom Copper (1 oz)"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Top Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    }
+  ]
+}

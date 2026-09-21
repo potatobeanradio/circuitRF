@@ -1,0 +1,18 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "IN",
+      "LayoutPin": "IN"
+    },
+    {
+      "Port": 2,
+      "Name": "OUT",
+      "LayoutPin": "OUT"
+    }
+  ],
+  "NumPorts": 2
+}

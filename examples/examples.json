@@ -45,6 +45,11 @@
       "Folder": "Smith Chart",
       "Title": "Smith Chart (narrowband match)",
       "Summary": "A device input of 8 \u2212 j12 \u03a9, stated over three frequencies, matched to 50 \u03a9 by hand with a series L and a shunt C. Drag either gripper and watch the band edges move."
+    },
+    {
+      "Folder": "LVS",
+      "Title": "Layout versus schematic",
+      "Summary": "A 3 dB attenuator whose artwork matches its drawing, the SAME board with six deliberate faults in its artwork, and an MMIC bias tee. The broken copy is broken ON PURPOSE \u2014 each fault is one thing LVS exists to find, and the README says what it is and what the report should say about it."
     }
   ]
 }

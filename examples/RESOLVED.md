@@ -261,3 +261,135 @@ Worth recording because the folder size on a working machine is not the artifact
 gates that make that true are easy to assume rather than check. Deleting them locally took the
 working copy to 500 KB and cost nothing — except that it immediately exposed the `-o` folder bug in
 `src/Cli/RESOLVED.md`, which had been masked the whole time by `results/` already existing.
+
+
+## LVS: what building the proving designs found (2026-09-21)
+
+`examples/LVS/` is brief 5 of the LVS series — a correct 3 dB attenuator, the same board with six
+named faults in its artwork, an MMIC bias tee, and a bench that runs. It exists to be the ORACLE
+the rest of that series is gated against, so everything below came out of making three designs
+that circuitRF itself accepts rather than out of reading anything.
+
+### A `Net` stamp on copper that touches unnamed copper is a spacing violation
+
+**The headline, because it affects every board anyone draws with footprints on it.**
+`DrcRegions.BuildConductors` groups a layer's geometry into conductors by the `Net` NAME stated on
+each shape, and puts everything unnamed into connected components. Named and unnamed copper that
+are physically CONTINUOUS therefore become two conductors, `MinSpacing` (default `NetScope.Any`,
+every pair a candidate) inflates both and finds them overlapping, and the overlap is reported as a
+clearance violation of zero — on artwork that is entirely correct.
+
+It is not avoidable by stamping more: a land pattern lives in a shared cell and **can never carry a
+board net** (R-ab2-2a — a `Net` inside a `C0402` would put every capacitor on the board on one
+net), so the pad a named trace runs onto is unnamed by construction.
+
+Six violations on a four-part board, each one a named trace against the unnamed stub that joins it
+to a pad. **`examples/Power Rail` misses it only because `pcb-4layer-1p6mm.ctech` declares
+`DrcRules: []`** — it stamps `+3V3` and `GND` on copper that touches unnamed lands throughout, and
+nothing measures it. The trimmed 2-layer technology here declares ordinary width and spacing rules
+and is the first board in the repository to have both.
+
+Not fixed here: the LVS series' own scope says it changes no `DrcEngine` behaviour, and this is a
+DRC defect rather than a fixture one. The fixture works around it by stamping only the board's
+bottom ground pour, which is the one shape on its layer and so has nothing to overlap. **The fix,
+when someone takes it:** build conductors from CONNECTIVITY and hang the stated name on the
+component, rather than treating the name as the grouping key. A conductor is a connected piece of
+metal; its name is a label on it.
+
+### A land pattern's placement is `DeviceKind.Cell`, and its schematic component is not
+
+`DeviceTypes.OfLayout` falls through to `DeviceKind.Cell` for any placement whose `CellRef`
+resolves and which declares no `PartKind`, and **Update Layout writes no `PartKind`** — it writes
+`SchematicId`, because "the schematic knows". The schematic side of the same part is a plain
+`Resistor` symbol with a `Footprint` parameter, so `DeviceTypes.OfSchematic` answers
+`DeviceKind.Resistor` with no cell directory at all.
+
+`DeviceType.CouldBe` then compares `Cell` against `Resistor` — neither is `Unknown`, they are not
+equal — and **vetoes the pair**. On the ordinary flow the brief itself calls the easy path (every
+component carries a footprint and a designator, and the layout came from Update Layout), every
+device on the board is type-incompatible with its own schematic component.
+
+Recorded rather than fixed for the same scope reason, and because it is brief 7's decision which
+way to take it. The two candidate fixes: treat `DeviceKind.Cell` as compatible with any kind when
+only ONE side resolved a directory (it means "nothing more specific said", which is what `Unknown`
+already means), or have the layout side read the kind through the resolved cell. Detail in
+`src/Design/RESOLVED.md`.
+
+### F5 splits the ground in two, and three was never reachable
+
+The brief asks the deleted stitching via to leave **three** islands. It cannot, at any geometry:
+`DrcConnectivity.FirstTouching` returns at most ONE piece per conductor, so on a two-layer board a
+via barrel is an edge of degree two, and removing one edge of a tree splits it into exactly two
+components. The fixture produces two, the gate asserts two, and the generator's own comment says
+why so nobody "fixes" it later.
+
+### The MMIC's parts are committed cells with a `PCellOrigin`, not kit-generated cells
+
+A Python PCell kit's cell lands under `.generated-cells/<generator>_<hash>/` with a layout and a
+`.ccell` and **no symbol view** — so `TerminalMap.Resolve` reaches its "this cell has no symbol
+view" case and returns `None`. Brief 1's R-lvs1-5b (the PCell path writes the block) is not
+implemented, so every placed kit part in the repository today is unmatchable by LVS.
+
+An MMIC fixture built on a kit would therefore be measuring the absence of that writer rather than
+the comparison, so `parts/` holds ordinary committed cell folders whose primary layout carries a
+`PCellOrigin` and whose `.ccell` declares its terminals. The generator is `Bias tee.gen.py`, its id
+is recorded in each cell, and the geometry is reproducible from the requested values. **When
+R-lvs1-5b lands, this is the fixture that will prove it**: the same four parts, through a kit,
+should produce the same four terminal maps.
+
+### Two traps in authoring a workspace by hand, both silent
+
+- **A sub-cell drawn on a different process needs its own `TechRef`.** Without it the cell resolves
+  against the WORKSPACE default — here the board process — so a 10 µm spiral track is measured
+  against a 0.15 mm copper rule and every part refuses, while the cell that PLACES them reports
+  "drawn against a different technology and its layers have not been mapped". Both messages are
+  correct and neither names the cause.
+- **A cell placed in a schematic needs a symbol view.** `CellSymbolResolver` resolves the cell's
+  primary `.csym`; with none, `GetEffectivePortDefs` falls back to built-in placeholder geometry
+  and the instance's pins are not where the auto-generated symbol would draw them. The wires reach
+  nothing, the extraction succeeds, the netlist is well formed — and the DUT is simply not in the
+  circuit. It presents as S21 = 0 dB and S11 = 1 across the whole band, which reads as a broken
+  model rather than a disconnected part.
+- **Python's `json` escapes non-ASCII in lower case and `System.Text.Json` in upper.** A `.ccell`
+  written by a script with `Ω` in it comes back `Ω` where circuitRF writes `Ω`, and the
+  shipped-cell round-trip gate fails on a difference nothing can see.
+
+### The property tolerances, measured (brief 5 R-lvs5-4)
+
+**The deliverable the owner asked for, and the reason brief 10 depends on this brief.** The
+tolerances are measured off `Bias tee/`, not chosen. Each part's geometry is solved for the value
+the schematic asks for and then SNAPPED to the drawing grid (0.25 µm), and what is left is the
+quantisation a correct design carries. That is the floor: a tolerance under it rejects good
+artwork.
+
+| part | dimension | requested | resolved | spread |
+|---|---|---|---|---|
+| `MIM-0P8P` | capacitance | 0.8 pF | 0.79844 pF | **0.195 %** |
+| `MIM-4P0P` | capacitance | 4.0 pF | 3.99861 pF | 0.035 % |
+| `SPIRAL-1N2` | inductance | 1.2 nH | 1.19985 nH | 0.013 % |
+| `TFR-62R` | resistance | 62 Ω | 61.875 Ω | **0.202 %** |
+
+**The two bounds, recorded so the number is not a magic one by the next release:**
+
+- **Floor — 0.202 %**, the worst spread of a correct design on this grid. Anything at or under this
+  fails artwork that is right.
+- **Ceiling — 2 %**, the smallest error worth catching. A one-preferred-value slip is the smallest
+  mistake anyone makes on a passive: 294 → 301 Ω is E96's next step at 2.4 %, and the E24 and E12
+  steps above it are 5 % and 10 %. A tolerance at or over 2 % would pass a part swapped for its
+  neighbour in the series.
+
+**Proposed default: 0.5 % on every continuous dimension** — resistance, capacitance, inductance,
+length, width. Comfortably above the observed 0.202 % and comfortably below the 2 % floor of a real
+error, and round enough to read.
+
+**Zero on everything discrete.** An integer (a turn count, a finger count, a multiplicity) and an
+enumeration (a metal layer, a connection style) are exact on both sides or they are different, and
+a tolerance there hides a class of error rather than absorbing noise. Likewise a DERIVED parameter
+that both sides compute from the same geometry with the same generator: it agrees exactly, and a
+non-zero tolerance would let a genuine geometry change through.
+
+**They are provisional and can be tuned later** (owner). They live in one table, are overridable
+per technology (brief 10 R-lvs10-3), and every report prints the tolerance it applied — so a wrong
+default is visible rather than latent. `ProvingDesignTests.TheMeasuredSpreadStaysUnderTheProvisional
+Tolerance` re-measures the spread on every run and fails if a generator change widens it past
+0.5 %, which is what stops the floor and the default drifting past each other in silence.

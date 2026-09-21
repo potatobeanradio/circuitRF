@@ -200,3 +200,56 @@ can are written now and the rest are added as each brief lands, in this file.
 - **No MMIC broken variant on disk** (`R-lvs5-3e`).
 - **No modification to any existing example.** These are new folders.
 - **No tolerance is invented before it is measured** (`R-lvs5-4a`).
+
+---
+
+## 8. Completion note (2026-09-21)
+
+Built. `examples/LVS/` ships, `examples/examples.json` offers it as *Layout versus schematic*, and
+`tests/Ui.Tests/Lvs/ProvingDesignTests.cs` is the gate — 22 tests, all passing, with the
+comparison half (gates 5, 6, 7) still to be added to that same file as briefs 7, 8 and 10 land.
+
+**Everything worth knowing is in `examples/RESOLVED.md`**, including §4's measured tolerances and
+their two bounds; `src/Design/RESOLVED.md` carries the one finding that is about code rather than
+about the fixture. What follows is only the map.
+
+**Four findings, in the order they matter.**
+
+1. **A `Net` stamp on copper that touches unnamed copper is reported as a zero-clearance spacing
+   violation** — on correct artwork, on any board with footprints on it. `examples/Power Rail`
+   misses it only because its technology declares no rules at all. Not fixed (the series changes
+   no DRC behaviour); the fixture stamps only the ground pour, which is the one shape on its layer.
+2. **`DeviceType.CouldBe` vetoes the ordinary board flow**: an Update-Layout placement reads as
+   `DeviceKind.Cell` and its schematic component as `DeviceKind.Resistor`, and the two are refused.
+   Brief 7 must resolve this before gate 5 can pass; two small candidate fixes are written down.
+3. **A kit-generated PCell cell has no symbol view and therefore no terminal map**, so brief 1's
+   R-lvs1-5b is unimplemented and every placed kit part is unmatchable today. The MMIC fixture's
+   parts are committed cells carrying a `PCellOrigin` for that reason, and they are what will
+   prove the writer when it lands.
+4. **F5 produces two ground islands and not three** — a via joins at most one piece per conductor,
+   so on two layers it is an edge of degree two and one deletion splits a tree in two. §2's table
+   is corrected here, in the generator's own comment and in the example's README.
+
+**Four deliberate departures from §0's sketch, each for a reason.**
+
+- **The MMIC technology keeps its shipped NAME**, `mmic-GaAs_2LM_100um.ctech`, rather than being
+  renamed `mmic-2lm-lvs.ctech`. R-lvs5-3a wants it unmodified and a renamed copy invites the
+  question of whether it was edited; a test asserts byte identity against
+  `src/Design/resources/technologies/`.
+- **There is no `TERM` footprint.** A placement carrying a designator is a DEVICE, so two TERM
+  placements would be two layout devices the schematic's `Pin` markers deliberately are not. The
+  two ports are boundary PINS on the root `.clay`, resolved through the terminal map.
+- **The board's parts are named after what they are** (`R0402-294R`, not `R0402`), because a land
+  pattern is the only place a board layout can state a value and F6 needs one to state. The parts
+  are still one shared 0402 land pattern geometrically. `R0402-150R` exists solely to be F6's
+  wrong part.
+- **A fourth cell, `Attenuator bench`, was added.** Every shipped example must have something to
+  run (`ExampleWorkspacesTests`), and a cell with `Pin` ports has no analysis it could carry. The
+  bench also earns its place: it reads −2.97 dB at 0.1 GHz rising to −2.55 dB at 6 GHz, which is
+  C1 shunting R2 — the part the topology does not need, measured.
+
+**One thing the fixture forced that is not a departure:** `Attenuator` needed a `symbol/` view
+before the bench could place it. Without one, `CellSymbolResolver` finds no `.csym`, the
+instance's pins fall back to placeholder geometry, the wires reach nothing, and the extraction
+succeeds with the DUT simply absent — S21 = 0 dB across the band. The symbol's pin names are the
+terminal map's own, so the cell would derive the same map by name even with no block declared.

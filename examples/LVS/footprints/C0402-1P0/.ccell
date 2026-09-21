@@ -1,0 +1,26 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "C",
+      "DefaultExpression": "1",
+      "Unit": "pF",
+      "Dimension": "Capacitance",
+      "ShowOnSchematic": true
+    }
+  ],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "2",
+      "LayoutPin": "2"
+    }
+  ],
+  "NumPorts": 2
+}

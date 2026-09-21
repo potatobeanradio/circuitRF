@@ -1,0 +1,130 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Attenuator bench",
+  "GridSize": 100,
+  "GridSnap": false,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "X1",
+      "Symbol": "Generic",
+      "X": 0,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../Attenuator"
+    },
+    {
+      "InstanceName": "P1",
+      "Symbol": "TermG",
+      "X": -600,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "TermG",
+      "X": 600,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03A9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -600,
+          200
+        ],
+        [
+          -600,
+          0
+        ],
+        [
+          -200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          600,
+          200
+        ],
+        [
+          600,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "0.1",
+          "StopExpr": "6",
+          "NumPoints": 119,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ]
+}

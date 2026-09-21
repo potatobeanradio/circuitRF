@@ -1,0 +1,104 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 5,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../../tech/mmic-GaAs_2LM_100um.ctech",
+  "PCellOrigin": {
+    "GeneratorId": "LVSKIT_MIMCAP",
+    "Parameters": {
+      "W": 0.00011525,
+      "L": 0.00011525,
+      "C": 3.998614302348646e-12
+    },
+    "ComputedParameters": [
+      "C"
+    ]
+  },
+  "Pins": [
+    {
+      "Name": "1",
+      "X": -72625,
+      "Y": 0,
+      "WidthDbu": 10000,
+      "OutwardDeg": 180,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "Name": "2",
+      "X": 72625,
+      "Y": 0,
+      "WidthDbu": 20000,
+      "OutwardDeg": 0,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "X1": -57625,
+      "Y1": -57625,
+      "X2": 57625,
+      "Y2": 57625,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "1"
+    },
+    {
+      "$type": "Rect",
+      "X1": -77625,
+      "Y1": -5000,
+      "X2": -57625,
+      "Y2": 5000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Pin": "1"
+    },
+    {
+      "$type": "Rect",
+      "X1": -57625,
+      "Y1": -57625,
+      "X2": 57625,
+      "Y2": 57625,
+      "Layer": {
+        "Layer": 9,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 41625,
+      "Y1": -7500,
+      "X2": 53625,
+      "Y2": 7500,
+      "Layer": {
+        "Layer": 10,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 37625,
+      "Y1": -10000,
+      "X2": 77625,
+      "Y2": 10000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Pin": "2"
+    }
+  ],
+  "Instances": []
+}

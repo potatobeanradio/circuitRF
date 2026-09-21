@@ -1,0 +1,23 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "RF1",
+      "LayoutPin": "RF1"
+    },
+    {
+      "Port": 2,
+      "Name": "RF2",
+      "LayoutPin": "RF2"
+    },
+    {
+      "Port": 3,
+      "Name": "VG",
+      "LayoutPin": "VG"
+    }
+  ],
+  "NumPorts": 3
+}

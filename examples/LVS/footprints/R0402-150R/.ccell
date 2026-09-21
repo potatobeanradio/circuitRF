@@ -1,0 +1,26 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "R",
+      "DefaultExpression": "150",
+      "Unit": "\u03A9",
+      "Dimension": "Resistance",
+      "ShowOnSchematic": true
+    }
+  ],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "2",
+      "LayoutPin": "2"
+    }
+  ],
+  "NumPorts": 2
+}
