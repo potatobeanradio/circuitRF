@@ -900,3 +900,9 @@ src/Design/Smith/SmithInverse.cs|'{e.Name}' is a {e.Kind}, whose value is a FILE
 # there is nothing for the Messages window to group, collapse or hang an action on — the plain
 # exception is the deliberate choice this file's header describes.
 src/Design/Layout/Extraction/PlacedPins.cs|PinNaming.ArtworkOnly reads the artwork and nothing else, so it takes no 
+#
+# brief-lvs-6-reduction.md R-lvs6-1b. The fixed-point assertion: every collapse removes a device, so
+# a pass that reported one without shrinking is a pass that would run forever. It is the reason no
+# iteration cap is needed, and it can only fire on a defect in the reducer itself — no document
+# reaches it, so there is nothing for the Messages window to group, collapse or hang an action on.
+src/Design/Layout/Lvs/LvsReduce.cs|LVS reduction made {groups.Count - made} collapse(s) on pass {passes} without 

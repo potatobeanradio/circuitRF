@@ -183,6 +183,54 @@ public static class LvsDiagnostics
         + "compare them as devices.",
         ("document", document), ("excluded", excluded));
 
+    // ── Reduction (brief-lvs-6-reduction.md R-lvs6-5, note R-lvs-38/40) ─────
+
+    /// <summary>
+    /// R-lvs6-5c. <b>Emitted on every run, in both modes.</b> A result whose reduction mode is not
+    /// on its face is a result two people can read differently — one counting eight fingers and one
+    /// counting one FET, each certain the other is looking at a different design.
+    /// </summary>
+    public static Diagnostic ReductionMode(string document, bool enabled) => Diagnostic.Create(
+        "lvs.reduce.mode", DiagnosticSeverity.Info,
+        "'{document}' was read with series/parallel reduction {mode}.",
+        ("document", document), ("mode", enabled ? "ON" : "OFF (--no-reduce)"),
+        ("enabled", enabled));
+
+    /// <summary>
+    /// R-lvs6-5a. <b>Counts, by type, per document</b> — and the caller prints both sides' lines
+    /// together, because an asymmetry between them is often the first clue to what is actually
+    /// wrong ("Layout: 8 parallel groups (32 to 8 devices). Schematic: 0.").
+    /// </summary>
+    public static Diagnostic ReduceParallel(string document, int groups, int from, int to, string byType)
+        => Diagnostic.Create(
+            "lvs.reduce.parallel", DiagnosticSeverity.Info,
+            "'{document}': {groups} parallel group(s), {from} devices read as {to} — {byType}.",
+            ("document", document), ("groups", groups), ("from", from), ("to", to),
+            ("byType", byType));
+
+    /// <summary>R-lvs6-5a, the series half.</summary>
+    public static Diagnostic ReduceSeries(string document, int groups, int from, int to, string byType)
+        => Diagnostic.Create(
+            "lvs.reduce.series", DiagnosticSeverity.Info,
+            "'{document}': {groups} series group(s), {from} devices read as {to} — {byType}.",
+            ("document", document), ("groups", groups), ("from", from), ("to", to),
+            ("byType", byType));
+
+    /// <summary>
+    /// R-lvs6-5d. <b>Said either way</b> — collapsed or not — because a jumper present in one
+    /// document and absent from the other is exactly the thing a designer wants told, and it is
+    /// invisible in a count of devices that never mentioned it.
+    /// </summary>
+    public static Diagnostic ReduceJumper(string document, string path, bool collapsed)
+        => Diagnostic.Create(
+            "lvs.reduce.jumper", DiagnosticSeverity.Info,
+            "'{document}': {path} declares zero ohms and is a shorting link. {outcome}",
+            ("document", document), ("path", path), ("collapsed", collapsed),
+            ("outcome", collapsed
+                ? "Its two nets were read as one, on both sides."
+                : "It was left as a device, because the other document has no jumper to collapse "
+                  + "against and collapsing one side only would compare a circuit neither document draws."));
+
     // ── The whole run (R-lvs3-2c) ────────────────────────────────────────────
 
     /// <summary>

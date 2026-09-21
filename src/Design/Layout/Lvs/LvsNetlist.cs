@@ -60,7 +60,27 @@ public sealed record LvsDevice(
     DeviceType Type,
     IReadOnlyList<LvsTerminal> Terminals,
     IReadOnlyDictionary<string, object?> Parameters,
-    LvsProvenance Provenance);
+    LvsProvenance Provenance)
+{
+    /// <summary>
+    /// Every device this one stands for, in canonical order — <b>what a finding un-reduces to</b>
+    /// (R-lvs6-2b, R-lvs6-5b).
+    /// </summary>
+    /// <remarks>
+    /// <b>Never empty, and it holds <see cref="Path"/> alone until something merges.</b> A report
+    /// that could only say "the merged group at net 14" is one a user cannot act on, so every
+    /// finding names the individuals — and it does so by reading this list unconditionally rather
+    /// than by asking first whether the device was merged, which is the branch that gets forgotten.
+    /// </remarks>
+    public IReadOnlyList<string> Group { get; init; } = [Path];
+
+    /// <summary>
+    /// How many devices are in parallel here — <b>carried, not discarded</b> (R-lvs6-2c). A merge
+    /// of four fingers is 4, and brief 10 compares it against the schematic's own <c>Nf</c>/<c>M</c>.
+    /// 1 for everything that has not been merged in parallel.
+    /// </summary>
+    public int Multiplicity { get; init; } = 1;
+}
 
 /// <summary>One net.</summary>
 /// <param name="Index">Its own position in <see cref="LvsNetlist.Nets"/>.</param>

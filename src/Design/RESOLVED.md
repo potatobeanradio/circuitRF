@@ -10415,3 +10415,78 @@ and cannot run until brief 7 lands.
 returns `None` and every placed kit part in the repository is unmatchable by LVS today. That is
 brief 1's R-lvs1-5b, unimplemented; `examples/RESOLVED.md` records what the MMIC fixture does
 instead and what will prove the writer when it lands.
+
+## Reduction: the same collapse on both netlists (2026-09-21, brief-lvs-6)
+
+`Layout/Lvs/LvsReduce.cs` — parallel and series collapse, run on either netlist through one
+function, plus `--no-reduce`. What follows is what the brief did not already say, in the order it
+bit.
+
+**The exclusion list is an ALLOW-list and that is the whole of R-lvs6-4e.** Two `HashSet<DeviceKind>`
+— one for parallel, one for series — and a kind added to the enum later is excluded because nobody
+wrote it down. A deny-list would have made a new kind reducible by default, which is exactly how a
+kind becomes reducible because nobody thought about it. What is missing from the parallel list turns
+out to be note R-lvs-36's exclusion *exactly*, with nothing to restate: the microstrip family is
+`TransmissionLine`; `SnP`, `SDD`, `Match`, the wBond and the composite RLCs are `Unknown`, which
+`DeviceTypes.Of` leaves them deliberately because they are boxes whose contents the file names; and
+`Port`, `Term` and the tuner family are `Fixture`. `DeviceKind.Cell` IS parallel-reducible, because
+the fingered FET and the paralleled die part are cells in the artwork and two placements of the same
+resolved cell folder with every terminal port for port on the same net are in parallel whatever the
+cell holds.
+
+**The unordered net pair is for `R`/`C`/`L` only.** The note's two-terminal row says "same net
+pair", and relaxing the key to an unordered pair for every two-terminal device would merge an
+antiparallel diode pair — which is R-lvs6-2a's own case one terminal count down. Those three kinds
+are the only symmetric parts here, so they get the relaxation and nothing else does, including a
+two-terminal cell, whose symmetry nothing in the netlist knows.
+
+**A `measure` clause that overlaps the label clause, on purpose.** `LvsNet.Label` carries only names
+something ANCHORED — ground, a user's net label, a cell port, a stamped piece of copper — and a
+measurement names a net by one of those, so on a flat netlist R-lvs6-3a's "carries no net label" and
+R-lvs6-3c's "no `measure` line names it" fire on the same nodes. They are still written and checked
+separately, which is the trade R-lvs6-3d already makes explicitly for net `"0"`: each is a distinct
+way the node could be reachable after all, each has a different fix, and brief 9's hierarchy
+stitching will carry names the label clause does not. The list is passed as NAMES rather than as net
+indices so that "identical arguments on both sides" is literally true — the two sides have no reason
+to number their nets alike.
+
+**Nothing in the options names a side, and neither does the document.** `ReductionLog.Notes(document)`
+takes the file name at the point the report is written, so no code the merge arithmetic can reach
+knows what file it is in. That is the same rule `LvsProvenance` follows and it costs nothing.
+
+**A jumper has no declaration in this repository today.** R-lvs6-5d and note R-lvs-37 say "`PartKind`
+declares it a shorting link", but no `SymbolKind` names one — `SmtCaseFamily.WireJumper` is a
+FOOTPRINT family and a land-pattern cell records no case anywhere the netlist can read. So the whole
+of the declaration is note R-lvs-37's other half: **zero ohms on a two-terminal part.** When a kind
+is added it is one more clause in `IsShortingLink` and nowhere else. Note that the two sides can
+disagree about this asymmetrically for a reason that is extraction's rather than the design's — a
+land-pattern cell claims no value, so only the schematic sees the zero — which is the second reason
+the collapse is off unless the caller states that both documents have one.
+
+**Reporting a jumper is not a change, and the fixed point cares.** The monotonic-decrease assertion
+(R-lvs6-1b) is what makes an infinite loop a test failure rather than a hang, and it reads "a pass
+that added a group must have removed a device". A jumper found but not collapsed adds a group and
+removes nothing, so it is reported ONCE, before the loop, rather than inside it. The first version
+tripped its own assertion on the first fixture that had a jumper in it.
+
+**`LvsDevice.Group` is never empty.** It holds the device's own path until something merges, so a
+finding names the individuals by reading one list unconditionally (R-lvs6-5b) instead of asking first
+whether the device was merged — which is the branch that gets forgotten.
+
+**A parameter the members disagree about is dropped, not picked.** Only the group's own value
+(`R`/`C`/`L`) is computed; every other key is carried only where every member claims the same one.
+Carrying the representative's would state something about the group that is untrue of it, and brief
+10 would then compare a schematic against a number one finger claimed. Where the group's value cannot
+be computed because some member claims none, the merged device claims none either.
+
+**Brief 5's two boards have nothing reducible in them.** Every node on the Attenuator and on the
+Bias tee is a boundary net or ground, so gate 10's "different device counts" half cannot be shown on
+them; `ReductionTests` pins that as a fact about the fixture and shows the count half on a synthetic
+one-symbol-versus-two-parts pair. What the shipped boards DO gate is the half that matters more —
+that reduction changes nothing about whether the two sides read as the same circuit, in either mode.
+
+**A C# trap worth the line:** `LvsReduceOptions.Default` is a static field built from the record's
+own defaults, and `MeasuredNames`' default was a static field declared BELOW it. Static field
+initializers run in declaration order, so `Default` was built with a null set and the first test to
+reach the measure clause threw a `NullReferenceException` from inside the reducer. The field is
+declared first now, with a comment saying why it is up there.
