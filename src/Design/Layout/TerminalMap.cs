@@ -498,9 +498,14 @@ public static class TerminalMap
 
     /// <summary>The name a terminal row uses for layout pin <paramref name="index"/>. An UNNAMED pin
     /// still has to be referable — it is a real connection point, just one nobody named — so it is
-    /// keyed by its 1-based position, which is the only handle it has.</summary>
+    /// keyed by its 1-based position, which is the only handle it has.
+    ///
+    /// <para><b>The rule lives in <see cref="CircuitRF.Design.Layout.Extraction.PlacedPins.PinKeyOf"/>
+    /// and is CALLED, not copied</b> (R-lvs3-5). LVS joins a terminal's <c>LayoutPin</c> list to a
+    /// projected pad by comparing these strings; two spellings of one key would match nothing and
+    /// read as every device being open.</para></summary>
     private static string PinKey(IReadOnlyList<LayoutPin> pins, int index)
-        => pins[index].Name.Length > 0 ? pins[index].Name : "#" + (index + 1);
+        => CircuitRF.Design.Layout.Extraction.PlacedPins.PinKeyOf(pins, index);
 
     /// <summary>A symbol pin's port number: its own <c>PortIndex</c> when it states one, else its
     /// 1-based position. A <c>.csym</c> written before port indices were assigned has zeroes.</summary>

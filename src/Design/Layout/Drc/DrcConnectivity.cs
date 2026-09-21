@@ -63,6 +63,48 @@ public readonly record struct PieceJoin(
     int PieceA, int PieceB, JoinKind Kind, long X, long Y, LayerKey Layer);
 
 /// <summary>
+/// What the stackup's own ground reference contributed to the partition — <c>brief-lvs-3-layout-netlist.md</c>
+/// R-lvs3-6, and the second reader of <see cref="StackupLayer.IsGroundReference"/> the design note
+/// (R-lvs-15) asks for.
+/// </summary>
+/// <remarks>
+/// <b>ONLY AN UNDRAWN REFERENCE IS INFERRED, AND THE NOTE'S OWN RULE HAD TO BE NARROWED TO GET
+/// THERE.</b> R-lvs-15 reads "every piece on a ground-reference conductor's drawing layers, if it
+/// has any, is net 0". Three of the four shipped PCB technologies flag their BOTTOM COPPER as the
+/// reference — correctly, because the flag was added so a microstrip's substrate resolution would
+/// find the right plane — and a two-layer board routes signals on that layer. Read literally, every
+/// bottom-side trace on the most common shipped technology becomes net 0 and the whole board reads
+/// as one short; the shipped four-layer technology flags Bottom Copper too, beside its real inner
+/// plane, so no rule keyed on the flag alone can tell the two apart.
+///
+/// <para>So the inference is confined to the case that actually needs one and is the gap the note
+/// is about (G4): a reference conductor that <b>draws nothing</b>. Drawn copper is read from the
+/// artwork, by the partition, exactly as every other piece is — there is something on the screen to
+/// look at and nothing to infer. See <c>src/Design/RESOLVED.md</c>.</para>
+///
+/// <para><b>Additive, and it changes the partition for nobody</b> — the same shape brief 2 gave
+/// <see cref="PieceJoin"/>. Nothing here unions anything: the grounded nets are REPORTED and the one
+/// reader that wants them as a single net (LVS) merges them on its own account, so the DRC's
+/// net-aware rules and railRF's island count are bit-for-bit what they were.</para>
+/// </remarks>
+/// <param name="ReferenceName">The <see cref="StackupLayer.Name"/> of the conductor flagged
+/// <see cref="StackupLayer.IsGroundReference"/>, or null when the technology flags none — which is
+/// R-lvs3-6d's warning, and is a real and correct design (a die grounded only through bondwires).</param>
+/// <param name="ReferenceDraws">Whether that conductor has any drawing layers. True means nothing
+/// was inferred: see the remarks.</param>
+/// <param name="Nets">Partition net indices — the same numbers <see cref="DrcNetPiece.Net"/> carries
+/// — read as reaching the reference.</param>
+/// <param name="ViasReached">How many via barrels reached an undrawn reference. This is the count
+/// R-lvs3-6e's sentence states, and it is the part a user cannot see on their own screen.</param>
+internal readonly record struct GroundReach(
+    string? ReferenceName, bool ReferenceDraws, IReadOnlySet<int> Nets, int ViasReached)
+{
+    /// <summary>A technology that flags no ground reference at all.</summary>
+    public static readonly GroundReach None =
+        new(null, ReferenceDraws: false, new HashSet<int>(), 0);
+}
+
+/// <summary>
 /// Extracts net identity from flat geometry plus the technology's own stackup.
 ///
 /// <para>Two pieces of metal are the same net when they touch on one layer, or when a via joins
@@ -112,10 +154,35 @@ internal static class DrcConnectivity
         return pieces;
     }
 
+    /// <summary>
+    /// The same partition, and <b>which of its nets the stackup's ground reference reaches</b> —
+    /// R-lvs3-6. See <see cref="GroundReach"/> for why only an UNDRAWN reference is inferred.
+    /// </summary>
+    /// <remarks>
+    /// <b>An additive form, for <see cref="PieceJoin"/>'s reason.</b> The DRC does not ask and
+    /// pays nothing: the walk is the same walk, and what this form keeps is a set of integers the
+    /// other forms discard.
+    ///
+    /// <para><b>A different NAME rather than a third overload</b>, because two <c>Extract</c>
+    /// overloads differing only in their out-parameter type make <c>out var</c> ambiguous, and
+    /// <c>out var</c> is how every existing caller is written.</para>
+    /// </remarks>
+    public static IReadOnlyList<DrcNetPiece> ExtractWithGround(
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech,
+        out GroundReach ground)
+        => Extract(layerRegions, tech, null, out ground);
+
     private static IReadOnlyList<DrcNetPiece> Extract(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,
-        List<PieceJoin>? joins)
+        List<PieceJoin>? joins) => Extract(layerRegions, tech, joins, out _);
+
+    private static IReadOnlyList<DrcNetPiece> Extract(
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech,
+        List<PieceJoin>? joins,
+        out GroundReach ground)
     {
         // ── Every connected piece on every layer, before any via is considered ──────────────────
         var pieces = new List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)>();
@@ -131,10 +198,21 @@ internal static class DrcConnectivity
             }
         }
 
-        if (pieces.Count == 0) return [];
+        if (pieces.Count == 0) { ground = GroundReach.None; return []; }
 
         var uf = new UnionFind(pieces.Count);
         var meets = new Dictionary<int, Paths64>();
+
+        // ── R-lvs3-6: the ground reference, collected as the via walk goes past it ──────────────
+        //
+        // The flagged conductor, its drawing layers, and the PIECES an undrawn one was reached
+        // from. Nothing is unioned here: see GroundReach's own remarks.
+        var groundLayer = tech.Stackup.Layers.FirstOrDefault(
+            l => l.Kind == StackupKind.Conductor && l.IsGroundReference && l.Name.Length > 0);
+        string? groundName = groundLayer?.Name;
+        bool groundDraws = groundLayer is { DrawingLayers.Count: > 0 };
+        var groundPieces = new HashSet<int>();
+        int groundVias = 0;
 
         // ── Vias join pieces across layers ──────────────────────────────────────────────────────
         // A via's own geometry is the bridge: a piece on the layer below and a piece on the layer
@@ -173,10 +251,15 @@ internal static class DrcConnectivity
             // imported artwork ("the copper stops at every pad"), so the count went up by one and
             // read as the thing that note is about.
             int a = conductorOrder.IndexOf(from), b = conductorOrder.IndexOf(to);
-            var spanned = conductorOrder
-                .GetRange(Math.Min(a, b), Math.Abs(a - b) + 1)
-                .Select(name => conductorLayers[name])
-                .ToList();
+            var spannedNames = conductorOrder.GetRange(Math.Min(a, b), Math.Abs(a - b) + 1);
+            var spanned = spannedNames.Select(name => conductorLayers[name]).ToList();
+
+            // R-lvs3-6c. A barrel that REACHES the reference terminates on net 0 even where that
+            // conductor draws nothing, because the stackup is the statement that the metal is
+            // there. Only where it draws nothing: a drawn reference is ordinary copper and the
+            // partition already says what touches it (GroundReach's remarks).
+            bool spansUndrawnGround =
+                !groundDraws && groundName is not null && spannedNames.Contains(groundName, StringComparer.Ordinal);
 
             foreach (var viaLayer in via.DrawingLayers)
             {
@@ -191,6 +274,17 @@ internal static class DrcConnectivity
                             touched.Add(hit);
                             if (joins is not null) meets[hit] = meet;
                         }
+
+                    // R-lvs3-6c, and it must be read BEFORE the bail-out below: the whole point of
+                    // an undrawn reference is that the barrel touches exactly ONE drawn conductor —
+                    // the other end is the metal nobody drew — so the common shape here is the one
+                    // the next line skips.
+                    if (spansUndrawnGround)
+                    {
+                        groundVias++;
+                        groundPieces.Add(v);
+                        foreach (int hit in touched) groundPieces.Add(hit);
+                    }
 
                     // A via touching only one conductor is a real, common state mid-edit — it
                     // connects nothing yet. It is not an error here; a rule about it is a rule's
@@ -226,6 +320,10 @@ internal static class DrcConnectivity
             }
             result[i] = result[i] with { Net = net };
         }
+
+        var groundNets = new HashSet<int>();
+        foreach (int piece in groundPieces) groundNets.Add(result[piece].Net);
+        ground = new GroundReach(groundName, groundDraws, groundNets, groundVias);
 
         return result;
     }

@@ -55,23 +55,16 @@ public static class LayoutToSchematicGenerator
         public bool NothingChanged => Command is null;
     }
 
-    private static readonly Dictionary<string, SymbolKind> ReverseGeneratorMap =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["MLIN"]   = SymbolKind.Mlin,
-            ["MBEND"]  = SymbolKind.MBend,
-            ["MTEE"]   = SymbolKind.MTee,
-            ["MCROSS"] = SymbolKind.MCross,
-            ["MTAPER"] = SymbolKind.Mtaper,
-            ["MKLOPF"] = SymbolKind.Mklopf,
-        };
-
     /// <summary>Public lookup for the same generator-id → SymbolKind map §5's Properties Inspector
     /// parameter list uses to order a PCell instance's parameters the same way the schematic's own
     /// symbol declares them (<c>ComponentTypeRegistry.DefaultParameters</c>), rather than an arbitrary
     /// dictionary order.</summary>
+    /// <remarks><b>The map moved to <see cref="CircuitRF.Design.Layout.Lvs.DeviceTypes"/> and this
+    /// calls it</b> (R-lvs4-5d, done early by brief 3 because that brief needed the same answer
+    /// below the firewall). Two maps with one meaning drift, which is this repository's recurring
+    /// scar — so there is one, and it is the one LVS matches on.</remarks>
     public static bool TryGetSymbolKind(string generatorId, out SymbolKind kind) =>
-        ReverseGeneratorMap.TryGetValue(generatorId, out kind);
+        CircuitRF.Design.Layout.Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out kind);
 
     private const int GridCols = 8;
     private const double GridPitchSchematic = 400; // schematic world units — a comfortable non-overlapping spacing
@@ -173,7 +166,7 @@ public static class LayoutToSchematicGenerator
             // draws (KitLayoutGenerators, read in reverse). Before this, a kit generator matched
             // neither and every PDK component in a layout was silently passed over — no create, and
             // no push-back onto one already linked.
-            bool builtIn = ReverseGeneratorMap.TryGetValue(origin.GeneratorId, out var kind);
+            bool builtIn = TryGetSymbolKind(origin.GeneratorId, out var kind);
             string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(wsRoot, origin.GeneratorId);
 
             // brief-footprint-6 §2/§4. A generated cell that neither a built-in nor a kit claims is

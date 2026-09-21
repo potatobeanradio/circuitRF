@@ -402,6 +402,17 @@ It is INFO rather than a warning because on a correct MMIC it is the normal, exp
 On a PCB this costs nothing and changes nothing: the ground pour is drawn, so it partitions like any
 other copper and the flag simply names which net it is.
 
+**BUILT, 2026-09-21** (`brief-lvs-3-layout-netlist.md`), **with R-lvs-15's first bullet deliberately
+NOT built.** Three of the four shipped PCB technologies flag their BOTTOM COPPER as the ground
+reference — correctly, for what the flag was added for — and a two-layer board routes signals there,
+so "every piece on a ground-reference conductor's drawing layers is net 0" turns every bottom-side
+trace into ground and the board into one short, with no symptom but a passing LVS. The shipped
+four-layer technology flags Bottom Copper beside its real inner plane, so no rule keyed on the flag
+alone can tell a plane from a routing layer. **Only an UNDRAWN reference is inferred**, which is the
+gap (G4) this section is actually about; a reference that draws is ordinary copper and the partition
+reads it from the artwork. The other three bullets and R-lvs-16 are built as written. See
+`src/Design/RESOLVED.md`.
+
 ### 4.5 Hierarchy
 
 **R-lvs-17. LVS extracts hierarchically and compares hierarchically, with a flat fallback it names.**

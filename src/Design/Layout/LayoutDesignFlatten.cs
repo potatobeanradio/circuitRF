@@ -35,6 +35,34 @@ public static class LayoutDesignFlatten
         bool ExceedsCeiling);
 
     /// <summary>
+    /// One flattened shape and the breadcrumb <see cref="Flatten"/> throws away —
+    /// <c>brief-lvs-3-layout-netlist.md</c> R-lvs3-2b.
+    /// </summary>
+    /// <param name="Shape">The same clone <see cref="Flatten"/> produces, in the root's frame.</param>
+    /// <param name="InstancePath">The ROOT placement it came from, spelled as the report spells a
+    /// device: its designator where it has one, else <c>@n</c> for its position in
+    /// <c>LayoutView.Instances</c>. <b>Empty for the root's own shapes.</b>
+    ///
+    /// <para><b>The root's own placements and no deeper</b>, which is <see cref="PlacedPins"/>'
+    /// rule (R-ab1-1a) and is all a FLAT reading can use: a land pattern nested three cells deep is
+    /// that module's internal business until somebody places the module. Brief 9 is where a path
+    /// gains a second segment, and it gains it by extracting each cell in its OWN frame rather than
+    /// by threading a string through this walk.</para></param>
+    /// <param name="SubCellPin">The sub-cell pad this shape realises — <see cref="LayoutShape.Pin"/>,
+    /// carried through the flatten by <c>LayoutGeometry.Clone</c> — or null where it realises none.</param>
+    public sealed record TaggedShape(LayoutShape Shape, string InstancePath, string? SubCellPin);
+
+    /// <summary><see cref="Flatten"/>'s answer with R-lvs3-2b's breadcrumb on every shape. Every
+    /// other member means exactly what it means there (R-lvs3-2c): same ceiling, same refusal, same
+    /// cross-technology reconciliation, same <c>UnresolvedInstances</c>.</summary>
+    public sealed record TaggedFlattenResult(
+        IReadOnlyList<TaggedShape> Shapes,
+        int TopLevelInstancesFlattened,
+        IReadOnlyList<string> UnresolvedInstances,
+        IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>> PendingCrossTechMappings,
+        bool ExceedsCeiling);
+
+    /// <summary>
     /// Flattens <paramref name="rootView"/>'s entire instance tree into world-space shapes, in the
     /// root's own coordinate frame (the root's own <see cref="LayoutView.Shapes"/> need no transform at
     /// all). <paramref name="resolvedCrossTechMappings"/> — keyed by the resolved sub-cell's absolute
@@ -48,9 +76,53 @@ public static class LayoutDesignFlatten
         LayoutView rootView, string rootCellDir, Technology? rootTech,
         Func<string?, string, TechResolution>? resolveTechAt,
         IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>>? resolvedCrossTechMappings)
+        => FlattenCore(rootView, rootCellDir, rootTech, resolveTechAt, resolvedCrossTechMappings, tags: null);
+
+    /// <summary>
+    /// <see cref="Flatten"/>'s shapes with, per shape, the root placement it came from and the
+    /// sub-cell pin it realises — R-lvs3-2b.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is a driving loop that keeps a breadcrumb, not a second flattener.</b> Both forms are
+    /// the SAME function body, walking the same instances in the same order through the same
+    /// <see cref="LayoutFlatten.FlattenAllLevels"/> and the same coordinate walk; what differs is
+    /// one list. <see cref="Flatten"/>'s output is therefore unchanged shape for shape and byte for
+    /// byte (R-lvs3-2a), which two shipped consumers — Gerber export and the DRC — depend on, and
+    /// it pays nothing for this: with no tag list to fill there is no allocation and no branch
+    /// taken per shape.
+    /// </remarks>
+    public static TaggedFlattenResult FlattenTagged(
+        LayoutView rootView, string rootCellDir, Technology? rootTech,
+        Func<string?, string, TechResolution>? resolveTechAt,
+        IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>>? resolvedCrossTechMappings)
+    {
+        var tags = new List<string>();
+        var flat = FlattenCore(rootView, rootCellDir, rootTech, resolveTechAt, resolvedCrossTechMappings, tags);
+
+        var tagged = new List<TaggedShape>(flat.Shapes.Count);
+        for (int i = 0; i < flat.Shapes.Count; i++)
+            tagged.Add(new TaggedShape(flat.Shapes[i], tags[i], flat.Shapes[i].Pin));
+
+        return new TaggedFlattenResult(
+            tagged, flat.TopLevelInstancesFlattened, flat.UnresolvedInstances,
+            flat.PendingCrossTechMappings, flat.ExceedsCeiling);
+    }
+
+    /// <summary>How a root placement is spelled in a <see cref="TaggedShape.InstancePath"/> and in
+    /// an <c>LvsDevice.Path</c> — its designator, else its position. <b>One rule, called from both
+    /// sides</b>: a device the flatten calls <c>@3</c> and the netlist calls something else is a
+    /// device nobody can cross-reference.</summary>
+    public static string PathOf(LayoutInstance inst, int index)
+        => inst.DisplayRefDes is { Length: > 0 } refdes ? refdes : "@" + index;
+
+    private static FlattenResult FlattenCore(
+        LayoutView rootView, string rootCellDir, Technology? rootTech,
+        Func<string?, string, TechResolution>? resolveTechAt,
+        IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>>? resolvedCrossTechMappings,
+        List<string>? tags)
     {
         var shapes = new List<LayoutShape>(rootView.Shapes.Count);
-        foreach (var s in rootView.Shapes) shapes.Add(LayoutGeometry.Clone(s));
+        foreach (var s in rootView.Shapes) { shapes.Add(LayoutGeometry.Clone(s)); tags?.Add(""); }
 
         string rootLayoutDir = CellFolder.SubFolderPath(rootCellDir, ViewType.Layout);
         var unresolved = new List<string>();
@@ -60,8 +132,9 @@ public static class LayoutDesignFlatten
         if (ExceedsCeiling(rootView, rootLayoutDir))
             return new FlattenResult([], 0, 0, [], pending, ExceedsCeiling: true);
 
-        foreach (var inst in rootView.Instances)
+        for (int instIndex = 0; instIndex < rootView.Instances.Count; instIndex++)
         {
+            var inst = rootView.Instances[instIndex];
             var res = CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir);
             if (res.State != CellLayoutState.Resolved)
             {
@@ -98,6 +171,11 @@ public static class LayoutDesignFlatten
             var allLevels = LayoutFlatten.FlattenAllLevels(inst, rootLayoutDir);
             var reconciled = ApplyCrossTechMapping(subTech, allLevels.Shapes, resolvedRows);
             shapes.AddRange(reconciled);
+            if (tags is not null)
+            {
+                string path = PathOf(inst, instIndex);
+                for (int i = 0; i < reconciled.Count; i++) tags.Add(path);
+            }
 
             foreach (var surviving in allLevels.SurvivingInstances)
                 unresolved.Add($"Instance referencing \"{surviving.CellRef}\" (nested under \"{inst.CellRef}\") could not be resolved — skipped, no geometry contributed for it.");
@@ -113,9 +191,14 @@ public static class LayoutDesignFlatten
         // not an overlay, and never relocated when the technology declares no silk (R-fp4b-4c).
         // Silk is not a conductor, so the EM path is indifferent to it by layer, exactly as it
         // already is to the land pattern's own body outline.
-        shapes.AddRange(Footprints.FootprintLabel.ShapesFor(
+        var labels = Footprints.FootprintLabel.ShapesFor(
             rootView, rootLayoutDir, rootTech,
-            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View));
+            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View);
+        shapes.AddRange(labels);
+        // Untagged on purpose. Silk is not a conductor, so the electrical reading never sees one;
+        // tagging it with the placement it names would put a device's path on artwork that carries
+        // no current, which is exactly the confusion a breadcrumb exists to prevent.
+        if (tags is not null) for (int i = 0; i < labels.Count; i++) tags.Add("");
 
         int contributed = shapes.Count - rootView.Shapes.Count;
         return new FlattenResult(shapes, flattenedCount, contributed, unresolved, pending, ExceedsCeiling: false);

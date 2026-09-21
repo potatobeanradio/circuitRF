@@ -35,26 +35,57 @@ namespace CircuitRF.Design.Layout.Extraction;
 /// and no names; <c>PdnRailRegions</c> already joins that partition to a name from a net POINT. This
 /// joins it to a name from a SHAPE, which is the same move from the other side.
 /// </remarks>
+/// <summary>
+/// What the stackup's ground reference contributed to a <see cref="CopperPieces"/> partition —
+/// <c>brief-lvs-3-layout-netlist.md</c> R-lvs3-6, and the public face of <c>DrcConnectivity</c>'s
+/// own <c>GroundReach</c>.
+/// </summary>
+/// <remarks>
+/// <b>Only an UNDRAWN reference is inferred</b>, and the design note's R-lvs-15 had to be narrowed
+/// to get there — three of the four shipped PCB technologies flag their bottom copper, which is a
+/// routing layer. <c>DrcConnectivity.GroundReach</c>'s own remarks carry the reasoning; it is not
+/// repeated here, because a rule stated twice is a rule that drifts.
+/// </remarks>
+/// <param name="ReferenceName">The flagged conductor, or null when the technology flags none.</param>
+/// <param name="ReferenceDraws">Whether it has drawing layers. True means nothing was inferred.</param>
+/// <param name="Nets">The net indices read as reaching it.</param>
+/// <param name="ViasReached">How many via barrels reached an undrawn reference — R-lvs3-6e's count.</param>
+public readonly record struct GroundReading(
+    string? ReferenceName, bool ReferenceDraws, IReadOnlySet<int> Nets, int ViasReached)
+{
+    /// <summary>Nothing to report.</summary>
+    public static readonly GroundReading None =
+        new(null, ReferenceDraws: false, new HashSet<int>(), 0);
+
+    /// <summary>Whether this run relied on metal the artwork does not draw — R-lvs3-6e's
+    /// condition, asked in one place.</summary>
+    public bool ReliesOnUndrawnMetal => ReferenceName is not null && !ReferenceDraws && ViasReached > 0;
+}
+
 public sealed class CopperPieces
 {
     private readonly PieceIndex _index;
     private readonly int[] _pieceOfShape;                 // index into the shapes handed in, -1 = none
     private readonly Dictionary<int, string> _nameOfPiece; // DrcNetPiece.Net -> the stated name
 
+    private readonly GroundReading _ground;
+
     private CopperPieces(
         PieceIndex index, int pieceCount, int[] pieceOfShape,
-        Dictionary<int, string> nameOfPiece, IReadOnlyList<string> refusals)
+        Dictionary<int, string> nameOfPiece, IReadOnlyList<string> refusals,
+        GroundReading ground)
     {
         _index = index;
         Count = pieceCount;
         _pieceOfShape = pieceOfShape;
         _nameOfPiece = nameOfPiece;
         Refusals = refusals;
+        _ground = ground;
     }
 
     /// <summary>Nothing to partition — no technology, or no copper.</summary>
     public static readonly CopperPieces Empty =
-        new(new PieceIndex([]), 0, [], [], []);
+        new(new PieceIndex([]), 0, [], [], [], GroundReading.None);
 
     /// <summary>How many galvanically-joined pieces the partition holds.</summary>
     public int Count { get; }
@@ -107,7 +138,7 @@ public sealed class CopperPieces
         var layerRegions = LayerRegions.Build(copper, tech);
         if (layerRegions.Count == 0) return Empty;
 
-        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        var pieces = DrcConnectivity.ExtractWithGround(layerRegions, tech, out var reach);
         if (pieces.Count == 0) return Empty;
 
         // R-lvs2-3. Built once per run and dropped with the answer — never maintained
@@ -168,8 +199,38 @@ public sealed class CopperPieces
             }
         }
 
-        return new CopperPieces(index, pieces.Count, pieceOfShape, nameOfPiece, refusals);
+        return new CopperPieces(
+            index, pieces.Count, pieceOfShape, nameOfPiece, refusals,
+            new GroundReading(reach.ReferenceName, reach.ReferenceDraws, reach.Nets, reach.ViasReached));
     }
+
+    /// <summary>
+    /// The <b>net index</b> of the piece covering (<paramref name="x"/>, <paramref name="y"/>) on
+    /// <paramref name="layer"/>, or <c>-1</c> where no piece does — R-lvs3-5c.
+    /// </summary>
+    /// <remarks>
+    /// <b>Identity, where <see cref="NameAt"/> is a name.</b> Unnamed copper is still a net, and it
+    /// is the ordinary case on artwork nobody has stamped — so the reading that decides whether two
+    /// terminals are connected has to be this one. It is the same number
+    /// <see cref="IsGround(int)"/> and <see cref="NameAt"/> are keyed on.
+    /// </remarks>
+    /// <param name="layer">R-ab2-2d, exactly as <see cref="NameAt"/>: a pin lands on the piece under
+    /// it ON ITS OWN LAYER. Null searches every layer, which is what a via wants.</param>
+    public int PieceAt(long x, long y, LayerKey? layer) => _index.PieceAt(x, y, layer);
+
+    /// <summary>The name stated on the net at <paramref name="netIndex"/>, or null where nothing
+    /// named it — which is the ordinary case on artwork nobody has stamped. The same answer
+    /// <see cref="NameAt"/> gives, asked by net rather than by point.</summary>
+    public string? NameOfNet(int netIndex) =>
+        netIndex >= 0 && _nameOfPiece.TryGetValue(netIndex, out string? net) ? net : null;
+
+    /// <summary>What the stackup's ground reference contributed — R-lvs3-6.</summary>
+    public GroundReading Ground => _ground;
+
+    /// <summary>Whether the net at <paramref name="netIndex"/> reaches the stackup's ground
+    /// reference. False for every net on a technology that flags none, and false for every net on
+    /// one whose reference DRAWS — see <see cref="GroundReading"/>.</summary>
+    public bool IsGround(int netIndex) => netIndex >= 0 && _ground.Nets.Contains(netIndex);
 
     /// <summary>
     /// The net of the piece covering (<paramref name="x"/>, <paramref name="y"/>) on

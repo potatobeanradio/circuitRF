@@ -80,6 +80,11 @@ public static class PlacedPins
     /// footprint pin's stated width. It is a side channel rather than a seventh member of
     /// <see cref="PlacedPin"/> because a netlist pad has no extent to state, and the one consumer is
     /// <c>PdnBoardDivergence</c>'s position comparison.</param>
+    /// <param name="origins">Filled, when supplied, with one <see cref="PlacedPinOrigin"/> per
+    /// returned pad, in the same order — R-lvs3-5. See that type for why it is a side channel and
+    /// a list.</param>
+    /// <param name="scope">Which placements to walk — R-lvs3-5b. The default is railRF's, which is
+    /// the one that existed before LVS asked.</param>
     public static IReadOnlyList<PlacedPin> Of(
         LayoutView view, string? clayPath, Technology? tech,
         PinNaming naming,
@@ -87,7 +92,9 @@ public static class PlacedPins
         List<string>? notes = null,
         Func<string, IReadOnlyList<string>>? portNetsOf = null,
         CopperPieces? stamped = null,
-        IDictionary<PlacedPin, long>? extents = null)
+        IDictionary<PlacedPin, long>? extents = null,
+        IList<PlacedPinOrigin>? origins = null,
+        PlacementScope scope = PlacementScope.Designated)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -118,12 +125,19 @@ public static class PlacedPins
 
         var pads = new List<PlacedPin>();
 
-        foreach (var inst in view.Instances)
+        for (int instIndex = 0; instIndex < view.Instances.Count; instIndex++)
         {
+            var inst = view.Instances[instIndex];
+
             // R-ab1-1b. Null means THIS PLACEMENT HAS NO IDENTITY TO DRAW, and R-fp4b-8c is explicit
             // that it must not be handed a fabricated one. A pad keyed on a fabricated designator is
             // worse here than no pad at all, because an anchor would then resolve to it.
-            if (inst.DisplayRefDes is not { Length: > 0 } refdes) continue;
+            //
+            // R-lvs3-5b widened this and did not weaken it: PlacementScope.EveryPlacement still
+            // fabricates nothing — the pad simply comes back with a null Refdes, which is a state
+            // PlacedPin has always been able to say. See PlacementScope.
+            string? refdes = inst.DisplayRefDes is { Length: > 0 } d ? d : null;
+            if (refdes is null && scope == PlacementScope.Designated) continue;
 
             var res = CellLayoutResolver.Resolve(inst.CellRef, layoutDir);
             if (res is not { State: CellLayoutState.Resolved, View: { } subView })
@@ -139,7 +153,7 @@ public static class PlacedPins
             IReadOnlyList<string> ports = Lookup(portNamesOf, inst.SchematicId);
             IReadOnlyList<string> nets  = Lookup(portNetsOf,  inst.SchematicId);
 
-            var joined = JoinPinsToPorts(inst, refdes, pins, ports, nets.Count, notes);
+            var joined = JoinPinsToPorts(inst, refdes ?? UnnamedPlacement, pins, ports, nets.Count, notes);
             if (joined is null) continue;   // a partial name match — refused, never filled in
 
             // R-ab1-1d. An ARRAY placement produces one pad per pin per cell, and the refdes is the
@@ -177,6 +191,8 @@ public static class PlacedPins
                 var pad = new PlacedPin(refdes, name, net, x, y, PinSource.Artwork);
                 pads.Add(pad);
                 if (extents is not null && pins[i].WidthDbu > 0) extents[pad] = pins[i].WidthDbu;
+                origins?.Add(new PlacedPinOrigin(
+                    instIndex, res.ResolvedCellDir!, PinKeyOf(pins, i), pins[i].Layer, r, c));
             }
         }
 
@@ -352,6 +368,23 @@ public static class PlacedPins
     private static IReadOnlyList<string> Lookup(
         Func<string, IReadOnlyList<string>>? source, string? schematicId) =>
         schematicId is { Length: > 0 } id && source is not null ? source(id) ?? [] : [];
+
+    /// <summary>What a placement with no designator is CALLED in a note. It is never written into
+    /// a pad: <see cref="PlacedPin.Refdes"/> stays null, per R-fp4b-8c.</summary>
+    private const string UnnamedPlacement = "(a placement with no designator)";
+
+    /// <summary>
+    /// How <c>TerminalMap</c> names layout pin <paramref name="index"/> — its own name, or
+    /// <c>#n</c> for an unnamed one.
+    /// </summary>
+    /// <remarks>
+    /// <b>THE spelling, and <c>TerminalMap</c> calls it rather than keeping a second copy.</b> A
+    /// terminal's <c>LayoutPin</c> list holds these strings and LVS joins a terminal to a pad by
+    /// comparing them, so two spellings of one key would match nothing at all — which reads as
+    /// every device being open, on a board that is perfectly connected.
+    /// </remarks>
+    public static string PinKeyOf(IReadOnlyList<LayoutPin> pins, int index)
+        => pins[index].Name.Length > 0 ? pins[index].Name : "#" + (index + 1);
 
     private static string Names(IReadOnlyList<LayoutPin> pins) =>
         string.Join(", ", pins.Select(p => p.Name is { Length: > 0 } n ? n : "(unnamed)"));

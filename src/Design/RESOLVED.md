@@ -1,5 +1,118 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The layout netlist: devices, terminals, nets and ground (2026-09-21)
+
+`brief-lvs-3-layout-netlist.md`. `src/Design/Layout/Lvs/` now turns a `.clay` plus its technology
+into an `LvsNetlist` — flat, one technology, no comparison. Four things came out of building it
+that the brief did not say, and two of them are defects in shipped code.
+
+### R-lvs3-6b would make the most common shipped technology read as one enormous short
+
+The note's R-lvs-15 and the brief's R-lvs3-6b both say: *every piece on a ground-reference
+conductor's drawing layers, if it has any, is net `"0"`.* **Three of the four shipped PCB
+technologies flag their BOTTOM COPPER as the ground reference**, and the four-layer one flags
+Bottom Copper *beside* its real inner plane:
+
+| technology | `IsGroundReference` on |
+|---|---|
+| `pcb-2layer_FR-4_70mil_1oz` | Bottom Copper (1 oz) |
+| `pcb-2layer_RO4350B_20mil_1oz` | Bottom Copper (1 oz) |
+| `pcb-2layer_RO4350B_30mil_1oz` | Bottom Copper (1 oz) |
+| `pcb-4layer_FR-4_62mil_1oz` | Inner 1 (Ground Plane) **and** Bottom Copper (1 oz) |
+| `mmic-GaAs_2LM_100um` | Backside Metal — and it draws nothing |
+
+That flagging is correct for what the flag was added for: a microstrip's substrate resolution needs
+to know which plate is the reference. It is not a statement that everything on that layer is net 0.
+Read literally, every bottom-side trace on a two-layer board becomes ground, they all merge, and the
+board passes LVS while being one short — with no symptom, which is the failure mode this whole
+series exists to prevent. And no rule keyed on the flag alone can separate the four-layer
+technology's real plane from its routing layer, because both carry it.
+
+**So only an UNDRAWN reference is inferred.** A reference conductor with drawing layers is ordinary
+copper: the partition reads it from the artwork like everything else, and there is nothing to infer
+because there is something on the screen to look at. That is also exactly the gap (G4) the note is
+actually about — `Backside Metal` on the starter MMIC technology, where a backside via lands on
+metal nobody drew. R-lvs3-6a, 6c, 6d and 6e are built as written; 6b is not, and
+`ADrawnGroundReferenceIsOrdinaryCopperAndNotOneNet` is the gate that keeps it that way.
+
+### A rotated `RectShape` came out of the flatten with its corners swapped
+
+`RectShape` and `RoundedRectShape` both declare *"Normalized so X1<X2, Y1<Y2"* as their contract.
+`LayoutCoordinateWalk.Transform` transformed the two corners and left it at that, so a 90°
+placement, a mirror or a negative scale mapped the lower-left corner to the upper-right and broke
+it.
+
+**It is not cosmetic, because of where the rect becomes a ring.** The readers that already defend
+against a reversed rect do it with `Math.Min`/`Math.Max` on a BOUNDING BOX
+(`LayoutGeometry.BoundsOf`, `LayoutFragment`, `LayoutRotationPromotion`, `LayoutRenderer`). The one
+that does not is `LayoutFlattener.Flatten`, which emits `X1,Y1 X2,Y1 X2,Y2 X1,Y2` verbatim — so a
+reversed rect becomes a CLOCKWISE ring. `LayoutClipper.Rule` is `FillRule.NonZero`, so that ring
+carries winding −1 and **cancels against correctly-wound copper it overlaps**: the union punches a
+hole exactly where a rotated pad meets the trace it is soldered to, and the two come back as
+separate nets. Nothing throws. A 90°-placed footprint simply stops being connected — in the DRC's
+partition, in railRF's islands, and in LVS's.
+
+Fixed at source, in `LayoutCoordinateWalk.Transform`, which is the one mutator flatten, rotate and
+scale all share.
+
+### The same cancellation is reachable two more ways, and the fix for those is in `LayerRegions`
+
+A mirrored or negatively-scaled placement reverses every ring its sub-cell contributes, because a
+reflection reverses orientation — and **the polygon tool follows the user's clicks, so a polygon
+drawn clockwise is clockwise.** Neither is exotic and both cancel the same way.
+
+`LayerRegions.Build.FaceOneWay` turns each shape's rings so the outer one winds positively before
+they are unioned. **Deliberately not in `LayoutClipper.ToClipperPaths`**, which is the other
+candidate and the funnel every export shares: reversing a ring changes the ORDER its vertices are
+written in, and the interchange gates compare exported files byte for byte. Orientation matters only
+when rings from DIFFERENT shapes are unioned, and `LayerRegions.Build` is the one place in the
+repository where that happens to copper.
+
+### `DrcConnectivity` reports the ground reach and unions nothing
+
+`ExtractWithGround` is additive in `PieceJoin`'s sense: the same walk, keeping a set of integers the
+other forms discard. **It does not merge the grounded pieces** — two backside vias reaching the same
+undrawn metal are one net to LVS and must not become one net to the DRC's net-aware rules or to
+railRF's island count, which are answers about DRAWN copper. `LayoutRead`'s `NetTable` does the
+merge on its own account.
+
+It is a differently-NAMED method rather than a third `Extract` overload, because two overloads
+differing only in their out-parameter type make `out var` ambiguous and `out var` is how every
+existing caller is written.
+
+### `PlacedPins.Of` gained a scope and an origin side channel, and LVS needed both
+
+- **`PlacementScope.EveryPlacement`.** railRF skips a placement with no designator (R-ab1-1b: a pad
+  keyed on a fabricated designator is worse than no pad, because an anchor would resolve to it).
+  LVS keys a device on its PATH, and R-lvs3-3a's last clause — a cell whose `.ccell` declares ports
+  — exists precisely for a placement carrying no designator, no part kind and no schematic id.
+  That is what makes a user-authored PDK need no registration, so those pads have to be produced.
+  Nothing is fabricated: the pad comes back with a null `Refdes`, which `PlacedPin` has always been
+  able to say.
+- **`PlacedPinOrigin`**, filled in lockstep with the returned pads. LVS needs the instance (to
+  classify the device), the resolved cell folder (to get its terminal map), the pin key (to join a
+  terminal's `LayoutPin` list to a pad) and the LAYER (because a pin lands on the piece under it on
+  its own layer, R-ab2-2d). A side channel for `extents`' reason: a pad projected from a board
+  netlist has none of them. A LIST and not a dictionary keyed on the pad, because two cells of one
+  array can put two identical pads in two places and a dictionary would keep one.
+
+`PlacedPins.PinKeyOf` is now the ONE spelling of a layout pin's key and `TerminalMap` calls it. Two
+spellings would have matched nothing at all, which reads as every device being open on a board that
+is perfectly connected.
+
+### Two smaller things
+
+- **`LayoutDesignFlatten.FlattenTagged` is the same function body**, with an optional parallel list
+  of tags. `Flatten` pays nothing for it — no allocation and no branch per shape with no list to
+  fill — which is what keeps R-lvs3-2a ("the existing output is unchanged") true by construction
+  rather than by testing.
+- **The generator-id map moved to `DeviceTypes` and `LayoutToSchematicGenerator` calls it.** That is
+  brief 4's R-lvs4-5d, done early, because the alternative was writing the second copy first and
+  deleting it later — and two maps with one meaning drift.
+- The brief cites `docs/design/lvs.md` §12.1 and §12.6 for the array and ground-reminder decisions.
+  **The note has no §12**; those decisions are in §4.7 and R-lvs-16, which is where the code points.
+
+
 ## One extraction, two readers: `Layout/Extraction` (2026-09-21)
 
 `brief-lvs-2-shared-extraction.md`. The copper reading railRF has always performed is now

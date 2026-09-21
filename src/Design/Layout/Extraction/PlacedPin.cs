@@ -55,6 +55,56 @@ public enum PinSource
 public readonly record struct PlacedPin(
     string? Refdes, string? Pin, string? Net, long X, long Y, PinSource Source);
 
+/// <summary>
+/// Which placements <see cref="PlacedPins.Of"/> walks — <c>brief-lvs-3-layout-netlist.md</c> R-lvs3-5b.
+/// </summary>
+public enum PlacementScope
+{
+    /// <summary>
+    /// Only placements that carry a designator. <b>railRF's rule</b> (R-ab1-1b): a pad keyed on a
+    /// fabricated designator is worse than no pad at all, because an anchor would then resolve to
+    /// it, and R-fp4b-8c is explicit that a placement with no identity to draw must not be handed
+    /// one.
+    /// </summary>
+    Designated,
+
+    /// <summary>
+    /// Every placement, designator or not. <b>LVS keys a device on its PATH and not on a
+    /// designator</b>, so a device cell placed without one — a kit part whose <c>.ccell</c>
+    /// declares ports, which is R-lvs3-3a's last clause and the whole reason a user-authored PDK
+    /// needs no registration — is an ordinary unnamed device there and must still contribute its
+    /// terminals. Such a pad comes back with a null <see cref="PlacedPin.Refdes"/>, which the type
+    /// has always been able to say.
+    /// </summary>
+    EveryPlacement,
+}
+
+/// <summary>
+/// Where one <see cref="PlacedPin"/> came from — R-lvs3-5.
+/// </summary>
+/// <remarks>
+/// <b>A side channel, for the same reason <c>extents</c> is one.</b> A pad projected from a board
+/// NETLIST has none of this: there is no instance, no cell folder and no array cell, so a netlist
+/// pad would have to carry four members it can never fill. LVS is the one reader that needs them,
+/// and it needs all four at once — the instance to classify the device, the cell folder to resolve
+/// its terminal map, the pin key to join a terminal's <c>LayoutPin</c> list to a pad, and the layer
+/// because a pin lands on the piece under it ON ITS OWN LAYER (R-ab2-2d).
+///
+/// <para><b>Filled in lockstep</b>: entry <c>i</c> describes the returned pad <c>i</c>. A LIST
+/// rather than a dictionary keyed on the pad, because two cells of one array can put two pads at
+/// the same place with the same name and a dictionary would silently keep one.</para>
+/// </remarks>
+/// <param name="Instance">Index into the walked view's own <c>Instances</c>.</param>
+/// <param name="CellDir">The resolved cell folder the pad's land pattern came from.</param>
+/// <param name="PinKey">How <c>TerminalMap</c> names this pin — its own name, or <c>#n</c> for an
+/// unnamed one. <b>The map's spelling, not a second one</b>: a terminal's <c>LayoutPin</c> list is
+/// matched against this string.</param>
+/// <param name="Layer">The layout pin's own drawing layer.</param>
+/// <param name="Row">Which array cell, 0-based. Zero for a plain placement.</param>
+/// <param name="Col">Which array cell, 0-based. Zero for a plain placement.</param>
+public readonly record struct PlacedPinOrigin(
+    int Instance, string CellDir, string PinKey, LayerKey Layer, int Row, int Col);
+
 /// <summary>How a pad set reads on a status strip and on a provenance banner — R-ab1-6c.</summary>
 /// <remarks>
 /// <b>Said once, here</b>, because the window's strip and the verb's banner report the same board and

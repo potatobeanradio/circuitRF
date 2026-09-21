@@ -41,6 +41,7 @@ public static class LayerRegions
                     byLayer[layer] = acc = [];
                     order.Add(layer);
                 }
+                FaceOneWay(paths);
                 acc.AddRange(paths);
             });
         }
@@ -88,5 +89,48 @@ public static class LayerRegions
                 "them is copper, add it to the stackup.");
 
         return unioned;
+    }
+
+    /// <summary>
+    /// Turns one shape's rings so its OUTER ring winds positively — and with it, its holes the
+    /// other way.
+    /// </summary>
+    /// <remarks>
+    /// <b>Without this, two pieces of copper that overlap can come back as a HOLE.</b>
+    /// <c>LayoutClipper.Rule</c> is <c>FillRule.NonZero</c>, so a clockwise ring carries winding
+    /// −1; union it with a counter-clockwise ring and the overlap sums to zero. The union then
+    /// punches a gap exactly where the two meet and the partition reports them as separate nets —
+    /// silently, with the picture showing them plainly joined.
+    ///
+    /// <para><b>It is reachable three ways, and none of them is exotic</b>: the polygon tool
+    /// follows the user's clicks, so a polygon drawn clockwise is clockwise; a MIRRORED or
+    /// negatively-scaled placement reverses every ring its sub-cell contributes, because a
+    /// reflection reverses orientation; and before this brief a rotated <c>RectShape</c> came out
+    /// of the flatten with its corners swapped, which <c>LayoutCoordinateWalk</c> now prevents at
+    /// source. Found by brief 3's rotation-and-mirror gate.</para>
+    ///
+    /// <para><b>Here rather than in <see cref="LayoutClipper.ToClipperPaths"/></b>, which is the
+    /// other candidate and the funnel every export shares: reversing a ring changes the ORDER the
+    /// vertices are written in, and the interchange gates compare exported files byte for byte.
+    /// Orientation matters only when rings from DIFFERENT shapes are unioned, and this function is
+    /// the one place in the repository where that happens to copper.</para>
+    ///
+    /// <para>The outer ring is the one with the largest absolute area — a hole is inside it by
+    /// construction, so it cannot be larger.</para>
+    /// </remarks>
+    private static void FaceOneWay(Paths64 paths)
+    {
+        if (paths.Count == 0) return;
+
+        int outer = 0;
+        double largest = -1;
+        for (int i = 0; i < paths.Count; i++)
+        {
+            double area = Math.Abs(Clipper.Area(paths[i]));
+            if (area > largest) { largest = area; outer = i; }
+        }
+
+        if (Clipper.Area(paths[outer]) >= 0) return;
+        foreach (var path in paths) path.Reverse();
     }
 }

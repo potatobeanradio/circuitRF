@@ -65,6 +65,22 @@ public static class LayoutCoordinateWalk
     /// R-L1h-6 names). Mutates in place. <b>Arc bulge is a dimensionless sweep-angle descriptor, not
     /// a coordinate, and is never touched here</b> — scaling it would silently change the arc's
     /// curvature relative to its (now-transformed) chord.
+    ///
+    /// <para><b>The two axis-aligned kinds are RE-NORMALIZED after the transform</b>, because
+    /// <see cref="RectShape"/> and <see cref="RoundedRectShape"/> both declare "normalized so
+    /// X1&lt;X2, Y1&lt;Y2" as their contract and a 90° rotation, a mirror or a negative scale all
+    /// break it: transforming the two corners maps the lower-left one to the upper-right.
+    ///
+    /// <para>It has to be restored HERE rather than defended at each reader, because the readers
+    /// that already defend it do so with <c>Math.Min</c>/<c>Math.Max</c> on a BOUNDING BOX and the
+    /// one that does not is the one that turns a rect into a RING —
+    /// <c>LayoutFlattener.Flatten</c>, which emits <c>X1,Y1 X2,Y1 X2,Y2 X1,Y2</c> verbatim. A
+    /// reversed rect makes that ring clockwise, so under <c>LayoutClipper.Rule</c>'s NonZero fill
+    /// it carries winding −1 and CANCELS against correctly-wound copper it overlaps: the union
+    /// punches a hole exactly where a rotated pad meets the trace it is soldered to, and the two
+    /// come back as separate nets. Nothing throws and nothing looks wrong — a 90°-placed footprint
+    /// simply stops being connected, in the DRC's partition, in railRF's islands and in LVS's.
+    /// Found by brief 3's rotation gate; <c>src/Design/RESOLVED.md</c> has the reading.</para></para>
     /// </summary>
     public static void Transform(LayoutShape shape, LayoutCoordinateTransform t)
     {
@@ -79,6 +95,8 @@ public static class LayoutCoordinateWalk
             case RectShape r:
                 (r.X1, r.Y1) = t.Point(r.X1, r.Y1);
                 (r.X2, r.Y2) = t.Point(r.X2, r.Y2);
+                (r.X1, r.X2) = (Math.Min(r.X1, r.X2), Math.Max(r.X1, r.X2));
+                (r.Y1, r.Y2) = (Math.Min(r.Y1, r.Y2), Math.Max(r.Y1, r.Y2));
                 break;
             case PolygonShape p:
                 TransformArray(p.Xy, t);
@@ -87,6 +105,8 @@ public static class LayoutCoordinateWalk
             case RoundedRectShape rr:
                 (rr.X1, rr.Y1) = t.Point(rr.X1, rr.Y1);
                 (rr.X2, rr.Y2) = t.Point(rr.X2, rr.Y2);
+                (rr.X1, rr.X2) = (Math.Min(rr.X1, rr.X2), Math.Max(rr.X1, rr.X2));
+                (rr.Y1, rr.Y2) = (Math.Min(rr.Y1, rr.Y2), Math.Max(rr.Y1, rr.Y2));
                 rr.CornerRadius = t.Magnitude(rr.CornerRadius);
                 if (rr.FlattenTolDbu is { } rrTol) rr.FlattenTolDbu = t.Magnitude(rrTol);
                 break;
