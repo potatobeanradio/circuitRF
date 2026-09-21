@@ -249,6 +249,15 @@ public static class ComponentLibraryXmlReader
                 case "smd": ReadSmd(e, footprint, Mm, LayerName); break;
                 case "pad": ReadPad(e, footprint, Mm, LayerName, copper, part); break;
                 case "hole": ReadHole(e, cell, Mm); break;
+                // brief-footprint-4b R-fp4b-8c asks whether this should now carry the designator the
+                // way PcbReader does. IT STAYS AS IT IS, and the reason is that these are two
+                // different kinds of file. A board states where one PLACEMENT's designator sits; a
+                // PART LIBRARY states only a prefix and a `>NAME` placeholder inside the library
+                // part's own artwork — there is no placement here to attach a position to, and
+                // importing the placeholder would put the literal string ">NAME" on the silkscreen of
+                // every instance. The prefix IS carried, one level up, through
+                // Metadata["Reference"] (see the `prefix` attribute), which is what
+                // FootprintLabel.SeedDesignator reads when a part is placed by hand.
                 case "text": case "description": case "dimension": break;
             }
         }

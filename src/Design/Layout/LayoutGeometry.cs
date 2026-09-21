@@ -247,6 +247,11 @@ public static class LayoutGeometry
         // evidence that this instance was authored against a different interface — and it would do so
         // on an ordinary edit, which is exactly what R-sl3-10 says must never happen.
         CellInterfaceHash = inst.CellInterfaceHash,
+        // brief-footprint-4b: the designator's stored PLACEMENT travels with the clone for the same
+        // reason the interface hash does — every properties edit, every move drag and every paste
+        // comes through here, and dropping it would silently send a dragged designator home.
+        RefDes = inst.RefDes, LabelDx = inst.LabelDx, LabelDy = inst.LabelDy,
+        LabelRotDeg = inst.LabelRotDeg, LabelHeight = inst.LabelHeight, ShowRefDes = inst.ShowRefDes,
     };
 
     /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape

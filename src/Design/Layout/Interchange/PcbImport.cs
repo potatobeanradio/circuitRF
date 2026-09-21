@@ -238,6 +238,13 @@ public static class PcbImport
                 // and its child layers are already the back-side ones. See PcbReader.ReadFootprint.
                 MirrorX = false,
                 Mag = 1.0,
+                // brief-footprint-4b R-fp4b-8a: the designator is the PLACEMENT's, and so is where its
+                // author put it. RefDes rather than SchematicId — an imported board corresponds to no
+                // schematic component in this workspace, and R-fp4b-1b is exactly that case.
+                RefDes = placement.Reference,
+                LabelDx = placement.LabelDx,
+                LabelDy = placement.LabelDy,
+                LabelRotDeg = placement.LabelRotDeg,
             });
         }
         Coalesce(boardView, destTech, destDbuPerMicron, coalesceRasterFill, messages, layerNameByKey);

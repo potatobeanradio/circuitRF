@@ -80,6 +80,15 @@ public sealed record class LayoutOverlay
     /// selection mutually exclusive — see <c>LayoutEditorViewModel.Instances.cs</c>'s header).</summary>
     public IReadOnlyList<int> SelectedInstanceIndices { get; init; } = [];
 
+    /// <summary>
+    /// <b>The THIRD selectable kind on a placement</b> — brief-footprint-4b R-fp4b-6c. Instance
+    /// INDICES, not shape ones: what is selected is one placement's reference designator, a
+    /// draggable sub-object attached to an instance in exactly the way a PCell parameter handle
+    /// already is (<c>PCellHandles</c> below), so the "hit the instance or hit the thing on it"
+    /// disambiguation the editor already knows how to make is the one that applies.
+    /// </summary>
+    public IReadOnlyList<int> SelectedDesignatorIndices { get; init; } = [];
+
     /// <summary>Live instance move-drag preview — instance index -&gt; a translated clone, mirroring
     /// <see cref="DragOverrides"/> exactly for instances.</summary>
     public IReadOnlyDictionary<int, LayoutInstance> InstanceDragOverrides { get; init; } =

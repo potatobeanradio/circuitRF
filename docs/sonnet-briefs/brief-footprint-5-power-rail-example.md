@@ -3,7 +3,7 @@
 **Series:** [SMT footprints](brief-footprint-0-overview.md) · **Tag:** `R-fp5-n` · **Phase:** P3
 **Area:** `examples/Power Rail/`, `src/Ui/Diagnostics/Fixtures/DocRailFixtures.cs`,
 `docs/user/src/reference/railrf.md`
-**Depends on:** [4](brief-footprint-4-picker-and-import.md),
+**Depends on:** [4b](brief-footprint-4b-designators.md),
 [railRF 23](brief-railrf-23-mount-and-unmount.md)
 **Found by:** the designer's pass, 2026-09-20 — *"you don't have a component layer in the example
 .clay, only pads without visible reference"*
@@ -67,9 +67,14 @@ empty.
 `7343-31` (D) or a `2220`, not an 0805 — pick one and say which in the README, because the
 mounting-loop story turns on the land geometry.
 
-**`R-fp5-2c`** Each instance carries a refdes drawn on Silk Top. **That is the "component layer"
-the designer asked for**, and it is what makes the parts table's Position column and the row-to-board
-selection legible rather than a highlight over anonymous copper.
+**`R-fp5-2c`** Each instance carries a refdes drawn on Silk Top — **which is
+[brief 4b](brief-footprint-4b-designators.md)'s doing, not this brief's.** Nothing here draws, stores
+or positions a designator; it states the layer role and consumes what 4b provides. (When this
+requirement was written there was no such mechanism at all — the layout model had no per-placement
+designator and the renderer skipped every label inside an instance, which is why 4b exists and why it
+runs first.) **That is the "component layer" the designer asked for**, and it is what makes the
+parts table's Position column and the row-to-board selection legible rather than a highlight over
+anonymous copper.
 
 **`R-fp5-2d`** The generator's existing invariant holds unchanged and is still enforced: *a pad in
 the netlist that is not under a land in the `.clay` is a part railRF cannot locate, and a land with

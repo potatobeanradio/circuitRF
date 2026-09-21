@@ -388,6 +388,10 @@ public sealed partial class LayoutEditorViewModel
             // previews and record nothing — nothing is stored until this runs.
             CellInterfaceHash = PlacedCellRef.HashFor(cellRef, InstanceBaseDir),
         };
+        // brief-footprint-4b R-fp4b-8c: a HAND-placed instance corresponds to no schematic component,
+        // so it owns its designator (R-fp4b-1b) — seeded from the part's own declared prefix where it
+        // has one, and left with none where it does not.
+        SeedDesignator(instance);
         Execute(new AddInstanceCommand(Model, instance));
         int newIndex = Model.Instances.Count - 1;
         SetInstanceSelection([newIndex]);

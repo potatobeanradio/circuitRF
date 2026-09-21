@@ -52,6 +52,11 @@ public partial class LayoutShapePropertiesView : UserControl
         if (sender is MenuItem { Tag: string degrees }) Vm?.CommitInstanceRotationText(degrees);
     }
 
+    /// <summary>brief-footprint-4b R-fp4b-6b — Reset to AUTO, which is back to derived rather than
+    /// back to a remembered number. Applies to every selected placement, not only this one.</summary>
+    private void OnResetDesignatorPositionClick(object? sender, RoutedEventArgs e)
+        => Vm?.ResetInstanceDesignatorPosition();
+
     // ── Bitmap: Browse… (UI firewall — the file picker lives in code-behind, never the VM) ───────
 
     private async void OnBitmapBrowseClick(object? sender, RoutedEventArgs e)

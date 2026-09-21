@@ -105,11 +105,16 @@ public static class PcbExport
                         inst.Y + row * inst.PitchY,
                         inst.RotationDegrees,
                         inst.MirrorX,
-                        // No reference designator: circuitRF's layout model has no such field, and
-                        // inventing R1/C2 names would put fabrication-facing identifiers in a file the
-                        // user did not author. The receiving tool shows an unnamed footprint, which is
-                        // recoverable; a wrong designator silently is not.
-                        Reference: null));
+                        // brief-footprint-4b R-fp4b-8b — the designator the PLACEMENT carries, which
+                        // PcbWriter writes as (property "Reference" …). Never an invented one: an
+                        // instance that corresponds to no schematic component and was given no
+                        // designator writes null and the receiving tool shows an unnamed footprint,
+                        // which is recoverable. A fabricated R1/C2 silently is not (R-fp4b-8c).
+                        //
+                        // Written as a property, not as flattened outlines: the receiving tool owns how
+                        // it draws its own silkscreen text, and a designator baked into geometry could
+                        // not be edited, moved or renamed there.
+                        Reference: inst.DisplayRefDes));
                     shapeCount += model.Definitions[defName].Shapes.Count;
                 }
         }

@@ -11,6 +11,8 @@ using CircuitRF.WBond;
 
 using CircuitRF.Design.Cells;
 
+using CircuitRF.Design.Layout.Footprints;
+
 namespace CircuitRF.Design.Layout.Interchange;
 
 public static class DxfExport
@@ -52,7 +54,7 @@ public static class DxfExport
     public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
         var (structures, nameByCellName, unresolvedRefs, rootName, rootRulers, displayUnit) =
-            CollectHierarchy(rootCellDir, rootView);
+            CollectHierarchy(rootCellDir, rootView, tech);
         return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron,
                               rootRulers, displayUnit);
     }
@@ -79,7 +81,8 @@ public static class DxfExport
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
         IReadOnlyList<string> UnresolvedRefs, string RootName,
-        IReadOnlyList<RulerAnnotation> RootRulers, LayoutUnit DisplayUnit) CollectHierarchy(string rootCellDir, LayoutView? rootView)
+        IReadOnlyList<RulerAnnotation> RootRulers, LayoutUnit DisplayUnit) CollectHierarchy(
+            string rootCellDir, LayoutView? rootView, Technology? tech)
     {
         var rootAbs = Path.GetFullPath(rootCellDir);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
@@ -141,7 +144,12 @@ public static class DxfExport
                 };
             }).ToList();
 
-            structures.Add(new InterchangeStructure(dirToBlockName[dir], [.. view.Shapes], instances));
+            // brief-footprint-4b R-fp4b-4b — mirrors GdsiiExport.CollectHierarchy exactly, and out of
+            // the same one function: a structure carries the designators of its OWN placements.
+            var shapes = new List<LayoutShape>(view.Shapes);
+            shapes.AddRange(FootprintLabel.ShapesFor(view, layoutDir, tech, null));
+
+            structures.Add(new InterchangeStructure(dirToBlockName[dir], shapes, instances));
         }
 
         // §9B.7: cell-LOCAL. Only the root's own rulers travel; a sub-cell's stay with that cell.

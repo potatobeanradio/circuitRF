@@ -956,6 +956,18 @@ public static partial class LayoutRenderer
                 // marquee, snap marker), which is about the gesture in progress and has to stay
                 // grabbable. Owner instruction, 2026-09-09: a port renders higher than any geometry,
                 // because seeing it is what the glyph is for.
+                // ── REFERENCE DESIGNATORS ──────────────────────────────────────────────────────
+                // brief-footprint-4b R-fp4b-5a. Above the geometry it names — a designator drawn under
+                // a copper pour is a designator nobody can read — and BELOW the port glyphs, which
+                // render higher than anything by owner instruction. Collected here rather than inside
+                // DrawCommitted because it is not committed geometry from the tile cache's point of
+                // view: it is derived per frame from the placements, and a document with placed cells
+                // does not tile at all. See LayoutRenderer.Designators.cs.
+                var designators = CollectDesignators(view, tech, instanceCandidates, instanceDragOverrides,
+                                                     opts, scaleUm * ps.DbuToUm);
+                if (designators.Count > 0)
+                    DrawDesignators(canvas, designators, opts, ps, scaleUm, counters);
+
                 if (deferredPorts.Count > 0)
                     DrawPortGlyphs(canvas, deferredPorts, conductorAt, ps, scaleUm, opts, counters,
                                    view.DbuPerMicron);

@@ -502,6 +502,28 @@
                                 <CheckBox Grid.Column="4" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
                             </Grid>
 
+                            <!-- brief-footprint-4b: the reference designator this placement draws on
+                                 silkscreen. The text is DERIVED for a schematic-generated instance
+                                 (its SchematicId), so the field is read-only there and says why —
+                                 renaming belongs on the schematic and arrives through Update Layout.
+                                 Reset puts a dragged designator back to its AUTOMATIC position, not
+                                 to a remembered number (R-fp4b-6b). -->
+                            <Grid ColumnDefinitions="56,*,Auto,Auto" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Designator" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstanceRefDesText}" Tag="InstanceRefDes"
+                                         IsReadOnly="{Binding !InstanceRefDesEditable}"
+                                         ToolTip.Tip="{Binding InstanceRefDesHint}"
+                                         GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                         FontSize="11" Padding="4,2"/>
+                                <CheckBox Grid.Column="2" IsChecked="{Binding InstanceShowRefDesValue, Mode=TwoWay}"
+                                          ToolTip.Tip="Draw this part's designator on silkscreen. It is exported as well as shown."/>
+                                <Button Grid.Column="3" Content="Reset" FontSize="11" Padding="5,2"
+                                        IsEnabled="{Binding InstanceDesignatorIsManual}"
+                                        Click="OnResetDesignatorPositionClick"
+                                        ToolTip.Tip="Put the designator back where it is placed automatically — above the part's body, following it when the footprint changes."/>
+                            </Grid>
+
                             <!-- brief-footprint-3 R-fp3-6a: re-point this instance at a built-in land
                                  pattern. ItemsSource is declared BEFORE SelectedIndex, deliberately —
                                  a ComboBox whose selection is assigned before its items binding

@@ -9339,3 +9339,63 @@ only. R-fp4-1b's filter is defined against "the component's port count" and a la
 component; the brief's §5 gate never touches that picker, and the gesture for pointing an instance
 at an arbitrary cell — Re-target… — is already beside it. Adding the middle section there needs a
 stated rule for what it may offer, which this brief does not give.
+
+## brief-footprint-4b — the designator a placement owns
+
+### Three committed comments describing a hole, all closed, and one of them was measurably wrong to keep
+
+`PcbReader`'s `fp_text` note, `PcbExport`'s "circuitRF's layout model has no such field", and
+`ComponentPlxReader`'s `refDesPrefix` (read, stored, used by nothing) were all workarounds for the
+same missing field. All three are rewritten or deleted. The one worth naming is `PcbReader`'s: its
+reasoning — an `fp_text` is the PLACEMENT's, and importing it into the shared CELL would mint a
+separate cell per placement — was exactly right and is still the rule. What changed is that the
+designator now has somewhere else to go. A board therefore round-trips with its designators where
+their author put them, and the VALUE text (10k) is still dropped, because that is a parameter
+circuitRF holds in the schematic.
+
+### `PcbPlacement` gained three nullable label fields, and null had to mean AUTO rather than zero
+
+A footprint whose file states no position for its reference must come back with `LabelDx = null`, not
+`0`. Zero is a real position — the part's own origin, inside its body — and it would also FREEZE the
+default, so re-pointing that part at a different case size would leave the designator inside the
+bigger one. The distinction costs one `is not { }` in `ReferencePlacementOf` and is the whole
+difference between "the author moved it here" and "nobody has ever moved it".
+
+### The two hierarchical exports needed the technology threaded into `CollectHierarchy`
+
+`GdsiiExport` and `DxfExport` both resolved their structures with no `Technology` in hand — they took
+it at `Analyze` and used it only for the writer. A designator is on the technology's silkscreen ROLE,
+so the walk itself now needs it. Threading it through was the smaller half; the half worth recording
+is that each structure carries the designators of **its own** placements, not only the root's,
+because those two formats keep the hierarchy and the parent of a placement is the structure that
+holds it. The flat consumers (Gerber, DRC, `check`, all through `LayoutDesignFlatten`) get the root's
+only, which is the only level a board places parts at.
+
+### `EmGeometry.Flatten` is indifferent for free, and not for the reason the brief assumed
+
+The brief expected silk to be ignored BY LAYER. It never reaches the EM path at all: `EmGeometry`
+calls `LayoutFlatten.FlattenAllLevels` per instance directly and has never gone through
+`LayoutDesignFlatten`, which is where the designators are emitted. So an EM extraction is identical
+with and without them by construction rather than by a filter — pinned by a test anyway, since
+"by construction" is a claim about today's call graph.
+
+### The auto position is memoized on the cell VIEW, not computed per placement per frame
+
+`AutoOffset` walks the resolved cell's shape list, and it is asked once per placement — which on the
+renderer's side is every frame. A board with 400 placements of a dozen cells would walk those cells
+400 times a frame for an answer that depends only on the cell and the two resolved roles. The cache
+is a `ConditionalWeakTable` keyed on the `LayoutView` instance, which is the trick
+`LayoutRenderer`'s own compile cache uses and for the same reason: the resolver hands back a NEW view
+object when the file changes, so a stale entry is unreachable and there is nothing to invalidate.
+Keyed within that on the silk/assembly layer keys, because the same cell measured under two
+technologies is genuinely two different measurements.
+
+### `ComponentLibraryXmlReader` deliberately still skips `<text>`
+
+R-fp4b-8c asks whether it should carry the designator the way `PcbReader` now does. It should not,
+and the reason is that the two are different kinds of file. A board states where ONE placement's
+designator sits; a part library states a prefix and a `>NAME` placeholder inside the library part's
+own artwork. There is no placement to attach a position to, and importing the placeholder would put
+the literal string `>NAME` on the silkscreen of every instance of that part. The prefix IS carried,
+one level up, through `Metadata["Reference"]` — which is what `FootprintLabel.SeedDesignator` reads
+when a part is placed by hand.

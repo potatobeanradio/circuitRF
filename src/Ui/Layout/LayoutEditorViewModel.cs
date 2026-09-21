@@ -1311,6 +1311,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         if (hasRulers) return ComputeRulerSelectionStatus();
         if (hasInstances) return ComputeInstanceSelectionStatus();
+        // brief-footprint-4b R-fp4b-6c's fourth channel. Not folded into the mixed-count arithmetic
+        // above because a designator selection is exclusive by construction (see
+        // SetDesignatorSelection) — it can never be one of several kinds at once.
+        if (_selectedDesignatorIndices.Count > 0) return ComputeDesignatorSelectionStatus();
         return ComputeGenericSelectionStatus();
     }
 
@@ -1468,6 +1472,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // geometry handles, an INSTANCE shows parameter handles, and an instance has never had
         // geometry handles at all.
         if (TryBeginPCellHandleDrag(px, py, tolDbu))
+            return;
+
+        // brief-footprint-4b R-fp4b-6c: a placement's DESIGNATOR is tested here, on the PCell grip's
+        // own terms and for the same reason — it is a draggable sub-object sitting ON an instance, so
+        // a press that lands on it must not move the instance underneath. After the grips, because a
+        // grip is a smaller target and its own lock gesture has already had its say.
+        if (TryBeginDesignatorDrag(px, py, tolDbu))
             return;
 
         // L1h: bbox scale handles take priority over everything else when they're showing (R-L1h-5) —
@@ -2547,6 +2558,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // it exactly once found.
         UpdateSnapMarker(px, py, mods, snapTolDbu, pixelDbu);
 
+        if (_designatorDrag is not null)
+        {
+            if (!leftDown) { CancelDesignatorDrag(); return; }
+            UpdateDesignatorDrag(px, py);
+            return;
+        }
+
         if (_pcellHandleDrag is not null)
         {
             if (!leftDown) { ResetPCellHandleDragState(); RebuildOverlay(); return; }
@@ -2651,6 +2669,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void HandleSelectRelease(double wx, double wy)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        if (_designatorDrag is not null)
+        {
+            CommitDesignatorDrag();
+            return;
+        }
 
         if (_pcellHandleDrag is not null)
         {
@@ -4178,6 +4202,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             }
             instanceDragOverrides = dict;
         }
+        else if (DesignatorDragOverride() is { } designatorOverride)
+        {
+            // brief-footprint-4b R-fp4b-6a — the designator drag rides the SAME channel, carrying a
+            // clone whose only difference is its label offset. The renderer already draws a
+            // placement's designator from whatever instance it is handed, so there is no preview path
+            // here at all.
+            instanceDragOverrides = new Dictionary<int, LayoutInstance>
+                { [designatorOverride.Key] = designatorOverride.Value };
+        }
         else if (_pcellHandleDrag is { } pinDrag && (pinDrag.PendingDx != 0 || pinDrag.PendingDy != 0))
         {
             // R-pch-4b: a pinned-anchor grip drag moves the whole instance so the anchor holds its
@@ -4351,6 +4384,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             SelectedIndices = effectiveHighlight.ToArray(),
             SelectedInstanceIndices = effectiveInstanceHighlight.ToArray(),
             SelectedRulerIndices = effectiveRulerHighlight.ToArray(),
+            SelectedDesignatorIndices = _selectedDesignatorIndices.ToArray(),
             RulerDragOverrides = rulerDragOverrides,
             RulerPreview = BuildRulerPreview(),
             RulerPastePreview = pasteRulerPreview,

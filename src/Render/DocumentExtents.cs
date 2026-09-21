@@ -1,5 +1,7 @@
 using SkiaSharp;
 
+using CircuitRF.Design.Layout.Footprints;
+
 namespace CircuitRF.Render;
 
 /// <summary>
@@ -91,6 +93,17 @@ public static class DocumentExtents
         {
             var ib = CellHierarchy.InstanceBbox(inst, baseDir, visible);
             if (!ib.IsEmpty) bbox = bbox.Union(ib);
+        }
+
+        // brief-footprint-4b R-fp4b-5d — a placement's reference designator is drawn OUTSIDE its
+        // body (above it, by construction), so a fit computed without it crops the designators off
+        // the top row of a board. It is derived per frame rather than stored, which is exactly why
+        // it has to be asked for here rather than arriving with view.Shapes: out of the same one
+        // function the renderer and every export use, never a second estimate of where it lands.
+        foreach (var label in FootprintLabel.ShapesFor(view, baseDir, tech, null))
+        {
+            if (!visible(label.Layer)) continue;
+            if (LayoutRenderer.MeasureLabelWorldBbox(label) is { } db) bbox = bbox.Union(db);
         }
 
         foreach (var ruler in view.Rulers)

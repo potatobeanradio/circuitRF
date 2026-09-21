@@ -7,6 +7,8 @@
 
 using CircuitRF.Design.Cells;
 
+using CircuitRF.Design.Layout.Footprints;
+
 namespace CircuitRF.Design.Layout.Interchange;
 
 public static class GdsiiExport
@@ -63,7 +65,7 @@ public static class GdsiiExport
     /// (the project-tree/no-open-document path) reads from disk as before.</summary>
     public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
-        var (structures, nameByCellName, unresolvedRefs) = CollectHierarchy(rootCellDir, rootView);
+        var (structures, nameByCellName, unresolvedRefs) = CollectHierarchy(rootCellDir, rootView, tech);
         var units = new GdsiiUnits(1e-6, 1e-6 / dbuPerMicron);
 
         try
@@ -91,7 +93,7 @@ public static class GdsiiExport
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
-        IReadOnlyList<string> UnresolvedRefs) CollectHierarchy(string rootCellDir, LayoutView? rootView)
+        IReadOnlyList<string> UnresolvedRefs) CollectHierarchy(string rootCellDir, LayoutView? rootView, Technology? tech)
     {
         var rootAbs = Path.GetFullPath(rootCellDir);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
@@ -159,7 +161,14 @@ public static class GdsiiExport
                 };
             }).ToList();
 
-            structures.Add(new InterchangeStructure(dirToStructureName[dir], [.. view.Shapes], instances));
+            // brief-footprint-4b R-fp4b-4b: each structure carries the designators of ITS OWN
+            // placements, as ordinary silkscreen artwork, out of the one function the whole-design
+            // flatten and the renderer also use. Per structure rather than only at the root because
+            // GDSII keeps the hierarchy, and the parent of a placement is the structure that holds it.
+            var shapes = new List<LayoutShape>(view.Shapes);
+            shapes.AddRange(FootprintLabel.ShapesFor(view, layoutDir, tech, null));
+
+            structures.Add(new InterchangeStructure(dirToStructureName[dir], shapes, instances));
         }
 
         return (structures, structureNameByCellName, unresolvedRefs);

@@ -3600,3 +3600,39 @@ circle stuck to the mouse cursor. Its earlier HOVER form had already been withdr
 complaint one revision before, which is the tell: the handle has nowhere to sit that is not under
 the cursor. The arcs are still grabbed and dragged exactly as before; what says the drag is working
 is that both arcs and the `Q=` readout move.
+
+## brief-footprint-4b — the L3a label gap is closed WITHOUT touching the instance compile
+
+`LayoutRenderer.Instances` skips a `LabelShape` inside a placed instance outright, and this file's
+own note has recorded that as an L3a gap since it was written. The reference-designator work is what
+finally needed it — and the answer is not to teach the compile about text.
+
+The compile builds a sub-cell ONCE into a reusable per-layer aggregate `SKPath` in cell-local space
+(R-L3a-3), shared by every placement. Per-placement text cannot live in a shared path, so the skip is
+not an oversight; it is the shape of the cache. That constraint forces the right design anyway: the
+designator is the PARENT's data — it belongs to the placement, not to the cell — so **the parent
+draws it**, in a deferred pass copied from the port glyphs, which exist for precisely this. Both
+label skips (`Instances.cs`, `LayoutRenderDetail`) stay exactly as they are.
+
+**The tile cache needed nothing, and the reason is worth knowing rather than assuming.** A port is
+collected inside `DrawCommitted` and therefore has to survive being rasterized into a tile, which is
+what `DeferredPort.Index` and its de-duplication exist for. A designator is collected OUTSIDE that
+closure, from the frame's instance candidates, because `TryDrawTiled` already declines to tile a
+document with placed cells — so there is no tile for a designator to be baked into. Collecting it
+inside the closure would have needed the same index-dedup machinery for no benefit.
+
+**Below the geometry it names would be worse than not drawing it.** The pass runs after every layer,
+every instance, the mesh overlay and the rulers, and BELOW `DrawPortGlyphs` — a port renders higher
+than anything by owner instruction (2026-09-09), and a designator is content rather than a marker.
+
+**The legibility floor drops, where a committed label's floor GROWS, and that difference is
+deliberate.** `EffectiveVisibleLabelHeightDbu` floors an authored label up to a readable size because
+that label is model data a user typed and would otherwise be invisible. A designator is derived, it
+is drawn at a fixed 0.8 mm, and there are as many of them as there are parts — floored up at
+board-fit zoom they would bury the artwork they name. Under the floor it is dropped.
+
+**`DocumentExtents` had to be told.** The brief assumed `render --fit` would grow for free because
+`DocumentExtents` already measures labels. It measures labels in `view.Shapes`, and a designator is
+in none — it is derived per frame. Without an explicit ask, a fit crops the designators off the top
+row of a board. It asks `FootprintLabel` rather than estimating, so the page is framed on the same
+measurement the renderer draws with.

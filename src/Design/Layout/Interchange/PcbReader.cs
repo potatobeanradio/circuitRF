@@ -89,13 +89,20 @@ public static class PcbReader
     ];
 
     /// <summary>
-    /// A footprint's own text is skipped ON PURPOSE, and the reason is R-L4d-15 rather than laziness.
+    /// A footprint's own text still never reaches the CELL, and the reason is R-L4d-15 rather than
+    /// laziness — but since brief-footprint-4b the designator half of it is no longer thrown away.
     ///
-    /// <para>An <c>fp_text</c> is the placement's reference designator and value — R3, 10k — not the
-    /// library part's artwork. Importing it into the CELL would bake one placement's designator into the
-    /// shared cell and mint a separate cell per placement, which is exactly the 400-copies-of-geometry
-    /// outcome R-L4d-15 exists to prevent. Board-level <c>gr_text</c> is imported normally (§5); this is
-    /// the one text case where importing costs more than it carries.</para>
+    /// <para><b>What is now carried:</b> the reference designator (R3) and, when the file states them,
+    /// the position and angle its author moved it to — into the PLACEMENT
+    /// (<see cref="LayoutInstance.RefDes"/> and its label offset, R-fp4b-8a), so a real board round-trips
+    /// with its designators where they were put. <b>What is still dropped:</b> the VALUE text (10k),
+    /// which is a parameter circuitRF holds in the schematic, and every other <c>fp_text</c>.</para>
+    ///
+    /// <para><b>Why none of it goes into the cell.</b> An <c>fp_text</c> belongs to one placement, not
+    /// to the library part's artwork. Importing it into the cell would bake one placement's designator
+    /// into the shared cell and mint a separate cell per placement, which is exactly the
+    /// 400-copies-of-geometry outcome R-L4d-15 exists to prevent. Board-level <c>gr_text</c> is imported
+    /// normally (§5).</para>
     /// </summary>
     /// <summary>Reported once per pad that HAD a net the shared cell cannot carry — see the note in
     /// <c>ReadPad</c>. Stated rather than silent, because "the tracks know, the pads do not" is exactly
@@ -105,7 +112,8 @@ public static class PcbReader
         "PLACEMENT; the tracks reaching it still carry theirs)";
 
     private const string FootprintTextSkipReason =
-        "footprint reference/value text (a per-PLACEMENT designator, not the shared cell's artwork)";
+        "footprint value/other text (the REFERENCE designator is carried into the placement; a value " +
+        "is a parameter circuitRF holds in the schematic, not artwork)";
 
     /// <summary>
     /// Reads <paramref name="text"/> at a destination resolution of <paramref name="dbuPerMicron"/>.
@@ -1000,13 +1008,39 @@ public static class PcbReader
 
         cell.ContentKey = ContentKeyOf(cell);
         ctx.Board.FootprintCells.TryAdd(cell.ContentKey, cell);
+        var (labelDx, labelDy, labelRot) = ReferencePlacementOf(node, ctx);
         ctx.Board.Placements.Add(new PcbPlacement(
-            cell.ContentKey, x, y, placementDegrees, ReferenceOf(node)));
+            cell.ContentKey, x, y, placementDegrees, ReferenceOf(node), labelDx, labelDy, labelRot));
+    }
+
+    /// <summary>
+    /// Where the file's author put this footprint's reference designator — R-fp4b-8a. Its
+    /// <c>(at …)</c> is relative to the footprint's own origin, which is exactly what
+    /// <see cref="LayoutInstance.LabelDx"/> stores, so it needs the Y flip and nothing else; the angle
+    /// is absolute, as a pad's is (see <see cref="ReadPad"/>).
+    ///
+    /// <para><b>An absent <c>(at …)</c> returns nulls, and null means AUTO, not zero</b> — a designator
+    /// the author never moved should keep following its part's body when the part is re-pointed at a
+    /// different case size, which is the whole reason the offset is nullable.</para>
+    /// </summary>
+    private static (long? Dx, long? Dy, double? RotDeg) ReferencePlacementOf(PcbNode node, Ctx ctx)
+    {
+        PcbNode? at = null;
+        foreach (var p in node.Children("property"))
+            if (p.Atom(0) == "Reference") { at = p.Child("at"); break; }
+        if (at is null)
+            foreach (var t in node.Children("fp_text"))
+                if (t.Atom(0) == "reference") { at = t.Child("at"); break; }
+
+        if (at?.Num(0) is not { } mmX || at.Num(1) is not { } mmY) return (null, null, null);
+        return (PcbUnits.X(mmX, ctx.Dbu), PcbUnits.Y(mmY, ctx.Dbu),
+                at.Num(2) is { } deg ? PcbUnits.Angle(deg) : null);
     }
 
     /// <summary>The part's reference designator, whichever spelling the epoch uses — a
     /// <c>(property "Reference" "R3")</c> from 20211014 on, an <c>(fp_text reference "R3" …)</c>
-    /// before that. Used only to name the cell folder readably; nothing depends on it.</summary>
+    /// before that. Names the cell folder readably AND becomes the placement's own
+    /// <see cref="LayoutInstance.RefDes"/> (R-fp4b-8a).</summary>
     private static string? ReferenceOf(PcbNode node)
     {
         foreach (var p in node.Children("property"))

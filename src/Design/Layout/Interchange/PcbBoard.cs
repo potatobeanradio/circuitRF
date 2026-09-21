@@ -86,8 +86,19 @@ public sealed class PcbFootprintCell
 /// <param name="Y">Board Y in DBU, already flipped up.</param>
 /// <param name="RotationDegrees">CCW in the Y-up frame — the source angle unchanged (see
 /// <see cref="PcbUnits.Angle"/>).</param>
-/// <param name="Reference">The part's reference designator, when it declares one.</param>
-public sealed record PcbPlacement(string ContentKey, long X, long Y, double RotationDegrees, string? Reference);
+/// <param name="Reference">The part's reference designator, when it declares one. <b>It is the
+/// PLACEMENT's, never the shared cell's</b> — see <c>PcbReader.ReadFootprint</c>'s own note — and
+/// since brief-footprint-4b it is carried into <see cref="LayoutInstance.RefDes"/> rather than only
+/// used to name a cell folder readably.</param>
+/// <param name="LabelDx">Where the author put the designator, relative to the placement origin, in
+/// DBU and Y-up. Null when the file states no position for it, which means AUTO
+/// (<see cref="LayoutInstance.LabelDx"/>) rather than zero.</param>
+/// <param name="LabelDy">The Y half of <paramref name="LabelDx"/>.</param>
+/// <param name="LabelRotDeg">The designator's own angle, absolute and CCW in the Y-up frame, when
+/// the file states one.</param>
+public sealed record PcbPlacement(
+    string ContentKey, long X, long Y, double RotationDegrees, string? Reference,
+    long? LabelDx = null, long? LabelDy = null, double? LabelRotDeg = null);
 
 /// <summary>What a stackup entry says, before it becomes a <see cref="StackupLayer"/>.</summary>
 /// <param name="Name">The entry's own name — a copper layer's canonical name, or <c>dielectric 1</c>.</param>

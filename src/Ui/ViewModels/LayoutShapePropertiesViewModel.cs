@@ -196,6 +196,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "InstanceY":       CommitInstanceYText(text); break;
             case "InstanceRotation": CommitInstanceRotationText(text); break;
             case "InstanceMag":     CommitInstanceMagText(text); break;
+            case "InstanceRefDes":  CommitInstanceRefDesText(text); break;
             case "InstanceRows":    CommitInstanceRowsText(text); break;
             case "InstanceCols":    CommitInstanceColsText(text); break;
             case "InstancePitchX":  CommitInstancePitchXText(text); break;
@@ -1041,6 +1042,30 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private bool? _instanceMirrorXValue;
 
+    // ── The reference designator (brief-footprint-4b R-fp4b-6d/-6e) ───────────
+
+    /// <summary>The designator this placement draws, through the ONE accessor
+    /// (<see cref="LayoutInstance.DisplayRefDes"/>) — never the two fields behind it.</summary>
+    [ObservableProperty] private string _instanceRefDesText = "";
+
+    /// <summary><b>False for a schematic-generated instance, and that is the rule rather than a
+    /// limitation</b> (R-fp4b-1a/-1e). Such an instance's designator IS its <c>SchematicId</c>,
+    /// derived, so there is nothing here to edit: a rename belongs on the schematic and arrives
+    /// through Update Layout. Editing it here would either write back (which R-fp3-6d forbids) or
+    /// produce a board whose silkscreen disagrees with the drawing.</summary>
+    [ObservableProperty] private bool _instanceRefDesEditable;
+
+    /// <summary>Why the field is read-only, said once rather than left to be discovered.</summary>
+    [ObservableProperty] private string _instanceRefDesHint = "";
+
+    /// <summary>Per-instance visibility (R-fp4b-6d). Null means SHOWN — the confirmed default — so
+    /// this reads true for every placement that has never been touched.</summary>
+    [ObservableProperty] private bool? _instanceShowRefDesValue;
+
+    /// <summary>True when this placement's designator has been dragged off its automatic position,
+    /// which is exactly when Reset has something to do (R-fp4b-6b).</summary>
+    [ObservableProperty] private bool _instanceDesignatorIsManual;
+
     [ObservableProperty] private string _instanceMagText = "";
     [ObservableProperty] private string? _instanceMagError;
     public bool HasInstanceMagError => InstanceMagError is not null;
@@ -1213,6 +1238,38 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    partial void OnInstanceShowRefDesValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        // The VM's own method applies to the whole selection, so the checkbox is the multi-select
+        // edit R-fp4b-6d asks for the moment more than one instance is selected — and one undo entry
+        // either way.
+        _vm.SetSelectedInstancesShowRefDes(newValue.Value);
+        RefreshFromVm();
+    }
+
+    /// <summary>
+    /// Commits a hand-placed instance's own designator. <b>It is a designator, not free text</b>
+    /// (R-fp4b-1d): a user who wants arbitrary words on silk uses the Label tool, because a drawn
+    /// string free to diverge from the instance's identity produces a board whose silkscreen lies,
+    /// which is the one outcome a designator exists to prevent. Blank clears it — an instance with no
+    /// identity draws nothing, rather than being handed a fabricated one (R-fp4b-8c).
+    /// </summary>
+    public void CommitInstanceRefDesText(string text)
+    {
+        if (_vm is null) return;
+        _vm.CommitSelectedInstanceRefDes(text);
+        RefreshFromVm();
+    }
+
+    /// <summary>R-fp4b-6b — back to DERIVED, never back to a remembered number.</summary>
+    public void ResetInstanceDesignatorPosition()
+    {
+        if (_vm is null) return;
+        _vm.ResetSelectedDesignatorPositions();
+        RefreshFromVm();
+    }
+
     public void CommitInstanceMagText(string text)
     {
         if (_vm is null) return;
@@ -1315,6 +1372,16 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
             SetTextIfNotFocused("InstanceRotation", FormatDegrees(inst.RotationDegrees), () => InstanceRotationText, v => InstanceRotationText = v);
             InstanceMirrorXValue = inst.MirrorX;
+            // R-fp4b-6e: the header string already shows (cell - SchematicId) and keeps doing so.
+            // This row is the same fact made EDITABLE where it can be, and the two must keep agreeing,
+            // which they do because both read DisplayRefDes and neither holds a copy.
+            SetTextIfNotFocused("InstanceRefDes", inst.DisplayRefDes ?? "", () => InstanceRefDesText, v => InstanceRefDesText = v);
+            InstanceRefDesEditable = string.IsNullOrEmpty(inst.SchematicId);
+            InstanceRefDesHint = InstanceRefDesEditable
+                ? "Drawn on silkscreen. Drag it on the canvas to move it."
+                : "This part's designator comes from the schematic. Rename it there and re-run Update Layout.";
+            InstanceShowRefDesValue = inst.DesignatorShown;
+            InstanceDesignatorIsManual = inst.LabelDx is not null || inst.LabelDy is not null || inst.LabelRotDeg is not null;
             SetTextIfNotFocused("InstanceMag", inst.Mag.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture), () => InstanceMagText, v => InstanceMagText = v);
             SetTextIfNotFocused("InstanceRows", inst.Rows.ToString(System.Globalization.CultureInfo.InvariantCulture), () => InstanceRowsText, v => InstanceRowsText = v);
             SetTextIfNotFocused("InstanceCols", inst.Cols.ToString(System.Globalization.CultureInfo.InvariantCulture), () => InstanceColsText, v => InstanceColsText = v);
@@ -1341,6 +1408,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ApplyExternalStatus(ExternalCellStatus.NotExternal);
             InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
             InstanceRotationText = ""; InstanceMirrorXValue = null;
+            InstanceRefDesText = ""; InstanceRefDesEditable = false; InstanceRefDesHint = "";
+            InstanceShowRefDesValue = null; InstanceDesignatorIsManual = false;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
             InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
             InstanceFootprintOptions.Clear(); _instanceFootprintHasCurrentRow = false;

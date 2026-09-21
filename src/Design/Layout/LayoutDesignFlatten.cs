@@ -115,6 +115,18 @@ public static class LayoutDesignFlatten
             flattenedCount++;
         }
 
+        // ── THE REFERENCE DESIGNATORS ───────────────────────────────────────────────────────────
+        // brief-footprint-4b R-fp4b-4b. Emitted HERE, from the ROOT's own placements, because the
+        // designator belongs to the placement and not to the cell — which is what makes Gerber, DRC
+        // and `circuitrf check` all see it at once, out of one function, rather than out of a second
+        // copy per consumer. It is ordinary artwork on the technology's silkscreen role: not chrome,
+        // not an overlay, and never relocated when the technology declares no silk (R-fp4b-4c).
+        // Silk is not a conductor, so the EM path is indifferent to it by layer, exactly as it
+        // already is to the land pattern's own body outline.
+        shapes.AddRange(Footprints.FootprintLabel.ShapesFor(
+            rootView, rootLayoutDir, rootTech,
+            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View));
+
         int contributed = shapes.Count - rootView.Shapes.Count;
         return new FlattenResult(shapes, flattenedCount, contributed, unresolved, pending, ExceedsCeiling: false);
     }

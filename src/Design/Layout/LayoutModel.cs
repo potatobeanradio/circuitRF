@@ -801,6 +801,84 @@ public sealed class LayoutInstance
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CellInterfaceHash { get; set; }
+
+    // ── The reference designator this placement draws on silkscreen ─────────────────────────────
+    //
+    // brief-footprint-4b-designators.md. THE DESIGNATOR BELONGS TO THE PLACEMENT, NOT TO THE CELL,
+    // and the TEXT is derived while only its PLACEMENT is stored. Every field below is nullable and
+    // omitted from the file when null — the same additive convention RotDeg and CellInterfaceHash
+    // above already follow, so no FormatVersion bump and every .clay written before this existed
+    // re-serializes byte-for-byte.
+
+    /// <summary>
+    /// The designator of an instance that corresponds to NO schematic component — a part placed by
+    /// hand, or one read out of a board file. <b>Never read this directly; read
+    /// <see cref="DisplayRefDes"/></b> (R-fp4b-1c), and never write it on an instance that has a
+    /// <see cref="SchematicId"/>.
+    ///
+    /// <para>An instance the schematic owns takes its designator FROM <see cref="SchematicId"/> and
+    /// stores nothing here (R-fp4b-1a): two fields with one meaning drift, which is the scar
+    /// <see cref="RotationDegrees"/>'s own comment cites. Derived means a rename in the schematic
+    /// arrives through Update Layout with no migration and no possibility of a board that disagrees
+    /// with the drawing about what a part is called.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RefDes { get; set; }
+
+    /// <summary>
+    /// Where the designator sits relative to this instance's own origin, <b>in the instance's placed
+    /// frame and in the PARENT's DBU</b> (R-fp4b-2b) — so it moves and rotates with its part, which
+    /// is what a user who dragged it there meant, and so a drag stores the delta in the frame the
+    /// drag happened in.
+    ///
+    /// <para><b>Null means AUTO, and auto is RECOMPUTED, never frozen</b> (R-fp4b-2a). The default
+    /// comes from the resolved cell's own silkscreen/courtyard extent, every time it is drawn, via
+    /// the one function <c>FootprintLabel.AutoOffset</c>. Writing the computed default into the file
+    /// at placement time would freeze it, so re-pointing a part from 0402 to 0805 — a supported
+    /// gesture — would leave its designator sitting inside the bigger body: correct when written,
+    /// wrong afterwards, and wrong silently.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? LabelDx { get; set; }
+
+    /// <inheritdoc cref="LabelDx"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? LabelDy { get; set; }
+
+    /// <summary>The designator's own angle when the user has set one. Null follows the placement,
+    /// normalized readable — a designator is never drawn upside down (R-fp4b-3a).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? LabelRotDeg { get; set; }
+
+    /// <summary>The designator's cap height in the PARENT's DBU when the user has set one. Null is
+    /// the board-wide default (<c>FootprintLabel.DefaultHeightMm</c>) — a FIXED size, never a
+    /// fraction of the part, or a board carrying 0402s and a 7343-31 would print designators an
+    /// order of magnitude apart and the small ones would be unreadable (R-fp4b-2d).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? LabelHeight { get; set; }
+
+    /// <summary>Per-instance visibility. <b>Null means SHOWN</b> (R-fp4b-7a, confirmed with the
+    /// owner 2026-09-20): the report this came from is that a designer could not tell which part was
+    /// which, and a designator behind a switch nobody finds does not answer it. Turning it off for a
+    /// crowded corner of a board is a per-instance (and multi-select) edit; there is deliberately no
+    /// global view-only toggle, because a switch that makes the screen disagree with the export is
+    /// the defect R-fp4b-4a exists to prevent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ShowRefDes { get; set; }
+
+    /// <summary><b>The designator — the ONE accessor anything outside persistence may use</b>
+    /// (R-fp4b-1c), in the shape <see cref="RotationDegrees"/> already established. Null when this
+    /// placement has no identity to draw, which is not the same as an empty one: an instance
+    /// corresponding to no schematic component and given no designator must not be handed a
+    /// fabricated one (R-fp4b-8c).</summary>
+    [JsonIgnore]
+    public string? DisplayRefDes
+        => SchematicId is { Length: > 0 } s ? s : RefDes is { Length: > 0 } r ? r : null;
+
+    /// <summary>Whether this placement's designator is drawn — <see cref="ShowRefDes"/> with its
+    /// null default resolved once, here, rather than at each of the four call sites that ask.</summary>
+    [JsonIgnore]
+    public bool DesignatorShown => ShowRefDes ?? true;
 }
 
 /// <summary>
