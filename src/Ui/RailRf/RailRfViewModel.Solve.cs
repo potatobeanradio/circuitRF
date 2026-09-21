@@ -83,6 +83,8 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(EditTechnologyTip));
         ClearResults();
         RebuildBoardLayout();
+        RebuildUnclaimedCopperNote();
+        RebuildBoardFootprints();
         RebuildReferenceOptions();
         RebuildParts();
         RefreshRunGate();

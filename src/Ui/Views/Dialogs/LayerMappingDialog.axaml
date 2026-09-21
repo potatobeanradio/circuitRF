@@ -4,7 +4,7 @@
         xmlns:lay="using:CircuitRF.Ui.Layout"
         x:Class="CircuitRF.Ui.Views.Dialogs.LayerMappingDialog"
         Title="Layer Mapping"
-        Width="880"
+        Width="1000"
         Height="520"
         MinWidth="700"
         MinHeight="320"
@@ -24,7 +24,9 @@
                  the "Map to" combo was simply off the right edge with the horizontal scroll bar
                  DISABLED, so there was no way to reach it. Auto, so a user who shrinks the window can
                  still scroll to it. "From" adds no minimum: it is empty for the importers whose
-                 source layer has no separate origin to name, and an empty column must not cost width. -->
+                 source layer has no separate origin to name, and an empty column must not cost width.
+                 R-rail27-1b's "In the stackup as" adds none for the same reason: only a Gerber
+                 import's unclassified rows are ever asked it. -->
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
 
                 <!-- Header and rows declare IDENTICAL ColumnDefinitions (SharedSizeGroup) so columns
@@ -36,6 +38,7 @@
                             <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MFrom"   MinWidth="0"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MStack"  MinWidth="0"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
@@ -43,9 +46,12 @@
                         <TextBlock Grid.Column="0" Text="Source layer" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
                         <TextBlock Grid.Column="1" Text="From" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
                         <TextBlock Grid.Column="2" Text="Shapes"      FontSize="11" FontWeight="SemiBold" Opacity="0.7" HorizontalAlignment="Right"/>
-                        <TextBlock Grid.Column="3" Text="Match"       FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
-                        <TextBlock Grid.Column="4" Text="Action"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
-                        <TextBlock Grid.Column="5" Text="Map to"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <!-- R-rail27-1b. The stackup question, beside the shape count that answers it:
+                             a plane is the row with hundreds of shapes on it and it sorts to the top. -->
+                        <TextBlock Grid.Column="3" x:Name="StackupHeader" Text="In the stackup as" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="4" x:Name="MatchHeader"  Text="Match"       FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="5" x:Name="ActionHeader" Text="Action"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="6" x:Name="TargetHeader" Text="Map to"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
                     </Grid>
 
                     <ItemsControl x:Name="RowsControl" Grid.Row="1" Margin="8,0,8,8">
@@ -56,6 +62,7 @@
                                         <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MFrom"   MinWidth="0"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MStack"  MinWidth="0"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
@@ -68,13 +75,21 @@
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                MaxWidth="220" ToolTip.Tip="{Binding SourceDetail}"/>
                                     <TextBlock Grid.Column="2" Text="{Binding ShapeCountText}" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding MatchLabel}" FontSize="11" Opacity="0.65" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <ComboBox Grid.Column="3" ItemsSource="{Binding StackupOptions}"
+                                              SelectedItem="{Binding SelectedStackup, Mode=TwoWay}"
+                                              IsVisible="{Binding ShowStackupCombo}"
+                                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
+                                              ToolTip.Tip="Only a conductor enters the stackup. A file left as artwork is drawn, and is priced by nothing, extracted by nothing, and cannot be named as a reference return."/>
 
-                                    <ComboBox Grid.Column="4" ItemsSource="{Binding Actions}"
+                                    <TextBlock Grid.Column="4" Text="{Binding MatchLabel}" IsVisible="{Binding ShowReconciliation}"
+                                               FontSize="11" Opacity="0.65" VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+                                    <ComboBox Grid.Column="5" ItemsSource="{Binding Actions}"
                                               SelectedItem="{Binding SelectedAction, Mode=TwoWay}"
+                                              IsVisible="{Binding ShowReconciliation}"
                                               FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
 
-                                    <ComboBox Grid.Column="5" ItemsSource="{Binding MapTargets}"
+                                    <ComboBox Grid.Column="6" ItemsSource="{Binding MapTargets}"
                                               SelectedItem="{Binding SelectedMapTarget, Mode=TwoWay}"
                                               IsVisible="{Binding ShowMapTargetCombo}"
                                               FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center">
@@ -101,14 +116,14 @@
         </Border>
 
         <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*" Margin="0,10,0,0">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" x:Name="BulkActions" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <TextBlock Text="Map all unmatched to:" FontSize="11" VerticalAlignment="Center"/>
                 <ComboBox x:Name="MapAllUnmatchedCombo" FontSize="11" Padding="6,2" MinHeight="0"
                           VerticalContentAlignment="Center" MinWidth="120"/>
                 <Button Content="Apply" FontSize="11" Padding="8,2" Click="OnMapAllUnmatchedClick"/>
+                <Button Content="Keep All Unknown" FontSize="11" Padding="8,2" Margin="10,0,0,0"
+                        Click="OnKeepAllUnknownClick"/>
             </StackPanel>
-            <Button Grid.Column="1" Content="Keep All Unknown" FontSize="11" Padding="8,2" Margin="10,0,0,0"
-                    Click="OnKeepAllUnknownClick"/>
             <TextBlock Grid.Column="2" x:Name="SummaryText" FontSize="11" Opacity="0.7"
                        HorizontalAlignment="Right" VerticalAlignment="Center"/>
         </Grid>

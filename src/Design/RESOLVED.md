@@ -9935,3 +9935,130 @@ too far to price still IS decoupling on this rail; it is a row whose mounting in
 unresolved, and using the loop's verdict as the filter would silently drop real parts from the bank.
 
 Gate: `tests/Ui.Tests/RailRf/RailPartDiscoveryTests.cs`.
+
+## The rest of the path: a Gerber set to a curve (2026-09-21, brief-railrf-27)
+
+Brief 26 removed the step that was impossible. Four more stood behind it, none of them discoverable
+from the window, and this is the design-layer half of closing them: the import, the validation and
+the refusal. The UI half — the dialog's new column, the parts-pane gestures, the open-time note — is
+in `src/Ui/RESOLVED.md`.
+
+### Copper that never reached the stackup, and was named nowhere
+
+`GerberImport` step 9 builds the stackup from `copperKeys`, the files the identification cascade
+classified as conductors. That is correct and `GerberLayerIdentity`'s own header defends it: only
+conductors enter the stackup, because guessing a conductor from a name is the costly wrong guess.
+
+**What was not correct is what happened next.** The reported board's inner plane was in a file named
+for the NET its plane carries, which matches none of the copper patterns (`copper`, `top/bottom
+layer`, `inner`, a numbered `layer n`), so it became a `drawing` layer with 328 shapes on it — and
+**nothing said so**. The one message that names layers left out of the stackup was gated on
+`IsMaskPasteOrLegend`, so a file that is neither copper nor mask, paste, legend nor drill was
+reported by NEITHER branch. On the mint path there was not even a layer summary: `"Layers: " +
+SummarizeMapping` is written only when `rows.Count > 0`, and `rows` come from reconciliation against
+a DESTINATION technology, which a fresh workspace does not have.
+
+**And nothing asked either.** `resolveLayerMapping` ran only when `unidentified.Count > 0 &&
+rows.Count > 0`. Same `rows`. So **a Gerber set imported into a workspace with no technology to
+reconcile against was asked nothing at all** — which is precisely the first-import case.
+
+Three changes, in the order they matter:
+
+- `ReportLayersLeftOutOfTheStackup` names every imported drawing layer that is not in the stackup,
+  **always, on every path**, split into the two cases that mean different things: mask/paste/legend
+  (a stated decision, with its own paragraph above it) and *not classified at all*. **The shape count
+  is the actionable part** — "unclassified" says nothing, *328 shapes* is what distinguishes a plane
+  from a stray drawing, and it is free because the import already holds the artwork. Said only when
+  there is something to say: a set in which every file classified raises no line, because a message
+  that is always there is one nobody reads.
+- `LayoutLayerMapping.Propose` gained `evenWithoutDestination`, which **only the Gerber import
+  passes**. With no destination there is genuinely nothing to reconcile — but the rows carry the
+  shape count and the FILE, and that is the table the stackup question has to be asked in.
+- `LayerMappingRow` gained `StackupConductors` (the offer) and `Stackup` (the answer), and
+  `PromoteAnsweredCopper` applies it. **The POSITION has to be asked and cannot be derived**: the
+  import orders copper by the side and index the cascade read off each name, a file stating neither
+  has no place in that order, and inventing one puts a plane at the wrong z — which changes every
+  plane separation, every mounting loop and every cavity mode, all silently.
+
+**Three things the promotion has to do, and all three are needed.** The file joins
+`copperTopToBottom`, which is what `copperKeys` is read off and therefore what decides how many
+conductor entries the stackup gets. Its identity's `Purpose` becomes `conductor`, which is what
+`BuildTechnology` writes onto the drawing layer. And its source layer's z-order is **re-stamped**,
+because `BuildSourceLayers` ranked it as artwork (1000 + n) before the question was asked, and a
+plane that sorts below the silkscreen is a layer table nobody can read.
+
+**The delegate changed shape**: `GerberImport.ResolveGerberLayerMapping` hands back the ROWS, not a
+dictionary of reconciliation choices, because a choice dictionary has nowhere to carry a second
+answer. The other four importers are untouched.
+
+### `TechValidation`: a conductor with no drawing layer — but only an INNER one
+
+Pure technology, so it reaches the Technology editor, `circuitrf check` and every other validation
+surface at once. A WARNING and never an error: a stackup skeleton legitimately has such entries
+before the artwork arrives, and every `TechProblem` reaches `check` at warning severity, so it still
+exits 0.
+
+**The inner-only rule is physics, not convenience, and it is what keeps the shipped technologies
+clean.** An OUTERMOST conductor with no drawing layer is BLANKET metal — `mmic-GaAs_2LM_100um`'s
+`Backside Metal` is exactly that, the whole die backside, unpatterned, with no artwork to point at
+and nothing missing. `ShippedTechnologiesTests` requires that file to validate with zero problems.
+An inner conductor cannot be blanket whatever the process: unpatterned metal in the middle of a stack
+shorts every via that passes through it, so an inner one claiming no drawing layer is always artwork
+that was never attached. **This is a deliberate narrowing of the brief's wording**, which asked for
+every drawing-layer-less conductor.
+
+### A rail that is its own reference, refused by name
+
+On the reported board the rail was made by clicking a pour and the pick landed on the ground pour.
+What came back was a SOLVED RESULT: three notes reading *"the rail has copper on layer 3/0, which is
+also its reference layer… a conductor cannot be its own return"*, one breakdown row of
+**526,314,394.9 squares** of reference copper, and a drop of 0 mV at 0 %. It looks like an answer, and
+nothing on it says the rail is not a rail. A refusal rather than a note, because the three notes it
+replaces were already printed and were read past.
+
+**The predicate went through three shapes before it was right, and the two that were wrong are worth
+recording because both are the obvious ones.**
+
+- **"The seed lands inside one of `regions.Reference`'s islands"** — the brief's own wording, and it
+  refuses every real board. A pad is a coordinate and a reference plane is usually under all of them;
+  `Walk`'s seeding note and `ReferenceNetOn`'s own header both record that trap from their side.
+  Point containment against a full plane's outline is true almost everywhere.
+- **"The rail's nets and the reference's intersect"** — also wrong, in the other direction. With no
+  reference NET named, the reference is taken to be everything on its layer, so a rail with a power
+  pour ON a mixed inner layer resolves its seed to a piece that is legitimately in that set. That is
+  an ordinary board and it is already reported by name as a diagnostic in both extractors.
+
+What is implemented is **galvanic ambiguity, which is `ReferenceNetOn`'s own discriminator**: the seed
+is on the return only where EVERY piece of copper covering it is ONE galvanically-joined net and that
+net is one the reference resolved to — **and** the reference has nothing left once the rail's own
+pieces are taken out of it, which is when the sentence *"there is nothing for current to return
+through"* is literally true.
+
+**And it is asked only of a rail nothing else names**: no net name, and an anchor that is a bare
+coordinate (`bareCoordinateSeeds`, which both extractors now compute). A net name or a refdes is an
+independent statement about what this copper is; a rail carrying one whose copper also reaches the
+reference layer is an ordinary multilayer board — a top plane stitched to a bottom one is two plates
+and a via field, which is exactly what four of this repository's own mesh fixtures are, and all four
+went red before that gate existed. The pour-click route has no such statement, the coordinate is the
+only evidence there is, and it is the only route available on a Gerber-only board.
+
+### `PdnUnclaimedCopper`: the same fact, asked of the artwork instead of a rail
+
+`PdnMeshExtractor.ResolveConductors` already refuses a rail that reaches a layer no conductor claims,
+and on this board that refusal is **useless: it needs a run, a run needs a confirmed reference, and
+the missing conductor is why there is no reference to confirm.** Circular, with the user inside the
+circle. This answers the same question from the artwork and the technology alone, which railRF holds
+the moment a board opens.
+
+**Mask, paste, legend and the drawings are not missing conductors**, and without excluding them the
+note names five or six layers on every board — which is the note nobody reads. The exclusion is the
+identification cascade's own, exposed as `GerberLayerCascade.IsNonConductorArtwork`: the declared
+`FileFunction` where the layer carries one (the technology keeps it in `InterchangeMapping`), the
+name otherwise, against the closed set of names **that cascade itself produces**. It decides a
+SENTENCE and never a stackup, which is why it may read a name at all — the same bargain
+`GerberImport.IsMaskPasteOrLegend` already states for its own.
+
+Gate: `tests/Ui.Tests/RailRf/GerberSetToACurveTests.cs`, whose first test performs the whole scenario
+with no display: import the set, answer the layer question, open the board, be refused on the ground
+pour, confirm the reference, be offered the two capacitors, name the part, and end with a curve whose
+series resonance is the part's own.

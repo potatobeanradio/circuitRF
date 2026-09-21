@@ -51,10 +51,29 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
     public ObservableCollection<LayerActionItem> Actions { get; }
     public ObservableCollection<LayerPickerItem> MapTargets { get; }
 
+    /// <summary>
+    /// R-rail27-1b's column — <b>"in the stackup as"</b>. Empty for every row that is not being
+    /// asked, which is every row of every caller but a Gerber import's unclassified files, and the
+    /// column then costs nothing.
+    /// </summary>
+    public ObservableCollection<LayerStackupItem> StackupOptions { get; } = [];
+
     [ObservableProperty] private LayerActionItem _selectedAction;
     [ObservableProperty] private LayerPickerItem? _selectedMapTarget;
+    [ObservableProperty] private LayerStackupItem? _selectedStackup;
 
-    public bool ShowMapTargetCombo => SelectedAction.Action == LayoutFragment.LayerReconciliationAction.MapToExisting;
+    public bool ShowMapTargetCombo =>
+        ShowReconciliation && SelectedAction.Action == LayoutFragment.LayerReconciliationAction.MapToExisting;
+
+    /// <summary>True only for a row that is being asked the stackup question.</summary>
+    public bool ShowStackupCombo => StackupOptions.Count > 0;
+
+    /// <summary>False on the mint path, where there is no destination technology and therefore no
+    /// reconciliation to confirm — the row then shows its source, its file, its shape count and the
+    /// stackup question, and nothing else.</summary>
+    [ObservableProperty] private bool _showReconciliation = true;
+
+    partial void OnShowReconciliationChanged(bool value) => OnPropertyChanged(nameof(ShowMapTargetCombo));
 
     partial void OnSelectedActionChanged(LayerActionItem value) => OnPropertyChanged(nameof(ShowMapTargetCombo));
 
@@ -62,6 +81,11 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
     public LayoutFragment.LayerReconciliationChoice CurrentChoice => new(
         SelectedAction.Action,
         SelectedAction.Action == LayoutFragment.LayerReconciliationAction.MapToExisting ? SelectedMapTarget?.Key : null);
+
+    /// <summary>The stackup answer as it currently stands, or the row's own (null where it was never
+    /// asked) — read at OK time beside <see cref="CurrentChoice"/>.</summary>
+    public LayerStackupChoice? CurrentStackup =>
+        StackupOptions.Count == 0 ? Row.Stackup : SelectedStackup?.Choice;
 
     public LayerMappingRowViewModel(LayerMappingRow row, IReadOnlyList<LayerPickerItem> availableLayers, bool techResolved)
     {
@@ -77,10 +101,31 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
 
         MapTargets = new ObservableCollection<LayerPickerItem>(availableLayers);
 
+        // R-rail27-1b. ARTWORK FIRST and selected, so an import nobody reads behaves exactly as it
+        // does now; the copper positions after it, in stack order, which is a question with a small
+        // and complete answer set.
+        if (row.StackupConductors is { } conductors)
+        {
+            StackupOptions.Add(new LayerStackupItem(LayerStackupChoice.Artwork, "artwork"));
+            StackupOptions.Add(new LayerStackupItem(
+                new LayerStackupChoice(true, LayerStackupChoice.AboveTheTop), "copper, above the top"));
+            for (int i = 0; i < conductors.Count; i++)
+                StackupOptions.Add(new LayerStackupItem(
+                    new LayerStackupChoice(true, i), $"copper, after {conductors[i]}"));
+
+            _selectedStackup = StackupOptions[0];
+        }
+
         _selectedMapTarget = (row.Proposed is { } proposed ? availableLayers.FirstOrDefault(l => l.Key == proposed) : null)
             ?? availableLayers.FirstOrDefault();
         _selectedAction = Actions.FirstOrDefault(a => a.Action == row.Choice.Action) ?? Actions[0];
     }
+}
+
+/// <summary>Combo item wrapping one <i>"in the stackup as"</i> answer (R-rail27-1b).</summary>
+public sealed record LayerStackupItem(LayerStackupChoice Choice, string Label)
+{
+    public override string ToString() => Label;
 }
 
 /// <summary>Result of the shared layer-mapping dialog: every row's settled choice, or null on
@@ -103,19 +148,29 @@ public partial class LayerMappingDialog : Window
 
     /// <param name="titleText">"Paste into <i>MMIC GaAs</i>" or "Change technology to <i>MMIC GaAs</i>".</param>
     /// <param name="sourceTechName">Name of the technology the geometry came from, or null.</param>
-    /// <param name="destTech">The resolved destination technology — <see cref="LayoutLayerMapping.Propose"/>
-    /// never returns rows when this is null, so the dialog is never shown in that case.</param>
+    /// <param name="destTech">
+    /// The resolved destination technology, or <b>null for an import that MINTS one</b>
+    /// (R-rail27-1b). A Gerber set imported into a fresh workspace has nothing to reconcile against,
+    /// so the reconciliation half of the table has no meaning and is hidden — what is left is the
+    /// question that import genuinely cannot answer for itself: which unclassified file is copper,
+    /// and where it sits in the copper order.
+    /// </param>
     /// <param name="rows">The proposed mapping (docs/sonnet-briefs/brief-L1g-technology-retarget.md §1).</param>
-    public LayerMappingDialog(string titleText, string? sourceTechName, Technology destTech, IReadOnlyList<LayerMappingRow> rows) : this()
+    public LayerMappingDialog(string titleText, string? sourceTechName, Technology? destTech, IReadOnlyList<LayerMappingRow> rows) : this()
     {
         Title = titleText;
         TitleText.Text = titleText;
 
-        HeaderText.Text = sourceTechName is { Length: > 0 }
-            ? $"Moving from '{sourceTechName}' to '{destTech.Name}'. Confirm where each layer goes."
-            : $"Moving to '{destTech.Name}'. Confirm where each layer goes.";
+        HeaderText.Text = destTech is null
+            ? "This import creates its own technology, so there is nothing to map these layers onto. "
+            + "What it cannot work out for itself is which of these files is COPPER — only a conductor "
+            + "enters the stackup, and nothing on it is priced, extracted or usable as a reference "
+            + "until it is one."
+            : sourceTechName is { Length: > 0 }
+                ? $"Moving from '{sourceTechName}' to '{destTech.Name}'. Confirm where each layer goes."
+                : $"Moving to '{destTech.Name}'. Confirm where each layer goes.";
 
-        var availableLayers = destTech.Layers
+        var availableLayers = (destTech?.Layers ?? [])
             .OrderBy(l => l.ZOrder)
             .Select(l => new LayerPickerItem(l.Key, l.Name, l.Color))
             .ToList();
@@ -124,8 +179,22 @@ public partial class LayerMappingDialog : Window
             MapAllUnmatchedCombo.Items.Add(new ComboBoxItem { Content = l.Name, Tag = l.Key });
         if (MapAllUnmatchedCombo.Items.Count > 0) MapAllUnmatchedCombo.SelectedIndex = 0;
 
+        // The reconciliation half of the table, and the two bulk buttons under it, answer a question
+        // that does not exist with no destination technology. Hidden rather than shown empty: a
+        // "Map to" combo with nothing in it is a control that reads as broken.
+        bool reconciling = destTech is not null;
+        MatchHeader.IsVisible = reconciling;
+        ActionHeader.IsVisible = reconciling;
+        TargetHeader.IsVisible = reconciling;
+        BulkActions.IsVisible = reconciling;
+        StackupHeader.IsVisible = rows.Any(r => r.StackupConductors is not null);
+
         _rowVms = rows.Select(r => new LayerMappingRowViewModel(r, availableLayers, techResolved: true)).ToList();
-        foreach (var rvm in _rowVms) rvm.PropertyChanged += OnRowChanged;
+        foreach (var rvm in _rowVms)
+        {
+            rvm.ShowReconciliation = reconciling;
+            rvm.PropertyChanged += OnRowChanged;
+        }
         RowsControl.ItemsSource = _rowVms;
 
         UpdateSummary();
@@ -165,7 +234,9 @@ public partial class LayerMappingDialog : Window
 
     private void OnOkClick(object? sender, RoutedEventArgs e)
     {
-        var settled = _rowVms.Select(r => r.Row with { Choice = r.CurrentChoice }).ToList();
+        var settled = _rowVms
+            .Select(r => r.Row with { Choice = r.CurrentChoice, Stackup = r.CurrentStackup })
+            .ToList();
         Close(new LayerMappingDialogResult(settled));
     }
 }

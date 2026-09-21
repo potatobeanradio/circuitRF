@@ -63,6 +63,54 @@ public static class GerberLayerCascade
     /// when they have to answer for it.</summary>
     public const string UnidentifiedPurpose = "drawing";
 
+    /// <summary>
+    /// Whether a drawing layer is one of the NON-CONDUCTOR artwork kinds a fabrication set carries —
+    /// mask, paste, legend, the fabrication and assembly drawings, the outline, the drill map.
+    /// </summary>
+    /// <remarks>
+    /// <b>This decides a SENTENCE and never a stackup</b>, which is the whole reason it may read a
+    /// name at all. Guessing a conductor from a name is the costly wrong guess and this file refuses
+    /// it everywhere; guessing that "Soldermask Top" is not a plane costs, at worst, a line of text
+    /// that should not have been printed — the same bargain <c>GerberImport.IsMaskPasteOrLegend</c>
+    /// already states for its own sentence.
+    ///
+    /// <para><b>The names it matches are the ones THIS CASCADE PRODUCES</b> (<see cref="Patterns"/>'s
+    /// own <c>LayerName</c> column), not a table of conventions, so a layer table written by an
+    /// import and a layer table written by hand are asked the same question. The declared
+    /// <c>FileFunction</c> outranks the name wherever there is one.</para>
+    /// </remarks>
+    public static bool IsNonConductorArtwork(string? fileFunction, string? layerName)
+    {
+        if (fileFunction is { Length: > 0 } fn)
+        {
+            string kind = fn.Split(',')[0].Trim();
+            foreach (string known in DeclaredNonConductorKinds)
+                if (kind.Equals(known, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        if (layerName is not { Length: > 0 } name) return false;
+
+        foreach (string known in NonConductorNames)
+            if (name.StartsWith(known, StringComparison.OrdinalIgnoreCase)) return true;
+
+        return false;
+    }
+
+    private static readonly string[] DeclaredNonConductorKinds =
+    [
+        "Soldermask", "Paste", "SolderPaste", "Legend", "Profile", "AssemblyDrawing",
+        "FabricationDrawing", "ArrayDrawing", "OtherDrawing", "Drillmap", "Glue", "Carbonmask",
+        "Goldmask", "Heatsinkmask", "Peelablemask", "Silvermask", "Tinmask", "Vcut", "Vcutmap",
+        "Depthrout", "Viafill", "Pads", "Other",
+    ];
+
+    /// <summary><see cref="Patterns"/>' own non-conductor <c>LayerName</c>s, as prefixes.</summary>
+    private static readonly string[] NonConductorNames =
+    [
+        "Soldermask", "Paste", "Silk", "Legend", "Assembly", "Fabrication", "Outline", "Mechanical",
+        "V-Cut", "Drill Map", "Drill",
+    ];
+
     // ── The cascade ───────────────────────────────────────────────────────────
 
     /// <summary>

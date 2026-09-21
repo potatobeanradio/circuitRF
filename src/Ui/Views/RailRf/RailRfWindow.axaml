@@ -967,6 +967,13 @@
                                  Q-8 closed. -->
                             <TextBlock Classes="note" Text="{Binding ReferenceProposalReason}"
                                        IsVisible="{Binding !IsReferenceConfirmed}"/>
+                            <!-- R-rail27-1d. The copper that belongs to no conductor, said HERE and
+                                 at open: the extraction says the same thing, but only after a run,
+                                 and a run needs a reference this very fact is what there is none of.
+                                 Always visible while it applies — including after the reference is
+                                 confirmed, because a second plane can still be unattached. -->
+                            <TextBlock Classes="note" Text="{Binding UnclaimedCopperNote}"
+                                       IsVisible="{Binding HasUnclaimedCopperNote}"/>
                             <Button Content="Confirm reference" FontSize="10" Padding="8,2"
                                     HorizontalAlignment="Stretch"
                                     Command="{Binding ConfirmReferenceCommand}"
@@ -1691,7 +1698,7 @@
                              say, so the card is the height it always was on a document that
                              already has its rows. They are APPENDED rather than inserted because
                              RailRfWindow.SyncPanes addresses the list's row by index. -->
-                        <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto,Auto,Auto" MaxHeight="210">
+                        <Grid Name="PartsGrid" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" MaxHeight="210">
                             <TextBlock Classes="cardhdr" Text="Parts"/>
                             <!-- Sortable column headers, LEFT-ALIGNED with the columns under them.
                                  This is R-rail7-2's one exception and it is an owner decision: any
@@ -1767,6 +1774,11 @@
                                      SelectionMode="Multiple"
                                      ItemsSource="{Binding Parts}"
                                      SelectedItem="{Binding SelectedPart, Mode=TwoWay}">
+                                <!-- R-rail27-3a. ONE ContextMenu instance, filled on Opening — the
+                                     shape the board canvas and the title bar already use. -->
+                                <ListBox.ContextMenu>
+                                    <ContextMenu Name="PartsContextMenu" Opening="OnPartsContextMenuOpening"/>
+                                </ListBox.ContextMenu>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="rvm:RailPartRowViewModel">
                                         <!-- An unresolved row is rendered AS unresolved and populates
@@ -1877,6 +1889,29 @@
                                                Text="Offered, not created — and a row arrives with no part number until a bill of materials or you say what the part is."/>
                                 </StackPanel>
                             </Border>
+
+                            <!-- ── R-rail27-3a / R-rail27-3c: SAYING WHICH PART THESE ARE ────
+                                 A discovered row has a refdes, a position and a mounting loop, and
+                                 no part number — brief 26 refuses to invent one from a land
+                                 pattern. With no bill of materials that is every row, and the
+                                 curve has no decoupling in it. These two buttons are the way out,
+                                 in the order they are used: say which part the selected rows are,
+                                 then give that part a capacitance and a self-resonance.
+
+                                 Neither is a second route. The first writes RailPart.PartNumber,
+                                 which is the row's OWN field and not a model value; the second is
+                                 the project tree's existing Create part library command, put
+                                 where the work is. -->
+                            <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="6"
+                                        Margin="2,5,2,0"
+                                        IsVisible="{Binding HasParts}">
+                                <Button Content="Assign part number…" FontSize="10" Padding="8,1"
+                                        Click="OnAssignPartNumberClick"
+                                        ToolTip.Tip="Write one internal part number onto the selected rows. It is what the part library is keyed by — the capacitance, the ESR and the self-resonance stay the library's."/>
+                                <Button Content="Create part library…" FontSize="10" Padding="8,1"
+                                        Click="OnCreatePartLibraryClick"
+                                        ToolTip.Tip="Seed a .crlib from the part numbers this document names, and open it. Until a part number resolves to a capacitance and a self-resonance the row contributes nothing to the curve."/>
+                            </StackPanel>
                         </Grid>
                     </Border>
                 </Grid>

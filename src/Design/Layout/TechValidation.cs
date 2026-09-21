@@ -94,6 +94,42 @@ public static class TechValidation
                 "order, and states nothing at all about the substrate.)"));
         }
 
+        // ── R-rail27-1c — a conductor with no drawing layer, so no artwork sits on it ────────────
+        //
+        // Reported from the field, 2026-09-21: a Gerber set's inner plane was classified as a
+        // `drawing` layer (its file was named for the NET it carries, which matches no copper
+        // pattern), the designer added the conductor to the stackup by hand, and nothing anywhere
+        // said the two were never joined. railRF's reference combo now LISTS such a conductor and
+        // says what is missing; this is the same fact reaching somebody who never opens railRF —
+        // the Technology editor, `circuitrf check`, and every other validation surface at once.
+        //
+        // A WARNING, never an error: a stackup skeleton legitimately has such entries before the
+        // artwork arrives, so `circuitrf check` still exits 0 (every TechProblem lands there as a
+        // warning already).
+        //
+        // ── AND WHY ONLY AN *INNER* CONDUCTOR ────────────────────────────────────────────────────
+        //
+        // An OUTERMOST conductor with no drawing layer is BLANKET METAL, which is an ordinary
+        // construction and not a defect: `mmic-GaAs_2LM_100um`'s `Backside Metal` is exactly that —
+        // the whole die backside, unpatterned, with no artwork to point at and nothing missing.
+        // An inner one cannot be blanket, whatever the process: unpatterned metal in the middle of a
+        // stack shorts every via that passes through it. So an inner conductor claiming no drawing
+        // layer is always artwork that was never attached.
+        var conductorEntries = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Conductor)
+            .ToList();
+
+        for (int i = 1; i < conductorEntries.Count - 1; i++)
+        {
+            var inner = conductorEntries[i];
+            if (inner.DrawingLayers.Count > 0) continue;
+
+            problems.Add(new(TechProblemArea.Stackup,
+                $"Conductor \"{inner.Name}\" claims no drawing layer, so no artwork sits on it: it is " +
+                "priced by nothing, extracted by nothing, and cannot be named as a reference return. " +
+                "Attach the drawing layer that carries this plane's copper on the Stackup tab."));
+        }
+
         // ── GI3 R-gi3-8 — two entries with one name ───────────────────────────────────────────────
         //
         // SpanFromLayer, SpanToLayer and PresentWithLayer all resolve a stackup entry BY NAME, and the

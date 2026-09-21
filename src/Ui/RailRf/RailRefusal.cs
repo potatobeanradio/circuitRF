@@ -74,6 +74,10 @@ public static class RailRefusals
     private static readonly (string Stem, RailRefusalControl Control)[] Stems =
     [
         ("states no reference layer",              RailRefusalControl.ReferenceLayer),
+        // R-rail27-2. The reference-layer combo is what answers it — the other remedy the sentence
+        // offers (pick the supply pour) is the pick button, and the combo is where a user who has
+        // already made a rail can act without starting again.
+        ("anchored on the copper of its own reference return", RailRefusalControl.ReferenceLayer),
         ("The fast model cannot answer above",     RailRefusalControl.ModelKind),
         ("could not be resolved to a layer span",  RailRefusalControl.Stackup),
         ("does not state its coordinate origin",   RailRefusalControl.PlacementOrigin),

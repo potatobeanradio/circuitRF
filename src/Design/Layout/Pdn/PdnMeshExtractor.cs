@@ -294,11 +294,28 @@ public static class PdnMeshExtractor
         foreach (var s in rail.Sources) anchorSeeds.AddRange(PdnAttachments.Resolve(s.Anchor, request.Pads));
         foreach (var l in rail.Loads) anchorSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
 
+        // R-rail27-2: the anchors that are NOTHING BUT A COORDINATE — the pour-click route, and the
+        // only one on which a rail anchored on its own return cannot be detected any other way. See
+        // PdnRailRegions.Walk's own note on why a refdes anchor is not one of these.
+        var bareCoordinateSeeds = new List<(long X, long Y)>();
+        foreach (var s in rail.Sources)
+            if (s.Anchor.Refdes is not { Length: > 0 })
+                bareCoordinateSeeds.AddRange(PdnAttachments.Resolve(s.Anchor, request.Pads));
+        foreach (var l in rail.Loads)
+            if (l.Anchor.Refdes is not { Length: > 0 })
+                bareCoordinateSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
+
         var regions = PdnRailRegions.Walk(
             layerRegions, tech, request.NetPoints, rail.NetName,
-            referenceLayer, request.ReferenceNet, anchorSeeds);
+            referenceLayer, request.ReferenceNet, anchorSeeds, bareCoordinateSeeds);
 
         diagnostics.AddRange(regions.Diagnostics);
+
+        // R-rail27-2, BEFORE the no-copper refusal and before anything is meshed or priced: a rail
+        // anchored on its own return resolves to plenty of copper, and that is exactly the trouble —
+        // it comes back as a solved result nothing on the face contradicts.
+        if (regions.OwnReturnRefusal is { } ownReturn)
+            return PdnExtraction.Refused(ownReturn, regions);
 
         if (regions.Power.Count == 0)
             return PdnExtraction.Refused(

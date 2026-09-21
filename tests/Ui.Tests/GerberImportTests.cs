@@ -63,7 +63,7 @@ public class GerberImportTests : IDisposable
 
     private static GerberImport.ImportResult Import(
         string sourceDir, string parentDir, string name, Technology? destTech = null,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? dialog = null,
+        GerberImport.ResolveGerberLayerMapping? dialog = null,
         GerberImport.ResolveDrillFormat? drillFormat = null) =>
         GerberImport.Import(FilesIn(sourceDir), parentDir, name, destTech, 1000, dialog, drillFormat);
 
@@ -349,7 +349,7 @@ public class GerberImportTests : IDisposable
         var result = Import(
             dir, _root, "row_names_file_import",
             new Technology { Name = "W", Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Metal" }] },
-            dialog: rows => { shown = rows; return LayoutLayerMapping.BuildChoices(rows); });
+            dialog: rows => { shown = rows; return rows; });
 
         Assert.False(result.Cancelled);
         Assert.Equal(
@@ -374,7 +374,7 @@ public class GerberImportTests : IDisposable
         var result = Import(
             dir, _root, "colliding_names_import",
             new Technology { Name = "W", Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Metal" }] },
-            dialog: rows => { shown = rows; return LayoutLayerMapping.BuildChoices(rows); });
+            dialog: rows => { shown = rows; return rows; });
 
         Assert.False(result.Cancelled);
         Assert.Equal(

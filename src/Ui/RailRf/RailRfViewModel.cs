@@ -573,6 +573,32 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// R-rail27-1d — <b>the copper that belongs to no conductor, said at OPEN and without a run.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>The extraction already reports this and it is useless here.</b> That report needs a run, a
+    /// run needs a confirmed reference, and the missing conductor is exactly why there is no
+    /// reference to confirm — circular, with the user inside the circle. This window holds the
+    /// flattened shapes and the technology the moment the board opens, so it answers it there.
+    ///
+    /// <para>Empty on an ordinary board, so nothing is added to a panel that was already right. The
+    /// sentence is <c>PdnUnclaimedCopper</c>'s, which is where the extractor's own wording lives —
+    /// one fact reported from two places must not come to be worded two ways.</para>
+    /// </remarks>
+    [ObservableProperty]
+    private string _unclaimedCopperNote = "";
+
+    /// <summary>True while <see cref="UnclaimedCopperNote"/> has something to say.</summary>
+    public bool HasUnclaimedCopperNote => UnclaimedCopperNote.Length > 0;
+
+    partial void OnUnclaimedCopperNoteChanged(string value)
+        => OnPropertyChanged(nameof(HasUnclaimedCopperNote));
+
+    private void RebuildUnclaimedCopperNote() =>
+        UnclaimedCopperNote = PdnUnclaimedCopper.Sentence(
+            PdnUnclaimedCopper.On(Board?.Technology, Board?.Shapes));
+
     /// <summary>What a conductor with no drawing layer reads in the combo. One spelling, so the row
     /// and the sentence under it cannot come to say different things.</summary>
     internal const string NoDrawingLayer = "no drawing layer";

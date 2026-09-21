@@ -53,7 +53,35 @@ public sealed record LayerMappingRow(
     LayerKey? Proposed,
     LayerMatchKind Match,
     LayoutFragment.LayerReconciliationChoice Choice,
-    string? SourceDetail = null);
+    string? SourceDetail = null,
+    IReadOnlyList<string>? StackupConductors = null,
+    LayerStackupChoice? Stackup = null);
+
+/// <summary>
+/// R-rail27-1b — where an unclassified imported layer goes in the STACKUP, which is a different
+/// question from where its shapes go and is asked in the same table.
+/// </summary>
+/// <remarks>
+/// <b>Only a Gerber import ever offers this</b>, and only for a file its identification cascade
+/// could not name. <see cref="AsCopper"/> false is today's behaviour — the file is artwork and the
+/// stackup does not mention it — and it is the default for every row, so an import nobody reads
+/// behaves exactly as it did before.
+///
+/// <para><b><see cref="AfterIndex"/> has to be ASKED and cannot be derived.</b> A Gerber set orders
+/// its copper by the side and index the cascade reads off each file name; a file whose name states
+/// neither has no place in that order, and inventing one puts a plane at the wrong z — which changes
+/// every plane separation, every mounting loop and every cavity mode, all silently. It is the
+/// zero-based position, in the conductor list the row was offered, that this layer goes AFTER;
+/// <c>-1</c> is "above the top".</para>
+/// </remarks>
+public sealed record LayerStackupChoice(bool AsCopper, int AfterIndex)
+{
+    /// <summary>Today's behaviour, and the default for every row.</summary>
+    public static readonly LayerStackupChoice Artwork = new(false, -1);
+
+    /// <summary>The position meaning "above the top conductor".</summary>
+    public const int AboveTheTop = -1;
+}
 
 /// <summary>
 /// Proposes a layer mapping for a set of shapes moving from one technology to another — the single
@@ -75,12 +103,22 @@ public static class LayoutLayerMapping
     /// <see cref="FallbackPalette"/> regardless of key, so there is nothing to reconcile (mirrors
     /// L1f's <c>GetMissingLayers</c> null-tech behavior).
     /// </summary>
+    /// <param name="evenWithoutDestination">
+    /// R-rail27-1b. Builds the rows ANYWAY when there is no destination technology — every one of
+    /// them a <see cref="LayerMatchKind.NoMatch"/>, because nothing can be matched against nothing.
+    /// <b>Reconciliation is not what those rows are for</b>: a Gerber set imported into a fresh
+    /// workspace mints its own technology, so there is genuinely nothing to reconcile — but the row
+    /// carries the shape count and the FILE, and that is the table the import has to ask its
+    /// stackup question in. Left false, this method behaves exactly as it always has, which is what
+    /// every other caller wants.
+    /// </param>
     public static IReadOnlyList<LayerMappingRow> Propose(
         IReadOnlyList<LayoutShape> shapes,
         IReadOnlyList<LayerDef> sourceLayers,
-        Technology? destTech)
+        Technology? destTech,
+        bool evenWithoutDestination = false)
     {
-        if (destTech is null) return [];
+        if (destTech is null && !evenWithoutDestination) return [];
 
         var counts = new Dictionary<LayerKey, int>();
         foreach (var s in shapes)
@@ -90,7 +128,9 @@ public static class LayoutLayerMapping
         foreach (var (key, count) in counts)
         {
             string? sourceName = sourceLayers.FirstOrDefault(l => l.Key == key)?.Name;
-            var (proposed, match) = ProposeTarget(key, sourceName, destTech);
+            var (proposed, match) = destTech is null
+                ? ((LayerKey?)null, LayerMatchKind.NoMatch)
+                : ProposeTarget(key, sourceName, destTech);
 
             var choice = match is LayerMatchKind.SameKeySameName or LayerMatchKind.ExactName
                 ? new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.MapToExisting, proposed)

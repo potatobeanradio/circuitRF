@@ -411,7 +411,14 @@ public sealed partial class RailRfViewModel
         string railName = name is { Length: > 0 } n ? n : $"rail at ({xDbu}, {yDbu})";
 
         var rail = new RailSpec { Name = railName };
-        rail.Sources.Add(new RailSource { Anchor = new RailPortAnchor { Point = (xDbu, yDbu) } });
+
+        // R-rail27-4: through the SAME seeding every other add gesture uses. This added a bare
+        // `RailSource` with no voltage, so a rail made by clicking a pour — the only route available
+        // on a Gerber-only board — produced exactly the report `RailRfViewModel.Seeds.cs` was written
+        // to prevent: "states no open-circuit voltage, so it contributes its impedance and no DC
+        // level", and a column of zeros with nothing saying the document was the reason. The seeded
+        // row is counted on the status strip, exactly as a dropped source is.
+        rail.Sources.Add(NewSeededSource(rail, new RailPortAnchor { Point = (xDbu, yDbu) }));
 
         _document.Rails.Add(rail);
         RebuildRails();

@@ -4677,10 +4677,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para><paramref name="format"/> is what the user is actually importing. FOUR importers share
     /// this one bridge, and the dialog used to name GDSII in all four — so a user importing Gerber
     /// was told, in the title and in the body, that they were mapping GDSII layers.</para></summary>
+    /// <param name="alwaysAsk">
+    /// R-rail27-1b — show the dialog even with NO destination technology. Four of the five importers
+    /// leave this false, because reconciliation is the only question they ask and there is nothing to
+    /// reconcile against. A Gerber set asks a second one in the same table — <i>is this unclassified
+    /// file copper, and where does it sit in the copper order?</i> — and that question is at its most
+    /// valuable on exactly the path this method used to skip: a first import into a fresh workspace,
+    /// which mints its own technology. The dialog hides the half that has no meaning there.
+    /// </param>
     private async Task<IReadOnlyList<LayerMappingRow>?> ResolveImportLayerMappingAsync(
-        Window owner, string format, Technology? destTech, IReadOnlyList<LayerMappingRow> rows)
+        Window owner, string format, Technology? destTech, IReadOnlyList<LayerMappingRow> rows,
+        bool alwaysAsk = false)
     {
-        if (destTech is null) return rows;
+        if (destTech is null && !alwaysAsk) return rows;
         var dialog = new LayerMappingDialog($"Import {format} — Layer Mapping", format, destTech, rows);
         var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
         return result?.Rows;
@@ -5158,13 +5167,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                 return folders.Count == 0 ? null : folders[0].Path.LocalPath;
                             })
                             .GetAwaiter().GetResult(),
-                        resolveLayerMapping: rows =>
-                        {
-                            var settled = Dispatcher.UIThread
-                                .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows))
-                                .GetAwaiter().GetResult();
-                            return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
-                        },
+                        // R-rail27-1b: the ROWS come back, not the choices — this import asks the
+                        // stackup question in the same table and the answer rides on the row. And it
+                        // is shown even with NO destination technology, which is the whole point: a
+                        // Gerber set imported into a fresh workspace is exactly the case where
+                        // nothing had ever asked which unclassified file is the plane.
+                        resolveLayerMapping: rows => Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows, alwaysAsk: true))
+                            .GetAwaiter().GetResult(),
                         resolveDrillFormat: (fileName, inferred, crossCheck, remaining) => Dispatcher.UIThread
                             .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck, remaining))
                             .GetAwaiter().GetResult(),

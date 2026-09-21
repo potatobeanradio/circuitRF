@@ -582,7 +582,7 @@ public class GerberRoundTripTests : IDisposable
         Directory.CreateDirectory(parent);
         var i1 = GerberImport.Import(
             FilesIn(e1), parent, "board", null, Dbu,
-            resolveLayerMapping: rows => { dialogs++; return LayoutLayerMapping.BuildChoices(rows); });
+            resolveLayerMapping: rows => { dialogs++; return rows; });
 
         Assert.False(i1.Cancelled);
         Assert.Equal(0, dialogs);

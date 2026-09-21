@@ -34065,3 +34065,95 @@ in it. That last one is honest and the table says so — **"13 parts added" is n
 includes 13 capacitors"**, which is why the unresolved count is already on the status strip.
 
 Gate: `tests/Ui.Tests/RailRf/RailPartDiscoveryTests.cs`.
+
+## The rest of the path: the dialog column, the parts gestures, the note at open (2026-09-21, brief-railrf-27)
+
+The application half of brief 27; the import, the validation and the refusal are in
+`src/Design/RESOLVED.md`. All of it exists because answering *"once brief 26 runs, will it work for
+the user?"* came back **no** — the path still broke at the reference for two independent reasons and
+at the curve for a third, and none of them was discoverable from the window.
+
+### `LayerMappingDialog` gains a column, and runs where it never ran
+
+`ResolveImportLayerMappingAsync` returned the rows untouched when there was no destination
+technology, which is right for the four importers that only ask about reconciliation. **A Gerber set
+asks a second question** — *is this unclassified file copper, and where does it sit in the copper
+order?* — **and that question is at its most valuable on exactly the path the bridge skipped**: a
+first import into a fresh workspace, which mints its own technology and has nothing to map onto. The
+bridge took an `alwaysAsk` flag rather than gaining a second copy, so the five importers still share
+one method and `LayerMappingDialogSourceTests`' own scan still finds all five naming their format.
+
+The dialog now takes a **nullable** destination and hides the half that has no meaning there: Match,
+Action and Map-to, plus the two bulk buttons. Two things about the new column are deliberate:
+
+- **"artwork" is first and pre-selected**, so an import nobody reads behaves exactly as it did.
+- Its `ColumnDefinition` declares `MinWidth="0"`, which is the `From` column's own precedent — an
+  empty column must not cost width, and this one is empty for every caller but a Gerber import's
+  unclassified rows. The other three keep their minimums, so
+  `LayerMappingDialogSourceTests`' 570 px sum is unchanged and still gates the bug it was written
+  for.
+
+**Trap worth naming:** `LayerMappingDialogSourceTests` and `GerberImportEntryTests` both scan the
+source text for `ResolveImportLayerMappingAsync(window, "Gerber"` on ONE LINE. Wrapping that call
+across two lines for width turned both red with "sub-string not found", which reads as a missing call
+rather than as a reformat.
+
+### The parts table says which part these are — without becoming editable
+
+After brief 26 a board with no bill of materials yields rows with a refdes, a position and a computed
+mounting loop, and **no part number**, because discovery refuses to invent one from a land pattern.
+With no BOM that is every row, all listed as unresolved, and the |Z| curve has no decoupling in it.
+The table is right and the answer is still empty.
+
+`AssignPartNumber` is `SetPartsMounted`'s shape exactly — a batch, a record `with`, a row already in
+the asked-for state left alone, and one `QueueResolve` at the end, which is the funnel the coarse
+undo snapshot hangs off. **This does not make the parts table editable, and the distinction is the
+whole argument.** `RailPartRowViewModel` is read-only *deliberately* — "a row that could be edited
+here would be a second place the same number lives" — and that rule is about the MODEL: capacitance,
+ESR, f₀, which belong to the part library. A part NUMBER is not a model value. It is the row's own
+field on the document, it is what the library is keyed BY, and choosing it is choosing which library
+row applies. Every electrical column stays read-only and stays the library's.
+
+Two details:
+
+- **An empty answer is a real answer** — it clears the number, which is the state a discovered row
+  starts in, so a mistaken assignment is taken back by the same gesture and not only by undo. The
+  dialog therefore distinguishes cancel by NULL and not by emptiness, and reads
+  `ComboBox.Text` rather than `SelectedItem`: a typed part number never becomes a selected item, and
+  reading the selection alone would silently discard exactly the case the dialog exists for.
+- **Create part library… is the project tree's existing command**, not a second route —
+  `WorkspaceViewModel.CreatePartLibraryForRailDocument`, reached through `WorkspaceLocator` the way
+  Edit Technology already is, with every refusal stated rather than returned silently because railRF
+  is an unowned window that outlives the workspace behind it.
+
+### The footprint column falls back to the board
+
+`FootprintToken` read the BOM row, then the library row, and stopped — so a discovered row on a board
+with neither showed nothing in the one column that lets a user GROUP the rows they are about to
+assign. `PdnLayoutPads.FootprintsOf` walks the root's own placements and returns refdes →
+land-pattern cell name; `RebuildParts` passes it and the ROW applies the precedence, so there is one
+place that decides which source speaks. **No document field is added** — the artwork is still there
+on the next open, and the map is rebuilt with the rows. Rebuilt on the BOARD's setter rather than
+inside `RebuildParts`, which runs on every solve and every row edit; the placements do not change
+between those.
+
+### The specification panel says it at open
+
+`UnclaimedCopperNote` is `PdnUnclaimedCopper`'s sentence, recomputed on the board's own setter and
+shown under the reference combo. It is the other half of the 2026-09-21 combo fix: that one lists a
+conductor with no drawing layer, this one names the drawing layer with no conductor.
+
+**Trap that cost a test run:** `RailBoardInputs` is a RECORD, so `Board = Board with { Technology =
+tech }` after mutating `tech` IN PLACE is structurally the same value, `SetProperty` returns false,
+and nothing recomputes. Anything derived from the board has to be given a genuinely new board.
+
+### And the pour pick seeds its source
+
+`PickRailAt` added a bare `RailSource` with no voltage, while the window's own add-source gesture goes
+through `NewSeededSource`. So a rail made by clicking a pour — **the only route available on a
+Gerber-only board** — produced exactly the report `RailRfViewModel.Seeds.cs` was written to prevent:
+*"states no open-circuit voltage, so it contributes its impedance and no DC level"*, and a column of
+zeros with nothing saying the document was the reason. One line, and the seeded-row count on the
+status strip covers it exactly as it covers a dropped source.
+
+Gate: `tests/Ui.Tests/RailRf/GerberSetToACurveTests.cs`.

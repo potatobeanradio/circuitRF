@@ -7,6 +7,7 @@ using System.Linq;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Render;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -177,10 +178,15 @@ public sealed partial class RailRfViewModel
 
             resolved.TryGetValue(part.Refdes, out var element);
 
+            // R-rail27-3b: the board's own land pattern, for the column the BOM would have filled.
+            // The ROW view model applies the precedence — the BOM, then the library, then this — so
+            // there is one place that decides which source speaks.
+            _boardFootprints.TryGetValue(part.Refdes, out string? boardFootprint);
+
             var built = new RailPartRowViewModel(
                 part, row, model,
                 element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
-                position, element);
+                position, element, boardFootprint);
             Parts.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
@@ -422,6 +428,10 @@ public sealed partial class RailRfViewModel
     /// <summary>True while <see cref="PartsEmptyText"/> has something to say.</summary>
     public bool HasPartsEmptyText => PartsEmptyText is not null;
 
+    /// <summary>True while the table has rows — what brief 27's two gestures hang off, since both
+    /// act on a selection and there is nothing to select until there is a row.</summary>
+    public bool HasParts => Parts.Count > 0;
+
     /// <summary>
     /// Re-reads the board for this rail's parts.
     /// </summary>
@@ -459,6 +469,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(PartOfferSkippedTooltip));
         OnPropertyChanged(nameof(PartsEmptyText));
         OnPropertyChanged(nameof(HasPartsEmptyText));
+        OnPropertyChanged(nameof(HasParts));
         AcceptDiscoveredPartsCommand.NotifyCanExecuteChanged();
     }
 
@@ -506,4 +517,108 @@ public sealed partial class RailRfViewModel
     /// <summary>The button on the offer line.</summary>
     [CommunityToolkit.Mvvm.Input.RelayCommand(CanExecute = nameof(HasPartOffer))]
     public void AcceptDiscoveredParts() => AddDiscoveredParts();
+
+    // ══ WHICH PART IS IT? (brief 27) ══════════════════════════════════════════════════════════
+    //
+    // Brief 26's discovery refuses to invent a part number from a land pattern, and it is right to:
+    // an 0402 land is a case size, not a capacitance. On a board with no bill of materials that is
+    // every discovered row, all of them listed as unresolved, and the |Z| curve has no decoupling in
+    // it. The table is right and the answer is still empty.
+    //
+    // The missing gesture is the one a designer expects: SELECT THE ROWS THAT ARE THE SAME PART AND
+    // SAY WHICH PART THEY ARE. The parts list has been SelectionMode="Multiple" since brief 23's
+    // batch unmount, so the selection already exists.
+    //
+    // THIS DOES NOT MAKE THE PARTS TABLE EDITABLE, and the distinction is the whole argument.
+    // RailPartRowViewModel is read-only "deliberately… a row that could be edited here would be a
+    // second place the same number lives" — and that rule is about the MODEL: capacitance, ESR, f0,
+    // which belong to the part library. A part NUMBER is not a model value. It is the row's own field
+    // on the document (RailPart.PartNumber), it is what the library is keyed BY, and choosing it is
+    // choosing which library row applies. Every electrical column stays read-only and stays the
+    // library's.
+
+    /// <summary>
+    /// Writes <paramref name="partNumber"/> onto the named rows, and re-solves ONCE.
+    /// </summary>
+    /// <remarks>
+    /// <b>SetPartsMounted's shape exactly</b>, and for its reasons: a batch is the real gesture, a
+    /// record <c>with</c> carries every other field across untouched, a row already carrying that
+    /// number is not rewritten, and the single <see cref="QueueResolve"/> at the end is the one undo
+    /// entry the coarse stack hangs off.
+    ///
+    /// <para><b>An empty part number CLEARS it</b>, which is the state a discovered row starts in —
+    /// so an assignment made by mistake is taken back by the same gesture and not only by undo.</para>
+    /// </remarks>
+    /// <param name="refdeses">The instances to act on. Unknown names are ignored — the caller's list
+    /// is a selection and a selection can outlive a rebuild.</param>
+    /// <param name="partNumber">The internal part number the part library is keyed by.</param>
+    /// <returns>How many rows actually changed.</returns>
+    public int AssignPartNumber(IEnumerable<string> refdeses, string? partNumber)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        if (SelectedRail is not { } rail) return 0;
+
+        var wanted = new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0) return 0;
+
+        string assigned = (partNumber ?? "").Trim();
+
+        int changed = 0;
+        for (int i = 0; i < rail.Parts.Count; i++)
+        {
+            var part = rail.Parts[i];
+            if (part.Refdes is not { Length: > 0 } refdes || !wanted.Contains(refdes)) continue;
+            if (string.Equals(part.PartNumber ?? "", assigned, StringComparison.Ordinal)) continue;
+
+            rail.Parts[i] = part with { PartNumber = assigned };
+            changed++;
+        }
+
+        if (changed == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return changed;
+    }
+
+    /// <summary>The part numbers already known to this document and its library — what the assign
+    /// gesture offers before free text, so twenty rows of one part are spelled one way.</summary>
+    /// <remarks>
+    /// <b>The library first, then the rail's own rows.</b> A number the library knows resolves to a
+    /// model; a number only the rail carries is one somebody typed a moment ago and is about to type
+    /// again on the next four rows, which is exactly what a list is for.
+    /// </remarks>
+    public IReadOnlyList<string> KnownPartNumbers
+    {
+        get
+        {
+            var known = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string pn in PartLibrary?.Rows.Select(r => r.PartNumber) ?? [])
+                if (pn is { Length: > 0 } && seen.Add(pn)) known.Add(pn);
+
+            foreach (var rail in _document.Rails)
+                foreach (var part in rail.Parts)
+                    if (part.PartNumber is { Length: > 0 } pn && seen.Add(pn)) known.Add(pn);
+
+            known.Sort(StringComparer.OrdinalIgnoreCase);
+            return known;
+        }
+    }
+
+    /// <summary>
+    /// R-rail27-3b's input — which land pattern each placed part sits on, by designator.
+    /// </summary>
+    /// <remarks>
+    /// <b>No document field is added</b> and nothing is cached across boards: the artwork is still
+    /// there on the next open, and the map is rebuilt with the rows. Rebuilt on the BOARD's own
+    /// setter rather than inside <see cref="RebuildParts"/>, which runs on every solve and every row
+    /// edit — the placements do not change between those.
+    /// </remarks>
+    private IReadOnlyDictionary<string, string> _boardFootprints =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    private void RebuildBoardFootprints() =>
+        _boardFootprints = PdnLayoutPads.FootprintsOf(Board?.View);
 }

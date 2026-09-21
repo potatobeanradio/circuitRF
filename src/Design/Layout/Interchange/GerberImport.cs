@@ -47,6 +47,20 @@ public static class GerberImport
     public delegate DrillFormatChoice? ResolveDrillFormat(
         string fileName, DrillFormatInference inferred, DrillExtentsCheck crossCheck, int remainingFiles);
 
+    /// <summary>
+    /// The shared layer-mapping dialog, as THIS import takes it — <b>rows in, rows out</b>.
+    /// </summary>
+    /// <remarks>
+    /// Every other importer hands the dialog's answer back as a dictionary of reconciliation
+    /// choices, because reconciliation is the only question they ask. R-rail27-1b adds a second one
+    /// to the same table — <i>is this unclassified file copper, and where does it sit in the copper
+    /// order?</i> — and the answer belongs on the ROW (<see cref="LayerMappingRow.Stackup"/>), which
+    /// a choice dictionary has nowhere to put. So this one returns what the dialog itself already
+    /// returns: the settled rows. Null cancels the whole import.
+    /// </remarks>
+    public delegate IReadOnlyList<LayerMappingRow>? ResolveGerberLayerMapping(
+        IReadOnlyList<LayerMappingRow> rows);
+
     /// <summary>One artwork file's row of R-L4g-15's per-layer summary.</summary>
     public sealed record LayerReport(
         string FileName,
@@ -106,8 +120,11 @@ public static class GerberImport
     /// the source folder's name, or the single file's base name.</param>
     /// <param name="destTech">The workspace's own technology. Read for rung 2 of the cascade and for
     /// the shared mapping dialog, and <b>never modified</b> (R-L4g-8).</param>
-    /// <param name="resolveLayerMapping">The shared layer-mapping dialog, exactly as every other
-    /// import takes it. Returning null aborts the whole import and creates nothing.</param>
+    /// <param name="resolveLayerMapping">The shared layer-mapping dialog. <b>It hands back the ROWS,
+    /// not the choices</b> (R-rail27-1b): this import asks a second question in the same table — which
+    /// unclassified file is COPPER, and where it goes in the copper order — and a dictionary of
+    /// reconciliation choices has nowhere to carry the answer. Returning null aborts the whole import
+    /// and creates nothing.</param>
     /// <param name="resolveDrillFormat">L4f's format prompt. Called only when the inference actually
     /// had to guess, or when the hits disagree with the artwork's extent.</param>
     /// <param name="control">Cancellation and progress, exactly as <c>EmRunService.Run</c> takes them
@@ -128,7 +145,7 @@ public static class GerberImport
         string importName,
         Technology? destTech,
         int destDbuPerMicron,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
+        ResolveGerberLayerMapping? resolveLayerMapping = null,
         ResolveDrillFormat? resolveDrillFormat = null,
         RunControl? control = null,
         OfferArchive? offerArchive = null,
@@ -178,7 +195,7 @@ public static class GerberImport
         string importName,
         Technology? destTech,
         int destDbuPerMicron,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping,
+        ResolveGerberLayerMapping? resolveLayerMapping,
         ResolveDrillFormat? resolveDrillFormat,
         RunControl? control,
         List<string> messages,
@@ -645,7 +662,11 @@ public static class GerberImport
                 shape.Shape.Layer = keyByFile[identity.FilePath];
 
         var allShapes = reads.SelectMany(r => r.Read.Shapes.Select(s => s.Shape)).ToList();
-        var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech);
+        // R-rail27-1b: EVEN WITH NO DESTINATION TECHNOLOGY. A Gerber set imported into a fresh
+        // workspace has nothing to reconcile against and used to get no rows at all — so the dialog
+        // never ran, and the one question this import genuinely cannot answer for itself (is that
+        // unclassified file a plane?) was never asked on exactly the path where it matters most.
+        var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech, evenWithoutDestination: true);
 
         // WHICH FILE each row is asking about — the one thing the row's own name cannot say here.
         // A layer is a FILE in this format, and a set's files share the board's stem by construction
@@ -665,29 +686,49 @@ public static class GerberImport
         // R-L4g-6: an unmatched row defaults to "Add to technology", following L4b's and L4d's own
         // divergence from the paste path — a file set's layer names are the author's deliberate intent,
         // not an accident of a paste.
+        // The dialog is rung 4 and ONLY rung 4: whatever rungs 0-3 identified is settled, and asking
+        // about it would make an exactly-identified set (gates 6 and 7) interrupt for nothing. What is
+        // left is genuinely unidentified, and there is nothing else that can answer for it.
+        var unidentified = identities.Where(i => i.Rung == GerberLayerRung.Unidentified).ToList();
+        var unidentifiedKeys = unidentified.Select(i => keyByFile[i.FilePath]).ToHashSet();
+
+        // R-rail27-1b's offer: the conductors already in order, top to bottom, as the combo lists
+        // them. Only an UNCLASSIFIED row is offered one — rung 4's existing rule is unchanged, and a
+        // file the cascade identified as copper is already in this list.
+        var conductorOffer = copperTopToBottom.Select(c => c.LayerName).ToList();
+
         rows = [.. rows.Select(r => r with
         {
             Choice = r.Match == LayerMatchKind.NoMatch
                 ? new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology)
                 : r.Choice,
             SourceDetail = filesByKey.TryGetValue(r.Source, out var named) ? string.Join(", ", named) : null,
+            StackupConductors = unidentifiedKeys.Contains(r.Source) ? conductorOffer : null,
+            Stackup = unidentifiedKeys.Contains(r.Source) ? LayerStackupChoice.Artwork : null,
         })];
 
-        // The dialog is rung 4 and ONLY rung 4: whatever rungs 0-3 identified is settled, and asking
-        // about it would make an exactly-identified set (gates 6 and 7) interrupt for nothing. What is
-        // left is genuinely unidentified, and there is nothing else that can answer for it.
-        var unidentified = identities.Where(i => i.Rung == GerberLayerRung.Unidentified).ToList();
         IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
         if (unidentified.Count > 0 && rows.Count > 0 && resolveLayerMapping is not null)
         {
-            choices = resolveLayerMapping(rows);
-            if (choices is null)
+            var settled = resolveLayerMapping(rows);
+            if (settled is null)
             {
                 messages.Add("Layer mapping was cancelled, so nothing was imported.");
                 return Nothing(messages, drillCandidates, archivePaths);
             }
+            rows = settled;
+            choices = LayoutLayerMapping.BuildChoices(rows);
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
+
+        // R-rail27-1b applied: a row answered "copper, after <conductor>" joins the copper order at
+        // the stated position and becomes a conductor everywhere downstream — the stackup, the layer
+        // table's purpose, and the z-order the technology sorts by. Done HERE, after the answer and
+        // before `copperKeys` is read off `copperTopToBottom`, which is the one place the stackup
+        // learns how many conductors there are.
+        PromoteAnsweredCopper(rows, keyByFile, identities, allIdentities, copperTopToBottom,
+                              sourceLayers, conductorOffer, messages);
+
         if (rows.Count > 0) messages.Add("Layers: " + LayoutLayerMapping.SummarizeMapping(rows, destTech));
 
         var reconciled = LayoutFragment.ApplyReconciliation(allShapes, sourceLayers, choices);
@@ -999,6 +1040,9 @@ public static class GerberImport
             copperLayerNames, maskNames);
         if (stackup.Stackup is not null) tech.Stackup = stackup.Stackup;
         messages.AddRange(stackup.Messages);
+
+        ReportLayersLeftOutOfTheStackup(
+            allIdentities, artwork, finalKeyByFile, nameByKey, copperKeys, maskNames, messages);
 
         // GI3 R-gi3-7. The job file's overall board thickness was read, reported once, and then
         // DROPPED — so the one number that could have checked a hand-entered stackup never reached the
@@ -1739,11 +1783,187 @@ public static class GerberImport
         return (sourceLayers, keyByFile);
     }
 
+    /// <summary>
+    /// R-rail27-1b — applies the layer-mapping table's <i>"in the stackup as"</i> answers.
+    /// </summary>
+    /// <remarks>
+    /// <b>What a promotion changes, and why each one is needed.</b> A file answered "copper, after
+    /// <c>&lt;conductor&gt;</c>" joins <paramref name="copperTopToBottom"/> at the stated position,
+    /// which is what <c>copperKeys</c> is read off and therefore what decides how many conductor
+    /// entries the stackup gets and in what order. Its identity's <c>Purpose</c> becomes
+    /// <c>conductor</c>, which is what <see cref="BuildTechnology"/> writes onto the drawing layer
+    /// and what everything downstream asks. And the source layer's z-order is re-stamped, because
+    /// <see cref="BuildSourceLayers"/> ranked it as artwork (1000 + n) before the question was asked
+    /// and a plane that sorts below the silkscreen is a layer table nobody can read.
+    ///
+    /// <para><b>The POSITION is inserted rather than appended.</b> Answers are applied against the
+    /// ORDER AS OFFERED — the combo listed the conductors the cascade resolved, and two files
+    /// promoted in one dialog must land where the user put them relative to that list, not relative
+    /// to each other's insertions.</para>
+    ///
+    /// <para><b>Nothing happens on the path that asks nothing.</b> Every row defaults to artwork, so
+    /// a headless import, an import with no dialog, and an import nobody read behave exactly as they
+    /// did before this existed.</para>
+    /// </remarks>
+    private static void PromoteAnsweredCopper(
+        IReadOnlyList<LayerMappingRow> rows,
+        IReadOnlyDictionary<string, LayerKey> keyByFile,
+        List<GerberLayerIdentity> identities,
+        List<GerberLayerIdentity> allIdentities,
+        List<GerberLayerIdentity> copperTopToBottom,
+        List<LayerDef> sourceLayers,
+        IReadOnlyList<string> offeredOrder,
+        List<string> messages)
+    {
+        var promoted = new List<(int After, GerberLayerIdentity Identity)>();
+
+        foreach (var row in rows)
+        {
+            if (row.Stackup is not { AsCopper: true } answer) continue;
+
+            foreach (var identity in identities)
+            {
+                if (identity.Rung != GerberLayerRung.Unidentified) continue;
+                if (keyByFile[identity.FilePath] != row.Source) continue;
+                promoted.Add((Math.Clamp(answer.AfterIndex, -1, offeredOrder.Count - 1), identity));
+            }
+        }
+
+        if (promoted.Count == 0) return;
+
+        foreach (var (_, identity) in promoted)
+        {
+            var conductor = identity with { Purpose = GerberLayerCascade.ConductorPurpose };
+            int at = identities.IndexOf(identity);
+            if (at >= 0) identities[at] = conductor;
+            int all = allIdentities.IndexOf(identity);
+            if (all >= 0) allIdentities[all] = conductor;
+        }
+
+        // Rebuilt against the offered order, so "after Top Copper" means the same thing whether one
+        // file was promoted or three.
+        var original = new List<GerberLayerIdentity>(copperTopToBottom);
+        var rebuilt = new List<GerberLayerIdentity>(original.Count + promoted.Count);
+
+        void EmitPromotedAfter(int index)
+        {
+            foreach (var (after, identity) in promoted)
+                if (after == index)
+                    rebuilt.Add(identities.First(i =>
+                        string.Equals(i.FilePath, identity.FilePath, StringComparison.Ordinal)));
+        }
+
+        EmitPromotedAfter(LayerStackupChoice.AboveTheTop);
+        for (int i = 0; i < original.Count; i++)
+        {
+            rebuilt.Add(original[i]);
+            EmitPromotedAfter(i);
+        }
+
+        copperTopToBottom.Clear();
+        copperTopToBottom.AddRange(rebuilt);
+
+        // The z-order every copper layer sorts by, re-stamped from the NEW rank — see this method's
+        // own note. Purpose too: the source layer is what carries it into the shape reconciliation.
+        for (int i = 0; i < copperTopToBottom.Count; i++)
+        {
+            var key = keyByFile[copperTopToBottom[i].FilePath];
+            foreach (var layer in sourceLayers)
+            {
+                if (layer.Key != key) continue;
+                layer.ZOrder = i * 10;
+                layer.Purpose = GerberLayerCascade.ConductorPurpose;
+            }
+        }
+
+        messages.Add(
+            $"{promoted.Count} unclassified file(s) were answered as COPPER in the layer-mapping " +
+            "table and are conductors in this stackup: " +
+            string.Join(", ", promoted.Select(p => p.Identity.FileName)) +
+            $". The copper order, top to bottom, is now: " +
+            string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ".");
+    }
+
     private static int IndexOfFile(IReadOnlyList<GerberLayerIdentity> list, string filePath)
     {
         for (int i = 0; i < list.Count; i++)
             if (string.Equals(list[i].FilePath, filePath, StringComparison.Ordinal)) return i;
         return -1;
+    }
+
+    /// <summary>
+    /// R-rail27-1a — <b>every imported drawing layer that is NOT in the stackup, named, with the
+    /// count of shapes on it.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>The defect this closes was a silence, not a wrong answer.</b> Only conductors enter the
+    /// stackup and the copper order — that is <see cref="GerberLayerCascade"/>'s own rule and it is
+    /// right, because guessing a conductor from a name is the costly wrong guess. What was wrong is
+    /// that a file which was neither copper, nor mask, paste or legend, nor drill was reported by
+    /// NEITHER branch: a reported board's inner plane, named for the net it carries, became a
+    /// drawing layer with 328 shapes on it and no sentence anywhere said so. Every consequence then
+    /// appeared somewhere else — no reference to confirm in railRF, an EM run with a plane missing,
+    /// a DRC that priced nothing on it.
+    ///
+    /// <para><b>The two halves mean different things and are kept apart.</b> Mask, paste and legend
+    /// are a stated decision with its own paragraph above; anything else is a file nothing
+    /// identified, and that is the half worth reading. <b>The shape count is the actionable part</b>
+    /// — "unclassified" says nothing, <i>328 shapes</i> is what distinguishes a plane from a stray
+    /// drawing, and it is free because the import already holds the artwork.</para>
+    ///
+    /// <para><b>Said only when there is something to say</b>: a set in which every file classified
+    /// and nothing was left out raises no line at all, because a message that is always there is one
+    /// nobody reads.</para>
+    /// </remarks>
+    private static void ReportLayersLeftOutOfTheStackup(
+        IReadOnlyList<GerberLayerIdentity> allIdentities,
+        IReadOnlyList<GerberImportedShape> artwork,
+        IReadOnlyDictionary<string, LayerKey> finalKeyByFile,
+        IReadOnlyDictionary<LayerKey, string> nameByKey,
+        IReadOnlyList<LayerKey> copperKeys,
+        IReadOnlyList<string> maskNames,
+        List<string> messages)
+    {
+        var shapesOn = new Dictionary<LayerKey, int>();
+        foreach (var imported in artwork)
+            shapesOn[imported.Shape.Layer] = shapesOn.GetValueOrDefault(imported.Shape.Layer) + 1;
+
+        var inStackup = new HashSet<LayerKey>(copperKeys);
+
+        // A drill file's layer IS in the stackup — as a Via entry, which step 9 mints for every one
+        // of them. Leaving it out of this set would report every drill layer as unclassified.
+        foreach (var identity in allIdentities)
+            if (string.Equals(identity.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal))
+                inStackup.Add(finalKeyByFile[identity.FilePath]);
+
+        var unclassified = new List<string>();
+        var seen = new HashSet<LayerKey>();
+
+        foreach (var identity in allIdentities)
+        {
+            var key = finalKeyByFile[identity.FilePath];
+            if (inStackup.Contains(key) || IsMaskPasteOrLegend(identity) || !seen.Add(key)) continue;
+
+            string name = nameByKey.TryGetValue(key, out string? n) ? n : identity.LayerName;
+            int count = shapesOn.GetValueOrDefault(key);
+            unclassified.Add($"'{name}' ({count:N0} shape(s))");
+        }
+
+        if (maskNames.Count == 0 && unclassified.Count == 0) return;
+
+        var parts = new List<string>();
+        if (maskNames.Count > 0)
+            parts.Add(
+                $"Imported as artwork and not in the stackup: {string.Join(", ", maskNames)} " +
+                "(mask, paste and legend — see above).");
+        if (unclassified.Count > 0)
+            parts.Add(
+                $"NOT CLASSIFIED AT ALL: {string.Join(", ", unclassified)}. If any of these is " +
+                "copper it must be a conductor in the stackup, or nothing on it is priced, " +
+                "extracted or usable as a reference — say so in the layer-mapping table on the " +
+                "next import, or add it on the Technology editor's Stackup tab.");
+
+        messages.Add(string.Join(" ", parts));
     }
 
     /// <summary>

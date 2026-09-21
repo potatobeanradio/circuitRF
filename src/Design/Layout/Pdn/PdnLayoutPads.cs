@@ -159,6 +159,42 @@ public static class PdnLayoutPads
     }
 
     /// <summary>
+    /// R-rail27-3b — <b>which land pattern each placed part sits on</b>, by designator.
+    /// </summary>
+    /// <remarks>
+    /// <b>The board knows what the bill of materials would have said.</b> A discovered part row on a
+    /// board with no BOM and no part library shows nothing in the footprint column — and that is the
+    /// one column that would let somebody GROUP the rows they are about to assign a part number to.
+    /// Each placed instance names its land-pattern cell, and that name is the token
+    /// <c>FootprintTokens</c> already matches case codes out of.
+    ///
+    /// <para><b>The cell's NAME, not a resolution.</b> This is the last segment of the instance's
+    /// <c>CellRef</c> — no file is opened, no pins are resolved, and an unresolvable reference still
+    /// contributes its name, because the name is the whole answer here. <see cref="PadsOf"/> resolves
+    /// because it needs the pins; this does not.</para>
+    ///
+    /// <para><b>The ROOT's own placements</b>, exactly as <see cref="PadsOf"/> walks them (R-ab1-1a):
+    /// a land pattern nested three cells deep inside a module is that module's internal business.
+    /// A placement with no designator to draw contributes nothing, for R-ab1-1b's reason.</para>
+    /// </remarks>
+    public static IReadOnlyDictionary<string, string> FootprintsOf(LayoutView? view)
+    {
+        var byRefdes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (view is null) return byRefdes;
+
+        foreach (var inst in view.Instances)
+        {
+            if (inst.DisplayRefDes is not { Length: > 0 } refdes) continue;
+            if (inst.CellRef is not { Length: > 0 } cellRef) continue;
+
+            string name = cellRef.Split('/', '\\')[^1];
+            if (name.Length > 0) byRefdes[refdes] = name;
+        }
+
+        return byRefdes;
+    }
+
+    /// <summary>
     /// Every net point the artwork itself states — one per pad carrying a net, plus every
     /// <see cref="ViaShape"/> in the ROOT's own shapes that carries one.
     /// </summary>

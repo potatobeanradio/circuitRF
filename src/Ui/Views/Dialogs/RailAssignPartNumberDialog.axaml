@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.RailAssignPartNumberDialog"
+        Title="Assign Part Number"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock x:Name="PromptLabel" FontSize="12" TextWrapping="Wrap"/>
+
+            <!-- EDITABLE, because both answers are ordinary: a number the part library already
+                 carries (pick it, and the row resolves to a model straight away) and one nothing has
+                 seen yet (type it, and brief 24's editor is where C and f0 get entered). A picker
+                 alone would refuse the second, which is every row on a board with no bill of
+                 materials — the case this exists for. -->
+            <ComboBox x:Name="PartNumberBox"
+                      FontSize="12"
+                      IsEditable="True"
+                      MaxDropDownHeight="240"
+                      HorizontalAlignment="Stretch"/>
+
+            <TextBlock x:Name="LibraryNote" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+
+            <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                       Text="Only the part number is written on these rows. Capacitance, ESR and self-resonance stay the part library's — a model is entered once and used many times, which is why it lives in a file of its own."/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" Click="OnCancelClick"/>
+            <Button x:Name="OkButton" Content="Assign" Width="80" IsDefault="True" FontSize="12" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

@@ -84,11 +84,24 @@ public sealed record PdnRegion(
 /// <param name="IslandReport">The sentence — "this rail is one region" or "this rail is three
 /// regions". Carried into <see cref="PdnProvenance.IslandReport"/> and onto every export.</param>
 /// <param name="Diagnostics">Everything else worth saying.</param>
+/// <param name="OwnReturnRefusal">
+/// R-rail27-2 — <b>the rail is anchored on its own reference return's copper</b>, so there is
+/// nothing left for current to return through. Non-null means the extraction must REFUSE; null is
+/// every ordinary board.
+///
+/// <para><b>Why a refusal and not a note.</b> On the reported board a rail made by clicking a pour
+/// landed on the ground pour, and what came back was a solved RESULT: three notes saying the rail
+/// has copper on its own reference layer, one breakdown row of 526,314,394.9 squares of reference
+/// copper, and a drop of 0 mV at 0 %. It looks like an answer, and nothing on it says the rail is
+/// not a rail. The three notes it replaces were already printed and were read past — a result that
+/// exists is evidence that the tool understood the question.</para>
+/// </param>
 public sealed record PdnRailRegionSet(
     IReadOnlyList<PdnRegion> Power,
     IReadOnlyList<PdnRegion> Reference,
     string IslandReport,
-    IReadOnlyList<string> Diagnostics);
+    IReadOnlyList<string> Diagnostics,
+    string? OwnReturnRefusal = null);
 
 /// <summary>The galvanic region walk — <see cref="DrcConnectivity"/> joined to a net name.</summary>
 public static class PdnRailRegions
@@ -109,6 +122,17 @@ public static class PdnRailRegions
     /// <param name="extraRailSeeds">Coordinates that are on the rail whatever the netlist says —
     /// the source and load anchors, which is how a rail with no net name at all is still found
     /// (§2.2's assisted Gerber path).</param>
+    /// <param name="bareCoordinateSeeds">
+    /// R-rail27-2 — the subset of <paramref name="extraRailSeeds"/> that came from an anchor which is
+    /// <b>nothing but a coordinate</b>: no refdes, no pin. Those are the only anchors
+    /// <see cref="PdnRailRegionSet.OwnReturnRefusal"/> is asked about, and the distinction is the
+    /// whole of its safety. A refdes anchor NAMES A PART and a rail net name names a net; either is
+    /// an independent statement about what this copper is, and a rail carrying one that also reaches
+    /// the reference layer is an ordinary multilayer board. A pour click has neither — the
+    /// coordinate is the only evidence there is, which is why it is the one route on which landing
+    /// on the return cannot be detected any other way, and it is the only route available on a
+    /// Gerber-only board.
+    /// </param>
     public static PdnRailRegionSet Walk(
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,
@@ -116,7 +140,8 @@ public static class PdnRailRegions
         string? railNet,
         LayerKey referenceLayer,
         string? referenceNet,
-        IReadOnlyList<(long X, long Y)> extraRailSeeds)
+        IReadOnlyList<(long X, long Y)> extraRailSeeds,
+        IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null)
     {
         var diagnostics = new List<string>();
         var pieces = DrcConnectivity.Extract(layerRegions, tech);
@@ -155,13 +180,110 @@ public static class PdnRailRegions
 
         string report = Describe("rail", power) + " " + Describe("reference", reference);
 
+        string? ownReturn = railNet is { Length: > 0 }
+            ? null   // see OwnReturnRefusalFor's own note: this is the POUR-PICK route's question
+            : OwnReturnRefusalFor(pieces, bareCoordinateSeeds ?? [], refNets, tech, referenceLayer, referenceNet);
+
         if (power.Count > 1)
             diagnostics.Add(
                 $"The rail's copper is {power.Count} galvanically separate regions. On imported " +
                 "artwork the copper stops at every pad, so this is ordinary and not an error — but " +
                 "nothing bridges them at DC until a series part says what does.");
 
-        return new PdnRailRegionSet(power, reference, report, diagnostics);
+        return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn);
+    }
+
+    /// <summary>
+    /// R-rail27-2 — the refusal for a rail anchored on the copper of its own reference return.
+    /// </summary>
+    /// <remarks>
+    /// <b>The predicate is GALVANIC AMBIGUITY, which is <see cref="ReferenceNetOn"/>'s own
+    /// discriminator and is exact.</b> A seed is on the reference only where EVERY piece of copper
+    /// covering it is ONE galvanically-joined net, and that net is one the reference resolved to.
+    /// That is what a click on a ground pour looks like: the pour, the plane under it and the stitch
+    /// between them are one piece, and there is nothing else at that coordinate.
+    ///
+    /// <para><b>Containment against the plane alone would refuse every real board.</b> A pad is a
+    /// coordinate and a reference plane is usually under all of them — <see cref="Walk"/> and
+    /// <see cref="ReferenceNetOn"/> both record that trap from their own side. A click on the supply
+    /// pour of a board with a ground plane covers two pieces that are NOT joined, so it is ambiguous
+    /// and is not this.</para>
+    ///
+    /// <para><b>And it does not fire for a rail that merely reaches the reference LAYER.</b> A rail
+    /// with a via landing there — a mixed plane carrying a power pour, a barrel through an antipad —
+    /// resolves its seed to its own piece, not the plane's. That case is already reported by name as
+    /// a diagnostic in both extractors, and it must stay a diagnostic: it is the difference between
+    /// a refusal and a tool that refuses every real board.</para>
+    ///
+    /// <para><b>EVERY seed, or none.</b> A rail with one anchor on the return and others on real rail
+    /// copper is a document with one bad anchor, which is a different fault and not this one — so
+    /// the refusal is raised only where nothing the rail is anchored by landed anywhere else.</para>
+    ///
+    /// <para><b>AND ONLY WHERE NOTHING ELSE NAMES THE RAIL</b> — no net name, and an anchor that is
+    /// a bare coordinate. Both gates are <see cref="Walk"/>'s, and both are the same argument: a net
+    /// name or a refdes is an independent statement about what this copper is, and a rail carrying
+    /// one whose copper also reaches the reference layer is an ordinary multilayer board. A top
+    /// plane stitched to a bottom one is two plates and a via field, which is a legitimate thing to
+    /// price and is what several of this repository's own mesh fixtures are. The pour-click route
+    /// has no such statement, it is the only route available on a Gerber-only board, and it is how
+    /// the reported rail came to be its own return.</para>
+    ///
+    /// <para><b>Not a name check.</b> A board may legitimately have several returns, and which net
+    /// the reference is was MEASURED from the copper on the confirmed layer (R-rail19-1d). This is
+    /// region membership, like everything else in this series.</para>
+    /// </remarks>
+    private static string? OwnReturnRefusalFor(
+        IReadOnlyList<DrcNetPiece> pieces,
+        IReadOnlyList<(long X, long Y)> seeds,
+        HashSet<int> refNets,
+        Technology tech, LayerKey referenceLayer, string? referenceNet)
+    {
+        if (seeds.Count == 0 || refNets.Count == 0) return null;
+
+        var anchored = new HashSet<int>();
+        var under = new HashSet<int>();
+
+        foreach (var (x, y) in seeds)
+        {
+            under.Clear();
+            foreach (var piece in pieces)
+            {
+                if (!piece.Bounds.Contains(x, y)) continue;
+                if (Contains(piece.Paths, x, y)) under.Add(piece.Net);
+            }
+
+            if (under.Count == 0) continue;                              // on no copper at all
+
+            // Ambiguous, or unambiguously on copper the reference did not resolve to: this rail is
+            // anchored somewhere real and the question does not arise.
+            if (under.Count != 1 || !refNets.Contains(under.First())) return null;
+
+            anchored.Add(under.First());
+        }
+
+        if (anchored.Count == 0) return null;
+
+        // ── AND THE REFERENCE MUST HAVE NOTHING LEFT ────────────────────────────────────────────
+        //
+        // This is the half that keeps a real board out of the refusal. A rail whose own copper sits
+        // ON the reference layer — a mixed inner layer carrying a power pour, which is an ordinary
+        // board — resolves its seed to a piece that is legitimately in `refNets`, because with no
+        // reference NET named the reference is taken to be everything on its layer. What separates
+        // that from the reported board is whether the plane's own piece survives: there, it does and
+        // a return exists; on the reported board the rail's piece was the only thing on the layer,
+        // and the sentence below is then literally true.
+        if (!refNets.IsSubsetOf(anchored)) return null;
+
+        string what = referenceNet is { Length: > 0 } net
+            ? $"'{net}'"
+            : tech.Layers.FirstOrDefault(l => l.Key == referenceLayer)?.Name is { Length: > 0 } name
+                ? $"'{name}'"
+                : $"layer {referenceLayer.Layer}/{referenceLayer.Datatype}";
+
+        return
+            $"This rail is anchored on the copper of its own reference return ({what}), so there is " +
+            "nothing for current to return through. Pick the supply pour instead, or name a " +
+            "different reference layer.";
     }
 
     /// <summary>

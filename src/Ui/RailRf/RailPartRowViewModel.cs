@@ -52,13 +52,16 @@ public sealed class RailPartRowViewModel
     /// <param name="resolved">What <c>RailPartResolver</c> worked this part out to be — the element
     /// the sweep carries, with every number's provenance beside it (R-rail11-6). Null where the row
     /// was built with no library at all.</param>
+    /// <param name="boardFootprint">The land-pattern cell this part is PLACED on, where the artwork
+    /// states one — R-rail27-3b. Read only where the BOM and the library are both silent.</param>
     public RailPartRowViewModel(
         RailPart part,
         BomRow? bom,
         PartModelResolution? model,
         double? mountingInductanceHenries,
         string? position,
-        RailPartModel? resolved = null)
+        RailPartModel? resolved = null,
+        string? boardFootprint = null)
     {
         ArgumentNullException.ThrowIfNull(part);
 
@@ -66,6 +69,7 @@ public sealed class RailPartRowViewModel
         _bom = bom;
         _model = model;
         _resolved = resolved;
+        _boardFootprint = boardFootprint;
         Refdes = part.Refdes;
         MountingInductanceHenries = mountingInductanceHenries;
         Position = position;
@@ -75,6 +79,7 @@ public sealed class RailPartRowViewModel
     private readonly BomRow? _bom;
     private readonly PartModelResolution? _model;
     private readonly RailPartModel? _resolved;
+    private readonly string? _boardFootprint;
 
     /// <summary>The resolved model, or null where it did not resolve — so every numeric column below
     /// is <see cref="UnresolvedText"/> in one place rather than thirteen.</summary>
@@ -192,10 +197,25 @@ public sealed class RailPartRowViewModel
     /// <summary>The footprint token this part carries: the bill of materials' own column first,
     /// then what the description parse recognised, then the part library's. Null where none of the
     /// three states one.</summary>
+    /// <summary>
+    /// What the footprint column is ABOUT — the BOM's, then the library's, then <b>the board's own
+    /// land pattern</b> (R-rail27-3b).
+    /// </summary>
+    /// <remarks>
+    /// <b>The artwork is LAST and only speaks where the other two are silent.</b> The BOM is the
+    /// board's own statement of what is fitted and stays the statement of record; the library row is
+    /// what the part number resolves to. The artwork is circuitRF's own reading of the placement, and
+    /// it is here because a board with neither of the first two — a Gerber set with hand-placed
+    /// footprints, which is the whole scenario brief 27 is measured against — showed nothing at all
+    /// in the one column that lets a designer group the rows they are about to assign a part number
+    /// to. Nothing is derived from it (R-rail26-3 stands: an 0402 land is a case size, not a
+    /// capacitance) and no document field is added — the artwork is still there on the next open.
+    /// </remarks>
     private string? FootprintToken =>
         _bom?.Footprint is { Length: > 0 } f ? f
         : _bom?.Parsed.CaseCode is { Length: > 0 } c ? c
         : (Model?.Row ?? _model?.Row)?.Footprint is { Length: > 0 } lib ? lib
+        : _boardFootprint is { Length: > 0 } art ? art
         : null;
 
     private FootprintTokenMatch? _footprintMatch;
@@ -224,8 +244,21 @@ public sealed class RailPartRowViewModel
     /// <summary>Both readings for an ambiguous token, the full §1e spelling for a matched one, and
     /// the case list for an unmatched one — <c>FootprintTokens</c> owns every sentence.</summary>
     public string FootprintTooltip => FootprintToken is null
-        ? "Neither the bill of materials nor the part library states a footprint for this part."
-        : Footprint.Report;
+        ? "Neither the bill of materials nor the part library states a footprint for this part, and "
+          + "the board places no land pattern for it."
+        : Footprint.Report
+          + (IsFootprintFromTheBoard
+                ? "\n\nRead off the board: this part is placed on the land-pattern cell of this name. "
+                + "Neither the bill of materials nor the part library states a footprint for it."
+                : "");
+
+    /// <summary>True where the column is reading the ARTWORK rather than a stated footprint —
+    /// R-rail27-3b. The tooltip says so, because a token nobody typed is worth marking.</summary>
+    public bool IsFootprintFromTheBoard =>
+        _bom?.Footprint is not { Length: > 0 }
+        && _bom?.Parsed.CaseCode is not { Length: > 0 }
+        && (Model?.Row ?? _model?.Row)?.Footprint is not { Length: > 0 }
+        && _boardFootprint is { Length: > 0 };
 
     /// <summary>
     /// Library row / attached file, and which won.
