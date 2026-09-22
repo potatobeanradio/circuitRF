@@ -59,7 +59,7 @@ public sealed class RailRfFieldReport4Tests : IDisposable
     private static readonly LayerKey Via = new(9, 0);
 
     private static long Um(double v) => (long)Math.Round(v * Dbu);
-    private static long Mm(double v) => (long)Math.Round(v * 1e3 * Dbu);
+    internal static long Mm(double v) => (long)Math.Round(v * 1e3 * Dbu);
 
     // Off-centre on purpose: a half turn about the footprint's OWN origin would move these lands off
     // their copper, and only a turn about the lands' midpoint puts each where the other was.
@@ -310,7 +310,7 @@ public sealed class RailRfFieldReport4Tests : IDisposable
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A railRF window opened on the fixture's <c>.clay</c>, with the copper read inline.</summary>
-    private static RailRfViewModel OpenWindowOn(Fx fx, bool rail = false)
+    internal static RailRfViewModel OpenWindowOn(Fx fx, bool rail = false)
     {
         var doc = new RailDocument
         {
@@ -329,7 +329,7 @@ public sealed class RailRfFieldReport4Tests : IDisposable
     }
 
 
-    private sealed record Fx(LayoutView View, string Clay, Technology Tech, string CellDir);
+    internal sealed record Fx(LayoutView View, string Clay, Technology Tech, string CellDir);
 
     private static IReadOnlyList<LayoutShape> Flat(Fx fx) => RailArtwork.FlattenedShapes(fx.View, fx.Clay, fx.Tech);
 
@@ -344,7 +344,7 @@ public sealed class RailRfFieldReport4Tests : IDisposable
     /// <paramref name="turnThird"/>, is turned 180° about its own origin — so its pin 2 lands on the
     /// supply strip and its pin 1 on the ground strip.
     /// </summary>
-    private Fx ThreeCapBoard(
+    internal Fx ThreeCapBoard(
         SymbolKind kind, bool turnThird, int parts = 3, bool thirdOnly = false, bool groundPlane = false)
     {
         var tech = TechFixture();

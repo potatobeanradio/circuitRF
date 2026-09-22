@@ -491,10 +491,22 @@ public sealed partial class RailRfViewModel
     /// measured on is the one outcome this window's whole status strip exists to prevent. Cleared
     /// rather than recomputed: a re-solve per edit would run the extraction on a board mid-edit, and
     /// <c>Run</c> is one keystroke away.</para>
+    ///
+    /// <para><b>And the PADS follow, a moment later</b> (brief 28). An edit that can move a pin
+    /// schedules one debounced re-read off the UI thread — see <c>RailRfViewModel.PadRead.cs</c> for
+    /// which <paramref name="change"/> kinds count and why a shape edit does not.</para>
     /// </remarks>
-    public void NotifyArtworkChanged()
+    /// <param name="change">What the layout said changed; null is <see cref="LayoutChangeInfo.Full"/>,
+    /// as it is on <see cref="LayoutView.NotifyChanged"/>.</param>
+    public void NotifyArtworkChanged(LayoutChangeInfo? change = null)
     {
         if (Board is not { View: { } live } board) return;
+
+        // Decided BEFORE anything is cleared, because the invalidation below drops the selection
+        // and a pad refresh has to be able to hand it back (R-rail28-2). The first edit of a burst
+        // is the one that saw the user's pick.
+        bool pinsMayHaveMoved = PinsMayHaveMoved(live, change);
+        if (pinsMayHaveMoved && !IsReadingParts) _netAcrossPadRead = SelectedNet?.Name;
 
         // NOT `Board = board with { … }`. That would raise OnBoardChanged, which rebuilds the
         // LayoutEditorViewModel and with it the viewport — the very thing the paragraph above says
@@ -509,7 +521,10 @@ public sealed partial class RailRfViewModel
         // with nothing to say so. Re-flattened here, through the backing field for AdoptTechnology's
         // reason, and only where there is an instance to flatten: with none, FlattenedShapes hands
         // back `live.Shapes` itself and the identity above is preserved exactly.
-        if (live.Instances.Count > 0)
+        //
+        // AND WHERE THE LAST INSTANCE HAS JUST GONE: the held list is still the old flatten, with
+        // that part's lands in it, and only a re-flatten hands back the live list again.
+        if (live.Instances.Count > 0 || !ReferenceEquals(board.Shapes, live.Shapes))
         {
 #pragma warning disable MVVMTK0034
             _board = board with
@@ -536,6 +551,9 @@ public sealed partial class RailRfViewModel
         // they were looking at.
         RebuildBoardFootprints();
         RebuildParts();
+
+        // The pads, net points and turned-parts reading, once the burst settles.
+        if (pinsMayHaveMoved) SchedulePadRead();
 
         SyncBoardOverlayResult();
         RefreshRunGate();

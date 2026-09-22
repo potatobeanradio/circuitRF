@@ -1,5 +1,41 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 28 — the pads follow the layout (2026-09-22)
+
+An edit in the layout window next door now re-reads the board's pads, net points and turned-parts
+reading, debounced (300 ms) and off the UI thread (`RailRfViewModel.PadRead.cs`). Gate:
+`tests/Ui.Tests/RailRf/RailRfPadsFollowTheLayoutTests.cs`.
+
+- **`Full` cannot be keyed on.** Instance commands raise `InstancesOnly`, but `DeleteShapesCommand`,
+  every `SetShapeFieldCommand` without an explicit change, and the ruler commands raise `Full` for
+  shape-only work. So `InstancesOnly` always re-reads, the shape kinds never do, and `Full` compares a
+  text signature of the placements (the instance fields that place a land) and the root's stamped
+  nets against the last read. A shape kind that restamps a `Net` is caught by the same comparison.
+- **`InstancesOnly` is also the workspace's broadcast when a REFERENCED cell changes**
+  (`OnCellLayoutLiveViewChanged`, `RepaintOpenLayouts`). The lands moved and no instance field did,
+  so a signature cannot see it. That is why that kind never goes through the comparison.
+- **A shape-only edit does not re-read, on purpose, even though the turned-parts reading reads the
+  copper partition.** Rerouting a trace can in principle change which way round a part reads; the
+  brief keeps copper edits off the pad path, and Run re-extracts anyway.
+- **The job reads a COPY of the placements**: a new `LayoutView` holding cloned instances and the
+  root's shape references. The layout editor mutates the live lists during the job, and a move drag
+  mutates instances in place.
+- **The Turn button is held while a re-read is pending** (`CanTurnParts`). Otherwise a part turned by
+  hand and then Turned inside the settle window would be turned back.
+- **The selection survives a pad refresh where its net still exists.** `InvalidateNetWalks` clears it
+  on every edit, so the name is taken at the first edit of the burst and handed back after the list
+  is rebuilt.
+- **A board that loses its LAST instance kept the old flatten.** `NotifyArtworkChanged` re-flattened
+  only while `Instances.Count > 0`, so the deleted part's lands stayed in `Shapes`. It now also
+  re-flattens when the held list is not the live one. A board with no instances before or after never
+  runs the partition. The transition to none runs it once, because the pads it removes are real.
+- **Turn through an open layout session still costs a second read.** The synchronous refresh answers
+  first, then the session's own `InstancesOnly` arrives and schedules a debounced one. That is
+  harmless and off-thread, and it cannot be told apart from a cell-content broadcast.
+- **Still open:** the live-artwork SWAP (`AdoptLiveArtwork`) takes the session's model without
+  re-reading pads, so unsaved placement edits made before railRF opened stay unread until the next
+  edit.
+
 ## railRF field report 4 — the whole board outlined for one net (2026-09-22)
 
 Outside use on an imported two-sided Gerber board with an inner plane and a hand-drawn schematic. The
@@ -17,7 +53,7 @@ extraction half — the turned-parts reading, the layered seed, the likely-layer
   the layout window while railRF is open leaves the net points where the part was. Deliberately NOT
   changed here: the pad funnel builds a galvanic partition, and one per keystroke is the shape
   R-rail19-2c forbids. `RefreshBoardPads` re-reads them once, for a gesture that knows it moved parts
-  (Turn). A debounced refresh after layout edits is the open follow-up.
+  (Turn). Closed by brief 28, below.
 - **The schematic's ground `0` merges into the MEASURED return**, never before it — railRF does not
   know which net the return is until the reference is confirmed (R-rail19-1c). The row reads
   *the reference return — also the schematic's '0'*, and the merge is undone if the return moves.

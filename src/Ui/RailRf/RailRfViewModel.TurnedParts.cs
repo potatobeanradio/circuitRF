@@ -40,6 +40,10 @@ public sealed partial class RailRfViewModel
     /// note and the pane cannot come to say different things.</summary>
     public string PartsReadAsTurnedNote => TurnedParts.Sentence(PartsReadAsTurned);
 
+    /// <summary>Whether Turn may run: not while a re-read is pending, because the list may name a part
+    /// the user has just turned by hand, and turning it again would put it back the wrong way.</summary>
+    public bool CanTurnParts => HasPartsReadAsTurned && !IsReadingParts;
+
     /// <summary>The button's words — it names what it will do.</summary>
     public string TurnPartsButtonText => PartsReadAsTurned.Count == 1
         ? $"Turn {PartsReadAsTurned[0].Refdes} in the layout"
@@ -66,7 +70,7 @@ public sealed partial class RailRfViewModel
     /// Turns every part in <see cref="PartsReadAsTurned"/> 180° about its own two lands, so each land
     /// takes the other's place and the document states the pin order the copper already shows.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(HasPartsReadAsTurned))]
+    [RelayCommand(CanExecute = nameof(CanTurnParts))]
     private void TurnParts()
     {
         if (Board is not { View: { } view, ArtworkCellRef: { Length: > 0 } clay }) return;
@@ -134,22 +138,44 @@ public sealed partial class RailRfViewModel
         && string.Equals(a.SchematicId, b.SchematicId, StringComparison.Ordinal);
 
     /// <summary>
-    /// Re-reads the board's pads off the artwork this window holds — once, for a gesture that moved
-    /// parts.
+    /// Re-reads the board's pads off the artwork this window holds — now, on the UI thread, for a
+    /// gesture that moved parts and must show the answer before anything else can be pressed.
     /// </summary>
     /// <remarks>
-    /// <b>Deliberately not part of <see cref="NotifyArtworkChanged"/></b>, which runs on every edit
-    /// in the layout window next door: the pad funnel builds a galvanic partition, and one of those
-    /// per keystroke is the shape R-rail19-2c forbids. A gesture that knows it moved parts asks for
-    /// it here, and the board is written through its backing field for NotifyArtworkChanged's own
-    /// reason — assigning the property would rebuild the canvas and take the viewport away.
+    /// The Turn gesture's route. An edit made in the layout window next door takes the DEBOUNCED one
+    /// (<c>RailRfViewModel.PadRead.cs</c>), because one galvanic partition per keystroke is the shape
+    /// R-rail19-2c forbids; both end in the same <see cref="RefreshBoardPads(RailBoardInputs, IReadOnlyList{LayoutShape}, RailArtwork.RailPadResolution, PinSignature)"/>.
+    /// A read already settling is abandoned: this one answers the same question about a newer model.
     /// </remarks>
     internal void RefreshBoardPads()
     {
         if (Board is not { View: { } view } board) return;
+        CancelPadRead();
 
         var shapes = RailArtwork.FlattenedShapes(view, board.ArtworkCellRef, board.Technology);
+        PadReadsPerformed++;
         var resolved = RailArtwork.PadsFor(view, board.ArtworkCellRef, board.Technology, BoardNetlist, null, shapes);
+        RefreshBoardPads(board, shapes, resolved, PinSignature.Of(view));
+    }
+
+    /// <summary>
+    /// <b>What a pad refresh re-states — the ONE copy</b>, which both the Turn gesture and the
+    /// debounced read call. Two copies of this list is the <see cref="RebuildAvailableNets"/> scar
+    /// again: the one that forgets a line leaves a derived surface describing the old pads.
+    /// </summary>
+    /// <remarks>
+    /// The board is written through its backing field for <see cref="NotifyArtworkChanged"/>'s reason
+    /// — assigning the property would rebuild the canvas and take the viewport away.
+    /// </remarks>
+    private void RefreshBoardPads(
+        RailBoardInputs board, IReadOnlyList<LayoutShape> shapes, RailArtwork.RailPadResolution resolved,
+        PinSignature readFrom)
+    {
+        // R-rail28-2: the pick survives where its net does. The selection is cleared by every
+        // invalidation below (and, on the debounced path, by the edit that started it), so the name
+        // is taken first and handed back after the list is rebuilt.
+        string? keep = SelectedNet?.Name ?? _netAcrossPadRead;
+        _netAcrossPadRead = null;
 
 #pragma warning disable MVVMTK0034
         _board = board with
@@ -162,12 +188,18 @@ public sealed partial class RailRfViewModel
             TurnedParts = resolved.Turned,
         };
 #pragma warning restore MVVMTK0034
+        _padsReadFrom = readFrom;
 
+        // The results GO, and not out of caution: every one was solved from the net points just
+        // replaced, and a moved pin is a moved seed. On the debounced path NotifyArtworkChanged has
+        // already cleared them for the copper; this also covers a run started while the read settled,
+        // which was seeded from the pads this refresh replaces.
         ClearResults();
         InvalidateNetWalks();
         RebuildAvailableNets();
         RebuildBoardFootprints();
         RebuildParts();
+        if (keep is not null) SelectNet(keep);
         SyncBoardOverlayResult();
         RefreshRunGate();
         NotifyPartsReadAsTurned();

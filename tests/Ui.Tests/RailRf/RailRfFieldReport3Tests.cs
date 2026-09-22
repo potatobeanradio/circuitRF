@@ -169,6 +169,10 @@ public sealed class RailRfFieldReport3Tests
         // away from a user who is looking at it.
         vm.NotifyArtworkChanged();
 
+        // An added instance also schedules the debounced pad re-read (brief 28). Waited for HERE, so
+        // it cannot land on another thread while the assertions below read the parts table.
+        vm.PadRead?.GetAwaiter().GetResult();
+
         Assert.Contains(vm.AddablePlacedParts, o => string.Equals(o.Refdes, refdes, StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, vm.AddParts([refdes]));
 

@@ -65,6 +65,12 @@ public sealed partial class RailRfViewModel
         // Every measurement taken off the OLD copper — the flatten, the per-net walks, the measured
         // reference return — is now about a board that is not loaded (R-rail19-2c).
         InvalidateNetWalks();
+
+        // And a pad read settling is of the old board. The new one's pads were read with it, so they
+        // are what the next edit is compared against.
+        CancelPadRead();
+        _netAcrossPadRead = null;
+        _padsReadFrom = PinSignature.Of(value?.View);
         OnPropertyChanged(nameof(HasBoard));
         AnnounceImpedanceMap();
 
@@ -1004,6 +1010,11 @@ public sealed partial class RailRfViewModel
             // coming, and a user who does not thinks the reference combo did nothing.
             if (IsReadingCopper)
                 parts.Add("reading the board's copper — the layer flatten and the connectivity walk");
+
+            // Brief 28: the layout moved a part, and until this clears the pads, the pick list and
+            // the turned-parts note are still of the placements before it.
+            if (IsReadingParts)
+                parts.Add("re-reading the board's parts — the layout has moved them");
 
             if (IsSolving)
             {

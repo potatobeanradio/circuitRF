@@ -237,7 +237,7 @@ public partial class RailRfWindow
     /// about a board that no longer exists.
     /// </remarks>
     private void OnArtworkChanged(object? sender, LayoutChangeInfo e) =>
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => Vm?.NotifyArtworkChanged());
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Vm?.NotifyArtworkChanged(e));
 
     /// <summary>
     /// The board's display unit changed in the other window — <b>while this one is on screen</b>.
