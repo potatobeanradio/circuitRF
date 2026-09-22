@@ -250,6 +250,39 @@ public class PlanarCurrentDensityTests
         return best;
     }
 
+    /// <summary>
+    /// A grown calibration lead is meshed and solved but is not artwork, so the map marks the cells
+    /// outside the DRAWN metal for the display to leave out — and marks nothing when nothing grew.
+    /// </summary>
+    [Fact]
+    public void MarkDrawnMetal_FlagsOnlyTheCellsOutsideTheDrawnArtwork()
+    {
+        var meshed = PlanarLineFixtures.Fr4Line(4e-3, FHz);
+        var mesh   = PlanarLineFixtures.MeshAndPorts(meshed, PlanarLineFixtures.Coarse).Mesh;
+        var map    = PlanarCurrentDensity.Compute(mesh, new Vec<Complex>(mesh.Bases.Count), 1, FHz);
+
+        Assert.Same(map, PlanarCurrentDensity.MarkDrawnMetal(map, mesh, meshed, meshed));
+
+        // The drawn line stops 1 mm short of the meshed one's left end, as a grown lead would.
+        var (x0, y0, x1, y1) = meshed.Bounds();
+        double cut = x0 + 1e-3;
+        var drawn = meshed with
+        {
+            Layers = [meshed.Layers[0] with { Polygons = [new PlanarPolygon(
+                [new EmPoint(cut, y0), new EmPoint(x1, y0), new EmPoint(x1, y1), new EmPoint(cut, y1)])] }],
+        };
+
+        var marked = PlanarCurrentDensity.MarkDrawnMetal(map, mesh, drawn, meshed);
+        int hidden = 0;
+        for (int c = 0; c < mesh.Cells.Count; c++)
+        {
+            bool outside = mesh.Cells[c].CentroidX < cut;
+            Assert.Equal(!outside, marked.IsOnDrawnMetal(c));
+            if (outside) hidden++;
+        }
+        Assert.InRange(hidden, 1, mesh.Cells.Count - 1);
+    }
+
     [Fact]
     public void ASolutionFromADifferentMesh_IsRefusedRatherThanReducedSilently()
     {

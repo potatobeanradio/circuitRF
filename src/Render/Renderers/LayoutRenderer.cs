@@ -917,7 +917,9 @@ public static partial class LayoutRenderer
                     // is one argument, not a second overlay.
                     var density = opts.PlanarCurrentDensity;
                     DrawPlanarMeshOverlay(canvas, planarMesh, theme, ps, view.DbuPerMicron, scaleUm,
-                                          density is null ? null : density.Normalised);
+                                          density is null ? null : density.Normalised,
+                                          density is null || ShowCurrentDensityOutsideDrawnMetal
+                                              ? null : density.IsOnDrawnMetal);
 
                     // §10.6 — the de-embedding reference planes, over the engine's own coordinates.
                     if (opts.PlanarPorts is { Count: > 0 } refPlanes)

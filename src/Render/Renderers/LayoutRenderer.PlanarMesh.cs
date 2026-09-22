@@ -42,6 +42,15 @@ public static partial class LayoutRenderer
     private const double PlanarMeshMinCellDevicePixels = 2.5;
 
     /// <summary>
+    /// Whether the current-density heat map also colours the cells the solver GREW beyond the drawn
+    /// metal — the uniform calibration feed <c>PlanarFeedExtension</c> adds at a port whose own feed
+    /// is too short. Off: the lead is not artwork, and colouring it paints current density outside
+    /// the metal the user drew. The currents on it are still computed, still in the map and still in
+    /// its normalisation; set this true to see them.
+    /// </summary>
+    internal static readonly bool ShowCurrentDensityOutsideDrawnMetal = false;
+
+    /// <summary>
     /// Draws the surface mesh over the artwork, in world coordinates.
     ///
     /// <para><b>L8e provision, and the whole of it.</b> §10.5's current-density heat map is a
@@ -54,7 +63,8 @@ public static partial class LayoutRenderer
     internal static void DrawPlanarMeshOverlay(
         SKCanvas canvas, PlanarMeshReport report, LayoutRenderTheme theme,
         PathSpace ps, double dbuPerMicron, double scaleUm,
-        Func<int, double>? cellScalar = null)
+        Func<int, double>? cellScalar = null,
+        Func<int, bool>? cellShown = null)
     {
         var cells = report.Mesh.Cells;
         if (cells.Count == 0) return;
@@ -125,6 +135,7 @@ public static partial class LayoutRenderer
         using var fill = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
         for (int i = 0; i < cells.Count; i++)
         {
+            if (cellShown is not null && !cellShown(i)) continue;
             var c = cells[i];
             fill.Color = HeatColor(cellScalar(i), theme);
             if (c.Region is null)

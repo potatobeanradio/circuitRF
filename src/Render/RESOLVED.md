@@ -3693,3 +3693,16 @@ board-fit zoom they would bury the artwork they name. Under the floor it is drop
 in none — it is derived per frame. Without an explicit ask, a fit crops the designators off the top
 row of a board. It asks `FootprintLabel` rather than estimating, so the page is framed on the same
 measurement the renderer draws with.
+
+## Current-density heat map painted outside the drawn metal (2026-09-22)
+
+After an EM run the heat map coloured cells beyond the artwork. Those cells are the uniform
+calibration lead `PlanarFeedExtension` grows at a port whose drawn feed is shorter than the
+calibration's run: the kernel meshes and solves the EXTENDED problem, and the map is indexed by that
+mesh, so the lead's cells were coloured like any other. The currents on the lead are real and stay
+in the map (and in its normalisation); only the display leaves them out now.
+`PlanarCurrentDensity.MarkDrawnMetal` records a per-cell `OnDrawnMetal` mask (metal centroid inside a
+drawn polygon on the cell's level; null when nothing grew), and
+`LayoutRenderer.ShowCurrentDensityOutsideDrawnMetal` (default false) is the switch that decides
+whether the heat-map pass skips the unmasked cells. The plain mesh overlay still draws the lead's
+cell boundaries.

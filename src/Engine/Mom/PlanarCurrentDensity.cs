@@ -87,6 +87,23 @@ public sealed record PlanarCurrentDensityMap(
     /// <summary>Whether this mesh carried any vertical (via) current at all.</summary>
     public bool HasVerticalCurrent => MaxViaCurrent > 0;
 
+    /// <summary>
+    /// Per cell, in L8b's cell order: whether the cell lies on metal the user DREW. Null means every
+    /// cell does, which is the case whenever the solver grew nothing.
+    ///
+    /// <para>The mesh a solve runs on is the EXTENDED problem — <see cref="PlanarFeedExtension"/>
+    /// grows a uniform calibration lead outward from a port's drawn end face, and the currents on it
+    /// are real and are part of the answer. But the lead is not artwork, so a display of the map can
+    /// use this to leave it out. Nothing numeric reads it: <see cref="Magnitude"/>,
+    /// <see cref="MaxMagnitude"/> and the normalisation still cover every meshed cell.</para>
+    /// </summary>
+    public IReadOnlyList<bool>? OnDrawnMetal { get; init; }
+
+    /// <summary>Whether cell <paramref name="cell"/> lies on drawn metal; true when no mask was
+    /// recorded. See <see cref="OnDrawnMetal"/>.</summary>
+    public bool IsOnDrawnMetal(int cell)
+        => OnDrawnMetal is not { } m || cell < 0 || cell >= m.Count || m[cell];
+
     /// <summary>The via current in cell <paramref name="cell"/>, amperes; zero where there is no via.</summary>
     public Complex ViaCurrent(int cell)
         => Iz is { } iz && cell >= 0 && cell < iz.Count ? iz[cell] : Complex.Zero;
@@ -213,6 +230,34 @@ public static class PlanarCurrentDensity
 
         return new PlanarCurrentDensityMap(mag, jx, jy, max, drivenPortNumber, fHz,
                                            anyVia ? iz : null, maxVia);
+    }
+
+    /// <summary>
+    /// Records <see cref="PlanarCurrentDensityMap.OnDrawnMetal"/>: a cell is on drawn metal when its
+    /// metal centroid lies inside a polygon of <paramref name="drawn"/> on the cell's own level.
+    /// Returns <paramref name="map"/> unchanged when <paramref name="drawn"/> is the problem that was
+    /// meshed, since then nothing was grown.
+    /// </summary>
+    /// <param name="drawn">The artwork as drawn, before any feed was grown. Its levels are the
+    /// meshed problem's levels, index for index — the feed extension replaces polygons, never
+    /// levels.</param>
+    public static PlanarCurrentDensityMap MarkDrawnMetal(
+        PlanarCurrentDensityMap map, PlanarMesh mesh, PlanarProblem drawn, PlanarProblem meshed)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(drawn);
+        if (ReferenceEquals(drawn.Layers, meshed.Layers)) return map;
+
+        var mask = new bool[mesh.Cells.Count];
+        for (int c = 0; c < mask.Length; c++)
+        {
+            var cell = mesh.Cells[c];
+            if (cell.LayerIndex < 0 || cell.LayerIndex >= drawn.Layers.Count) { mask[c] = true; continue; }
+            foreach (var poly in drawn.Layers[cell.LayerIndex].Polygons)
+                if (poly.Contains(cell.CentroidX, cell.CentroidY)) { mask[c] = true; break; }
+        }
+        return map with { OnDrawnMetal = mask };
     }
 
     /// <summary>

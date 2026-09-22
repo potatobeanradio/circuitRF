@@ -474,8 +474,10 @@ public sealed class PlanarKernel
         PlanarCurrentDensityMap? density = null;
         if (sweep.CapturedCurrents is { } currents)
         {
-            density = PlanarCurrentDensity.Compute(
-                report.Mesh, currents, sweep.CapturedPortNumber, sweep.CapturedFrequencyHz);
+            density = PlanarCurrentDensity.MarkDrawnMetal(
+                PlanarCurrentDensity.Compute(
+                    report.Mesh, currents, sweep.CapturedPortNumber, sweep.CapturedFrequencyHz),
+                report.Mesh, problem, meshed);
             notes.Add(density.ScaleCaption);
         }
 
@@ -537,7 +539,9 @@ public sealed class PlanarKernel
             meshed, fHz, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
 
         var solution = context.SolveAt(kernel, fHz);
-        return PlanarCurrentDensity.Compute(report.Mesh, solution.Currents[j], drivenPortNumber, fHz);
+        return PlanarCurrentDensity.MarkDrawnMetal(
+            PlanarCurrentDensity.Compute(report.Mesh, solution.Currents[j], drivenPortNumber, fHz),
+            report.Mesh, problem, meshed);
     }
 
     /// <summary>
