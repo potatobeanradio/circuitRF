@@ -96,7 +96,7 @@ public sealed class AssemblyTests : IDisposable
     {
         var result = LvsRun.Run(Assembly("Clean"));
 
-        Assert.Empty(result.Findings.Where(f => f.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(result.Findings, f => f.Severity == DiagnosticSeverity.Error);
         Assert.Equal(2, result.Hierarchy.Extractions);       // the board, and the die once
         Assert.Equal(2, result.Layout.Devices.Count);         // the die placement, and the wBond
 
@@ -315,7 +315,7 @@ public sealed class AssemblyTests : IDisposable
 
         // The package's reference is what the wBond's REF terminal found: net "0".
         Assert.Equal("0", result.Layout.Nets[NetOf(result, "W1", "REF")].Label);
-        Assert.Empty(result.Findings.Where(f => f.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(result.Findings, f => f.Severity == DiagnosticSeverity.Error);
     }
 
     // ══ 11 — an array with no wires ═════════════════════════════════════════════════════════════
@@ -370,8 +370,7 @@ public sealed class AssemblyTests : IDisposable
         int device = result.Layout.Devices.ToList().FindIndex(d => d.Path == "W1");
         return Assert.Single(
             result.Geometry.PadsOfDevice(device)
-                  .Select(i => result.Geometry.Pads[i])
-                  .Where(p => p.Y == D(foot.Y) && p.X == D(foot.X))).X;
+                  .Select(i => result.Geometry.Pads[i]), p => p.Y == D(foot.Y) && p.X == D(foot.X)).X;
     }
 
     /// <summary>The line that says which wires were read — R-lvs13-5b.</summary>

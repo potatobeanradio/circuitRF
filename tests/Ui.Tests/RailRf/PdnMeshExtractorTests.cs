@@ -720,7 +720,7 @@ public sealed class PdnMeshExtractorTests
         double shorted = Measure(0.0, out _);
 
         var origin = Assert.Single(
-            withFet.Origins.Where(o => o.Kind == PdnOriginKind.SeriesElement));
+            withFet.Origins, o => o.Kind == PdnOriginKind.SeriesElement);
         Assert.Equal("Q1", origin.Refdes);
         Assert.Equal(0.350, origin.ResistanceOhms!.Value, 12);
 
@@ -926,7 +926,7 @@ public sealed class PdnMeshExtractorTests
         Assert.Null(result.Refusal);
 
         var pdn = result.Netlist!;
-        var cap = Assert.Single(pdn.Netlist.Components.Where(c => c.Model is CapacitorModel));
+        var cap = Assert.Single(pdn.Netlist.Components, c => c.Model is CapacitorModel);
         Assert.Equal(1e-6, cap.Parameters["C"].AsReal(), 12);
 
         // The rail's copper and the reference's are separate in the RESISTIVE network: the capacitor

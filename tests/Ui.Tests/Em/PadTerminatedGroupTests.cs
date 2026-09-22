@@ -77,7 +77,7 @@ public sealed class PadTerminatedGroupTests(ITestOutputHelper output) : IDisposa
         Assert.NotNull(r.SnpPath);
 
         // ── Both planes are a group, and the pad end is one of them ────────────────────────────
-        var groups = r.Notes.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
+        var groups = r.Notes!.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
         foreach (string g in groups) output.WriteLine(g);
         Assert.Equal(2, groups.Count);
         Assert.Contains(groups, g => g.Contains("Ports 1, 3", StringComparison.Ordinal));
@@ -87,16 +87,16 @@ public sealed class PadTerminatedGroupTests(ITestOutputHelper output) : IDisposa
         //
         // Asserted by NAME rather than by "the run is green": a group that formed for some other
         // reason would satisfy the two lines above and this one would still catch it.
-        Assert.DoesNotContain(r.Notes,
+        Assert.DoesNotContain(r.Notes!,
             n => n.Contains("would form one calibration group", StringComparison.Ordinal));
 
         // ── Both members grew a lead, and both got it back off ─────────────────────────────────
-        string grown = Assert.Single(r.Notes, n => n.Contains("UNIFORM LEAD", StringComparison.Ordinal));
+        string grown = Assert.Single(r.Notes!, n => n.Contains("UNIFORM LEAD", StringComparison.Ordinal));
         output.WriteLine(grown);
         Assert.Contains("port 2", grown, StringComparison.Ordinal);
         Assert.Contains("port 4", grown, StringComparison.Ordinal);
 
-        string peeled = Assert.Single(r.Notes, n => n.Contains("peeled back off", StringComparison.Ordinal));
+        string peeled = Assert.Single(r.Notes!, n => n.Contains("peeled back off", StringComparison.Ordinal));
         output.WriteLine(peeled);
         Assert.Contains("port 2", peeled, StringComparison.Ordinal);
         Assert.Contains("port 4", peeled, StringComparison.Ordinal);
@@ -105,7 +105,7 @@ public sealed class PadTerminatedGroupTests(ITestOutputHelper output) : IDisposa
         //
         // Which is the whole difference between this and the override a user had to reach for: the
         // file carries no caveat because none is owed.
-        Assert.DoesNotContain(r.Notes, n => n.Contains("OUTSIDE the condition", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes!, n => n.Contains("OUTSIDE the condition", StringComparison.Ordinal));
         Assert.Empty(EmSnpProvenance.ReadCaveats(r.SnpPath!));
     }
 }

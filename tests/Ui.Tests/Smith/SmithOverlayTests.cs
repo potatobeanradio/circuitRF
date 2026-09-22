@@ -453,7 +453,7 @@ public sealed class SmithOverlayTests
         Assert.Contains("no-such-part.s2p", vm.StripNotice);
 
         // The one that DID resolve is on the chart; the other is not.
-        var drawn = Assert.Single(vm.ChartPlot.Traces.Where(t => !t.ExcludeFromAxisLabels));
+        var drawn = Assert.Single(vm.ChartPlot.Traces, t => !t.ExcludeFromAxisLabels);
         Assert.Equal("part.s1p", drawn.SourceRef);
 
         vm.HarvestOverlays();

@@ -123,7 +123,7 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
         Assert.Equal(fromAppTitled.Length, fromCli.Length);
         Assert.True(fromAppTitled.AsSpan().SequenceEqual(fromCli),
                     "the pdf the verb wrote differs from the one the application's export writes");
-        Assert.NotEqual(fromApp.Length, 0);
+        Assert.NotEmpty(fromApp);
     }
 
 

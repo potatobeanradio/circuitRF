@@ -93,7 +93,7 @@ public sealed class WsProbeGlobalCliTests(ITestOutputHelper output) : IDisposabl
 
         // The document's flattened lists: YP(1..8) and FET2(1..16), labelled with its names.
         Assert.Equal(["freq", "k"], Names(inProcess["yp2"]));
-        Assert.Equal(["y11", "y12", "y21", "y22", "yf11", "yf12", "yf21", "yf22"], inProcess["yp2"].Axes[1].Labels);
+        Assert.Equal(["y11", "y12", "y21", "y22", "yf11", "yf12", "yf21", "yf22"], inProcess["yp2"].Axes[1].Labels!);
         Assert.Equal(["freq", "k"], Names(inProcess["bc"]));
         Assert.Equal(16, inProcess["bc"].Axes[1].Length);
         Assert.Equal("LGM", inProcess["bc"].Axes[1].Labels![15]);
@@ -105,18 +105,18 @@ public sealed class WsProbeGlobalCliTests(ITestOutputHelper output) : IDisposabl
             var c = inProcess[name];
             Assert.Equal(["freq", "i", "j"], Names(c));
             Assert.Equal([nf, 1, 1], c.Axes.Select(a => a.Length).ToArray());
-            Assert.Equal(["PS"], c.Axes[1].Labels);
+            Assert.Equal(["PS"], c.Axes[1].Labels!);
             Assert.Equal([1.0], c.Axes[1].Values);
         }
         // wsp_ymatrix over every probe: 3×3 labelled PS, PL, P3 — the idx order; over a list, that order.
-        Assert.Equal(["PS", "PL", "P3"], inProcess["ym"].Axes[1].Labels);
+        Assert.Equal(["PS", "PL", "P3"], inProcess["ym"].Axes[1].Labels!);
         Assert.Equal([1.0, 2.0, 3.0], inProcess["ym"].Axes[2].Values);
-        Assert.Equal(["PS", "P3"], inProcess["ym2"].Axes[1].Labels);
+        Assert.Equal(["PS", "P3"], inProcess["ym2"].Axes[1].Labels!);
         Assert.Equal([1.0, 3.0], inProcess["ym2"].Axes[1].Values);
 
         // Ohtomo: {freq, node}, node labelled by probe.
         Assert.Equal(["freq", "node"], Names(inProcess["oht"]));
-        Assert.Equal(["PL"], inProcess["oht"].Axes[1].Labels);
+        Assert.Equal(["PL"], inProcess["oht"].Axes[1].Labels!);
 
         // wsp_ndf of a run against itself is 1 everywhere.
         Assert.Equal(["freq"], Names(inProcess["ndf"]));
@@ -130,12 +130,12 @@ public sealed class WsProbeGlobalCliTests(ITestOutputHelper output) : IDisposabl
         var lp = inProcess["lp"];
         Assert.Equal(["gS", "gL", "freq", "env"], Names(lp));
         Assert.Equal([6, 4, nf, 2], lp.Axes.Select(a => a.Length).ToArray());
-        Assert.Equal(["H0env", "Y0env"], lp.Axes[3].Labels);
+        Assert.Equal(["H0env", "Y0env"], lp.Axes[3].Labels!);
         Assert.Equal("0.5@60", lp.Axes[0].Labels![1]);
         Assert.Equal("0.3@-90", lp.Axes[1].Labels![3]);
         var lpl = inProcess["lpl"];
         Assert.Equal([1, 8, nf, 2], lpl.Axes.Select(a => a.Length).ToArray());
-        Assert.Equal(["unpulled"], lpl.Axes[0].Labels);
+        Assert.Equal(["unpulled"], lpl.Axes[0].Labels!);
         Assert.Equal("0.6@15", lpl.Axes[1].Labels![0]);
 
         var lpu = inProcess["lpu"];

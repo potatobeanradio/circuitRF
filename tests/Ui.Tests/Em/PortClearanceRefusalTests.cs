@@ -186,11 +186,11 @@ public sealed class PortClearanceRefusalTests(ITestOutputHelper output) : IDispo
         var (setup, source) = Fixture("separated-pair");
         var r = EmRunService.Run(setup, source, _results);
 
-        foreach (string n in r.Notes) output.WriteLine("note: " + n);
+        foreach (string n in r.Notes!) output.WriteLine("note: " + n);
         Assert.Equal(EmRunStatus.Ok, r.Status);
         Assert.NotNull(r.SnpPath);
         Assert.Empty(EmSnpProvenance.ReadCaveats(r.SnpPath!));
-        Assert.DoesNotContain(r.Notes, n => n.Contains("OUTSIDE", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes!, n => n.Contains("OUTSIDE", StringComparison.Ordinal));
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -209,7 +209,7 @@ public sealed class PortClearanceRefusalTests(ITestOutputHelper output) : IDispo
         Assert.NotNull(r.SnpPath);
 
         // The run says it…
-        Assert.Contains(r.Notes, n => n.Contains("OUTSIDE", StringComparison.Ordinal));
+        Assert.Contains(r.Notes!, n => n.Contains("OUTSIDE", StringComparison.Ordinal));
 
         // …and so does the artefact, which is the half that survives being opened a month later
         // somewhere else. Read back off the file, not asserted on what was written.
@@ -263,7 +263,7 @@ public sealed class PortClearanceRefusalTests(ITestOutputHelper output) : IDispo
         Assert.Contains("OPEN", warn, StringComparison.Ordinal);
 
         // It ran de-embedded, so there is no "De-embedding is OFF" note anywhere in the run…
-        Assert.DoesNotContain(r.Notes, n => n.Contains("De-embedding is OFF", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes!, n => n.Contains("De-embedding is OFF", StringComparison.Ordinal));
 
         // …and saving the setup drops the field, which is what stops it coming back.
         Assert.DoesNotContain("\"Deembed\"", EmSetupPersistence.Serialize(legacy), StringComparison.Ordinal);

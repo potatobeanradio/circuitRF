@@ -138,9 +138,6 @@
                         <Button Click="OnZoomOut" ToolTip.Tip="Zoom Out" Padding="6,3">
                             <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
                         </Button>
-                        <Button Click="OnZoom1To1" ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3">
-                            <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
-                        </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

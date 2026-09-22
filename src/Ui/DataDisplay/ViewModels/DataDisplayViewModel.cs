@@ -1280,7 +1280,6 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     public void ZoomIn()  => ZoomLevel = Math.Min(ZoomMax, ZoomLevel * ZoomStep);
     public void ZoomOut() => ZoomLevel = Math.Max(ZoomMin, ZoomLevel / ZoomStep);
-    public void ActualSize() => ZoomLevel = 1.0;
 
     public void ZoomAtPoint(double screenX, double screenY, double factor)
     {

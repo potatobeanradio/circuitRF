@@ -162,7 +162,7 @@ public sealed class SmithChartTests
 
         // The load points: one trace for the design frequency and one for the other rows. The table
         // has three rows and the design frequency is one of them, so the secondary trace holds two.
-        Assert.Equal(1, byName["load (design f)"].Points.Count);
+        Assert.Single(byName["load (design f)"].Points);
         Assert.Equal(2, byName["load"].Points.Count);
 
         // One generator glyph per generator-table row.

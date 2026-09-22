@@ -500,29 +500,29 @@ public sealed class RailBoardViewTests(ITestOutputHelper output)
         });
 
     /// <summary>
-    /// The four toolbar buttons, which are what a user who has never read a tooltip finds.
+    /// The three toolbar buttons, which are what a user who has never read a tooltip finds.
     /// </summary>
     /// <remarks>
-    /// Driven as the CANVAS methods the window's four handlers call, because that is the whole of
-    /// what those handlers do — see <c>RailRfWindow.OnBoardZoomToFit</c> and its three siblings, and
-    /// <c>LayoutEditorView.OnZoomToFit</c> and its three. The XAML's own half (that there are four of
-    /// them, in that order, with those tooltips) is asserted separately below.
+    /// Driven as the CANVAS methods the window's three handlers call, because that is the whole of
+    /// what those handlers do — see <c>RailRfWindow.OnBoardZoomToFit</c> and its two siblings, and
+    /// <c>LayoutEditorView.OnZoomToFit</c> and its two. The XAML's own half (that there are three of
+    /// them, in that order, with those tooltips) is asserted separately below. Zoom 1:1 was a fourth
+    /// until the owner withdrew it from every toolbar (2026-09-22).
     /// </remarks>
     [Fact]
-    public void TheFourToolbarButtons_DoTheSameThing_Identically()
+    public void TheThreeToolbarButtons_DoTheSameThing_Identically()
     {
         SameViewport(c => { Wheel(c, 40, 40, +1); c.ZoomToFit(); });
         SameViewport(c => c.ZoomOut());
-        SameViewport(c => c.Zoom1To1());
         SameViewport(c => { c.ArmZoomBox(); Assert.True(c.ZoomBoxArmed); c.DisarmZoomBox(); });
     }
 
     /// <summary>
-    /// <b>The same four buttons, in the same order and with the same tooltips</b> (§11.6) — read out
+    /// <b>The same three buttons, in the same order and with the same tooltips</b> (§11.6) — read out
     /// of both windows' AXAML, because that is where the decision lives.
     /// </summary>
     [Fact]
-    public void TheBoardPanelCarriesTheLayoutEditorsOwnFourButtons()
+    public void TheBoardPanelCarriesTheLayoutEditorsOwnThreeButtons()
     {
         string rail = Read("src", "Ui", "Views", "RailRf", "RailRfWindow.axaml");
         string editor = Read("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml");
@@ -532,7 +532,6 @@ public sealed class RailBoardViewTests(ITestOutputHelper output)
             "Zoom to Fit  (F)",
             "Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl+ +/- steps)",
             "Zoom Out",
-            "Zoom 1:1 (1 px per display-unit tick)",
         ];
 
         int at = -1;
@@ -1141,7 +1140,7 @@ public sealed class RailBoardViewTests(ITestOutputHelper output)
 
         // Before any override the ticked row is "use the measured classification" — an override the
         // user cannot see is one they cannot clear.
-        Assert.Same(items[2], Assert.Single(items.Where(m => m.IsChecked)));
+        Assert.Same(items[2], Assert.Single(items, m => m.IsChecked));
 
         items[0].Command!.Execute(null);                       // "treat as a trace"
         Assert.Equal(region.Region, asked);
@@ -1404,11 +1403,11 @@ public sealed class RailBoardViewTests(ITestOutputHelper output)
     {
         var overlay = WithResult(out _);
 
-        var source = Assert.Single(overlay.Scene.Markers.Where(m => m.Kind == RailMarkerKind.Source));
+        var source = Assert.Single(overlay.Scene.Markers, m => m.Kind == RailMarkerKind.Source);
         Assert.Equal(Mm(0.2), source.X);
         Assert.Equal(Mm(0.2), source.Y);
 
-        var load = Assert.Single(overlay.Scene.Markers.Where(m => m.Kind == RailMarkerKind.Load));
+        var load = Assert.Single(overlay.Scene.Markers, m => m.Kind == RailMarkerKind.Load);
         Assert.Equal(Mm(29.8), load.X);
         Assert.Equal(Mm(0.2), load.Y);
     }

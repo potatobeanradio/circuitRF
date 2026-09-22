@@ -5,8 +5,8 @@ using CircuitRF.Ui.Layout;
 namespace CircuitRF.Ui.Tests;
 
 // ── L1 fix gates: default viewport is drawable + a degenerate drag never yields nothing ────
-// docs/sonnet-briefs/brief-L1-fix-clear-and-default-zoom.md Bug 2. Zoom is device pixels per DBU
-// (LayoutCanvas.Zoom1To1); a fixed default of 1.0 meant 1 screen pixel per NANOMETRE at the default
+// docs/sonnet-briefs/brief-L1-fix-clear-and-default-zoom.md Bug 2. Zoom is device pixels per DBU;
+// a fixed default of 1.0 meant 1 screen pixel per NANOMETRE at the default
 // 1000 DBU/µm, which made a PCB technology's 1-mil (25,400 DBU) snap step wider than the entire
 // visible canvas — every pointer position snapped to the same grid cell and no shape could ever be
 // drawn. World-coordinate unit tests (feeding OnPointerPressed/Moved/Released world DBU directly)

@@ -154,7 +154,7 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
 
         foreach (string id in new[] { Mlin, Spiral, OSpiral })
         {
-            var metal = Assert.Single(kit.DeclaredParameters(id)!.Where(p => p.Name == "Metal"));
+            var metal = Assert.Single(kit.DeclaredParameters(id)!, p => p.Name == "Metal");
             Assert.Equal(["Metal1", "Metal2"], metal.Choices!.Select(c => c.AsText()));
             Assert.Equal("Metal1", metal.Default!.Value.AsText());
         }
@@ -187,7 +187,7 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
         Assert.True(kit.TryGetGenerator(Spiral, out var coil));
         var coilShapes = coil(kit.DeclaredDefaults(Spiral)!, tech, PCellLayerSelection.Default).Shapes;
         Assert.Contains(coilShapes, s => s.Layer == Metal1);
-        Assert.Single(coilShapes.Where(s => s.Layer == Metal2));
+        Assert.Single(coilShapes, s => s.Layer == Metal2);
     }
 
     /// <summary>
@@ -1056,8 +1056,8 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
 
         // MIM-11 — the mask ENCLOSES the top plate, which is the rule that matters: a plate whose
         // edge ran past the nitride would sit straight on the bottom plate and short it.
-        var mask = Assert.Single(result.Shapes.OfType<RectShape>().Where(r => r.Layer == nitride));
-        var plate = Assert.Single(result.Shapes.OfType<RectShape>().Where(r => r.Layer == mimMetal));
+        var mask = Assert.Single(result.Shapes.OfType<RectShape>(), r => r.Layer == nitride);
+        var plate = Assert.Single(result.Shapes.OfType<RectShape>(), r => r.Layer == mimMetal);
         Assert.True(Math.Min(mask.X1, mask.X2) <= Math.Min(plate.X1, plate.X2));
         Assert.True(Math.Max(mask.X1, mask.X2) >= Math.Max(plate.X1, plate.X2));
         Assert.True(Math.Min(mask.Y1, mask.Y2) <= Math.Min(plate.Y1, plate.Y2));
@@ -1165,7 +1165,7 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(series.Shapes, sh => sh.Layer == backsideVia);
 
         var shunt = Generate("Shunt");
-        var hole = Assert.Single(shunt.Shapes.OfType<RectShape>().Where(r => r.Layer == backsideVia));
+        var hole = Assert.Single(shunt.Shapes.OfType<RectShape>(), r => r.Layer == backsideVia);
 
         // The via spans Metal1 to the backside, so it has to sit on Metal1 — and inside it, because
         // a drilled hole with no pad round it is an open circuit that draws.
@@ -1246,7 +1246,7 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
             => generate(p, tech, PCellLayerSelection.Default);
 
         var result = Generate(parameters);
-        var top = Assert.Single(result.Shapes.OfType<RectShape>().Where(r => r.Layer == mimMetal));
+        var top = Assert.Single(result.Shapes.OfType<RectShape>(), r => r.Layer == mimMetal);
         long w = PCellUnits.MetresToDbu(parameters["W"].AsReal(), Dbu);
         long l = PCellUnits.MetresToDbu(parameters["L"].AsReal(), Dbu);
         Assert.Equal(l, Math.Abs(top.X2 - top.X1));
@@ -1448,12 +1448,12 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
             new CcellFile { NumPorts = 1 }, IconPath: null);
         PdkKitRegistry.SetKit(root, "k", [imported]);
 
-        Assert.Equal(1, PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Spiral), root)!.Symbol.Pins.Count);
+        Assert.Single(PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Spiral), root)!.Symbol.Pins);
         Assert.Equal(2, PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Mlin),   root)!.Symbol.Pins.Count);
 
         // …and a later re-reading of the kit's scripts does not take the imported part back off.
         PdkKitRegistry.SetPCellParts(root, "k", [spiral, mlin]);
-        Assert.Equal(1, PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Spiral), root)!.Symbol.Pins.Count);
+        Assert.Single(PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Spiral), root)!.Symbol.Pins);
         Assert.Equal(2, PdkKitRegistry.Find(PdkKitRegistry.RefFor("k", Mlin),   root)!.Symbol.Pins.Count);
 
         PdkKitRegistry.ResetAllForTests();

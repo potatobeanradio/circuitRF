@@ -961,10 +961,6 @@ public partial class WBondEditorView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
         ProfileView.ZoomOut, HostedLayoutView.ZoomCanvasOut);
 
-    private void OnZoom1To1(object? sender, RoutedEventArgs e) => ForEachVisibleCanvas(
-        () => ProfileView.Zoom1To1(_bound?.Editor.DisplayUnit ?? WBondUnit.Mil),
-        HostedLayoutView.ZoomCanvas1To1);
-
     private void ForEachVisibleCanvas(Action profile, Action layout)
     {
         if (_bound?.ProfileVisible != false) profile();

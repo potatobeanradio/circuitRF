@@ -671,7 +671,7 @@ public class PortReturnConductorTests(ITestOutputHelper output) : IDisposable
         vm.ActiveTool = LayoutEditorViewModel.Tool.Port;
         vm.OnPointerPressed(0, Mm(YSignal), default, 1, 40, 1e-3, 0);
 
-        var port = Assert.Single(view.Shapes.OfType<LabelShape>().Where(l => l.IsPort));
+        var port = Assert.Single(view.Shapes.OfType<LabelShape>(), l => l.IsPort);
         Assert.Null(port.PortReference);
         Assert.Null(port.PortReturn);
     }

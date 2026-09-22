@@ -119,7 +119,7 @@ public sealed class LvsCliVerbTests(ITestOutputHelper output) : IDisposable
 
         var ids = Findings(Payload(LastDocument))
             .Where(f => f.GetProperty("severity").GetString() != "info")
-            .Select(f => f.GetProperty("id").GetString())
+            .Select(f => f.GetProperty("id").GetString()!)
             .Order(StringComparer.Ordinal)
             .ToArray();
 
@@ -449,7 +449,7 @@ public sealed class LvsCliVerbTests(ITestOutputHelper output) : IDisposable
             Assert.DoesNotContain(call, code, StringComparison.Ordinal);
 
         // And the one call that IS here is exactly one. Two would be two sets of defaults.
-        Assert.Equal(1, Regex.Matches(code, @"LvsRun\.Run\(").Count);
+        Assert.Single(Regex.Matches(code, @"LvsRun\.Run\("));
     }
 
     // ══ gate 14 — serve answers `lvs` with the same payload as --json ═══════════════════════════

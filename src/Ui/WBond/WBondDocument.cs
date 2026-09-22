@@ -357,7 +357,7 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
     /// field, reused rather than reimplemented — and both are formatted in the layout's
     /// <c>DisplayUnit</c>, which defaults to microns. So a document set to <c>mil</c> offered a snap
     /// ladder in µm right beside a Unit box saying mil. Mirroring the unit is what makes the metadata
-    /// bar internally consistent, and it carries the layout's cursor readout, extent and Zoom 1:1 with
+    /// bar internally consistent, and it carries the layout's cursor readout and extent with
     /// it, which is the same answer for the same reason.</para>
     ///
     /// <para>§6.5's "independent of the <c>.ctech</c> display unit" is untouched by this: that rule is

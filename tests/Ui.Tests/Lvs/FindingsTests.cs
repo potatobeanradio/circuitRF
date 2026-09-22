@@ -169,7 +169,7 @@ public sealed class FindingsTests
         Assert.DoesNotContain(result.Findings, f => f.Id == "lvs.net.open");
 
         // And it is the only thing wrong: unstitched copper is not an error about the comparison.
-        Assert.Empty(result.Findings.Where(f => f.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(result.Findings, f => f.Severity == DiagnosticSeverity.Error);
     }
 
     // ══ 6, 8, 11 — order, markers and counts, on the six-fault board ════════════════════════════

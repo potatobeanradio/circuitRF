@@ -158,7 +158,7 @@ public sealed class MarkerGlyphTests
     {
         var offered = PlotInspectorViewModel.SymbolModes;
 
-        Assert.Single(offered.Where(m => m.IsOff));
+        Assert.Single(offered, m => m.IsOff);
         Assert.Equal(All, offered.Where(m => !m.IsOff).Select(m => m.Shape).ToArray());
         Assert.Equal(All, PlotInspectorViewModel.AllMarkerTypes.Select(m => m.Value).ToArray());
 

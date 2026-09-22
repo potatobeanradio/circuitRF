@@ -657,7 +657,7 @@ public class RailReaderTests
 
         // The half that matters: what the descriptions actually yielded, which is the number that
         // says whether R-rail2-5's parse is worth anything on real text.
-        Assert.NotEmpty(bom.Rows.Where(r => r.Parsed.Any));
+        Assert.Contains(bom.Rows, r => r.Parsed.Any);
     }
 
     [FixtureFact(ReferenceDir + "/library.crlib", HowToObtain)]

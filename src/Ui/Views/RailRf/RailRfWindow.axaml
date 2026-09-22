@@ -1337,10 +1337,6 @@
                                     ToolTip.Tip="Zoom Out" Padding="6,3">
                                 <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="14" Height="14"/>
                             </Button>
-                            <Button Name="BoardZoom1To1Btn" Click="OnBoardZoom1To1"
-                                    ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3">
-                                <mi:MaterialIcon Kind="Magnify" Width="14" Height="14"/>
-                            </Button>
                             <!-- The stackup this board is priced against, in its own editor (owner,
                                  2026-09-19). It is beside the zoom buttons because the question that
                                  sends a user there is usually about the PICTURE — a layer that should

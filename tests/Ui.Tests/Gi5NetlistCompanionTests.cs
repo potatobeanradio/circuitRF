@@ -304,7 +304,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         Write(np, "board.ipc", Netlist(1,
             Record("", (Counts(2), Counts(2)), drill: 300, plated: false)));
 
-        var entry = Assert.Single(TechOf(Import(np, "np")).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var entry = Assert.Single(TechOf(Import(np, "np")).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(entry.Plated);
         Assert.Null(entry.Fill);                       // a fill model means nothing for a hole
         Assert.Null(entry.WallThicknessDbu);           // nor does a plating thickness
@@ -315,7 +315,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         Write(p, "board.ipc", Netlist(1,
             Record("", (Counts(2), Counts(2)), drill: 300, plated: true)));
 
-        var plated = Assert.Single(TechOf(Import(p, "p")).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var plated = Assert.Single(TechOf(Import(p, "p")).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.True(plated.Plated);
         Assert.Equal(ViaFillKind.Plated, plated.Fill);
     }
@@ -341,7 +341,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         Assert.Contains("T1 (listing: non-plated, netlist: plated)", all, StringComparison.Ordinal);
 
         // Unstated means plated, which is what the entry had before either companion spoke.
-        var entry = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var entry = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.Null(entry.Plated);
     }
 
@@ -359,7 +359,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         var result = Import(dir, "file_wins");
 
         Assert.Contains("The drill file was preferred", All(result), StringComparison.Ordinal);
-        var entry = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var entry = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(entry.Plated);
     }
 
@@ -395,7 +395,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         Assert.Contains("Layer spans found: 2-3", all, StringComparison.Ordinal);
 
         // ONE via entry, which is one per drill file — the number this import already minted.
-        var via = Assert.Single(tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
         var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
         Assert.Equal(4, conductors.Count);
         Assert.Equal(conductors[1].Name, via.SpanFromLayer);
@@ -512,7 +512,7 @@ public class Gi5NetlistCompanionTests : IDisposable
 
         var result = Import(dir, "one_net_pour");
 
-        Assert.Single(Cell(result).Shapes.Where(s => s.Net == "GND"));
+        Assert.Single(Cell(result).Shapes, s => s.Net == "GND");
         Assert.DoesNotContain("more than one net", All(result), StringComparison.Ordinal);
     }
 
@@ -544,8 +544,8 @@ public class Gi5NetlistCompanionTests : IDisposable
         var shapes = Cell(result).Shapes;
 
         Assert.Contains("COMPOSITED", All(result), StringComparison.Ordinal);
-        Assert.Single(shapes.Where(s => s.Net == "GND"));
-        Assert.Single(shapes.Where(s => s.Net == "VCC"));
+        Assert.Single(shapes, s => s.Net == "GND");
+        Assert.Single(shapes, s => s.Net == "VCC");
         Assert.DoesNotContain("more than one net", All(result), StringComparison.Ordinal);
     }
 
@@ -616,7 +616,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         string all = All(result);
 
         Assert.Contains("No cross-check against the artwork was possible", all, StringComparison.Ordinal);
-        var entry = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var entry = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(entry.Plated);
     }
 
@@ -853,8 +853,7 @@ public class Gi5NetlistCompanionTests : IDisposable
             Record("VCC", (Counts(2), Counts(2)), drill: 300, access: 0),
             Record("GND", (Counts(5), Counts(5)), component: "R1", pin: "1", drill: 300, access: 0)));
 
-        string line = Assert.Single(Import(dir, "summary").Messages
-            .Where(m => m.StartsWith("Board netlist:", StringComparison.Ordinal)));
+        string line = Assert.Single(Import(dir, "summary").Messages, m => m.StartsWith("Board netlist:", StringComparison.Ordinal));
 
         foreach (string fragment in new[]
                  {

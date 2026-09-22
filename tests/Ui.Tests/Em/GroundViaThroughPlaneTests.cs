@@ -364,8 +364,7 @@ public class GroundViaThroughPlaneTests(ITestOutputHelper output)
         var r = Extract(shapes);
         Assert.True(r.Ok, r.Refusal);
 
-        string note = Assert.Single(r.Notes.Where(
-            n => n.Contains("on the far side of the plane", StringComparison.Ordinal)));
+        string note = Assert.Single(r.Notes, n => n.Contains("on the far side of the plane", StringComparison.Ordinal));
         _out.WriteLine(note);
 
         Assert.Contains("'Bottom Copper'", note, StringComparison.Ordinal);
@@ -406,8 +405,7 @@ public class GroundViaThroughPlaneTests(ITestOutputHelper output)
         // EM-SEV R-emsev-1: the CLASS, not a prefix in the prose. Narrowed to the via warning
         // because this board legitimately carries a SECOND one — the artwork it puts on 'Bottom
         // Copper' is not in the analysis levels, which R-emsev-1 also classes as a warning now.
-        string warn = Assert.Single(r.Warnings.Where(
-            w => w.Contains("via(s) join", StringComparison.Ordinal)));
+        string warn = Assert.Single(r.Warnings, w => w.Contains("via(s) join", StringComparison.Ordinal));
         _out.WriteLine(warn);
 
         Assert.Contains("1 via(s) join", warn, StringComparison.Ordinal);

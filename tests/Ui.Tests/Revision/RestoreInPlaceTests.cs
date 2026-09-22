@@ -199,7 +199,7 @@ public class RestoreInPlaceTests
         Assert.Equal(4, Regex.Matches(source, @"await ReloadChangedDocuments\(").Count);
 
         // And the full reopen is reached from exactly one place: the fallback inside it.
-        Assert.Equal(1, Regex.Matches(source, @"await ReloadWorkspaceAfterFilesChangedUnderneath\(\)").Count);
+        Assert.Single(Regex.Matches(source, @"await ReloadWorkspaceAfterFilesChangedUnderneath\(\)"));
 
         var body = Between(source, "private async Task ReloadChangedDocuments(", "private void RestoreTabPosition(");
 
@@ -249,7 +249,7 @@ public class RestoreInPlaceTests
         // WhileAsync, not While: the callers block on the next line, and a cursor assigned with no
         // dispatcher turn after it is one the platform has had no moment to draw.
         Assert.Equal(2, Regex.Matches(revision, @"await Views\.BusyCursorScope\.WhileAsync\(").Count);
-        Assert.Equal(1, Regex.Matches(vm,       @"await Views\.BusyCursorScope\.WhileAsync\(").Count);
+        Assert.Single(Regex.Matches(vm,       @"await Views\.BusyCursorScope\.WhileAsync\("));
 
         string scope = StripComments(ReadSource("src/Ui/Views/BusyCursorScope.cs"));
         Assert.Contains("StandardCursorType.Wait", scope, StringComparison.Ordinal);

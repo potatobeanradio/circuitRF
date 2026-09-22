@@ -151,19 +151,19 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Zoom 1:1 -->
-                <Button Click="OnZoomToPage"
-                        ToolTip.Tip="Reset to 1:1 zoom"
-                        Padding="6,3">
-                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
-                </Button>
-
                 <!-- Zoom Box -->
                 <Button x:Name="ZoomBoxToolBtn"
                         Click="OnZoomBoxTool"
                         ToolTip.Tip="Zoom Box  (Z)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Zoom Out — the layout editor's third zoom button, in the same place. -->
+                <Button Click="OnZoomOut"
+                        ToolTip.Tip="Zoom Out"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Separator -->

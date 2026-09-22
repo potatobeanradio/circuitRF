@@ -124,7 +124,7 @@ public sealed class WsProbeDerivedMetricsCliTests(ITestOutputHelper output) : ID
         // GainDEFs: four NAMED numbers per frequency is a labelled axis and nothing else.
         var g = inProcess["gains"];
         Assert.Equal(["freq", "gaindef"], g.Axes.Select(a => a.Name).ToArray());
-        Assert.Equal(["GT_dB", "GP_dB", "GA_dB", "Gmax_dB"], g.Axes[1].Labels);
+        Assert.Equal(["GT_dB", "GP_dB", "GA_dB", "Gmax_dB"], g.Axes[1].Labels!);
 
         // The Kurokawa search returns a LIST of frequencies — empty here, because this network is
         // stable, and empty is the honest spelling of that (the document returns a zero, E.12).

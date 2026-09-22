@@ -374,7 +374,7 @@ public class Gi2StackupSkeletonTests : IDisposable
     {
         var tech = TechOf(Import(SixLayerSet(), "skeleton_via"));
 
-        var via = Assert.Single(tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.Equal("Top Copper", via.SpanFromLayer);
         Assert.Equal("Bottom Copper", via.SpanToLayer);
 

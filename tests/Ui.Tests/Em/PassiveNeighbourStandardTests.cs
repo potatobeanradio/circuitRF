@@ -77,17 +77,17 @@ public sealed class PassiveNeighbourStandardTests(ITestOutputHelper output) : ID
         var (setup, source) = Fixture("coupled-pair-passive");
         var r = EmRunService.Run(OnePoint(setup), source, _results);
 
-        foreach (string n in r.Notes) output.WriteLine("note: " + n);
+        foreach (string n in r.Notes!) output.WriteLine("note: " + n);
         Assert.Equal(EmRunStatus.Ok, r.Status);
         Assert.NotNull(r.SnpPath);
 
         // It was a REFUSAL before, so the decision has to be visible: the widening says so, and the
         // clearance margin that used to be the breach now reads clear.
-        Assert.Contains(r.Notes, n => n.Contains("neighbouring conductor(s) beside the feed",
+        Assert.Contains(r.Notes!, n => n.Contains("neighbouring conductor(s) beside the feed",
                                                  StringComparison.Ordinal));
-        Assert.Contains(r.Notes, n => n.Contains("246 µm away", StringComparison.Ordinal)
+        Assert.Contains(r.Notes!, n => n.Contains("246 µm away", StringComparison.Ordinal)
                                    || n.Contains("243 µm away", StringComparison.Ordinal));
-        Assert.DoesNotContain(r.Notes, n => n.Contains("OUTSIDE the condition", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes!, n => n.Contains("OUTSIDE the condition", StringComparison.Ordinal));
 
         // Nothing was published outside the calibration's validity, so the file declares nothing.
         Assert.Empty(EmSnpProvenance.ReadCaveats(r.SnpPath!));
@@ -156,7 +156,7 @@ public sealed class PassiveNeighbourStandardTests(ITestOutputHelper output) : ID
         sw.Stop();
 
         Assert.Equal(EmRunStatus.Ok, r.Status);
-        string cost = Assert.Single(r.Notes, n => n.Contains("De-embedding costs", StringComparison.Ordinal));
+        string cost = Assert.Single(r.Notes!, n => n.Contains("De-embedding costs", StringComparison.Ordinal));
         output.WriteLine(cost);
         output.WriteLine($"7-point sweep: {sw.Elapsed.TotalSeconds:F1} s");
         Assert.Contains("× the DUT's unknowns", cost, StringComparison.Ordinal);

@@ -90,8 +90,7 @@ public sealed class SmithRoundFiveTests
         Assert.Equal(b.Components.Count, a.Components.Count);
         foreach (var expected in b.Components)
         {
-            var actual = Assert.Single(a.Components.Where(
-                c => string.Equals(c.InstanceName, expected.InstanceName, StringComparison.Ordinal)));
+            var actual = Assert.Single(a.Components, c => string.Equals(c.InstanceName, expected.InstanceName, StringComparison.Ordinal));
             Assert.Equal(expected.X, actual.X, 6);
             Assert.Equal(expected.Y, actual.Y, 6);
         }
@@ -417,7 +416,7 @@ public sealed class SmithRoundFiveTests
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private static Trace TraceFor(SmithChartViewModel vm, int elementIndex)
-        => Assert.Single(vm.ChartTraceKeys.Where(k => k.ElementIndex == elementIndex)).Trace;
+        => Assert.Single(vm.ChartTraceKeys, k => k.ElementIndex == elementIndex).Trace;
 
     /// <inheritdoc cref="HarmonicaOwnWindowTests"/>
     private static string MethodBody(string source, string signature)

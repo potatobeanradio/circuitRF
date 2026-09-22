@@ -385,7 +385,7 @@ public partial class SchematicView : UserControl
     // ── Zoom buttons ──────────────────────────────────────────────────────────
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e) => SchematicCanvasCtrl.ZoomToFit();
-    private void OnZoomToPage(object? sender, RoutedEventArgs e) => SchematicCanvasCtrl.ZoomToPage();
+    private void OnZoomOut(object? sender, RoutedEventArgs e)   => SchematicCanvasCtrl.ZoomOut();
 
     // ── Tool buttons ──────────────────────────────────────────────────────────
 

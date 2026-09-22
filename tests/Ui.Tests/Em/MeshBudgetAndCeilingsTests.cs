@@ -32,7 +32,7 @@ using CircuitRF.Ui.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.Em;
 
-public class MeshBudgetAndCeilingsTests(Xunit.Abstractions.ITestOutputHelper output)
+public class MeshBudgetAndCeilingsTests
 {
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;
 

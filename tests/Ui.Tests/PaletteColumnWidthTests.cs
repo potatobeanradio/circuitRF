@@ -57,7 +57,7 @@ public sealed class PaletteColumnWidthTests
                          .Select(double.Parse).ToArray();
         Assert.Equal(4, margin.Length);
 
-        Assert.Equal(width + margin[0] + margin[2], PaletteColumnWidth.GlyphSlotWidth);
+        Assert.Equal(PaletteColumnWidth.GlyphSlotWidth, width + margin[0] + margin[2]);
     }
 
     /// <summary>

@@ -371,7 +371,6 @@ public partial class LayoutEditorView : UserControl
     public void ZoomCanvasToFit() => LayoutCanvasCtrl.ZoomToFit();
     public void ZoomCanvasIn()    => LayoutCanvasCtrl.ZoomIn();
     public void ZoomCanvasOut()   => LayoutCanvasCtrl.ZoomOut();
-    public void ZoomCanvas1To1()  => LayoutCanvasCtrl.Zoom1To1();
 
     /// <summary>The magnifier, for a host toolbar that arms this canvas alongside one of its own —
     /// the wBond editor, whose one button arms both of its viewports.</summary>
@@ -1141,7 +1140,6 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.Focus();
     }
     private void OnZoomOut(object? sender, RoutedEventArgs e)   { LayoutCanvasCtrl.ZoomOut();    LayoutCanvasCtrl.Focus(); }
-    private void OnZoom1To1(object? sender, RoutedEventArgs e)  { LayoutCanvasCtrl.Zoom1To1();   LayoutCanvasCtrl.Focus(); }
 
     /// <summary>
     /// Every tool button hands the keyboard back to the canvas.

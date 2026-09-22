@@ -31,17 +31,8 @@
       "Kind": "button"
     },
     {
-      "Index": 4,
-      "Slot": 3,
-      "Id": "",
-      "Tooltip": "Zoom 1:1 (1 px per display-unit tick)",
-      "Icon": "Magnify",
-      "Command": null,
-      "Kind": "button"
-    },
-    {
       "Index": 0,
-      "Slot": 4,
+      "Slot": 3,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -49,8 +40,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 5,
-      "Slot": 5,
+      "Index": 4,
+      "Slot": 4,
       "Id": "SaveBtn",
       "Tooltip": "Save  (\u2318S / Ctrl\u002BS)",
       "Icon": "FloppyDisc",
@@ -58,8 +49,8 @@
       "Kind": "button"
     },
     {
-      "Index": 6,
-      "Slot": 6,
+      "Index": 5,
+      "Slot": 5,
       "Id": "SaveAsBtn",
       "Tooltip": "Save As\u2026",
       "Icon": "ContentSaveEdit",
@@ -68,7 +59,7 @@
     },
     {
       "Index": 0,
-      "Slot": 7,
+      "Slot": 6,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -76,8 +67,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 7,
-      "Slot": 8,
+      "Index": 6,
+      "Slot": 7,
       "Id": "ViewModeToggle",
       "Tooltip": "Showing: profile and layout  (V cycles)",
       "Icon": "ViewSplitHorizontal",
@@ -85,8 +76,8 @@
       "Kind": "button"
     },
     {
-      "Index": 8,
-      "Slot": 9,
+      "Index": 7,
+      "Slot": 8,
       "Id": "PanelToggle",
       "Tooltip": "Hide/Show Inductance panel  (I)",
       "Icon": "TableLarge",
@@ -94,8 +85,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 9,
-      "Slot": 10,
+      "Index": 8,
+      "Slot": 9,
       "Id": "RulerToggle",
       "Tooltip": "Hide/Show rulers on both views",
       "Icon": "Ruler",
@@ -103,8 +94,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 10,
-      "Slot": 11,
+      "Index": 9,
+      "Slot": 10,
       "Id": "CapacitanceToggle",
       "Tooltip": "Include capacitance to the reference plane in the reported inductance",
       "Icon": "CircleMultipleOutline",
@@ -113,7 +104,7 @@
     },
     {
       "Index": 0,
-      "Slot": 12,
+      "Slot": 11,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -121,8 +112,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 11,
-      "Slot": 13,
+      "Index": 10,
+      "Slot": 12,
       "Id": "",
       "Tooltip": "Select  (Esc)",
       "Icon": "CursorDefault",
@@ -130,8 +121,8 @@
       "Kind": "button"
     },
     {
-      "Index": 12,
-      "Slot": 14,
+      "Index": 11,
+      "Slot": 13,
       "Id": "",
       "Tooltip": "Draw wire (W) \u2014 click start, click end; Shift constrains",
       "Icon": "VectorPolyline",
@@ -139,8 +130,8 @@
       "Kind": "button"
     },
     {
-      "Index": 13,
-      "Slot": 15,
+      "Index": 12,
+      "Slot": 14,
       "Id": "",
       "Tooltip": "Rotate about end point (R) \u2014 grab near the end you want to move (Shift: 45\u00B0 steps)",
       "Icon": "RotateRight",
@@ -149,7 +140,7 @@
     },
     {
       "Index": 0,
-      "Slot": 16,
+      "Slot": 15,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -157,8 +148,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 14,
-      "Slot": 17,
+      "Index": 13,
+      "Slot": 16,
       "Id": "TrueDiameterToggle",
       "Tooltip": "Draw wires at their true diameter",
       "Icon": "text:\u00D8",
@@ -166,8 +157,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 15,
-      "Slot": 18,
+      "Index": 14,
+      "Slot": 17,
       "Id": "SnapToggle",
       "Tooltip": "Snap wire points \u2014 to layout geometry first, then to the grid",
       "Icon": "MagnetOn",
@@ -175,8 +166,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 16,
-      "Slot": 19,
+      "Index": 15,
+      "Slot": 18,
       "Id": "WireMarqueeToggle",
       "Tooltip": "Marquee selects wires (off: selects layout shapes)",
       "Icon": "SelectionDrag",
@@ -185,7 +176,7 @@
     },
     {
       "Index": 0,
-      "Slot": 20,
+      "Slot": 19,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -193,8 +184,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 17,
-      "Slot": 21,
+      "Index": 16,
+      "Slot": 20,
       "Id": "ReverseBtn",
       "Tooltip": "Reverse wire direction",
       "Icon": "SwapHorizontal",
@@ -202,8 +193,8 @@
       "Kind": "button"
     },
     {
-      "Index": 18,
-      "Slot": 22,
+      "Index": 17,
+      "Slot": 21,
       "Id": "StraightenBtn",
       "Tooltip": "Straighten",
       "Icon": "VectorLine",
@@ -211,8 +202,8 @@
       "Kind": "button"
     },
     {
-      "Index": 19,
-      "Slot": 23,
+      "Index": 18,
+      "Slot": 22,
       "Id": "TransformBtn",
       "Tooltip": "Transform Selection (T)\u2026",
       "Icon": "AxisArrow",
@@ -221,7 +212,7 @@
     },
     {
       "Index": 0,
-      "Slot": 24,
+      "Slot": 23,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -229,8 +220,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 20,
-      "Slot": 25,
+      "Index": 19,
+      "Slot": 24,
       "Id": "ExportDxfBtn",
       "Tooltip": "Export DXF\u2026",
       "Icon": "FileExportOutline",
@@ -238,8 +229,8 @@
       "Kind": "button"
     },
     {
-      "Index": 21,
-      "Slot": 26,
+      "Index": 20,
+      "Slot": 25,
       "Id": "ImportWiresBtn",
       "Tooltip": "Import Wires from DXF\u2026",
       "Icon": "FileImportOutline",
@@ -247,8 +238,8 @@
       "Kind": "button"
     },
     {
-      "Index": 22,
-      "Slot": 27,
+      "Index": 21,
+      "Slot": 26,
       "Id": "ExportTouchstoneBtn",
       "Tooltip": "Export Touchstone (.sNp)\u2026 \u2014 publish this wirebond\u0027s network. Choose the reference impedance, the frequency sweep and the port basis in the dialog.",
       "Icon": "SineWave",
@@ -256,8 +247,8 @@
       "Kind": "button"
     },
     {
-      "Index": 23,
-      "Slot": 28,
+      "Index": 22,
+      "Slot": 27,
       "Id": "CompareModelBtn",
       "Tooltip": "Compare Distributed Model\u2026 \u2014 run the distributed (MoM) model next to the lumped one on a frequency grid, and show the two side by side. Same design, same ports, no export needed.",
       "Icon": "Legal",
@@ -265,8 +256,8 @@
       "Kind": "button"
     },
     {
-      "Index": 24,
-      "Slot": 29,
+      "Index": 23,
+      "Slot": 28,
       "Id": "CopyGraphicBtn",
       "Tooltip": "Copy as a graphic (\u21E7\u2318C / Ctrl\u002BShift\u002BC)",
       "Icon": "ImageOutline",
@@ -275,7 +266,7 @@
     },
     {
       "Index": 0,
-      "Slot": 30,
+      "Slot": 29,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -283,8 +274,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 25,
-      "Slot": 31,
+      "Index": 24,
+      "Slot": 30,
       "Id": "",
       "Tooltip": "Wires: 1",
       "Icon": "text",

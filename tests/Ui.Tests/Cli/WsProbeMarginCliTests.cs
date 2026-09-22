@@ -79,7 +79,7 @@ public sealed class WsProbeMarginCliTests(ITestOutputHelper output) : IDisposabl
         var text = RunCli("sparam", Fixture("margin_split_resonator.cnl"),
                           "-o", Path.Combine(Dir("summary2"), "split.npy"));
         Assert.True(text.ExitCode == 0, text.StdErr + text.StdOut);
-        string line = Assert.Single(text.StdOut.Split('\n').Where(l => l.StartsWith("WSProbe P ")));
+        string line = Assert.Single(text.StdOut.Split('\n'), l => l.StartsWith("WSProbe P "));
         output.WriteLine(line);
         Assert.Contains($"SM_Y0 min {Db(yMin)}", line);
         Assert.Contains($"SM_H0 min {Db(hMin)}", line);
@@ -274,7 +274,7 @@ public sealed class WsProbeMarginCliTests(ITestOutputHelper output) : IDisposabl
 
         var text = RunCli("hb", path);
         Assert.True(text.ExitCode == 0, text.StdErr + text.StdOut);
-        string line = Assert.Single(text.StdOut.Split('\n').Where(l => l.StartsWith("WSProbe GATE ")));
+        string line = Assert.Single(text.StdOut.Split('\n'), l => l.StartsWith("WSProbe GATE "));
         output.WriteLine(line);
         Assert.Contains("idx=1", line);
         Assert.Contains($"SM_Y0 min {Db(probes[0].GetProperty("smY0Min").GetDouble())}", line);

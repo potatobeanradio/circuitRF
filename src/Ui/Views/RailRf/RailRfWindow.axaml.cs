@@ -560,11 +560,6 @@ public partial class RailRfWindow : Window
         BoardCanvas.Focus();
     }
 
-    private void OnBoardZoom1To1(object? sender, RoutedEventArgs e)
-    {
-        BoardCanvas.Zoom1To1();
-        BoardCanvas.Focus();
-    }
 
     /// <summary>
     /// Opens the <c>.ctech</c> this board is priced against, in the workspace's own technology editor.

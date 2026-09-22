@@ -188,8 +188,8 @@ public class EmRunInFlightGuardTests
     {
         var body = MethodBody(ReadStripped("src/Ui/ViewModels/WorkspaceViewModel.cs"), signature);
 
-        Assert.Equal(1, Regex.Matches(body, @"_emWorkInFlight\.Add\(").Count);
-        Assert.Equal(1, Regex.Matches(body, @"_emWorkInFlight\.Remove\(").Count);
+        Assert.Single(Regex.Matches(body, @"_emWorkInFlight\.Add\("));
+        Assert.Single(Regex.Matches(body, @"_emWorkInFlight\.Remove\("));
 
         // The release must sit in a finally, not on the happy path: this method has four early
         // returns and two catch blocks between the two calls.

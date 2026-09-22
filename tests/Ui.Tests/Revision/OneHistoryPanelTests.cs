@@ -391,11 +391,11 @@ public class OneHistoryPanelTests
 
         // The batch's own stated intent, which is not the same string as its label.
         var byIntent = HistoryList.Read(git, HistoryFilter.Default with { Search = "widen" }).Rows;
-        Assert.Single(byIntent.Where(r => !r.IsGap));
+        Assert.Single(byIntent, r => !r.IsGap);
 
         // The author — the one field a version has and a restore point does not.
         var byAuthor = HistoryList.Read(git, HistoryFilter.Default with { Search = "A Designer" }).Rows;
-        Assert.Single(byAuthor.Where(r => !r.IsGap));
+        Assert.Single(byAuthor, r => !r.IsGap);
         Assert.True(byAuthor.Single(r => !r.IsGap).IsVersion);
 
         // ── The thinned entry, and the line that stops the answer being wrong ─────────────────────

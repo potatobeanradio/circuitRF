@@ -195,7 +195,7 @@ public class Gi3SubstrateFieldsTests : IDisposable
         var result = ImportTwoLayerWithDrill("wall_default");
         var tech = TechPersistence.LoadFromFile(result.TechPath!);
 
-        var via = Assert.Single(tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.Equal(ViaDefaults.PlatedWallThicknessDbu(1000), via.WallThicknessDbu);
         Assert.Equal(25_000, via.WallThicknessDbu);           // 25 µm at the default resolution
 
@@ -233,7 +233,7 @@ public class Gi3SubstrateFieldsTests : IDisposable
         var result = Import(dir, "nonplated_import");
         var tech = TechPersistence.LoadFromFile(result.TechPath!);
 
-        var via = Assert.Single(tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(via.Plated);
         Assert.Null(via.WallThicknessDbu);
         Assert.DoesNotContain(result.Messages,
@@ -521,10 +521,10 @@ public class Gi3SubstrateFieldsTests : IDisposable
         tech.Stackup.Layers.Add(new StackupLayer { Kind = StackupKind.Via, Name = "Blind Via" });
         var vm = Editor(tech);
 
-        Assert.Equal("PTH", Assert.Single(vm.FilteredStackupLayers.Where(r => r.ShowsViaGroupHeader)).Layer.Name);
+        Assert.Equal("PTH", Assert.Single(vm.FilteredStackupLayers, r => r.ShowsViaGroupHeader).Layer.Name);
 
         vm.StackupFilter = "Blind";
-        Assert.Equal("Blind Via", Assert.Single(vm.FilteredStackupLayers.Where(r => r.ShowsViaGroupHeader)).Layer.Name);
+        Assert.Equal("Blind Via", Assert.Single(vm.FilteredStackupLayers, r => r.ShowsViaGroupHeader).Layer.Name);
 
         // A filter that lists no via at all leaves no header behind on any row.
         vm.StackupFilter = "Core";

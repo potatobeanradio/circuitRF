@@ -60,7 +60,7 @@ public sealed class SchematicNetlistTests : IDisposable
     {
         var netlist = Read(Divider(), "divider.csch");
 
-        Assert.Empty(netlist.Notes.Where(n => n.Severity >= DiagnosticSeverity.Warning));
+        Assert.DoesNotContain(netlist.Notes, n => n.Severity >= DiagnosticSeverity.Warning);
         Assert.Equal(["R1", "R2"], netlist.Devices.Select(d => d.Path));
         Assert.Equal(4, netlist.Devices.Sum(d => d.Terminals.Count));
         Assert.Equal(3, netlist.Nets.Count);

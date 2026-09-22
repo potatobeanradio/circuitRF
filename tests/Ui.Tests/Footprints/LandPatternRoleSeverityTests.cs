@@ -54,8 +54,8 @@ public sealed class LandPatternRoleSeverityTests
         // Asserted against the REAL produced sentences, not against a literal: IsInformational keys
         // on the layer aliases the sentence names, so rewording it and dropping them would silently
         // re-promote the courtyard note to a warning. This is what turns red instead.
-        Assert.Single(Diagnose(tech, court).Where(LandPatternLayers.IsInformational));
-        Assert.Empty(Diagnose(tech, silk).Where(LandPatternLayers.IsInformational));
+        Assert.Single(Diagnose(tech, court), LandPatternLayers.IsInformational);
+        Assert.DoesNotContain(Diagnose(tech, silk), LandPatternLayers.IsInformational);
 
         // And the two that do matter stay warnings — a pad that cannot be soldered, and a part you
         // cannot identify once the board is populated.

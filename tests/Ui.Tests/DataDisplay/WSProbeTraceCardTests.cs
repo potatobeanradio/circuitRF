@@ -124,14 +124,14 @@ public sealed class WSProbeTraceCardTests(ITestOutputHelper output) : IDisposabl
         // R-wsp4-8 adds as an ordinary NETWORK source. The metric list is the one that ENDS in the
         // probe section's own name.
         string group = Assert.Single(
-            row.AvailableGroups.Where(g => g.EndsWith("\u25b8 WSProbe", StringComparison.Ordinal)));
+            row.AvailableGroups, g => g.EndsWith("\u25b8 WSProbe", StringComparison.Ordinal));
         row.SelectedGroup = group;
         output.WriteLine($"{plotType}: {row.AvailableSignals.Count} items in '{group}'");
 
         Assert.Equal(WspMetrics.All.Count, row.AvailableSignals.Count);
         foreach (var info in WspMetrics.All)
         {
-            var item = Assert.Single(row.AvailableSignals.Where(s => s.WspMetric == info.Metric));
+            var item = Assert.Single(row.AvailableSignals, s => s.WspMetric == info.Metric);
             string? why = WspMetrics.DisabledReasonOn(info.Metric, plotType);
             Assert.Equal(why is null, item.IsEnabled);
             Assert.Equal(why, item.DisabledReason);

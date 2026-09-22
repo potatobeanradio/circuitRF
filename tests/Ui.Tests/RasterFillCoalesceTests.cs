@@ -292,7 +292,7 @@ public class RasterFillCoalesceTests : IDisposable
         var dir = Folder("pour-note", "pour.gtl", PaintedPour());
         var result = Import(dir, "on", coalesce: true);
 
-        string note = Assert.Single(result.Messages.Where(m => m.Contains("coalesced into", StringComparison.Ordinal)));
+        string note = Assert.Single(result.Messages, m => m.Contains("coalesced into", StringComparison.Ordinal));
         Assert.Contains("220", note, StringComparison.Ordinal);          // the strokes it consumed
         Assert.Contains("1 filled region", note, StringComparison.Ordinal);
         Assert.Contains("0.1 µm", note, StringComparison.Ordinal);        // R-rf3-5's stated tolerance

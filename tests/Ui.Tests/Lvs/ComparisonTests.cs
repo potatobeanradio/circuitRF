@@ -210,7 +210,7 @@ public sealed class ComparisonTests
 
         Assert.Equal(0, result.Comparison.Anchors);
         Assert.Equal(4, result.Comparison.Devices.Count);
-        Assert.Empty(result.Comparison.Findings.Where(f => f.Severity > DiagnosticSeverity.Info));
+        Assert.DoesNotContain(result.Comparison.Findings, f => f.Severity > DiagnosticSeverity.Info);
 
         Assert.Single(result.Comparison.Findings, f => f.Id == "lvs.match.structural-only");
         var symmetry = Assert.Single(result.Comparison.Findings, f => f.Id == "lvs.match.by-symmetry");

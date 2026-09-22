@@ -123,7 +123,7 @@ public sealed class SuperstrateNotInTheSolveTests
         var covered = PlanarExtractor.Extract(Patch(), Tech(true), Dbu, 6.3e9);
         Assert.True(covered.Ok, covered.Refusal);
 
-        string warning = Assert.Single(covered.Notes.Where(n => n.Contains("'Radome'")));
+        string warning = Assert.Single(covered.Notes, n => n.Contains("'Radome'"));
         // EM-SEV R-emsev-1: it is a warning because its CLASS says so, not because the sentence
         // starts with the word.
         Assert.Contains(warning, covered.Warnings);

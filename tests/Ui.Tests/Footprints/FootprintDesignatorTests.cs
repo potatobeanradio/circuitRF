@@ -120,7 +120,7 @@ public sealed class FootprintDesignatorTests : IDisposable
 
         // A LabelShape carries no mirror of its own, so the un-mirrored glyphs are structural — this
         // pins that nothing was added that could reverse them, at the MIRRORED anchor (R-fp4b-3b).
-        Assert.False(label.GetType().GetProperties().Any(p => p.Name.Contains("Mirror", StringComparison.Ordinal)));
+        Assert.DoesNotContain(label.GetType().GetProperties(), p => p.Name.Contains("Mirror", StringComparison.Ordinal));
     }
 
     // ══ 5. One source, four consumers ═══════════════════════════════════════════════════════════

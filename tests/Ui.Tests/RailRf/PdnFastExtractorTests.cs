@@ -720,8 +720,8 @@ public sealed class PdnFastExtractorTests
         // The sentence lives in RailDcResult and nowhere else. `PlaneMedia` and `PlaneCapacitance`
         // raise a NOTE with the same words, which is a different surface — this pins the readout.
         string source = File.ReadAllText(Path.Combine(RepoRoot(), "src/Design/RailRf/RailDcResult.cs"));
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(
-            source, "The stackup states no dielectric").Count);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(
+            source, "The stackup states no dielectric"));
     }
 
     private static string Line(PdnExtraction extraction) => Line(extraction.Netlist!);

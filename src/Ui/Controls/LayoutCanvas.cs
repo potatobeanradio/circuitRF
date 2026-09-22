@@ -754,16 +754,6 @@ public sealed class LayoutCanvas : Control
         RaiseViewportChanged();
     }
 
-    /// <summary>1 device pixel per one tick of the document's display unit (e.g. 1 px = 1 mil on a
-    /// PCB layout, 1 px = 1 µm on an MMIC layout) — a stable, physically-meaningful "actual size".</summary>
-    public void Zoom1To1()
-    {
-        if (_viewModel?.Model is not { } model) return;
-        long dbuPerUnit = LayoutUnits.ToDbu(1m, model.DisplayUnit, model.DbuPerMicron);
-        if (dbuPerUnit <= 0) dbuPerUnit = 1;
-        ZoomAtCenter(1.0 / dbuPerUnit);
-    }
-
     private void ZoomAtCenter(double newZoom)
     {
         newZoom = Math.Clamp(newZoom, MinZoom, MaxZoom);

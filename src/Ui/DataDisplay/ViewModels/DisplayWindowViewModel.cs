@@ -557,9 +557,6 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private void ZoomOut() => DataDisplay?.ZoomOut();
 
     [RelayCommand]
-    private void ActualSize() => DataDisplay?.ActualSize();
-
-    [RelayCommand]
     private void FitAll()
     {
         var display = DataDisplay;

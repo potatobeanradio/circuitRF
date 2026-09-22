@@ -72,7 +72,7 @@ public class PortContextMenuTests
         var (canvas, vm, port) = Fixture();
 
         var ticked = Assert.Single(canvas.BuildContextMenuItems(port.X, port.Y)
-                                         .OfType<MenuItem>().Where(m => m.IsChecked));
+                                         .OfType<MenuItem>(), m => m.IsChecked);
         Assert.Equal("Port Type: Internal (to ground)", ticked.Header);
 
         // Radio, not a checkbox: the user is choosing among three states.
@@ -84,7 +84,7 @@ public class PortContextMenuTests
         port.PortKind = null;
         vm.Model.NotifyChanged();
         var inferred = Assert.Single(canvas.BuildContextMenuItems(port.X, port.Y)
-                                           .OfType<MenuItem>().Where(m => m.IsChecked));
+                                           .OfType<MenuItem>(), m => m.IsChecked);
         Assert.Equal("Port Type: Internal (to ground)", inferred.Header);   // mid-metal
     }
 

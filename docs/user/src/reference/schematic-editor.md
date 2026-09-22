@@ -339,7 +339,7 @@ or a layout has focus; the panel itself is also under **View ▸ Panels ▸ Inst
 
 Grouped by what you are doing, left to right:
 
-- **View** — Zoom to Fit, reset to 1:1, and a zoom box. <kbd>F</kbd> is the one to learn; a schematic
+- **View** — Zoom to Fit, a zoom box, and Zoom Out. <kbd>F</kbd> is the one to learn; a schematic
   is usually bigger than the window.
 - **Draw** — Select, the Wire tool, and the three things you place constantly: **Ground**, **Term**
   (a numbered port with a reference impedance, for an S-parameter run) and **Pin** (a connection

@@ -775,7 +775,7 @@ public class RailWindowTests
                      "ShowCoincidencesCard", "ShowMaskCard", "ShowAntiResonancesCard",
                      "ShowRemovalCard", "ShowPlaneResonancesCard", "ShowImpedanceMessageCard",
                  })
-            Assert.Equal(1, Regex.Matches(xaml, $@"IsVisible=""{{Binding {card}}}""").Count);
+            Assert.Single(Regex.Matches(xaml, $@"IsVisible=""{{Binding {card}}}"""));
     }
 
     /// <summary>
@@ -1406,7 +1406,7 @@ public class RailWindowTests
     {
         string xaml = Read("src/Ui/Views/RailRf/RailRfWindow.axaml");
 
-        Assert.Equal(1, Regex.Matches(xaml, @"\{Binding RunBlockedReason\}").Count);
+        Assert.Single(Regex.Matches(xaml, @"\{Binding RunBlockedReason\}"));
         Assert.Contains(@"ToolTip.Tip=""{Binding RunBlockedReason}""", xaml, StringComparison.Ordinal);
 
         // And the strip really does carry it, so removing the row lost nothing.

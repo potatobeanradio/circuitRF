@@ -86,7 +86,7 @@ public sealed class FootprintCatalogTests : IDisposable
 
         // ── 3. R-fp4-1b: not offered to an S4P, and neither is any built-in. ────────────────────
         var four = FootprintCatalog.Build(_root, schematicDir, portCount: 4);
-        Assert.Empty(four.Choices.Where(c => c.Section is FootprintSection.Workspace or FootprintSection.BuiltIn));
+        Assert.DoesNotContain(four.Choices, c => c.Section is FootprintSection.Workspace or FootprintSection.BuiltIn);
     }
 
     // ══ 4. Component Import is untouched ════════════════════════════════════════════════════════
@@ -104,12 +104,12 @@ public sealed class FootprintCatalogTests : IDisposable
 
         // Exactly one mention of the catalog, and it is the report's call site — not a registration,
         // not a second index, not a footprint type of its own.
-        Assert.Equal(1, Regex.Matches(code, @"FootprintCatalog").Count);
+        Assert.Single(Regex.Matches(code, @"FootprintCatalog"));
         Assert.Contains("FootprintCatalog.ImportAvailabilitySentence(", code, StringComparison.Ordinal);
 
         // One writer of a land pattern, the one that was already here. A second would be the second
         // artifact kind the series' governing rule forbids.
-        Assert.Equal(1, Regex.Matches(code, @"LayoutPersistence\.SaveToFile").Count);
+        Assert.Single(Regex.Matches(code, @"LayoutPersistence\.SaveToFile"));
     }
 
     // ══ 5. One density spelling ═════════════════════════════════════════════════════════════════

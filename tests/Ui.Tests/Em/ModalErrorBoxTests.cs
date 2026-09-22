@@ -91,7 +91,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(EmRunStatus.Ok, r.Status);
         Assert.NotNull(r.SnpPath);
 
-        var groups = r.Notes.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
+        var groups = r.Notes!.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
         foreach (string g in groups) output.WriteLine(g);
         Assert.Equal(2, groups.Count);
         Assert.Contains(groups, g => g.Contains("Ports 1, 3", StringComparison.Ordinal));
@@ -100,7 +100,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
 
         // The clearance breach that used to refuse the run is cleared by the grouping itself: the
         // neighbour is IN the standard now, so it is not a neighbour any more.
-        Assert.DoesNotContain(r.Notes, n => n.Contains("not isolated", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes!, n => n.Contains("not isolated", StringComparison.Ordinal));
 
         // And the file declares nothing about VALIDITY, because the calibration is not being applied
         // outside its validity — it is a different calibration.
@@ -116,7 +116,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         // own words are "the s-parameters at those points should not be used" is the warning class
         // by definition, and it had been arriving as Info.
         bool notPassive = r.Warnings.Any(n => n.Contains("NOT PASSIVE", StringComparison.Ordinal));
-        Assert.DoesNotContain(r.Notes ?? [], n => n.Contains("NOT PASSIVE", StringComparison.Ordinal));
+        Assert.DoesNotContain(r.Notes! ?? [], n => n.Contains("NOT PASSIVE", StringComparison.Ordinal));
         Assert.Equal(notPassive, caveats.Any(c => c.Contains("NOT A PASSIVE NETWORK", StringComparison.Ordinal)));
     }
 
@@ -162,7 +162,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         var r = EmRunService.Run(OnePoint(setup), source, _results);
 
         Assert.Equal(EmRunStatus.Ok, r.Status);
-        string line = Assert.Single(r.Notes, n => n.Contains("ports 1+3", StringComparison.Ordinal));
+        string line = Assert.Single(r.Notes!, n => n.Contains("ports 1+3", StringComparison.Ordinal));
         output.WriteLine(line);
 
         Assert.Contains("ε_eff", line, StringComparison.Ordinal);
@@ -179,13 +179,13 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         var r = EmRunService.Run(OnePoint(setup), source, _results);
 
         Assert.Equal(EmRunStatus.Ok, r.Status);
-        var groups = r.Notes.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
+        var groups = r.Notes!.Where(n => n.Contains("CALIBRATION GROUP", StringComparison.Ordinal)).ToList();
         foreach (string g in groups) output.WriteLine(g);
         Assert.Equal(2, groups.Count);
         Assert.Contains(groups, g => g.Contains("Ports 1, 3, 5", StringComparison.Ordinal));
         Assert.All(groups, g => Assert.Contains("3 modes", g, StringComparison.Ordinal));
 
-        string line = Assert.Single(r.Notes, n => n.Contains("ports 1+3+5", StringComparison.Ordinal));
+        string line = Assert.Single(r.Notes!, n => n.Contains("ports 1+3+5", StringComparison.Ordinal));
         output.WriteLine(line);
         Assert.Equal(3, line.Split('·').Length);
     }
@@ -207,7 +207,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         var r = EmRunService.Run(OnePoint(setup), source, _results);
         Assert.Equal(EmRunStatus.Ok, r.Status);
 
-        string summary = Assert.Single(r.Notes, n => n.StartsWith("MODAL CALIBRATION", StringComparison.Ordinal));
+        string summary = Assert.Single(r.Notes!, n => n.StartsWith("MODAL CALIBRATION", StringComparison.Ordinal));
         output.WriteLine(summary);
         foreach (string k in new[] { "mode separation", "cascade residual", "modal-gauge residual",
                                      "null-space gap", "sign margin", "palindrome" })
@@ -217,12 +217,12 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         // R-pcal4-4 — the reference impedance's accuracy is reported SEPARATELY from the
         // de-embedding's, because they are two different things and one figure of merit would hide
         // which of them a run is short on.
-        string zc = Assert.Single(r.Notes, n => n.StartsWith("MODAL REFERENCE IMPEDANCE", StringComparison.Ordinal));
+        string zc = Assert.Single(r.Notes!, n => n.StartsWith("MODAL REFERENCE IMPEDANCE", StringComparison.Ordinal));
         output.WriteLine(zc);
         Assert.Contains("quasi-static", zc, StringComparison.OrdinalIgnoreCase);
 
         // …and a per-point line for every group at every frequency.
-        var perPoint = r.Notes.Where(n => n.Contains("separation", StringComparison.Ordinal)
+        var perPoint = r.Notes!.Where(n => n.Contains("separation", StringComparison.Ordinal)
                                        && n.Contains("GHz, ports", StringComparison.Ordinal)).ToList();
         Assert.Equal(2, perPoint.Count);                       // two groups × one frequency
         foreach (string line in perPoint) output.WriteLine(line);
@@ -250,7 +250,7 @@ public sealed class ModalErrorBoxTests(ITestOutputHelper output) : IDisposable
         sw.Stop();
 
         Assert.Equal(EmRunStatus.Ok, r.Status);
-        string cost = Assert.Single(r.Notes, n => n.StartsWith("De-embedding costs", StringComparison.Ordinal));
+        string cost = Assert.Single(r.Notes!, n => n.StartsWith("De-embedding costs", StringComparison.Ordinal));
         output.WriteLine($"{cost}\n7 points in {sw.Elapsed.TotalSeconds:F2} s");
 
         Assert.Contains("2 calibration(s) over 4 de-embedded port(s)", cost, StringComparison.Ordinal);

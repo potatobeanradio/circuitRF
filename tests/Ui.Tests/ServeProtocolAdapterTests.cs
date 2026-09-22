@@ -271,7 +271,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         using var server = Start(Root);
 
         var without = server.CallRaw("render", new JsonObject { ["path"] = clay, ["output"] = png });
-        Assert.Equal(1, without.Count);
+        Assert.Single(without);
         Assert.Equal("text", without[0]!["type"]!.GetValue<string>());
 
         var with = server.CallRaw("render", new JsonObject

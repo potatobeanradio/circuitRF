@@ -456,14 +456,6 @@ public sealed class SchematicCanvas : Control
     /// <summary>One step further out, anchored on the middle of the canvas — Ctrl/⌘+'-'.</summary>
     public void ZoomOut() => ZoomAtPoint(new Point(Bounds.Width / 2.0, Bounds.Height / 2.0), -1);
 
-    public void ZoomToPage()
-    {
-        _panX = 0; _panY = 0; _zoom = 1.0;
-        if (_editContext is not null) _editContext.CanvasZoom = _zoom;
-        InvalidateVisual();
-        RaiseViewportChanged();
-    }
-
     private void ZoomToRect(double x0, double y0, double x1, double y1)
     {
         double worldW = Math.Abs(x1 - x0);

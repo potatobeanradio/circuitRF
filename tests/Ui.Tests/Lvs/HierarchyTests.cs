@@ -112,7 +112,7 @@ public sealed class HierarchyTests : IDisposable
 
         Assert.Equal(2, result.Hierarchy.Extractions);
         Assert.Equal(39, result.Hierarchy.CacheHits);
-        Assert.Equal(1, result.Cells.Count);
+        Assert.Single(result.Cells);
         Assert.Equal(40, result.Cells[0].Placements.Count);
     }
 

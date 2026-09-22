@@ -165,7 +165,7 @@ public class StackupContextMenuTests
     {
         string xaml = Source(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml"));
         Assert.Contains("<ctrl:StackupCanvas.ContextMenu>", xaml, StringComparison.Ordinal);
-        Assert.Equal(1, Regex.Matches(xaml, @"Opening=""OnStackupContextMenuOpening""").Count);
+        Assert.Single(Regex.Matches(xaml, @"Opening=""OnStackupContextMenuOpening"""));
 
         string code = StripComments(
             Source(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs")));
@@ -246,7 +246,7 @@ public class StackupContextMenuTests
         var via = vm.Working.Stackup.Layers.First(l => l.Kind == StackupKind.Via);
         string spanned = via.SpanFromLayer!;
         string viaName = via.Name;
-        Assert.Empty(TechValidation.Validate(vm.Working).Where(p => p.Contains(viaName, StringComparison.Ordinal)));
+        Assert.DoesNotContain(TechValidation.Validate(vm.Working), p => p.Contains(viaName, StringComparison.Ordinal));
 
         Click(Item(MenuAt(canvas, vm, spanned), "Delete Conductor"));
 

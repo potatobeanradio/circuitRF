@@ -1466,8 +1466,8 @@ code at all.**
 | Arrow keys | pan 40 device pixels a step, ×5 with Shift | `CanvasArrowPan.ScreenStep` |
 | `Escape` | disarms the magnifier and drops a half-drawn box | `DisarmZoomBox` |
 
-**And the same four toolbar buttons**, in the same order and with the same tooltips the layout editor's
-carry: Zoom to Fit, the Zoom Box magnifier (which lights while armed), Zoom Out, and Zoom 1:1. The
+**And the same three toolbar buttons**, in the same order and with the same tooltips the layout editor's
+carry: Zoom to Fit, the Zoom Box magnifier (which lights while armed), and Zoom Out. The
 keyboard is not the only route to any of these, and the buttons are where a user who has never read a
 tooltip finds them.
 

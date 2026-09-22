@@ -143,7 +143,7 @@ public sealed class ResultDocumentContractTests(ITestOutputHelper output) : IDis
             Assert.Equal(ran[i][0].GetDouble(), read[i][0].GetDouble(), 9);
 
         Assert.Equal([new Complex(50, 0), new Complex(12, 0)],
-                     RfCore.TouchstoneIO.ReadFile(snp).Z0PerPort);
+                     RfCore.TouchstoneIO.ReadFile(snp).Z0PerPort!);
 
         static JsonElement Cubes(JsonElement doc)
             => doc.GetProperty("result").GetProperty("groups").GetProperty("");

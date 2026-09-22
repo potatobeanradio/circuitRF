@@ -83,8 +83,8 @@ public sealed class ProvingDesignTests
         // a bench, it draws nothing, and a cell with no artwork has no terminals to map — which
         // `TerminalMap` states as `None` and which is the right answer rather than a finding.
         var cells = Directory.EnumerateFiles(Lvs(), CellFolder.CcellFileName, SearchOption.AllDirectories)
-            .Select(Path.GetDirectoryName!)
-            .Where(d => CellFolder.ResolvePrimary(d!, ViewType.Layout).ResolvedName is { Length: > 0 })
+            .Select(d => Path.GetDirectoryName(d)!)
+            .Where(d => CellFolder.ResolvePrimary(d, ViewType.Layout).ResolvedName is { Length: > 0 })
             .OrderBy(d => d, StringComparer.Ordinal)
             .ToList();
 
@@ -426,7 +426,7 @@ public sealed class ProvingDesignTests
         Assert.Equal(4, result.Comparison.Devices.Count);
         Assert.Equal(4, result.Comparison.Anchors);
 
-        var only = Assert.Single(result.Diagnostics.Where(d => d.Severity > DiagnosticSeverity.Info));
+        var only = Assert.Single(result.Diagnostics, d => d.Severity > DiagnosticSeverity.Info);
         Assert.Equal("lvs.net.short", only.Id);
         Assert.Equal(2, only.Arguments["count"]);
 

@@ -34,8 +34,6 @@
         <KeyBinding Gesture="Meta+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>
         <KeyBinding Gesture="Ctrl+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
         <KeyBinding Gesture="Meta+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
-        <KeyBinding Gesture="Ctrl+D1"       Command="{Binding ViewModel.Window.ActualSizeCommand}"/>
-        <KeyBinding Gesture="Meta+D1"       Command="{Binding ViewModel.Window.ActualSizeCommand}"/>
         <KeyBinding Gesture="Ctrl+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
         <KeyBinding Gesture="Meta+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
         <KeyBinding Gesture="Ctrl+Z"        Command="{Binding ViewModel.Window.UndoCommand}"/>
@@ -172,12 +170,6 @@
                         ToolTip.Tip="Zoom Out  (Ctrl+-)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
-                </Button>
-
-                <Button Command="{Binding ViewModel.Window.ActualSizeCommand}"
-                        ToolTip.Tip="Actual Size  (Ctrl+1)"
-                        Padding="6,3">
-                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.FitAllCommand}"

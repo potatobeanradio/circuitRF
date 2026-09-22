@@ -251,8 +251,7 @@ public sealed class SmithExampleTests(ITestOutputHelper output)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.NotEmpty(catalogued);
-        Assert.Empty(cited.Except(catalogued, StringComparer.Ordinal).Where(
-            id => id.StartsWith("smith-", StringComparison.Ordinal)));
+        Assert.DoesNotContain(cited.Except(catalogued, StringComparer.Ordinal), id => id.StartsWith("smith-", StringComparison.Ordinal));
         Assert.Empty(catalogued.Except(cited, StringComparer.Ordinal));
     }
 

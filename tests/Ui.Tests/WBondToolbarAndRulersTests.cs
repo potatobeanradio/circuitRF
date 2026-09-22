@@ -410,7 +410,7 @@ public class WBondToolbarAndRulersTests
     // ════════════════════════════════════════════════════════ toolbar order
 
     /// <summary>
-    /// Zoom to Fit / Zoom Box / Out / 1:1 are the FIRST four controls in the toolbar, matching the
+    /// Zoom to Fit / Zoom Box / Out are the FIRST three controls in the toolbar, matching the
     /// Layout Editor and the schematic (owner) — the point of moving them is that a hand does not
     /// have to re-learn the toolbar per editor.
     ///
@@ -420,14 +420,14 @@ public class WBondToolbarAndRulersTests
     /// <c>CanvasArrowPanAndZoomBoxTests</c>.</para>
     /// </summary>
     [Fact]
-    public void TheFourZoomButtons_ComeFirst()
+    public void TheThreeZoomButtons_ComeFirst()
     {
         var xaml = EditorXaml();
         int wrap = xaml.IndexOf("<WrapPanel", StringComparison.Ordinal);
         Assert.True(wrap >= 0, "The toolbar's WrapPanel is gone.");
 
         AssertOrder(xaml[wrap..],
-            "Click=\"OnZoomToFit\"", "Click=\"OnZoomBoxTool\"", "Click=\"OnZoomOut\"", "Click=\"OnZoom1To1\"",
+            "Click=\"OnZoomToFit\"", "Click=\"OnZoomBoxTool\"", "Click=\"OnZoomOut\"",
             // …and everything else follows them.
             "Click=\"OnSave\"", "x:Name=\"ViewModeToggle\"", "ConverterParameter=Select");
     }

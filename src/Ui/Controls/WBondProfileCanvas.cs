@@ -557,16 +557,6 @@ public sealed class WBondProfileCanvas : Control
         InvalidateVisual();
     }
 
-    /// <summary>
-    /// One device pixel per one tick of the given display unit — the same "actual size" definition
-    /// <c>LayoutCanvas.Zoom1To1</c> uses, expressed in this view's own units (nanometres).
-    /// </summary>
-    public void Zoom1To1(WBondUnit unit)
-    {
-        long nmPerUnit = WBondUnits.NmPerUnit(unit);
-        if (nmPerUnit > 0) ZoomAtCenter(1.0 / nmPerUnit);
-    }
-
     private void ZoomAtCenter(double newZoom)
     {
         if (Bounds.Width <= 1 || Bounds.Height <= 1) return;

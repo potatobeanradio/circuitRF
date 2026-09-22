@@ -103,7 +103,7 @@ public sealed class EmSetupHeaderShrinksTests
     public void EachRowHasExactlyOneStarColumn(string binding)
     {
         var (row, _) = RowCarrying(binding);
-        Assert.Single(ColumnWidths(row).Where(w => w.EndsWith('*')));
+        Assert.Single(ColumnWidths(row), w => w.EndsWith('*'));
     }
 
     /// <summary>The full name is still reachable once it is elided — the tooltip carries it.</summary>

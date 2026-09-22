@@ -675,7 +675,7 @@ public class StackupSceneTests
     public void TheGroundDesignatedConductorIsTheOneBandFlaggedForAHeavyEdge()
     {
         var scene = StackupScene.Build(Shipped("mmic-GaAs_2LM_100um"), Wide);
-        Assert.Single(scene.Bands.Where(b => b.IsGroundReference));
+        Assert.Single(scene.Bands, b => b.IsGroundReference);
         Assert.True(scene.Bands.Single(b => b.IsGroundReference).Name == "Backside Metal");
     }
 

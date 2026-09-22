@@ -203,7 +203,6 @@ public partial class WBondProfileView : UserControl
     }
     public void ZoomIn()    => ProfileCanvas.ZoomIn();
     public void ZoomOut()   => ProfileCanvas.ZoomOut();
-    public void Zoom1To1(WBondUnit unit) => ProfileCanvas.Zoom1To1(unit);
 
     /// <summary>The magnifier — armed by the editor's one toolbar button, which arms both viewports.</summary>
     public void ArmZoomBox()    => ProfileCanvas.ArmZoomBox();

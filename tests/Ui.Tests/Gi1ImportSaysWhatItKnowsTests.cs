@@ -149,7 +149,7 @@ public class Gi1ImportSaysWhatItKnowsTests : IDisposable
         var result = Import(dir, "np_import");
         Assert.False(result.Cancelled);
 
-        var via = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(via.Plated);
         // Fill is a fill MODEL and both of its values are metal, so it says nothing here rather than
         // reading "Plated" beside a Plated flag of false.
@@ -169,7 +169,7 @@ public class Gi1ImportSaysWhatItKnowsTests : IDisposable
 
         var result = Import(dir, "silent_import");
 
-        var via = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.Null(via.Plated);                       // null MEANS plated — nothing was written
         Assert.Equal(ViaFillKind.Plated, via.Fill);
         Assert.DoesNotContain(result.Messages, m => m.Contains("NON-PLATED", StringComparison.Ordinal));
@@ -257,7 +257,7 @@ public class Gi1ImportSaysWhatItKnowsTests : IDisposable
         var result = Import(dir, "rout_import");
         Assert.False(result.Cancelled);
 
-        var via = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.False(via.Plated);
         Assert.Null(via.Fill);
         Assert.Null(via.SpanFromLayer);
@@ -282,7 +282,7 @@ public class Gi1ImportSaysWhatItKnowsTests : IDisposable
 
         var result = Import(dir, "both_import");
 
-        var via = Assert.Single(TechOf(result).Stackup.Layers.Where(l => l.Kind == StackupKind.Via));
+        var via = Assert.Single(TechOf(result).Stackup.Layers, l => l.Kind == StackupKind.Via);
         Assert.Equal(ViaFillKind.Plated, via.Fill);
         Assert.DoesNotContain(result.Messages, m => m.Contains("drilled no holes", StringComparison.Ordinal));
     }
