@@ -262,6 +262,14 @@ public static class PdnGraphExtractor
                       "rail its net name, or anchor a source or a load on the rail's own copper."),
                 regions);
 
+        // R-rail29-2: A CONNECTIVITY QUESTION, ANSWERED BEFORE ANY PRICING. Whether the source can
+        // reach a load at all is a galvanic fact the walk above has already settled, and nothing
+        // below — the reference extent, the classification, the per-piece rasters — can change it.
+        // On the reported board those stages were the whole of a five-minute Debug run (148 s
+        // sorting, 146 s measuring) that ended in this answer, given wrongly; here it costs nothing.
+        if (PdnRailConnectivity.Refusal(request, regions, referenceLayer) is { } apart)
+            return PdnExtraction.Refused(apart, regions);
+
         double celsius = request.Settings.CopperTemperatureCelsius;
         if (PdnMeshExtractor.ResolveConductors(request, regions, referenceLayer,
                                                out _, out var byLayer) is { } conductorRefusal)
@@ -1124,7 +1132,11 @@ internal sealed class GraphBuild(
     private readonly List<Element> _copper = [];
     private readonly List<int> _traceEdgeA = [];
     private readonly List<int> _traceEdgeB = [];
-    private readonly HashSet<int> _spreadingRailNodes = [];
+    // Every rail node inside a SPREADING piece, and which piece it is in (its classification
+    // index) — R-rail29-1: the refusal has to know which region a node belongs to in order to say
+    // which region is on the path, rather than naming the largest one on the board.
+    private readonly Dictionary<int, int> _spreadingPieceOf = [];
+    private readonly Dictionary<int, List<int>> _spreadingPieceNodes = [];
     private readonly Dictionary<(long X, long Y), List<int>> _railNodesAtPoint = [];
     private int _merged;
     private int _coarsened;
@@ -1223,7 +1235,7 @@ internal sealed class GraphBuild(
             if (c.Class == PdnCopperClass.Trace)
                 classification[index] = Trace(c, piece, conductor, sigmaT, dbuPerMetre);
             else
-                classification[index] = Pour(c, piece, conductor, sigmaT, dbuPerMetre);
+                classification[index] = Pour(c, piece, index, conductor, sigmaT, dbuPerMetre);
 
             piece++;
         }
@@ -1285,18 +1297,126 @@ internal sealed class GraphBuild(
         var rail = request.Rail;
         if (rail.Sources.Count == 0 || rail.Loads.Count == 0) return null;
 
-        var trace = new int[nodes.NodeTotal];
-        for (int i = 0; i < trace.Length; i++) trace[i] = i;
+        List<int> AnchorNodes(RailPortAnchor anchor)
+        {
+            var found = new List<int>();
+            foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
+                found.AddRange(nodes.NodesAt(x, y, isReference: false));
+            return found;
+        }
 
-        int Find(int x) { while (trace[x] != x) { trace[x] = trace[trace[x]]; x = trace[x]; } return x; }
-        void Union(int a, int b) { int ra = Find(a), rb = Find(b); if (ra != rb) trace[Math.Max(ra, rb)] = Math.Min(ra, rb); }
+        var sourceNodes = rail.Sources.SelectMany(s => AnchorNodes(s.Anchor)).ToList();
+        var loadNodes = rail.Loads.Select(l => AnchorNodes(l.Anchor)).ToList();
+        if (sourceNodes.Count == 0) return null;
+
+        // ── R-rail29-1: A TERMINAL'S OWN LANDING PIECE IS NOT ON THE PATH, IT IS AN END OF IT ──
+        //
+        // A spreading piece that lands exactly ONE terminal — one source row or one load row — is
+        // where current enters or leaves the rail, by definition, and it joins the union below. It
+        // is still priced: Pour() has already meshed it, coarsely, like every spreading piece. The
+        // term the closed form omits there is the constriction at a port, and that is the term
+        // PdnCopperClassifier.TraceSquaresThreshold already budgets about one square for at each
+        // end of every section. What the refusal exists for is spreading copper current has to
+        // CROSS between two terminals, and a piece holding two of them is exactly that — the §7
+        // pour gate's own fixture is one pour with the source and the load both on it, and it is
+        // still refused. Before this, a source on a compact connector land was refused on every
+        // board, whatever the rest of the rail was, and the land was the region named.
+        var terminalNodes = rail.Sources.Select(s => AnchorNodes(s.Anchor).ToHashSet())
+            .Concat(loadNodes.Select(n => n.ToHashSet()))
+            .ToList();
+
+        var landing = new HashSet<int>();
+        foreach (var (index, members) in _spreadingPieceNodes)
+            if (terminalNodes.Count(t => members.Any(t.Contains)) == 1) landing.Add(index);
+
+        var joined = Connect(landing.Contains);
+
+        for (int k = 0; k < rail.Loads.Count; k++)
+        {
+            var load = rail.Loads[k];
+            if (loadNodes[k].Count == 0) continue;
+            if (Reaches(joined, sourceNodes, loadNodes[k])) continue;
+
+            var fmt = request.LengthFormat;
+
+            // ── ASK WHICH OF THE TWO CASES THIS IS BEFORE BLAMING A CLASS (R-rail29-1) ────────
+            //
+            // With every spreading piece joined as well, does the source reach the load at all?
+            // PdnRailConnectivity has already refused separate islands, and islands joined only
+            // through the rail's copper on its own reference layer, before anything was priced — so
+            // a "no" here is a disagreement between this graph and the region walk, not a fact
+            // about the board. No class override can answer it, and naming a region would send the
+            // user to one.
+            var all = Connect(_ => true);
+            if (!Reaches(all, sourceNodes, loadNodes[k]))
+                return
+                    $"Rail '{rail.Name}' does not reach {load.Anchor.Describe(fmt)} from its source " +
+                    "through any copper the fast model read, even counting every spreading region as " +
+                    "joined — so no class override can answer it. The region walk does join them, so " +
+                    "what joins them is copper this reading does not carry as the rail's own. That is " +
+                    "a fault in the fast reading rather than in the board; Accuracy reads the copper " +
+                    "differently and may answer.";
+
+            // ── only now is spreading the cause, and the region named must be ON the path ──────
+            //
+            // A CUT: a spreading piece without which the source no longer reaches the load. The
+            // largest cut is named — not the largest spreading region on the whole rail, which on
+            // the reported board was the source's own connector land and lay on no path at all.
+            // A path that needs two spreading pieces in parallel has no single cut; then the
+            // largest non-landing piece on the source's side of the copper is the honest pointer.
+            var onPath = BestSpreading(i =>
+                !landing.Contains(i) &&
+                !Reaches(Connect(p => p != i), sourceNodes, loadNodes[k]));
+            bool isCut = onPath is not null;
+            onPath ??= BestSpreading(i =>
+                !landing.Contains(i) &&
+                _spreadingPieceNodes[i].Any(n => Reaches(all, sourceNodes, [n])));
+
+            // IN THE BOARD'S OWN UNIT, both the size and the vertex — this row used to read a
+            // millimetre size against a DBU vertex, two units in one clause, on a board that reads
+            // in neither (owner, 2026-09-20).
+            string where = onPath is null
+                ? "copper the fast model classified as spreading"
+                : $"a {fmt.Length(onPath.Bounds.MaxX - onPath.Bounds.MinX)} × " +
+                  $"{fmt.Length(onPath.Bounds.MaxY - onPath.Bounds.MinY)} region on " +
+                  $"{onPath.Region.Describe(fmt)}";
+
+            return
+                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(fmt)} " +
+                (isCut ? "only through " : "only through spreading copper, including ") +
+                $"{where}, which the fast model read as spreading rather than as a trace. The " +
+                "closed form has no bounded error across copper the current fans out in, and the " +
+                "error it would make is OPTIMISTIC — so the fast model produces no number here " +
+                "rather than a smaller one. Run Accuracy, which meshes it; or, if you know the " +
+                "current on this board follows a path across that region, force it to 'trace' on " +
+                "the class tab and the fast reading will price it as one." +
+                (onPath is null ? "" : $" What was measured: {onPath.Reason}");
+        }
+
+        return null;
+    }
+
+    /// <summary>The rail's connectivity at DC with the spreading pieces <paramref name="joins"/>
+    /// accepts counted as copper, and every other spreading piece left out — the union-find root of
+    /// each node.</summary>
+    private int[] Connect(Func<int, bool> joins)
+    {
+        var root = new int[nodes.NodeTotal];
+        for (int i = 0; i < root.Length; i++) root[i] = i;
+
+        int Find(int x) { while (root[x] != x) { root[x] = root[root[x]]; x = root[x]; } return x; }
+        void Union(int a, int b) { int ra = Find(a), rb = Find(b); if (ra != rb) root[Math.Max(ra, rb)] = Math.Min(ra, rb); }
+        bool Counted(int n) => !_spreadingPieceOf.TryGetValue(n, out int piece) || joins(piece);
 
         for (int i = 0; i < _traceEdgeA.Count; i++)
-        {
-            if (_spreadingRailNodes.Contains(_traceEdgeA[i]) ||
-                _spreadingRailNodes.Contains(_traceEdgeB[i])) continue;
-            Union(_traceEdgeA[i], _traceEdgeB[i]);
-        }
+            if (Counted(_traceEdgeA[i]) && Counted(_traceEdgeB[i]))
+                Union(_traceEdgeA[i], _traceEdgeB[i]);
+
+        // A spreading piece is ONE connected piece of copper by construction (the classifier cuts
+        // on DrcRegions.Components), so a counted one joins all of its own nodes.
+        foreach (var (piece, members) in _spreadingPieceNodes)
+            if (joins(piece))
+                for (int i = 1; i < members.Count; i++) Union(members[0], members[i]);
 
         // A layer transition joins the rail's copper above and below whatever the class of either
         // piece is. Read from the via COORDINATES rather than re-deriving the stackup's spans, which
@@ -1306,8 +1426,7 @@ internal sealed class GraphBuild(
         {
             if (!_railNodesAtPoint.TryGetValue((via.X, via.Y), out var at) || at.Count < 2) continue;
             for (int i = 1; i < at.Count; i++)
-                if (!_spreadingRailNodes.Contains(at[0]) && !_spreadingRailNodes.Contains(at[i]))
-                    Union(at[0], at[i]);
+                if (Counted(at[0]) && Counted(at[i])) Union(at[0], at[i]);
         }
 
         // A SERIES PART bridges two pieces of the rail's copper exactly as a via bridges two
@@ -1316,8 +1435,7 @@ internal sealed class GraphBuild(
         // the user has said what bridges each gap". Without this, the design note's own §2.8 board
         // — a battery, a protection FET, and 50 mm of inner copper — is refused as pour-dominated
         // when no pour is involved at all, and so is every real board with a ferrite on the rail.
-        // Permissive for the reason the via loop above states: it can only ever make a refusal LESS
-        // likely, and the connectivity it stands in for is the region walk's own.
+        // Permissive for the reason the via loop above states.
         foreach (var part in request.SeriesElements)
         {
             var ends = new List<int>();
@@ -1326,56 +1444,27 @@ internal sealed class GraphBuild(
                     ends.AddRange(nodes.NodesAt(x, y, isReference: false));
 
             for (int i = 1; i < ends.Count; i++)
-                if (!_spreadingRailNodes.Contains(ends[0]) && !_spreadingRailNodes.Contains(ends[i]))
-                    Union(ends[0], ends[i]);
+                if (Counted(ends[0]) && Counted(ends[i])) Union(ends[0], ends[i]);
         }
 
-        var sourceRoots = new HashSet<int>();
-        foreach (var s in rail.Sources)
-            foreach (var (x, y) in PdnAttachments.Resolve(s.Anchor, request.Pads))
-                foreach (int n in nodes.NodesAt(x, y, isReference: false))
-                    sourceRoots.Add(Find(n));
-
-        if (sourceRoots.Count == 0) return null;
-
-        foreach (var load in rail.Loads)
-        {
-            var loadNodes = new List<int>();
-            foreach (var (x, y) in PdnAttachments.Resolve(load.Anchor, request.Pads))
-                loadNodes.AddRange(nodes.NodesAt(x, y, isReference: false));
-
-            if (loadNodes.Count == 0) continue;
-            if (loadNodes.Any(n => sourceRoots.Contains(Find(n)))) continue;
-
-            var worst = classification
-                .Where(c => c is { Class: PdnCopperClass.Spreading, IsReference: false })
-                .OrderByDescending(c => (double)(c.Bounds.MaxX - c.Bounds.MinX) *
-                                        (c.Bounds.MaxY - c.Bounds.MinY))
-                .FirstOrDefault();
-
-            // IN THE BOARD'S OWN UNIT, both the size and the vertex — this row used to read a
-            // millimetre size against a DBU vertex, two units in one clause, on a board that reads
-            // in neither (owner, 2026-09-20).
-            var fmt = request.LengthFormat;
-            string where = worst is null
-                ? "copper the fast model classified as spreading"
-                : $"a {fmt.Length(worst.Bounds.MaxX - worst.Bounds.MinX)} × " +
-                  $"{fmt.Length(worst.Bounds.MaxY - worst.Bounds.MinY)} region on " +
-                  $"{worst.Region.Describe(fmt)}";
-
-            return
-                $"Rail '{request.Rail.Name}' reaches {load.Anchor.Describe(request.LengthFormat)} only through {where}, " +
-                "which the fast model read as spreading rather than as a trace. The closed form has " +
-                "no bounded error across copper the current fans out in, and the error it would make " +
-                "is OPTIMISTIC — so the fast model produces no number here rather than a smaller one. " +
-                "Run Accuracy, which meshes it; or, if you know the current on this board follows a " +
-                "path across that region, force it to 'trace' on the class tab and the fast reading " +
-                "will price it as one." +
-                (worst is null ? "" : $" What was measured: {worst.Reason}");
-        }
-
-        return null;
+        for (int i = 0; i < root.Length; i++) root[i] = Find(i);
+        return root;
     }
+
+    private static bool Reaches(int[] root, IEnumerable<int> from, IReadOnlyCollection<int> to)
+    {
+        var roots = from.Select(n => root[n]).ToHashSet();
+        return to.Any(n => roots.Contains(root[n]));
+    }
+
+    /// <summary>The largest rail-side spreading piece <paramref name="accept"/> takes, or null.</summary>
+    private PdnClassification? BestSpreading(Func<int, bool> accept) =>
+        _spreadingPieceNodes.Keys
+            .Where(accept)
+            .Select(i => classification[i])
+            .OrderByDescending(c => (double)(c.Bounds.MaxX - c.Bounds.MinX) *
+                                    (c.Bounds.MaxY - c.Bounds.MinY))
+            .FirstOrDefault();
 
     // ── the trace-shaped pieces (R-rail4-1, R-rail4-6) ─────────────────────────────────────────
 
@@ -1710,7 +1799,8 @@ internal sealed class GraphBuild(
     // ── the spreading pieces: meshed, and coarsely (§2.9) ──────────────────────────────────────
 
     private PdnClassification Pour(
-        PdnClassification c, int piece, PdnConductor conductor, double sigmaT, double dbuPerMetre)
+        PdnClassification c, int piece, int index, PdnConductor conductor, double sigmaT,
+        double dbuPerMetre)
     {
         var b = c.Bounds;
         long w = Math.Max(1, b.MaxX - b.MinX), h = Math.Max(1, b.MaxY - b.MinY);
@@ -1744,7 +1834,13 @@ internal sealed class GraphBuild(
                     $"{side}.{c.Region.Layer.Layer}_{c.Region.Layer.Datatype}.p{piece}.{i}.{j}");
                 AccountedAreaSquareDbu += area[k];
 
-                if (!c.IsReference) _spreadingRailNodes.Add(node[k]);
+                if (!c.IsReference)
+                {
+                    _spreadingPieceOf[node[k]] = index;
+                    if (!_spreadingPieceNodes.TryGetValue(index, out var mine))
+                        _spreadingPieceNodes[index] = mine = [];
+                    mine.Add(node[k]);
+                }
             }
 
         double d = pitch / dbuPerMetre;

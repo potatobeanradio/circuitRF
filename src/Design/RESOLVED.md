@@ -1,5 +1,104 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The refusal that blamed the source pad: a connectivity question answered after the pricing (2026-09-22, brief-railrf-29)
+
+From the same fourth field report. The designer's rail — a coordinate source on a connector land, a
+30 mA coordinate load, Bottom Copper as the reference — ran for about ten minutes headless (Debug)
+and was then refused as "reaches the load only through a 1.57 × 2.0 mm region … read as spreading".
+That region was the source's own landing pad. The board must not enter the repo; it was measured from
+the reported workspace with a scratch harness (footprints regenerated, `ArtworkCellRef` made
+relative). Gate: `tests/Ui.Tests/RailRf/PdnRefusalCauseTests.cs`.
+
+### Verified first: the source and the load were never on the same copper
+
+Seeding the walk from the two anchors gives **2 islands, 34.7 + 33.3 mm²**, source on one and load on
+the other, with every piece counted. The only part with pads on both is the jumper JP1, and the rail
+declared no series part. No classification of any region could have joined them, and the sentence
+sent the user to force a connector pad to 'trace'.
+
+The old predicate could not tell the two cases apart: it unioned the non-spreading nodes, found the
+load unreachable, and then named the LARGEST spreading region on the whole rail, on the path or not.
+
+### Where the time went (per phase, this machine; the report's ten minutes was the designer's Debug build)
+
+| Phase | Debug before | Release before | Debug after | Release after |
+|---|---|---|---|---|
+| resolve + flatten | 0.23 s | 0.20 s | 0.26 s | 0.19 s |
+| pads (`RailArtwork.PadsFor`) | 7.23 s | 8.18 s | 7.49 s | 7.35 s |
+| reading the copper (`LayerRegions`) | 0.06 s | 0.06 s | 0.06 s | 0.07 s |
+| walk + conductors + reference extent | 2.59 s | 2.63 s | — | — |
+| walk + **connectivity refusal** | — | — | 2.38 s | 2.31 s |
+| sorting (classification) | **148.4 s** | **153.6 s** | not reached | not reached |
+| measuring (per-piece rasters, pour meshes) + refusal check | **146.3 s** | **146.5 s** | not reached | not reached |
+| **total** | **~305 s** | **~311 s** | **~10 s** | **~10 s** |
+
+- **Every second of the ~300 s was pricing a rail that was then refused on a galvanic fact the walk
+  already had.** `PdnRailConnectivity.Refusal` now asks it right after `Regions.Walk`, before the
+  conductors, the reference extent, the classification and the per-piece loop. The refusal check
+  itself was not timed separately; it is a union-find over the graph inside the 146 s it sat in.
+- **Debug and Release agree to within a few percent**, unlike the `.clay` read's 8.3×: the cost is in
+  Clipper (a package, always an optimised build), not in this repository's managed code.
+- **The classification is the REFERENCE layer, not the rail.** Timed per layer: the rail's own copper
+  classifies in 0.08 s; Bottom Copper — 71 pieces, 67,295 vertices — takes 159 s. Where inside
+  `Classify` was not broken down; `MinimumFeatureWidthDbu`'s erode/dilate bisection over a pour that
+  size is the obvious suspect and is unmeasured. With the inner plane as the reference instead
+  (below) the stages are 190 s (walk + connectivity + reference extent, not broken down), 173 s
+  (sorting) and 168 s (measuring). **Not fixed here** — the
+  brief said to fix only what the table points at for THIS refusal — but it is what every connected
+  rail on a real board now pays, and it is the next thing to measure.
+- `pads` (7 s) is now the largest cost before the extraction on a refused rail.
+
+### The second connectivity question: a rail routed on its own reference layer
+
+With JP1 declared as the series part the rail was STILL refused, after the same five minutes, by the
+new graph-level fallback. **60 % of the rail (40.5 mm²) is on Bottom Copper**, the layer it names as
+its return, and both extractors set rail copper on the reference layer aside (a conductor cannot be
+its own return) — so what was left did not join the source to the load. That is galvanic too, so
+`PdnRailConnectivity` asks it up front as well, over the rail's copper with the reference layer taken
+out, through `DrcConnectivity` again rather than a second walk. It refuses in 2.3 s and names the
+layer and the fraction.
+
+**A refusal is the only thing the user sees**: `RailDcRun` returns `Refused(why)` with no
+diagnostics, so "the diagnostics say which" would have been a promise nothing kept. The refusal
+sentence has to carry the cause itself.
+
+With JP1 declared **and** the inner GND plane attached to its drawing layer and named as the
+reference, the rail **solves** (Release, ~9 min — see the classification note above).
+
+### A terminal's own landing piece is exempt from the pour refusal — the decision and why
+
+The brief asked for this to be decided. **A spreading piece that lands exactly one terminal (one
+source row or one load row) joins the refusal's union and is priced by the coarse mesh `Pour()`
+already gives it.** Current enters or leaves the rail there by definition; the term the closed form
+omits at a port is the constriction, which `TraceSquaresThreshold`'s own derivation already budgets
+about one square for at each end of a section. **A piece holding two terminals is not exempt** — the
+current crosses it between them, which is exactly what §7 refuses, and the pour gate's own fixture
+(one pour with both anchors on it) is still refused. Before this, a source on a compact land joined to
+the rest by a via was refused on every board, whatever the rest of the rail was.
+
+Known weakness, stated rather than hidden: a LARGE single-terminal pour whose current crosses it to a
+far via field is exempt too, and is priced only at the coarse mesh's pitch. Accuracy is the check.
+
+### What the pour refusal names now
+
+Only when the rail connects with every spreading piece counted is spreading the cause. Then the region
+named is a **cut** — a non-landing spreading piece whose removal disconnects source from load — the
+largest one if several; with no single cut (two spreading pieces in parallel) it is the largest
+non-landing piece on the source's side, and the sentence says "including" rather than "only through".
+
+### Found and not done
+
+- **The window has no gesture that makes a part a series part.** `RailPart.Connection = Series` is
+  reachable only by writing the `.crail` row (as the shipped Power Rail example's FB1 is), so the
+  refusal names that spelling. A parts-table affordance is the missing half.
+- **Not wired into `PdnMeshExtractor`.** The mesh also serves the AC sweeps, where an island joined
+  only by a capacitor is legitimate (`Regions`' own header); the fast model already refused a
+  disconnected load, so there the change is when and how, not whether.
+- `circuitrf rail` builds its `RailDcRequest` with no `Control`, so headless shows none of the stage
+  names the window gets.
+- The "rail has copper on layer … which is also its reference layer" diagnostic is emitted once per
+  island-layer pair: ten identical lines on the reported board with the inner plane as reference.
+
 ## Two-pin parts turned end for end, a pad that seeded the plane under it, and a plane nobody attached (2026-09-22)
 
 From a fourth round of outside railRF use: an imported two-sided Gerber board with an inner plane, a
