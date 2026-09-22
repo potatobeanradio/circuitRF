@@ -57,6 +57,7 @@ reference/cli.html          | Running every analysis headless: the verbs, their 
 == Layout & EM
 reference/layout-editor.html   | The layout view: technology, drawing, snapping, and the schematic it belongs to.
 reference/footprints.html      | SMT land patterns: case sizes, density levels, and how a part gets its artwork.
+reference/lvs.html             | Layout versus schematic: does the artwork implement the drawing, and what the report names.
 reference/pcells.html          | Parameterised cells — placing one, driving it, and its parameter handles.
 reference/pdk-integration.html | Importing a kit and simulating the parts it supplies.
 reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.

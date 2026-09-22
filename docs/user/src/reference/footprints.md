@@ -280,5 +280,6 @@ footprint that no longer resolves and a pad/port disagreement as warnings, on th
 - **No parameter handles.** A case size is a discrete choice from a table, not a dimension to drag —
   a grip would let you pull an 0402 into a shape no case code names, and the stored reference would
   then lie about what the artwork is.
-- **Not LVS, and not a router.** Nothing here checks connectivity, and Update Layout places parts
-  without routing them.
+- **Not a connectivity check, and not a router.** Nothing here reads a net, and Update Layout places
+  parts without routing them. Checking that the artwork implements the schematic is
+  {{anchor: lvs|LVS}}, which is a separate command you run when there is copper to compare.

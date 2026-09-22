@@ -7,10 +7,14 @@
 *not* use, and why), `docs/design/layout-view.md` and `src/Design/Layout/Interchange/` (the Gerber /
 Excellon / board-netlist / `.kicad_pcb` readers this is built on), `docs/design/ui-architecture.md` (the
 firewall this obeys), `docs/user/reference/derived-metrics.html` (the passive readouts that turn a
-vendor part file into a PDN element), `docs/design/lvs.md` (the **second reader of this one's copper
-extraction** — `CopperPieces`, `LayerRegions`, `PlacedPins` and `Regions.Walk` are promoted into a
-shared `Layout/Extraction` namespace that both call, because a board whose connectivity railRF and LVS
-disagree about is a bug neither of them reports).
+vendor part file into a PDN element), `docs/design/lvs.md` (**BUILT** 2026-09-21, and the
+**second reader of this one's copper extraction** — `CopperPieces`, `LayerRegions.Build`,
+`PlacedPins.Of`, `PlacedPin`/`PinSource`, `Regions.Walk`/`.Contains` and `Conductors.Of` now live in
+`CircuitRF.Design.Layout.Extraction`, at `src/Design/Layout/Extraction/`, and both callers go through
+it, because a board whose connectivity railRF and LVS disagree about is a bug neither of them reports.
+**railRF's own answers are a gate on that namespace** — the whole of `tests/Ui.Tests/RailRf/` and
+`PowerRailExampleTests` pass unmodified against it; see
+[`src/Design/Layout/Extraction/RESOLVED.md`](../../src/Design/Layout/Extraction/RESOLVED.md)).
 
 **What changed in rev 4.** The third review round answered every question rev 3 left open but one, and
 one of the answers arrived against §11's window rather than against a numbered question — and it is the

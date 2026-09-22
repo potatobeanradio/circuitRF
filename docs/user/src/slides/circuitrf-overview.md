@@ -105,6 +105,7 @@ The four analyses, the two solvers, and the two instruments.
 - Violations land in a panel: what broke, which rule, by how much, click to zoom. Markers draw over the artwork.
 - The panel always names the **technology it checked against**: a clean result against the wrong process looks exactly like a clean result against the right one.
 - A violation can be **waived with a reason**, so a known exception stays visible instead of being deleted.
+- **Layout versus schematic** is the other half: does the artwork implement the drawing — every device there once, every net whole and separate, every terminal on the right net, every value in agreement. Same panel pattern, same waivers, and a `circuitrf lvs` verb for CI.
 
 ## The check, on a two-rule process
 
@@ -188,7 +189,7 @@ circuitrf hb    pa.cnl   --set Pavs=22 -o sweep.npy
 
 - **Not a transient simulator.** No time-domain SPICE analysis, and none is planned for v1.
 - **Not a full-wave 3D EM solver.** The MoM kernel is planar and says so; a genuinely 3D structure needs a 3D tool.
-- **No LVS, and no sign-off.** Layout-versus-schematic is not implemented and there is no tape-out guarantee. **Design-rule checking is** — see the next slide.
+- **No sign-off.** There is no tape-out guarantee. Design-rule checking and layout-versus-schematic both exist, but neither is a foundry sign-off deck: LVS compares topology and values, and says nothing about manufacturability or parasitics.
 - **Not finished.** It is in active development, and the documentation tracks the current build.
 
 > **Deliberate** — the boundary is stated so it can be checked. Every one of these is a documented non-goal rather than a gap nobody has admitted to.

@@ -341,7 +341,18 @@ public sealed class DocGenRun
         }
 
         // The search index is written LAST, from what the pages turned out to contain — so it cannot
-        // describe a page this run did not write. A slides-only run never reaches here.
+        // describe a page this run did not write.
+        //
+        // A SLIDES-ONLY RUN MUST NOT REACH THE WRITE. This comment used to assert that it never did,
+        // and it did: the loop above `continue`s past each page's HTML emission on `slidesOnly` but
+        // still falls through to here, with `search` holding nothing — so
+        // `dotnet run --project tools/DocGen -- --slides docs/slides --deck overview` OVERWROTE the
+        // committed site index with `{"v":1,"p":[],"s":[]}`. Nothing failed and nothing was printed;
+        // the symptom is that search on every page of the published documentation returns nothing,
+        // which is not visible in a diff anybody reads. `docs/slides/` is git-ignored, so a deck run
+        // touches no tracked file OTHER than this one — which is exactly why it went unnoticed.
+        if (slidesOnly) return families;
+
         string js = Path.Combine(_docsRoot, "assets", "js", "search-index.js");
         Directory.CreateDirectory(Path.GetDirectoryName(js)!);
         File.WriteAllText(js, search.ToJs());

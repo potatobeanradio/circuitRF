@@ -580,3 +580,39 @@ as the last regeneration.
 made it look at first like this change had caused it; a third run in the working tree read 40 again.
 The figure is not deterministic and is not evidence of anything — classify it before reporting a
 regeneration, and put the file back if it moved.
+
+## A slides-only DocGen run emptied the site search index (2026-09-21)
+
+Found while regenerating documentation for `brief-lvs-15-docs-and-example.md`, and fixed in
+`tools/DocGen/Pipeline/DocGenRun.cs`.
+
+```
+dotnet run -c Release --project tools/DocGen -- --slides docs/slides --deck overview
+```
+
+That command **rewrote `docs/user/assets/js/search-index.js` to
+`window.CRF_DOCS_SEARCH = {"v":1,"p":[],"s":[]};`** — an index of nothing. Exit 0, and the run's own
+report lists the two PDFs it produced and does not mention the file at all.
+
+**The code already said it could not happen.** The comment above the write read *"A slides-only run
+never reaches here."* It does: the page loop `continue`s past each page's HTML emission on
+`slidesOnly`, then falls out of the loop to the write with the `SearchIndex` still empty. The fix is
+the early `return` the comment was describing.
+
+**Why it went unnoticed, and why it is worth a file of its own.** `docs/slides/` is **git-ignored**,
+so a deck run is supposed to touch no tracked file whatsoever — which means nobody looks at
+`git status` afterwards. This one file was the single exception, so the damage was invisible at the
+moment it happened and would have arrived in a later commit as one modified line inside a minified
+`.js`, in the same diff as whatever else that commit was about.
+
+**And the symptom is not an error.** Search on every page of the published documentation simply
+returns nothing, forever, with the box still there and still accepting input. `check-docs-current.sh`
+would have caught it *if* it were run after a deck regeneration, but the whole point of a deck
+regeneration is that it is not a docs change.
+
+Two things generalise:
+
+- **A comment asserting that a branch is unreachable is a claim, and an unenforced claim rots.** It
+  is now the guard rather than the description of one.
+- **"This mode writes nothing tracked" is a property worth holding, not assuming.** The exception is
+  what made the bug silent, not what made it small.

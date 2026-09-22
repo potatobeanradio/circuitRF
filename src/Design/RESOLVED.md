@@ -115,79 +115,13 @@ is perfectly connected.
 
 ## One extraction, two readers: `Layout/Extraction` (2026-09-21)
 
-`brief-lvs-2-shared-extraction.md`. The copper reading railRF has always performed is now
-`CircuitRF.Design.Layout.Extraction` — `CopperPieces`, `LayerRegions.Build`, `PlacedPins.Of`,
-`PlacedPin`/`PinSource`, `Regions.Walk`/`.Contains` and `Conductors.Of` — with a broad phase in
-front of the point lookup and a record of WHY two pieces are one net. **Nothing about railRF's
-answers changed**: the whole of `tests/Ui.Tests/RailRf/` and `PowerRailExampleTests` (which parses
-the shipped README's numbers, committed before the change, and compares them to a live run) pass
-unmodified, 830 tests.
+**Moved, in full, to [`Layout/Extraction/RESOLVED.md`](Layout/Extraction/RESOLVED.md)** — the sibling
+of the code it is about, which is where the next person to touch `CopperPieces` will look. It is the
+same findings plus the precedence inversion that made the namespace necessary, the winding rules in
+`LayerRegions.Build`, and the statement of what railRF's own gate costs a change here.
 
-### `JoinKind.SameLayerTouch` cannot be produced by today's walk, and that is not a defect
-
-R-lvs2-4a asks for two join kinds and gate 9 asks for a same-layer join carrying a point inside the
-intersection. **There is no such join.** `DrcConnectivity` receives per-layer UNIONED geometry and
-splits it with `DrcRegions.Components`, so two pieces of metal meeting on one drawing layer are
-already one component before the union-find sees them — every edge the walk retains bridges a via
-barrel to a conductor on another layer. A via drawing layer that happened to coincide with a
-conductor's would not change that, because the union would then make them one component too.
-
-So the kind is classified **by measuring the two pieces' layers**, not by which loop produced the
-union. That is why the unreachable half is still written: brief 9's boundary stitching unions on its
-own account, and a classification keyed on provenance would be wrong there and right nowhere.
-
-### The broad phase has to test candidates in ASCENDING piece order
-
-`PieceAt` with a null layer can be covered by pieces on several layers, and the linear scan it
-replaces returned the FIRST of them in list order. A grid bucket plus a board-spanning list is two
-ascending sequences, so `PieceIndex.PieceAt` merges them rather than concatenating: concatenating
-changes which piece answers an any-layer query, which is not a performance change at all. Held by
-gate 5 — 2,000 randomised pieces, 10,000 queries, index against a scan written out in the test.
-
-### A pour is put on ONE list, not into every cell
-
-A board-wide pour's bbox covers every cell, so smearing it across the grid is a quarter of a million
-insertions for one shape. A piece spanning more than 64 cells goes on a "spans the board" list every
-query tests exactly instead — which is fine *because there are a handful of pours*, and is stated at
-the class header because it stops being fine the moment somebody reaches for the same grid over
-SHAPES. The gate puts the pour LAST on purpose: at index 0 it would answer every query on its first
-exact test and the assertion would prove nothing.
-
-### The cell size is the MEDIAN piece bbox, and the mean would have been wrong
-
-One board-wide pour drags a mean up by orders of magnitude and coarsens the grid into uselessness on
-exactly the boards that need it. R-lvs2-3d's "not configured" is the other half: a knob here is a
-knob nobody can set correctly.
-
-### What did NOT move, and why
-
-`PdnConductor` stayed in `Layout/Pdn` with its sheet resistance — railRF prices copper and LVS never
-prices anything — and gained `AsConductor`, a projection onto the neutral `Conductor` that
-`Conductors.Of` enumerates. `DrcConnectivity` stayed `internal` and grew an **overload**: the DRC
-does not ask for the joins and pays nothing, because locating one costs a Clipper intersection the
-two-argument form never performs.
-
-`PdnNetPoint`, `PdnRegion` and `PdnRailRegionSet` came across with `Regions.Walk` **keeping their
-names**. R-lvs2-1's table renames the types the two readers share and says nothing about these
-three, which are railRF's own vocabulary for a rail and its return; R-lvs2-1d forbids an alias, so
-renaming them would have been sixty call sites of churn for no reader's benefit.
-
-### Two collisions the promotion created
-
-`LayoutEditorViewModel.CopperPieces()` — a method named after the type it returns — became
-`PartitionedCopper()`, and a test helper named `Regions()` became `Walked()`. Both are the ordinary
-cost of giving a promoted type the neutral name; neither is worth an alias.
-
-`RailCliVerbTests`' source scan listed `"PdnRailRegions"` as a forbidden token in `src/Cli/Rail.cs`.
-`"Regions"` on its own would match `layerRegions`, so the token is now `"Regions.Walk"` — the thing
-the scan was actually about.
-
-### The refusal is a programmer's error and is allowlisted as one
-
-R-lvs2-2c's `ArgumentException` fires only when a caller asks for `PinNaming.ArtworkOnly` and hands
-over a schematic-facing delegate anyway. No document can produce that call, so there is nothing for
-the Messages window to group or hang an action on, and `UserFacingTextGateTests`' allowlist is the
-right home for it rather than a coded diagnostic.
+Kept as a heading rather than deleted, because a section that simply vanishes reads as a finding
+somebody decided was wrong. One line of pointer; two copies would drift.
 
 ## The terminal map: which layout pin is which schematic port (2026-09-21)
 

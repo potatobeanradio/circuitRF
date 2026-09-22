@@ -1,7 +1,19 @@
 # circuitRF — Layout Versus Schematic (LVS)
 
-**Status:** Proposal — rev 2 (owner's six decisions folded in) · **Date:** 2026-09-21 ·
-**Phase:** proposed (post-L9, post-railRF)
+**Status:** **BUILT** — rev 3, amended 2026-09-21 · **Date:** 2026-09-21 ·
+**Phase:** shipped (post-L9, post-railRF)
+**Implementation:** [`docs/sonnet-briefs/brief-lvs-0-overview.md`](../sonnet-briefs/brief-lvs-0-overview.md)
+— 15 briefs, all built 2026-09-21. Findings live in the sibling `RESOLVED.md` files:
+[`src/Design/Layout/Lvs/`](../../src/Design/Layout/Lvs/RESOLVED.md),
+[`src/Design/Layout/Extraction/`](../../src/Design/Layout/Extraction/RESOLVED.md),
+[`src/Design/RESOLVED.md`](../../src/Design/RESOLVED.md) and
+[`examples/RESOLVED.md`](../../examples/RESOLVED.md).
+**User documentation:** [`docs/user/src/reference/lvs.md`](../user/src/reference/lvs.md), written
+against `examples/LVS/`, which ships both boards and the die.
+
+**What changed in rev 3.** Nothing about the design; §13 is the list of what the *build* decided
+differently and why, and §12's "Still genuinely open" is closed. A note that disagrees with the code
+is worse than no note.
 
 **Decisions taken (owner, 2026-09-21).** All folded into the body below; §12 keeps the record.
 1. **An `M×N` array is `M×N` devices** (§4.7).
@@ -340,18 +352,26 @@ says which rule answered:
    PCell contract's R3 already promises; making the derivation explicit is what turns an unenforced
    sentence into a checked one.
 3. **By position in the two lists**, when every pin on both sides is unnamed and the counts match.
-   Reported as `lvs.terminals.derived-by-order` at **warning**, always, even on a clean run — it is
+   Reported as `check.terminals.derived-by-order` at **warning**, always, even on a clean run — it is
    a guess that happens to be right most of the time, and a guess that is never announced is the
    shape of a wrong answer nobody finds.
-4. **Nothing.** Counts disagree, or names partly match. `lvs.terminals.underivable`, error, and the
+4. **Nothing.** Counts disagree, or names partly match. `check.terminals.underivable`, error, and the
    device is reported as unmatchable rather than matched against a fabricated terminal list.
 
 **BUILT, 2026-09-21** (`brief-lvs-1-terminal-map.md`). `src/Design/Layout/TerminalMap.cs` is the one
 place R-lvs-9's question is answered, and it returns the ORIGIN of every answer. One guard had to be
 added that this section does not state: `None` covers "the two sides disagree" **and** "there is only
 one side", and only the first is R-lvs-10's error — a cell with a symbol and no layout is most cells
-in every workspace, and a layout-only cell is what every shipped land pattern is. See
-`src/Design/RESOLVED.md`.
+in every workspace, and a layout-only cell is what every shipped land pattern is. And
+`Terminals: []` in a `.ccell` **derives**, it does not declare a map of zero terminals — it is
+"circuitRF made this cell and it has no terminals yet", and reading it as a declaration reports
+three unmapped ports and three unmapped pins on a cell whose G/D/S would have matched by name.
+
+**The ids above read `check.`, not `lvs.`, and this section's original spelling has been corrected
+to match the code.** Brief 1 ships these diagnostics and `check` reports them; minting a second id
+so the same fault reads `lvs.` in an LVS report would be one fault with two contracts, which is
+what §8's stable-id rule exists to prevent. LVS carries brief 1's own line verbatim instead. See
+`src/Design/RESOLVED.md` and `src/Design/Layout/Lvs/RESOLVED.md`.
 
 **R-lvs-11. `check` validates the terminal map without running LVS.** A cell whose map names a pin
 the `.clay` does not have, or leaves a declared port unmapped, is a `check` error today — long
@@ -858,6 +878,12 @@ architecture: an agent that authors a layout can ask whether it matches the sche
 
 ## 9. The gaps — what would block an implementation today
 
+> **All eleven are closed (2026-09-21).** The table is kept as written, in its original tense,
+> because it is the record of *why the design is shaped the way it is* — each row is a constraint
+> the build had to satisfy, and the shape it forced is still in the code. Read it as history, not
+> as a to-do list. G3's answer is `src/Design/Layout/TerminalMap.cs` (§4.2) and G4's is the undrawn
+> ground reference as narrowed in §4.4; §13 lists the places the answer differed from the plan.
+
 Ranked by how much they block, with what closes each. Six of the eleven are small.
 
 | # | Gap | Blocks | Closes with |
@@ -889,6 +915,9 @@ present, all in use, all tested.
 ---
 
 ## 10. Build order
+
+> **All 15 briefs are built (2026-09-21).** The order below is what was followed, and §12 decision
+> 5 held: the whole of LVS landed before any of it shipped, so no phase became a place to stop.
 
 **Implementation:** [`docs/sonnet-briefs/brief-lvs-0-overview.md`](../sonnet-briefs/brief-lvs-0-overview.md)
 — 15 briefs, written 2026-09-21. The overview fixes the boundaries between them and records the
@@ -957,7 +986,7 @@ section keeps the record.
 1. **An `M×N` array is `M×N` devices** (§4.7, R-lvs-23). Confirmed. §6.3's parallel reduction takes
    most of the sting out of it: an array whose elements share a net pair merges and matches.
 2. **Terminals may be derived by POSITION when both sides are entirely unnamed** (§4.2, R-lvs-10
-   rule 3). Confirmed — and it reports `lvs.terminals.derived-by-order` at warning every time,
+   rule 3). Confirmed — and it reports `check.terminals.derived-by-order` at warning every time,
    including on an otherwise clean run, because it is a guess that is usually right.
 3. **The default unit of comparison is the CELL, not the testbench** (§5, R-lvs-29). Confirmed;
    `--testbench` opts in.
@@ -977,14 +1006,146 @@ section keeps the record.
    the stackup entry and the number of terminals that reached ground through it — because this is
    the one inference in the extraction that the user cannot see on their own screen.
 
-### Still genuinely open
+### Nothing is still open — both entries closed 2026-09-21
 
-- **§6.4 R-lvs-45's default tolerances.** 1 % on R and C is a guess; the right numbers may differ
-  per unit dimension and per market (a PCB resistor is a 1 % part; an MMIC NiCr is not). Worth
-  setting against a real design rather than in advance.
-- **§4.1 tier 3's recognition deck's CONTENTS.** The shape is built and fixed (a `DeviceRules`
-  block reusing `DrcLayerExpr` and the one expression engine, with `Constants` beside it); what no
-  shipped technology yet states is a rule, because no design has needed one. Two-terminal passives
-  are all a rule may describe today — a three-terminal one is additive to the same deck when a real
-  design needs it. Fixing the vocabulary before there is a design to fix it against is how a rule
-  language acquires features nobody uses.
+- **§6.4 R-lvs-45's default tolerances — CLOSED, and they are now MEASURED rather than guessed.**
+  The note called 1 % a guess and asked that it be set against a real design. Brief 10 set it
+  against `examples/LVS/Bias tee/`, which is a real design drawn on a 0.25 µm grid: each of its
+  four parts is solved for a requested value and then quantised to that grid, so the gap between
+  the requested value and the value the artwork actually resolves to is **the quantisation of a
+  correct design**, and it is the floor under any tolerance. A tolerance tighter than it rejects
+  good artwork.
+
+  | part | dimension | requested | resolved | spread |
+  |---|---|---|---|---|
+  | `MIM-0P8P`  | capacitance | 0.8 pF | 0.79844 pF | 0.195 % |
+  | `MIM-4P0P`  | capacitance | 4.0 pF | 3.99861 pF | 0.035 % |
+  | `SPIRAL-1N2`| inductance  | 1.2 nH | 1.19985 nH | 0.013 % |
+  | `TFR-62R`   | resistance  | 62 Ω   | 61.875 Ω   | 0.202 % |
+
+  The widest is **0.2 %**. The smallest *wrong* part anybody could have fitted is one step of the
+  E96 series, **2.4 %**. The shipped default sits between them at **1 %** for R, C and L alike — so
+  it is bounded on both sides by something measurable rather than chosen for looking round. A
+  **length** is compared to one database unit instead, because a smaller difference cannot be
+  drawn. **Every other dimension is compared exactly, and the report says that no tolerance has
+  been established for it** (`lvs.property.tolerance-unestablished`) rather than a plausible number
+  being invented — which is the part of this that generalises: the answer to "we do not know the
+  right tolerance" is to say so on the line, not to pick one.
+
+  The note's second worry — that the right number differs per market — is answered by the number
+  being **overridable per technology in the `.ctech`**, and by **every finding printing the
+  tolerance it applied**, so a wrong default shows up on the line it produced instead of being
+  argued about in the abstract. The generator re-prints the table on every run and the test suite
+  fails if a change widens one of those gaps past the tolerance.
+
+- **§4.1 tier 3's recognition deck's CONTENTS — CLOSED as written, which is to say deliberately
+  left empty.** The shape is built and fixed exactly as the note describes it, and **no shipped
+  technology states a rule**, because no design has needed one. That is the answer rather than an
+  omission: `--recognize` is off per run *and* off per technology, a process declaring no rules
+  recognises nothing and that is not an error, and the deck is validated by
+  `circuitrf check <tech.ctech>` the moment somebody writes one. Fixing a rule vocabulary before
+  there is a design to fix it against is how a rule language acquires features nobody uses, so the
+  right state for this list is closed-and-empty, not open.
+
+---
+
+## 13. What the build decided differently, and why (2026-09-21)
+
+Everything in §1-§11 shipped. These are the places where the *code* and the note as written
+disagreed, resolved in the code's favour, so this note can be read as a description of what exists.
+Each one is recorded in full in the relevant sibling `RESOLVED.md`; this is the index.
+
+### 13.1 The terminal diagnostics read `check.`, not `lvs.`
+
+§3's table and §4.2 both spelled them `lvs.terminals.…`; the shipped ids are
+`check.terminals.derived-by-order` and `check.terminals.underivable`, which is what brief 1 gave
+them, and **both sections are corrected in place**. LVS carries brief 1's own line verbatim rather
+than minting a second id so the report reads `lvs.`: one fault with two contracts is what §8's
+stable-id rule exists to prevent, and `check` reports these too. `lvs.net.contested-name` and
+`lvs.schematic.extraction-note` make the same choice in the other direction — **the id belongs to
+the finding, not to the verb that happened to print it.**
+
+### 13.2 §4.4's R-lvs-15 is narrowed: only an UNDRAWN reference is inferred
+
+**Amended in §4.4 itself**, which is where it belongs and where it already reads. The one-line
+reason, because it is the most dangerous of these: applied literally, the first bullet turns every
+bottom-side trace on three of the four shipped PCB technologies into ground, and the board **passes
+LVS while being one short, with no symptom.** A reference conductor that draws is ordinary copper;
+only the undrawn case is inferred, and R-lvs-16's unconditional reminder now carries the whole
+weight of that inference.
+
+### 13.3 §5's `JoinKind.SameLayerTouch` is unreachable by today's walk, on purpose
+
+`DrcConnectivity` receives per-layer **unioned** geometry, so two pieces of metal meeting on one
+drawing layer are already one component before the union-find ever sees them: every edge the walk
+retains bridges a via barrel to a conductor on another layer. The kind is therefore classified by
+**measuring the two pieces' layers** rather than by which loop produced the join. The unreachable
+half is still written because brief 9's boundary stitching unions on its own account, and a
+classification keyed on provenance would be wrong there and right nowhere.
+
+### 13.4 §4.2's derivation ladder needed a fifth state, or every workspace lights up red
+
+**Amended in §4.2 itself.** In one line: `None` covers *the two sides disagree* **and** *there is
+only one side*, and only the first is an error — the second is most cells in every workspace, so
+the note read literally lights nearly all of them red. `Terminals: []` derives rather than
+declaring, for the same reason.
+
+### 13.5 §10's staging held, and §10's validation list moved
+
+The build order held as written, which is what §12 decision 5 bought. Of the four validation
+anchors, the shipped example workspace is `examples/LVS/`, and its fault list is **not** §10's.
+
+§10 asks for *one swapped net, one missing part, one short, one wrong value, one un-exploded array*.
+What ships is **six**: swapped net, missing part, **extra part**, short, **open**, wrong value.
+
+- **An extra part and an open were added** because each is a whole finding class with nothing else
+  exercising it. A part in the artwork with no schematic is the mirror of a part in the schematic
+  with no artwork, and the two travel through different branches of the correspondence; an open is
+  the mirror of a short, and §8's island reporting has no other fixture.
+- **The un-exploded array was dropped.** Nothing on either board collapses and the MMIC's only
+  sub-cells are leaf parts, so an array fault would have needed a fixture built for it — a fixture
+  exercising a fixture. §6.3's reduction is gated on netlists BUILT IN THE TEST instead — four
+  parallel resistors, a ladder that needs three passes, one broken out of four — which is where the
+  reduction actually has to hold and where a committed board would have pinned one shape of it.
+
+**`F5`'s open splits the ground in two, and three was never reachable at any geometry** — brief 5
+asked for three. `DrcConnectivity.FirstTouching` returns at most one piece per conductor, so on a
+two-layer board a via barrel is an edge of degree two, and removing one edge of a tree splits it
+into exactly two components. The generator's own comment says so, so nobody "fixes" it later.
+
+### 13.6 The `--no-reduce` and `--flat` gate measures the MODE, not the counts
+
+Brief 11's gate asked both flags to change the counts on the correct board. They do not, and cannot:
+nothing on either example board collapses and the MMIC's only sub-cells are leaf parts. What they
+change is what the run **says it did** — the mode is on the face of the human report and of the
+`--json` document, both sides, every run — and that is what the gate pins instead. A result whose
+reduction mode is not stated is one two people can read differently.
+
+### 13.7 The MMIC does not compare clean, and that is the shape of a real limit
+
+`Bias tee` reports exactly one `lvs.net.short`. A spiral inductor is one continuous piece of metal,
+so a galvanic extraction reads its two terminals as one net and the comparison **correctly** says
+that two schematic nets are one piece of copper. Nothing there is a fixture defect: the missing rule
+is that a recognised *device's* internal copper is not interconnect, which is §4.1 tier 3's, and
+this cell is the first fixture in the repository that could show it (a board's two land-pattern pads
+are separate copper, and a MIM capacitor's plates are on different conductors). It is stated on the
+user documentation page as a limit rather than hidden, and the example's README says why.
+
+### 13.8 §11's non-goals are unchanged, and one more was added by construction
+
+`--recognize` reads what copper **looks like**, never whether the process would actually make that
+device. Every candidate it rejects is reported with its reason, a recognised device carries no
+designator so it can only ever match structurally, and a run that recognised anything says so at
+info. That is a boundary the note implied and the build had to state, because a recognition result
+read as a manufacturability statement is the one way this feature could mislead.
+
+### 13.9 Two brief citations point at sections that did not exist
+
+`brief-lvs-3-layout-netlist.md` cites this note's `§12.1` and `§12.6` for the array and
+ground-reminder decisions. **The note had no §12 when the brief was written**; those decisions are
+in §4.7 and R-lvs-16, and that is where the code's own comments point. §12 is the decision record
+added in rev 2, and it holds neither.
+
+Recorded rather than silently corrected in the brief, because the briefs are the history of what was
+asked for and the note is the description of what exists. Only one of the two is edited when they
+disagree, and it is this one.

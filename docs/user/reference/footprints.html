@@ -410,13 +410,14 @@ picker.</li>
 <li><strong>No parameter handles.</strong> A case size is a discrete choice from a table, not a dimension to drag —
 a grip would let you pull an 0402 into a shape no case code names, and the stored reference would
 then lie about what the artwork is.</li>
-<li><strong>Not LVS, and not a router.</strong> Nothing here checks connectivity, and Update Layout places parts
-without routing them.</li>
+<li><strong>Not a connectivity check, and not a router.</strong> Nothing here reads a net, and Update Layout places
+parts without routing them. Checking that the artwork implements the schematic is
+<a href="lvs.html">LVS</a>, which is a separate command you run when there is copper to compare.</li>
 </ul>
 
 <nav class="page-nav">
   <a class="prev" href="layout-editor.html"><span class="dir">Previous</span><span class="name">The Layout Editor</span></a>
-  <a class="next" href="pcells.html"><span class="dir">Next</span><span class="name">PCells</span></a>
+  <a class="next" href="lvs.html"><span class="dir">Next</span><span class="name">Layout versus schematic</span></a>
 </nav>
 </main>
 

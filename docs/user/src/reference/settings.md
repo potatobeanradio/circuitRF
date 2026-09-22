@@ -100,6 +100,12 @@ there are violations they are listed first and you can still go ahead. Catching 
 it reaches a fabricator is most of what DRC is worth, and a check you have to remember to run by hand
 is one you will forget before the export that mattered.
 
+**Run LVS before exporting** makes the same offer for
+{{anchor: lvs|layout versus schematic}}, and it is **off** by default. The difference is that a
+design-rule check needs only artwork, and LVS needs a drawing to compare the artwork against &mdash;
+exporting artwork on its own is a legitimate thing to do, so this one is opt-in. Off with the box
+visible is not the same as absent: you can see that the offer exists.
+
 The rules themselves, and the panel that lists the violations, are in
 {{anchor: layout-editor.html|the layout editor chapter}}.
 

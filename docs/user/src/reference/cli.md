@@ -89,6 +89,7 @@ convention behind both.</p>
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
+| `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -658,6 +659,50 @@ A file read six months later has no status strip beside it, so every format carr
 Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
 many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
 height **indicative** rather than measured.
+
+## `lvs` — does the artwork implement the drawing? {#lvs}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs &lt;path&gt; [--no-reduce] [--flat] [--flatten-cell NAME] [--testbench]
+<span class="prompt">  </span>[--recognize] [--set var=expr] [--severity warning|error] [-o report.txt]</code></pre>
+
+`lvs` compares a cell's **layout** against its **schematic** and reports every device, net, terminal and
+value the two disagree about. It answers the one question a headless client cannot answer any other way:
+the design was drawn twice, and do the two drawings say the same thing? An agent that authored a `.clay`
+cannot look at the screen.
+
+Every finding comes out of the same call the [LVS panel](lvs.html#window)'s **Compare** button makes, so
+a design that passes on a build machine passes when somebody opens it.
+
+The path may be a **cell folder** (the default unit &mdash; its primary schematic against its primary
+layout), a **workspace** (every cell holding both views), a **`.clay`** or a **`.csch`** (each finds its
+sibling in the cell folder that holds it). A cell holding only one of the two views is reported and
+skipped, not failed: that is the ordinary state of a design being drawn.
+
+| Option | Meaning |
+|---|---|
+| `--no-reduce` | Compare object for object. By default parallel and series `R`/`C`/`L` collapse first, and every finding un-reduces to the objects you drew. |
+| `--flat` / `--flatten-cell <name>` | Flatten the whole hierarchy, or one named sub-cell (repeatable). Every use is reported, so a design that quietly flattens everything is visible. |
+| `--testbench` | Compare a bench as drawn rather than the cell it instantiates. |
+| `--recognize` | Also read devices out of bare copper, through the technology's own `DeviceRules` deck. Off by default, and off for a process that declares no rules. |
+| `--set var=expr` | Set a global before the schematic elaborates, exactly as a run verb does. |
+| `--severity warning\|error` | What makes the exit code non-zero. Default `error`. |
+| `-o report.txt` | The **only** thing this verb ever writes. With no `-o` it writes nothing at all, so it runs on a read-only tree and on a workspace another process has open. |
+
+**Exit 0** when nothing at or above `--severity` was found, **1** otherwise, **130** on a cancellation.
+A run holding warnings and no errors exits 0 and still reports every one.
+
+With `--json`, every finding travels with a stable `lvs.` id and typed arguments &mdash; the layer, the
+coordinate, the two values, the marker box &mdash; so a caller reads what it needs without parsing the
+sentence apart. It **honours waivers and never creates one**: waiving is a reasoned act with a sentence
+attached and belongs beside the thing being waived.
+
+**It is not folded into [`check`](#check)**, deliberately. `check` has to stay cheap enough to call after
+every edit; an LVS on a real board is seconds rather than milliseconds, and a `check` that had become
+slow is a `check` people stop running. What `check` does carry is the
+[terminal-map](lvs.html#terminals) validation, which is cheap and static.
+
+See {{anchor: lvs|the LVS chapter}} for what the findings mean and a worked example on the shipped
+example workspace.
 
 ## `smith` — a matching network, headless {#smith}
 

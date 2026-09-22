@@ -1578,7 +1578,7 @@ L9 and is named, not scheduled.
 | Gerber import complexity | Medium | Export-only for v1, stated explicitly rather than half-shipped |
 | Unit/DBU model gets it wrong and everything inherits the mistake | Medium | §1 is the first thing built and the first thing tested; unit change asserted to be a byte-identical no-op |
 | Schematic→layout regenerating over hand placement | Medium | R16 idempotency by stable schematic `Id`, designed in from the start |
-| Scope creep into auto-routing and LVS | Medium | Both named as non-goals for this plan. DRC is in scope but bounded to §9A's two rules; LVS is a direction, not a phase. Revisit only after L8 |
+| Scope creep into auto-routing and LVS | ~~Medium~~ **Closed 2026-09-21** | Auto-routing is still a non-goal. LVS is no longer a direction: it is **BUILT** — designed in full in [`lvs.md`](lvs.md) and shipped by the 15-brief LVS series, after L8 and after railRF, as its own subsystem reusing this plan's connectivity extraction rather than as a phase inside it. The risk this row named — LVS arriving one plausible increment at a time inside the layout plan — did not happen |
 | Kernel W (LW1/LW2) dilutes effort across two EM kernels at once | Medium | LW1 shares everything but the kernel with L7 and carries **no DCIM dependency**, so it is not a second research project. Sequenced against L8 rather than beside it, and LW2 gated behind LW1's oracles |
 | LW2's wire-to-surface junction is under-estimated because it looks like "just adding panels" | **High** | Named in §10.11 as the larger half of the wirebond effort and budgeted as one deliverable unlocking three capabilities. Gated on the right-angle-corner 3-image oracle *before* any package geometry, so the junction's correctness is measurable in isolation |
 | A wirebond result is reported without a stated return path and is silently optimistic | **High** | §10.11: ports carry an explicit reference conductor and the UI refuses a port without one; ground bond wires are ordinary wires; a multi-tier ground with no declared connection is refused rather than shorted |
@@ -1599,7 +1599,7 @@ the decision and where it now lives in the body.
 | 1 | MoM kernel starting point | **A → B → C** — quasi-static 2D per-unit-length first | §10.3, phases L7–L9 |
 | 2 | Tech file scope | **Workspace-level shared `.ctech`**, several permitted per workspace, one default in `.cws` | §2.4 |
 | 3 | Primary market for defaults | **Both, chosen per workspace** — two starter techs, two templates, two heroes, one code path | §2.4 |
-| 4 | Connectivity in layout | **Shapes carry a net and the editor maintains it**; LVS is a named future direction | §3.4 R10a |
+| 4 | Connectivity in layout | **Shapes carry a net and the editor maintains it**; LVS was a named future direction and is now **built** ([`lvs.md`](lvs.md), 2026-09-21) | §3.4 R10a, §9A.3 |
 | 5 | Same-layer overlap | **Darkens.** Merge becomes an automatic LOD tier above a visible-shape threshold, and the fallback if the benchmark says so | §2.3 R8a/R8b, §5.3 |
 | 6 | Curves | **`Curve`, `Circle`, `RoundedRect` are first-class primitives** over a shared edge-list model, with **Flatten to Polygon** on the context menu and automatic flattening on GDSII export | §3.2 R9a–R9e |
 | 7 | `.clay` size | **Plain JSON.** The reader sniffs gzip magic bytes from day one, but the WRITER reserve is revoked: gzipping costs a repository ~508× per mid-file edit (§4) | §4 |
@@ -1630,7 +1630,7 @@ v1.3 — see the §12 risk row and decision 11.)*
 
 ### Non-goals, stated so they stay non-goals
 
-Auto-routing. Live as-you-type DRC. LVS as a phase (it is a direction — §9A.3). Gerber *import*.
+Auto-routing. Live as-you-type DRC. Gerber *import*.
 **FEM, volumetric meshing, and arbitrary 3D geometry.** Each is a real product on its own; naming them
 here is what keeps them from arriving one plausible increment at a time.
 
@@ -1639,6 +1639,13 @@ here is what keeps them from arriving one plausible increment at a time.
 > meshing, and drawing arbitrary 3D solids remain out — and kernel W deliberately requires none of
 > them: the layout stays 2D, `.clay` gains no 3D shape type, and the only 3D object is a wirebond
 > polyline generated from named parameters.
+
+> **"LVS as a phase" left this list 2026-09-21.** It was never a non-goal of the *product*, only of
+> this plan — the line's own parenthesis said so, pointing at §9A.3's "it is a direction". The
+> direction was taken: LVS is designed in [`lvs.md`](lvs.md) and built as its own 15-brief series,
+> reusing the connectivity extraction §9A built rather than growing inside the layout phases. It is
+> struck rather than reworded because a non-goals list that names a shipped feature is a list nobody
+> can use.
 
 
 ### §11's L9 gate sentence — the proposal on the record (L9e, 2026-08-05)

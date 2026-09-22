@@ -709,11 +709,12 @@ separately, rather than disappearing — a known exception you can still see is 
 report you cannot trust.
 
 <div class="callout note">
-<span class="label">DRC, not LVS</span>
-<p>circuitRF checks the <strong>geometry</strong> against the process rules. It does not compare the
-layout against the schematic: there is no layout-versus-schematic check, and the connectivity the DRC
-computes internally exists to tell one net's shapes from another's, not to verify a netlist. Two
-different nets overlapping is a short, and finding it is an LVS job circuitRF does not do.</p>
+<span class="label">DRC is the geometry; LVS is the netlist</span>
+<p>The DRC checks the <strong>geometry</strong> against the process rules, and the connectivity it
+computes internally exists to tell one net's shapes from another's. Whether the artwork implements the
+<strong>schematic</strong> &mdash; every device there once, every net whole and separate, every terminal
+on the right net, every value in agreement &mdash; is a different check with a different engine: see
+{{anchor: lvs|layout versus schematic}}. A board can pass either one and fail the other.</p>
 </div>
 
 ## The toolbar {#toolbar}

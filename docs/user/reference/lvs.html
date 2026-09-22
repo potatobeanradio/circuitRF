@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Layout versus schematic</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/lvs.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Layout versus schematic</p>
+
+  <h1>Layout versus schematic</h1>
+  <p class="lede">Does the artwork implement the drawing? One comparison of the copper you drew against the circuit you drew, naming every device, net and value the two disagree about.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What LVS checks</a></li>
+<li><a href="#unit">The unit of comparison, and what it reads</a></li>
+<li><a href="#window">Running it from the window</a></li>
+<li><a href="#headless">Running it from the command line</a></li>
+<li><a href="#report">Reading a report</a></li>
+<li><a href="#example">The worked example</a></li>
+<li><a href="#waivers">Waivers</a></li>
+<li><a href="#terminals">Terminal maps: which pad is which pin</a></li>
+<li><a href="#recognize">Recognising devices in bare copper</a></li>
+<li><a href="#limits">What LVS does not check</a></li>
+</ol>
+</nav>
+<h2 id="what">What LVS checks</h2>
+<p>A design that will be manufactured is drawn <strong>twice</strong> — once as a circuit and once as artwork
+— and only one of the two is simulated. LVS is the check that the second drawing says the same
+thing as the first.</p>
+<p>It reads the copper on your layout, works out which pieces are electrically one net, works out which
+pads belong to which placed device, and compares the netlist that falls out of that against the
+netlist your schematic extracts to. Then it reports every place the two disagree.</p>
+<div class="callout note">
+<span class="label">The four things it answers</span>
+<ol>
+<li><b>Is every device there, once?</b> A part in the schematic with no artwork, a part in the artwork
+with no schematic, and a part of the wrong kind.</li>
+<li><b>Is every net whole, and separate?</b> A schematic net that is two or more disconnected pieces of
+copper is an <b>open</b>. Two schematic nets that are one piece of copper are a <b>short</b>, and the
+report names the metal that joins them and where it is.</li>
+<li><b>Is every terminal on the right net?</b> A pad landed on the neighbouring trace is not an open and
+not a short &mdash; both nets still exist &mdash; and it is the fault hardest to see by eye.</li>
+<li><b>Does every value agree?</b> The resistance, capacitance, inductance or length the artwork
+resolves to, against the value the schematic asked for, each to a stated tolerance.</li>
+</ol>
+</div>
+<p>LVS never edits anything. It reads, it compares, and it reports.</p>
+<h2 id="unit">The unit of comparison, and what it reads</h2>
+<p><strong>The unit is the cell.</strong> A cell's primary layout view is compared against its primary schematic view.
+That is the object a designer draws twice, so it is the object worth comparing; a test bench wraps a
+cell in terminations that have no artwork at all, and comparing one of those would report the
+terminations as missing parts on every run.</p>
+<p>To do it, LVS resolves three things, all of which it finds for itself:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>the layout</strong></td>
+<td>the cell's own <code>.clay</code>, and every sub-cell it places, read down the hierarchy</td>
+</tr>
+<tr>
+<td><strong>the technology</strong></td>
+<td>the stackup that layout references — which conductor each drawing layer is, which vias join which conductors, and <strong>which conductor is the ground reference</strong></td>
+</tr>
+<tr>
+<td><strong>the schematic</strong></td>
+<td>the cell's own <code>.csch</code>, read by the same extraction <strong>Simulate</strong> performs — but <em>not</em> the flattened, elaborated netlist. The hierarchy stays intact and the names stay yours; all LVS takes from elaboration is the resolved parameter <strong>values</strong> it compares</td>
+</tr>
+</tbody>
+</table>
+<p>The technology is not optional and is never guessed. Without it there is no way to know that a shape on
+one layer and a shape on another are the same conductor, or that a barrel between them joins them.</p>
+<div class="callout note">
+<span class="label">Ground can come from the stackup</span>
+<p>A stackup entry may be flagged as the <b>ground reference</b> and draw no layer at all &mdash; a
+die's backside metal is the usual case. Vias that terminate on it reach ground through metal that
+exists in the process and nowhere in your artwork. LVS reads that connection, and <b>says so on every
+run that relies on it</b>, naming the stackup entry and how many vias reached ground through it. It is
+the one inference in the whole extraction that you cannot check by looking at your own screen.</p>
+</div>
+<h2 id="window">Running it from the window</h2>
+<p>Open the cell's <strong>layout</strong> view, then <strong>View › Panels › LVS</strong>. The panel is not in either
+shipped default layout, because it needs a cell with both views drawn and most documents being edited do
+not have that yet.</p>
+<p>The panel is the <a href="layout-editor.html#drc">DRC panel</a>'s pattern, control for control:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Compare</strong></td>
+<td>Runs the comparison. It never runs on its own and it never blocks editing.</td>
+</tr>
+<tr>
+<td><strong>Markers</strong></td>
+<td>Draws each finding's region over the artwork. A view preference: never saved, never on the undo stack.</td>
+</tr>
+<tr>
+<td><strong>Layout → Schematic</strong></td>
+<td>Selects the schematic component matching the artwork you have selected.</td>
+</tr>
+<tr>
+<td><strong>Schematic → Layout</strong></td>
+<td>The other direction.</td>
+</tr>
+</tbody>
+</table>
+<p>Under the buttons: the technology the comparison ran against, the reduction mode, both sides' device and
+net counts, and the findings, grouped by severity. Clicking a finding zooms the layout to it.</p>
+<div class="callout note">
+<span class="label">A result describes what is on disk</span>
+<p>The comparison reads the cell folder, which is what makes the panel and the command line give the
+same answer. So editing the document after a run makes that run <b>stale</b>, and the panel says so.
+The result is <i>kept</i> rather than discarded &mdash; unlike a DRC result &mdash; because it also
+carries the correspondence, which is what cross-probing runs on and the thing you are most likely to
+still want after nudging a pad. Cross-probing refuses while the result is stale rather than
+highlighting against a correspondence that no longer describes the design.</p>
+</div>
+<h2 id="headless">Running it from the command line</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs &lt;path&gt; [--no-reduce] [--flat] [--testbench] [--recognize] [-o report.txt]</code></pre>
+<p>Same function, same arguments, same findings in the same order — so a design that passes on a
+build machine passes when somebody opens it. The path says what to compare:</p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Compared</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a <strong>cell folder</strong></td>
+<td>its primary schematic against its primary layout</td>
+</tr>
+<tr>
+<td>a <strong>workspace</strong></td>
+<td>every cell holding both views; one holding a single view is reported and skipped</td>
+</tr>
+<tr>
+<td>a <strong><code>.clay</code></strong></td>
+<td>its sibling schematic, in the cell folder that holds it</td>
+</tr>
+<tr>
+<td>a <strong><code>.csch</code></strong></td>
+<td>its sibling layout, likewise</td>
+</tr>
+</tbody>
+</table>
+<p>A cell with only one of the two views is <strong>not</strong> an error. That is the ordinary state of a design being
+drawn, and the run reports which view is missing and carries on.</p>
+<h3 id="lvs-options">Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--no-reduce</code></td>
+<td>Turn series/parallel reduction off and compare object for object.</td>
+</tr>
+<tr>
+<td><code>--flat</code></td>
+<td>Flatten the whole hierarchy instead of comparing sub-cells as cells.</td>
+</tr>
+<tr>
+<td><code>--flatten-cell &lt;name&gt;</code></td>
+<td>Flatten one named sub-cell and keep the rest hierarchical. Repeatable, matched on the cell folder's name, and every use is reported — a design that quietly flattens everything is a design whose hierarchy was never compared. A cell that is permanently like this says so itself, with <code>FlattenForLvs</code>.</td>
+</tr>
+<tr>
+<td><code>--testbench</code></td>
+<td>Compare a test bench as drawn, instead of the cell it instantiates.</td>
+</tr>
+<tr>
+<td><code>--recognize</code></td>
+<td>Also read devices out of bare copper — see <a href="#recognize">below</a>. Off by default.</td>
+</tr>
+<tr>
+<td><code>--set var=expr</code></td>
+<td>Set a global before the schematic elaborates, exactly as a run verb does.</td>
+</tr>
+<tr>
+<td><code>--severity warning\|error</code></td>
+<td>What makes the exit code non-zero. Default <code>error</code>.</td>
+</tr>
+<tr>
+<td><code>-o report.txt</code></td>
+<td>Write the report to a file.</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>-o</code> is the only thing this verb ever writes</strong>, and with no <code>-o</code> it writes nothing at all. It runs on
+a read-only tree and on a workspace another process has open.</p>
+<h3 id="lvs-exit">Exit codes</h3>
+<p><strong>0</strong> when nothing at or above <code>--severity</code> was found, <strong>1</strong> otherwise, <strong>130</strong> on a cancellation. A run
+that found warnings and no errors exits 0 and still reports every one of them — hiding them to
+keep the exit code clean is what makes an exit code useless.</p>
+<p><code>--json</code> gives the whole result as one document. Every finding travels with a stable <code>lvs.</code> id and
+typed arguments — the layer, the coordinate, the two values — so a script reads what it
+needs without parsing the sentence back apart. The id is the contract; the sentence is not.</p>
+<h2 id="report">Reading a report</h2>
+<p>A report opens with one line per cell and then the findings, grouped by severity. The header line is
+worth reading before the findings are:</p>
+<pre><code class="cmd"><span class="output">Attenuator broken: 6 error(s), 0 warning(s)
+  technology 'PCB 2-Layer FR-4 (0.8mm, 1oz) - LVS example', reduction on
+  schematic 4 device(s) and 3 net(s); layout 4 device(s) and 5 net(s)</span></code></pre>
+<p>Both sides' counts are on the face of it, and so is the technology and the reduction mode, because two
+people reading the same report have to be reading the same run.</p>
+<p>Findings name <strong>your own objects</strong> — designators, net names, pin names — never internal
+indices, and never a coordinate where a name exists. These are the ones you will meet most:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lvs.device.unmatched-schematic</code></td>
+<td>A part in the drawing that the artwork does not have</td>
+</tr>
+<tr>
+<td><code>lvs.device.unmatched-layout</code></td>
+<td>A part in the artwork that the drawing does not have</td>
+</tr>
+<tr>
+<td><code>lvs.device.type-mismatch</code></td>
+<td>Both sides have it, and they disagree about what it is</td>
+</tr>
+<tr>
+<td><code>lvs.net.open</code></td>
+<td>One schematic net is two or more separate pieces of copper, <strong>with the pins on each</strong></td>
+</tr>
+<tr>
+<td><code>lvs.net.short</code></td>
+<td>Two or more schematic nets are one piece of copper, <strong>with the metal that joins them and its coordinate</strong></td>
+</tr>
+<tr>
+<td><code>lvs.terminal.wrong-net</code></td>
+<td>A terminal is on one net in the drawing and reaches a different one in the artwork, <strong>naming both</strong></td>
+</tr>
+<tr>
+<td><code>lvs.property.mismatch</code></td>
+<td>A value disagrees, <strong>with both values and the tolerance that was applied</strong></td>
+</tr>
+<tr>
+<td><code>lvs.pin.no-copper</code></td>
+<td>A pad that lands on nothing at all</td>
+</tr>
+</tbody>
+</table>
+<p><strong>A short is never reported without its path.</strong> A short reported as a bare pair of net names is a
+finding nobody can act on, so the sentence carries the neck or via that joins them, its width and where
+it is. The same rule drives the rest: an open names the pins on each island, a property mismatch names
+the tolerance it applied, so a wrong default shows up on the line it produced rather than being argued
+about in the abstract.</p>
+<h3 id="reduction">Reduction, and why findings un-reduce</h3>
+<p>By default LVS <strong>reduces</strong> before it compares: parallel <code>R</code>/<code>C</code>/<code>L</code> on a net pair, parallel
+multi-terminal devices with every terminal common, and series <code>R</code>/<code>C</code>/<code>L</code> through a node of degree
+exactly two that no port, label or <code>measure</code> line observes. A four-finger FET drawn as four devices and
+schematised as one is the case this exists for.</p>
+<p>Every reduction is reported, and <strong>every finding un-reduces</strong> — a collapsed device names all four
+of the objects you drew, not the merged one the comparison worked on. <code>--no-reduce</code> gives the
+object-for-object reading, and the mode is on the face of every report either way.</p>
+<p>Distributed and behavioural elements are never reduced, and neither are series cascodes.</p>
+<h2 id="example">The worked example</h2>
+<p><strong>Tools › Examples › Layout versus schematic</strong> ships a 3 dB attenuator whose artwork
+matches its drawing, <strong>the same board with six deliberate faults in its artwork</strong>, and an MMIC bias
+tee. Open it and follow along.</p>
+<p>Its own <code>README.md</code> is the fault list: each of the six, what was mutated, and what the report should
+say about it. It also carries the Python that regenerates both boards, so you can write a seventh fault
+and see what LVS makes of it.</p>
+<h3 id="lvs-example">Both boards, from the folder you copied the example into</h3>
+<p>The correct board first, so you know what a clean run looks like:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs Attenuator
+<span class="output">Attenuator: matches
+  technology 'PCB 2-Layer FR-4 (0.8mm, 1oz) - LVS example', reduction on
+  schematic 4 device(s) and 3 net(s); layout 4 device(s) and 3 net(s)
+
+1 cell(s) compared: 0 error(s), 0 warning(s), 3 note(s).</span></code></pre>
+<p>Now the same schematic, byte for byte, against artwork with six faults in it:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs "Attenuator broken"
+<span class="output">Attenuator broken: 6 error(s), 0 warning(s)
+  technology 'PCB 2-Layer FR-4 (0.8mm, 1oz) - LVS example', reduction on
+  schematic 4 device(s) and 3 net(s); layout 4 device(s) and 5 net(s)
+  error: The layout's 'R4' has no counterpart in the schematic (0 indistinguishable device(s) in the schematic against 1 in the layout).
+      R4
+  error: The schematic's 'C1' has no counterpart in the layout (1 indistinguishable device(s) in the schematic against 0 in the layout).
+      C1
+  error: Schematic net '0' is 2 separate pieces of copper in the layout: 0 (R2.1, R2.2, R1.1, R3.2); net 1 (R1.2).
+      0, R2.1, R2.2, R1.1, R3.2, R1.2
+  error: 2 schematic nets are one piece of copper ('0'): 0, IN. They are joined through a 200.064 µm neck of Top Copper at (1500, 4675) µm.
+      0, IN
+  error: R3 R: schematic 294 Ω, layout 150 Ω, tolerance 1 %.
+      R3, R3
+  error: R2 terminal 2 ('2') is on 'OUT' in the schematic and reaches '0' in the layout.
+      R2, R2
+
+1 cell(s) compared: 6 error(s), 0 warning(s), 3 note(s).</span></code></pre>
+<p>Six faults, six findings, in one run. Read against the README's table they line up one for one: an extra
+part, a missing part, an open, a short, a wrong value and a mis-wired terminal. The short carries the
+0.2 mm spur that causes it and its coordinate; the open names which pins ended up on the island that
+reaches nothing else; the value mismatch prints both values and the tolerance.</p>
+<p>Note what the <strong>fifth</strong> one is. <code>R3</code> is the right kind of part, in the right place, with the right
+designator, wired correctly — and it is the wrong resistor. No topology check of any kind will
+find it, and neither will looking at the board.</p>
+<p>Point the verb at the whole folder and it does every cell in it:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs .
+<span class="output">Attenuator: matches
+Attenuator bench: 'Attenuator bench' has no primary layout view, so there was nothing to compare it against.</span></code></pre>
+<p><code>Attenuator bench</code> is the test bench that runs the correct cell — two terminations and an
+S-parameter sweep. It has no artwork, so it is reported and skipped rather than failed.</p>
+<h3 id="example-mmic">The die</h3>
+<p><code>Bias tee</code> is an MMIC cell on the shipped GaAs process, and it shows two things a board cannot.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs "Bias tee"
+<span class="output">  note: Ground came from the stackup, not from the artwork: 'Backside Metal' is the ground reference and draws no layer, so 2 via(s) were read as reaching net 0. Nothing on your drawing shows this connection.</span></code></pre>
+<p>That is the undrawn ground reference, reported unconditionally.</p>
+<p>The second thing is the one error this cell reports: its <strong>spiral inductor</strong> is one continuous piece of
+metal, so a galvanic reading of the copper finds its two terminals on one net and correctly says that
+two schematic nets are one piece of copper. The spiral is a device, and a device's internal metal is not
+interconnect — but nothing in the artwork says which continuous run of copper is a component. That
+is what <a href="#recognize">device recognition</a> is for, and it is why this cell reports one short.</p>
+<h2 id="waivers">Waivers</h2>
+<p>A finding you have decided is not a fault can be <strong>waived, with a reason</strong>, from the panel. A waived
+finding is still reported and merely not counted — a known exception you can still see is worth
+more than a clean report you cannot trust.</p>
+<p><strong>An LVS waiver names a relationship, not a place.</strong> &quot;<code>R7</code>'s pin 2 is deliberately not connected&quot;
+survives moving <code>R7</code> to the other side of the board, and stops being true the moment the <em>schematic</em>
+changes. That is the opposite of a DRC waiver, which names a place and correctly stops applying when
+the shape moves. So re-routing never silently un-waives anything here.</p>
+<p>Waivers are saved with the layout. A waiver the last run matched nothing for is listed separately, under
+<strong>Waivers that no longer match any finding</strong>, carrying the text of the finding at the time it was
+waived, so you can recognise it and remove it.</p>
+<p><strong>The command line honours waivers and never creates one.</strong> Waiving is a deliberate, reasoned act with a
+sentence attached, and it belongs beside the thing being waived.</p>
+<h2 id="terminals">Terminal maps: which pad is which pin</h2>
+<p>Before anything can be compared, each cell has to say which of its <strong>layout pins</strong> is which of its
+<strong>schematic ports</strong>. A cell states that in its <code>.ccell</code>, and where it does not, circuitRF derives it and
+tells you which rule produced the answer:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>declared</strong></td>
+<td>The <code>.ccell</code> states the map. Nothing is guessed.</td>
+</tr>
+<tr>
+<td><strong>imported</strong></td>
+<td>The map came in with the part, from the source it was imported from.</td>
+</tr>
+<tr>
+<td><strong>by name</strong></td>
+<td>Every symbol pin is named and every one of those names is a layout pin name. Layout pins no symbol pin names — a mounting pad, a shield — stay out of the map.</td>
+</tr>
+<tr>
+<td><strong>by order</strong></td>
+<td><strong>Only</strong> when no pin on either side is named at all and the counts match. It is a guess that is usually right, so it is reported at warning on every run that does it, including an otherwise clean one.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>A partial name match never falls through to positional.</strong> Three of five names matching is evidence the
+author meant them to match and got two wrong; reading the whole thing by position would produce a
+confident wrong answer over a visible clue. That case is reported, naming the pins on both sides that
+did not match.</p>
+<p>The map is validated by <a href="cli.html#check"><code>check</code></a> too, before any comparison, because it is cheap and
+static and a design whose map is wrong is a design that would be compared against the wrong pads.</p>
+<h2 id="recognize">Recognising devices in bare copper</h2>
+<p>circuitRF's layout is <strong>instance-bearing</strong>: a device on it is a placed object with a designator, so the
+primary reading is correspondence rather than recognition. That is why <code>--recognize</code> is <strong>off</strong> by
+default — turning it on for a design circuitRF authored would re-derive, from geometry and less
+reliably, devices that are right there in the file.</p>
+<p>It exists for artwork that carries no instances: a hand-drawn MMIC device, a GDSII import whose
+hierarchy was flattened away, a Gerber board read back as polygons.</p>
+<p>It is also off <strong>per technology</strong>. The rules are a <code>DeviceRules</code> block in the <code>.ctech</code>, stating the
+layer expression a device's copper must satisfy and the formula that turns its measured geometry into a
+value. A process that declares none recognises nothing, whatever the flag says, and that is not an
+error. The deck is checked by <code>circuitrf check &lt;tech.ctech&gt;</code> before any run — an unreadable region,
+an unknown kind, a formula naming something neither measured nor declared, a cyclic constant.</p>
+<p>A run that recognised anything says so, naming the technology and the count, so a clean report is never
+mistaken for the stronger claim. <strong>Recognition answers <em>what does this copper look like</em>, never <em>is this
+the device the process actually makes</em>.</strong> Every candidate it rejected is reported with its reason, and a
+recognised device carries no designator, so it can only ever be matched structurally.</p>
+<h2 id="limits">What LVS does not check</h2>
+<p>Four things, stated plainly, because a check whose boundary is unstated is one people over-trust.</p>
+<ol>
+<li><strong>Performance.</strong> LVS compares topology and values. It says nothing about whether the circuit works,
+how much the artwork's parasitics cost it, or whether a trace is wide enough for its current. Those
+are questions for <a href="simulations.html">simulation</a>, the <a href="mom-engine.html">EM engine</a> and
+<a href="railrf.html">railRF</a>, and none of them is answered by a netlist comparison.</li>
+<li><strong>Manufacturability.</strong> Widths, spacings, annular rings, minimum areas and the rest are
+<a href="layout-editor.html#drc">design rules</a>, and they are a different check with a different engine. A
+board can pass LVS and be unbuildable.</li>
+<li><strong>Parasitics.</strong> Copper between two pads is a net, not an inductor, and LVS never extracts one. A
+clean report is not a statement that the artwork behaves like the schematic — only that it is
+wired like it. Extracting what the copper really is, is the <a href="em-setup.html">EM engine</a>'s job.</li>
+<li><strong>Whether a declared device is really there.</strong> A placement says &quot;this is a 294 Ω resistor&quot; and LVS
+believes it, checking its value against the schematic's. It does not verify from the geometry that
+the process would actually make that part — and with <code>--recognize</code> on, what it reads out of
+copper is still what the copper <em>looks</em> like, not what the fab will build. A device the process
+cannot manufacture is caught by design rules and by the process's own sign-off, not here.</li>
+</ol>
+<p>One more, and it is a limit of the reading rather than a non-goal: <strong>a device's internal copper is
+interconnect to the extraction unless something says otherwise.</strong> A spiral inductor drawn as one run of
+metal reads as a short between its own terminals, which is what the shipped
+<a href="#example-mmic">MMIC cell</a> demonstrates.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="footprints.html"><span class="dir">Previous</span><span class="name">Footprints</span></a>
+  <a class="next" href="pcells.html"><span class="dir">Next</span><span class="name">PCells</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

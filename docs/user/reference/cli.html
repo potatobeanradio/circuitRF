@@ -155,6 +155,12 @@ convention behind both.</p>
 <td>The reading and the per-node table to stdout; <code>-o .s1p</code> for the load Γ, <code>-o .svg/.pdf/.png</code> for the chart</td>
 </tr>
 <tr>
+<td><code>lvs</code></td>
+<td>a cell folder, a workspace, a <code>.clay</code> or a <code>.csch</code></td>
+<td>The same comparison the <a href="lvs.html">LVS panel</a>'s <strong>Compare</strong> button calls</td>
+<td><strong>Nothing</strong> — the report to stdout; <code>-o report.txt</code></td>
+</tr>
+<tr>
 <td><code>convert</code></td>
 <td>any layout format</td>
 <td>The same importer and exporter <strong>File ▸ Import/Export</strong> runs</td>
@@ -947,6 +953,69 @@ accepted here would be silently dropped.</p>
 Accuracy), the reference extent, the copper temperature, how many parts are modelled from a file, how
 many have no bias curve, and whether any ESR fell back to a class default — which makes a derived peak
 height <strong>indicative</strong> rather than measured.</p>
+<h2 id="lvs"><code>lvs</code> — does the artwork implement the drawing?</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lvs &lt;path&gt; [--no-reduce] [--flat] [--flatten-cell NAME] [--testbench]
+<span class="prompt">  </span>[--recognize] [--set var=expr] [--severity warning|error] [-o report.txt]</code></pre>
+<p><code>lvs</code> compares a cell's <strong>layout</strong> against its <strong>schematic</strong> and reports every device, net, terminal and
+value the two disagree about. It answers the one question a headless client cannot answer any other way:
+the design was drawn twice, and do the two drawings say the same thing? An agent that authored a <code>.clay</code>
+cannot look at the screen.</p>
+<p>Every finding comes out of the same call the <a href="lvs.html#window">LVS panel</a>'s <strong>Compare</strong> button makes, so
+a design that passes on a build machine passes when somebody opens it.</p>
+<p>The path may be a <strong>cell folder</strong> (the default unit — its primary schematic against its primary
+layout), a <strong>workspace</strong> (every cell holding both views), a <strong><code>.clay</code></strong> or a <strong><code>.csch</code></strong> (each finds its
+sibling in the cell folder that holds it). A cell holding only one of the two views is reported and
+skipped, not failed: that is the ordinary state of a design being drawn.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--no-reduce</code></td>
+<td>Compare object for object. By default parallel and series <code>R</code>/<code>C</code>/<code>L</code> collapse first, and every finding un-reduces to the objects you drew.</td>
+</tr>
+<tr>
+<td><code>--flat</code> / <code>--flatten-cell &lt;name&gt;</code></td>
+<td>Flatten the whole hierarchy, or one named sub-cell (repeatable). Every use is reported, so a design that quietly flattens everything is visible.</td>
+</tr>
+<tr>
+<td><code>--testbench</code></td>
+<td>Compare a bench as drawn rather than the cell it instantiates.</td>
+</tr>
+<tr>
+<td><code>--recognize</code></td>
+<td>Also read devices out of bare copper, through the technology's own <code>DeviceRules</code> deck. Off by default, and off for a process that declares no rules.</td>
+</tr>
+<tr>
+<td><code>--set var=expr</code></td>
+<td>Set a global before the schematic elaborates, exactly as a run verb does.</td>
+</tr>
+<tr>
+<td><code>--severity warning\|error</code></td>
+<td>What makes the exit code non-zero. Default <code>error</code>.</td>
+</tr>
+<tr>
+<td><code>-o report.txt</code></td>
+<td>The <strong>only</strong> thing this verb ever writes. With no <code>-o</code> it writes nothing at all, so it runs on a read-only tree and on a workspace another process has open.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Exit 0</strong> when nothing at or above <code>--severity</code> was found, <strong>1</strong> otherwise, <strong>130</strong> on a cancellation.
+A run holding warnings and no errors exits 0 and still reports every one.</p>
+<p>With <code>--json</code>, every finding travels with a stable <code>lvs.</code> id and typed arguments — the layer, the
+coordinate, the two values, the marker box — so a caller reads what it needs without parsing the
+sentence apart. It <strong>honours waivers and never creates one</strong>: waiving is a reasoned act with a sentence
+attached and belongs beside the thing being waived.</p>
+<p><strong>It is not folded into <a href="#check"><code>check</code></a></strong>, deliberately. <code>check</code> has to stay cheap enough to call after
+every edit; an LVS on a real board is seconds rather than milliseconds, and a <code>check</code> that had become
+slow is a <code>check</code> people stop running. What <code>check</code> does carry is the
+<a href="lvs.html#terminals">terminal-map</a> validation, which is cheap and static.</p>
+<p>See <a href="lvs.html">the LVS chapter</a> for what the findings mean and a worked example on the shipped
+example workspace.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It

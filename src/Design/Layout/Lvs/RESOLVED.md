@@ -162,3 +162,154 @@ looking.
 with every value plausible and nothing to compare it against. The scope chain is
 `device -> technology`, so the constants resolve once per candidate and their own cycle detection is
 the engine's.
+
+---
+
+# The LVS series' own traps (brief-lvs-15-docs-and-example.md §3b)
+
+Six things whose failure mode is **silence** — a clean report over a broken design, or a broken
+report nobody can act on. They are collected here because each is the kind of defect no test catches
+by accident: the output looks right.
+
+## 1. The precedence inversion — recorded next door, and it is the big one
+
+`src/Design/Layout/Extraction/RESOLVED.md` holds it in full, because that is where `PinNaming`
+lives. The short form, because it is the single most important fact about this subsystem:
+
+railRF's rule is *net(pad) = the schematic's own binding, else the net stated on the copper*. Read
+that way, **LVS asks the artwork what the artwork says, gets the SCHEMATIC's answer back, and every
+net on every design matches** — no exception, no warning, no finding. A tool that passes everything,
+and nothing about the output looks wrong.
+
+`PinNaming` is an **enum**, it is **required**, and nullable delegates were rejected precisely
+because null-means-artwork-only is a shape a later caller re-enters by accident. Making the caller
+write the word is the whole mechanism.
+
+## 2. The undrawn ground reference, and why the reminder is unconditional
+
+`LayoutRead` infers net 0 for a via terminating on a ground-reference conductor **that draws no
+layer**. The shipped MMIC technology's `Backside Metal` is exactly that: a die's backside metal
+exists in the stackup and nowhere in the artwork, so read naively every grounded device on that
+process is **open**.
+
+**What it costs read the other way round is worse, and it is why the rule is narrowed.** The note's
+R-lvs-15 says *every piece on a ground-reference conductor's drawing layers, if it has any, is net
+`"0"`*. Three of the four shipped PCB technologies flag their **bottom copper** as the ground
+reference (and the four-layer one flags it *beside* its real inner plane). Applied literally, every
+bottom-side trace on a two-layer board becomes ground, they all merge, and the board **passes LVS
+while being one short** — the exact failure this series exists to prevent. No rule keyed on the flag
+alone can separate the four-layer technology's real plane from its routing layer, because both carry
+it. So a reference conductor **with** drawing layers is ordinary copper and is read from the artwork
+like everything else. `ADrawnGroundReferenceIsOrdinaryCopperAndNotOneNet` is the gate.
+
+**`lvs.ground.reference-undrawn` is INFO, unconditional, and fires on a clean run.** It is not a
+warning because nothing is wrong, and it is not suppressible because **this is the one inference in
+the whole extraction the user cannot check by looking at their own screen**. It names the stackup
+entry and the number of vias that reached ground through it, so the reader can count them against
+what they drew. A reminder that only appears when something else is also wrong is a reminder nobody
+sees on the run that mattered.
+
+## 3. The terminal map's four derivations, and the one that must not be a fallback
+
+`TerminalMap.Resolve` answers *which layout pin is which schematic port*, and **returns which rule
+produced the answer** — the whole point, because the four are not equally trustworthy and the
+consumer has to be able to say so.
+
+| | |
+|---|---|
+| **declared** | the `.ccell` states it |
+| **imported** | R-lvs1-3a's import table, from the source the part came in from |
+| **by name** | every symbol pin is named, and every one of those names is a layout pin name |
+| **by order** | **only** when no pin on either side is named at all and the counts match |
+
+**A partial name match must NOT fall through to positional (R-lvs1-3e), and this is the trap.**
+Three of five names matching is *evidence the author meant them to match and got two wrong*.
+Reading the whole cell positionally there produces a **confident wrong answer over a visible clue** —
+and a wrong terminal map is not a finding, it is a comparison against the wrong pads, which
+manufactures findings everywhere else and hides the real one. So `ByName` returns **null** rather
+than a partial map, and the positional branch is guarded on *every* pin on *both* sides being
+unnamed. The partial case is reported, naming both unmatched lists.
+
+`ByOrder` reports `check.terminals.derived-by-order` at **warning** on every run that uses it,
+including an otherwise clean one, because it is a guess that is usually right — and "usually right"
+is the dangerous kind.
+
+**`None` covers two states and only one is a failure.** See §13.4 of `docs/design/lvs.md`: applied
+literally the note's ladder errors on a cell with a symbol and no layout, which is most cells in
+every workspace. `Terminals: []` in a `.ccell` **derives** and does not declare, for the same
+reason — it is "circuitRF made this cell and it has no terminals yet".
+
+## 4. The terminal index in the colour hash — drop it and a drain matches a source
+
+`LvsCompare`'s refinement colours devices and nets by their neighbours, iterating to a fixed point.
+Each recolouring appends, per edge, the pair **(terminal position, the far end's colour)** —
+`Recolour` adds `port[e]` *and* `endColour[end[e]]`, and `GroupSort` sorts within an owner by
+`(port, far-end colour)` through three stable counting sorts.
+
+**Dropping the port index is the invisible defect.** A resistor is symmetric, so every
+two-terminal-passive test still passes. A FET is not: a device whose drain is on net A and source on
+net B gets the same signature as one wired the other way round, the refinement calls them
+indistinguishable, and the comparison happily pairs a drain to a source. Every other test in the
+suite goes on passing — the counts agree, the nets agree, the report is clean.
+
+It is one term in a hash, it costs nothing, and it is the difference between a comparison and a
+degree count. The code says so at the line (R-lvs7-3c) so nobody optimises it away.
+
+## 5. The nm↔DBU coincidence at 1000 DBU/µm, in its third recorded form
+
+A wBond `Wire`'s points are `Point3` in **nanometres**; a layout is in **DBU**. At the shipped
+default of **1000 DBU/µm the two numbers are numerically identical**, so a wrong conversion — or no
+conversion at all — is invisible on every default-configured design and fails only on somebody
+else's.
+
+This is the third time it has been recorded (WB-C is the first, and `src/Ui/RESOLVED.md` carries the
+second), which is the argument for the two rules `AssemblyRead` follows:
+
+- **`LayoutUnits.NmToDbu` is spelled out at the call site**, not folded into a helper. The
+  conversion has to be *visible* in the one place the two unit systems meet, because the reader of
+  that line is the only person who can notice it is missing.
+- **The fixture uses a non-default resolution and coordinates that are not round micron values.** A
+  test written at 1000 DBU/µm on whole microns asserts nothing whatever about the conversion — it
+  passes identically with the conversion deleted. This is the part that generalises past wBond: a
+  unit-conversion test at the default is not a test.
+
+## 6. What the list above did not predict
+
+### An LVS waiver key must not reuse `LvsFinding.Key`
+
+Recorded in full at the top of this file. In one line: a **DRC** waiver names a *place* and
+correctly stops applying when the shape moves; an **LVS** waiver names a *relationship* and must
+survive a re-route while dying on the schematic edit that invalidated it. Keying it on a marker box
+would be wrong in both directions at once — silently un-waived on every re-route, and kept alive
+across the change that made it false.
+
+### The shipped example's own six faults are the oracle, and one of them is not a topology fault
+
+`examples/LVS/` ships a correct board and the **same schematic, byte for byte**, against artwork
+with six deliberate faults. Five are topology. The sixth — `R3` re-pointed from a 294 Ω part to a
+150 Ω one — is the right kind of part, in the right place, with the right designator, wired
+correctly, and it is the wrong resistor. **No topology check of any kind finds it**, which is why
+the property comparison is not an optional extra, and why the broken board carries it.
+
+The property **tolerances are measured, not chosen**: `Bias tee`'s four parts quantise onto a
+0.25 µm grid with a worst-case spread of 0.2 %, and one E96 step — the smallest wrong part anybody
+could fit — is 2.4 %. The default sits between them at 1 %. Every dimension with no measured floor
+is compared **exactly**, and the report says no tolerance has been established for it rather than a
+plausible number being invented.
+
+### `Bias tee` reports one short, and it is the comparison being right
+
+A spiral inductor is one continuous run of metal, so a galvanic extraction finds its two terminals
+on one net. The comparison correctly says two schematic nets are one piece of copper. The missing
+rule is that a recognised **device's** internal copper is not interconnect — §4.1 tier 3's — and
+this cell is the first fixture in the repository that could show it. It is stated on the user
+documentation page as a limit rather than hidden.
+
+### Findings un-reduce, or reduction makes the report unusable
+
+Reduction is on by default because every production LVS reduces and a fingered FET reporting as
+seven extra devices is how a tool stops being run. But the reduced objects are **not the objects the
+designer drew**, so every finding un-reduces before it is reported: a collapsed four-finger device
+names all four. A report naming an object that exists only inside the comparison is a report nobody
+can act on, which is the same rule that makes a short carry its neck and a property mismatch carry
+its tolerance.

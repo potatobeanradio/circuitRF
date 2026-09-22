@@ -649,7 +649,14 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    already running it should open in the RUNNING copy rather than starting a second one.
 5. **Run the manual acceptance matrix above** if this release touched signing, packaging or the
    updater.
-6. **Collect all fifteen files from all three machines into one `dist/`, then sign and upload:**
+6. **Walk one shipped example end to end, in the window.** Its commands are executed by tests and
+   its numbers are asserted against live runs, but *that a person can follow it* is not something a
+   test can claim. **Tools &rsaquo; Examples &rsaquo; Layout versus schematic** is the one to use:
+   open it, run LVS on `Attenuator` and read **matches**, run it on `Attenuator broken` and read the
+   six findings, click one and watch the layout zoom to it. Then read the workspace's own
+   `README.md` beside the report and check the two agree. It exercises the example browser, a
+   technology resolve, both editors, a tool panel and cross-probing in about two minutes.
+7. **Collect all fifteen files from all three machines into one `dist/`, then sign and upload:**
 
    ```bash
    ./packaging/sign-release.sh
@@ -702,8 +709,8 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    would put the private key on three machines instead of one. What the build scripts *do* is end by
    stating whether a release key is compiled in and therefore whether these artifacts can auto-update
    at all; `tests/Ui.Tests/PackagingScriptTests.cs` holds all three to it.
-7. Update the download table in `README.md` to the new version.
-8. Add the release notes and publish it. **One command, the same for either channel:**
+8. Update the download table in `README.md` to the new version.
+9. Add the release notes and publish it. **One command, the same for either channel:**
 
    ```bash
    gh release edit <version> --draft=false
