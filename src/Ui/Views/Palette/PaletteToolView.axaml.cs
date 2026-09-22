@@ -53,12 +53,18 @@ public partial class PaletteToolView : UserControl
     }
 
     /// <summary>
-    /// Takes the panel's pending "open at the default glyph count" request, if any — raised by Reset
-    /// Layout and by choosing a Window Layout, both of which mean "the shipped arrangement, now".
+    /// Takes the panel's pending "open at this glyph count" request, if any — the default count from
+    /// Reset Layout, a Window Layout or a new workspace, or the count a saved arrangement recorded.
     /// Forwarded from the tool so <see cref="PaletteColumnPin"/> needs no dock view-model type.
     /// </summary>
-    internal bool ConsumeDefaultWidthRequest()
-        => DataContext is PaletteTool tool && tool.ConsumeDefaultWidthRequest();
+    internal int ConsumeGlyphColumnsRequest()
+        => DataContext is PaletteTool tool ? tool.ConsumeGlyphColumnsRequest() : 0;
+
+    /// <summary>Tells the tool the count being held, so a save records it.</summary>
+    internal void ReportHeldGlyphColumns(int columns)
+    {
+        if (DataContext is PaletteTool tool) tool.HeldGlyphColumns = columns;
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {

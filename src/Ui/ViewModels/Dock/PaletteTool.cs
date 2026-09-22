@@ -133,7 +133,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
 
     // ── Opening width (owner, 2026-09-13) ─────────────────────────────────────
 
-    private bool _defaultWidthRequested;
+    private int _requestedGlyphColumns;
 
     /// <summary>
     /// Asks the panel to open at the DEFAULT number of glyph columns rather than at whatever its
@@ -151,16 +151,41 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     /// first and laid out later — which is why it is a latch to be consumed rather than an event,
     /// exactly like <see cref="RequestActivationFocus"/> beside it.</para>
     /// </summary>
-    public void RequestDefaultWidth() => _defaultWidthRequested = true;
+    public void RequestDefaultWidth() => RequestGlyphColumns(Views.Palette.PaletteColumnWidth.DefaultGlyphColumns);
 
-    /// <summary>Takes the pending <see cref="RequestDefaultWidth"/>, if any, and clears it. Once
-    /// honoured the panel is the user's again — the next drag or window resize is theirs.</summary>
-    public bool ConsumeDefaultWidthRequest()
+    /// <summary>
+    /// Asks the panel to open at <paramref name="columns"/> glyph columns — the count a workspace's
+    /// saved arrangement recorded (<c>CwsDockLayout.LibraryGlyphColumns</c>). The same latch as
+    /// <see cref="RequestDefaultWidth"/>, for the same reason: the saved proportion is a fraction of
+    /// a window whose size was not saved. Zero or less asks nothing.
+    /// </summary>
+    public void RequestGlyphColumns(int columns)
     {
-        bool pending = _defaultWidthRequested;
-        _defaultWidthRequested = false;
+        if (columns > 0) _requestedGlyphColumns = columns;
+    }
+
+    /// <summary>Takes the pending request, if any, and clears it: the glyph count asked for, or 0 for
+    /// none. Once honoured the panel is the user's again — the next drag or window resize is
+    /// theirs.</summary>
+    public int ConsumeGlyphColumnsRequest()
+    {
+        int pending = _requestedGlyphColumns;
+        _requestedGlyphColumns = 0;
         return pending;
     }
+
+    /// <summary>
+    /// The glyph-column count the docked panel is holding now, as <c>PaletteColumnPin</c> last
+    /// reported it; 0 when it has held none. Read when the arrangement is saved.
+    /// </summary>
+    public int HeldGlyphColumns { get; internal set; }
+
+    /// <summary>
+    /// The count a save records: a request not yet honoured wins — it is the arrangement being put
+    /// up, and a Library tab never brought to the front this session never gets to honour it —
+    /// otherwise the count being held. 0 when there is neither.
+    /// </summary>
+    public int GlyphColumnsToSave => _requestedGlyphColumns > 0 ? _requestedGlyphColumns : HeldGlyphColumns;
 
     /// <summary>Dock's own "this tab was chosen" hook.</summary>
     public override void OnSelected()

@@ -122,13 +122,14 @@ public sealed class PaletteColumnWidthTests
         Assert.NotNull(palette);
 
         // Nothing pending on a shell nobody has reset.
-        Assert.False(palette!.ConsumeDefaultWidthRequest());
+        Assert.Equal(0, palette!.ConsumeGlyphColumnsRequest());
 
         vm.ResetLayoutCommand.Execute(null);
 
         // The factory may hand back a fresh tool for the rebuilt tree — it is whichever one the
         // rebuilt layout holds that has to carry the request.
-        Assert.True(((CircuitRfDockFactory)vm.DockFactory).PaletteTool!.ConsumeDefaultWidthRequest());
+        Assert.Equal(PaletteColumnWidth.DefaultGlyphColumns,
+                     ((CircuitRfDockFactory)vm.DockFactory).PaletteTool!.ConsumeGlyphColumnsRequest());
     }
 
     /// <summary>
@@ -163,10 +164,49 @@ public sealed class PaletteColumnWidthTests
     {
         var tool = new PaletteTool();
 
-        Assert.False(tool.ConsumeDefaultWidthRequest());
+        Assert.Equal(0, tool.ConsumeGlyphColumnsRequest());
         tool.RequestDefaultWidth();
-        Assert.True(tool.ConsumeDefaultWidthRequest());
-        Assert.False(tool.ConsumeDefaultWidthRequest());
+        Assert.Equal(PaletteColumnWidth.DefaultGlyphColumns, tool.ConsumeGlyphColumnsRequest());
+        Assert.Equal(0, tool.ConsumeGlyphColumnsRequest());
+    }
+
+    /// <summary>
+    /// Field report, 2026-09-22: a workspace closed with a two-column Library reopened at one. The
+    /// saved arrangement carried only the column's FRACTION of a window whose size is not saved, so
+    /// the count was re-read off pixels on open — one column in a narrower window, or a pixel short
+    /// of two slots. The count itself is now saved, and opening asks the Library for it.
+    /// </summary>
+    [Fact]
+    public void TheLibraryGlyphCount_IsSaved_AndRequestedOnOpen()
+    {
+        var vm   = new WorkspaceViewModel();
+        var tool = ((CircuitRfDockFactory)vm.DockFactory).PaletteTool!;
+        tool.ConsumeGlyphColumnsRequest();
+
+        // Saved: the count the pin is holding, through the .cws JSON.
+        tool.HeldGlyphColumns = 3;
+        var saved = DockLayoutSerialization.TryRead(DockLayoutSerialization.Write(vm.CaptureDockLayout()!)).Layout!;
+        Assert.Equal(3, saved.LibraryGlyphColumns);
+
+        // Restored: the reopen asks for that count, whatever the fraction comes to in this window.
+        // Three, not the default two, so a restore that fell back to the default cannot pass.
+        tool.HeldGlyphColumns = 1;
+        typeof(WorkspaceViewModel)
+            .GetMethod("ApplyRestoredDockShell", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(vm, [new DockLayoutSerialization.ReadResult(saved, null), (Func<string, bool>)(_ => false)]);
+        Assert.Equal(3, ((CircuitRfDockFactory)vm.DockFactory).PaletteTool!.ConsumeGlyphColumnsRequest());
+    }
+
+    /// <summary>A request not yet honoured is what a save records — a Library tab never brought to
+    /// the front this session must not lose the count it was opened with.</summary>
+    [Fact]
+    public void APendingRequest_IsWhatASaveRecords()
+    {
+        var tool = new PaletteTool { HeldGlyphColumns = 1 };
+        tool.RequestGlyphColumns(3);
+        Assert.Equal(3, tool.GlyphColumnsToSave);
+        tool.ConsumeGlyphColumnsRequest();
+        Assert.Equal(1, tool.GlyphColumnsToSave);
     }
 
     // ── What count is being held ──────────────────────────────────────────────

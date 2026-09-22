@@ -91,6 +91,16 @@ it draws none by design (R-fp4b-4c) — neither is the reported "some".
   clean-slate rebuilds did not. New Workspace and the blank shell now always ask; opening a workspace
   asks only when its `.cws` has no usable layout (`ApplyRestoredDockShell`'s null and exception
   paths) — a saved arrangement carries the width its user chose and the request would override it.
+- **…but a saved arrangement did NOT carry the width its user chose** (same day, follow-up: a
+  workspace closed at two columns reopened at one). It carried the column's FRACTION, and the
+  workspace window's size is not saved, so on open the pin re-read the count off pixels: one column
+  in a narrower window, and even at the same size a column a pixel short of two slots (proportion
+  rounding, or a scroll bar on the first pass) floors to one. `CwsDockLayout.LibraryGlyphColumns` now
+  records the count (`PaletteTool.GlyphColumnsToSave` — a request not yet honoured wins, so a Library
+  tab never shown in a session keeps the count it opened with), and `ApplyRestoredDockShell` requests
+  it through the same one-shot latch Reset Layout uses, now a count rather than a bool. Omitted when
+  null, so an older build reads the file as before. Not seen in pixels (no GUI from this session);
+  held by `PaletteColumnWidthTests.TheLibraryGlyphCount_IsSaved_AndRequestedOnOpen`.
 
 ## railRF field report 3 — the parts table had no producer a user could reach (2026-09-22)
 

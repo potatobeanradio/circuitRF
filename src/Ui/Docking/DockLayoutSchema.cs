@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace CircuitRF.Ui.Docking;
 
@@ -295,6 +296,22 @@ public sealed class CwsDockLayout
 
     /// <summary>Workspace-relative path of the visible document tab, or null.</summary>
     public string? ActiveDocument { get; set; }
+
+    /// <summary>
+    /// How many component-glyph columns the docked Library was showing, or null when it was showing
+    /// none (floated, or dragged narrower than one glyph).
+    ///
+    /// <para><b>Why the count and not just the column's proportion.</b> A proportion is a FRACTION
+    /// of the window, and the workspace window's size is not saved — so a Library two glyphs wide in
+    /// a wide window reopened one glyph wide in a narrower one, and even at the same size a column a
+    /// pixel short of two slots (rounding, or a scroll bar present on the first pass) reads back as
+    /// one. The pin re-derives the fraction from this count against the window as it opens.</para>
+    ///
+    /// <para>Additive and omitted when null, so no version bump: an older build ignores it and
+    /// reads the count off the proportion as it always did.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LibraryGlyphColumns { get; set; }
 
     /// <summary>
     /// The docked document area's own pane structure — written ONLY when it is actually SPLIT.

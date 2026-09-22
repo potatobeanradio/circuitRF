@@ -1020,11 +1020,15 @@ public partial class WorkspaceViewModel
         var screens = CurrentScreens();
         var shell   = ShellWindow()?.Screens;
 
-        return DockLayoutCapture.Capture(
+        var layout = DockLayoutCapture.Capture(
             root,
             screens,
             documentKey: DocumentKeyFor,
             windowGeometry: w => LiveGeometryOf(w, shell));
+
+        // The Library's glyph count, which its proportion alone cannot carry — see the field.
+        if (_factory.PaletteTool?.GlyphColumnsToSave is > 0 and var held) layout.LibraryGlyphColumns = held;
+        return layout;
     }
 
     /// <summary>
@@ -1683,6 +1687,10 @@ public partial class WorkspaceViewModel
     /// <see cref="FloatingWindowPlacer"/>'s own note on why the restore may not build two.</summary>
     private FloatingWindowPlacer? _restorePlacer;
 
+    /// <summary>A hand-edited or corrupt count above this is ignored rather than honoured — the pin
+    /// would simply fail to fit it, but there is no reason to ask.</summary>
+    private const int MaxRestoredGlyphColumns = 32;
+
     /// <summary>
     /// Phase one: the SHELL. Puts the tool panels where the workspace says they go, builds (but does
     /// not fill) the split document panes, and reports why the saved arrangement could not be used
@@ -1713,6 +1721,12 @@ public partial class WorkspaceViewModel
             _factory.PaletteTool?.RequestDefaultWidth();
             return;
         }
+
+        // The Library opens at the glyph count it was saved at, not at whatever the saved fraction of
+        // THIS window comes to (field report, 2026-09-22: two columns closed, one reopened). The
+        // factory keeps its tool instances on this rebuild, so the request survives the apply.
+        if (layout.LibraryGlyphColumns is > 0 and <= MaxRestoredGlyphColumns and var saved)
+            _factory.PaletteTool?.RequestGlyphColumns(saved);
 
         // Before applying it: the CLOSED entries are places, not panels, and the apply drops them.
         SeedPanelHomesFrom(layout);

@@ -271,10 +271,11 @@ public sealed class PaletteColumnPin
             // its panel is replaced — consuming there honoured it on the arrangement about to be
             // thrown away, and the new one then read three columns off its own fresh fraction. The
             // latch belongs to the arrangement that has not measured yet.
+            //  - Opening a workspace whose .cws recorded the count: that count, for the same reason as
+            //    Reset Layout — the saved fraction is of a window whose size was not saved.
             _settled = true;
-            _columns = _view.ConsumeDefaultWidthRequest()
-                     ? PaletteColumnWidth.DefaultGlyphColumns
-                     : PaletteColumnWidth.GlyphColumnsIn(tileArea);
+            int requested = _view.ConsumeGlyphColumnsRequest();
+            Hold(requested > 0 ? requested : PaletteColumnWidth.GlyphColumnsIn(tileArea));
             if (_columns > 0) Apply(pool);
             return;
         }
@@ -284,7 +285,7 @@ public sealed class PaletteColumnPin
             // The user has the splitter. Whatever they are landing on is the count to keep, and
             // nothing is applied — see the class note on why a pin that snapped back mid-drag would
             // be a bug.
-            _columns       = PaletteColumnWidth.GlyphColumnsIn(tileArea);
+            Hold(PaletteColumnWidth.GlyphColumnsIn(tileArea));
             _readAfterDrag = true;
             return;
         }
@@ -293,7 +294,7 @@ public sealed class PaletteColumnPin
         {
             // The first pass after they let go: the width they left it at is the one to keep.
             _readAfterDrag = false;
-            _columns       = PaletteColumnWidth.GlyphColumnsIn(tileArea);
+            Hold(PaletteColumnWidth.GlyphColumnsIn(tileArea));
         }
 
         // Not a drag, so this width is not a choice — hold the count, whatever moved. Apply writes
@@ -303,6 +304,13 @@ public sealed class PaletteColumnPin
     }
 
     // ── Doing it ──────────────────────────────────────────────────────────────
+
+    /// <summary>Latches the count and tells the tool, which is where a save reads it from.</summary>
+    private void Hold(int columns)
+    {
+        _columns = columns;
+        _view?.ReportHeldGlyphColumns(columns);
+    }
 
     private void Apply(double pool)
     {
