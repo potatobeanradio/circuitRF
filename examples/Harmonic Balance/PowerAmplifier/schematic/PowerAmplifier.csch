@@ -849,6 +849,5 @@
       "PsaStepOrCount": 3,
       "PsaKind": "Linear"
     }
-  ],
-  "ResultsFileName": "damon2.npy"
+  ]
 }

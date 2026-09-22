@@ -68,14 +68,15 @@ public static class RailImportReport
     {
         if (netlist is null) return "";
 
-        // The refusal INSTEAD of the counts, because there are none — and it is prefixed with the
-        // one thing the reader's own sentence cannot know: which family of file this row wants. The
-        // set a board is fabricated from carries one; a schematic tool's own netlist export is a
+        // The refusal INSTEAD of the counts, because there are none — and it carries the one thing
+        // the READER cannot know: which of two files with the same word in their name this row
+        // wants. The reader names the format and says what the file it was given actually is
+        // (BoardNetlistFile.NotThisFormat), and that sentence is the same on every surface; what is
+        // added here is the distinction the dialog's own row is about. The set a board is
+        // fabricated from carries a board netlist; a schematic tool's own netlist export is a
         // different file for a different purpose and is not it.
         if (netlist.Refusal is { Length: > 0 } refusal)
-            return $"{netlist.FileName} {refusal} This row takes the BOARD netlist that ships beside "
-                 + "the artwork — the IPC-D-356 file the fabrication output set carries, one record "
-                 + "per pad with its net, not a netlist exported from the schematic.";
+            return $"{netlist.FileName} {RefusalTail(refusal)}";
 
         string line = $"{netlist.FileName}: {netlist.Records.Count:N0} feature record(s), "
                     + $"{netlist.Nets.Count:N0} net(s), {netlist.UnitsSummary}";
@@ -85,6 +86,21 @@ public static class RailImportReport
 
         return line + ".";
     }
+
+    /// <summary>
+    /// A board-netlist refusal with the clause only this ROW can supply on the end of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Separate so the import and the OPEN say the same thing</b> (field report, 2026-09-22).
+    /// The reader's own sentence names the format and says what the file it was handed actually is;
+    /// what it cannot know is which of two files with the same word in their name the user meant to
+    /// point at, and that is a fact about this dialog row. Until now the tail existed only on the
+    /// import path, so a document that was imported, saved and re-opened reported the same file with
+    /// a shorter and less useful sentence on the second surface than on the first.
+    /// </remarks>
+    public static string RefusalTail(string refusal) =>
+        $"{refusal} That row takes the BOARD netlist that ships beside the artwork — one record "
+      + "per pad with its net — and not a netlist exported from the schematic.";
 
     /// <summary>Every companion's own sentence, joined — what the window shows after one import.</summary>
     public static string Summary(BomTable? bom, BoardNetlist? netlist)

@@ -501,8 +501,21 @@ public class RailReaderTests
 
     // ── R-rail2-14 item 3: there may be NO header row at all ─────────────────
 
+    /// <summary>
+    /// <b>No header row is a refusal that names a remedy which EXISTS, and never a positional
+    /// guess.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>This test used to assert the refusal named <c>--columns</c>, and that was pinning a
+    /// falsehood</b> (field report, 2026-09-22). Nothing in <c>src/Cli</c> parses that flag, and
+    /// <c>netlist --placement</c>/<c>--bom</c> WRITE those tables out of a layout rather than
+    /// reading one in — so the sentence sent a designer who met it in a WINDOW looking for a command
+    /// line, and there was nothing at either end. The refusal itself is right and stays: column
+    /// order is not a standard, and a positional reading puts the rotation in the Y column silently.
+    /// What is asserted now is that the remedy named is one somebody can actually take.
+    /// </remarks>
     [Fact]
-    public void RailRf_R_rail2_14_NoHeaderRowIsARefusalNamingTheFlagAndNeverAPositionalGuess()
+    public void RailRf_R_rail2_14_NoHeaderRowIsARefusalNamingARealRemedyAndNeverAPositionalGuess()
     {
         const string headerless = """
             C1,PN-0001,MLCC 100n 16V 0402 X7R
@@ -512,8 +525,9 @@ public class RailReaderTests
 
         var refused = BomFile.Read("bom.csv", headerless);
         Assert.NotNull(refused.Refusal);
-        Assert.Contains("--columns", refused.Refusal, StringComparison.Ordinal);
         Assert.Empty(refused.Rows);
+        Assert.DoesNotContain("--columns", refused.Refusal, StringComparison.Ordinal);
+        Assert.Contains("Add a header row", refused.Refusal, StringComparison.Ordinal);
 
         // Named, and it reads. Column order is not a standard, so the caller states it.
         var read = BomFile.Read("bom.csv", headerless, columns: ["Refdes", "Part Number", "Description"]);
@@ -522,11 +536,15 @@ public class RailReaderTests
         Assert.Equal("PN-0001", read.Rows[0].PartNumber);
         Assert.Equal("X7R", read.Rows[0].Parsed.DielectricClass);
 
-        // The placement reader refuses the same way, for the same reason.
+        // The placement reader refuses the same way, for the same reason — and ITS remedy is a
+        // control: railRF asks at import and the .crail records the answer, which is the one
+        // headless route there has ever been.
         var placement = PlacementFile.Read("place.csv", "C1,0402,10.0,10.0\nC2,0402,20.0,10.0", Dbu,
                                            PlacementOrigin.PinOne);
         Assert.NotNull(placement.Refusal);
-        Assert.Contains("--columns", placement.Refusal, StringComparison.Ordinal);
+        Assert.True(PlacementFile.HasNoHeader(placement));
+        Assert.DoesNotContain("--columns", placement.Refusal, StringComparison.Ordinal);
+        Assert.Contains("Say what the columns are", placement.Refusal, StringComparison.Ordinal);
     }
 
     // ── R-rail2-14 item 4: text-file mechanics, and the naming hazard ────────

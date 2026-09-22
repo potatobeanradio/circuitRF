@@ -220,7 +220,18 @@ public static class RailArtwork
         path = Core.RefPath.Resolve(Path.GetDirectoryName(Path.GetFullPath(documentPath))!, r);
         try
         {
-            var read = PlacementFile.ReadFile(path, dbuPerMicron, null);
+            // ── THE DOCUMENT'S OWN READING, AND IT USED TO PASS NULL FOR ALL OF IT ────────────
+            //
+            // The origin, the units and the column names are three answers a HUMAN gave the import
+            // dialog, and until 2026-09-22 none of them was written down. So a document imported
+            // with all three answered, saved and opened again re-read the file with none — which
+            // re-raised the origin refusal on a document that had already answered it, and on a
+            // headerless file threw the user's column mapping away entirely. See
+            // RailPlacementReading.
+            var reading = document.Placement;
+            var read = PlacementFile.ReadFile(
+                path, dbuPerMicron, reading.Origin, reading.Units,
+                delimiter: null, columns: reading.Columns);
             if (read is { Refusal: { Length: > 0 } why }) { error = why; return null; }
             return read;
         }

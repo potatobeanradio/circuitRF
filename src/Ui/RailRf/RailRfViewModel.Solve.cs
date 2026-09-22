@@ -565,6 +565,7 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(StatusLine));
         RunCommand.NotifyCanExecuteChanged();
         AccuracyCommand.NotifyCanExecuteChanged();
+        StopRunCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -690,14 +691,25 @@ public sealed partial class RailRfViewModel
         CancelInFlight();
 
         var cts = new CancellationTokenSource();
-        var control = new RunControl { Token = cts.Token };
+
+        // PROGRESS THROUGH THE WINDOW'S OWN SEAM, not through a `Progress<T>`. `Progress<T>` captures
+        // whatever synchronization context happened to be current where it was constructed, and this
+        // view model's whole off-thread contract is expressed as `PostToUi` so a test can drive the
+        // loop inline with no application host. Two routes to the UI thread would be two answers to
+        // the same question.
+        var control = new RunControl
+        {
+            Token = cts.Token,
+            Progress = new RailSolveProgress(this, cts),
+        };
         _cts = cts;
         _inFlight = control;
         SolvesStarted++;
         _solvingKind = kind;
+        SolveStage = "";
         IsSolving = true;
 
-        var request = BuildRequest(board, kind);
+        var request = BuildRequest(board, kind, control);
         // Both requests are built HERE, on the UI thread, because both read the document rows the
         // user is editing — the same rule BuildRequest has always followed.
         var sweepRequest = BuildSweepRequest(kind);
@@ -728,16 +740,37 @@ public sealed partial class RailRfViewModel
         IsSolving = false;
         Pending = null;
 
-        if (token.IsCancellationRequested || task.IsCanceled) { cts.Dispose(); return; }
+        if (token.IsCancellationRequested || task.IsCanceled) { SolveStage = ""; cts.Dispose(); return; }
 
         if (task.IsFaulted)
         {
+            // A CANCELLED EXTRACTION ARRIVES HERE, not as IsCanceled. The engine answers a token by
+            // throwing OperationCanceledException from inside the work, and a task whose body throws
+            // one for a token the TaskScheduler was not given faults rather than transitioning to
+            // Canceled. Reporting it as "the solve did not finish: The operation was canceled" would
+            // put an error on the strip for the one outcome the user asked for (field report,
+            // 2026-09-22 — the run that could not be stopped is the whole reason the token is now
+            // threaded at all).
+            if (task.Exception?.GetBaseException() is OperationCanceledException)
+            {
+                SolveStage = "";
+                Refusal = new RailRefusal(
+                    "The run was stopped. Nothing was computed — a half-finished extraction has no "
+                  + "shape to publish, so what is on screen is whatever the last completed run left "
+                  + "there.", RailRefusalControl.None);
+                cts.Dispose();
+                return;
+            }
+
+            SolveStage = "";
             Refusal = new RailRefusal(
                 $"The solve did not finish: {task.Exception?.GetBaseException().Message}",
                 RailRefusalControl.None);
             cts.Dispose();
             return;
         }
+
+        SolveStage = "";
 
         var view = task.Result;
         cts.Dispose();
@@ -782,10 +815,103 @@ public sealed partial class RailRfViewModel
         _cts = null;
         _inFlight = null;
         IsSolving = false;
+        SolveStage = "";
     }
 
-    private RailDcRequest BuildRequest(RailBoardInputs board, PdnModelKind kind) => new()
+    /// <summary>
+    /// Stops the run in flight, at the user's request.
+    /// </summary>
+    /// <remarks>
+    /// <b>The button that was not there</b> (field report, 2026-09-22). A designer pressed Run on a
+    /// production six-layer board, got "solving…" and reported it as "probably run in a dead end" —
+    /// with no way to tell a long answer from a hung one and nothing to press. There was no Stop
+    /// anywhere on the window, and until this round <see cref="CancelInFlight"/> could not have
+    /// backed one: the token reached no engine, so cancelling stopped the window listening and left
+    /// the work running.
+    ///
+    /// <para><b>It abandons the run rather than finishing early</b>, which is
+    /// <see cref="RunControl"/>'s own distinction and the right one here: a half-finished extraction
+    /// has no shape to publish — the netlist is not assembled until every piece is measured — so
+    /// there is no partial answer to keep. What is on screen stays what the last completed run put
+    /// there, and the strip says so rather than blanking the numbers.</para>
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(IsSolving))]
+    private void StopRun()
     {
+        if (_cts is null) return;
+
+        CancelInFlight();
+        Refusal = new RailRefusal(
+            "The run was stopped. Nothing was computed — what is on screen is whatever the last "
+          + "completed run left there.", RailRefusalControl.None);
+    }
+
+    /// <summary>
+    /// What phase the solve in flight is in, or empty — <b>beside <see cref="BusyText"/> rather
+    /// than instead of it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <c>BusyText</c> names the MODEL, which is what §2.9 needs on screen and what a press of
+    /// Accuracy has to be answerable by. This names the phase and, where the phase has an honest
+    /// denominator, how far through it is. Together they are the difference between a long run and a
+    /// hung one, which is the distinction the field report could not make — and the reason the next
+    /// report of a slow board will arrive saying WHICH phase was slow.
+    /// </remarks>
+    [ObservableProperty]
+    private string _solveStage = "";
+
+    partial void OnSolveStageChanged(string value) => OnPropertyChanged(nameof(StatusLine));
+
+    /// <summary>
+    /// Carries <see cref="RunControl"/>'s observations onto the UI thread through the view model's
+    /// own <see cref="PostToUi"/> seam.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a <c>Progress&lt;T&gt;</c></b>: that type captures whatever synchronization context is
+    /// current where it is constructed, and this view model's off-thread contract is expressed as
+    /// <see cref="PostToUi"/> precisely so a test can drive the whole loop inline with no application
+    /// host. Two routes to the UI thread would be two answers to one question.
+    ///
+    /// <para><b>It carries the token source it was made for</b> and drops an observation whose run
+    /// has been superseded — the same guard <c>Finish</c> keeps, for the same reason: a stage name
+    /// from a cancelled solve arriving after the replacement started would put the old run's phase
+    /// under the new run's numbers.</para>
+    /// </remarks>
+    private sealed class RailSolveProgress(RailRfViewModel owner, CancellationTokenSource cts)
+        : IProgress<RunProgress>
+    {
+        public void Report(RunProgress value) => owner.PostToUi(() =>
+        {
+            if (!ReferenceEquals(owner._cts, cts)) return;
+            owner.SolveStage = Describe(value);
+        });
+
+        private static string Describe(RunProgress p)
+        {
+            if (p.Stage is not { Length: > 0 } stage) return "";
+
+            // A denominator only where the stage declared one. RunControl's own contract is that a
+            // StageTotal of 0 means indeterminate, and printing a fake "1 / 1" for a phase that is
+            // one pass over the board would be worse than printing nothing.
+            if (p.StageTotal <= 0) return stage;
+
+            string unit = p.StageUnit is { Length: > 0 } u ? $" {u}" : "";
+            return $"{stage} — {p.StageCompleted:N0} / {p.StageTotal:N0}{unit}";
+        }
+    }
+
+    private RailDcRequest BuildRequest(RailBoardInputs board, PdnModelKind kind, RunControl? control = null) => new()
+    {
+        // ── THE CONTROL WAS BUILT AND HANDED TO NOTHING (field report, 2026-09-22) ─────────────
+        //
+        // `Start` has constructed a RunControl since brief 7, and QueueResolve's own comment says it
+        // is "the mechanism because it is already the one em and render cancel through". No request
+        // ever carried it. CancelInFlight therefore stopped the window LISTENING and left the work
+        // running: four edits in a row put four whole-board extractions on the thread pool at once,
+        // each still competing for the same cores, and the "solving…" a designer reported as a dead
+        // end had no way to be taken back and no way to say which phase it was in.
+        Control        = control,
+
         Document       = _document,
         Shapes         = board.Shapes,
         Technology     = board.Technology,
@@ -856,6 +982,17 @@ public sealed partial class RailRfViewModel
             // was never "no defaults" but "a number nobody typed must not read as one somebody did".
             if (SeededRowsText.Length > 0) parts.Add(SeededRowsText);
 
+            // ── WHAT A RUN WITH NO DECOUPLING ON IT ACTUALLY ANSWERED (field report, 2026-09-22)
+            //
+            // "even without any part model i was allowed to press run". Allowing it is right and
+            // stays: the DC drop is a real answer that needs no decoupling at all, and on a board
+            // being checked for copper it is frequently the whole question — gating Run would refuse
+            // something railRF can answer. What was wrong is that nothing said what the OTHER half
+            // of the window was showing. With no part on the rail the impedance curve is bare
+            // copper and the plane's own capacitance, the target band has nothing in it to meet, and
+            // a reader has no way to tell that from a bank that was modelled and found wanting.
+            if (NoDecouplingText.Length > 0) parts.Add(NoDecouplingText);
+
             // The other thing this window can be busy doing, and until 2026-09-21 the one it did
             // WITHOUT saying so — on the UI thread, with the window unresponsive for as long as it
             // took (RailRfViewModel.NetPreview.cs' header). Named rather than spinner-shaped for
@@ -864,9 +1001,43 @@ public sealed partial class RailRfViewModel
             if (IsReadingCopper)
                 parts.Add("reading the board's copper — the layer flatten and the connectivity walk");
 
-            if (IsSolving) parts.Add(BusyText);
+            if (IsSolving)
+            {
+                parts.Add(BusyText);
+                // The phase, where the run has reached one — see SolveStage's own note for why it
+                // is beside BusyText and not instead of it.
+                if (SolveStage.Length > 0) parts.Add(SolveStage);
+            }
 
             return string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>
+    /// The strip's phrase for a rail carrying no decoupling, or "" where it carries some.
+    /// </summary>
+    /// <remarks>
+    /// <b>A note and not a gate</b>, which is the owner's call on the field report of 2026-09-22.
+    /// The complaint was that Run could be pressed "without any part model"; the DC answer needs no
+    /// parts and is often the whole question, so refusing it would refuse work railRF can do. What
+    /// the run cannot do without them is the frequency half — so that is what is said.
+    ///
+    /// <para><b>MOUNTED parts only.</b> A rail whose whole bank is unmounted is in exactly the state
+    /// this sentence describes, and brief 23's checkbox is how a designer asks "what does this board
+    /// do with the decoupling taken off" — which is a question they are entitled to a clear answer
+    /// to rather than a silently empty curve.</para>
+    /// </remarks>
+    public string NoDecouplingText
+    {
+        get
+        {
+            if (SelectedRail is not { } rail) return "";
+            foreach (var part in rail.Parts)
+                if (part.Mounted && part.Connection == RailPartConnection.Shunt) return "";
+
+            return rail.Parts.Count > 0
+                ? "no decoupling mounted — the |Z| curve is bare copper"
+                : "no decoupling parts — the |Z| curve is bare copper";
         }
     }
 

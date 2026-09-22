@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.RailRf;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.RailRf;
 
@@ -120,7 +121,7 @@ public partial class RailImportDialog : Window
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(null);
 
-    private void OnImportClick(object? sender, RoutedEventArgs e)
+    private async void OnImportClick(object? sender, RoutedEventArgs e)
     {
         var options = Build();
 
@@ -147,14 +148,126 @@ public partial class RailImportDialog : Window
         {
             Refuse(
                 $"\u201c{System.IO.Path.GetFileName(options.PlacementPath!)}\u201d needs its "
-              + "coordinate origin stated; pass --origin or set it here. railRF does not guess it — "
-              + "three quarters of a millimetre on an 0402 is the difference between landing on the "
-              + "part's own pad and landing on its neighbour's.",
+              + "coordinate origin stated; set it here. railRF does not guess it — three quarters "
+              + "of a millimetre on an 0402 is the difference between landing on the part's own pad "
+              + "and landing on its neighbour's.",
                 OriginCombo);
             return;
         }
 
-        Close(options);
+        // ── THE TWO COMPANIONS ARE TESTED *HERE*, WHERE THE ANSWER IS (field report, 2026-09-22) ─
+        //
+        // Both files were read only after the whole import had run, so a designer who pointed a row
+        // at the wrong file learned about it from a log line with the dialog long closed — and in
+        // one case the sentence he got named a command-line flag. The dialog has refused an
+        // unreadable BOM and an unstated origin since it was written, at the moment they can be
+        // fixed; there was no reason these two were different.
+        //
+        // NEITHER IS A HARD GATE. A board with no netlist and no placement table is the ordinary
+        // assisted-Gerber path and solves perfectly well, so each refusal names CLEARING THE BOX as
+        // an exit. What must not happen is that a file was named and nothing said what became of it.
+        // THE NETLIST FIRST, because it is the cheap one. Both are refusals the dialog stays open
+        // on, and the placement route can open a second dialog — so checking it first would make a
+        // user who then hits the netlist refusal walk through the column mapping again on their
+        // next press.
+        if (!CheckNetlist(options)) return;
+
+        // Re-read from the file on every press: Build() constructs a fresh options record, so a
+        // mapping given for one file can never be carried onto whatever the row names next.
+        if (await ResolvePlacementAsync(options) is not { } withPlacement) return;
+
+        Close(withPlacement);
+    }
+
+    /// <summary>
+    /// Reads the placement file the dialog names, and — where it has no header row — opens the
+    /// column-naming dialog rather than refusing with a flag nobody can reach.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="PlacementFile"/>'s refusal is right and stays</b>: column order is not a
+    /// standard, and a positional reading puts the rotation in the Y column silently. What was
+    /// missing is the GUI half of the answer — the sentence said "Name them with --columns" to a
+    /// user in a window.
+    ///
+    /// <para>Returns the options to import with, or null where the user answered neither — in which
+    /// case the dialog stays open, which is <see cref="Refuse"/>'s own rule.</para>
+    /// </remarks>
+    private async Task<RailImportOptions?> ResolvePlacementAsync(RailImportOptions options)
+    {
+        if (options.PlacementPath is not { Length: > 0 } path) return options;
+
+        string text;
+        try { text = System.IO.File.ReadAllText(path); }
+        catch (Exception ex)
+        {
+            Refuse($"\u201c{System.IO.Path.GetFileName(path)}\u201d could not be read: {ex.Message} "
+                 + "Point the row at another file, or clear the box to import without a placement "
+                 + "table — the parts table's Position column is then empty and nothing else changes.",
+                PlacementBox);
+            return null;
+        }
+
+        var read = PlacementFile.Read(
+            path, text, CircuitRF.Design.Layout.LayoutUnits.DefaultDbuPerMicron, options.PlacementOrigin);
+
+        if (read.Refusal is not { Length: > 0 } refusal) return options;
+
+        // A header this reader could not find is the one refusal with a control that answers it.
+        // Every other one — an ambiguous header, a missing X column, a file that is not a table at
+        // all — is about the FILE, and the answer is a different file.
+        if (!PlacementFile.HasNoHeader(read))
+        {
+            Refuse($"\u201c{System.IO.Path.GetFileName(path)}\u201d {refusal} Point the row at "
+                 + "another file, or clear the box to import without a placement table.",
+                PlacementBox);
+            return null;
+        }
+
+        var chosen = await new RailPlacementColumnsDialog(
+            System.IO.Path.GetFileName(path),
+            DelimitedTables.Parse(text)).ShowDialog<RailPlacementColumnChoice?>(this);
+
+        // "Skip this file" is an ANSWER, not a cancel: the artwork imports and the placement row is
+        // cleared, which is exactly the state a board that shipped no placement table is in.
+        if (chosen is null)
+            return options with { PlacementPath = null, PlacementOrigin = null };
+
+        return options with
+        {
+            PlacementColumns = chosen.Columns,
+            PlacementUnits   = chosen.Units,
+        };
+    }
+
+    /// <summary>
+    /// Reads the board netlist the dialog names, so a file that is not one is reported HERE.
+    /// </summary>
+    /// <remarks>
+    /// The sentence is <c>RailImportReport</c>'s, unchanged — one refusal, one wording, on every
+    /// surface. What is added is the exit, because this row is genuinely optional: a board with no
+    /// netlist anchors every port by coordinate and solves.
+    /// </remarks>
+    private bool CheckNetlist(RailImportOptions options)
+    {
+        if (options.BoardNetlistPath is not { Length: > 0 } path) return true;
+
+        var read = BoardNetlistFile.ReadFile(
+            path, CircuitRF.Design.Layout.LayoutUnits.DefaultDbuPerMicron);
+
+        if (read is null)
+        {
+            Refuse($"\u201c{System.IO.Path.GetFileName(path)}\u201d could not be read. Point the row "
+                 + "at another file, or clear the box to import without one.", NetlistBox);
+            return false;
+        }
+
+        if (read.Refusal is not { Length: > 0 } refusal) return true;
+
+        Refuse($"\u201c{read.FileName}\u201d {RailImportReport.RefusalTail(refusal)} Point the row "
+             + "at the right file, or clear the box to import without one — every port is then "
+             + "anchored by coordinate instead of by reference designator, which is the ordinary "
+             + "assisted-Gerber path.", NetlistBox);
+        return false;
     }
 
     /// <summary>Says the sentence and puts the caret on the control that answers it. <b>The dialog

@@ -5,95 +5,28 @@
   "SnapDbu": 5,
   "AngleMode": "AnyAngle",
   "PCellSnapshots": {
-    "KIT_SPIRAL_f5c89c06b982": {
+    "KIT_SPIRAL_ca170c07be6c": {
       "GeneratorId": "KIT_SPIRAL",
       "Parameters": {
-        "Width": 1e-05,
-        "Space": 8e-06,
+        "Width": 1E-05,
+        "Space": 8E-06,
         "Inner": 0.00012,
         "Turns": 3,
         "Metal": "Metal1"
       }
+    },
+    "KIT_MIMCAP_93119f9de692": {
+      "GeneratorId": "KIT_MIMCAP",
+      "Parameters": {
+        "W": 6E-05,
+        "L": 6E-05,
+        "Connection": "Series",
+        "C": 1.0838
+      },
+      "TechIdentity": "/Users/damonholmes/claude/circuitRF/examples/PDK PCells/tech/mmic-GaAs_2LM_100um.ctech"
     }
   },
   "Shapes": [
-    {
-      "$type": "Rect",
-      "X1": -255000,
-      "Y1": -80000,
-      "X2": -187000,
-      "Y2": -12000,
-      "Layer": {
-        "Layer": 1,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -251000,
-      "Y1": -76000,
-      "X2": -191000,
-      "Y2": -16000,
-      "Layer": {
-        "Layer": 9,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -255000,
-      "Y1": -80000,
-      "X2": -187000,
-      "Y2": -12000,
-      "Layer": {
-        "Layer": 6,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -203000,
-      "Y1": -50000,
-      "X2": -195000,
-      "Y2": -42000,
-      "Layer": {
-        "Layer": 10,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -203000,
-      "Y1": -54000,
-      "X2": -171000,
-      "Y2": -38000,
-      "Layer": {
-        "Layer": 2,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -179000,
-      "Y1": -54000,
-      "X2": -171000,
-      "Y2": -38000,
-      "Layer": {
-        "Layer": 3,
-        "Datatype": 0
-      }
-    },
-    {
-      "$type": "Rect",
-      "X1": -179000,
-      "Y1": -54000,
-      "X2": -153000,
-      "Y2": -38000,
-      "Layer": {
-        "Layer": 1,
-        "Datatype": 0
-      }
-    },
     {
       "$type": "Label",
       "X": -255000,
@@ -125,9 +58,21 @@
   ],
   "Instances": [
     {
-      "CellRef": "../../.generated-cells/KIT_SPIRAL_f5c89c06b982",
+      "CellRef": "../../.generated-cells/KIT_SPIRAL_ca170c07be6c",
       "X": 0,
       "Y": 0,
+      "Rot": "R0",
+      "MirrorX": false,
+      "Mag": 1,
+      "Rows": 1,
+      "Cols": 1,
+      "PitchX": 0,
+      "PitchY": 0
+    },
+    {
+      "CellRef": "../../.generated-cells/KIT_MIMCAP_93119f9de692",
+      "X": -255000,
+      "Y": -46000,
       "Rot": "R0",
       "MirrorX": false,
       "Mag": 1,

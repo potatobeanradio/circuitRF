@@ -86,10 +86,17 @@ public sealed partial class RailRfViewModel
                 // so it is read after the artwork and in the artwork's own resolution.
                 var netlist = RailArtwork.ResolveBoardNetlist(
                     _document, path, view.DbuPerMicron, out string? netlistPath, out string? netlistError);
+                // THE SAME SENTENCE THE IMPORT SAYS, and that is the point of routing it through
+                // RailImportReport rather than writing one here (field report, 2026-09-22). A
+                // designer who imported a file that is not a board netlist, saved, and opened the
+                // document again got a SHORTER and less useful message on the second surface than on
+                // the first — the import names which family of file the row wants and this did not.
+                // One document, one answer.
                 if (netlistError is { Length: > 0 })
-                    notes.Add($"The board netlist '{netlistPath}' did not read: {netlistError}. Every "
-                            + "port anchored by refdes is unresolved and no mounting loop can be "
-                            + "computed; typed values are unaffected.");
+                    notes.Add($"The board netlist '{netlistPath}' did not read: "
+                            + $"{RailImportReport.RefusalTail(netlistError)} Every port anchored by "
+                            + "refdes is unresolved and no mounting loop can be computed; typed "
+                            + "values are unaffected.");
                 else if (netlist is not null)
                     BoardNetlist = netlist;
 

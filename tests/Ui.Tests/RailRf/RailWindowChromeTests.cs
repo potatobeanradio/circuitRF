@@ -455,11 +455,11 @@ public class RailWindowChromeTests
         }
     }
 
-    // ── The parts pane's two actions (owner, 2026-09-21) ─────────────────────────────────────
+    // ── The parts pane's four actions (owner 2026-09-21; add/remove 2026-09-22) ──────────────
 
     /// <summary>
-    /// <b>Both are square glyph buttons whose tooltips are placed off the pointer, and only Assign
-    /// is gated on a selected row.</b>
+    /// <b>All four are square glyph buttons whose tooltips are placed off the pointer, the row
+    /// itself is live whenever a rail is, and only the three that act on rows are gated.</b>
     /// </summary>
     /// <remarks>
     /// <b>The offset is the half that gets dropped, and without it the placement does nothing.</b>
@@ -469,39 +469,64 @@ public class RailWindowChromeTests
     /// reported three times now and a Placement written without its offset looks correct in every
     /// review, so the pairing is asserted over the WHOLE window rather than on these two buttons.
     ///
-    /// <para><b>And Create part library is deliberately NOT gated</b> (owner, 2026-09-21). It seeds
-    /// the <c>.crlib</c> from every part number the document names, so a selection is not its
-    /// operand; asserting its absence is what stops the gate from being copied onto it by symmetry.
-    /// </para>
+    /// <para><b>And Create part library is deliberately NOT gated on a SELECTION</b> (owner,
+    /// 2026-09-21). It seeds the <c>.crlib</c> from every part number the document names, so a row
+    /// is not its operand; asserting that absence is what stops the gate being copied onto it by
+    /// symmetry. It IS hidden with the rest of the row when the table is empty, because there is
+    /// then nothing to seed from.</para>
+    ///
+    /// <para><b>The row's own visibility is the field report's half</b> (2026-09-22). It was gated
+    /// on <c>HasParts</c>, which hid every gesture at exactly the moment the pane is empty — and an
+    /// empty pane, after a designer had just placed two footprints, is the whole of what was
+    /// reported. <c>CanAddPart</c> is the gate now, and Add is the one button with no further one:
+    /// a table you cannot put the first row into is the defect.</para>
     /// </remarks>
     [Fact]
     public void ThePartsPaneActionsAreSquareGlyphs_PlaceTheirTooltipsOffThePointer_AndOnlyAssignIsGated()
     {
         string xaml = Xaml();
 
-        // The two buttons of the parts pane's own action row, split out of the panel that holds
-        // them — anchoring on each Click handler would start the block PAST the attributes above it.
-        string[] buttons = Block(xaml, "Grid.Row=\"5\" Orientation=\"Horizontal\"", "</StackPanel>")
-                          .Split("<Button", StringSplitOptions.None);
-        Assert.Equal(3, buttons.Length);
+        // The buttons of the parts pane's own action row, split out of the panel that holds them —
+        // anchoring on each Click handler would start the block PAST the attributes above it.
+        string row = Block(xaml, "Grid.Row=\"5\" Orientation=\"Horizontal\"", "</StackPanel>");
+        string[] buttons = row.Split("<Button", StringSplitOptions.None);
+        Assert.Equal(5, buttons.Length);
 
-        string assign  = buttons[1];
-        string library = buttons[2];
+        string add     = buttons[1];
+        string remove  = buttons[2];
+        string assign  = buttons[3];
+        string library = buttons[4];
+        Assert.Contains("Click=\"OnAddPartClick\"",           add,     StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnRemovePartClick\"",        remove,  StringComparison.Ordinal);
         Assert.Contains("Click=\"OnAssignPartNumberClick\"",  assign,  StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCreatePartLibraryClick\"", library, StringComparison.Ordinal);
 
-        foreach (string button in new[] { assign, library })
+        foreach (string button in new[] { add, remove, assign, library })
         {
             Assert.Contains("Classes=\"sqbtn\"", button, StringComparison.Ordinal);
             Assert.Contains("MaterialIcon", button, StringComparison.Ordinal);
             Assert.DoesNotContain("Content=", button, StringComparison.Ordinal);
         }
 
-        // Assign writes onto the SELECTION, so it is dead without one; the library's operand is the
-        // document, so it stays live.
-        Assert.Contains("IsEnabled=\"{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}\"",
-                        assign, StringComparison.Ordinal);
+        // THE ROW IS LIVE WHENEVER A RAIL IS, not whenever the table has rows — the field report's
+        // half. Gating it on HasParts hid every gesture at exactly the moment the pane is empty.
+        Assert.Contains("IsVisible=\"{Binding CanAddPart}\"", row, StringComparison.Ordinal);
+
+        // ADD IS THE ONE WITH NO FURTHER GATE. A table you cannot put the first row into is the
+        // defect; every other button here operates on something that has to exist first.
+        Assert.DoesNotContain("IsEnabled=", add,     StringComparison.Ordinal);
+        Assert.DoesNotContain("IsVisible=", add,     StringComparison.Ordinal);
+
+        // Remove and Assign both write onto the SELECTION, so both are dead without one.
+        foreach (string button in new[] { remove, assign })
+            Assert.Contains(
+                "IsEnabled=\"{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}\"",
+                button, StringComparison.Ordinal);
+
+        // The library's operand is the DOCUMENT, so it takes no selection gate — but it is hidden
+        // with the empty table, because there are then no part numbers to seed a .crlib from.
         Assert.DoesNotContain("IsEnabled=", library, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding HasParts}\"", library, StringComparison.Ordinal);
 
         // Every Placement="Top" in this window carries its offset on the same line — see the remarks.
         foreach (string line in xaml.Split('\n'))

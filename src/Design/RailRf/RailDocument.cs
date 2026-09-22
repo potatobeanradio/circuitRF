@@ -176,6 +176,24 @@ public sealed class RailDocument
     public string? PlacementRef { get; set; }
 
     /// <summary>
+    /// How to READ the file <see cref="PlacementRef"/> names — the origin, the units, and the
+    /// column names for a file that has no header row.
+    /// </summary>
+    /// <remarks>
+    /// <b>On the document for exactly <see cref="BoardNetlistRef"/>'s reason, and it was missing for
+    /// the same one</b> (field report, 2026-09-22). Everything here is something the IMPORT asked a
+    /// user and nothing wrote down: an origin the dialog refuses to guess, a unit a headerless file
+    /// declares nowhere, and a column mapping that only exists because somebody supplied it. A
+    /// document imported with all three answered, saved, and opened again re-read the file with none
+    /// of them — so it re-refused, or worse, read at the defaulted millimetre and put every part in
+    /// a box a twenty-fifth of the board's size with nothing to say so.
+    ///
+    /// <para>Null throughout is the ordinary state: a file with a header row in a format that
+    /// declares its own units and origin needs none of it.</para>
+    /// </remarks>
+    public RailPlacementReading Placement { get; set; } = new();
+
+    /// <summary>
     /// The net the reference return is on — <c>GND</c>, <c>AGND</c>.
     ///
     /// <para><b>Named rather than inferred, and the mounting loop has no second side without it.</b>

@@ -87,6 +87,27 @@ public sealed class RailDcRequest
 
     /// <summary>How the fast reading traces and how coarsely it meshes what it will not trace.</summary>
     public PdnGraphSettings Graph { get; init; } = new();
+
+    /// <summary>
+    /// Cancellation and progress for the whole run. Null is the ordinary headless case and makes
+    /// every checkpoint a no-op.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window built one and passed it to nothing</b> (field report, 2026-09-22).
+    /// <c>RailRfViewModel.Start</c> has constructed a <see cref="RunControl"/> since brief 7 — and
+    /// <c>QueueResolve</c>'s own comment says it is "the mechanism because it is already the one
+    /// <c>em</c> and <c>render</c> cancel through" — but no request carried it and no engine ever
+    /// saw it. Cancelling stopped the window LISTENING: the work kept running, so four edits in a
+    /// row put four whole-board extractions on the thread pool at once and the last one still had to
+    /// wait behind the first three. On a production six-layer board that is the "solving…" that
+    /// never ends.
+    ///
+    /// <para><b>A run is solved rail by rail and the boundary between two rails is a checkpoint</b>,
+    /// beside the finer ones <see cref="PdnExtractionRequest.Control"/> plants inside one. A stage
+    /// name is set per rail for the same reason: a chained supply is several extractions and a user
+    /// watching one word is entitled to know which.</para>
+    /// </remarks>
+    public RunControl? Control { get; init; }
 }
 
 /// <summary>
@@ -152,6 +173,10 @@ public static class RailDcRun
 
         foreach (string railName in order.Order)
         {
+            // Between rails, which is the coarse boundary; PdnGraphExtractor plants the fine ones
+            // inside a single extraction. See Control's own note.
+            request.Control?.Token.ThrowIfCancellationRequested();
+
             var spec = doc.Rail(railName);
             if (spec is null) continue;
 
@@ -171,6 +196,11 @@ public static class RailDcRun
                 return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}");
 
             var pdn = extraction.Netlist!;
+
+            request.Control?.Token.ThrowIfCancellationRequested();
+            if (request.Control is { } solving)
+                solving.Stage = $"Rail '{railName}': solving";
+
             var solve = LinearDcEngine.Run(pdn.Netlist);
             if (solve.Refusal is { } solveRefusal)
                 return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");
@@ -397,6 +427,11 @@ public static class RailDcRun
         Mesh            = mesh ?? request.Mesh,
         Graph           = request.Graph,
         ClassOverrides  = request.Document.ClassOverrides,
+
+        // ONE CONTROL OBJECT FOR THE WHOLE RUN, handed down rather than a child of it. A rail set is
+        // solved one rail at a time and there is no enclosing counter to double — the stage name is
+        // what carries "which rail", which is why each extraction sets it.
+        Control         = request.Control,
     };
 
     // ── reading the answer ─────────────────────────────────────────────────────────────────────

@@ -61,6 +61,8 @@ using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Engine.Pdn;
 
+using CircuitRF.Engine;
+
 namespace CircuitRF.Design.Layout.Pdn;
 
 /// <summary>
@@ -196,6 +198,27 @@ public sealed class PdnExtractionRequest
     /// </summary>
     public IReadOnlyDictionary<PdnRegionRef, PdnCopperClass> ClassOverrides { get; init; } =
         new Dictionary<PdnRegionRef, PdnCopperClass>();
+
+    /// <summary>
+    /// Cancellation and progress for this extraction. Null is the ordinary headless case and makes
+    /// every checkpoint a no-op.
+    /// </summary>
+    /// <remarks>
+    /// <b>Because an extraction could not be stopped and said nothing while it ran</b> (field
+    /// report, 2026-09-22). A designer pressed Run on a production six-layer board, got the word
+    /// "solving…" at the end of a status strip, and reported that it was "probably run in a dead
+    /// end" — with no way to tell a long answer from a hung one and no way to take it back. The
+    /// window had BUILT a <see cref="RunControl"/> since brief 7 and passed it to nothing: cancelling
+    /// stopped the window LISTENING and left the work running on a thread-pool thread, so a user
+    /// editing a value four times had four whole-board extractions in flight at once.
+    ///
+    /// <para><b>The checkpoints are at the boundaries between phases, and inside the one loop that
+    /// is per-PIECE</b> — the same granularity <see cref="RunControl"/>'s own contract states for
+    /// every other engine here: answered within one unit of work, never inside a matrix
+    /// factorisation. What that buys is that the stage NAME is always the phase actually running, so
+    /// the next report of a slow board says which phase was slow instead of "solving…".</para>
+    /// </remarks>
+    public RunControl? Control { get; init; }
 }
 
 /// <summary>Copper in, <c>ElaboratedNetlist</c> out.</summary>

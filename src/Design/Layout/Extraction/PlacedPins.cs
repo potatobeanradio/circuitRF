@@ -221,6 +221,41 @@ public static class PlacedPins
     /// a land pattern nested three cells deep inside a module is that module's internal business.
     /// A placement with no designator to draw contributes nothing, for R-ab1-1b's reason.</para>
     /// </remarks>
+    /// <summary>
+    /// <b>WHERE each placed part is</b>, by designator — the instance's own origin, in DBU.
+    /// </summary>
+    /// <remarks>
+    /// <b>The board is a source of truth the "where" column ignored</b> (owner report,
+    /// 2026-09-22). <c>RailRfViewModel.RebuildParts</c> filled that column from the placement FILE
+    /// and from nothing else, so a part placed in the <c>.clay</c> — whose land pattern railRF was
+    /// already naming in the column beside it, out of <see cref="FootprintsOf"/>, off the very same
+    /// instance — read "not placed". The tooltip then said "no placement file names this refdes",
+    /// which is true and useless: the artwork does.
+    ///
+    /// <para><b>The placement FILE still wins where it has a row</b>, and that is not arbitrary.
+    /// The two answer subtly different questions — a placement file states the manufacturing
+    /// centroid under a stated origin convention (<c>PlacementOrigin</c>), which is what an
+    /// assembly machine uses; an instance origin is where the land-pattern cell's own origin was
+    /// dropped. They agree on a sanely-drawn footprint and they are not the same number in general,
+    /// so the more specific statement is the one somebody exported on purpose, and the row says
+    /// which it is showing.</para>
+    ///
+    /// <para><b>The ROOT's own placements</b>, exactly as <see cref="FootprintsOf"/> walks them, and
+    /// no cell is opened: the origin is on the instance. <c>MirrorX</c> comes along because it is
+    /// what puts a part on the far side of the board, which is the one other thing the column says.</para>
+    /// </remarks>
+    public static IReadOnlyDictionary<string, (long X, long Y, bool Mirrored)> OriginsOf(LayoutView? view)
+    {
+        var byRefdes = new Dictionary<string, (long, long, bool)>(StringComparer.OrdinalIgnoreCase);
+        if (view is null) return byRefdes;
+
+        foreach (var inst in view.Instances)
+            if (inst.DisplayRefDes is { Length: > 0 } refdes)
+                byRefdes[refdes] = (inst.X, inst.Y, inst.MirrorX);
+
+        return byRefdes;
+    }
+
     public static IReadOnlyDictionary<string, string> FootprintsOf(LayoutView? view)
     {
         var byRefdes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

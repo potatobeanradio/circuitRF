@@ -130,6 +130,21 @@
                             <Run Text="{Binding TextInline}"
                                  Foreground="{DynamicResource SystemBaseHighColor}"/>
 
+                            <!-- ── HOW MANY TIMES, WHERE IT WAS SAID THREE TIMES ────────────────
+                                 A designer arming footprint placement three times on a technology
+                                 with no courtyard layer got the same 300-character warning three
+                                 times in a row (field report, 2026-09-22). The warning is right and
+                                 is reported per arming on purpose; the log just repeated it instead
+                                 of counting. MessageOrdering.Insert collapses only CONSECUTIVE
+                                 identical messages, so two episodes with anything between them stay
+                                 two rows — which is what a timestamped log is for.
+
+                                 ABSENT, NOT EMPTY, on a message said once, so every ordinary row
+                                 renders exactly as it always did. -->
+                            <Run Text="{Binding RepeatText}"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
                             <!-- Progress bar for a LIVE message (a running simulation). Absent — not
                                  merely empty — on every ordinary message, so the log is unchanged
                                  when nothing is running. Indeterminate while the work has no honest

@@ -175,10 +175,37 @@ public sealed partial class RailRfViewModel
             string partNumber = part.PartNumber is { Length: > 0 } own ? own : row?.PartNumber ?? "";
             var model = partNumber.Length > 0 ? PartLibrary?.ResolveModel(partNumber) : null;
 
-            string? position = placedBy.TryGetValue(part.Refdes, out var placement)
-                ? BoardLengthFormat().Point(placement.X, placement.Y)
-                  + (placement.Mirror ? " · bottom" : "")
-                : null;
+            // ── THE BOARD IS A SOURCE OF TRUTH THIS COLUMN USED TO IGNORE ────────────────────
+            //
+            // Owner report, 2026-09-22: a part added by hand, given a part number, then PLACED in
+            // the `.clay` with that designator, still read "not placed". It was placed — railRF was
+            // naming its land pattern in the column beside this one, out of _boardFootprints, off
+            // the very same instance. Only the placement FILE was ever consulted here, and the
+            // tooltip then said "no placement file names this refdes": true, and useless.
+            //
+            // THE FILE STILL WINS WHERE IT HAS A ROW, and the two are NOT interchangeable. A
+            // placement file states the manufacturing centroid under a declared origin convention
+            // (PlacementOrigin — the thing the import dialog refuses to guess); an instance origin
+            // is where the land-pattern cell's own origin was dropped. On a sanely drawn footprint
+            // they agree, and in general they do not. So the more specific statement wins and the
+            // row SAYS which one it is showing — the same rule every other number in this window
+            // follows, because a coordinate from one source that reads identically to a coordinate
+            // from another is exactly the defaulted-number failure this tool exists to prevent.
+            string? position = null;
+            var positionFrom = RailPartPositionSource.Nothing;
+
+            if (placedBy.TryGetValue(part.Refdes, out var placement))
+            {
+                position = BoardLengthFormat().Point(placement.X, placement.Y)
+                         + (placement.Mirror ? " · bottom" : "");
+                positionFrom = RailPartPositionSource.PlacementFile;
+            }
+            else if (_boardOrigins.TryGetValue(part.Refdes, out var origin))
+            {
+                position = BoardLengthFormat().Point(origin.X, origin.Y)
+                         + (origin.Mirrored ? " · bottom" : "");
+                positionFrom = RailPartPositionSource.Artwork;
+            }
 
             resolved.TryGetValue(part.Refdes, out var element);
 
@@ -190,7 +217,7 @@ public sealed partial class RailRfViewModel
             var built = new RailPartRowViewModel(
                 part, row, model,
                 element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
-                position, element, boardFootprint);
+                position, element, boardFootprint, positionFrom);
             Parts.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
@@ -414,18 +441,27 @@ public sealed partial class RailRfViewModel
 
             if (Board is null)
                 return "No board yet. Open the layout this document names, or import one — with no " +
-                       "artwork railRF has nothing to read parts off, and a part row is one you type.";
+                       "artwork railRF has nothing to read parts off. Add a row with + either way: " +
+                       "artwork is optional, and the numbers come from the part library.";
 
+            // ── EVERY ONE OF THESE NAMES THE BUTTON NOW (field report, 2026-09-22) ─────────────
+            //
+            // They already said a row could be typed. There was no way to type one — no add button,
+            // no menu item, nothing — so a designer who had just placed two footprints read that
+            // sentence, went looking for the gesture, and reported twice that his parts never
+            // showed up. A pane that names a gesture it does not have is worse than a silent one.
             if (PartOffer.State == RailDiscoveryState.NotExtracted)
                 return "This rail's copper has not been extracted yet. Confirm its reference return " +
-                       "and run, and railRF will look for the parts sitting between the rail and it.";
+                       "and run, and railRF will look for the parts sitting between the rail and " +
+                       "it — or add the rows yourself with +, which needs no extraction.";
 
             if (PartOffer.HasOffer)
                 return $"This rail has no part rows yet — add the {PartOffer.Offered.Count} railRF " +
-                       "found on the board, or type them.";
+                       "found on the board, or add your own with +.";
 
             return "No two-terminal part sits between this rail and its reference, so there was " +
-                   "nothing to offer. Rows can still be typed — §6 makes artwork optional.";
+                   "nothing to offer. Add rows with + — §6 makes artwork optional, and on a Gerber " +
+                   "set with no netlist railRF cannot tell a decoupling land from any other.";
         }
     }
 
@@ -474,6 +510,13 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(PartsEmptyText));
         OnPropertyChanged(nameof(HasPartsEmptyText));
         OnPropertyChanged(nameof(HasParts));
+
+        // The add gesture's own two, on the SAME funnel for RebuildPartOffer's reason: both derive
+        // from the rail's rows and the board's placed designators, and a derived list follows every
+        // write to what derives it.
+        OnPropertyChanged(nameof(AddablePlacedParts));
+        OnPropertyChanged(nameof(CanAddPart));
+
         AcceptDiscoveredPartsCommand.NotifyCanExecuteChanged();
     }
 
@@ -611,6 +654,146 @@ public sealed partial class RailRfViewModel
         }
     }
 
+    // ══ ADDING A ROW BY HAND (field report, 2026-09-22) ═══════════════════════════════════════
+    //
+    // A designer placed two footprints on an imported board, gave them reference designators, and
+    // reported twice in one session that they "never showed up on the part list". They had not: the
+    // only producer of a part row was brief 26's discovery, which needs a completed extraction and
+    // then only offers a part it can PROVE bridges the rail and its reference. On a Gerber set with
+    // no netlist a hand-placed footprint is two lands standing on copper that nothing names, so
+    // discovery cannot conclude anything about it — correctly, and uselessly for him.
+    //
+    // WORSE, THE PANE PROMISED THE GESTURE THAT DID NOT EXIST. PartsEmptyText has said "Rows can
+    // still be typed — §6 makes artwork optional" and "or type them" since brief 26. There was no
+    // way to type one: no add button, no context-menu item, nothing. Sources and Loads have carried
+    // a + since brief 7. A pane that names a gesture it does not have is worse than a silent one,
+    // because the reader spends their time looking for it.
+    //
+    // ── IT IS NOT A SECOND DISCOVERY, AND THAT IS THE WHOLE DESIGN ────────────────────────────
+    //
+    // Nothing here classifies anything. RailPartDiscovery's predicate — two pads, one on the rail,
+    // one on the reference — is a CONCLUSION railRF reached, and its rows carry RailPartOrigin
+    // .Artwork to say so. A row added here is a user's ASSERTION that this part is on this rail,
+    // and it carries RailPartOrigin.Typed, which is exactly what it is. The two must not be
+    // confused: the failure this tool exists to prevent is a defaulted number reading as a stated
+    // one, and a provenance is a number of the same kind.
+    //
+    // WHAT THE BOARD CONTRIBUTES IS THE LIST OF NAMES AND NOTHING ELSE. _boardFootprints already
+    // holds every placed designator and its land pattern (PlacedPins.FootprintsOf), and it is the
+    // difference between a dialog where you type "C47" from memory and one where you pick it. No
+    // capacitance, no ESR and no connection type is derived from a land pattern here any more than
+    // it is in brief 26 — an 0402 land is a case size.
+
+    /// <summary>
+    /// Every designator placed on the board that is not already a part row on the selected rail,
+    /// in designator order.
+    /// </summary>
+    /// <remarks>
+    /// <b>Filtered against THIS RAIL's rows only</b>, deliberately. A part may legitimately appear
+    /// on one rail's table and not another's — a series element between two rails is the obvious
+    /// case — so excluding every designator any rail mentions would hide exactly the row somebody
+    /// is trying to add. Adding one twice to the same rail is what is prevented, and
+    /// <see cref="AddParts"/> enforces it again for the caller that does not consult this.
+    /// </remarks>
+    public IReadOnlyList<RailAddablePart> AddablePlacedParts
+    {
+        get
+        {
+            if (SelectedRail is not { } rail) return [];
+
+            var already = new HashSet<string>(
+                rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0),
+                StringComparer.OrdinalIgnoreCase);
+
+            var offered = new List<RailAddablePart>();
+            foreach (var (refdes, footprint) in _boardFootprints)
+                if (!already.Contains(refdes)) offered.Add(new RailAddablePart(refdes, footprint));
+
+            offered.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Refdes, b.Refdes));
+            return offered;
+        }
+    }
+
+    /// <summary>True while a row can be added at all — which is exactly "a rail is selected".</summary>
+    /// <remarks>
+    /// <b>Not gated on the BOARD</b>, and that is §6: artwork is optional, a part row can be typed
+    /// on a document that has none, and the numbers come from the part library either way. The
+    /// board only makes the designators pickable rather than typed.
+    /// </remarks>
+    public bool CanAddPart => SelectedRail is not null;
+
+    /// <summary>
+    /// Adds one row per designator to the selected rail, and re-solves ONCE.
+    /// </summary>
+    /// <remarks>
+    /// <b>Idempotent by designator and batched into one undo entry</b> — both of
+    /// <see cref="AddDiscoveredParts"/>'s rules, for its reasons: a designator the rail already
+    /// carries is never added twice, and adding four rows is one gesture and must be one press to
+    /// take back.
+    ///
+    /// <para><b>A row arrives carrying NOTHING but its designator.</b> No capacitance, no ESR, no
+    /// connection type inferred from a land pattern — brief 26 refuses to invent those from artwork
+    /// and this refuses for the same reason. The row is listed as unresolved until a part number is
+    /// assigned and the library says what that part is, which is the state the table already
+    /// renders.</para>
+    /// </remarks>
+    /// <returns>How many rows were added.</returns>
+    public int AddParts(IEnumerable<string> refdeses)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        if (SelectedRail is not { } rail) return 0;
+
+        var already = new HashSet<string>(
+            rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+
+        int added = 0;
+        foreach (string raw in refdeses)
+        {
+            if (raw is not { Length: > 0 }) continue;
+            string refdes = raw.Trim();
+            if (refdes.Length == 0 || !already.Add(refdes)) continue;
+
+            rail.Parts.Add(new RailPart { Refdes = refdes, Origin = RailPartOrigin.Typed });
+            added++;
+        }
+
+        if (added == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return added;
+    }
+
+    /// <summary>
+    /// Removes the named rows from the selected rail, and re-solves ONCE.
+    /// </summary>
+    /// <remarks>
+    /// <b>The other half of an add gesture.</b> A pane that can gain a row it cannot lose is a pane
+    /// whose only correction is a hand edit of the document — and brief 23 already settled that
+    /// taking a part OFF THE BOARD is a different act (it is <c>Mounted</c>, it keeps the mounting
+    /// loop the artwork gave the part, and it is reversible). This one is for a row that should
+    /// never have been added: a designator typed wrongly, or one picked off the board that turns
+    /// out to be on another rail.
+    /// </remarks>
+    /// <returns>How many rows were removed.</returns>
+    public int RemoveParts(IEnumerable<string> refdeses)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        if (SelectedRail is not { } rail) return 0;
+
+        var wanted = new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0) return 0;
+
+        int removed = rail.Parts.RemoveAll(
+            p => p.Refdes is { Length: > 0 } r && wanted.Contains(r));
+        if (removed == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return removed;
+    }
+
     /// <summary>
     /// R-rail27-3b's input — which land pattern each placed part sits on, by designator.
     /// </summary>
@@ -623,6 +806,15 @@ public sealed partial class RailRfViewModel
     private IReadOnlyDictionary<string, string> _boardFootprints =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-    private void RebuildBoardFootprints() =>
+    /// <summary>Where each placed part is, by designator — the "where" column's second source, and
+    /// the one it used to have none of. Rebuilt beside <see cref="_boardFootprints"/> because the
+    /// two come off the same instances in one walk.</summary>
+    private IReadOnlyDictionary<string, (long X, long Y, bool Mirrored)> _boardOrigins =
+        new Dictionary<string, (long, long, bool)>(StringComparer.OrdinalIgnoreCase);
+
+    private void RebuildBoardFootprints()
+    {
         _boardFootprints = PlacedPins.FootprintsOf(Board?.View);
+        _boardOrigins    = PlacedPins.OriginsOf(Board?.View);
+    }
 }

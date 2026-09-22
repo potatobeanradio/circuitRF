@@ -1,5 +1,81 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Three companion readers, and two refusals that named nothing real (2026-09-22)
+
+From a third round of outside railRF use on a production board. The board itself must not enter the
+repo and the reporter must not be named; the UI half is in `src/Ui/RESOLVED.md` for the same date.
+
+### A refusal that names an inert knob costs more than one that names nothing
+
+`PlacementFile`'s headerless refusal read *"Name them with --columns, or state --from to read it as
+something else"*, and `BomFile`'s read *"Name them with --columns"*. **Neither flag exists.**
+Nothing in `src/Cli` parses `--columns`, and `netlist --placement` / `netlist --bom` WRITE those
+tables out of a layout rather than reading one in. There is exactly one headless reader of a
+placement file, `RailArtwork.ResolvePlacement`, and it reads the mapping off the `.crail`.
+
+So a designer met the sentence in a WINDOW — where there is no command line at all — went looking
+for the flag, and there was nothing to find at either end. Both sentences now name a remedy that
+exists: railRF asks at import, the `.crail` records the answer, and adding a header row to the file
+answers it too. (Same class as the MoM ceiling refusal that named cells/λ, which is inert on a
+taper.)
+
+### `BoardNetlistFile` was the one reader of three that never said what the file IS
+
+Its refusal was *"holds no feature records that could be read, so nothing was taken from it"* —
+naming neither the file nor the want. `PlacementFile` and `BomFile` have both run the import's own
+`GerberFileClassifier` over a file they could not read since they were written; there was no reason
+this one did not. `NotThisFormat` now says what it reads as and names IPC-D-356/356A and the usual
+extensions.
+
+**Deliberately NOT a reader for the format he actually had.** It is a named CAD tool's own part/net
+export; writing one means describing a vendor format in this repo, which the root rule forbids.
+Refuse clearly and name the standard his exporter also offers — the owner's call.
+
+### The reading of a placement file is now part of the document
+
+`RailPlacementReading` on `RailDocument`: origin, units, column names. All three are answers a HUMAN
+gave the import dialog and **none of them was written down**, which is the same defect
+`RailDocument.BoardNetlistRef`'s own comment describes about the netlist before brief 2 ("an import
+that read a netlist and was then SAVED used to lose it"). Absent from the JSON entirely where
+nothing was stated, so a document written before this reads exactly as it did, and parsed leniently
+— an unknown token drops to "let the file say" rather than costing the whole document.
+
+**The units are asked and never inferred.** A headerless file declares none and `PlacementFile`
+defaults to millimetre; mm and mils differ by 25.4, and a file read at the wrong one still lands
+every part inside a plausible-looking box. That is the failure every reader in this folder is built
+against, and it was one default away.
+
+### `PlacementColumns.Infer` claims roles in order of RECOGNISABILITY, not left to right
+
+New file. The ordering is the whole design: side and mirror first (fixed vocabularies), then the
+reference (letters-then-digits AND mostly distinct — a footprint column is also letters-and-digits,
+and it is the DISTINCTNESS that separates them, since a board repeats a land pattern and never
+repeats a designator), then **rotation before the coordinates**, then X and Y.
+
+Rotation before the coordinates is the point. An angle column is numeric, so a rule that took the
+first two numeric columns would read it as X — which is *precisely* the "puts the rotation in the Y
+column silently" the original refusal was written against. An angle is bounded and repeats; a
+coordinate is neither. X-before-Y is a convention rather than a measurement and the evidence string
+says so, because it is the one assignment a reader is most likely to have to swap.
+
+**Nothing here is applied.** It returns a proposal AND its evidence, and the dialog renders each
+role directly over the column it claims. A guess and a declaration must never read the same.
+
+### Two things found while in here and NOT fixed
+
+- **The BOM is not persisted on the `.crail` at all.** There is no `BomRef` and nothing sets one, so
+  a bill of materials read at import is gone on reopen — the same defect the netlist and the
+  placement had before brief 2, never applied to the third companion. It matters: the BOM is what
+  gives a discovered part row its part number, and without one every row is unresolved and
+  contributes nothing to the curve.
+- **`PlacementFile.CrossCheckExtents` and `BoardNetlistFile.CrossCheckExtents` are called by
+  nothing.** Both were written to catch a wrong SCALE against the artwork's own bounding box — the
+  instrument `ExcellonReader` uses — and no caller in `src/Ui` or `src/Cli` invokes either. The
+  units cross-check a placement file gets today is therefore none.
+
+Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport3Tests.cs`.
+
+
 ## The layout netlist: devices, terminals, nets and ground (2026-09-21)
 
 `brief-lvs-3-layout-netlist.md`. `src/Design/Layout/Lvs/` now turns a `.clay` plus its technology

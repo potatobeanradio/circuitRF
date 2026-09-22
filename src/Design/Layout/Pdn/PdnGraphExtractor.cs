@@ -201,6 +201,21 @@ public static class PdnGraphExtractor
                 "through and no graph to build. Name the reference return's drawing layer — railRF " +
                 "never infers one (railrf.md §2.2, Q-8).");
 
+        // ── THE STAGE NAMES, AND WHY THEY EARN THEIR KEEP (field report, 2026-09-22) ──────────
+        //
+        // This extraction is the whole of what "solving…" meant on the window, and on a production
+        // six-layer board it is where the wait is. A designer reported it as "probably run in a dead
+        // end": the word was the only sign of life, it named no phase, and there was nothing to
+        // press to stop it. Naming the phase costs one assignment and means the NEXT report of a
+        // slow board arrives saying which phase was slow.
+        //
+        // Cancellation is checked at the same points and inside the one per-piece loop below, which
+        // is RunControl's own stated granularity — within a unit of work, never inside a
+        // factorisation. Null control makes every one of these a no-op, which is the headless case.
+        var control = request.Control;
+        control?.Token.ThrowIfCancellationRequested();
+        if (control is not null) control.Stage = $"Rail '{rail.Name}': reading the board's copper";
+
         var layerRegions = LayerRegions.Build(request.Shapes, tech, diagnostics);
         if (layerRegions.Count == 0)
             return PdnExtraction.Refused(
@@ -221,6 +236,9 @@ public static class PdnGraphExtractor
         foreach (var l in rail.Loads)
             if (l.Anchor.Refdes is not { Length: > 0 })
                 bareCoordinateSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
+
+        control?.Token.ThrowIfCancellationRequested();
+        if (control is not null) control.Stage = $"Rail '{rail.Name}': following the connectivity";
 
         var regions = Regions.Walk(
             layerRegions, tech, request.NetPoints, rail.NetName,
@@ -336,6 +354,10 @@ public static class PdnGraphExtractor
             return n;
         }
 
+        control?.Token.ThrowIfCancellationRequested();
+        if (control is not null)
+            control.Stage = $"Rail '{rail.Name}': sorting trace-shaped copper from spreading copper";
+
         foreach (var (layer, paths) in Ordered(railCopper))
             classification.AddRange(PdnCopperClassifier.Classify(
                 layer, DrcRegions.Union(paths), isReference: false, dbuPerMetre,
@@ -347,6 +369,16 @@ public static class PdnGraphExtractor
                 request.ClassOverrides, settings.TraceSquaresThreshold, PortsOn));
 
         // ── the graph ──────────────────────────────────────────────────────────────────────────
+        control?.Token.ThrowIfCancellationRequested();
+
+        // THE ONE WITH A DENOMINATOR. Everything above is a single pass over the board; this is one
+        // unit of work per classified piece, each of which rasterises and thins, and on a real board
+        // it is most of the wall clock. A counter that advances is the difference between a long
+        // answer and a hung one — which is exactly the distinction the report could not make.
+        if (control is not null)
+            control.BeginStage(
+                $"Rail '{rail.Name}': measuring the copper", classification.Count, "piece(s)");
+
         var nodes = new PdnGraphNodes(request.DbuPerMicron);
         var build = new GraphBuild(
             request, frequencyHz, nodes, byLayer, classification, attachmentPoints, notes, diagnostics);
@@ -1169,6 +1201,13 @@ internal sealed class GraphBuild(
 
         foreach (var c in classification.ToList())
         {
+            // ONE PIECE IS ONE UNIT OF WORK, and this is the only loop in the extraction where that
+            // is true — each iteration below rasterises a piece and thins it, and on a real board
+            // that is most of the wall clock (field report, 2026-09-22). TickStage checks the token
+            // as well as counting, which is RunControl's own contract, so a cancel is answered
+            // within one piece rather than at the end of the board.
+            request.Control?.TickStage();
+
             int index = classification.IndexOf(c);
             if (!conductors.TryGetValue(c.Region.Layer, out var conductor)) { piece++; continue; }
 

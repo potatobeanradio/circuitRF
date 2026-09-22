@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Pdn;
 
 namespace CircuitRF.Design.RailRf;
@@ -116,6 +117,18 @@ public static class RailDocumentIo
         PartLibraryRef = NullIfEmpty(d.PartLibraryRef),
         BoardNetlistRef = NullIfEmpty(d.BoardNetlistRef),
         PlacementRef    = NullIfEmpty(d.PlacementRef),
+
+        // OMITTED ENTIRELY WHERE NOTHING WAS STATED, which is every document written before this
+        // existed and every board whose placement file declares its own origin and units. A group
+        // of three nulls in the JSON would be three questions a reader has to work out are not
+        // being answered.
+        Placement       = d.Placement.IsEmpty ? null : new CrailPlacement
+        {
+            Origin  = d.Placement.Origin?.ToString(),
+            Units   = d.Placement.Units?.ToString(),
+            Columns = d.Placement.Columns is { Count: > 0 } c ? [.. c] : null,
+        },
+
         ReferenceNet    = NullIfEmpty(d.ReferenceNet),
         Settings = new CrailSettings
         {
@@ -283,6 +296,18 @@ public static class RailDocumentIo
             PartLibraryRef = f.PartLibraryRef,
             BoardNetlistRef = f.BoardNetlistRef,
             PlacementRef    = f.PlacementRef,
+            Placement       = new RailPlacementReading
+            {
+                // PARSED LENIENTLY AND DROPPED WHERE IT DOES NOT PARSE. A token this build does not
+                // know is a reading it cannot honour, and falling back to "let the file say" is the
+                // state the document was in before anyone answered — which is recoverable. Throwing
+                // would make one unknown token cost the whole document.
+                Origin  = Enum.TryParse<PlacementOrigin>(f.Placement?.Origin, ignoreCase: true, out var placementOrigin)
+                              ? placementOrigin : null,
+                Units   = Enum.TryParse<LayoutUnit>(f.Placement?.Units, ignoreCase: true, out var placementUnits)
+                              ? placementUnits : null,
+                Columns = f.Placement?.Columns is { Length: > 0 } c ? [.. c] : null,
+            },
             ReferenceNet    = f.ReferenceNet,
             Settings = new RailSettings
             {
@@ -439,6 +464,11 @@ public static class RailDocumentIo
         public string?          BoardNetlistRef { get; set; }
         public string?          PlacementRef    { get; set; }
 
+        /// <summary>How to READ that file — see <see cref="RailPlacementReading"/>. Absent on every
+        /// document written before it existed and on every board whose placement file declares its
+        /// own origin and units, which is what makes leaving it out the right default.</summary>
+        public CrailPlacement?  Placement       { get; set; }
+
         /// <summary>The reference return's net. Absent is not "GND" — see RailDocument.</summary>
         public string?          ReferenceNet    { get; set; }
 
@@ -487,6 +517,22 @@ public static class RailDocumentIo
         public bool? ShowParts         { get; set; }
         public bool? ShowResults       { get; set; }
         public bool? ShowResultText    { get; set; }
+    }
+
+    /// <summary>
+    /// The three answers a placement file cannot be read without and does not always carry.
+    /// </summary>
+    /// <remarks>
+    /// <b>Strings rather than the enums</b>, which is this file's rule everywhere else it stores
+    /// one: a token a future build does not know is a reading it cannot honour, and a lenient parse
+    /// that drops it leaves the document in the state it was in before anyone answered. A strict
+    /// enum converter would make one unknown token cost the whole document.
+    /// </remarks>
+    private sealed class CrailPlacement
+    {
+        public string?   Origin  { get; set; }
+        public string?   Units   { get; set; }
+        public string[]? Columns { get; set; }
     }
 
     private sealed class CrailSettings

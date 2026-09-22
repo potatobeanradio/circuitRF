@@ -287,8 +287,8 @@ public static class BoardNetlistFile
 
         if (records.Count == 0)
             return new BoardNetlist(
-                full, "holds no feature records that could be read, so nothing was taken from it.",
-                units, evidence, job, [], conductors, outlines, unreadable, DrillExtents.Empty, diagnostics);
+                full, NotThisFormat(text), units, evidence, job, [],
+                conductors, outlines, unreadable, DrillExtents.Empty, diagnostics);
 
         if (conductors > 0)
             diagnostics.Add(
@@ -310,6 +310,45 @@ public static class BoardNetlistFile
         return new BoardNetlist(
             full, null, units, evidence, job, records, conductors, outlines, unreadable, extents,
             diagnostics);
+    }
+
+    /// <summary>
+    /// The refusal for a file that held no feature record — which is nearly always a file that is
+    /// not this format at all, rather than an empty one of it.
+    /// </summary>
+    /// <remarks>
+    /// <b>It used to say only "holds no feature records that could be read"</b>, and a field report
+    /// (2026-09-22) is what showed what that costs: a designer pointed the import at his own tool's
+    /// part/net export, got that sentence, and had nothing to act on — it named neither what the
+    /// file IS nor what railRF was hoping for. <see cref="PlacementFile"/> and <see cref="BomFile"/>
+    /// have both run the import's own classifier over a file they could not read since they were
+    /// written; this reader was the one of the three that did not, and there was no reason for it.
+    ///
+    /// <para><b>The format is named, and named as a STANDARD</b>. A board netlist here is IPC-D-356
+    /// or its 356A revision — the file this reader's own header says it was written from public
+    /// documentation of — and most CAD tools export it under a menu item of their own wording. A
+    /// refusal that names the standard is one a user can search their own exporter for; naming a
+    /// tool would be both wrong for every other reader and against the repo's own rule.</para>
+    ///
+    /// <para>Nothing about the artwork changes: a netlist railRF will not read leaves the import
+    /// exactly where a board that shipped no netlist at all leaves it, which
+    /// <see cref="ReadFile"/>'s own contract already states.</para>
+    /// </remarks>
+    private static string NotThisFormat(string text)
+    {
+        var kind = GerberFileClassifier.ClassifyContent("", text);
+
+        // What it IS, where anything recognised it. A file the import can name is very often one
+        // the user pointed at the wrong row of the dialog with, and saying so is the whole fix.
+        string what = kind.Kind == GerberFileKind.Other
+            ? "it is not any file kind circuitRF recognises"
+            : $"it reads as {kind.Why}";
+
+        return $"it holds no feature records, so {what}. railRF reads a board netlist in the "
+             + "IPC-D-356/356A interchange format — the one that carries a net name per pad, a "
+             + "plating flag per hole and the reference designator and pin where there is one. Most "
+             + "CAD tools export it beside the Gerbers; it is commonly written .ipc, .d356, .356 or "
+             + ".net. Naming no netlist at all is an ordinary state and imports fine.";
     }
 
     /// <summary>Reads a netlist from disk. A netlist that cannot be read is not a reason to fail an

@@ -246,6 +246,42 @@ public sealed partial class MessageEntry : ObservableObject
 
     /// <summary>Message text with leading + trailing gaps, for inline rendering between the
     /// timestamp and the (separately clickable) file-path link.</summary>
+    /// <summary>
+    /// How many times this exact message has been posted in a row — 1 for every message that has
+    /// been said once, which is nearly all of them.
+    /// </summary>
+    /// <remarks>
+    /// <b>Because three identical paragraphs read as three problems</b> (field report,
+    /// 2026-09-22). A designer arming footprint placement three times on a technology with no
+    /// courtyard layer got the same 300-character warning three times, and that warning is CORRECT
+    /// and is reported per arming on purpose — the alternative, once per generated cell, was the
+    /// defect the previous round fixed. What was wrong is only that the log said it three times
+    /// instead of saying it once and counting.
+    ///
+    /// <para><b>Consecutive only</b>, and that is the whole of the rule. Two identical warnings with
+    /// something else between them are two separate episodes and a reader is entitled to see where
+    /// each one fell; collapsing across the log would hide the interleaving, which is the one thing
+    /// a timestamped log is for.</para>
+    /// </remarks>
+    public int RepeatCount
+    {
+        get => _repeatCount;
+        internal set
+        {
+            if (!SetProperty(ref _repeatCount, value)) return;
+            OnPropertyChanged(nameof(RepeatText));
+            OnPropertyChanged(nameof(HasRepeats));
+        }
+    }
+
+    private int _repeatCount = 1;
+
+    /// <summary>The count as the row renders it, or "" while this was said once.</summary>
+    public string RepeatText => _repeatCount > 1 ? $"×{_repeatCount}" : "";
+
+    /// <summary>True while this message has been repeated.</summary>
+    public bool HasRepeats => _repeatCount > 1;
+
     public string TextInline => "  " + Text + "  ";
 
     public static MessageEntry Info(string text, string? filePath = null)

@@ -184,9 +184,17 @@ public partial class RailRfWindow
         };
     }
 
+    /// <remarks>
+    /// <b>The dialog's own three answers, all of them</b> (field report, 2026-09-22). The origin has
+    /// been asked since R-rail7-7; the units and the column names are what
+    /// <c>RailPlacementColumnsDialog</c> settles for a file with no header row, and passing null for
+    /// them here would throw away the answer the user had just given.
+    /// </remarks>
     private static PlacementTable? ReadPlacement(RailImportOptions options, int dbuPerMicron) =>
         options.PlacementPath is { Length: > 0 } p
-            ? PlacementFile.ReadFile(p, dbuPerMicron, options.PlacementOrigin)
+            ? PlacementFile.ReadFile(
+                p, dbuPerMicron, options.PlacementOrigin, options.PlacementUnits,
+                delimiter: null, columns: options.PlacementColumns)
             : null;
 
     private static BomTable? ReadBom(RailImportOptions options) =>

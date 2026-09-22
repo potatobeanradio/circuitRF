@@ -61,7 +61,8 @@ public sealed class RailPartRowViewModel
         double? mountingInductanceHenries,
         string? position,
         RailPartModel? resolved = null,
-        string? boardFootprint = null)
+        string? boardFootprint = null,
+        RailPartPositionSource positionFrom = RailPartPositionSource.Nothing)
     {
         ArgumentNullException.ThrowIfNull(part);
 
@@ -73,6 +74,7 @@ public sealed class RailPartRowViewModel
         Refdes = part.Refdes;
         MountingInductanceHenries = mountingInductanceHenries;
         Position = position;
+        PositionFrom = positionFrom;
     }
 
     private readonly RailPart _part;
@@ -516,15 +518,39 @@ public sealed class RailPartRowViewModel
     /// <summary>What an unplaced part's location column says.</summary>
     public const string NotPlacedText = "not placed";
 
+    /// <summary>
+    /// Which of the two things that can say where a part is, said it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Carried because the two are not the same number</b> — see
+    /// <c>PlacedPins.OriginsOf</c> for the argument. The column shows one coordinate either way;
+    /// the TOOLTIP is where the reader finds out which, and a coordinate whose source is invisible
+    /// is the defaulted-number failure in another column.
+    /// </remarks>
+    public RailPartPositionSource PositionFrom { get; }
+
     /// <summary>The sentence behind that column, for the row's own tooltip.</summary>
-    public string PositionTooltip =>
-        Position is { Length: > 0 }
-            ? "Where the placement file puts this part. The board panel's own coordinates read in the "
-            + "same unit."
-            : "Nothing says where this part is: no placement file names this refdes, so railRF has no "
-            + "coordinate for it and draws nothing for it on the board. It is still in the answer — a "
-            + "shunt branch on this rail, with the mounting inductance this row states. Load a "
-            + "placement to tie it to the artwork.";
+    public string PositionTooltip => PositionFrom switch
+    {
+        RailPartPositionSource.PlacementFile =>
+            "Where the PLACEMENT FILE puts this part — the manufacturing centroid, under the origin "
+          + "convention the import stated. The board panel's own coordinates read in the same unit.",
+
+        // Owner report, 2026-09-22: this case read "not placed" and the tooltip blamed the absence
+        // of a placement file, while railRF was naming the part's land pattern one column to the
+        // left off the very instance it claimed not to know about.
+        RailPartPositionSource.Artwork =>
+            "Where the ARTWORK places this part — the origin of the land-pattern instance carrying "
+          + "this reference designator in the layout. That is not quite a placement file's number: a "
+          + "placement file states the manufacturing centroid under a declared origin convention, "
+          + "and a placement file's row would be shown here instead if one named this part.",
+
+        _ =>
+            "Nothing says where this part is: no placement file names this refdes and no instance in "
+          + "the artwork carries it, so railRF has no coordinate for it and draws nothing for it on "
+          + "the board. It is still in the answer — a shunt branch on this rail, with the mounting "
+          + "inductance this row states. Place it in the layout, or load a placement file.",
+    };
 
     /// <summary>
     /// True when this row could not be resolved at all — no part number, or no library row for it.

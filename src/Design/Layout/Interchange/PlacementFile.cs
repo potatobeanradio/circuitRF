@@ -199,6 +199,40 @@ public static class PlacementFile
     /// (0, 0).</summary>
     public const string KindFlags = "--placement / --bom";
 
+    /// <summary>
+    /// The refusal for a file with no header row, <b>named so a caller can recognise it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the one refusal in this reader that a CONTROL can answer</b> (field report,
+    /// 2026-09-22), and that is why it is a constant rather than an interpolated sentence. Every
+    /// other refusal here is about the file — an ambiguous header, a missing X column, something
+    /// that is not a table at all — and the answer to those is a different file. This one is
+    /// answerable in place, by somebody saying what the columns are; the GUI now asks
+    /// (<c>RailPlacementColumnsDialog</c>) and <see cref="HasNoHeader"/> is how it tells this case
+    /// apart without matching on prose.
+    ///
+    /// <para><b>AND IT NO LONGER NAMES A FLAG THAT DOES NOT EXIST.</b> The sentence used to read
+    /// "Name them with --columns, or state --from to read it as something else". A designer met it
+    /// in a WINDOW, where there is no command line at all — and the flag is not on one either:
+    /// nothing in <c>src/Cli</c> parses <c>--columns</c>, and <c>netlist --placement</c> WRITES a
+    /// placement table out of a layout rather than reading one in. There is exactly one headless
+    /// reader of a placement file, <c>RailArtwork.ResolvePlacement</c>, and what it reads the
+    /// mapping from is the <c>.crail</c>'s own <c>RailPlacementReading</c>. So that is what the
+    /// sentence names. A refusal pointing at an inert knob is worse than one pointing at
+    /// nothing: it costs the reader the time to go and look.</para>
+    /// </remarks>
+    public const string NoHeaderRefusal =
+        "states no header row naming its columns, and column order is not a standard — a positional "
+      + "reading would put the rotation in the Y column silently. Say what the columns are: railRF "
+      + "asks when the file is imported, and a .crail records the answer under \"placement\" so "
+      + "the same file reads the same way headlessly. Adding a header row to the file answers it "
+      + "too.";
+
+    /// <summary>Whether <paramref name="table"/> was refused for having no header row — the one
+    /// refusal a caller can answer in place. See <see cref="NoHeaderRefusal"/>.</summary>
+    public static bool HasNoHeader(PlacementTable? table) =>
+        table?.Refusal is { Length: > 0 } r && r.Contains(NoHeaderRefusal, StringComparison.Ordinal);
+
     // The column names, in the normalized form DelimitedTables.NormalizeHeader produces. EXACT
     // equality, never a substring test: a `contains "x"` rule matches `footprint`, and the column it
     // then puts the coordinate in is the one nothing downstream questions.
@@ -323,10 +357,7 @@ public static class PlacementFile
         else
         {
             return Refuse(
-                $"{System.IO.Path.GetFileName(full)} states no header row naming its columns, and " +
-                "column order is not a standard — a positional reading would put the rotation in the " +
-                "Y column silently. Name them with --columns, or state --from to read it as " +
-                $"something else. ({Classify(text)})");
+                $"{System.IO.Path.GetFileName(full)} {NoHeaderRefusal} ({Classify(text)})");
         }
 
         int cRefdes = DelimitedTables.IndexOf(header, RefdesNames);

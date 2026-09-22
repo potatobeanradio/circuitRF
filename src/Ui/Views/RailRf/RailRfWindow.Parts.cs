@@ -44,11 +44,28 @@ public partial class RailRfWindow
     private void OnPartsContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (sender is not ContextMenu menu) return;
-        if (Vm is not { } vm || vm.Parts.Count == 0) { e.Cancel = true; return; }
+        if (Vm is not { } vm) { e.Cancel = true; return; }
+
+        // ── AN EMPTY TABLE STILL HAS A MENU, AND IT HAS THE ONE GESTURE THAT MATTERS THERE ─────
+        //
+        // It used to cancel on zero rows, which meant the pane a designer was staring at — empty,
+        // after placing two footprints — answered a right-click with nothing at all (field report,
+        // 2026-09-22). Add is exactly the gesture for an empty table, so the menu opens carrying it
+        // and nothing else; the two that act on a SELECTION still need one and still cancel without.
+        var add = new MenuItem { Header = "Add parts…" };
+        ToolTip.SetTip(add,
+            "Put rows on this rail, picked from the designators the board places or typed. A row "
+            + "arrives carrying its designator and nothing else.");
+        add.Click += (_, _) => OnAddPartClick(null, new RoutedEventArgs());
 
         var row = PartsList.SelectedItem as RailPartRowViewModel
                ?? PartsList.SelectedItems?.OfType<RailPartRowViewModel>().FirstOrDefault();
-        if (row is null) { e.Cancel = true; return; }
+        if (row is null)
+        {
+            if (vm.SelectedRail is null) { e.Cancel = true; return; }
+            menu.ItemsSource = new List<object> { add };
+            return;
+        }
 
         var targets = TargetsFor(row);
 
@@ -70,7 +87,81 @@ public partial class RailRfWindow
             + "the curve.");
         library.Click += (_, _) => CreatePartLibrary();
 
-        menu.ItemsSource = new List<object> { assign, new Separator(), library };
+        var remove = new MenuItem
+        {
+            Header = targets.Count == 1
+                ? $"Remove {targets[0]} from this rail"
+                : $"Remove {targets.Count} parts from this rail",
+        };
+        ToolTip.SetTip(remove,
+            "Take these rows off the rail entirely. To keep a part in the table but off the board, "
+            + "clear its mount checkbox instead — that keeps the mounting loop the artwork gave it "
+            + "and is reversible.");
+        remove.Click += (_, _) => Vm?.RemoveParts(targets);
+
+        menu.ItemsSource = new List<object>
+        {
+            add, remove, new Separator(), assign, new Separator(), library,
+        };
+    }
+
+    // ══ ADDING AND REMOVING A ROW (field report, 2026-09-22) ═══════════════════════════════════
+    //
+    // The pane could gain a row only through brief 26's discovery, and PartsEmptyText promised a
+    // gesture — "rows can still be typed" — that did not exist anywhere. See RailAddPartDialog's own
+    // header for what was reported and why the row it adds is Typed rather than Artwork.
+    //
+    // NEITHER OF THESE OWNS A RULE. Both end in one view-model call, on this file's own terms.
+
+    /// <summary>The pane's + button. Offers the board's placed designators, and takes typed ones.</summary>
+    private async void OnAddPartClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+
+        // R-rail22-2a's backstop: the button is hidden without a rail, and a press that arrived
+        // anyway says what to do rather than doing nothing.
+        if (vm.SelectedRail is not { } rail)
+        {
+            vm.Refusal = new RailRefusal(
+                "Pick a rail first — a part row belongs to a rail, so there is nothing for it to "
+                + "sit on until there is one.", RailRefusalControl.RailSelector);
+            return;
+        }
+
+        var dialog = new RailAddPartDialog(rail.Name, vm.AddablePlacedParts, vm.Board is not null);
+        if (await dialog.ShowDialog<IReadOnlyList<string>?>(this) is not { Count: > 0 } chosen) return;
+
+        int added = vm.AddParts(chosen);
+        if (added > 0)
+            vm.Refusal = new RailRefusal(
+                added == 1
+                    ? $"Added {chosen[0]} to '{rail.Name}'. It carries no part number yet, so it "
+                    + "contributes nothing to the curve — assign one, and the part library is what "
+                    + "gives it a capacitance and a self-resonance."
+                    : $"Added {added} parts to '{rail.Name}'. None carries a part number yet, so "
+                    + "none contributes to the curve — assign one to the rows that are the same "
+                    + "part, and the part library is what gives it a capacitance and a "
+                    + "self-resonance.",
+                RailRefusalControl.None);
+    }
+
+    /// <summary>The pane's remove button — the rows off the rail entirely, which is not unmounting.</summary>
+    private void OnRemovePartClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+
+        var row = PartsList.SelectedItem as RailPartRowViewModel
+               ?? PartsList.SelectedItems?.OfType<RailPartRowViewModel>().FirstOrDefault();
+
+        if (row is null)
+        {
+            vm.Refusal = new RailRefusal(
+                "Select the rows to remove first — there is nothing selected.",
+                RailRefusalControl.None);
+            return;
+        }
+
+        vm.RemoveParts(TargetsFor(row));
     }
 
     /// <summary>The pane's own button for R-rail27-3c.</summary>

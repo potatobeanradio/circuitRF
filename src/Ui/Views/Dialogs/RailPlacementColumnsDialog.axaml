@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.RailPlacementColumnsDialog"
+        Title="Name the Placement Columns"
+        Width="760"
+        Height="560"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="PromptLabel" FontSize="12" TextWrapping="Wrap"/>
+
+        <TextBlock Grid.Row="1" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
+                   Text="This file states no header row, and column order is not a standard — a positional reading would put the rotation in the Y column silently. railRF has proposed an assignment from the values themselves; check it against the rows below, where each column is shown under the role it was given."/>
+
+        <!-- ── THE PROPOSAL OVER THE FILE'S OWN ROWS ─────────────────────────────────────────
+             The whole reason the inference is allowed to exist. A guess and a declaration must
+             never read the same (the GI series' standing rule 2), so nothing here is applied: the
+             roles sit directly above the values they claim, and a rotation sitting over a column of
+             coordinates is visible at a glance. The grid is built in code because the column count
+             is the file's. -->
+        <Border Grid.Row="2" BorderThickness="1" Margin="0,10,0,0"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <Grid x:Name="PreviewGrid" Margin="8"/>
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock Grid.Row="3" x:Name="EvidenceText" FontSize="11" Opacity="0.75"
+                   TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+        <!-- ── THE UNIT, WHICH railRF WILL NOT GUESS ─────────────────────────────────────────
+             A file with no header declares no units either, and mm and mils differ by 25.4. A
+             placement table read at the wrong unit that matches nothing is at least loud; one read
+             at a wrong unit that still lands inside the board puts every part somewhere plausible
+             and wrong. The reader's own default is millimetre and it reports that as DEFAULTED —
+             this is where somebody who knows says so. -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0"
+                    VerticalAlignment="Center">
+            <TextBlock Text="Coordinates are in:" FontSize="12" VerticalAlignment="Center"/>
+            <ComboBox x:Name="UnitCombo" FontSize="12" MinWidth="170"/>
+            <TextBlock FontSize="11" Opacity="0.75" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="Millimetres and mils differ by 25.4 — a wrong choice puts every part somewhere plausible."/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="5"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <TextBlock x:Name="RefusalText" FontSize="11" TextWrapping="Wrap" MaxWidth="420"
+                       VerticalAlignment="Center" IsVisible="False"
+                       Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+            <Button Content="Skip this file" Width="110" FontSize="12" Click="OnCancelClick"
+                    ToolTip.Tip="Import the artwork without the placement table. The parts table's Position column is empty and nothing else changes — a board with no placement file is an ordinary state."/>
+            <Button x:Name="OkButton" Content="Use these" Width="100" IsDefault="True" FontSize="12"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

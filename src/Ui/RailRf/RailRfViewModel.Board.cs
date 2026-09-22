@@ -521,6 +521,22 @@ public sealed partial class RailRfViewModel
 
         ClearResults();
         InvalidateNetWalks();       // the copper moved, so every walk taken off it is of a board that is gone
+
+        // ── AND WHAT THE BOARD SAYS ABOUT ITS PARTS (owner report, 2026-09-22) ────────────────
+        //
+        // An edit next door can PLACE one. Only the shapes were re-read here, so the two maps this
+        // window keeps by designator — which land pattern a part sits on, and WHERE it is — went on
+        // describing the board as it was: a footprint dropped into the layout while railRF was open
+        // never appeared in the parts table's footprint or where columns at all, and no amount of
+        // looking at railRF would show it until the document was closed and reopened.
+        //
+        // Neither call touches the canvas, which is the constraint the paragraph above sets:
+        // RebuildBoardFootprints walks the instances, and RebuildParts rebuilds the ROWS. The
+        // LayoutEditorViewModel and its viewport are untouched, so the user keeps the pan and zoom
+        // they were looking at.
+        RebuildBoardFootprints();
+        RebuildParts();
+
         SyncBoardOverlayResult();
         RefreshRunGate();
         OnPropertyChanged(nameof(StatusLine));

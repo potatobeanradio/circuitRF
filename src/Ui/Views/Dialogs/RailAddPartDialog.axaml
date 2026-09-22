@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:rail="using:CircuitRF.Ui.RailRf"
+        x:Class="CircuitRF.Ui.Views.Dialogs.RailAddPartDialog"
+        Title="Add Parts"
+        Width="420"
+        Height="480"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="PromptLabel" FontSize="12" TextWrapping="Wrap"
+                   Margin="0,0,0,8"/>
+
+        <!-- THE BOARD'S OWN DESIGNATORS, MULTI-SELECT. A decoupling bank is added a bank at a
+             time, and the view model batches the whole selection into one undo entry — so a
+             single-select list here would make the gesture N presses to do and N to take back.
+
+             The board contributes the NAMES and nothing else: no capacitance, no ESR and no
+             connection type is read off a land pattern, which is brief 26's own rule. The land
+             pattern is shown only so two rows can be told apart. -->
+        <ListBox Grid.Row="1" x:Name="PlacedList"
+                 FontSize="12"
+                 SelectionMode="Multiple"
+                 BorderThickness="1">
+            <!-- THE ITEMS ARE THE RECORDS, and the template is the only thing that renders the
+                 label. Filling the list with display STRINGS and reading the designator back out of
+                 the chosen one would be a round trip through a format that embeds the land pattern
+                 in brackets — and a designator is allowed to contain a bracket. It works on every
+                 row anybody tests and loses somebody's real board. -->
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="rail:RailAddablePart">
+                    <TextBlock Text="{Binding Label}"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock Grid.Row="2" x:Name="PlacedNote" FontSize="11" Opacity="0.75"
+                   TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+        <!-- AND THE TYPED ROUTE BESIDE IT, NOT INSTEAD OF IT (§6: artwork is optional). A
+             document with no board has an empty list above and this box is the whole dialog; a
+             board whose artwork does not carry a designator for a part that is nonetheless on the
+             rail is the same case one row down. Comma-separated because adding four bulk
+             capacitors by name should not be four trips through a dialog. -->
+        <StackPanel Grid.Row="3" Spacing="4" Margin="0,10,0,0">
+            <TextBlock Text="Or type reference designators, separated by commas:"
+                       FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+            <TextBox x:Name="TypedBox" FontSize="12" Watermark="C12, C13, C14"/>
+            <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                       Text="A row arrives carrying its designator and nothing else. Assign a part number next, and the part library is what gives it a capacitance and a self-resonance — until then the row is listed as unresolved and contributes nothing to the curve."/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" Click="OnCancelClick"/>
+            <Button x:Name="OkButton" Content="Add" Width="80" IsDefault="True" FontSize="12"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

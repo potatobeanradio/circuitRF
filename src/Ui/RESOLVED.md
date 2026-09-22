@@ -1,5 +1,144 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF field report 3 — the parts table had no producer a user could reach (2026-09-22)
+
+A third round of outside railRF use, on a production six-layer board imported from its own Gerber
+set. Raw material is in the owner's Downloads and **must not enter the repo** — it names a real
+board, its customer and its part numbers. **Do not name or quote the reporter anywhere in the
+repo, and do not name any competing product or the CAD tool the board came out of.**
+
+### The headline: "the 2 footprints placed manually never showed up on the part list"
+
+Said twice in one session, and it was true. **The parts card had no add gesture at all** — no
+button, no menu item, nothing — while `PartsEmptyText` had been saying "Rows can still be typed"
+since brief 26. Sources and Loads have both carried a `+` since brief 7.
+
+The only producer of a part row was brief 26's discovery, and discovery is CORRECT to have found
+nothing here: its predicate is the extraction's galvanic regions, so it needs a completed run, and
+it only offers a part it can PROVE bridges the rail and its reference. On a Gerber set with no
+netlist "the copper stops at every pad" (§2.8), so a hand-placed footprint is two lands standing
+on copper nothing names and there is no information anywhere that classifies it. Discovery was
+right, the pane was right, and the user was stuck.
+
+**A pane that names a gesture it does not have is worse than a silent one**, because the reader
+spends their time looking for it. The fix is `RailAddPartDialog`: the board's own placed
+designators (`PlacedPins.FootprintsOf`, which the window already held in `_boardFootprints` and
+never showed) plus a typed route for §6's artwork-optional case. **A row added there carries
+`RailPartOrigin.Typed`, never `Artwork`** — one is a user's assertion, the other a conclusion
+railRF reached and proved, and merging them would put a provenance nobody stated beside numbers
+nobody stated. Nothing is derived from a land pattern, exactly as brief 26 refuses to derive it.
+
+`RemoveParts` is the other half, and it is NOT brief 23's unmount: that takes a part off the board,
+keeps the mounting loop the artwork gave it and is reversible; this is for a row that should never
+have been added.
+
+**The action row was gated on `HasParts`**, which hid every gesture at exactly the moment the pane
+is empty — which is the moment the report is about. It is `CanAddPart` now, and Add is the one
+button in it with no further gate.
+
+### "it then say solving .. but is probably run in a dead end"
+
+**`RailRfViewModel.Start` had built a `RunControl` since brief 7 and passed it to nothing.**
+`QueueResolve`'s own comment says it is "the mechanism because it is already the one `em` and
+`render` cancel through"; `RailDcRequest` carried no control and `RailDcRun.Run` took none. So
+`CancelInFlight` stopped the window LISTENING and left the work running on a thread-pool thread —
+four edits in a row put four whole-board extractions in flight at once, each competing for the same
+cores, and the last one still had to wait behind the first three. There was no Stop button anywhere,
+and before this round one would have lied about what it did.
+
+Threaded now, with stage names at each phase boundary of `PdnGraphExtractor.Extract` and a
+`TickStage` per classified copper piece — the only loop in the extraction where one iteration is one
+unit of work, and on a real board most of the wall clock. The strip says which phase and how far
+through, beside `BusyText`'s model name.
+
+**A cancelled run arrives as a FAULT, not as `IsCanceled`.** The engine answers the token by
+throwing from inside the work, and a task whose body throws `OperationCanceledException` for a token
+its scheduler was not given faults. Without the branch that recognises it, the strip would read
+"The solve did not finish: The operation was canceled" for the one outcome the user asked for.
+
+### "even without any part model i was allowed to press run"
+
+**Allowed, and it stays allowed** — the owner's call. The DC drop is a real answer that needs no
+decoupling at all, and on a board being checked for copper it is frequently the whole question;
+gating Run would refuse something railRF can do. What was wrong is that nothing said what the other
+half of the window was showing, so `NoDecouplingText` is on the strip: with no mounted shunt part
+the |Z| curve is bare copper and the target band has nothing in it to meet.
+
+### "the where field still said not placed" — and it was two bugs stacked
+
+Owner report the same day, reproducing the round's headline one step further on: a row added by
+hand, given a part number, then PLACED in the `.clay` with that designator, still read "not placed".
+
+**The `where` column had exactly one source and behaved as though that were the only one there could
+be.** `RebuildParts` filled it from the placement FILE and from nothing else — while the column
+immediately to its left was naming that part's land pattern out of `PlacedPins.FootprintsOf`, off
+the very instance the `where` column claimed not to know about. The tooltip then said "no placement
+file names this refdes", which is true and useless: the artwork does.
+
+`PlacedPins.OriginsOf` is the second source. **The file still wins where it has a row**, and the two
+are not interchangeable: a placement file states the manufacturing centroid under a declared origin
+convention (the thing the import dialog refuses to guess), an instance origin is where the land
+pattern's own origin was dropped. They agree on a sanely drawn footprint and not in general — so
+`RailPartPositionSource` is carried and the tooltip says which spoke. A coordinate whose source is
+invisible is the defaulted-number failure in another column.
+
+**And `NotifyArtworkChanged` never rebuilt the parts table.** It re-flattens `Shapes` and clears the
+results, correctly, and stops there — so the two maps this window keeps by designator went on
+describing the board as it was. A footprint dropped into the layout while railRF was open reached
+NEITHER the footprint column nor the where column, and nothing short of closing and reopening the
+document would show it. `RebuildBoardFootprints()` + `RebuildParts()` now run there; neither touches
+the canvas, so the viewport the user is looking at is still untouched — which is the constraint that
+method's own header sets.
+
+Verified against the reporter's own board: the hand-placed part reads its artwork origin and every
+part the placement file names still reads from the file.
+
+**A note for whoever reproduces this in a test:** `RailBoardInputs` is a record, so
+`Board = board with { }` is an EQUAL value and never reaches the setter. The production path does not
+use the setter either — assigning it rebuilds the canvas and takes the viewport away. Drive
+`NotifyArtworkChanged`, which is the signal the layout editor actually raises.
+
+### The same warning three times
+
+Three identical 300-character courtyard paragraphs, from arming placement three times. The warning
+is right and is per-arming ON PURPOSE — reporting it once per generated cell was the defect round
+two fixed, because the second placement then said nothing. Only the log was wrong.
+`MessageOrdering.Insert` collapses **consecutive** identical messages to one row with a count.
+Consecutive only: two identical warnings with something else between them are two episodes, and
+where each one fell is what a timestamped log is for. The timestamp stays at the FIRST occurrence.
+
+### The second surface said less than the first, three times over
+
+A shape worth recognising. Everything below was answered at IMPORT and lost by the time the
+document was reopened:
+
+- the board-netlist refusal — the import added which family of file the row wants, the open path
+  printed the bare reader sentence. One `RailImportReport.RefusalTail` now.
+- the placement ORIGIN — refused by the dialog since R-rail7-7 and written down nowhere, so the
+  same document reopened asked again.
+- the placement COLUMN MAPPING and UNITS — see `src/Design/RESOLVED.md` for the same date.
+
+All three live on the document now (`RailDocument.Placement`, `RailPlacementReading`).
+
+### Both companion files are tested at the DIALOG now
+
+They were read only after the whole import had run, so a row pointed at the wrong file reported
+from a log line with the dialog long closed. The dialog has refused an unreadable BOM and an
+unstated origin since it was written, at the moment they can be fixed; there was no reason these two
+were different. **Neither is a hard gate** — a board with no netlist and no placement table is the
+ordinary assisted-Gerber path — so each refusal names clearing the box as an exit.
+
+### Still open, and not guessed at
+
+**Where the solve actually spends its time on his board, and 7 crash reports.** Nothing here
+reproduces either; the progress stages are what make the next report say which phase was slow. The
+Gerber set and the `.crail` have been asked for. Do not guess again without them
+(`ask-for-the-real-artifact-early`).
+
+Gates: `tests/Ui.Tests/RailRf/RailRfFieldReport3Tests.cs`, and `RailWindowChromeTests`' parts-pane
+action row.
+
+
 ## railRF — an unmounted part is MARKED on the board, never removed from it (2026-09-21)
 
 Asked: when a part is unmounted with the parts table's checkbox, does it make sense to take it off

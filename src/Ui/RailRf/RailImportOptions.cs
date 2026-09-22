@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Ui.RailRf;
@@ -44,6 +45,27 @@ public sealed record RailImportOptions
     /// settles that, and the dialog only asks where it comes back
     /// <see cref="PlacementOriginEvidence.Unstated"/>.</para></summary>
     public PlacementOrigin? PlacementOrigin { get; init; }
+
+    /// <summary>
+    /// The column names for a placement file with NO HEADER ROW, in column order, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>Settled by <c>RailPlacementColumnsDialog</c> and saved onto the document</b> (field
+    /// report, 2026-09-22). It is the GUI half of a refusal that used to name <c>--columns</c> to a
+    /// user in a window. Null is the ordinary case — a file that names its own columns.
+    /// </remarks>
+    public IReadOnlyList<string>? PlacementColumns { get; init; }
+
+    /// <summary>
+    /// The unit the placement file's coordinates are in, where a user stated it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Asked beside the columns and never inferred.</b> A headerless file declares no unit, and
+    /// millimetres and mils differ by 25.4: a file read at the wrong one still lands every part
+    /// inside a plausible-looking box. Null reads the file's own and falls back to this format's
+    /// usual millimetre, reported as defaulted.
+    /// </remarks>
+    public CircuitRF.Design.Layout.LayoutUnit? PlacementUnits { get; init; }
 
     /// <summary>The BOM, or null.</summary>
     public string? BomPath { get; init; }

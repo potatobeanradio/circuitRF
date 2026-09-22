@@ -44,7 +44,45 @@ internal static class MessageOrdering
         return at;
     }
 
-    /// <inheritdoc cref="InsertIndexFor"/>
+    /// <summary>
+    /// Puts <paramref name="entry"/> in the log — <b>or counts it against the identical message
+    /// already sitting where it would go</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three identical paragraphs read as three problems</b> (field report, 2026-09-22). A
+    /// designer arming footprint placement three times on a technology declaring no courtyard layer
+    /// got the same 300-character warning three times in a row. The warning is correct and is
+    /// reported per arming DELIBERATELY — reporting it once per generated cell was the defect the
+    /// previous round fixed, because the second placement then said nothing. What was wrong is only
+    /// that the log repeated it rather than counting it.
+    ///
+    /// <para><b>CONSECUTIVE ONLY, and never across an intervening message.</b> Two identical
+    /// warnings with something else between them are two separate episodes, and where each one fell
+    /// is exactly what a timestamped log is for. The comparison is on the level, the text and the
+    /// file — a row whose text is still CHANGING is a live progress row and is excluded outright,
+    /// since collapsing two of those would merge two running operations into one.</para>
+    ///
+    /// <para><b>The timestamp is left at the FIRST occurrence.</b> A repeat count answers "how many
+    /// times"; the time the condition was first met is the one a reader correlates against what they
+    /// were doing, and overwriting it would lose that to gain nothing.</para>
+    /// </remarks>
     public static void Insert(IList<MessageEntry> messages, MessageEntry entry)
-        => messages.Insert(InsertIndexFor(messages), entry);
+    {
+        int at = InsertIndexFor(messages);
+
+        if (at > 0 && !entry.IsLiveProgress && IsSameMessage(messages[at - 1], entry))
+        {
+            messages[at - 1].RepeatCount++;
+            return;
+        }
+
+        messages.Insert(at, entry);
+    }
+
+    private static bool IsSameMessage(MessageEntry existing, MessageEntry entry) =>
+        !existing.IsLiveProgress
+        && existing.Level == entry.Level
+        && string.Equals(existing.Text, entry.Text, System.StringComparison.Ordinal)
+        && string.Equals(existing.FilePath ?? "", entry.FilePath ?? "", System.StringComparison.Ordinal)
+        && existing.ActionLabel is null && entry.ActionLabel is null;
 }

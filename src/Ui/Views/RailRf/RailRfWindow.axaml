@@ -1937,10 +1937,47 @@
                                  .crlib from every part number the .crail names — so a selection is
                                  not its operand and gating it on one would refuse a gesture that
                                  had everything it needed. -->
+                            <!-- ── THE ROW IS VISIBLE WHEN A RAIL IS, NOT WHEN THE TABLE HAS
+                                 ROWS (field report, 2026-09-22). It was gated on HasParts, which
+                                 hid every gesture at exactly the moment the pane is empty — and
+                                 the pane being empty when a designer had just placed two
+                                 footprints is the whole of what was reported. Add is live on an
+                                 empty table by construction; the two that operate on rows keep
+                                 their own gates below. -->
                             <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="6"
                                         Margin="2,5,2,0"
-                                        IsVisible="{Binding HasParts}">
+                                        IsVisible="{Binding CanAddPart}">
+                                <!-- ── ADD, AND IT IS THE GESTURE THE PANE HAS BEEN NAMING ──────
+                                     PartsEmptyText has said rows "can still be typed" since brief
+                                     26 and there was nowhere to type one: brief 26's discovery was
+                                     the only producer of a row, it needs a completed extraction,
+                                     and it only ever offers a part it can PROVE bridges the rail
+                                     and its reference — which on a Gerber set with no netlist it
+                                     can never prove about a hand-placed footprint. Sources and
+                                     Loads have both carried a + since brief 7.
+
+                                     It is NOT a second discovery. A row added here carries
+                                     RailPartOrigin.Typed — a user's assertion — where a row brief
+                                     26 offers carries Artwork, a conclusion railRF reached. -->
                                 <Button Classes="sqbtn"
+                                        Click="OnAddPartClick"
+                                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                                        ToolTip.Tip="Add parts… — put rows on this rail, picked from the designators the board places or typed. A row arrives carrying its designator and nothing else: an 0402 land pattern is a case size, not a capacitance.">
+                                    <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
+                                </Button>
+                                <!-- REMOVE, which is a different act from UNMOUNT and the tooltip
+                                     says so. Brief 23's checkbox takes a part OFF THE BOARD and
+                                     keeps the mounting loop the artwork gave it, reversibly; this
+                                     is for a row that should never have been added. -->
+                                <Button Classes="sqbtn"
+                                        Click="OnRemovePartClick"
+                                        IsEnabled="{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                                        ToolTip.Tip="Remove — take the selected rows off this rail entirely. To keep a part in the table but off the board, clear its mount checkbox instead: that keeps the mounting loop the artwork gave it and is reversible.">
+                                    <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/>
+                                </Button>
+                                <Button Classes="sqbtn"
+                                        IsVisible="{Binding HasParts}"
                                         Click="OnAssignPartNumberClick"
                                         IsEnabled="{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}"
                                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
@@ -1948,6 +1985,7 @@
                                     <mi:MaterialIcon Kind="TagText" Width="14" Height="14"/>
                                 </Button>
                                 <Button Classes="sqbtn"
+                                        IsVisible="{Binding HasParts}"
                                         Click="OnCreatePartLibraryClick"
                                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                                         ToolTip.Tip="Create part library… — seed a .crlib from the part numbers this document names, and open it. Until a part number resolves to a capacitance and a self-resonance the row contributes nothing to the curve.">
@@ -2278,9 +2316,19 @@
                  Accuracy — which takes roughly eight times the fast reading and moves the numbers by
                  under a millivolt on a good board — read as a dead button (owner, 2026-09-19). Both
                  buttons also disable while a solve is in flight, so the press is visibly taken. -->
-            <TextBlock Classes="note" Text="{Binding BusyText}" VerticalAlignment="Center"
-                       IsVisible="{Binding IsSolving}" Margin="0,0,10,0"
-                       HorizontalAlignment="Right" Grid.Column="0"/>
+            <!-- AND WHICH PHASE, BESIDE WHICH MODEL. BusyText names the reading, which is what
+                 §2.9 needs on screen; SolveStage names the phase the extraction is actually in and,
+                 where the phase has an honest denominator, how far through it is. A designer on a
+                 production six-layer board reported the run as "probably run in a dead end" (field
+                 report, 2026-09-22) — a word that never changes cannot distinguish a long answer
+                 from a hung one, and a counter that advances can. -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Margin="0,0,10,0" IsVisible="{Binding IsSolving}">
+                <TextBlock Classes="note" Text="{Binding BusyText}" VerticalAlignment="Center"/>
+                <TextBlock Classes="note" Text="{Binding SolveStage}" VerticalAlignment="Center"
+                           Opacity="0.75" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+            </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                 <!-- ACCURACY IS A TOOLBAR BUTTON AND IT IS LIT WHILE ITS READING IS ON SCREEN
@@ -2332,8 +2380,24 @@
                         IsEnabled="{Binding CanExport}"
                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="CSV, .npy, .mat, .txt, or the report page as SVG or PDF — the extension picks the format, exactly as circuitrf rail -o does, and both write the same bytes."/>
+                <!-- ── STOP, AND IT ONLY EXISTS BECAUSE THE TOKEN NOW REACHES AN ENGINE ─────
+                     There was no way to take a run back. The window had BUILT a RunControl since
+                     brief 7 and handed it to nothing, so cancelling stopped the window listening and
+                     left the work running on a thread-pool thread — a button here before this round
+                     would have lied about what it did. RailDcRequest.Control carries it now and
+                     PdnGraphExtractor answers it per copper piece.
+
+                     IT REPLACES RUN RATHER THAN SITTING BESIDE IT. The two are never both usable —
+                     Run is gated on !IsSolving and this on IsSolving — and a row that grows a
+                     button while a run is in flight moves every other button under the pointer. -->
+                <Button Name="StopButton" Content="Stop" FontSize="11" Padding="14,3"
+                        IsVisible="{Binding IsSolving}"
+                        Command="{Binding StopRunCommand}"
+                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                        ToolTip.Tip="Stop this run. It is abandoned rather than finished early — a half-measured board has no answer to publish — so what is on screen stays whatever the last completed run left there."/>
                 <Button Name="RunButton" Content="Run" FontSize="11" Padding="14,3"
                         IsDefault="True"
+                        IsVisible="{Binding !IsSolving}"
                         Command="{Binding RunCommand}"
                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                         ToolTip.Tip="{Binding RunBlockedReason}"/>

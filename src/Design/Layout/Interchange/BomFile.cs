@@ -243,10 +243,17 @@ public static class BomFile
         }
         else
         {
+            // NOT "--columns". The flag does not exist: nothing in src/Cli parses one, and
+            // `netlist --bom` WRITES a bill of materials out of a layout rather than reading one
+            // in. A refusal pointing at an inert knob is worse than one pointing at nothing —
+            // it costs the reader the time to go and look for it (field report, 2026-09-22, where
+            // the placement reader's identical sentence sent a designer hunting for a command line
+            // from inside a dialog).
             return Refuse(
                 $"{System.IO.Path.GetFileName(full)} states no header row naming its columns, and " +
                 "column order is not a standard — a positional reading would put the value column in " +
-                $"the footprint column, silently. Name them with --columns. {Classify(text)}");
+                "the footprint column, silently. Add a header row naming at least the reference " +
+                $"column; the export that produced this file almost always offers one. {Classify(text)}");
         }
 
         int cRefdes = DelimitedTables.IndexOf(header, RefdesNames);

@@ -72,6 +72,21 @@ public sealed partial class RailRfViewModel
         _document.BoardNetlistRef = options.BoardNetlistPath;
         _document.PlacementRef    = options.PlacementPath;
 
+        // AND HOW TO READ IT, which is the half that was still missing (field report, 2026-09-22).
+        // The origin, the units and the column names are three answers a HUMAN gave this dialog and
+        // none of them was written down — so the same document reopened asked for the origin again,
+        // and threw away a column mapping somebody had just supplied for a headerless file. Cleared
+        // rather than left where a row names nothing: a reading that outlived the file it was for
+        // would be applied to whatever the row named next.
+        _document.Placement = options.PlacementPath is { Length: > 0 }
+            ? new RailPlacementReading
+            {
+                Origin  = options.PlacementOrigin,
+                Units   = options.PlacementUnits,
+                Columns = options.PlacementColumns is { Count: > 0 } c ? [.. c] : null,
+            }
+            : new RailPlacementReading();
+
         // R-ab1-5b. The one funnel, so an IMPORTED board whose parts are footprint instances
         // resolves its own pads for every refdes the netlist did not name.
         var resolvedPads = RailArtwork.PadsFor(
