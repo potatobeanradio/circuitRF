@@ -10912,3 +10912,23 @@ the MMIC cell every compared dimension comes from the drawing.
 relative tolerance is a slack a correct design is allowed to use; an absolute one here is a
 RESOLUTION, and a difference of exactly one DBU is a real difference — which is gate 9's own
 assertion, and the reason the two bounds cannot share a comparison operator.
+
+---
+
+## `WBondCell` came below the UI firewall; `WBondCellAttach` stayed above it (2026-09-21)
+
+Brief 13 needs the stem pairing — an assembly's wires are the `.wBond` beside the root `.clay`, and
+`AssemblyRead` compares a carried payload against it to report `lvs.wbond.payload-drift`. Writing
+"same folder, same stem" a second time in `src/Design` would be one rule in two places, drifting the
+moment either is revised, and the legacy cell-root and orphan branches would have been dropped from
+the copy without anyone noticing.
+
+So the RESOLUTION moved to `src/Design/Layout/WBondCell.cs` — `Resolve`, `FindFor`,
+`RenamePairedWires`, `LegacyRootPath`, the orphan note — and the one member that could not,
+`TryAttach`, which takes a `LayoutEditorViewModel`, is now `WBondCellAttach` in `src/Ui/WBond/`.
+Same split the DRC engine took in AUT-4: the engine crossed, the two files that are not the engine
+did not.
+
+`CircuitRF.Design.Layout` is already a global using in both `src/Ui` and `tests/Ui.Tests`, so every
+reference to `WBondCell.FileExtension`, `.FindFor` and `.RenamePairedWires` compiles unchanged; only
+the four `TryAttach` call sites were renamed.

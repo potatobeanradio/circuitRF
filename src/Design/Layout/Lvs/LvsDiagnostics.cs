@@ -642,4 +642,82 @@ public static class LvsDiagnostics
             + "attempt, so nothing was compared. Compare a cell of it rather than the whole "
             + "design, or raise the ceiling if the machine can carry it.",
             ("document", document), ("devices", devices), ("ceiling", ceiling));
+
+    // ── The assembly's bond wires (brief-lvs-13-assemblies.md) ───────────────
+
+    /// <summary>
+    /// R-lvs13-5b. <b>Which wires were read</b> — the one the ENGINE would simulate, said out loud.
+    /// </summary>
+    /// <remarks>
+    /// Info, and unconditional wherever a wBond is compared. Verifying wires the engine will not
+    /// simulate verifies a design nobody runs, and the only way a reader can tell which of the two
+    /// sources answered is to be told: a Carried instance and a Linked one look identical in every
+    /// other line of the report.
+    /// </remarks>
+    public static Diagnostic WBondWiresRead(string path, string source, string from, int arrays, int wires)
+        => Diagnostic.Create(
+            "lvs.wbond.wires-read", DiagnosticSeverity.Info,
+            "wBond '{path}' was compared against its {source} wires ({from}): {arrays} array(s), "
+            + "{wires} wire(s). These are the wires the next Run simulates.",
+            ("path", path), ("source", source), ("from", from),
+            ("arrays", arrays), ("wires", wires));
+
+    /// <summary>
+    /// R-lvs13-3c. A wire foot on no copper at all.
+    /// </summary>
+    /// <remarks>
+    /// <b>The ARRAY, the WIRE and the COORDINATE</b>, because a wBond has no designator to name and
+    /// no pad to point at: "a foot is unbonded" with nothing else attached is a sentence a user
+    /// cannot act on. The coordinate carries the layout's own unit for
+    /// <see cref="LvsGeometryNaming"/>'s reason.
+    /// </remarks>
+    public static Diagnostic WBondFootOnNothing(
+        string path, string array, int wire, string end, string where, long x, long y)
+        => Diagnostic.Create(
+            "lvs.wbond.foot-on-nothing", DiagnosticSeverity.Error,
+            "wBond '{path}' array '{array}' wire {wire}: its {end} foot lands at {where}, where "
+            + "there is no copper. A bond wire reaches a net through its foot, so this one reaches "
+            + "nothing.",
+            ("path", path), ("array", array), ("wire", wire), ("end", end),
+            ("where", where), ("x", x), ("y", y));
+
+    /// <summary>
+    /// R-lvs13-4c. The array list moved under a placed instance, so its pins did.
+    /// </summary>
+    /// <remarks>
+    /// <b>Reported BEFORE any net is compared, and the instance is then left out of the
+    /// comparison.</b> A wBond's pin order IS its array order, so a reorder genuinely re-points
+    /// every pin while the schematic's wiring stays where it was drawn — comparing nets against
+    /// that produces 2M findings that are all real and all about the wrong thing. One line naming
+    /// the drift is the finding; the cascade would bury it.
+    ///
+    /// <para>The drift itself is <c>WBondPlacement.DriftBetween</c>'s answer, consumed rather than
+    /// re-derived (R-lvs13-4b): that function exists for exactly this failure and a second
+    /// implementation here would be a second opinion about it.</para>
+    /// </remarks>
+    public static Diagnostic WBondArrayDrift(string path, string recorded, string current)
+        => Diagnostic.Create(
+            "lvs.wbond.array-drift", DiagnosticSeverity.Error,
+            "wBond '{path}' was wired against arrays {recorded} and now declares {current}. Every "
+            + "pin keeps its position while its name moves, so the schematic's wires connect to "
+            + "different arrays than they were drawn for. It was left out of the comparison until "
+            + "that is settled — re-import the wires, or re-wire the symbol.",
+            ("path", path), ("recorded", recorded), ("current", current));
+
+    /// <summary>
+    /// R-lvs13-5c. A Carried instance whose payload no longer matches the cell's own <c>.wBond</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A warning, not an error.</b> wbond.md §9.6 calls this state normal and recoverable — it is
+    /// what drawing in the layout and not yet pushing to the schematic looks like. The rule is that
+    /// it must never be QUIET, not that it must be prevented, so the sentence names the command
+    /// that settles it.
+    /// </remarks>
+    public static Diagnostic WBondPayloadDrift(string path, string file)
+        => Diagnostic.Create(
+            "lvs.wbond.payload-drift", DiagnosticSeverity.Warning,
+            "wBond '{path}' carries its own wires, and they differ from '{file}' beside the "
+            + "artwork. The carried copy is what runs and what was compared. Use "
+            + "\"Update Schematic from wBond Layout\" to bring the two back together.",
+            ("path", path), ("file", file));
 }

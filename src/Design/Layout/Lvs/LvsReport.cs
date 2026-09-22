@@ -315,6 +315,20 @@ internal static class LvsReport
                         new Bbox(cx - half, cy - half, cx + half, cy + half));
                 }
 
+                // R-lvs13-3c. The FOOT, at the coordinate the conversion produced — not the
+                // wBond's other feet, which are the part that landed correctly. The box is the
+                // wire's own diameter where there is one, so there is always a ring to click on.
+                case "lvs.wbond.foot-on-nothing":
+                {
+                    int device = Layout(Text(diagnostic, "path"));
+                    long half = PadFloor / 2;
+                    long cx = Number(diagnostic, "x"), cy = Number(diagnostic, "y");
+                    return LvsMarker.Of(
+                        diagnostic,
+                        device < 0 ? [Text(diagnostic, "path")] : Group(layout, device),
+                        new Bbox(cx - half, cy - half, cx + half, cy + half));
+                }
+
                 // Every placement claiming the designator, because which one is meant is the
                 // question the finding is about.
                 case "lvs.device.duplicate-designator":

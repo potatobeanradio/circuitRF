@@ -1,10 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
-using CircuitRF.Ui.Layout;
-using CircuitRF.WBond;
 
-namespace CircuitRF.Ui.WBond;
+namespace CircuitRF.Design.Layout;
 
 /// <summary>
 /// WB40 — finding the <c>.wBond</c> that belongs to a layout, and attaching it to that layout's
@@ -43,6 +41,14 @@ namespace CircuitRF.Ui.WBond;
 ///     and unlike every other Finder-edit failure mode (a "Not Found" glyph, a warning row) that one
 ///     would otherwise remove wires from a simulation the user believes includes them.</item>
 /// </list>
+///
+/// <h3>Why it is below the UI firewall (2026-09-21)</h3>
+/// <para>Brief 13 needs the stem pairing: an assembly's wires are the <c>.wBond</c> beside the root
+/// <c>.clay</c>, and <c>AssemblyRead</c> compares a carried payload against it. A second copy of
+/// "same folder, same stem" in <c>src/Design</c> would be the same rule in two places, drifting the
+/// moment either is revised — so the RESOLUTION came down and the one thing that could not,
+/// attaching a design to an editing session, stayed up as <c>WBondCellAttach</c>. Same split the
+/// DRC engine took (AUT-4): the engine crossed, the two files that are not the engine did not.</para>
 /// </summary>
 public static class WBondCell
 {
@@ -178,38 +184,5 @@ public static class WBondCell
         return $"{string.Join(", ", orphans)} {(orphans.Count == 1 ? "has" : "have")} no matching .clay, " +
                $"so {(orphans.Count == 1 ? "its wires are" : "their wires are")} not attached to any " +
                $"layout — including this one ('{stem}.clay'). Rename to '{stem}.wBond' to attach.";
-    }
-
-    /// <summary>
-    /// Reads the <c>.wBond</c> attached to this layout, if there is one, and attaches it to
-    /// <paramref name="vm"/>.
-    /// </summary>
-    /// <param name="report">
-    /// Called with a human-readable line when there is something to say: a file that was found but could
-    /// not be read, a legacy cell-root sidecar, or an orphan. The layout still opens in every case — a
-    /// bond list that will not parse is not a reason to withhold the artwork.
-    /// </param>
-    /// <returns>True when wires were attached.</returns>
-    public static bool TryAttach(LayoutEditorViewModel vm, string? absClayPath, Action<string>? report = null)
-    {
-        ArgumentNullException.ThrowIfNull(vm);
-
-        var (path, note) = Resolve(absClayPath);
-        if (note is not null) report?.Invoke(note);
-        if (path is null) return false;
-
-        WBondDesign design;
-        try
-        {
-            design = WBondIo.ReadFile(path);
-        }
-        catch (Exception ex)
-        {
-            report?.Invoke($"Wirebonds in '{Path.GetFileName(path)}' could not be read: {ex.Message}");
-            return false;
-        }
-
-        vm.AttachWireDesign(design, path);
-        return true;
     }
 }

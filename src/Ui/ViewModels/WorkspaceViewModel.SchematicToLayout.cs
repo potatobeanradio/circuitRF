@@ -240,7 +240,7 @@ public partial class WorkspaceViewModel
         // re-attaching would replace the live editor the user may have unsaved wire edits in.
         if (layoutVm.WireDesign is not null) return;
 
-        if (WBondCell.TryAttach(layoutVm, layoutVm.CurrentLayoutPath, m => Messages.Warning(m)))
+        if (WBondCellAttach.TryAttach(layoutVm, layoutVm.CurrentLayoutPath, m => Messages.Warning(m)))
         {
             layoutVm.AssemblyRules = ResolveWorkspaceAssemblyRules(layoutVm.CurrentLayoutPath!);
             _factory.WBondProfileTool?.SetActiveLayout(layoutVm);

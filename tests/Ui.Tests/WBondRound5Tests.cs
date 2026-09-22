@@ -341,7 +341,7 @@ public class WBondRound5Tests
         Assert.Equal(result.Path, WBondCell.FindFor(cell.ClayPath));
 
         var layout = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = Dbu }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(layout, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(layout, cell.ClayPath));
         Assert.True(layout.HasWireDesign);
         Assert.True(layout.WireDesign!.WireCount > 0);
 
@@ -571,7 +571,7 @@ public class WBondRound5Tests
                 overlayReadyWhenNotified = layout.WireOverlay is not null && layout.WireEditor is not null;
         };
 
-        Assert.True(WBondCell.TryAttach(layout, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(layout, cell.ClayPath));
         Assert.True(overlayReadyWhenNotified,
             "WireDesign must be the LAST assignment in AttachWireDesign — a view attaching the overlay " +
             "on that notification would otherwise find it null.");
@@ -2645,7 +2645,7 @@ public class WBondRound5Tests
         WBondIo.WriteFile(sidecar, Design(wires));
 
         var layout = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = Dbu }, clay);
-        Assert.True(WBondCell.TryAttach(layout, clay));
+        Assert.True(WBondCellAttach.TryAttach(layout, clay));
 
         try { Directory.Delete(root, recursive: true); } catch { /* the design is in memory now */ }
 

@@ -17233,7 +17233,7 @@ alongside the three per-platform packaging parity tests (see `packaging/RESOLVED
 
 ### The three worries that turned out to need nothing
 
-- **A `.clay` with a wBond overlay.** Nothing extra. `WBondCell.TryAttach` runs inside
+- **A `.clay` with a wBond overlay.** Nothing extra. `WBondCellAttach.TryAttach` runs inside
   `BuildLayoutSessionVm`, the single funnel both "open as a tab" and "push in" go through, and the
   sidecar is found by STEM (`Amp.clay` ↔ `Amp.wBond`, WB40). A Finder-opened `.clay` gets its wires on
   exactly the same terms as one opened from the tree.

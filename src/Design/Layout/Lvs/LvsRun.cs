@@ -199,9 +199,18 @@ public static class LvsRun
         string schematicDoc = Path.GetFileName(cschPath);
         string layoutDoc    = Path.GetFileName(clayPath);
 
+        // ── The assembly's bond wires, BEFORE either side is read (brief 13) ──────────────────
+        //
+        // R-lvs13-4c: an array list that has moved under a placed instance is reported and that
+        // instance is then left out of BOTH netlists, so the finding is one line rather than 2M
+        // findings that are all real and all about the wrong thing. That decision has to be taken
+        // before either read, which is why it is here and not inside one of them.
+        var (wbonds, wbondNotes) = AssemblyRead.Resolve(schematic, cschPath, clayPath);
+        var excluded = AssemblyRead.Excluded(wbonds);
+
         control?.BeginStage("Reading the schematic");
         var schematicNetlist = SchematicRead.Read(
-            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set);
+            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set, excluded);
         control?.ThrowIfCancellationRequested();
 
         // R-lvs3-3d's dangling SchematicId needs the other side's names, and NOTHING else here
@@ -220,10 +229,18 @@ public static class LvsRun
             Cache = hierarchy.Cache,
             Descending = hierarchy.Descending,
         };
+        // R-lvs13-2c/2d: how a DIE's own technology resolves. Supplied rather than null — without
+        // it the flatten never asks, so two technologies' layer numbers are taken at face value and
+        // an MMIC's layer 1 becomes the board's by coincidence of integers. With it, the flatten
+        // reconciles what it confidently can and leaves the rest PENDING, which `LayoutRead` already
+        // reports as a refusal for that sub-cell (`lvs.layout.pending-layer-mapping`).
+        var techCache = new TechnologyCache();
         var layoutNetlist = LayoutRead.Read(
-            layout, clayPath, cellDir, tech, out var geometry, null,
+            layout, clayPath, cellDir, tech, out var geometry,
+            (techRef, subLayoutDir) => TechnologyResolver.ResolveForDocument(
+                techRef, Path.Combine(subLayoutDir, "x.clay"), null, techCache).Resolution,
             schematicNetlist.Devices.Select(d => d.Path).ToHashSet(StringComparer.Ordinal),
-            level);
+            level, wbonds);
         control?.ThrowIfCancellationRequested();
 
         control?.BeginStage("Reducing");
@@ -256,6 +273,7 @@ public static class LvsRun
         // Both sides' reduction lines are printed TOGETHER (R-lvs6-5a): an asymmetry between them
         // is often the first clue to what is actually wrong.
         var notes = new List<Diagnostic>();
+        notes.AddRange(wbondNotes);
         notes.AddRange(schematicNetlist.Notes);
         notes.AddRange(layoutNetlist.Notes);
         notes.AddRange(schematicLog.Notes(schematicDoc));

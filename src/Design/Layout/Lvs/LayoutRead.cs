@@ -83,12 +83,18 @@ public static class LayoutRead
     /// cells in their own right are read as such, their internals leave this level's partition
     /// (R-lvs9-2d), and what it cost is counted.
     /// </param>
-    public static LvsNetlist Read(
+    /// <remarks>
+    /// <b>Internal because two of what it takes are</b> — the hierarchy context a caller outside
+    /// this assembly cannot have, and brief 13's already-resolved wBond wires. The public reading is
+    /// the overload above, which is the whole netlist minus the report's side channel.
+    /// </remarks>
+    internal static LvsNetlist Read(
         LayoutView view, string clayPath, string cellDir, Technology? tech,
         out LvsGeometry geometry,
         Func<string?, string, TechResolution>? resolveTechAt = null,
         IReadOnlySet<string>? schematicComponents = null,
-        LvsHierarchyContext? hierarchy = null)
+        LvsHierarchyContext? hierarchy = null,
+        IReadOnlyList<AssemblyWBond>? wbonds = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
@@ -304,6 +310,15 @@ public static class LayoutRead
 
         foreach (var (_, entry) in unclassified.OrderBy(e => e.Key, StringComparer.Ordinal))
             notes.Add(LvsDiagnostics.UnclassifiedCell(entry.Name, entry.Count));
+
+        // ── The assembly's bond wires (brief 13) ───────────────────────────────────────────────
+        //
+        // AFTER every placement, so a foot landing on a die's bond pad reaches the net that pad is
+        // already on. Null — which is every caller that is not a full run — leaves the reading
+        // byte for byte as it was, and a design that places no wBond passes through untouched.
+        if (wbonds is { Count: > 0 })
+            AssemblyRead.Emit(
+                wbonds, pieces, view.DbuPerMicron, document, nets, devices, padGeometry, notes, naming);
 
         // ── R-lvs9-5d: a pathological design costs a message, not a hang ───────────────────────
         //
@@ -612,7 +627,13 @@ public static class LayoutRead
     /// deliberately does not union them: the DRC's net-aware rules and railRF's island count are
     /// answers about DRAWN copper and must not move because LVS asked a different question.
     /// </remarks>
-    private sealed class NetTable(CopperPieces pieces)
+    /// <summary>
+    /// <b>Internal rather than private</b> so brief 13's <c>AssemblyRead</c> can put a bond wire's
+    /// feet on this level's nets. A wire foot is located by the same point-in-piece lookup a pad is,
+    /// so it must arrive at the SAME net table — a second one would give one design two numbering
+    /// schemes and two answers to "is this wire on the input net".
+    /// </summary>
+    internal sealed class NetTable(CopperPieces pieces)
     {
         private readonly Dictionary<int, int> _ofPartition = [];
         private readonly List<string?> _labels = [];

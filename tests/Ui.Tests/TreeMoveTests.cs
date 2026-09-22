@@ -405,7 +405,7 @@ public sealed class TreeMoveTests : IDisposable
     {
         var a = Cell("A");
         string layDir = CellFolder.SubFolderPath(a, ViewType.Layout);
-        string wb     = Path.Combine(layDir, "A" + CircuitRF.Ui.WBond.WBondCell.FileExtension);
+        string wb     = Path.Combine(layDir, "A" + WBondCell.FileExtension);
         File.WriteAllText(wb, "{}");
 
         string schDir = CellFolder.SubFolderPath(a, ViewType.Schematic);
@@ -420,7 +420,7 @@ public sealed class TreeMoveTests : IDisposable
         Move(a, Path.Combine(_ws, "sub"));
 
         string movedSch = Path.Combine(_ws, "sub", "A", "schematic", "A.csch");
-        string movedWb  = Path.Combine(_ws, "sub", "A", "layout", "A" + CircuitRF.Ui.WBond.WBondCell.FileExtension);
+        string movedWb  = Path.Combine(_ws, "sub", "A", "layout", "A" + WBondCell.FileExtension);
 
         var reloaded = SchematicPersistence.LoadFromFile(movedSch).model;
         Assert.Equal(Norm(movedWb),

@@ -11296,7 +11296,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // both "open as a tab" and "push in" go through, so a cell pushed into from a parent gets its
         // wires on exactly the same terms as one opened directly. Also where the assembly rules the
         // wire DRC checks against are resolved, for the same reason.
-        if (WBondCell.TryAttach(vm, absClayPath, m => Messages.Warning(m)))
+        if (WBondCellAttach.TryAttach(vm, absClayPath, m => Messages.Warning(m)))
             vm.AssemblyRules = ResolveWorkspaceAssemblyRules(absClayPath);
 
         return vm;

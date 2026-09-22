@@ -149,6 +149,12 @@ public static class LvsFindingIds
         "lvs.hierarchy.undeclared-contact",
         "lvs.hierarchy.flattened",
 
+        // the assembly's bond wires (brief 13)
+        "lvs.wbond.wires-read",
+        "lvs.wbond.foot-on-nothing",
+        "lvs.wbond.array-drift",
+        "lvs.wbond.payload-drift",
+
         // reduction (brief 6)
         "lvs.reduce.mode",
         "lvs.reduce.parallel",

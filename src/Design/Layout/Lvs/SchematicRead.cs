@@ -64,10 +64,21 @@ public static class SchematicRead
     /// past it would change one value and leave every expression written in terms of it reading the
     /// old one.</para>
     /// </param>
+    /// <param name="excludeInstances">
+    /// Instances left out of the comparison ENTIRELY, by name — R-lvs13-4c's drifted wBond, and
+    /// nothing else today.
+    ///
+    /// <para><b>Both sides drop it, which is the whole point.</b> A wBond whose array list has moved
+    /// under it has every pin re-pointed while the drawn wiring stayed put: comparing its nets
+    /// yields 2M findings that are individually true and collectively about the wrong thing, and
+    /// dropping it on ONE side would merely turn that cascade into an unmatched part. One line
+    /// naming the drift is the finding.</para>
+    /// </param>
     public static LvsNetlist Read(
         SchematicEditModel model, string cschPath,
         bool includeFixture = false, bool isTestBenchCell = false,
-        IReadOnlyList<LvsGlobalOverride>? overrides = null)
+        IReadOnlyList<LvsGlobalOverride>? overrides = null,
+        IReadOnlySet<string>? excludeInstances = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -153,6 +164,9 @@ public static class SchematicRead
 
         foreach (var inst in tb.Instances)
         {
+            // R-lvs13-4c. Not a device on either side; the drift is already reported.
+            if (excludeInstances is not null && excludeInstances.Contains(inst.InstanceName)) continue;
+
             var comp = components.GetValueOrDefault(inst.InstanceName);
             var type = comp is null ? DeviceType.Unknown : DeviceTypes.OfSchematic(comp, model.SchematicDirectory);
 

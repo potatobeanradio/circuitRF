@@ -592,7 +592,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.WBondPath, Design(3));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
 
         Assert.NotNull(vm.WireDesign);
         Assert.NotNull(vm.WireOverlay);
@@ -613,7 +613,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.WBondPath, Design());
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
 
         var overlay = vm.WireOverlay!;
         Assert.False(overlay.WireMarqueeEnabled);
@@ -637,7 +637,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(sidecar, Design(3));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
         Assert.False(vm.IsDirty);
 
         // ONE of the three, deliberately. Deleting them ALL is a different case since 2026-08-17 —
@@ -669,7 +669,7 @@ public class WBondOneEditorTests
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
 
         string? reported = null;
-        Assert.False(WBondCell.TryAttach(vm, cell.ClayPath, m => reported = m));
+        Assert.False(WBondCellAttach.TryAttach(vm, cell.ClayPath, m => reported = m));
 
         Assert.NotNull(reported);
         Assert.Contains("amp.wBond", reported!, StringComparison.Ordinal);
@@ -728,7 +728,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.WBondPath, Design(3));
 
         var wirebond = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(wirebond, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(wirebond, cell.ClayPath));
 
         var profile = new WBondProfileTool();
         var inductance = new WBondInductanceTool();
@@ -853,7 +853,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.WBondPath, Design(2));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
         vm.MarkSaved();
         Assert.False(vm.IsDirty);
 
@@ -891,7 +891,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.WBondPath, Design(2));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
         vm.MarkSaved();
 
         // No wire edit at all — the copy must still be complete.
@@ -920,7 +920,7 @@ public class WBondOneEditorTests
         WBondIo.WriteFile(cell.LegacyWBondPath, Design(2));
 
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }, cell.ClayPath);
-        Assert.True(WBondCell.TryAttach(vm, cell.ClayPath));
+        Assert.True(WBondCellAttach.TryAttach(vm, cell.ClayPath));
         vm.MarkSaved();
 
         vm.WireEditor!.Design.Arrays[0].Wires.RemoveAt(1);

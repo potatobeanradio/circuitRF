@@ -38,3 +38,54 @@ a statement about the drawing it is stored on.
 back marked findings; the list on the document is untouched, which is what keeps a comparison usable
 on a read-only tree and on a workspace another process has open. There is deliberately no `--waive`:
 a waiver is a deliberate, reasoned act performed beside the thing being waived.
+
+---
+
+## An empty wBond array is NOT "an ordinary mid-design state" (brief-lvs-13-assemblies.md R-lvs13-4d)
+
+The brief asks for an array with no wires to read as two opens and to be no error, on the grounds
+that it is a normal state of a design being drawn. **The extraction half of that is done and gated.
+The premise behind it is false**, and it has been false since WB-B:
+
+- `WBondDesign.Validate` **refuses** an empty array — it makes the mapping matrix rank-deficient and
+  the array-basis inductance singular, and the refusal is deliberately there rather than in the
+  linear algebra so the failure names its cause.
+- The schematic's own array editor **cannot create one**: a new array arrives carrying a default
+  wire, for exactly that reason (`ParameterEditorViewModel.WBond`'s own header says so).
+
+So the state is reachable only by hand-editing a document, and a design in it does not elaborate.
+LVS reports the elaborator's own sentence, unmodified, and the layout side still reads the array as
+two opens and invents nothing. `AssemblyTests.AnArrayWithNoWiresIsTwoOpensAndNotAWBondFinding`
+asserts BOTH halves — the reading and the refusal — so that nobody later reads the passing test as
+evidence the state is supported.
+
+## A cross-technology layer REMAP silently unmakes a sub-cell's boundary pads
+
+Found building brief 13's fixture, and it is the reason `LvsRun` now supplies `resolveTechAt`.
+
+`LayoutReadHierarchy.CopperFor` keeps a module's shape in the parent's partition when that shape
+covers one of the placement's declared pins **on that pin's own layer** (`shape.Layer == layer`).
+The pin layers come from `PlacedPins`, which projects them in the SUB-CELL's own numbering. The
+shapes, by then, have been through `LayoutDesignFlatten`'s cross-technology reconciliation and may
+carry the PARENT's numbering instead.
+
+When the two differ — a die whose metal is layer 7 named `Top`, reconciled by name onto a board's
+layer 1 — every boundary pad fails the test, leaves the partition with the rest of the module's
+internals, and the die reads as a part whose every pin is on no copper. The symptom is
+`lvs.pin.no-copper` on a correctly-abutted die, plus every bond wire landing on nothing, and it
+appears only when two technologies are in play.
+
+**Not fixed here, and the brief's own fixture is why it did not have to be:** R-lvs13-2a is about a
+layer-number COINCIDENCE, so the assembly fixture puts the die's metal on the same key the board
+uses (layer 1, named the same in both technologies), which reconciles to the identity and exercises
+the case the brief is actually about. The remap case is a real gap in the hierarchical reading, it
+is recorded here, and it wants either `PlacedPins` to reconcile alongside the shapes or `CopperFor`
+to compare on the reconciled key.
+
+## `LayoutRead.NetTable` is internal, deliberately
+
+A bond wire's foot is located by the same point-in-piece lookup a pad is, so it has to arrive at the
+SAME net table — `AssemblyRead.Emit` takes it rather than building one. A second table would give
+one design two numbering schemes and two answers to "is this wire on the input net", and nothing
+would compare them. The `out LvsGeometry` overload of `LayoutRead.Read` went internal with it, which
+cost nothing: `LvsRun` was its only caller.
