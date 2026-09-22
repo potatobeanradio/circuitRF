@@ -88,6 +88,10 @@ public sealed record PdnDivergence(string Refdes, string? Pin, string Sentence);
 /// normalised or re-derived.</param>
 /// <param name="TypeName">What the schematic draws as this component's TYPE — the cell folder name
 /// for a cell reference, the registry name for a built-in.</param>
+/// <param name="Kind">The coarse device kind, through LVS's own classifier
+/// (<c>DeviceTypes.Of</c>) so the two readers cannot disagree about what a part IS. It is what
+/// <c>TurnedParts</c> asks — a resistor, a capacitor and an inductor have two interchangeable
+/// terminals, and nothing else here is known to.</param>
 /// <remarks>
 /// <b>The last three are here so the schematic is read ONCE</b> (R-ab3-1a). A bill of materials
 /// wants a value, a footprint and a type; the net resolution wants ports and bindings; both come
@@ -99,7 +103,8 @@ public sealed record PdnSchematicPart(
     IReadOnlyList<string> Nets,
     string? Value = null,
     string? Footprint = null,
-    string? TypeName = null);
+    string? TypeName = null,
+    Lvs.DeviceKind Kind = Lvs.DeviceKind.Unknown);
 
 /// <summary>
 /// The schematic beside a <c>.clay</c>, extracted — R-ab2-1.
@@ -231,7 +236,8 @@ public sealed record PdnSchematicNets(
                 inst.NetBindings,
                 ValueOf(component),
                 component?.Footprint,
-                component?.TypeLabelText());
+                component?.TypeLabelText(),
+                component is null ? Lvs.DeviceKind.Unknown : Lvs.DeviceTypes.Of(component.Symbol));
         }
 
         return new PdnSchematicNets(schPath, byInstance, []);

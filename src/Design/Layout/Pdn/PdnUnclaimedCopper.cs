@@ -56,7 +56,8 @@ public static class PdnUnclaimedCopper
         // A miss costs a line of text and never a wrong answer, which is the same bargain
         // `GerberImport.IsMaskPasteOrLegend` states for its own sentence.
         foreach (var layer in tech.Layers)
-            if (GerberLayerCascade.IsNonConductorArtwork(layer.Interchange?.GerberFileFunction, layer.Name)
+            if (GerberLayerCascade.IsNonConductorArtwork(
+                    layer.Interchange?.GerberFileFunction, layer.Name, layer.Interchange?.GerberSuffix)
                 || string.Equals(layer.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal))
                 claimed.Add(layer.Key);
 
@@ -85,18 +86,34 @@ public static class PdnUnclaimedCopper
     /// other. The reference clause is the addition: at open time, the consequence a designer is about
     /// to hit is that the combo does not offer their plane.
     /// </remarks>
-    public static string Sentence(IReadOnlyList<PdnUnclaimedLayer> layers)
+    /// <param name="layers">What <see cref="On"/> found.</param>
+    /// <param name="tech">The technology, where the caller has it — so the sentence can name the
+    /// CONDUCTOR the layer belongs on as well as the layer (field report, 2026-09-22: a designer told
+    /// that drawing layer <c>gnd</c> was unclaimed and that conductor <c>GND</c> claimed nothing
+    /// answered "I have a gnd layer" — the two sentences never said they were about each other).</param>
+    public static string Sentence(IReadOnlyList<PdnUnclaimedLayer> layers, Technology? tech = null)
     {
         if (layers.Count == 0) return "";
 
         string named = string.Join(", ", layers.Select(
             u => $"'{u.Name}' ({u.Layer.Layer}/{u.Layer.Datatype}, {u.ShapeCount:N0} shape(s))"));
 
-        return
+        string sentence =
             $"{(layers.Count == 1 ? "Drawing layer" : "Drawing layers")} {named} " +
             $"{(layers.Count == 1 ? "carries" : "carry")} copper that no Conductor entry of the " +
             "stackup claims. Map it onto a conductor in the technology's stackup, or the copper on " +
             "it has no thickness and no resistance, nothing on it is priced or extracted, and it " +
             "cannot be named as a reference return.";
+
+        if (tech is null) return sentence;
+
+        foreach (var conductor in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Count == 0))
+            if (TechValidation.LikelyDrawingLayerFor(tech, conductor) is { } likely
+                && layers.Any(u => u.Layer == likely.Key))
+                sentence += $" The stackup's conductor '{conductor.Name}' has no drawing layer at all, " +
+                            $"and '{likely.Name}' is very likely its copper: attach it there with Edit " +
+                            "Technology.";
+
+        return sentence;
     }
 }

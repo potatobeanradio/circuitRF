@@ -11468,6 +11468,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             : null;
 
     /// <summary>
+    /// The live layout SESSION for a <c>.clay</c>, or null when nothing has it open — for a window
+    /// that must EDIT the document through its own command stack rather than behind it (railRF's Turn
+    /// gesture). Like <see cref="LiveLayoutModel"/>, it never creates one.
+    /// </summary>
+    internal LayoutEditorViewModel? LiveLayoutSession(string absClayPath) =>
+        _layoutRegistry.TryGet(Path.GetFullPath(absClayPath), out var vm) ? vm : null;
+
+    /// <summary>
     /// The technology the live session for that <c>.clay</c> is currently resolved against, or null
     /// where no session is open on it.
     /// </summary>

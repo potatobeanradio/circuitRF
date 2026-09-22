@@ -87,6 +87,8 @@ public sealed partial class RailRfViewModel
         RebuildBoardFootprints();
         RebuildReferenceOptions();
         RebuildParts();
+        NotifyPartsReadAsTurned();
+        TurnPartsProblem = "";
         RefreshRunGate();
         OnPropertyChanged(nameof(StatusLine));
     }
@@ -563,6 +565,8 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(CanStartRun));
         OnPropertyChanged(nameof(BusyText));
         OnPropertyChanged(nameof(StatusLine));
+        OnPropertyChanged(nameof(PartsEmptyText));
+        OnPropertyChanged(nameof(HasPartsEmptyText));
         RunCommand.NotifyCanExecuteChanged();
         AccuracyCommand.NotifyCanExecuteChanged();
         StopRunCommand.NotifyCanExecuteChanged();

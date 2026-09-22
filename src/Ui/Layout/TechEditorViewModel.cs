@@ -73,6 +73,36 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// <summary>Whether the tab currently showing has problems — what makes the banner visible.</summary>
     public bool HasActiveTabIssues => ActiveTabIssues.Count > 0;
 
+    /// <summary>
+    /// The one-step repairs this tab's problems offer — each a button under the banner's messages
+    /// (field report, 2026-09-22: "Conductor GND claims no drawing layer" was answered with "I have
+    /// a gnd layer", because the conductor card opens on its four field rows and the picker that
+    /// joins the two sits below them).
+    /// </summary>
+    public IReadOnlyList<TechFix> ActiveTabFixes =>
+        [.. ValidationProblems.Where(p => p.Area == AreaOfTab(SelectedTabIndex) && p.Fix is not null)
+                              .Select(p => p.Fix!)];
+
+    /// <summary>Whether there is at least one.</summary>
+    public bool HasActiveTabFixes => ActiveTabFixes.Count > 0;
+
+    /// <summary>
+    /// Applies a <see cref="TechFix"/> — one undoable edit, through the same commit the drawing-layer
+    /// checkbox makes.
+    /// </summary>
+    [RelayCommand]
+    private void ApplyTechFix(TechFix? fix)
+    {
+        if (fix is null) return;
+        var conductor = Working.Stackup.Layers.FirstOrDefault(
+            l => l.Kind == StackupKind.Conductor && string.Equals(l.Name, fix.ConductorName, StringComparison.Ordinal));
+        if (conductor is null || conductor.DrawingLayers.Contains(fix.Layer)) return;
+
+        var before = SnapshotJson();
+        conductor.DrawingLayers.Add(fix.Layer);
+        CommitEdit(before, fix.Label);
+    }
+
     public string LayersTabHeader      => TabHeader("Layers",    TechProblemArea.Layers);
     public string StackupTabHeader     => TabHeader("Stackup",   TechProblemArea.Stackup);
     public string DrcTabHeader         => TabHeader("DRC Rules", TechProblemArea.Drc);
@@ -573,6 +603,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ActiveTabIssues));
         OnPropertyChanged(nameof(HasActiveTabIssues));
+        OnPropertyChanged(nameof(ActiveTabFixes));
+        OnPropertyChanged(nameof(HasActiveTabFixes));
         OnPropertyChanged(nameof(HelpTip));
     }
 
@@ -615,6 +647,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ActiveTabIssues));
         OnPropertyChanged(nameof(HasValidationIssues));
         OnPropertyChanged(nameof(HasActiveTabIssues));
+        OnPropertyChanged(nameof(ActiveTabFixes));
+        OnPropertyChanged(nameof(HasActiveTabFixes));
         OnPropertyChanged(nameof(LayersTabHeader));
         OnPropertyChanged(nameof(StackupTabHeader));
         OnPropertyChanged(nameof(DrcTabHeader));

@@ -597,7 +597,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 
     private void RebuildUnclaimedCopperNote() =>
         UnclaimedCopperNote = PdnUnclaimedCopper.Sentence(
-            PdnUnclaimedCopper.On(Board?.Technology, Board?.Shapes));
+            PdnUnclaimedCopper.On(Board?.Technology, Board?.Shapes), Board?.Technology);
 
     /// <summary>What a conductor with no drawing layer reads in the combo. One spelling, so the row
     /// and the sentence under it cannot come to say different things.</summary>

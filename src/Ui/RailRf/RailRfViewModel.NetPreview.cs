@@ -50,6 +50,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CircuitRF.Design.Layout;
@@ -130,6 +131,39 @@ public sealed partial class RailRfViewModel
     partial void OnNetPreviewChanged(RailNetPreview? value) => BoardOverlayLayer.NetPreview = value;
 
     /// <summary>
+    /// What the highlighted net's copper ALSO carries, or empty (field report, 2026-09-22).
+    /// </summary>
+    /// <remarks>
+    /// Picking a supply net outlined the whole board and said nothing else, so the only thing a
+    /// designer could conclude was that railRF was wrong. It was the board's own names that were: the
+    /// copper that net reaches also held the pins of a dozen others. Saying WHICH is what turns a
+    /// wrong-looking picture into something a user can go and fix.
+    /// </remarks>
+    [ObservableProperty]
+    private string _netPreviewNote = "";
+
+    /// <summary>True while <see cref="NetPreviewNote"/> has something to say.</summary>
+    public bool HasNetPreviewNote => NetPreviewNote.Length > 0;
+
+    partial void OnNetPreviewNoteChanged(string value) => OnPropertyChanged(nameof(HasNetPreviewNote));
+
+    private readonly Dictionary<string, string> _netPreviewNotes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The sentence, for a net whose copper also holds <paramref name="others"/>' pins.</summary>
+    internal static string NetPreviewShortNote(string net, IReadOnlyList<(string Net, int Pins)> others)
+    {
+        if (others.Count == 0) return "";
+
+        string list = string.Join(", ", others.Take(4).Select(o => $"'{o.Net}' ({o.Pins} pin{(o.Pins == 1 ? "" : "s")})"))
+                    + (others.Count > 4 ? $" and {others.Count - 4} more" : "");
+
+        return $"The copper '{net}' reaches also holds pins the schematic puts on {list}, so on this " +
+               "board those nets are one piece of metal. Either the artwork joins them, or a part " +
+               "between them is placed the wrong way round and railRF could not tell which way from " +
+               "the copper.";
+    }
+
+    /// <summary>
     /// Which net the confirmed reference layer's copper belongs to, measured from the artwork — or
     /// null before the reference is confirmed, <b>while the measurement is in flight</b>, and where
     /// the measurement does not resolve.
@@ -182,13 +216,19 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     private void ShowNetPreview(string? net)
     {
-        if (net is not { Length: > 0 }) { NetPreview = null; return; }
-        if (_netPreviews.TryGetValue(net, out var cached)) { NetPreview = cached; return; }
+        if (net is not { Length: > 0 }) { NetPreview = null; NetPreviewNote = ""; return; }
+        if (_netPreviews.TryGetValue(net, out var cached))
+        {
+            NetPreview = cached;
+            NetPreviewNote = _netPreviewNotes.GetValueOrDefault(net, "");
+            return;
+        }
 
         // Cleared rather than left standing: the outline on the board belongs to the row that WAS
         // selected, and leaving it there while a different row is highlighted is the preview saying
         // the wrong thing rather than saying nothing.
         NetPreview = null;
+        NetPreviewNote = "";
         BeginCopperJob(new CopperJob(null, net));
     }
 
@@ -222,12 +262,17 @@ public sealed partial class RailRfViewModel
         var railReference = SelectedRail?.ReferenceLayer;
         var regions = _layerRegions;
 
+        // The measured return, where there is one for this reference — so the schematic's ground
+        // (`0`) is not reported as a short against the net it IS.
+        string? measuredReturn = railReference is { } r && _referenceNetMeasuredOn == r ? _referenceReturnNet : null;
+
         CopperRead = ReadCopperOffThread(() =>
         {
             regions ??= LayerRegions.Build(shapes, tech);
 
             string? measured = null;
             RailNetPreview? preview = null;
+            string note = "";
 
             if (job.MeasureReference is { } layer)
                 measured = Regions.ReferenceNetOn(regions, tech, netPoints, layer);
@@ -260,17 +305,23 @@ public sealed partial class RailRfViewModel
                     }
 
                 preview = new RailNetPreview(net, copper, bounds);
+
+                var sameNet = new List<string> { net };
+                if (measuredReturn is { Length: > 0 } ret
+                    && (IsSchematicGround(net) || string.Equals(net, ret, StringComparison.OrdinalIgnoreCase)))
+                    sameNet.AddRange([ret, SchematicGround]);
+                note = NetPreviewShortNote(net, Regions.OtherNetsOn(islands, netPoints, sameNet));
             }
 
             var finished = regions;
-            PostToUi(() => FinishCopperJob(cts, job, finished, measured, preview));
+            PostToUi(() => FinishCopperJob(cts, job, finished, measured, preview, note));
         });
     }
 
     /// <summary>Publishes one copper job's answers, unless it has been superseded.</summary>
     private void FinishCopperJob(
         CancellationTokenSource cts, CopperJob job,
-        Dictionary<LayerKey, Paths64> regions, string? measured, RailNetPreview? preview)
+        Dictionary<LayerKey, Paths64> regions, string? measured, RailNetPreview? preview, string note)
     {
         // A job from a board that has since changed is DROPPED — not merely stale: it describes
         // copper nobody can see any more, which is the same rule Finish() applies to a solve.
@@ -302,13 +353,63 @@ public sealed partial class RailRfViewModel
         {
             NetWalksPerformed++;
             _netPreviews[net] = preview;
+            _netPreviewNotes[net] = note;
 
             // Only where that row is still the selected one. A user who arrowed past it while this
             // ran is looking at a different net, and publishing this one would outline the row they
             // left.
             if (string.Equals(SelectedNet?.Name, net, StringComparison.OrdinalIgnoreCase))
+            {
                 NetPreview = preview;
+                NetPreviewNote = note;
+            }
         }
+    }
+
+    // ── THE SCHEMATIC'S GROUND IS THE MEASURED RETURN (owner, 2026-09-22) ──────────────────────
+    //
+    // A ground symbol names its net `0` — node 0 is ground, which is an invariant of this code base
+    // and not a naming convention — and a board's return is usually stamped or netlisted under a name
+    // of its own. The pick list then offered both, `0` and `GND`, as two nets: one of them a name no
+    // board designer would recognise, and nothing saying the two were the same metal. Once the
+    // return has been MEASURED off the confirmed reference layer, `0` is read as that net: one row,
+    // marked, and the row says it is both. Before the measurement nothing is merged — railRF does not
+    // know which net the return is yet, and R-rail19-1c forbids acting as though it did.
+
+    /// <summary>The name a schematic's ground symbol gives its net.</summary>
+    internal const string SchematicGround = "0";
+
+    internal static bool IsSchematicGround(string? net) =>
+        string.Equals(net, SchematicGround, StringComparison.Ordinal);
+
+    /// <summary>The <c>0</c> row taken out of the list while it is merged into the return, so it can
+    /// come back if the return moves.</summary>
+    private RailNetRowViewModel? _mergedGroundRow;
+
+    private void MergeSchematicGround(string? reference)
+    {
+        // Undo the last merge first: the return it was merged into may no longer be the return.
+        if (_mergedGroundRow is { } merged)
+        {
+            foreach (var row in AvailableNets) row.AlsoNamed = null;
+            if (!AvailableNets.Any(r => IsSchematicGround(r.Name)))
+            {
+                int at = 0;
+                while (at < AvailableNets.Count && string.CompareOrdinal(AvailableNets[at].Name, merged.Name) < 0) at++;
+                AvailableNets.Insert(at, merged);
+            }
+            _mergedGroundRow = null;
+        }
+
+        if (reference is not { Length: > 0 } || IsSchematicGround(reference)) return;
+        var returnRow = AvailableNets.FirstOrDefault(r => string.Equals(r.Name, reference, StringComparison.OrdinalIgnoreCase));
+        var ground = AvailableNets.FirstOrDefault(r => IsSchematicGround(r.Name));
+        if (returnRow is null || ground is null) return;
+
+        if (ReferenceEquals(SelectedNet, ground)) SelectedNet = returnRow;
+        AvailableNets.Remove(ground);
+        _mergedGroundRow = ground;
+        returnRow.AlsoNamed = SchematicGround;
     }
 
     /// <summary>A drawing layer this artwork does not use — see <see cref="ShowNetPreview"/>.</summary>
@@ -337,6 +438,7 @@ public sealed partial class RailRfViewModel
 
         _layerRegions = null;
         _netPreviews.Clear();
+        _netPreviewNotes.Clear();
         _referenceNetMeasuredOn = null;
         _referenceReturnNet = null;
 
@@ -345,6 +447,7 @@ public sealed partial class RailRfViewModel
         // Clearing it also means the next pick walks the copper that is actually loaded.
         SelectedNet = null;
         NetPreview = null;
+        NetPreviewNote = "";
 
         // The marks are CLEARED here and not re-measured, which is the difference between an
         // invalidation and a recomputation. This runs on every live artwork edit in the layout
@@ -369,6 +472,7 @@ public sealed partial class RailRfViewModel
     internal void RefreshNetMarks()
     {
         string? reference = ReferenceReturnNet;
+        MergeSchematicGround(reference);
         foreach (var row in AvailableNets)
             row.IsReferenceReturn = reference is { Length: > 0 }
                                  && string.Equals(row.Name, reference, StringComparison.OrdinalIgnoreCase);

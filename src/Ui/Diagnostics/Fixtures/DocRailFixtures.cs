@@ -174,6 +174,7 @@ public static class DocRailFixtures
                 NetPoints = resolvedPads.NetPoints,
                 Nets = resolvedPads.Nets,
                 NetOrigin = resolvedPads.NetOrigin,
+                TurnedParts = resolvedPads.Turned,
                 ReferenceNet = document.ReferenceNet,
             },
             placement: placement,

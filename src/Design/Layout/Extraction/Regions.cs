@@ -42,7 +42,12 @@ namespace CircuitRF.Design.Layout.Extraction;
 /// <param name="Net">The net name, as that file spells it.</param>
 /// <param name="X">DBU, on the artwork's own coordinate system.</param>
 /// <param name="Y">DBU.</param>
-public readonly record struct PdnNetPoint(string Net, long X, long Y);
+/// <param name="Layer">The drawing layer the point's LAND is on, where that is known — a placed
+/// footprint's pad is; a netlist record and a via are not. <see cref="Regions.Walk"/> seeds a
+/// point that states one ON THAT LAYER ONLY (field report, 2026-09-22): a pad is a coordinate, a
+/// ground plane is usually under every one of them, and before a reference layer was named there was
+/// nothing to exclude — so picking any net on such a board outlined the whole board.</param>
+public readonly record struct PdnNetPoint(string Net, long X, long Y, LayerKey? Layer = null);
 
 /// <summary>
 /// One galvanically-joined island of a rail's copper, across every layer it reaches.
@@ -134,18 +139,18 @@ public static class Regions
         if (pieces.Count == 0)
             return new PdnRailRegionSet([], [], "No copper was found on any layer.", diagnostics);
 
-        var railSeeds = new List<(long X, long Y)>();
-        var refSeeds = new List<(long X, long Y)>();
+        var railSeeds = new List<(long X, long Y, LayerKey? Layer)>();
+        var refSeeds = new List<(long X, long Y, LayerKey? Layer)>();
 
         foreach (var p in netPoints)
         {
             if (railNet is { Length: > 0 } && string.Equals(p.Net, railNet, StringComparison.OrdinalIgnoreCase))
-                railSeeds.Add((p.X, p.Y));
+                railSeeds.Add((p.X, p.Y, p.Layer));
             else if (referenceNet is { Length: > 0 } && string.Equals(p.Net, referenceNet, StringComparison.OrdinalIgnoreCase))
-                refSeeds.Add((p.X, p.Y));
+                refSeeds.Add((p.X, p.Y, null));
         }
 
-        railSeeds.AddRange(extraRailSeeds);
+        foreach (var (x, y) in extraRailSeeds) railSeeds.Add((x, y, null));
 
         // A seed point sits over the RETURN as well as over the rail — a pad is a coordinate and the
         // reference plane is usually under all of them. Seeding off it would make the reference an
@@ -355,6 +360,47 @@ public static class Regions
         return bestVotes > 0 && tied == 1 ? best : null;
     }
 
+    /// <summary>
+    /// The OTHER net names standing on <paramref name="islands"/>, with how many pins each — the
+    /// short a net pick would otherwise show as a board-sized outline and nothing else (field report,
+    /// 2026-09-22).
+    /// </summary>
+    /// <remarks>
+    /// <b>Only points that state their land's layer are asked</b> (<see cref="PdnNetPoint.Layer"/>):
+    /// a placed pad is where a schematic pin stands and is evidence of what the copper under it is
+    /// called; a netlist record or a via has no layer to be on, and asked of every layer it would
+    /// find the plane under every pad and call the whole board shorted.
+    /// </remarks>
+    /// <param name="sameNet">Names that ARE the net walked — its own, and any alias of it (the
+    /// schematic's ground <c>0</c> where the walked net is the measured return). Compared
+    /// case-insensitively.</param>
+    public static IReadOnlyList<(string Net, int Pins)> OtherNetsOn(
+        IReadOnlyList<PdnRegion> islands, IReadOnlyList<PdnNetPoint> netPoints, IReadOnlyCollection<string> sameNet)
+    {
+        ArgumentNullException.ThrowIfNull(islands);
+        ArgumentNullException.ThrowIfNull(netPoints);
+        ArgumentNullException.ThrowIfNull(sameNet);
+
+        var same = new HashSet<string>(sameNet, StringComparer.OrdinalIgnoreCase);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var point in netPoints)
+        {
+            if (point.Layer is not { } land || same.Contains(point.Net)) continue;
+
+            foreach (var island in islands)
+            {
+                if (!island.Bounds.Contains(point.X, point.Y)) continue;
+                if (!island.Copper.Any(c => c.Layer == land && Contains(c.Paths, point.X, point.Y))) continue;
+                counts[point.Net] = counts.GetValueOrDefault(point.Net) + 1;
+                break;
+            }
+        }
+
+        return [.. counts.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                         .Select(kv => (kv.Key, kv.Value))];
+    }
+
     private static string Describe(string what, IReadOnlyList<PdnRegion> islands) =>
         islands.Count switch
         {
@@ -364,19 +410,23 @@ public static class Regions
         };
 
     /// <summary>The net indices of every piece containing one of <paramref name="seeds"/>.</summary>
+    /// <remarks>A seed that states its land's layer meets only the piece on that layer — see
+    /// <see cref="PdnNetPoint.Layer"/>. One that does not (a netlist record, a via, a clicked anchor)
+    /// meets every layer, which is what those have always done.</remarks>
     private static HashSet<int> NetsAt(
         IReadOnlyList<DrcNetPiece> pieces,
-        IReadOnlyList<(long X, long Y)> seeds,
+        IReadOnlyList<(long X, long Y, LayerKey? Layer)> seeds,
         bool anyLayer,
         LayerKey onlyLayer = default,
         LayerKey? exceptLayer = null)
     {
         var found = new HashSet<int>();
-        foreach (var (x, y) in seeds)
+        foreach (var (x, y, land) in seeds)
             foreach (var piece in pieces)
             {
                 if (exceptLayer is { } skip && piece.Layer == skip) continue;
                 if (!anyLayer && piece.Layer != onlyLayer) continue;
+                if (land is { } own && piece.Layer != own) continue;
                 if (!piece.Bounds.Contains(x, y)) continue;
                 if (Contains(piece.Paths, x, y)) found.Add(piece.Net);
             }

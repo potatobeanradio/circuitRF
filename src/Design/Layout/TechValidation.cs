@@ -12,10 +12,56 @@ namespace CircuitRF.Design.Layout;
 public enum TechProblemArea { Layers, Stackup, Drc, Interchange }
 
 /// <summary>One technology-consistency problem, and the tab that owns it.</summary>
-public sealed record TechProblem(TechProblemArea Area, string Message);
+public sealed record TechProblem(TechProblemArea Area, string Message, TechFix? Fix = null);
+
+/// <summary>
+/// A one-step repair a problem can offer — attach <paramref name="Layer"/> to the conductor named
+/// <paramref name="ConductorName"/>. Offered only where exactly one layer is the plausible answer,
+/// so pressing it is never a guess the user did not see.
+/// </summary>
+/// <param name="Label">What the button says.</param>
+public sealed record TechFix(string Label, string ConductorName, LayerKey Layer);
 
 public static class TechValidation
 {
+    /// <summary>
+    /// The one drawing layer that is plausibly <paramref name="conductor"/>'s copper, or null where
+    /// there is no single answer.
+    /// </summary>
+    /// <remarks>
+    /// <b>A SUGGESTION, never a stackup decision</b> — it decides the words of a message and what a
+    /// button offers, and nothing is attached until somebody presses it. The candidates are the
+    /// layers no Conductor or Via entry claims, less the drill layers and the artwork kinds a
+    /// fabrication set always carries (<c>GerberLayerCascade.IsNonConductorArtwork</c>, suffix
+    /// included). One whose name matches the conductor's, ignoring case, is the answer; failing that,
+    /// a sole candidate is; anything else is no answer at all.
+    /// </remarks>
+    public static LayerDef? LikelyDrawingLayerFor(Technology tech, StackupLayer conductor)
+    {
+        ArgumentNullException.ThrowIfNull(tech);
+        ArgumentNullException.ThrowIfNull(conductor);
+
+        var claimed = tech.Stackup.Layers
+            .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+
+        var candidates = tech.Layers
+            .Where(l => !claimed.Contains(l.Key))
+            .Where(l => !string.Equals(l.Purpose, Interchange.GerberLayerCascade.DrillPurpose, StringComparison.Ordinal))
+            .Where(l => !Interchange.GerberLayerCascade.IsNonConductorArtwork(
+                l.Interchange?.GerberFileFunction, l.Name, l.Interchange?.GerberSuffix))
+            .ToList();
+
+        var byName = candidates
+            .Where(l => string.Equals(l.Name?.Trim(), conductor.Name?.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return byName.Count == 1 ? byName[0]
+             : byName.Count == 0 && candidates.Count == 1 ? candidates[0]
+             : null;
+    }
+
     /// <summary>The messages alone, in <see cref="Analyze"/>'s order — the long-standing shape of
     /// this API, kept for every caller that only wants to say what is wrong.</summary>
     public static IReadOnlyList<string> Validate(Technology tech)
@@ -124,10 +170,20 @@ public static class TechValidation
             var inner = conductorEntries[i];
             if (inner.DrawingLayers.Count > 0) continue;
 
+            // Field report, 2026-09-22: the designer's answer to this message was "I have a gnd
+            // layer". He did — a drawing layer named `gnd`, which the conductor `GND` had never been
+            // joined to, and nothing here said the two were about each other. Where one layer is the
+            // plausible answer it is NAMED, and the editor offers to attach it.
+            var likely = LikelyDrawingLayerFor(tech, inner);
             problems.Add(new(TechProblemArea.Stackup,
                 $"Conductor \"{inner.Name}\" claims no drawing layer, so no artwork sits on it: it is " +
                 "priced by nothing, extracted by nothing, and cannot be named as a reference return. " +
-                "Attach the drawing layer that carries this plane's copper on the Stackup tab."));
+                (likely is null
+                    ? "Attach the drawing layer that carries this plane's copper on the Stackup tab — " +
+                      "the picker is at the foot of the conductor's card."
+                    : $"Drawing layer '{likely.Name}' is claimed by no conductor and is very likely " +
+                      "this plane's copper: attach it to this conductor."),
+                likely is null ? null : new TechFix($"Attach '{likely.Name}' to {inner.Name}", inner.Name, likely.Key)));
         }
 
         // ── GI3 R-gi3-8 — two entries with one name ───────────────────────────────────────────────

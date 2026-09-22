@@ -1,5 +1,69 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Two-pin parts turned end for end, a pad that seeded the plane under it, and a plane nobody attached (2026-09-22)
+
+From a fourth round of outside railRF use: an imported two-sided Gerber board with an inner plane, a
+schematic the designer drew for it, and footprints he dragged onto the artwork after Update Layout.
+The board must not enter the repo and the reporter must not be named; the window half is in
+`src/Ui/RESOLVED.md` for the same date. Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport4Tests.cs`.
+
+### The copper was right and the names were not — 30 of 55 parts sat at 180°
+
+Picking a supply net outlined ~1,950 mm² of copper, the whole board; so did a crystal-local net. Every
+extractor was correct. `PlacedPins.Of` binds a schematic net to a land by PIN NUMBER, and 30 of the
+board's 55 two-terminal parts had been dropped onto their lands turned end for end — so each put a
+schematic net on the ground side of its part, the net walk seeded the ground copper, and the pour
+took everything with it. An 0402 is the same picture at 0° and 180°; nothing on screen could have
+shown him.
+
+`Extraction/TurnedParts` reads which way round each part sits from the copper, for resistors,
+capacitors and inductors only — `LvsReduce.ParallelKey`'s own line, for its own reasons (a diode's
+reversal is a different circuit; a two-terminal cell's symmetry is unknown). Measured on the reported
+board: every net he named came back the size he said (the supply 13.1 mm², one region, trace only;
+the crystal net 6.2 mm²; the other supply 33.3 mm²).
+
+- **The evidence has to be GALVANIC, vias included.** Read on the top layer alone, 18 parts turn and
+  two nets stay shorted to ground: a decoupling capacitor's ground land usually sits alone on a pad
+  with a via down to the plane, and only through that via does it share a net with the other ground
+  pins. `CopperPieces` (the stamped partition, or one built for this) is the evidence.
+- **A local search turns whichever part it visits first when two disagree and nothing else is on
+  either net** — both readings fit the copper equally. So each group of parts joined by shared nets
+  is compared against itself fully swapped: equal fit keeps the reading that turns FEWER parts, and
+  an even split turns none. `ATieIsNeverTurned` is the row that fails without it.
+- **A turned part's two pads trade places; pins keep their names and nets**, so an anchor written
+  `C19.1` still means the terminal the schematic calls pin 1.
+- `TurnedParts.HalfTurn` turns about the midpoint of the two lands, `T' = P1 + P2 − T`, not about
+  the footprint origin — exact, and independent of the mirror flag. A footprint not centred on its
+  origin would otherwise walk off its copper.
+- Margins on the reported board run from +1 to +37 agreeing pins. A +1 turn is legitimate evidence
+  and also the kind worth looking at; the window lists every part it turned.
+
+### A pad seeded the plane under it whenever no reference layer was named
+
+`Regions.Walk` seeded a net point on EVERY layer except the reference, because a pad is a coordinate.
+Before a reference is chosen the preview excludes nothing (`AbsentLayer`), so on any board with a
+plane under its pads, picking ANY net outlined the plane. `PdnNetPoint` now carries the land's
+`Layer` where it is known (a placed pad; not a netlist record, not a via), and the walk seeds only
+that layer. **`ReferenceNetOn` deliberately still reads every layer**: a ground pad's via down to the
+plane is exactly its evidence there, and reading the land alone would lose it.
+
+### "I have a gnd layer"
+
+The warning *Conductor "GND" claims no drawing layer…* was answered with *I have a gnd layer*. He did
+— a drawing layer named `gnd`, which the conductor he added by hand was never joined to, and nothing
+said the two were about each other. `TechValidation.LikelyDrawingLayerFor` names the one plausible
+candidate (unclaimed, not drill, not fabrication artwork; a case-insensitive name match first, else a
+sole candidate, else nothing), the message names it, and `TechProblem.Fix` lets the editor attach it
+in one press. `PdnUnclaimedCopper.Sentence` names the conductor too, from the same function.
+
+### A fabrication drawing reported as copper no conductor claims
+
+The designer's import predates the rung-3 `fab` row, so his fabrication drawing is a layer named after
+its file's STEM (the board's part number with `FAB` glued on) — which `IsNonConductorArtwork` could not
+recognise. Its drill chart and stackup table were reported as unclaimed copper beside the plane that
+really was. The three-argument overload also runs the recorded Gerber SUFFIX through the same rung-3
+table an import uses.
+
 ## Three companion readers, and two refusals that named nothing real (2026-09-22)
 
 From a third round of outside railRF use on a production board. The board itself must not enter the

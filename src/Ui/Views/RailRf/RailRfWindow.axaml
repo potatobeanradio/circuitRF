@@ -1055,6 +1055,24 @@
                                                              IsVisible="{Binding !WillShowExistingRail}"/>
                                         </Panel>
                                     </Button>
+                                    <!-- Field report, 2026-09-22: a net whose outline covered the
+                                         whole board said nothing else, so the only reading left
+                                         was that railRF was wrong. This names the other nets
+                                         standing on that copper. -->
+                                    <TextBlock Classes="note" Text="{Binding NetPreviewNote}"
+                                               IsVisible="{Binding HasNetPreviewNote}"/>
+                                    <!-- The same report: two-terminal parts placed end for end,
+                                         read from the copper, named, and turned in the layout on
+                                         request — the only fix that makes the document agree. -->
+                                    <StackPanel Spacing="3" IsVisible="{Binding HasPartsReadAsTurned}">
+                                        <TextBlock Classes="note" Text="{Binding PartsReadAsTurnedNote}"/>
+                                        <Button Content="{Binding TurnPartsButtonText}" FontSize="10" Padding="8,2"
+                                                HorizontalAlignment="Stretch"
+                                                Command="{Binding TurnPartsCommand}"
+                                                ToolTip.Tip="Turns each named part 180° about its own two lands, so each land takes the other's place and the layout states the pin order the copper already shows. With the layout open in its own window this is one undoable edit there; otherwise the .clay file is written."/>
+                                    </StackPanel>
+                                    <TextBlock Classes="note" Text="{Binding TurnPartsProblem}"
+                                               IsVisible="{Binding HasTurnPartsProblem}"/>
                                 </StackPanel>
                             </Border>
 

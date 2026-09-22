@@ -327,6 +327,9 @@ public static class RailArtwork
     /// second <c>CopperPieces.Build</c> over one board is a second partition that nothing
     /// compares. Its <c>Refusals</c> are also the writers' own refusal (R-ab3-2e) — a piece of
     /// copper carrying two names is a board nothing may be written for.</param>
+    /// <param name="TurnedParts">The parts <see cref="Layout.Extraction.TurnedParts"/> read as placed at
+    /// 180° to their schematic — their pads in <paramref name="Pads"/> already carry the reading.
+    /// Read through <see cref="RailPadResolution.Turned"/>, which is never null.</param>
     /// <param name="Schematic">The schematic beside the artwork, as this resolution read it —
     /// carried for <see cref="Stamped"/>'s reason. A bill of materials wants each part's value,
     /// footprint and type off the same <c>.csch</c> the nets came from, and resolving it a second
@@ -341,7 +344,13 @@ public static class RailArtwork
         PdnNetOrigin                                          NetOrigin,
         System.Collections.Generic.IReadOnlyList<PdnDivergence> Divergences,
         CopperPieces                                       Stamped,
-        PdnSchematicNets                                      Schematic);
+        PdnSchematicNets                                      Schematic,
+        System.Collections.Generic.IReadOnlyList<TurnedPart>? TurnedParts = null)
+    {
+        /// <summary>The two-terminal parts the copper reads as placed at 180° to their schematic —
+        /// <see cref="Layout.Extraction.TurnedParts"/>. Never null.</summary>
+        public System.Collections.Generic.IReadOnlyList<TurnedPart> Turned => TurnedParts ?? [];
+    }
 
     /// <summary>
     /// The board's pads and their nets: the netlist's where it speaks, the artwork's everywhere
@@ -413,7 +422,8 @@ public static class RailArtwork
         notes.AddRange(stamped.Refusals);
 
         var extents = new System.Collections.Generic.Dictionary<PlacedPin, long>();
-        var artwork = view is null
+        var origins = new System.Collections.Generic.List<PlacedPinOrigin>();
+        IReadOnlyList<PlacedPin> artwork = view is null
             ? []
             : PlacedPins.Of(
                 view, clayPath, technology,
@@ -424,7 +434,51 @@ public static class RailArtwork
                 notes,
                 id => schematic.For(id)?.Nets ?? [],
                 stamped,
-                extents);
+                extents,
+                origins);
+
+        // ── A TWO-TERMINAL PART AT 180° TO ITS SCHEMATIC (field report, 2026-09-22) ─────────────
+        //
+        // The schematic's binding above is by PIN NUMBER, and on a resistor, a capacitor or an
+        // inductor the pin number is the one thing the board cannot show: an 0402 turned end for end
+        // is the same picture. TurnedParts reads which way round each one sits from the copper — its
+        // own header says why only those three kinds, and why only on strict evidence — and the
+        // parts it turns are REPORTED, never absorbed, so the window can offer to turn them in the
+        // layout. Before the divergence comparison, so a board netlist is compared against the
+        // reading the run will actually use.
+        IReadOnlyList<TurnedPart> turned = [];
+        if (view is not null && technology is not null && schematic.Any
+            && artwork.Count > 0 && origins.Count == artwork.Count)
+        {
+            CircuitRF.Design.Layout.Lvs.DeviceKind KindOf(int instance) =>
+                instance >= 0 && instance < view.Instances.Count
+                    ? schematic.For(view.Instances[instance].SchematicId)?.Kind ?? CircuitRF.Design.Layout.Lvs.DeviceKind.Unknown
+                    : CircuitRF.Design.Layout.Lvs.DeviceKind.Unknown;
+
+            bool anySymmetric = false;
+            for (int i = 0; i < view.Instances.Count && !anySymmetric; i++)
+                anySymmetric = TurnedParts.IsSymmetric(KindOf(i));
+
+            if (anySymmetric)
+            {
+                // The partition the stamps were read through where there is one — it is the same
+                // copper, and a second connectivity walk of one board is a second answer nothing
+                // compares. Built here only where the board states no net on any shape.
+                var partition = stamped.Any ? stamped : CopperPieces.Build(shapes ?? view.Shapes, technology);
+                var reading = TurnedParts.Read(artwork, origins, view, KindOf, partition);
+
+                if (reading.Turned.Count > 0)
+                {
+                    for (int i = 0; i < artwork.Count; i++)
+                        if (reading.Pads[i] != artwork[i] && extents.Remove(artwork[i], out long w))
+                            extents[reading.Pads[i]] = w;
+
+                    artwork = reading.Pads;
+                    turned = reading.Turned;
+                    notes.Add(TurnedParts.Sentence(turned));
+                }
+            }
+        }
 
         // R-ab2-5. Computed BEFORE the precedence filter, which is the only reason the artwork's
         // reading of a part the netlist also names is worked out at all: R-ab1-3a discards those
@@ -451,8 +505,15 @@ public static class RailArtwork
         var points = new System.Collections.Generic.List<PdnNetPoint>();
         var seen = new System.Collections.Generic.HashSet<PdnNetPoint>();
         foreach (var pt in PdnBoardPads.NetPointsOf(netlist)) if (seen.Add(pt)) points.Add(pt);
+        // Each artwork pad's LAND layer rides along, so the walk seeds the land and not a plane under
+        // it (PdnNetPoint.Layer). `artwork` and `origins` are one-to-one by construction — a turned
+        // part's pads moved, and their lands' layers did not.
+        var landLayers = new System.Collections.Generic.Dictionary<PlacedPin, LayerKey>();
+        if (origins.Count == artwork.Count)
+            for (int i = 0; i < artwork.Count; i++) landLayers.TryAdd(artwork[i], origins[i].Layer);
+
         if (view is not null)
-            foreach (var pt in PlacedPins.NetPointsOf(view, fromArtwork, stamped))
+            foreach (var pt in PlacedPins.NetPointsOf(view, fromArtwork, stamped, landLayers))
                 if (seen.Add(pt)) points.Add(pt);
 
         // ── R-ab2-4a: the RESOLVED net set, which is what the pick list offers ──────────────────
@@ -482,7 +543,7 @@ public static class RailArtwork
 
         return new RailPadResolution(
             pads, points, fromNetlist.Count, fromArtwork.Count, notes, [.. nets], origin, divergences,
-            stamped, schematic);
+            stamped, schematic, turned);
     }
 
     // ── THE WRITING HALF OF THE SAME WALK (owner, 2026-09-21) ────────────────────────────────────

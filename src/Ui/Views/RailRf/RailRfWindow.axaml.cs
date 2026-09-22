@@ -93,6 +93,15 @@ public partial class RailRfWindow : Window
             // there is a dispatcher — the same split the rest of this view model keeps.
             vm.PostToUi = a => Dispatcher.UIThread.Post(a);
             vm.RunOffThread = (work, token) => System.Threading.Tasks.Task.Run(work, token);
+
+            // The Turn gesture edits the layout through its OWN window's command stack where one has
+            // the `.clay` open — undoable there, and dirtying that document like any other edit.
+            vm.EditLiveLayout = (clay, edits, description) =>
+            {
+                if (WorkspaceLocator.Any()?.LiveLayoutSession(clay) is not { } session) return false;
+                session.ReplaceInstances(edits, description);
+                return true;
+            };
             InstallSaveHook(vm);
             InstallMenuHooks(vm);
 

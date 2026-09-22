@@ -1,5 +1,34 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF field report 4 — the whole board outlined for one net (2026-09-22)
+
+Outside use on an imported two-sided Gerber board with an inner plane and a hand-drawn schematic. The
+extraction half — the turned-parts reading, the layered seed, the likely-layer suggestion — is in
+`src/Design/RESOLVED.md` for the same date. Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport4Tests.cs`.
+
+- **The Turn gesture edits through the layout's OWN command stack where a window has the `.clay`
+  open** (`WorkspaceViewModel.LiveLayoutSession` → `LayoutEditorViewModel.ReplaceInstances`), so it
+  is one undoable entry that dirties that document. With none open it writes the file and railRF's
+  own copy, refusing with nothing written if the file no longer holds the placements railRF read.
+- **`ReplaceInstanceCommand` notifies per instance**; a composite of thirty is thirty `Changed`
+  events, each of which a watching railRF window answers with a full re-flatten.
+  `ReplaceInstancesCommand` does all of them in one entry and one notification.
+- **`NotifyArtworkChanged` re-flattens the shapes and has never re-read the PADS.** A part moved in
+  the layout window while railRF is open leaves the net points where the part was. Deliberately NOT
+  changed here: the pad funnel builds a galvanic partition, and one per keystroke is the shape
+  R-rail19-2c forbids. `RefreshBoardPads` re-reads them once, for a gesture that knows it moved parts
+  (Turn). A debounced refresh after layout edits is the open follow-up.
+- **The schematic's ground `0` merges into the MEASURED return**, never before it — railRF does not
+  know which net the return is until the reference is confirmed (R-rail19-1c). The row reads
+  *the reference return — also the schematic's '0'*, and the merge is undone if the return moves.
+- **A net whose copper also holds other nets' pins now says which** (`Regions.OtherNetsOn`), counting
+  only points with a land layer — a layerless point over a plane would call every board shorted.
+- **The empty parts pane told him to confirm and run while the strip said "solving…"**, so he read it
+  as the run having failed. It now says the run is extracting.
+- **The technology editor's banner renders `TechProblem.Fix` as a button** under the messages; it
+  makes the same undoable edit the drawing-layer checkbox makes. The card still opens on its four
+  field rows (owner, 2026-09-13), which is exactly why the picker was out of sight.
+
 ## The Instances panel and Design ▸ Find Instance… (2026-09-22, brief-find-instance-panel)
 
 A dockable **Instances** panel (`InstancesTool`, id `Instances`, in no shipped default layout) listing

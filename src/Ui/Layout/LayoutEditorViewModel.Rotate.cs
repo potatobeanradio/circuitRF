@@ -220,6 +220,18 @@ public partial class LayoutEditorViewModel
         if (command is not null) Execute(command);
     }
 
+    /// <summary>
+    /// Replaces several instances as ONE undoable edit — for a window next door that has worked out
+    /// the new placements itself (railRF turning parts the copper reads as placed at 180°). Through
+    /// <see cref="Execute"/>, so it is refused on a read-only PCell like every other edit.
+    /// </summary>
+    internal void ReplaceInstances(
+        IReadOnlyList<(int Index, LayoutInstance Before, LayoutInstance After)> edits, string description)
+    {
+        if (edits.Count == 0) return;
+        Execute(new Commands.Layout.ReplaceInstancesCommand(Model, edits, description));
+    }
+
     /// <summary>Next 90° step. CCW advances R0→R90→R180→R270; CW runs the other way.</summary>
     private static LayoutRotation AdvanceRotation(LayoutRotation r, bool clockwise) => clockwise
         ? r switch

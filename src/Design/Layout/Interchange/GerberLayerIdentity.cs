@@ -96,6 +96,28 @@ public static class GerberLayerCascade
         return false;
     }
 
+    /// <summary>
+    /// <see cref="IsNonConductorArtwork(string?, string?)"/>, also asking the layer's Gerber SUFFIX
+    /// through the rung-3 table (field report, 2026-09-22).
+    /// </summary>
+    /// <remarks>
+    /// <b>A layer named after its file's STEM says nothing about what it is.</b> An import made before
+    /// the table knew the fabrication drawing named that layer after the file — the board's own part
+    /// number with <c>FAB</c> glued to the end — and the suffix it recorded is the one word that says
+    /// what the file was. Unasked, a fabrication drawing's drill chart and stackup table were
+    /// reported as copper no conductor claims, right beside the plane that really was. The suffix
+    /// goes through the SAME table an import reads a set by, so the two cannot disagree.
+    /// </remarks>
+    public static bool IsNonConductorArtwork(string? fileFunction, string? layerName, string? gerberSuffix)
+    {
+        if (IsNonConductorArtwork(fileFunction, layerName)) return true;
+        if (gerberSuffix is not { Length: > 0 } suffix) return false;
+
+        return Heuristic($"{layerName ?? "layer"}.{suffix}") is { } guess
+               && string.Equals(guess.Purpose, UnidentifiedPurpose, StringComparison.Ordinal)
+               && IsNonConductorArtwork(null, guess.LayerName);
+    }
+
     private static readonly string[] DeclaredNonConductorKinds =
     [
         "Soldermask", "Paste", "SolderPaste", "Legend", "Profile", "AssemblyDrawing",

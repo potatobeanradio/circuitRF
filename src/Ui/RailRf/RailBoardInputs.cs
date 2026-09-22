@@ -102,6 +102,13 @@ public sealed record RailBoardInputs
     /// <summary>Which of the three claims named them — what the strip says (R-ab2-4d).</summary>
     public PdnNetOrigin NetOrigin { get; init; } = PdnNetOrigin.None;
 
+    /// <summary>
+    /// The two-terminal parts the copper reads as placed at 180° to their schematic
+    /// (<c>TurnedParts</c>, field report 2026-09-22). <see cref="Pads"/> already carries the reading;
+    /// this is what the window NAMES, and what its Turn gesture turns in the layout.
+    /// </summary>
+    public IReadOnlyList<TurnedPart> TurnedParts { get; init; } = [];
+
     /// <summary>The board outline. Required by <c>FilledToOutline</c>.</summary>
     public Paths64? BoardOutline { get; init; }
 

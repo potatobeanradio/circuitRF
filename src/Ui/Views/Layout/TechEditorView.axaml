@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:des="using:CircuitRF.Design.Layout"
              xmlns:conv="using:CircuitRF.Ui.Converters"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
@@ -379,6 +380,7 @@
             <!-- HorizontalScrollBarVisibility is Disabled EXPLICITLY, so the row below is measured
                  against the banner's real width and the text has something to wrap at. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="4">
                 <ItemsControl ItemsSource="{Binding ViewModel.ActiveTabIssues}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
@@ -407,6 +409,22 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- A problem with ONE plausible answer offers it as a button (field report,
+                     2026-09-22): "Conductor GND claims no drawing layer" was answered with "I have a
+                     gnd layer", because the picker that joins the two sits below the fold of the
+                     conductor's card. The button makes the same undoable edit that checkbox does. -->
+                <ItemsControl ItemsSource="{Binding ViewModel.ActiveTabFixes}"
+                              IsVisible="{Binding ViewModel.HasActiveTabFixes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="des:TechFix">
+                            <Button Content="{Binding Label}" FontSize="11" Padding="8,2" Margin="18,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding $parent[UserControl].((lay:TechDocument)DataContext).ViewModel.ApplyTechFixCommand}"
+                                    CommandParameter="{Binding}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </StackPanel>
             </ScrollViewer>
         </Border>
 

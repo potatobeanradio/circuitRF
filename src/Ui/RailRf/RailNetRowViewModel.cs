@@ -33,11 +33,22 @@ public sealed partial class RailNetRowViewModel(string name) : ObservableObject
     [ObservableProperty]
     private bool _isReferenceReturn;
 
+    /// <summary>
+    /// Another name this very net carries, or null — the schematic's ground <c>0</c> once the
+    /// measured return has absorbed it (owner, 2026-09-22), so the one row says it is both.
+    /// </summary>
+    [ObservableProperty]
+    private string? _alsoNamed;
+
     /// <summary>The mark's own words, or empty. Bound rather than composed in the AXAML so the row
     /// and the refusal say the same thing.</summary>
-    public string Mark => IsReferenceReturn ? "the reference return" : "";
+    public string Mark => !IsReferenceReturn ? ""
+        : AlsoNamed is { Length: > 0 } other ? $"the reference return — also the schematic's '{other}'"
+        : "the reference return";
 
     partial void OnIsReferenceReturnChanged(bool value) => OnPropertyChanged(nameof(Mark));
+
+    partial void OnAlsoNamedChanged(string? value) => OnPropertyChanged(nameof(Mark));
 
     public override string ToString() => Name;
 }

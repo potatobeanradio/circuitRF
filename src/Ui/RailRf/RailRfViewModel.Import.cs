@@ -98,6 +98,7 @@ public sealed partial class RailRfViewModel
             NetPoints    = resolvedPads.NetPoints,
             Nets         = resolvedPads.Nets,
             NetOrigin    = resolvedPads.NetOrigin,
+            TurnedParts  = resolvedPads.Turned,
             ReferenceNet = _document.ReferenceNet,
         };
         Placement = placement;

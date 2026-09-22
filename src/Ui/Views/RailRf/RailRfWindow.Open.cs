@@ -170,6 +170,7 @@ public partial class RailRfWindow
             NetPoints      = resolvedPads.NetPoints,
             Nets           = resolvedPads.Nets,
             NetOrigin      = resolvedPads.NetOrigin,
+            TurnedParts    = resolvedPads.Turned,
         };
 
         var openNotes = resolution.Diagnostics.Concat(flattenNotes).ToList();

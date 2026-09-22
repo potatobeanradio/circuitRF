@@ -100,6 +100,25 @@ yours, so nothing is rounded by the choice.</p>
 | **The band and the aggressors** | The frequency span to sweep, and the things on your board that actually generate energy &mdash; the crystal, the converter, the radio reference. |
 
 <div class="callout note">
+<span class="label">A two-pin part placed end for end</span>
+<p>A resistor, capacitor or inductor looks the same at 0° and at 180°, so a footprint dragged onto its
+lands can easily sit with its pin 1 on the copper its pin 2 belongs to. railRF reads which way round each
+one really is from the copper it sits on, and names every part it read as turned under the pick list.
+<b>Turn them in the layout</b> turns those parts 180° about their own lands, so the layout says what
+the copper shows. With the layout open in its own window it is one undoable edit there; otherwise railRF
+writes the <code>.clay</code> itself. Where the copper cannot tell which way round a part is, nothing is
+turned, and picking the net says which other nets' pins are standing on its copper.</p>
+</div>
+
+<div class="callout note">
+<span class="label">A plane the stackup never received</span>
+<p>An inner plane imported from a Gerber file named after its net comes in as a drawing layer, and a
+conductor added to the stackup by hand does not know about it. Where one unattached drawing layer is the
+plausible match, the technology editor's warning names it and offers an <b>Attach</b> button that joins
+the two in one press.</p>
+</div>
+
+<div class="callout note">
 <span class="label">A load with no current is an observation port</span>
 <p>Leave a load row's current <b>empty</b> and it stops being a load: it contributes nothing to the DC
 solve and is still reported &mdash; listed as <i>observed</i> rather than quietly dropped &mdash; and over

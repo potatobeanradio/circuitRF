@@ -450,6 +450,17 @@ public sealed partial class RailRfViewModel
             // no menu item, nothing — so a designer who had just placed two footprints read that
             // sentence, went looking for the gesture, and reported twice that his parts never
             // showed up. A pane that names a gesture it does not have is worse than a silent one.
+            // ── AND NOT WHILE IT IS BEING EXTRACTED (field report, 2026-09-22) ─────────────────
+            //
+            // The strip said "solving…" and this pane, directly above it, told the designer to
+            // confirm the reference and run — the thing he had just done. So he read the empty pane
+            // as the run having failed, and reported it. While a run is in flight the pane says it is
+            // waiting for that run.
+            if (PartOffer.State == RailDiscoveryState.NotExtracted && IsSolving)
+                return "railRF is extracting this rail's copper now. The parts sitting between the " +
+                       "rail and its reference are offered here when that run finishes — or add rows " +
+                       "yourself with +, which does not wait for it.";
+
             if (PartOffer.State == RailDiscoveryState.NotExtracted)
                 return "This rail's copper has not been extracted yet. Confirm its reference return " +
                        "and run, and railRF will look for the parts sitting between the rail and " +
