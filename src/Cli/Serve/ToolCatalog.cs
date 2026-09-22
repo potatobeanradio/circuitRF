@@ -686,6 +686,12 @@ internal static class ToolCatalog
                           + "default the unit of comparison is the cell, which is what a layout draws."),
                         new("noReduce", "--no-reduce", OptKind.Flag,
                             "Do not collapse series, parallel or jumper groups on either side."),
+                        new("recognize", "--recognize", OptKind.Flag,
+                            "Also read devices out of COPPER, by the technology's DeviceRules deck. "
+                          + "Off by default and for a design circuitRF authored: a placed instance "
+                          + "already says what a part is, and the instance always wins. It is for "
+                          + "artwork carrying no instances at all. A technology stating no deck "
+                          + "recognises nothing, which is not an error."),
                         Set,
                         new("severity", "--severity", OptKind.Str,
                             "What decides the exit code: warning or error. Default error; warnings "

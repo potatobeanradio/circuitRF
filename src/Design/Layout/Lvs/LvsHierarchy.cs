@@ -134,6 +134,23 @@ public sealed class LvsHierarchyContext
     public IReadOnlySet<string> FlattenCells { get; init; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// <c>--recognize</c> (R-lvs14-1d) — <b>tier-3 geometric device recognition, and it is OFF
+    /// unless a run asks for it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Off per RUN and off per TECHNOLOGY, and both halves are needed.</b> Turning it on for a
+    /// design circuitRF authored would re-recognise devices it already knows, from geometry, less
+    /// reliably than reading the instance that is right there; and a technology with no
+    /// <c>DeviceRules</c> block cannot recognise anything whatever a run asks for, which is not an
+    /// error.
+    ///
+    /// <para>It rides on the context rather than being threaded separately for
+    /// <see cref="Flat"/>'s reason: one object says what the whole tree was asked for, so a
+    /// sub-cell is read the same way its parent was.</para>
+    /// </remarks>
+    public bool Recognize { get; init; }
+
     /// <summary>R-lvs9-5. Shared down the whole tree, so the totals are the run's.</summary>
     public LvsHierarchyCounters Counters { get; init; } = new();
 

@@ -149,6 +149,16 @@ public static class LvsFindingIds
         "lvs.hierarchy.undeclared-contact",
         "lvs.hierarchy.flattened",
 
+        // geometric recognition (brief 14). Spelled `recognize.` rather than `device.` because
+        // every one of them is about the RECOGNITION PASS — a rule, a candidate it rejected, a
+        // formula that did not evaluate — and a reader filtering the report for "was any of this
+        // recognised rather than read" wants exactly this prefix and nothing else.
+        "lvs.recognize.in-use",
+        "lvs.recognize.terminal-count",
+        "lvs.recognize.ambiguous-axis",
+        "lvs.recognize.rule-invalid",
+        "lvs.recognize.parameter-failed",
+
         // the assembly's bond wires (brief 13)
         "lvs.wbond.wires-read",
         "lvs.wbond.foot-on-nothing",

@@ -643,6 +643,93 @@ public static class LvsDiagnostics
             + "design, or raise the ceiling if the machine can carry it.",
             ("document", document), ("devices", devices), ("ceiling", ceiling));
 
+    // ── Geometric device recognition (brief-lvs-14-recognition.md) ───────────
+    //
+    // TIER 3 IS A FALLBACK AND EVERY SENTENCE HERE SAYS SO. R-lvs14-5a: recognition answers "what
+    // does this copper look like", never "is this the device the process actually makes", and a
+    // clean report over a recognised design must not read as the stronger claim. That is why the
+    // in-use line is unconditional wherever recognition contributed, and why nothing it rejected
+    // is ever dropped in silence (R-lvs14-4c) — a pass that quietly discarded half the devices
+    // would make a design read as clean.
+
+    /// <summary>
+    /// R-lvs14-5a. <b>Unconditional wherever recognition contributed</b>, and it names the deck and
+    /// the count.
+    /// </summary>
+    /// <remarks>
+    /// Info, and the same argument as <see cref="GroundReferenceUndrawn"/>: it is an inference the
+    /// user cannot see on their own screen. There is no instance to select, no placement to click,
+    /// nothing in the drawing that says "this rectangle was read as a resistor" — so being told is
+    /// the only way anyone knows the comparison rested on a recognition at all.
+    /// </remarks>
+    public static Diagnostic RecognizeInUse(string technology, int devices, int rules)
+        => Diagnostic.Create(
+            "lvs.recognize.in-use", DiagnosticSeverity.Info,
+            "{devices} device(s) were RECOGNISED from geometry by {rules} rule(s) of '{technology}', "
+            + "not read from placed instances. Recognition says what this copper looks like; it "
+            + "cannot say whether it is the device the process actually makes.",
+            ("technology", technology), ("devices", devices), ("rules", rules));
+
+    /// <summary>
+    /// R-lvs14-3b. A candidate whose terminal count is not the two a two-terminal rule needs.
+    /// </summary>
+    /// <remarks>
+    /// <b>A warning, and NO device is emitted.</b> A body with one terminal is half a device and a
+    /// body with five is a rule matching something it was not written for; either way there is no
+    /// honest netlist entry to make. It is reported rather than skipped because R-lvs14-4c is that
+    /// every candidate the extraction rejected says why.
+    /// </remarks>
+    public static Diagnostic RecognizeTerminalCount(
+        string rule, string where, int found, int expected) => Diagnostic.Create(
+        "lvs.recognize.terminal-count", DiagnosticSeverity.Warning,
+        "Device rule '{rule}' matched a body at {where} with {found} terminal(s) where {expected} "
+        + "are needed, so no device was made from it.",
+        ("rule", rule), ("where", where), ("found", found), ("expected", expected));
+
+    /// <summary>
+    /// R-lvs14-3c. A body within a few percent of square, so which way is "along" is not decidable
+    /// from the shape.
+    /// </summary>
+    /// <remarks>
+    /// <b>The device IS emitted; only the values that depend on the axis are withheld.</b> The
+    /// topology is real and comparable — R-lvs3-5a's rule, that a device the comparison cannot
+    /// fully handle must still appear in the count — and a resistor read the wrong way round is
+    /// off by (L/W)² with nothing saying so, which is the one outcome that must not happen.
+    /// </remarks>
+    public static Diagnostic RecognizeAmbiguousAxis(
+        string rule, string path, string where, string parameters) => Diagnostic.Create(
+        "lvs.recognize.ambiguous-axis", DiagnosticSeverity.Warning,
+        "'{path}' ({rule}) is within a few percent of square at {where}, so nothing says which way "
+        + "is its length. {parameters} depend on that and were left unclaimed rather than guessed "
+        + "at — read the wrong way round a length-over-width value is out by the square of the "
+        + "ratio.",
+        ("rule", rule), ("path", path), ("where", where), ("parameters", parameters));
+
+    /// <summary>
+    /// R-lvs14-2c, at run time. <b>The deck should have been refused by <c>check</c> first</b> —
+    /// <c>TechValidation</c> parses every rule and evaluates every constant — so this fires only
+    /// where somebody ran without checking, and it names the rule rather than failing the run.
+    /// </summary>
+    public static Diagnostic RecognizeRuleInvalid(string rule, string detail) => Diagnostic.Create(
+        "lvs.recognize.rule-invalid", DiagnosticSeverity.Error,
+        "Device rule '{rule}' cannot be read and recognised nothing: {detail}",
+        ("rule", rule), ("detail", detail));
+
+    /// <summary>
+    /// R-lvs14-4b. A formula that did not evaluate on one candidate's own measurements.
+    /// </summary>
+    /// <remarks>
+    /// <b>The device keeps its terminals and claims nothing about that parameter.</b> Inventing a
+    /// value the rule did not produce is the one thing recognition may never do, and brief 10's
+    /// compare-only-where-both-claim already answers a device that claims nothing.
+    /// </remarks>
+    public static Diagnostic RecognizeParameterFailed(
+        string path, string rule, string parameter, string detail) => Diagnostic.Create(
+        "lvs.recognize.parameter-failed", DiagnosticSeverity.Warning,
+        "'{path}' ({rule}): {parameter} did not evaluate on this body's own geometry, so it claims "
+        + "no value. {detail}",
+        ("path", path), ("rule", rule), ("parameter", parameter), ("detail", detail));
+
     // ── The assembly's bond wires (brief-lvs-13-assemblies.md) ───────────────
 
     /// <summary>

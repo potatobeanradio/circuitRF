@@ -154,6 +154,53 @@ internal static class LayoutReadHierarchy
         return copper;
     }
 
+    /// <summary>
+    /// The copper tier-3 recognition may look at — <b>the root's own shapes, plus the cells
+    /// explicitly flattened for LVS, minus everything a placed DEVICE owns</b> (R-lvs14-3d,
+    /// R-lvs14-4a).
+    /// </summary>
+    /// <remarks>
+    /// <b>Both halves are the same rule stated from two sides.</b> Instances are already devices,
+    /// so a recognised device inside one would be the same device twice — and where copper belongs
+    /// to a placed device the instance wins, because it is the better evidence: the file SAYS what
+    /// that part is, and no amount of looking at its artwork improves on being told.
+    ///
+    /// <para>A cell flattened for LVS is the one case where a placement's copper is legitimately
+    /// this design's own — its internals joined the partition precisely because nobody wanted it
+    /// read as a cell — so a hand-drawn device inside a flattened shield frame is recognisable. A
+    /// flattened cell that is ALSO a device is excluded by the second half, which is the clause
+    /// that would otherwise double it.</para>
+    ///
+    /// <para>Ordinary interconnect placements — a land pattern, a via fence — are left out. They
+    /// are neither the root's own artwork nor a cell anybody asked to flatten, and R-lvs14-3d names
+    /// exactly two sources for a reason: a recognition pass that wandered into every placed cell
+    /// would find bodies in land patterns on every board that has ever been drawn.</para>
+    /// </remarks>
+    /// <param name="devicePaths">The flatten path of every placement that emitted a device, as
+    /// <c>LayoutDesignFlatten.PathOf</c> spells one.</param>
+    public static IReadOnlyList<LayoutShape> RecognizableCopper(
+        IReadOnlyList<LayoutDesignFlatten.TaggedShape> shapes,
+        LayoutView view, IReadOnlyList<PlacedCell> placed,
+        LvsHierarchyContext? hierarchy, IReadOnlySet<string> devicePaths)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "" };
+
+        for (int i = 0; i < view.Instances.Count; i++)
+        {
+            if (placed[i].CellDir is not { Length: > 0 } dir) continue;
+
+            bool asked = hierarchy is not null
+                      && hierarchy.FlattenCells.Contains(LvsHierarchyContext.NameOf(dir));
+
+            if (asked || LvsHierarchy.DeclaresFlattenForLvs(dir))
+                allowed.Add(LayoutDesignFlatten.PathOf(view.Instances[i], i));
+        }
+
+        allowed.ExceptWith(devicePaths);
+
+        return [.. shapes.Where(t => allowed.Contains(t.InstancePath)).Select(t => t.Shape)];
+    }
+
     /// <summary>Whether <paramref name="shape"/> is one of the pads a declared pin lands on.</summary>
     private static bool CoversAPin(
         LayoutShape shape, List<(long X, long Y, LayerKey Layer)> pins)

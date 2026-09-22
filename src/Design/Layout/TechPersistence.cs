@@ -32,6 +32,15 @@ public sealed class CtechFile
     /// for <see cref="FillPatterns"/>' reason: absent in every .ctech written before brief 10, and
     /// absent is what "use the shipped table" already meant, so nothing on disk changes.</summary>
     public List<LvsToleranceRule>? LvsTolerances { get; set; }
+
+    /// <summary>The geometric device-recognition deck (rev 1, additive) — nullable for
+    /// <see cref="LvsTolerances"/>' reason: absent in every .ctech written before brief 14, and
+    /// absent is what "this process recognises nothing" already meant.</summary>
+    public List<DeviceRule>? DeviceRules { get; set; }
+
+    /// <summary>The process's own named constants, which a <see cref="DeviceRule"/>'s parameter
+    /// formula may refer to (rev 1, additive).</summary>
+    public List<TechConstant>? Constants { get; set; }
 }
 
 /// <summary>Reads and writes .ctech files. Framework-free (no Avalonia / Skia).</summary>
@@ -90,6 +99,8 @@ public static class TechPersistence
         Stackup              = tech.Stackup,
         DrcRules             = [.. tech.DrcRules],
         LvsTolerances        = tech.LvsTolerances.Count > 0 ? [.. tech.LvsTolerances] : null,
+        DeviceRules          = tech.DeviceRules.Count > 0 ? [.. tech.DeviceRules] : null,
+        Constants            = tech.Constants.Count > 0 ? [.. tech.Constants] : null,
     };
 
     private static Technology FromFileModel(CtechFile file)
@@ -131,5 +142,7 @@ public static class TechPersistence
         Stackup              = file.Stackup,
         DrcRules             = [.. file.DrcRules],
         LvsTolerances        = file.LvsTolerances is { Count: > 0 } lt ? [.. lt] : [],
+        DeviceRules          = file.DeviceRules is { Count: > 0 } dr ? [.. dr] : [],
+        Constants            = file.Constants is { Count: > 0 } tc ? [.. tc] : [],
     };
 }

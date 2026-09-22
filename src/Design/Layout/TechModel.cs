@@ -598,6 +598,23 @@ public sealed class Technology
     /// </summary>
     public List<LvsToleranceRule> LvsTolerances { get; set; } = [];
 
+    /// <summary>
+    /// The geometric device-recognition deck — <b>beside <see cref="DrcRules"/> and for the same
+    /// reason</b> (brief-lvs-14-recognition.md R-lvs14-2): what a NiCr resistor looks like is a
+    /// property of the process.
+    ///
+    /// <para><b>Empty is the ordinary case and is not an error</b> (R-lvs14-1d). A technology with
+    /// no block cannot recognise anything, and recognition is off by default anyway — the primary
+    /// reading is the instance that is already in the file.</para>
+    /// </summary>
+    public List<DeviceRule> DeviceRules { get; set; } = [];
+
+    /// <summary>
+    /// The process's own named constants, which a <see cref="DeviceRule"/>'s parameter formula may
+    /// refer to (R-lvs14-2b). Empty is ordinary.
+    /// </summary>
+    public List<TechConstant> Constants { get; set; } = [];
+
     /// <summary>The stipple <paramref name="name"/> resolves to, or null for none/unknown.
     ///
     /// <para>A name that resolves to nothing yields null rather than throwing: a layer referring to a
@@ -609,5 +626,131 @@ public sealed class Technology
         foreach (var p in FillPatterns)
             if (string.Equals(p.Name, name, StringComparison.Ordinal) && p.Size > 0) return p;
         return null;
+    }
+}
+
+// ── The device-recognition deck (brief-lvs-14-recognition.md R-lvs14-2) ───────────────────────
+//
+// It sits BESIDE DrcRules, in the same file, for LvsToleranceRule's reason: recognition is a
+// property of the PROCESS — what a NiCr resistor looks like on this wafer — and not of the
+// comparison. What the deck may say is deliberately small, and every part of it is something that
+// already exists: the region is a `DrcLayerExpr`, the formulas go through the one expression
+// engine, and the kind is brief 4's own `DeviceKind`.
+//
+// ── EVERY FIELD IS A STRING, AND THAT IS THE POINT ───────────────────────────────────────────
+//
+// `Kind` is not the enum. System.Text.Json throws on an enum member it does not know, so a deck
+// carrying a typo would make the whole TECHNOLOGY unloadable — the layer table, the stackup and
+// every DRC rule with it. R-lvs14-2d says an unknown kind is a `check` error listing the real
+// ones, which it cannot be if the file never opens. The same argument keeps `Body` and
+// `Terminals` as text: a malformed expression is one unusable RULE, reported by name.
+
+/// <summary>
+/// One declared constant of the process — <b>what a recognition formula multiplies by</b>
+/// (R-lvs14-2b): a sheet resistance, a capacitance per unit area.
+/// </summary>
+/// <remarks>
+/// <b>On the TECHNOLOGY rather than on the rule</b>, because that is what it is: one wafer has one
+/// sheet resistance, and several rules may read it. It is an EXPRESSION with a unit beside it,
+/// resolved through the one expression engine exactly as a <c>.ccell</c> parameter default is —
+/// never by parsing the number out of the text.
+/// </remarks>
+public sealed class TechConstant
+{
+    /// <summary>The name a formula refers to it by.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>Its value, as an expression. May refer to another constant; a cycle is caught by
+    /// the expression engine's own cycle detection and reported by <see cref="TechValidation"/>.</summary>
+    public string Expression { get; set; } = "";
+
+    /// <summary>The unit the expression is written in — <c>Ohm</c>, <c>F</c>. Null is a bare
+    /// number, which is SI by construction.</summary>
+    public string? Unit { get; set; }
+}
+
+/// <summary>
+/// One rule of the recognition deck — <b>what a device of this process LOOKS LIKE</b>
+/// (R-lvs14-2).
+/// </summary>
+/// <remarks>
+/// <b>Read only when a run asks for it</b> (R-lvs14-1d): recognition is off by default, per run
+/// and per technology, because a design circuitRF authored already carries its devices as
+/// instances and re-recognising them from geometry is less reliable than reading the instance that
+/// is right there.
+/// </remarks>
+public sealed class DeviceRule
+{
+    /// <summary>What to call this rule in a report. Never matched on.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The canonical <c>DeviceKind</c>, by name (R-lvs14-2d). An unknown one is a
+    /// <c>check</c> error listing the real ones — never a fallback.</summary>
+    public string Kind { get; set; } = "";
+
+    /// <summary>
+    /// The region whose connected components are the candidate devices, as a
+    /// <c>DrcLayerExprParser</c> expression — <b>the same grammar a DRC rule's region uses</b>
+    /// (R-lvs14-2a).
+    /// </summary>
+    public string Body { get; set; } = "";
+
+    /// <summary>
+    /// The terminal layers, IN ORDER — one expression each, in the same grammar. The order is the
+    /// rule's own and is what orders the recognised device's terminals before position does
+    /// (R-lvs14-3b).
+    /// </summary>
+    /// <remarks>A single expression may be written as a bare string in the `.ctech`; the converter
+    /// reads either spelling, because the file is hand-edited and both read naturally.</remarks>
+    [System.Text.Json.Serialization.JsonConverter(typeof(StringOrStringsConverter))]
+    public List<string> Terminals { get; set; } = [];
+
+    /// <summary>
+    /// What this device's values are, as formulas over the MEASURED geometry (<c>Length</c>,
+    /// <c>Width</c>, <c>Area</c>, <c>Perimeter</c>, all SI) and the technology's own
+    /// <see cref="Technology.Constants"/> — through the one expression engine (R-lvs14-2b).
+    /// </summary>
+    /// <remarks>
+    /// <b>Empty claims nothing</b> (R-lvs14-4b), and brief 10's compare-only-where-both-claim
+    /// already answers that.
+    /// </remarks>
+    public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Reads a JSON string OR an array of strings into a <c>List&lt;string&gt;</c>.
+/// </summary>
+/// <remarks>
+/// <b>For the file, not for the model.</b> The `.ctech` is hand-edited and a one-terminal-layer
+/// rule reads naturally as <c>"Terminals": "1/0"</c> while a two-layer one reads naturally as an
+/// array. Writing always emits the array, so a round trip is stable.
+/// </remarks>
+public sealed class StringOrStringsConverter
+    : System.Text.Json.Serialization.JsonConverter<List<string>>
+{
+    public override List<string> Read(
+        ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert,
+        System.Text.Json.JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+            return [reader.GetString() ?? ""];
+
+        var list = new List<string>();
+        if (reader.TokenType != System.Text.Json.JsonTokenType.StartArray) return list;
+
+        while (reader.Read() && reader.TokenType != System.Text.Json.JsonTokenType.EndArray)
+            if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+                list.Add(reader.GetString() ?? "");
+
+        return list;
+    }
+
+    public override void Write(
+        System.Text.Json.Utf8JsonWriter writer, List<string> value,
+        System.Text.Json.JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        foreach (string s in value) writer.WriteStringValue(s);
+        writer.WriteEndArray();
     }
 }

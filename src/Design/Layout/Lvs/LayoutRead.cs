@@ -206,6 +206,11 @@ public static class LayoutRead
         // ── The devices ────────────────────────────────────────────────────────────────────────
         var nets = new NetTable(pieces);
         var devices = new List<LvsDevice>();
+
+        // R-lvs14-4a: which placements OWN copper, so tier-3 recognition can be kept out of it.
+        // Filled by the walk that already knows which instance is a device, rather than by asking
+        // the same question a second time somewhere else and getting a different answer.
+        var devicePaths = new HashSet<string>(StringComparer.Ordinal);
         var saidOnce = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var unclassified = new Dictionary<string, (string Name, int Count)>(StringComparer.OrdinalIgnoreCase);
 
@@ -259,6 +264,7 @@ public static class LayoutRead
 
             var type = DeviceTypes.OfLayout(inst, resolvedDir, subView);
             var (parameters, parameterFacts) = ParametersOf(subView, resolvedDir);
+            devicePaths.Add(LayoutDesignFlatten.PathOf(inst, instIndex));
 
             // R-lvs3-4a. An MxN array is MxN devices, each with the array element's own transformed
             // pins — and all of them carry the SAME designator (R-lvs3-4b), which is correct and is
@@ -310,6 +316,18 @@ public static class LayoutRead
 
         foreach (var (_, entry) in unclassified.OrderBy(e => e.Key, StringComparer.Ordinal))
             notes.Add(LvsDiagnostics.UnclassifiedCell(entry.Name, entry.Count));
+
+        // ── Tier 3: devices read out of copper (brief 14) ──────────────────────────────────────
+        //
+        // AFTER every placement, and that is not merely tidiness. A recognised device may never
+        // override an instance (R-lvs14-4a), so what it is allowed to look at is decided from the
+        // set of placements that produced devices — which only exists once the walk above has
+        // finished. It is OFF unless the run asked for it and the technology describes something.
+        if (hierarchy is { Recognize: true })
+            DeviceRecognition.Emit(
+                tech,
+                LayoutReadHierarchy.RecognizableCopper(flat.Shapes, view, placed, hierarchy, devicePaths),
+                pieces, nets, devices, padGeometry, notes, naming, document);
 
         // ── The assembly's bond wires (brief 13) ───────────────────────────────────────────────
         //

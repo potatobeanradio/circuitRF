@@ -300,9 +300,152 @@ public static class TechValidation
                 "Stackup has no conductor marked as a ground reference (Stackup tab) — " +
                 "microstrip components cannot resolve a ground plane."));
 
+        ValidateDeviceRules(tech, knownLayers, problems);
         ValidateInterchange(tech, problems);
 
         return problems;
+    }
+
+    // ── The device-recognition deck (brief-lvs-14-recognition.md R-lvs14-2c/2d) ───────────────
+    //
+    // R-lvs14-2c: a rule that will not parse is a `check` ERROR, before any run. `check` already
+    // calls Analyze for a technology, so the deck joins the validator table the same way
+    // DrcPredicateParser did — and for the identical reason. A deck that fails at run time instead
+    // is a deck that fails during the one operation the user wanted to succeed.
+    //
+    // ── WHY THESE LAND UNDER `Drc` AND NOT UNDER AN AREA OF THEIR OWN ─────────────────────────
+    //
+    // TechProblemArea names the EDITOR TAB whose fields would fix the problem, and R-lvs14-4d says
+    // this brief ships no rule-authoring UI. A `Devices` member with no tab behind it would count
+    // on no tab header and would therefore be invisible in the editor — reported by `check` and
+    // nowhere else, which is the half-visible state the enum exists to prevent. The deck is
+    // hand-edited beside DrcRules, in the same file and in the same layer grammar, so the DRC Rules
+    // tab is where someone editing one is already looking.
+
+    /// <summary>
+    /// Every way a <see cref="DeviceRule"/> or a <see cref="TechConstant"/> can be unusable, said
+    /// before any run reads one.
+    /// </summary>
+    /// <remarks>
+    /// <b>The constants are EVALUATED here, not merely parsed.</b> A constant can refer to another
+    /// one, so a cycle is representable — and it is the expression engine's own cycle detection
+    /// that finds it (R-lvs14-2b), through the same <c>Evaluator.Resolve</c> every other binding in
+    /// circuitRF resolves through. Nothing about a constant depends on geometry, so the whole
+    /// question is answerable statically and there is no reason to leave it to a run.
+    /// </remarks>
+    private static void ValidateDeviceRules(
+        Technology tech, HashSet<LayerKey> knownLayers, List<TechProblem> problems)
+    {
+        // ── The constants ────────────────────────────────────────────────────────────────────
+        var scope = new Core.Expressions.Scope("technology");
+        foreach (var constant in tech.Constants)
+        {
+            if (constant.Name is not { Length: > 0 })
+            {
+                problems.Add(new(TechProblemArea.Drc, "A technology constant has no name."));
+                continue;
+            }
+            scope.Bind(constant.Name, constant.Expression ?? "", NormalizeUnit(constant.Unit));
+        }
+
+        foreach (var constant in tech.Constants)
+        {
+            if (constant.Name is not { Length: > 0 }) continue;
+            try { new Core.Expressions.Evaluator().Resolve(constant.Name, scope); }
+            catch (Exception ex)
+            {
+                problems.Add(new(TechProblemArea.Drc,
+                    $"Technology constant \"{constant.Name}\" does not evaluate: {ex.Message}"));
+            }
+        }
+
+        var declared = tech.Constants
+            .Where(c => c.Name is { Length: > 0 })
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // ── The rules ────────────────────────────────────────────────────────────────────────
+        foreach (var rule in tech.DeviceRules)
+        {
+            string name = rule.Name is { Length: > 0 } n ? n : "(unnamed)";
+            if (rule.Name is not { Length: > 0 })
+                problems.Add(new(TechProblemArea.Drc, "A device rule has no name."));
+
+            // R-lvs14-2d. An unknown kind LISTS the real ones and is never a fallback — `--tech`'s
+            // own rule. A fallback here would recognise a resistor as something else and then match
+            // it against nothing, with no line saying why.
+            if (!Lvs.DeviceRecognition.TryParseKind(rule.Kind, out _))
+                problems.Add(new(TechProblemArea.Drc,
+                    $"Device rule \"{name}\" declares kind \"{rule.Kind}\", which is not one of: " +
+                    $"{Lvs.DeviceRecognition.KindNames}."));
+
+            ValidateDeviceRegion(name, rule.Body, "body", knownLayers, problems);
+
+            if (rule.Terminals.Count == 0)
+                problems.Add(new(TechProblemArea.Drc,
+                    $"Device rule \"{name}\" names no terminal layers, so nothing it recognised " +
+                    "could ever be connected to anything."));
+
+            for (int i = 0; i < rule.Terminals.Count; i++)
+                ValidateDeviceRegion(name, rule.Terminals[i], $"terminal {i + 1}", knownLayers, problems);
+
+            foreach (var (parameter, formula) in rule.Parameters)
+            {
+                Core.Expressions.Expr ast;
+                try { ast = Core.Expressions.Parser.Parse(formula ?? ""); }
+                catch (Exception ex)
+                {
+                    problems.Add(new(TechProblemArea.Drc,
+                        $"Device rule \"{name}\" parameter {parameter} does not parse: {ex.Message}"));
+                    continue;
+                }
+
+                // Every name a formula may use is known before any geometry exists: the four
+                // measured quantities, and the constants this technology declares. A typo caught
+                // here is a typo that never becomes a device with no value and no explanation.
+                foreach (string reference in Core.Expressions.AstWalker.CollectRefs(ast))
+                    if (!Lvs.DeviceRecognition.Measured.Contains(reference) && !declared.Contains(reference))
+                        problems.Add(new(TechProblemArea.Drc,
+                            $"Device rule \"{name}\" parameter {parameter} refers to \"{reference}\", " +
+                            $"which is neither a measured quantity ({Lvs.DeviceRecognition.MeasuredNames}) " +
+                            "nor a constant this technology declares."));
+            }
+        }
+    }
+
+    /// <summary>One of a device rule's region expressions: it must parse, and every layer it names
+    /// must be defined. <see cref="ValidateRegion"/>'s twin, naming a device rule instead.</summary>
+    private static void ValidateDeviceRegion(
+        string ruleName, string? text, string which,
+        HashSet<LayerKey> knownLayers, List<TechProblem> problems)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            problems.Add(new(TechProblemArea.Drc,
+                $"Device rule \"{ruleName}\" states no {which} region."));
+            return;
+        }
+
+        if (!Drc.DrcLayerExprParser.TryParse(text, out var expr, out string? error) || expr is null)
+        {
+            problems.Add(new(TechProblemArea.Drc,
+                $"Device rule \"{ruleName}\" has an unreadable {which} region: {error}"));
+            return;
+        }
+
+        foreach (var key in expr.ReferencedLayers())
+            if (!knownLayers.Contains(key))
+                problems.Add(new(TechProblemArea.Drc,
+                    $"Device rule \"{ruleName}\" {which} region references unknown layer " +
+                    $"({key.Layer},{key.Datatype})."));
+    }
+
+    /// <summary>A unit as the expression engine spells one, or null where none was stated.</summary>
+    private static string? NormalizeUnit(string? unit)
+    {
+        if (string.IsNullOrWhiteSpace(unit)) return null;
+        string engine = Core.Expressions.UnitNormalizer.ToEngineUnit(unit);
+        return engine.Length > 0 ? engine : null;
     }
 
     /// <summary>

@@ -2295,7 +2295,8 @@ picture.
 
 ```
 circuitrf lvs <path> [--flat] [--flatten-cell <name>] [--testbench] [--no-reduce]
-                     [--set var=expr] [--severity warning|error] [--json] [-o report.txt]
+                     [--recognize] [--set var=expr] [--severity warning|error]
+                     [--json] [-o report.txt]
 ```
 
 It answers the one question a headless client cannot answer any other way: **the design was drawn
@@ -2350,6 +2351,27 @@ more than one correct layout, and a caller must be able to say which. It reaches
 and, there, the resolved parameter values the property pass compares: LVS reads its topology from
 the drawing's own instances and nets rather than from the elaborated netlist, and the artwork is
 already drawn.
+
+**`--recognize` reads devices out of COPPER as well as out of instances, and it is OFF by default**
+(`brief-lvs-14-recognition.md` R-lvs14-1d; `lvs.md` §4.1 tier 3). circuitRF's layout is
+instance-bearing: a device is already a first-class object in the file, so the primary reading is
+correspondence rather than recognition, and turning this on for a design circuitRF authored would
+re-recognise devices it already knows, from geometry, less reliably than reading the instance that is
+right there. It exists for artwork that carries no instances at all — a hand-drawn MMIC device, a
+GDSII import whose hierarchy was flattened away, a Gerber board read back as polygons.
+
+It is off per RUN and off per TECHNOLOGY, and both halves matter: the deck is a `DeviceRules` block
+in the `.ctech`, and a process that declares none recognises nothing whatever the flag says, which is
+not an error. A run that recognised anything reports `lvs.recognize.in-use` at info naming the
+technology and the count, so a clean report is never mistaken for the stronger claim — recognition
+answers *what does this copper look like*, never *is this the device the process actually makes*.
+Every candidate it rejected is reported with its reason, and a recognised device carries no
+designator, so it can only ever be matched structurally.
+
+The deck itself is checked by `circuitrf check <tech.ctech>`, before any run: an unreadable region,
+an unknown `Kind` (listing the real ones), a formula naming something neither measured nor declared,
+and a cyclic constant are all technology problems, because a deck that fails at run time instead is a
+deck that fails during the one operation the user wanted to succeed.
 
 ### 19.3 What it writes, and what it does not
 

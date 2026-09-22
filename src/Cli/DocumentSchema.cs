@@ -154,6 +154,14 @@ internal static class DocumentSchema
         as well as the layers — a technology with layers and no stackup draws correctly and cannot
         be solved.
 
+        DeviceRules and Constants are the geometric device-recognition deck, which `lvs --recognize`
+        reads and nothing else does. It is for artwork carrying no instances: a rule's Body is a
+        layer expression whose connected components are candidate devices, its Terminals are the
+        layers a terminal may be on, and its Parameters are formulas over Length, Width, Area and
+        Perimeter — all SI — plus the Constants this file declares. A technology stating none
+        recognises nothing, which is the ordinary case and is not an error. `check` validates the
+        deck, so a rule that will not read is refused before any run reads it.
+
         Every field the reader understands follows, with its default.
         """;
 

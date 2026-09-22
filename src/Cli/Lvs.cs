@@ -53,6 +53,10 @@ internal static class Lvs
         public bool TestBench;
         public bool NoReduce;
 
+        /// <summary>R-lvs14-1d. Tier-3 recognition, OFF unless asked for — see the switch's own
+        /// note in <see cref="Parse"/>.</summary>
+        public bool Recognize;
+
         /// <summary>Repeatable, in the order given — <c>cli.md</c> §5's own spelling.</summary>
         public readonly List<LvsGlobalOverride> Sets = [];
 
@@ -93,7 +97,8 @@ internal static class Lvs
     {
         Console.Error.WriteLine(
             "Usage: circuitrf lvs <path> [--flat] [--flatten-cell <name>] [--testbench] [--no-reduce]\n" +
-            "                     [--set var=expr] [--severity warning|error] [-o report.txt]\n" +
+            "                     [--recognize] [--set var=expr] [--severity warning|error]\n" +
+            "                     [-o report.txt]\n" +
             "  <path> is a cell folder, a workspace, a .clay or a .csch.");
         return 1;
     }
@@ -111,6 +116,14 @@ internal static class Lvs
                 case "--flat":      o.Flat      = true; continue;
                 case "--testbench": o.TestBench = true; continue;
                 case "--no-reduce": o.NoReduce  = true; continue;
+
+                // R-lvs14-1d. Reading devices out of COPPER rather than out of instances. It is
+                // opt-in per run because circuitRF's layout is instance-bearing: a design this
+                // application authored already says what each part is, and re-recognising those
+                // from geometry is less reliable than reading the instance that is right there.
+                // It is also opt-in per TECHNOLOGY — a process with no DeviceRules block
+                // recognises nothing, and saying so is not an error.
+                case "--recognize" or "--recognise": o.Recognize = true; continue;
 
                 // Repeatable, and by cell FOLDER name — R-lvs9-3d's own spelling. Using it is
                 // reported at info by the run itself, so a design that quietly flattens everything
@@ -228,6 +241,7 @@ internal static class Lvs
             FlattenCells   = new HashSet<string>(o.FlattenCells, StringComparer.OrdinalIgnoreCase),
             IncludeFixture = o.TestBench,
             Reduce         = o.NoReduce ? LvsReduceOptions.NoReduce : LvsReduceOptions.Default,
+            Recognize      = o.Recognize,
             Set            = o.Sets,
         };
 

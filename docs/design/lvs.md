@@ -252,7 +252,28 @@ get wrong.
 **Tier 3 ships OFF and stays off until a real MMIC design needs it.** It is specified now because
 the extraction's shape must accommodate it — a recognised device and an instance device must be the
 same `LvsDevice` to the comparator — and retrofitting that is the kind of change that never happens
-later. It is not in the first phases (§10).
+later.
+
+*Built 2026-09-21 (`brief-lvs-14-recognition.md`), and the shape above is what shipped, with three
+things the sketch above leaves implicit:*
+
+- **The layer expressions are spelled in `DrcLayerExprParser`'s own grammar** — `7/0`,
+  `and(8/0, 9/0)` — not in layer names. The example above is illustrative on both sides of R-lvs-7;
+  the DRC's `Metal1 AND NOT Nitride` is not the real syntax either. Reusing the parser *unchanged*
+  is the requirement, and the parser's leaf is a `(layer, datatype)` pair.
+- **`Body` sees every drawing layer, not only the electrical ones.** `MIM Metal AND Nitride` names a
+  dielectric, and the per-layer union drops a declared layer the stackup does not claim so that a
+  soldermask opening cannot join the copper under it. That drop is a question about CONNECTIVITY and
+  applying it here would make this very example recognise nothing, silently. Terminals still reach
+  their nets through the partition, which does apply it.
+- **The measured names are SI** — `Length`, `Width`, `Area`, `Perimeter` in metres and square metres
+  — because a sheet resistance is ohms per square and a capacitance density is farads per square
+  metre. `Length` and `Width` are the sides of the MINIMUM-AREA enclosing rectangle, which is exact
+  for a body drawn at any angle; a body within a few percent of square withholds the parameters that
+  read them rather than guessing, since a resistor read the wrong way round is out by (L/W)².
+
+The constants those formulas multiply by are a `Constants` block on the technology beside
+`DeviceRules` — one wafer has one sheet resistance, and several rules may read it.
 
 #### Which cells are devices, and which are interconnect
 
@@ -899,9 +920,10 @@ against something that already works rather than against a new assertion.
 - **LVS-4 — properties (§6.4) and the GUI surface.** Tolerances, derived parameters, merged-group
   multiplicity, waivers, the results panel, cross-probing.
 - **LVS-5 — assemblies and the wBond (§4.6, §4.8).** Multi-die, multi-technology, bondwires.
-- **LVS-6 — tier-3 geometric recognition (§4.1).** Built, shipped, and **default off** — it exists
-  for artwork that carries no instances, and turning it on for a design circuitRF authored would
-  re-recognise devices it already knows.
+- **LVS-6 — tier-3 geometric recognition (§4.1).** Built 2026-09-21, shipped, and **default off** —
+  it exists for artwork that carries no instances, and turning it on for a design circuitRF authored
+  would re-recognise devices it already knows. `circuitrf lvs --recognize`; the deck is validated by
+  `circuitrf check` before any run.
 
 **Validation.** The five heroes are the wrong anchor here; LVS is not numerical. The right ones are:
 
@@ -960,7 +982,9 @@ section keeps the record.
 - **§6.4 R-lvs-45's default tolerances.** 1 % on R and C is a guess; the right numbers may differ
   per unit dimension and per market (a PCB resistor is a 1 % part; an MMIC NiCr is not). Worth
   setting against a real design rather than in advance.
-- **§4.1 tier 3's recognition deck**, in detail. The shape is fixed (a `DeviceRules` block reusing
-  `DrcLayerExpr` and the one expression engine) and the contents are not, because no design has
-  needed them yet. Fixing them before there is a design to fix them against is how a rule language
-  acquires features nobody uses.
+- **§4.1 tier 3's recognition deck's CONTENTS.** The shape is built and fixed (a `DeviceRules`
+  block reusing `DrcLayerExpr` and the one expression engine, with `Constants` beside it); what no
+  shipped technology yet states is a rule, because no design has needed one. Two-terminal passives
+  are all a rule may describe today — a three-terminal one is additive to the same deck when a real
+  design needs it. Fixing the vocabulary before there is a design to fix it against is how a rule
+  language acquires features nobody uses.

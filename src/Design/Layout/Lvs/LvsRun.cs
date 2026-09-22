@@ -83,6 +83,20 @@ public sealed record LvsRunOptions
     /// </remarks>
     public IReadOnlySet<string> FlattenCells { get; init; } = NoCells;
 
+    /// <summary>
+    /// <c>--recognize</c> (R-lvs14-1d) — read devices out of COPPER as well as out of instances.
+    /// </summary>
+    /// <remarks>
+    /// <b>Default off, and it stays off for a design circuitRF authored.</b> circuitRF's layout is
+    /// instance-bearing, so the primary reading is correspondence rather than recognition; tier 3
+    /// is for artwork that carries no instances at all — a hand-drawn MMIC device, a GDSII import
+    /// whose hierarchy was flattened away, a Gerber board read back as polygons.
+    ///
+    /// <para>A technology with no <c>DeviceRules</c> block recognises nothing however this is set,
+    /// and saying so is not an error.</para>
+    /// </remarks>
+    public bool Recognize { get; init; }
+
     /// <summary>R-lvs9-5d's ceiling. See <see cref="LvsHierarchyContext.MaxDevices"/>.</summary>
     public long MaxDevices { get; init; } = LayoutDesignFlatten.HardCeiling;
 
@@ -186,6 +200,7 @@ public static class LvsRun
             Flat = options.Flat,
             FlattenCells = options.FlattenCells,
             MaxDevices = options.MaxDevices,
+            Recognize = options.Recognize,
         };
 
         // This cell is now ON the descent stack, so a cell that places itself is flattened and
@@ -225,6 +240,7 @@ public static class LvsRun
             Flat = hierarchy.Flat,
             FlattenCells = hierarchy.FlattenCells,
             MaxDevices = hierarchy.MaxDevices,
+            Recognize = hierarchy.Recognize,
             Counters = hierarchy.Counters,
             Cache = hierarchy.Cache,
             Descending = hierarchy.Descending,

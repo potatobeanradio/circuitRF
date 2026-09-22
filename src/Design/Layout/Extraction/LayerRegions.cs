@@ -25,8 +25,21 @@ public static class LayerRegions
     /// its own layer and a pad on its landing layer. Sharing it is what keeps the two from disagreeing
     /// about what a via IS.
     /// </summary>
+    /// <param name="electricalOnly">
+    /// <b>True — the default and every existing caller — drops a declared layer no stackup entry
+    /// claims</b>, because a soldermask opening is drawn ON a land and a silkscreen outline runs
+    /// between two of them; left in, the connectivity walk joins whatever they overlap.
+    ///
+    /// <para>False keeps every layer, which is what a reader asking a GEOMETRIC question rather
+    /// than an electrical one needs: a DRC rule measures a mask clearance, and brief 14's
+    /// recognition <c>Body</c> may legitimately name a dielectric — <c>MIM Metal AND Nitride</c> is
+    /// the deck's own example, and with the drop applied it would evaluate to nothing and recognise
+    /// nothing, silently. <c>DrcEngine</c> already builds its own regions this way; this is that
+    /// same reading, sharing the one expansion rather than a second copy of it.</para>
+    /// </param>
     public static Dictionary<LayerKey, Paths64> Build(
-        IReadOnlyList<LayoutShape> shapes, Technology tech, List<string>? diagnostics = null)
+        IReadOnlyList<LayoutShape> shapes, Technology tech, List<string>? diagnostics = null,
+        bool electricalOnly = true)
     {
         var byLayer = new Dictionary<LayerKey, Paths64>();
         var order = new List<LayerKey>();
@@ -71,7 +84,7 @@ public static class LayerRegions
         var dropped = new List<string>();
         foreach (var layer in order)
         {
-            if (!claimed.Contains(layer) && declared.TryGetValue(layer, out string? name))
+            if (electricalOnly && !claimed.Contains(layer) && declared.TryGetValue(layer, out string? name))
             {
                 dropped.Add($"{layer.Layer}/{layer.Datatype} ('{name}')");
                 continue;

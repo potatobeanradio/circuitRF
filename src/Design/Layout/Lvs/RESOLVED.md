@@ -89,3 +89,76 @@ SAME net table — `AssemblyRead.Emit` takes it rather than building one. A seco
 one design two numbering schemes and two answers to "is this wire on the input net", and nothing
 would compare them. The `out LvsGeometry` overload of `LayoutRead.Read` went internal with it, which
 cost nothing: `LvsRun` was its only caller.
+
+## Recognition reads a resistive film that is NOT a stackup conductor — and it must (brief 14)
+
+The deck's first rule is a NiCr resistor: `Body` is the resistive-film layer, `Terminals` are
+Metal1. Two things about that layer pull in opposite directions and both are load-bearing.
+
+**The body must be VISIBLE to the region evaluator.** `LayerRegions.Build` drops a declared drawing
+layer no `Conductor` or `Via` stackup entry claims, so a soldermask opening cannot join the copper
+under it. A nitride window is dropped by the same clause, and `MIM Metal AND Nitride` — the deck's
+own second example — would then evaluate to nothing and recognise nothing, **silently**. So
+`DeviceCandidates` passes `electricalOnly: false`, which is the reading `DrcEngine` already performs
+for its own regions: a DRC rule measures a mask clearance too. The drop is a question about
+CONNECTIVITY and it still applies to the partition, which is where terminals get their nets.
+
+**And the body must NOT be a stackup conductor**, or every resistor it recognises is shorted. A
+recognised resistor's two terminals are two nets only because nothing joins the two Metal1 pads at
+DC; declare the film a plain `Conductor` and the partition unions the body with both pads, the
+device comes back with its terminals on one net, and the comparison reports an open circuit's worth
+of findings about a correct design. That is the technology author's decision, not the recognition
+pass's, and there is nothing here that can detect it — the geometry of a correct resistor and the
+geometry of a shorted one are identical.
+
+## The ambiguous-axis rule is judged per FORMULA, not per candidate
+
+R-lvs14-3c says a body within a few percent of square "does not guess", because a resistor read the
+wrong way round is off by (L/W)². Applied per CANDIDATE it would fire on the deck's own MIM
+capacitor, which is square by construction and whose `C = CapDensity * Area` has no opinion about
+which way is along. So the withholding is decided by whether the formula actually references
+`Length` or `Width`, and a rule that reads neither is unaffected.
+
+The device is still EMITTED in either case, with its terminals, claiming nothing about the
+parameters that were withheld. That is R-lvs3-5a's rule applied one level down: a device the
+comparison cannot fully handle must still appear in the count, or the two sides disagree about how
+many parts there are for a reason the report never gave. Brief 10's compare-only-where-both-claim
+then does the right thing with a device that claims nothing.
+
+## `Length`/`Width` are the MINIMUM-AREA rectangle, not the bounding box
+
+An axis-aligned bounding box was the one-line candidate and it is wrong for exactly the artwork this
+feature is for. A NiCr body drawn at 30° measures longer and much wider than it is, and
+`R = SheetRho * Length / Width` comes out low by a factor of several with nothing saying so — the
+same silent class of error the ambiguity rule exists to prevent, arriving by a different door. So
+`DeviceCandidates.MinimumAreaRectangle` runs rotating calipers over the convex hull, which is exact
+for a rectangle at any angle (including one the flatten turned into a polygon) and yields the
+principal axis as a direction rather than as a guess about which way is up.
+
+## `Kind` is a STRING in the `.ctech`, and that is not laziness
+
+`System.Text.Json` throws on an enum member it does not know. A deck carrying one typo in `Kind`
+would make the whole TECHNOLOGY unloadable — the layer table, the stackup and every DRC rule with
+it. R-lvs14-2d requires an unknown kind to be a `check` error listing the real ones, which it cannot
+be if the file never opens. The same argument keeps `Body` and `Terminals` as text: a malformed
+expression is one unusable RULE, reported by name, and the rest of the deck still runs.
+
+`Terminals` reads a bare string OR an array (`StringOrStringsConverter`) and always writes the
+array, so a hand-edited one-layer rule reads naturally and a round trip is still stable.
+
+## The deck's problems land under `TechProblemArea.Drc`, not an area of their own
+
+`TechProblemArea` names the EDITOR TAB whose fields would fix a problem, and R-lvs14-4d ships no
+rule-authoring UI. A `Devices` member with no tab behind it would count on no tab header and would
+be invisible in the Technology editor — reported by `circuitrf check` and nowhere else, which is the
+half-visible state the enum exists to prevent. The deck is hand-edited beside `DrcRules`, in the same
+file and the same layer grammar, so the DRC Rules tab is where someone editing one is already
+looking.
+
+## A fresh `Evaluator` per candidate, or every device after the first is wrong
+
+`Evaluator` memoizes by `scope::name`. One shared across candidates answers the second body's
+`Length` with the first body's — every device after the first silently carrying the wrong geometry,
+with every value plausible and nothing to compare it against. The scope chain is
+`device -> technology`, so the constants resolve once per candidate and their own cycle detection is
+the engine's.
