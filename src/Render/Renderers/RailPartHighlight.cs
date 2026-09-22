@@ -18,6 +18,9 @@
 // says where to draw.
 
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.RailRf;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace CircuitRF.Render;
@@ -38,7 +41,13 @@ public sealed record RailPartHighlight(
 {
     /// <summary>How far past the pads the fallback outline reaches, DBU per micron scaled by the
     /// caller. A pad is a coordinate here, not a shape, so the box needs some width of its own.</summary>
-    public const long PadReachDbu = 300_000;   // 0.3 mm at the default 1000 DBU/µm
+    /// <remarks>
+    /// <b><see cref="RailPartMarks.PadReachDbu"/>'s own value, not a second copy.</b> That class
+    /// builds the body box a caller hands in as <see cref="Body"/>, and this is the fallback used
+    /// when it hands in none — two numbers would mark one part at two sizes depending on whether a
+    /// placement file happened to be loaded.
+    /// </remarks>
+    public const long PadReachDbu = RailPartMarks.PadReachDbu;
 
     /// <summary>
     /// <b>Value equality, over the pads as well.</b>
@@ -64,6 +73,19 @@ public sealed record RailPartHighlight(
         hash.Add(Body);
         foreach (var pad in Pads) hash.Add(pad);
         return hash.ToHashCode();
+    }
+
+    /// <summary>One resolved mark as a draw argument — the projection every surface that draws these
+    /// makes, spelled once so none of them can spell it differently.</summary>
+    public static RailPartHighlight Of(RailPartMark mark) => new(mark.Label, mark.Pads, mark.Body);
+
+    /// <summary>Several of them, in order.</summary>
+    public static IReadOnlyList<RailPartHighlight> Of(IReadOnlyList<RailPartMark> marks)
+    {
+        ArgumentNullException.ThrowIfNull(marks);
+        var list = new List<RailPartHighlight>(marks.Count);
+        foreach (var mark in marks) list.Add(Of(mark));
+        return list;
     }
 
     /// <summary>

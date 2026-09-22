@@ -132,6 +132,10 @@ public sealed partial class RailRfViewModel
             OnPropertyChanged(nameof(RecognisedAggressors));
             OnPropertyChanged(nameof(HasRecognisedAggressors));
             OnPropertyChanged(nameof(UnmountedPartCount));
+
+            // And the board says which rows those are — see PublishNotFitted for why this is the
+            // only call site.
+            PublishNotFitted();
         }
 
         if (SelectedRail is not { } rail)

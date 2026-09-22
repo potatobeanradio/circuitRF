@@ -60,12 +60,17 @@ internal static class RailComparisonExport
     /// <param name="tech">Its stackup.</param>
     /// <param name="map">The scene the board panel is showing, or null for the bare artwork.</param>
     /// <param name="provenance">R-rail10-5's lines, from the run that produced the results.</param>
+    /// <param name="notFitted">The JUDGED design's unmounted parts, marked on its board. It is the
+    /// judged side for the same reason <paramref name="board"/> is, and it belongs on a comparison
+    /// page more than on any other: a depopulated part is very often the difference the two sides
+    /// are being compared over.</param>
     internal static RailReportPageRequest PageOf(
         RailComparisonReport report,
         LayoutView? board,
         Technology? tech,
         RailMapScene? map,
-        IReadOnlyList<string>? provenance = null)
+        IReadOnlyList<string>? provenance = null,
+        IReadOnlyList<RailPartHighlight>? notFitted = null)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -79,6 +84,7 @@ internal static class RailComparisonExport
             Board      = board,
             Technology = tech,
             Map        = map,
+            NotFitted  = notFitted ?? [],
             Theme      = ThemeService.Active,
             Variant    = variant,
             BaseDir    = "",

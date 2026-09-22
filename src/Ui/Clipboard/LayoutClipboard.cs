@@ -163,7 +163,8 @@ public static class LayoutClipboard
         Engine.Mom.PlanarCurrentDensityMap? CurrentDensity,
         IReadOnlyList<DrcMarker>? DrcMarkers = null,
         RailMapScene? RailMap = null,
-        RailMapTheme? RailTheme = null);
+        RailMapTheme? RailTheme = null,
+        IReadOnlyList<RailPartHighlight>? RailNotFitted = null);
 
     /// <summary>
     /// The page a clipboard picture is offered to Windows at, from the SVG flavour's own pixel size.
@@ -427,6 +428,7 @@ public static class LayoutClipboard
         DrcMarkers = ctx.DrcMarkers,
         RailMap = ctx.RailMap,
         RailTheme = ctx.RailTheme,
+        RailNotFitted = ctx.RailNotFitted,
     };
 
     /// <summary>Test seam: build the same context <see cref="CopyAsync"/> builds, so a gate can drive
@@ -436,9 +438,10 @@ public static class LayoutClipboard
         string baseDir = "", Engine.Mom.PlanarMeshReport? planarMesh = null,
         Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
         IReadOnlyList<DrcMarker>? drcMarkers = null,
-        RailMapScene? railMap = null, RailMapTheme? railTheme = null)
+        RailMapScene? railMap = null, RailMapTheme? railTheme = null,
+        IReadOnlyList<RailPartHighlight>? railNotFitted = null)
         => new(payload, tech, theme, transparent, baseDir, planarMesh, currentDensity, drcMarkers,
-               railMap, railTheme);
+               railMap, railTheme, railNotFitted);
 
     /// <summary>Test seam over <see cref="ComputeSelectionBounds"/> — the page-framing rule is the
     /// thing the cropped-ports report was about, and it is worth asserting directly rather than

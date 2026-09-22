@@ -317,6 +317,38 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     private RailNetPreview? _netPreview;
 
     /// <summary>
+    /// Every part the table says is NOT FITTED, marked where it sits on the board — empty for none.
+    /// </summary>
+    /// <remarks>
+    /// <b>Pushed, like <see cref="PartHighlight"/>, and it does NOT rebuild the scene</b>: mount
+    /// state is a property of the DOCUMENT and the scene is a pure function of the RESULT
+    /// (R-rail8-13), so a checkbox that re-sampled the drop field would pay for a solve's worth of
+    /// sampling to answer a question the solve did not ask.
+    ///
+    /// <para><b>The land pattern is not removed and nothing here could remove it</b> — this overlay
+    /// never touches the layout model (see this file's header), and the copper, mask and silkscreen
+    /// under an unmounted part are on the board whichever way the checkbox is set. See
+    /// <c>RailMapRenderer.Draw</c>'s own <c>notFitted</c> note.</para>
+    ///
+    /// <para>Compared by the LIST's own sequence equality rather than by reference, because the view
+    /// model rebuilds it from scratch on every parts rebuild — a solve, a BOM arriving, an arrow key
+    /// down the table — and a reference comparison would repaint on every one of them.</para>
+    /// </remarks>
+    public IReadOnlyList<RailPartHighlight> NotFitted
+    {
+        get => _notFitted;
+        set
+        {
+            value ??= [];
+            if (_notFitted.SequenceEqual(value)) return;
+            _notFitted = value;
+            OverlayChanged?.Invoke();
+        }
+    }
+
+    private IReadOnlyList<RailPartHighlight> _notFitted = [];
+
+    /// <summary>
     /// Paints the map for the WINDOW, which is the one caller that asks for the blitted form.
     /// </summary>
     /// <remarks>
@@ -332,7 +364,7 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
     {
         _drawnAt = viewport;
         RailMapRenderer.Draw(canvas, Scene, viewport, _theme, _hiddenLayers, _partHighlight,
-                             batchTiles: true, netPreview: _netPreview);
+                             batchTiles: true, netPreview: _netPreview, notFitted: _notFitted);
     }
 
     /// <summary>
@@ -399,9 +431,33 @@ public sealed class RailLayoutOverlay : ILayoutCanvasOverlay
             return true;
         }
 
-        if (PourPick is null) return false;
-        return PourPick(worldX, worldY, tolDbu);
+        if (PourPick is not null) return PourPick(worldX, worldY, tolDbu);
+
+        // A press on bare board means "nothing is selected" — and it is REPORTED, never consumed.
+        // Returning false is the same load-bearing false OnPointerMoved returns: the canvas's own
+        // marquee, pan and hit test start on this very press, and swallowing it to run a deselect
+        // would be the near-miss with the layout canvas that this file's header forbids.
+        BackgroundClick?.Invoke(worldX, worldY, tolDbu);
+        return false;
     }
+
+    /// <summary>
+    /// Told about an unarmed left press, with the point it landed on — or null where a bare click on
+    /// the board means nothing here.
+    /// </summary>
+    /// <remarks>
+    /// <b>Whether that point is on anything is the CALLER's question, not this overlay's</b> (owner,
+    /// 2026-09-21: a rail picked in the list stays lit until something says otherwise, and clicking
+    /// empty board is one of the two ways a user says it). The hit test is the layout editor's own
+    /// <c>LayoutHitTest.HitStack</c> over the board model, which the view model holds and this class
+    /// deliberately does not — <see cref="PourPick"/> answers the same question from the same place
+    /// for the same reason, so what counts as "on something" cannot come apart between the two.
+    ///
+    /// <para><b>It is not offered while the pour pick is armed</b>, which the branch above enforces
+    /// by returning first: an armed miss is documented as leaving the gesture armed, and a deselect
+    /// running underneath it would disarm what the user is still aiming.</para>
+    /// </remarks>
+    public Action<long, long, long>? BackgroundClick { get; set; }
 
     /// <summary>
     /// What a left-click on the copper does, or null when clicking the pour means nothing here.

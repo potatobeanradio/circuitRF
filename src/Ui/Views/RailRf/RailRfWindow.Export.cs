@@ -201,6 +201,11 @@ public partial class RailRfWindow
                                             vm.Board?.DbuPerMicron ?? 1000)
                                      .WithLegendMovedBy(vm.BoardOverlayLayer.LegendOffset.X,
                                                         vm.BoardOverlayLayer.LegendOffset.Y),
+            // AND WHICH PARTS ARE NOT FITTED. The curve on this page was computed without them, so
+            // a board drawn as though they were all there is the report contradicting its own
+            // numbers — LayoutRenderOptions.RailNotFitted's own note. The window's list, not a
+            // second resolution.
+            NotFitted  = vm.NotFittedMarks,
             Theme      = ThemeService.Active,
             Variant    = ClipboardRenderPolicy.Resolve().Variant,
             BaseDir    = vm.ExportBaseDir,

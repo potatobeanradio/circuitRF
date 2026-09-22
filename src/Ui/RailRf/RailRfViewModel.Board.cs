@@ -166,6 +166,40 @@ public sealed partial class RailRfViewModel
         // BUTTON and never by a bare click — see SyncPourPick's own note for the report that
         // changed, and for why the gesture is the same gesture and no longer an ambient one.
         SyncPourPick();
+
+        // And an UNARMED click on bare board is how the user says "nothing is selected" — the other
+        // half of Escape, wired once because the overlay reports the press and this decides what it
+        // meant. See ClearSelectionOnBareBoard.
+        BoardOverlayLayer.BackgroundClick = ClearSelectionOnBareBoard;
+    }
+
+    /// <summary>
+    /// Clears the window's one selection when a left click landed on bare board.
+    /// </summary>
+    /// <remarks>
+    /// <b>Escape's gesture, made with the pointer</b> (owner, 2026-09-21). A net picked under
+    /// <i>Pick the rail</i> outlines its copper on the board, and the two ways a user says they are
+    /// done looking at it are the key and a click on empty board — the second because that is what
+    /// deselects on the layout canvas next door, and §11.6 promises someone who learned that canvas
+    /// has learned this one. It runs <see cref="ClearSelectionCommand"/> and not a second clearing of
+    /// its own, so the key and the click cannot come to mean different things.
+    ///
+    /// <para><b>The hit test is the layout editor's own</b> — <see cref="LayoutHitTest.HitStack"/> at
+    /// the canvas's own tolerance, which is also what <see cref="TryPickPourAt"/> asks: what counts
+    /// as "on something" is one answer, in one place, for both gestures. Anything hit leaves the
+    /// selection alone, because a click ON the board is the user pointing at it.</para>
+    ///
+    /// <para>The armed pour pick never reaches here — the overlay returns before offering the press
+    /// — which is deliberate: an armed miss is documented as leaving the gesture armed, and this
+    /// would disarm what the user is still aiming.</para>
+    /// </remarks>
+    private void ClearSelectionOnBareBoard(long xDbu, long yDbu, long tolDbu)
+    {
+        if (!HasSelection) return;
+        if (BoardLayout is not { } canvas) return;
+        if (LayoutHitTest.HitStack(canvas.Model, canvas.Technology, xDbu, yDbu, tolDbu).Count > 0) return;
+
+        ClearSelection();
     }
 
     // ── Click-the-pour is ARMED, and a plain click no longer touches the document ──────────────

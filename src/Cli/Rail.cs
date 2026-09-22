@@ -343,7 +343,7 @@ internal static class Rail
         RunHost.Control?.BeginStage("export");
         Progress("export");
 
-        return Export(o, input, board, doc, results, provenance, data);
+        return Export(o, input, board, doc, results, provenance, data, resolvedPads.Pads);
     }
 
     // ── step 1: which document (R-rail10-2) ──────────────────────────────────
@@ -1071,7 +1071,8 @@ internal static class Rail
 
     private static int Export(
         Options o, Input input, BoardInputs board, RailDocument doc,
-        IReadOnlyList<RailDcResult> results, RailProvenance provenance, DataSet data)
+        IReadOnlyList<RailDcResult> results, RailProvenance provenance, DataSet data,
+        IReadOnlyList<PlacedPin> pads)
     {
         string output = o.Output!;
 
@@ -1089,7 +1090,7 @@ internal static class Rail
 
             case OutputKind.Svg:
             case OutputKind.Pdf:
-                return WritePicture(o, input, board, doc, results, provenance);
+                return WritePicture(o, input, board, doc, results, provenance, pads);
 
             default:
             {
@@ -1149,7 +1150,8 @@ internal static class Rail
     /// </remarks>
     private static int WritePicture(
         Options o, Input input, BoardInputs board, RailDocument doc,
-        IReadOnlyList<RailDcResult> results, RailProvenance provenance)
+        IReadOnlyList<RailDcResult> results, RailProvenance provenance,
+        IReadOnlyList<PlacedPin> pads)
     {
         var request = new RailReportPageRequest
         {
@@ -1161,6 +1163,17 @@ internal static class Rail
             // §2.4's headline, which is the tab the window opens on and the one a report is about.
             Map        = RailMapScene.Build(results.Count > 0 ? results[0] : null,
                                             RailMapKind.Drop, board.View.DbuPerMicron),
+            // The parts this document says are NOT FITTED, crossed where they sit — the same marks
+            // the window draws and the same resolution (RailPartMarks, below the firewall, which is
+            // why there is no second copy of it here). The page's own curve was computed without
+            // them, so a board drawn as though they were all there would contradict the numbers
+            // beside it. The rail is the one the map is of, matched by name for that reason.
+            NotFitted  = RailPartHighlight.Of(RailPartMarks.NotFitted(
+                             results.Count > 0
+                                 ? doc.Rails.FirstOrDefault(r => string.Equals(
+                                       r.Name, results[0].RailName, StringComparison.OrdinalIgnoreCase))
+                                 : null,
+                             pads)),
             Theme      = ThemeResolver.Resolve(ThemeResolver.DefaultThemeName,
                                                Path.GetDirectoryName(input.DocumentPath)),
             Variant    = ColorVariant.Light,

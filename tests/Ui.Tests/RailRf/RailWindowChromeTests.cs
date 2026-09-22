@@ -455,6 +455,62 @@ public class RailWindowChromeTests
         }
     }
 
+    // ── The parts pane's two actions (owner, 2026-09-21) ─────────────────────────────────────
+
+    /// <summary>
+    /// <b>Both are square glyph buttons whose tooltips are placed off the pointer, and only Assign
+    /// is gated on a selected row.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>The offset is the half that gets dropped, and without it the placement does nothing.</b>
+    /// <c>ToolTip.VerticalOffsetProperty</c> is registered with a default of 20.0 and the positioner
+    /// adds it unconditionally, so <c>Placement="Top"</c> alone pushes the popup straight back down
+    /// over the button, under the pointer — which reopens the loop that IS the flash. It has been
+    /// reported three times now and a Placement written without its offset looks correct in every
+    /// review, so the pairing is asserted over the WHOLE window rather than on these two buttons.
+    ///
+    /// <para><b>And Create part library is deliberately NOT gated</b> (owner, 2026-09-21). It seeds
+    /// the <c>.crlib</c> from every part number the document names, so a selection is not its
+    /// operand; asserting its absence is what stops the gate from being copied onto it by symmetry.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ThePartsPaneActionsAreSquareGlyphs_PlaceTheirTooltipsOffThePointer_AndOnlyAssignIsGated()
+    {
+        string xaml = Xaml();
+
+        // The two buttons of the parts pane's own action row, split out of the panel that holds
+        // them — anchoring on each Click handler would start the block PAST the attributes above it.
+        string[] buttons = Block(xaml, "Grid.Row=\"5\" Orientation=\"Horizontal\"", "</StackPanel>")
+                          .Split("<Button", StringSplitOptions.None);
+        Assert.Equal(3, buttons.Length);
+
+        string assign  = buttons[1];
+        string library = buttons[2];
+        Assert.Contains("Click=\"OnAssignPartNumberClick\"",  assign,  StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCreatePartLibraryClick\"", library, StringComparison.Ordinal);
+
+        foreach (string button in new[] { assign, library })
+        {
+            Assert.Contains("Classes=\"sqbtn\"", button, StringComparison.Ordinal);
+            Assert.Contains("MaterialIcon", button, StringComparison.Ordinal);
+            Assert.DoesNotContain("Content=", button, StringComparison.Ordinal);
+        }
+
+        // Assign writes onto the SELECTION, so it is dead without one; the library's operand is the
+        // document, so it stays live.
+        Assert.Contains("IsEnabled=\"{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}\"",
+                        assign, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsEnabled=", library, StringComparison.Ordinal);
+
+        // Every Placement="Top" in this window carries its offset on the same line — see the remarks.
+        foreach (string line in xaml.Split('\n'))
+        {
+            if (!line.Contains("ToolTip.Placement=\"Top\"", StringComparison.Ordinal)) continue;
+            Assert.Contains("ToolTip.VerticalOffset=", line, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>The AXAML from <paramref name="from"/> up to the next <paramref name="until"/>.</summary>
     private static string Block(string xaml, string from, string until)
     {

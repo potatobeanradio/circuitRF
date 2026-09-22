@@ -228,6 +228,11 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(PickRailButtonText));
         OnPropertyChanged(nameof(WillShowExistingRail));
 
+        // Escape reads HasSelection and the picked net is part of it — see that property's note. A
+        // gate that is not re-published is a keystroke that does nothing on the one state it was
+        // just given, which is exactly the shape the armed pour pick's own notification exists for.
+        OnPropertyChanged(nameof(HasSelection));
+
         // R-rail19-2a: the pick is the moment a user needs to check they picked the right thing, and
         // on a board carrying +3V3, +3V3_A and VDD_IO the name is not enough. The board answers now
         // rather than after the rail has been committed and looked at.

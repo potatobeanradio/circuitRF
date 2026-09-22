@@ -1902,15 +1902,57 @@
                                  which is the row's OWN field and not a model value; the second is
                                  the project tree's existing Create part library command, put
                                  where the work is. -->
+                            <!-- SQUARE GLYPH BUTTONS, on the rail selector's own Button.sqbtn
+                                 (owner, 2026-09-21) — the argument that style's own comment makes,
+                                 made again one pane down: two wide push buttons carrying a sentence
+                                 under a table read as another row of the form rather than as things
+                                 you press. The sentences are the tooltips, unchanged, and the
+                                 context menu over the table still spells both out in words.
+
+                                 ToolTip.Placement="Top" AND ToolTip.VerticalOffset="-4", TOGETHER
+                                 (owner, 2026-09-21: the tooltips flash repeatedly under the
+                                 pointer). The same defect as the results row's, whose own comment
+                                 below carries the read-out-of-the-assembly argument in full: the
+                                 tooltip is placed at the CURSOR by default, this row is low in a
+                                 tall column so the positioner flips the popup up onto the pointer,
+                                 the button loses :pointerover to a different top-level,
+                                 ToolTipService closes the tip, and BetweenShowDelay's 100 ms makes
+                                 the re-open immediate. Placement alone does NOT fix it —
+                                 ToolTip.VerticalOffsetProperty defaults to 20.0 and is added
+                                 unconditionally, which pushes the popup straight back down over the
+                                 button. Both attributes or neither.
+
+                                 THE FIRST IS GATED ON A SELECTED ROW AND THE SECOND IS NOT (owner,
+                                 2026-09-21). A part number is written onto the SELECTION, so
+                                 Assign cannot act without one — pressing it with nothing selected
+                                 used to raise a refusal saying exactly that, which is a sentence
+                                 the user reads after pressing a button that looked ready. The same
+                                 rule CanPickSelectedNet already states one pane up: a control that
+                                 is live and silent is indistinguishable from a control that is
+                                 broken. The refusal stays in the handler as the backstop, because
+                                 the context menu reaches the same gesture and does not consult
+                                 IsEnabled.
+
+                                 Create part library operates on the WHOLE DOCUMENT — it seeds the
+                                 .crlib from every part number the .crail names — so a selection is
+                                 not its operand and gating it on one would refuse a gesture that
+                                 had everything it needed. -->
                             <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="6"
                                         Margin="2,5,2,0"
                                         IsVisible="{Binding HasParts}">
-                                <Button Content="Assign part number…" FontSize="10" Padding="8,1"
+                                <Button Classes="sqbtn"
                                         Click="OnAssignPartNumberClick"
-                                        ToolTip.Tip="Write one internal part number onto the selected rows. It is what the part library is keyed by — the capacitance, the ESR and the self-resonance stay the library's."/>
-                                <Button Content="Create part library…" FontSize="10" Padding="8,1"
+                                        IsEnabled="{Binding SelectedPart, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                                        ToolTip.Tip="Assign part number… — write one internal part number onto the selected rows. It is what the part library is keyed by — the capacitance, the ESR and the self-resonance stay the library's.">
+                                    <mi:MaterialIcon Kind="TagText" Width="14" Height="14"/>
+                                </Button>
+                                <Button Classes="sqbtn"
                                         Click="OnCreatePartLibraryClick"
-                                        ToolTip.Tip="Seed a .crlib from the part numbers this document names, and open it. Until a part number resolves to a capacitance and a self-resonance the row contributes nothing to the curve."/>
+                                        ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                                        ToolTip.Tip="Create part library… — seed a .crlib from the part numbers this document names, and open it. Until a part number resolves to a capacitance and a self-resonance the row contributes nothing to the curve.">
+                                    <mi:MaterialIcon Kind="BookPlus" Width="14" Height="14"/>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </Border>

@@ -368,6 +368,15 @@ public static class ColorRole
     /// makes a user think they already pressed the button (R-rail19-2b).</para></summary>
     public const string RailNetPreview = "Rail.NetPreview";
 
+    /// <summary>
+    /// A part the parts table says is NOT FITTED, marked where it sits on the board.
+    ///
+    /// <para>Its own role, and deliberately a neutral one: the mark means "this is not in the
+    /// answer", so it must not read as an alarm the way <see cref="RailViaFlag"/> and the hot end of
+    /// the ramp do, and it must not read as a selection either. Grey is what a depopulated part is
+    /// drawn as everywhere else in this trade.</para></summary>
+    public const string RailNotFitted = "Rail.NotFitted";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -402,6 +411,6 @@ public static class ColorRole
         RailLegendBackground, RailLegendInk,
         RailSource, RailLoad, RailViaFlag,
         RailClassTrace, RailClassSpreading, RailClassForced, RailCopperHighlight,
-        RailPartSelection, RailNetPreview,
+        RailPartSelection, RailNetPreview, RailNotFitted,
     ];
 }

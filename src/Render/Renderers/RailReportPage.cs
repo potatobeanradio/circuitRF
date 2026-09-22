@@ -76,6 +76,11 @@ public sealed record RailReportPageRequest
     /// <summary>The scene the board panel would be showing, or null for the bare artwork.</summary>
     public RailMapScene? Map { get; init; }
 
+    /// <summary>Every part the document says is NOT FITTED, marked on the board — empty for none.
+    /// <b>Document state, not window state</b>: see <c>LayoutRenderOptions.RailNotFitted</c> for why
+    /// this travels into a report while the parts table's selection does not.</summary>
+    public IReadOnlyList<RailPartHighlight> NotFitted { get; init; } = [];
+
     /// <summary>The colour theme both halves of the page are resolved from — ONE variant, because a
     /// light board under a dark legend is how a page ends up not looking like one picture.</summary>
     public ColorTheme Theme { get; init; } = ColorTheme.BuiltIn;
@@ -199,6 +204,7 @@ public static class RailReportPage
                 PathCache  = null,
                 RailMap    = request.Map,
                 RailTheme  = railTheme,
+                RailNotFitted = request.NotFitted,
 
                 // See this file's header: ALL SEVEN, and the list is the one
                 // `LayoutClipboard.ExportOptions` and `render --detail full` set.

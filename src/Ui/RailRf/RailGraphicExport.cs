@@ -104,11 +104,16 @@ internal static class RailGraphicExport
     /// <param name="Tech">The stackup, for layer colours and visibility.</param>
     /// <param name="Map">The scene the showing tab draws, or null for the bare artwork.</param>
     /// <param name="Document">What the TEXT flavour carries.</param>
+    /// <param name="NotFitted">Every part the document says is NOT FITTED, marked on the board.
+    /// <b>Document state, so it travels</b> — unlike the parts table's selection, which is the state
+    /// of a list box and would paste a window rather than a picture. <c>LayoutRenderOptions
+    /// .RailNotFitted</c> carries the argument.</param>
     internal sealed record Request(
         LayoutView? Board,
         Technology? Tech,
         RailMapScene? Map,
-        RailDocument Document);
+        RailDocument Document,
+        IReadOnlyList<RailPartHighlight>? NotFitted = null);
 
     /// <summary>
     /// The board as a <c>LayoutFragment.Payload</c> — the shape
@@ -160,7 +165,8 @@ internal static class RailGraphicExport
             transparent,
             baseDir: "",
             railMap: request.Map,
-            railTheme: RailMapTheme.FromTheme(ThemeService.Active, variant));
+            railTheme: RailMapTheme.FromTheme(ThemeService.Active, variant),
+            railNotFitted: request.NotFitted);
     }
 
     /// <summary>

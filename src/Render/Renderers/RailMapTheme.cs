@@ -62,6 +62,10 @@ public sealed class RailMapTheme
     /// already pressed.</summary>
     public SKColor NetPreview { get; init; }
 
+    /// <summary>A part the table says is NOT FITTED, marked where it sits. Neutral on purpose — see
+    /// <see cref="ColorRole.RailNotFitted"/>.</summary>
+    public SKColor NotFitted { get; init; }
+
     public static RailMapTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         ArgumentNullException.ThrowIfNull(theme);
@@ -88,6 +92,7 @@ public sealed class RailMapTheme
             CopperHighlight  = SK(ColorRole.RailCopperHighlight),
             PartSelection    = SK(ColorRole.RailPartSelection),
             NetPreview       = SK(ColorRole.RailNetPreview),
+            NotFitted        = SK(ColorRole.RailNotFitted),
         };
     }
 

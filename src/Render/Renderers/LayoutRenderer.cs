@@ -324,6 +324,28 @@ public readonly struct LayoutRenderOptions
     /// (<c>ClipboardRenderPolicy</c>), and that is never re-decided here.</summary>
     public RailMapTheme? RailTheme { get; init; }
 
+    /// <summary>
+    /// Every part railRF's document says is NOT FITTED, marked over <see cref="RailMap"/> — empty
+    /// for none.
+    /// </summary>
+    /// <remarks>
+    /// <b>It is here because of the failure mode <see cref="RailMap"/>'s own remarks name</b>: an
+    /// overlay nobody added to this list is silently absent from an export. The picture is still
+    /// produced, it still looks correct, and the one thing the user copied it for is missing.
+    ///
+    /// <para><b>And it is here while the SELECTION and the net preview are deliberately not.</b>
+    /// Those are transient UI state — which row a list box happens to be on — and a copy carrying
+    /// them would paste the state of a window rather than a picture of a board. Mount state is
+    /// DOCUMENT state: it is saved in the <c>.crail</c>, it changes the answer, and a report showing
+    /// a curve computed without C7 while drawing a board that says nothing about C7 is the
+    /// <c>Observation</c> marker's own defect one surface further out.</para>
+    ///
+    /// <para><b>Nullable with no initializer</b>, because this is a <c>readonly struct</c> and C#
+    /// forbids a field initializer on one that declares no constructor — which is why every other
+    /// collection on this type reads the same way.</para>
+    /// </remarks>
+    public IReadOnlyList<RailPartHighlight>? RailNotFitted { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
@@ -1031,7 +1053,8 @@ public static partial class LayoutRenderer
             // copied board and the one on screen are painted by one piece of code.
             if (opts.RailMap is { } railMap)
             {
-                RailMapRenderer.Draw(canvas, railMap, vp, opts.RailTheme ?? RailMapTheme.Fallback);
+                RailMapRenderer.Draw(canvas, railMap, vp, opts.RailTheme ?? RailMapTheme.Fallback,
+                                     notFitted: opts.RailNotFitted);
 
                 // …and the rulers back on top of it. §9B.9: a ruler is DOCUMENT CONTENT, it comes out
                 // in a slide, and an export path that quietly dropped it (or buried it under an

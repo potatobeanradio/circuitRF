@@ -30,6 +30,7 @@ public partial class RailCompareDialog : Window
     private Technology? _technology;
     private RailMapScene? _map;
     private IReadOnlyList<string> _provenance = [];
+    private IReadOnlyList<RailPartHighlight> _notFitted = [];
 
     /// <param name="report">What <see cref="RailComparisonReport.Build"/> produced.</param>
     /// <param name="board">The JUDGED design's artwork — see <c>RailComparisonExport.PageOf</c>
@@ -37,12 +38,15 @@ public partial class RailCompareDialog : Window
     /// <param name="technology">Its stackup.</param>
     /// <param name="map">The scene the board panel is showing, or null.</param>
     /// <param name="provenance">R-rail10-5's lines, from the run that produced the results.</param>
+    /// <param name="notFitted">The judged design's unmounted parts — see
+    /// <c>RailComparisonExport.PageOf</c>.</param>
     public RailCompareDialog(
         RailComparisonReport report,
         LayoutView? board,
         Technology? technology,
         RailMapScene? map,
-        IReadOnlyList<string> provenance) : this()
+        IReadOnlyList<string> provenance,
+        IReadOnlyList<RailPartHighlight>? notFitted = null) : this()
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -51,6 +55,7 @@ public partial class RailCompareDialog : Window
         _technology = technology;
         _map        = map;
         _provenance = provenance ?? [];
+        _notFitted  = notFitted ?? [];
 
         BannerText.Text =
             $"Reference: {report.Match.ReferenceName} · judged: {report.Match.TargetName} · "
@@ -95,7 +100,8 @@ public partial class RailCompareDialog : Window
         if (file is null) return;
 
         string path = file.Path.LocalPath;
-        var request = RailComparisonExport.PageOf(_report, _board, _technology, _map, _provenance);
+        var request = RailComparisonExport.PageOf(
+            _report, _board, _technology, _map, _provenance, _notFitted);
 
         try
         {

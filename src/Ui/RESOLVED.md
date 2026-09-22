@@ -1,5 +1,155 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF — an unmounted part is MARKED on the board, never removed from it (2026-09-21)
+
+Asked: when a part is unmounted with the parts table's checkbox, does it make sense to take it off
+the board rendering?
+
+**No, and the reason is what the board rendering actually is.** The board panel shows the live
+`.clay`, and a part in it is a footprint INSTANCE — the shipped Sensor board's `C0603` cell is two
+copper pads (layer 1), two mask openings (5) and two silkscreen strokes (6). Every bit of that is
+etched and printed whether or not a component is soldered onto it, so dropping the instance would
+draw a board nobody fabricated. `RailPart.Mounted`'s own contract already says it: the `.clay` is
+never touched, because unmounting is a statement about what is fitted TO the geometry rather than a
+change to the geometry (R-rail23-1c).
+
+**What WAS wrong is that the board said nothing at all.** The table greys the row; the picture was
+identical either way. That is the shape `RailMarkerKind.Observation` is already drawn rather than
+omitted to prevent — *not there* and *there and contributing nothing* must not look the same — and
+a depopulated board is the commonest what-if in power integrity, so the state is not a rare one.
+
+### The mark
+
+`RailMapRenderer.Draw` takes a `notFitted` list and crosses each one where it sits: dashed rounded
+box, a diagonal cross, the refdes above it, in a new `Rail.NotFitted` role. Three choices, each
+load-bearing — a CROSS is what a depopulated part is drawn as in this trade and survives being laid
+over a cold-to-hot ramp; DASHED separates it from the selection outline, which is solid and is the
+one mark the user asked for this frame; NEUTRAL GREY keeps it off the alarm palette, because a part
+deliberately left off a board is not a fault.
+
+**Drawn UNDER the markers**, unlike the selection and the net preview which are drawn over them.
+This is ambient state — up for every unmounted row at once, nobody asked for it this frame, and
+there can be two dozen — so a source or load resolved onto the same pad, which is an ANSWER, stays
+on top of it.
+
+**A draw argument, not part of `RailMapScene`** (R-rail8-13). Mount state is a property of the
+document and the scene is a pure function of the RESULT, so folding it in would re-sample the drop
+field on every tick of a checkbox.
+
+### Resolved through the selection's own `Mark`
+
+`RailRfViewModel.NotFittedMarks` calls the same private helper `PartHighlight` uses, so an unmounted
+part is marked at exactly the pads the same part is marked at when it is picked in the table — one
+resolution through `PdnAttachments`, never a second that could drift. A part the board does not
+place resolves to null and is left out, which is `PartHighlight`'s own rule; the test asserts the
+two geometries are equal rather than asserting a mark merely exists.
+
+**Published from `RebuildParts` and nowhere else.** That method is already the funnel every path
+that can change the answer goes through — the checkbox, a solve, the rail selector, a BOM or
+placement arriving, a new board — and a second call site would be a path that could change the
+answer without re-stating it.
+
+### The one failure that hides
+
+A colour role the theme does not carry resolves to TRANSPARENT, which is a feature wired, tested and
+not on screen. `Rail.NotFitted` is in `ColorRole.All` and in both variants of `ColorTheme.BuiltIn`
+(it is absent from `Default.ccolor`, like `Rail.PartSelection` and `Rail.NetPreview`, because the
+in-code palette is the per-role fallback). A test asserts the resolved colour is opaque on both
+variants and distinct from the selection's, since the two mean opposite things and can land on the
+same pads.
+
+### It travels into every picture, and the SELECTION deliberately does not
+
+`LayoutRenderer`'s `opts.RailMap` call passes no highlight and no net preview, and the first cut of
+this followed them. Wrong, and the distinction is the reason: those are **transient UI state** —
+which row a list box happens to be on — so a copy carrying them would paste the state of a window
+rather than a picture of a board. Mount state is **document state**: it is saved in the `.crail`, it
+changes the answer, and a report drawing a board as though every part were fitted beside a curve
+computed without C7 is the `Observation` marker's own defect one surface further out.
+
+So `LayoutRenderOptions.RailNotFitted` and `RailReportPageRequest.NotFitted` carry it, and all four
+surfaces fill them: the board panel, **Copy**, the window's **Export** report, the **Compare** page
+(the judged side's, for the same reason the board is the judged side's — a depopulated part is very
+often the difference the two sides are being compared over) and **`circuitrf rail -o`**.
+
+**One resolution, in `src/Design/RailRf/RailPartMarks.cs`.** The CLI cannot reference `src/Ui`, so
+leaving the resolution in the view model would have meant a second implementation in `Rail.cs` and a
+headless report that could disagree with the window — the divergence the CLI chapter's "no second
+route" rule exists against. The renderer cannot own it either (`RailPartHighlight`'s own header:
+nothing below the firewall may look a part up, because that would be a second copy of
+`PdnAttachments`' resolution in the drawing code). So it sits in the document layer, `RailPartHighlight.Of`
+projects it into the draw argument, and the **selection mark now goes through the same call** —
+`RailRfViewModel.Mark` is four lines and holds no geometry of its own. `RailPartHighlight.PadReachDbu`
+is `RailPartMarks.PadReachDbu`, not a second constant: two numbers would mark one part at two sizes
+depending on whether a placement file happened to be loaded.
+
+**The gate is the real export context**, the one `RailGraphicExport` itself builds, asserting the
+mark's colour is in the SVG bytes — and asserting it is **absent** with an empty list, or the test
+would be satisfied by anything on the page that happened to be grey.
+
+## railRF — a picked net can be put away, and the parts pane's two actions (2026-09-21)
+
+Three owner reports on the specification column, all of them about a control saying nothing.
+
+### 1. A net picked under *Pick the rail* could not be deselected
+
+Selecting a net highlights the row and outlines that net's copper on the board. Escape did nothing to
+it, and neither did clicking empty board: the only way back was to pick a different net.
+
+`RailRfViewModel.Selection.cs`'s `HasSelection` is the gate the window's Escape handler reads before
+it runs the command, and the net picker is deliberately **not** one of the five lists that property
+asks about — it is the operand of the button directly beneath it, and clearing it on an unrelated row
+click would disable that button under the user's hand. That argument is about a click somewhere else
+in the window. It says nothing about the two gestures that MEAN "nothing is selected", so the picker
+stays out of `TakeSelection`'s group and joins `HasSelection` and `ClearSelection` only.
+
+**The board click is reported by the overlay and decided by the view model.** `RailLayoutOverlay`
+gained `BackgroundClick`, told about an unarmed left press with the point it landed on, and it
+**returns false either way** — the canvas's own marquee, pan and hit test start on that very press,
+and consuming it to run a deselect is exactly the near-miss with the layout editor that §11.6 forbids.
+Whether the point is on anything is `LayoutHitTest.HitStack` at the canvas's own tolerance, which is
+what `TryPickPourAt` already asks, so what counts as "on something" cannot come apart between the two
+gestures. An ARMED pour pick never reaches it: the overlay returns first, because a miss while armed
+is documented as leaving the gesture armed and a deselect underneath would disarm what the user is
+still aiming.
+
+The trap is the notification, not the clearing: `OnSelectedNetChanged` has to publish `HasSelection`
+or Escape is silently inert on the one state it was just given — the armed pour pick carries the same
+line for the same reason.
+
+### 2. Two tooltips flashed repeatedly — the third report of one defect
+
+*Assign part number…* and *Create part library…* flashed under the pointer. Same loop as the results
+row's Accuracy button, whose own AXAML comment carries the argument read out of the shipping
+`Avalonia.Controls.dll`: a tooltip is placed at the CURSOR by default, a control low in a tall column
+makes the positioner flip the popup up onto the pointer, the button loses `:pointerover` to a
+different top-level, `ToolTipService` closes the tip, and `BetweenShowDelay`'s 100 ms makes the
+re-open immediate.
+
+**`ToolTip.Placement="Top"` alone does not fix it and never did** — `ToolTip.VerticalOffsetProperty`
+is registered with a default of **20.0** and `ManagedPopupPositioner` adds it unconditionally, which
+pushes the popup straight back down over the button. Both attributes, or neither.
+
+Reported three times now, and a `Placement` written without its offset looks correct in every review,
+so the pairing is asserted over the whole window rather than on the two buttons:
+`RailWindowChromeTests` scans every line carrying `ToolTip.Placement="Top"` for an offset beside it.
+
+### 3. Both became square glyph buttons; only one is gated on a selection
+
+Two wide push buttons carrying a sentence under a table read as another row of the form rather than
+as things you press — the argument `Button.sqbtn`'s own style comment makes about the rail selector's
+actions, one pane down. `TagText` and `BookPlus`, 14 px, with the sentences kept as the tooltips and
+the context menu over the table still spelling both out in words.
+
+**Assign is dead without a selected row; Create part library is not.** A part number is written onto
+the SELECTION, so pressing Assign with nothing selected raised a refusal saying exactly that — a
+sentence read after pressing a button that looked ready, which is the rule `CanPickSelectedNet`
+already states. The refusal stays in the handler as the backstop, because the context menu reaches
+the same gesture and does not consult `IsEnabled`. **Create part library seeds the `.crlib` from
+every part number the document names**, so a selection is not its operand and gating it would refuse
+a gesture that had everything it needed; the test asserts the absence of that gate so it is not
+copied on by symmetry.
+
 ## The cell Properties panel gained a Terminals section (2026-09-21)
 
 `brief-lvs-1-terminal-map.md` R-lvs1-4c: a rule that exists only in `check` is a rule the application

@@ -150,11 +150,26 @@ public static class RailMapRenderer
     /// <param name="netPreview">The net highlighted in the pick list and not yet made a rail, or null
     /// for none. A draw argument for <paramref name="highlight"/>'s reason, and drawn in its own role
     /// so it cannot be mistaken for a committed rail (R-rail19-2b).</param>
+    /// <param name="notFitted">Every part the table says is NOT FITTED, or null for none — <b>the
+    /// state R-rail23-1's checkbox puts a row in, said on the board</b> (owner, 2026-09-21).
+    ///
+    /// <para><b>The footprint is NEVER removed, and that is the whole shape of this.</b> What is
+    /// drawn under a part is its land pattern — copper, mask and silkscreen — and all of it is
+    /// etched and printed on the board whether or not a component is soldered onto it; unmounting
+    /// says what is fitted TO the geometry and never touches it (R-rail23-1c). So the land pattern
+    /// stays and this marks it, exactly as the <c>Observation</c> marker is drawn rather than
+    /// omitted: <i>not there</i> and <i>there and contributing nothing</i> must not look the
+    /// same.</para>
+    ///
+    /// <para>A draw argument for <paramref name="highlight"/>'s reason — mount state is a property
+    /// of the document, not of the solve, and folding it into <see cref="RailMapScene"/> would make
+    /// one result produce a new scene on every tick of a checkbox.</para></param>
     public static void Draw(SKCanvas canvas, RailMapScene scene, LayoutViewport viewport, RailMapTheme theme,
                             IReadOnlySet<LayerKey>? hiddenLayers = null,
                             RailPartHighlight? highlight = null,
                             bool batchTiles = false,
-                            RailNetPreview? netPreview = null)
+                            RailNetPreview? netPreview = null,
+                            IReadOnlyList<RailPartHighlight>? notFitted = null)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
@@ -168,6 +183,13 @@ public static class RailMapRenderer
         {
             DrawTiles(canvas, scene, viewport, theme, hiddenLayers, batchTiles);
             DrawRegions(canvas, scene, viewport, theme, hiddenLayers);
+
+            // UNDER the markers, and under everything below them. This is AMBIENT state — it is up
+            // for every unmounted row at once, nobody asked for it this frame, and there may be two
+            // dozen of them. A source or a load resolved onto the same pad is an ANSWER and has to
+            // stay on top of it; so does a selection, which is the one thing the user did ask for.
+            DrawNotFitted(canvas, notFitted, viewport, theme);
+
             DrawMarkers(canvas, scene, viewport, theme);
 
             // AFTER the markers and BEFORE the legend. Over the markers because the selection is the
@@ -631,6 +653,81 @@ public static class RailMapRenderer
     /// <summary>Its dash period, device pixels.</summary>
     public const float PreviewDashPx = 4f;
 
+    /// <summary>
+    /// Every part the table says is not fitted, marked where it sits — <b>the land pattern is left
+    /// exactly as it is and crossed</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A cross, dashed, and in a neutral colour</b>, which is three statements and each is load
+    /// bearing. The CROSS is what a depopulated part is drawn as everywhere else in this trade and
+    /// is legible at a glance over a colour ramp; DASHED separates it from the selection outline,
+    /// which is solid and is the one mark the user asked for this frame; NEUTRAL keeps it from
+    /// reading as an alarm, because a part deliberately left off a board is not a fault.
+    ///
+    /// <para><b>The label is the refdes and nothing else.</b> A sentence per part would be two dozen
+    /// sentences over the copper on the shipped example alone; what the mark has to answer is
+    /// <i>which</i> rows are off, and the table beside it says the rest.</para>
+    ///
+    /// <para><b>A part the board does not place draws nothing</b>, which is
+    /// <see cref="RailPartHighlight.Outline"/>'s own rule — the caller learns there is no geometry
+    /// from the picture staying as it was, never from a mark appearing at the origin.</para>
+    /// </remarks>
+    private static void DrawNotFitted(
+        SKCanvas canvas, IReadOnlyList<RailPartHighlight>? parts, LayoutViewport vp, RailMapTheme theme)
+    {
+        if (parts is not { Count: > 0 }) return;
+
+        using var dash = SKPathEffect.CreateDash([NotFittedDashPx, NotFittedDashPx], 0);
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = NotFittedStrokePx, Color = theme.NotFitted, PathEffect = dash,
+        };
+        using var solid = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = NotFittedStrokePx, Color = theme.NotFitted,
+        };
+        using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.NotFitted };
+        using var font = Font(SkiaFonts.PlexSemiBold, LabelSizePx);
+
+        foreach (var part in parts)
+        {
+            var box = part.Outline;
+            if (box.IsEmpty) continue;
+
+            var rect = ScreenRect(box, vp);
+
+            // The same floor the selection outline keeps, and for the same reason: an 0402 at fit
+            // zoom is a few pixels, and a mark nobody can see has answered nothing.
+            float padX = Math.Max(0f, MinHighlightPx - rect.Width) / 2f;
+            float padY = Math.Max(0f, MinHighlightPx - rect.Height) / 2f;
+            rect.Inflate(padX + HighlightInsetPx, padY + HighlightInsetPx);
+
+            canvas.DrawRoundRect(rect, HighlightCornerPx, HighlightCornerPx, stroke);
+            canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Bottom, solid);
+            canvas.DrawLine(rect.Left, rect.Bottom, rect.Right, rect.Top, solid);
+
+            canvas.DrawText(part.Label, rect.MidX, rect.Top - 4f, SKTextAlign.Center, font, ink);
+        }
+    }
+
+    /// <summary>The not-fitted mark's stroke, device pixels — lighter than the selection's, because
+    /// it is ambient and there may be two dozen of them on one board.</summary>
+    public const float NotFittedStrokePx = 1.5f;
+
+    /// <summary>Its dash period, device pixels.</summary>
+    public const float NotFittedDashPx = 3f;
+
+    /// <summary>One world box as a screen rectangle, normalised — the y axis is flipped, so the
+    /// corners cannot be assumed to come out in order.</summary>
+    private static SKRect ScreenRect(Bbox box, LayoutViewport vp)
+    {
+        float x0 = (float)vp.WorldToScreenX(box.MinX), x1 = (float)vp.WorldToScreenX(box.MaxX);
+        float y0 = (float)vp.WorldToScreenY(box.MinY), y1 = (float)vp.WorldToScreenY(box.MaxY);
+        return new SKRect(Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Max(y0, y1));
+    }
+
     private static void DrawPartHighlight(
         SKCanvas canvas, RailPartHighlight? highlight, LayoutViewport vp, RailMapTheme theme)
     {
@@ -639,9 +736,7 @@ public static class RailMapRenderer
         var box = part.Outline;
         if (box.IsEmpty) return;
 
-        float x0 = (float)vp.WorldToScreenX(box.MinX), x1 = (float)vp.WorldToScreenX(box.MaxX);
-        float y0 = (float)vp.WorldToScreenY(box.MinY), y1 = (float)vp.WorldToScreenY(box.MaxY);
-        var rect = new SKRect(Math.Min(x0, x1), Math.Min(y0, y1), Math.Max(x0, x1), Math.Max(y0, y1));
+        var rect = ScreenRect(box, vp);
 
         // A part zoomed out to nothing is still findable: the outline never shrinks below a size a
         // user can see, because "where is C7" is asked most often from a view of the whole board.

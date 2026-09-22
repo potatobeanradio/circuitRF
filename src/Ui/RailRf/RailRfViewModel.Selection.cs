@@ -136,7 +136,17 @@ public sealed partial class RailRfViewModel
     /// works on two of three states is the one case a user cannot diagnose — this file's own header
     /// says so about the four lists.</para>
     /// </remarks>
-    public bool HasSelection => HasRowSelection || HasMarkerSelection || IsPickingFromBoard;
+    /// <remarks>
+    /// <b>And the picked NET, which is the fourth thing Escape has to reach</b> (owner, 2026-09-21).
+    /// It is not one of the five lists — the net picker deliberately keeps its own selection, because
+    /// it is the operand of the button directly beneath it and clearing it on an unrelated row click
+    /// would disable that button under the user's hand. But that argument is about a click somewhere
+    /// else in the window; it says nothing about the two gestures that MEAN "nothing is selected", and
+    /// a highlighted row outlining copper on the board with no way to put either away is the state
+    /// this property's own note already calls the one a user cannot diagnose.
+    /// </remarks>
+    public bool HasSelection =>
+        HasRowSelection || HasMarkerSelection || IsPickingFromBoard || SelectedNet is not null;
 
     /// <summary>
     /// Makes <paramref name="kept"/> the window's one selection and clears the rest.
@@ -176,6 +186,13 @@ public sealed partial class RailRfViewModel
 
         // The armed pour pick goes with them — see HasSelection's own note.
         CancelPickFromBoard();
+
+        // And the picked net, which takes its own outline off the board through OnSelectedNetChanged
+        // -> ShowNetPreview(null). Cleared HERE and not in ClearRowSelection, which the
+        // document-replaced path calls: the net walks are invalidated there by their own owner
+        // (InvalidateNetWalks), and clearing the row a second time from a different file is how the
+        // two come apart.
+        SelectedNet = null;
 
         // The Data Display's own — see this file's header. It also drops the plot CONTAINER's
         // selection, which is inert here: this window lays the one container out itself and draws no
@@ -313,29 +330,65 @@ public sealed partial class RailRfViewModel
         }
     }
 
-    /// <summary>The mark for one anchor, labelled as the row spells it.</summary>
-    private RailPartHighlight? Mark(RailPortAnchor anchor, string label, RailBoardInputs board)
+    // ── NOT FITTED, SAID ON THE BOARD (owner, 2026-09-21) ─────────────────────────────────────
+
+    /// <summary>
+    /// Every part of the selected rail the document says is NOT FITTED, marked where it sits.
+    /// </summary>
+    /// <remarks>
+    /// <b>The footprint is never removed, and it could not be.</b> The board panel shows the live
+    /// <c>.clay</c>, and what sits under a part there is its LAND PATTERN — copper, mask and
+    /// silkscreen — all of which is etched and printed whether or not a component is soldered onto
+    /// it. Unmounting is a statement about what is fitted TO the geometry and never a change to it
+    /// (R-rail23-1c), so taking the pads off the picture would draw a board nobody fabricated.
+    ///
+    /// <para><b>What was missing is that the board said NOTHING.</b> The table greys the row and
+    /// the picture was identical either way — the same shape <c>RailMarkerKind.Observation</c>
+    /// already forbids: <i>not there</i> and <i>there and contributing nothing</i> must not look
+    /// the same.</para>
+    ///
+    /// <para><b>Resolved through <see cref="Mark"/>, which is the selection's own call</b>, so an
+    /// unmounted part is marked at exactly the pads the same part is marked at when it is picked in
+    /// the table — one resolution, through <c>PdnAttachments</c>, never a second that could drift.
+    /// A part the board does not place resolves to null and is left out, which is
+    /// <see cref="PartHighlight"/>'s own rule.</para>
+    /// </remarks>
+    public IReadOnlyList<RailPartHighlight> NotFittedMarks
     {
-        var pads = PdnAttachments.Resolve(anchor, board.Pads);
-
-        // The body box where the placement states a centroid — it is what the part actually COVERS,
-        // and on a bulk capacitor that is several millimetres wider than its two pads. A coordinate
-        // anchor names no component, so it has none.
-        Bbox? body = null;
-        if (anchor.Refdes is { Length: > 0 } refdes &&
-            Placement is { Refusal: null } table &&
-            table.Rows.FirstOrDefault(r =>
-                string.Equals(r.Refdes, refdes, StringComparison.OrdinalIgnoreCase)) is
-                { Refdes: { Length: > 0 } } placed)
+        get
         {
-            var box = new Bbox(placed.X, placed.Y, placed.X, placed.Y);
-            foreach (var (x, y) in pads) box = box.Union(new Bbox(x, y, x, y));
-            long reach = RailPartHighlight.PadReachDbu;
-            body = new Bbox(box.MinX - reach, box.MinY - reach, box.MaxX + reach, box.MaxY + reach);
+            if (Board is not { } board || SelectedRail is not { } rail) return [];
+
+            return RailPartHighlight.Of(RailPartMarks.NotFitted(rail, board.Pads, Placement));
         }
-
-        if (pads.Count == 0 && body is null) return null;
-
-        return new RailPartHighlight(label, [.. pads], body);
     }
+
+    /// <summary>
+    /// Tells the board which parts are not fitted — <b>called from <c>RebuildParts</c> and nowhere
+    /// else</b>.
+    /// </summary>
+    /// <remarks>
+    /// That method is already the one funnel every path that can change this goes through: the mount
+    /// checkbox, a solve, the rail selector, a BOM or placement arriving, a new board. A second call
+    /// site would be a path that could change the answer without re-stating it, which is how the
+    /// mark and the table come to disagree.
+    /// </remarks>
+    internal void PublishNotFitted()
+    {
+        BoardOverlayLayer.NotFitted = NotFittedMarks;
+        OnPropertyChanged(nameof(NotFittedMarks));
+    }
+
+    /// <summary>The mark for one anchor, labelled as the row spells it.</summary>
+    /// <remarks>
+    /// <b><see cref="RailPartMarks.For"/>, and nothing of its own.</b> That is the one resolution
+    /// four surfaces share — this window's board panel, Copy, the Export report and
+    /// <c>circuitrf rail -o</c> — and it lives below the firewall because <c>src/Cli</c> cannot
+    /// reference <c>src/Ui</c>: a headless report whose marks were resolved by a second
+    /// implementation is exactly the divergence the CLI chapter's "no second route" rule is about.
+    /// </remarks>
+    private RailPartHighlight? Mark(RailPortAnchor anchor, string label, RailBoardInputs board) =>
+        RailPartMarks.For(anchor, label, board.Pads, Placement) is { } mark
+            ? RailPartHighlight.Of(mark)
+            : null;
 }

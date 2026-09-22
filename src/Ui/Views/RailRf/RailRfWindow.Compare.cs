@@ -115,7 +115,8 @@ public partial class RailRfWindow
             vm.BoardLayout?.Model,
             vm.Board?.Technology,
             vm.BoardOverlayLayer.Scene,
-            vm.ExportProvenance()?.Lines ?? []);
+            vm.ExportProvenance()?.Lines ?? [],
+            vm.NotFittedMarks);
 
         _ = dialog.ShowDialog(this);
     }
@@ -177,7 +178,8 @@ public partial class RailRfWindow
             vm.BoardLayout?.Model,
             vm.Board?.Technology,
             vm.BoardOverlayLayer.Scene,
-            vm.ExportProvenance()?.Lines ?? []);
+            vm.ExportProvenance()?.Lines ?? [],
+            vm.NotFittedMarks);
 
         await dialog.ShowDialog(this);
     }

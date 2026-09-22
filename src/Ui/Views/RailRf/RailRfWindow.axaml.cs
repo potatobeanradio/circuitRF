@@ -404,10 +404,14 @@ public partial class RailRfWindow : Window
         try
         {
             await RailGraphicExport.CopyToClipboardAsync(this, new RailGraphicExport.Request(
-                Board:    vm.BoardLayout?.Model,
-                Tech:     vm.Board?.Technology,
-                Map:      vm.BoardOverlayLayer.Scene,
-                Document: vm.Document));
+                Board:     vm.BoardLayout?.Model,
+                Tech:      vm.Board?.Technology,
+                Map:       vm.BoardOverlayLayer.Scene,
+                Document:  vm.Document,
+                // What the user is looking at includes the crosses over the parts that are not
+                // fitted — they are document state, and a copy that dropped them would paste a
+                // board claiming to carry parts this design says it does not.
+                NotFitted: vm.NotFittedMarks));
         }
         catch (Exception ex)
         {
