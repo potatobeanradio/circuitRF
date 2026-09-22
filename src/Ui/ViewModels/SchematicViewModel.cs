@@ -590,6 +590,14 @@ public sealed partial class SchematicViewModel : ObservableObject
     public double CanvasZoom { get; set; } = 1.0;
 
     /// <summary>
+    /// The pan/zoom this session's canvas was last left at, or null before it has ever been shown.
+    /// Held here rather than on the canvas for the reason <c>LayoutEditorViewModel.LastViewport</c>
+    /// records: a canvas does not outlive a re-realise of its view (a split, a tear-off, a dock
+    /// rebuild), and a fresh canvas that fits on bind silently throws away the zoom the user chose.
+    /// </summary>
+    internal (double PanX, double PanY, double Zoom)? LastViewport { get; set; }
+
+    /// <summary>
     /// Returns the world rectangle the canvas is currently showing, or null when there is no live
     /// canvas (headless, or not yet laid out). Set by SchematicCanvas; read by Paste so a pasted
     /// fragment lands where the user is looking (see <see cref="SchematicPasteGeometry"/>).

@@ -568,6 +568,26 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- The toolbar's two Disable buttons, reachable where the component is.
+                             Same command, same icons, same toggle: a second choice of the state
+                             the component is already in re-enables it. -->
+                        <MenuItem x:Name="CtxDisableOpen"
+                                  Header="Disable (Open)"
+                                  Click="OnDisableOpen"
+                                  InputGesture="Q">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="EyeOff" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem x:Name="CtxDisableShort"
+                                  Header="Disable (Short)"
+                                  Click="OnDisableShort">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="EyeOffOutline" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <Separator/>
 
                         <MenuItem Header="Copy"

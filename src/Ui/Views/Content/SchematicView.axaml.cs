@@ -542,6 +542,17 @@ public partial class SchematicView : UserControl
         CtxResetLabels.IsVisible     = !isGnd;
         CtxLabelsSubMenu.IsVisible   = !isGnd;
         CtxSep2.IsVisible            = !isGnd;
+        CtxDisableOpen.IsVisible     = !isGnd;
+        CtxDisableShort.IsVisible    = !isGnd;
+
+        // Choosing the state the selection is already in re-enables it (DisableSelection's toggle,
+        // decided over EVERY selected component), so the row says which of the two it will do.
+        var selected = Vm is { } svm
+            ? svm.Selection.Ids.Select(svm.EditModel.FindComponent).OfType<EditableComponent>().ToList()
+            : [];
+        bool AllIn(DisableState st) => selected.Count > 0 && selected.All(c => c.Disable == st);
+        CtxDisableOpen.Header  = AllIn(DisableState.Open)  ? "Enable (currently Open)"  : "Disable (Open)";
+        CtxDisableShort.Header = AllIn(DisableState.Short) ? "Enable (currently Short)" : "Disable (Short)";
 
         CtxPushIn.IsVisible      = isCell;
         CtxOpenInNewTab.IsVisible = isCell;

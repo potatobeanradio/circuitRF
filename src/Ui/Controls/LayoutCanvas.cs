@@ -585,30 +585,22 @@ public sealed class LayoutCanvas : Control
     {
         if (Bounds.Width < 1 || Bounds.Height < 1) return;
 
+        // Field report (2026-09-22): Zoom to Fit framed geometry on HIDDEN layers, so switching off a
+        // board outline or a keep-out still left the visible artwork small in the middle of the canvas.
+        // `render --fit` already honoured LayerDef.Visible — through DocumentExtents — and this canvas
+        // had its own second union that did not. It now asks the same function, so the picture the
+        // CLI fits and the view the editor fits are one box: shapes and instances on visible layers
+        // only, a label's painted text, a port's direction hint, a placement's designator, and every
+        // ruler (a Fixed one measured at the zoom the fit lands on, not the one it leaves).
         var bb = Bbox.Empty;
         if (_viewModel?.Model is { } model)
         {
-            foreach (var shape in model.Shapes)
-                bb = bb.Union(LayoutGeometry.BboxOf(shape));
-            // Owner report (2026-07-29): Zoom to Fit ignored every placed instance — including a
-            // PCell instance, which is an ordinary LayoutInstance pointing at a generated cell folder
-            // (see this file's own architecture note on PCells) — so a layout consisting solely of
-            // PCells (or one whose PCells extend past its raw shapes) zoomed to an empty/undersized
-            // extent. CellHierarchy.InstanceBbox is the SAME resolved, array-expanded, recursive bbox
-            // the marquee/spatial-index and Select-All paths already use for an instance — reused here
-            // rather than a second bbox notion.
-            foreach (var inst in model.Instances)
-                bb = bb.Union(CellHierarchy.InstanceBbox(inst, _viewModel.InstanceBaseDir));
-
-            // docs/design/layout-view.md §9B: a ruler is document content and must be framed like any
-            // other. Measured through the RENDERER (LayoutRenderer.MeasureRulerWorldBbox), never by a
-            // second footprint derived here — the readout's extent is real font metrics, and a Fixed
-            // ruler's is a function of the zoom. The CURRENT zoom is the right one to ask with: this
-            // frames what is on screen now, and a fit that changed the zoom to change the answer to
-            // change the zoom would not converge.
-            foreach (var ruler in model.Rulers)
-                bb = bb.Union(LayoutRenderer.MeasureRulerWorldBbox(
-                    ruler, model.DisplayUnit, model.DbuPerMicron, _zoom));
+            string baseDir = _viewModel.InstanceBaseDir;
+            bb = DocumentExtents.LayoutFitBox(model, _viewModel.Technology, baseDir, Bounds.Width, Bounds.Height);
+            // Everything switched off is not a reason to jump to the origin: frame the document anyway,
+            // so the camera is at least where the content is when a layer is switched back on.
+            if (bb.IsEmpty)
+                bb = DocumentExtents.LayoutFitBox(model, null, baseDir, Bounds.Width, Bounds.Height);
         }
 
         // Whatever rides ON the canvas counts too. A wBond document's wires are an overlay by design
@@ -653,6 +645,20 @@ public sealed class LayoutCanvas : Control
         _panX = vp.PanX; _panY = vp.PanY; _zoom = Math.Clamp(vp.Zoom, MinZoom, MaxZoom);
         RaiseViewportChanged();
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Brings <paramref name="region"/> on screen at the current zoom (<see cref="LayoutViewport.Reveal"/>).
+    /// Does nothing before the canvas has been laid out: the initial fit that follows frames the
+    /// whole document anyway, the added region included.
+    /// </summary>
+    public void RevealRegion(Bbox region)
+    {
+        if (region.IsEmpty || Bounds.Width < 1 || Bounds.Height < 1 || _needsInitialFit) return;
+        var vp = CurrentViewport.Reveal(region);
+        if (vp == CurrentViewport) return;
+        _panX = vp.PanX; _panY = vp.PanY;
+        RaiseViewportChanged();
     }
 
     /// <summary>A hairline violation is grown to at least this many snap steps before zooming.</summary>

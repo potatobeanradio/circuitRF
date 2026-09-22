@@ -66,7 +66,7 @@ public sealed class SchematicCanvas : Control
             SetAndRaise(ModelProperty, ref _model, value);
             if (_editContext is null)
                 _index = value is not null ? new SchematicSpatialIndex(value) : null;
-            _needsInitialFit = value is not null;
+            _needsInitialFit = value is not null && !_viewportEstablished;
             InvalidateVisual();
         }
     }
@@ -97,6 +97,17 @@ public sealed class SchematicCanvas : Control
                 _editContext.PropertyChanged += OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = ZoomToRect;
                 _editContext.ViewportProvider   = () => WorldViewport;
+
+                // A session this canvas has not shown yet but that HAS been on screen before — the
+                // view was re-realised — comes back at the pan/zoom it was left at instead of being
+                // fitted again. Field report (2026-09-22): the zoom was lost going schematic -> layout
+                // -> schematic. Only a canvas that has not established a view of its own restores:
+                // a push-in inside a live canvas keeps the behaviour it has always had.
+                if (!_viewportEstablished && _editContext.LastViewport is { } last)
+                {
+                    (_panX, _panY, _zoom) = last;
+                    MarkViewportEstablished();
+                }
                 _editContext.CanvasZoom = _zoom;
                 SyncFromVm();
                 UpdateCursor();
@@ -200,6 +211,7 @@ public sealed class SchematicCanvas : Control
     private SchematicSpatialIndex? _index;
     private SchematicOverlay?      _overlay;
     private bool _needsInitialFit;
+    private bool _viewportEstablished;
 
     // ── Events (raised to code-behind) ────────────────────────────────────────
 
@@ -252,11 +264,33 @@ public sealed class SchematicCanvas : Control
     {
         if (_needsInitialFit && _model is not null && Bounds.Width > 1 && Bounds.Height > 1)
         {
-            _needsInitialFit = false;
-            LayoutUpdated -= OnLayoutUpdated;
+            MarkViewportEstablished();
             ZoomToFitInternal(Bounds.Width, Bounds.Height);
+            RememberViewport();
             InvalidateVisual();
         }
+    }
+
+    /// <summary>This canvas has a view of its own now — fitted or restored — so the one-shot initial
+    /// fit is spent. Unsubscribing is what makes the Model setter's re-arm harmless afterwards.</summary>
+    private void MarkViewportEstablished()
+    {
+        _viewportEstablished = true;
+        _needsInitialFit = false;
+        LayoutUpdated -= OnLayoutUpdated;
+    }
+
+    private void RememberViewport()
+    {
+        if (_editContext is not null) _editContext.LastViewport = (_panX, _panY, _zoom);
+    }
+
+    /// <summary>Every pan/zoom change funnels through here, so the session always holds the view
+    /// a re-realised canvas should come back to.</summary>
+    private void RaiseViewportChanged()
+    {
+        RememberViewport();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── Visual tree ──────────────────────────────────────────────────────────
@@ -320,7 +354,7 @@ public sealed class SchematicCanvas : Control
     {
         ZoomToFitInternal(Bounds.Width, Bounds.Height);
         InvalidateVisual();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewportChanged();
     }
 
     private void ZoomToFitInternal(double canvasW, double canvasH)
@@ -387,7 +421,7 @@ public sealed class SchematicCanvas : Control
         _panX = 0; _panY = 0; _zoom = 1.0;
         if (_editContext is not null) _editContext.CanvasZoom = _zoom;
         InvalidateVisual();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewportChanged();
     }
 
     private void ZoomToRect(double x0, double y0, double x1, double y1)
@@ -405,7 +439,7 @@ public sealed class SchematicCanvas : Control
         _panY = cy - Bounds.Height / (2.0 * _zoom);
         if (_editContext is not null) _editContext.CanvasZoom = _zoom;
         InvalidateVisual();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewportChanged();
     }
 
     // ── World ↔ screen ────────────────────────────────────────────────────────
@@ -524,7 +558,7 @@ public sealed class SchematicCanvas : Control
             _panX = _panDragStartPanX - (pos.X - _panDragStartScreen.X) / _zoom;
             _panY = _panDragStartPanY - (pos.Y - _panDragStartScreen.Y) / _zoom;
             InvalidateVisual();
-            ViewportChanged?.Invoke(this, EventArgs.Empty);
+            RaiseViewportChanged();
             return;
         }
 
@@ -889,7 +923,7 @@ public sealed class SchematicCanvas : Control
         _panX += step.Dx / _zoom;
         _panY += step.Dy / _zoom;
         InvalidateVisual();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewportChanged();
         return true;
     }
 
@@ -910,7 +944,7 @@ public sealed class SchematicCanvas : Control
         _panY = wy - canvasPos.Y / _zoom;
         if (_editContext is not null) _editContext.CanvasZoom = _zoom;
         InvalidateVisual();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewportChanged();
     }
 
     private void OnPointerWheel(object? _, PointerWheelEventArgs e)

@@ -30,6 +30,20 @@ public sealed class SchematicMirrorContextMenuTests
         Assert.Contains(items, i => i.Header == "Mirror Vertical"   && i.Click == "OnMirrorV");
     }
 
+    /// <summary>Field report, 2026-09-22: the two Disable commands on the component menu, wired to the
+    /// toolbar's own handlers for the same reason Mirror is.</summary>
+    [Fact]
+    public void TheContextMenuOffersBothDisableStates_WiredToTheToolbarsOwnHandlers()
+    {
+        var items = LoadContextMenu().Elements()
+            .Where(e => e.Name.LocalName == "MenuItem")
+            .Select(e => (Header: (string?)e.Attribute("Header"), Click: (string?)e.Attribute("Click")))
+            .ToList();
+
+        Assert.Contains(items, i => i.Header == "Disable (Open)"  && i.Click == "OnDisableOpen");
+        Assert.Contains(items, i => i.Header == "Disable (Short)" && i.Click == "OnDisableShort");
+    }
+
     [Fact]
     public void MirrorSitsDirectlyBelowRotate_NotBuriedAtTheEnd()
     {

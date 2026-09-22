@@ -132,6 +132,28 @@ public sealed class PaletteColumnWidthTests
     }
 
     /// <summary>
+    /// Field report, 2026-09-22: with the window maximised, New Workspace opened the Library at three
+    /// columns. Every clean-slate rebuild that no SAVED arrangement follows is the shipped arrangement,
+    /// so it asks for the shipped count exactly as Reset Layout does — New Workspace, closing to the
+    /// blank shell, and opening a workspace whose <c>.cws</c> has no usable layout. Opening one that
+    /// HAS a layout must not ask: the request would override the width its user chose.
+    /// </summary>
+    [Fact]
+    public void EveryDefaultArrangementNoSavedLayoutFollows_AsksForTheDefaultGlyphCount()
+    {
+        string ws = Regex.Replace(Regex.Replace(Src("src/Ui/ViewModels/WorkspaceViewModel.cs"),
+            @"/\*.*?\*/", "", RegexOptions.Singleline), @"//[^\n]*", "");
+        var rebuilds = Regex.Matches(ws,
+            @"var newLayout = _factory\.CreateDefaultLayout\([^;]*;\s*(?<req>_factory\.PaletteTool\?\.RequestDefaultWidth\(\);)?");
+        // New Workspace, switching workspace (which a saved layout may follow), and the blank shell.
+        Assert.Equal(3, rebuilds.Count);
+        Assert.Equal(2, rebuilds.Count(m => m.Groups["req"].Success));
+
+        string docking = Src("src/Ui/ViewModels/WorkspaceViewModel.Docking.cs");
+        Assert.Matches(@"if \(read\.Layout is not \{ \} layout\)\s*\{\s*_factory\.PaletteTool\?\.RequestDefaultWidth\(\);\s*return;", docking);
+    }
+
+    /// <summary>
     /// The latch is one-shot. Once honoured the palette is the user's again: the next drag or window
     /// resize keeps whatever they set, which is the whole point of the pin reading the count off the
     /// panel the rest of the time.

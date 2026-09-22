@@ -97,22 +97,28 @@ public sealed class LayoutZoomToFitInstancesTests : IDisposable
     [Fact]
     public void ZoomToFitInternal_UnionsInstanceBboxes_NotJustShapeBboxes()
     {
-        string src = ReadRepoFile(Path.Combine("src", "Ui", "Controls", "LayoutCanvas.cs"));
+        // Since 2026-09-22 the canvas's fit IS DocumentExtents' box (so hidden layers are left out, as
+        // `render --fit` already left them out) — the instance union this pins lives there now.
+        string canvas = ReadRepoFile(Path.Combine("src", "Ui", "Controls", "LayoutCanvas.cs"));
+        string fit    = MethodBody(canvas, "private void ZoomToFitInternal(");
+        Assert.Contains("DocumentExtents.LayoutFitBox(", fit);
 
-        int methodStart = src.IndexOf("private void ZoomToFitInternal(", System.StringComparison.Ordinal);
-        Assert.True(methodStart >= 0, "ZoomToFitInternal not found");
-        int methodEnd = src.IndexOf("\n    }", methodStart, System.StringComparison.Ordinal);
-        Assert.True(methodEnd > methodStart, "could not find the end of ZoomToFitInternal");
-        string body = src[methodStart..methodEnd];
-
-        Assert.Contains("model.Shapes", body);
-        Assert.Contains("model.Instances", body);
+        string body = MethodBody(ReadRepoFile(Path.Combine("src", "Render", "DocumentExtents.cs")),
+                                 "public static Bbox LayoutBox(");
         Assert.Contains("CellHierarchy.InstanceBbox(", body);
 
-        // The instance union must happen unconditionally alongside the shape union, not behind some
-        // separate/optional path — both loops union into the SAME `bb` the viewport is computed from.
-        int shapesUnionAt = body.IndexOf("model.Shapes", System.StringComparison.Ordinal);
-        int instancesUnionAt = body.IndexOf("model.Instances", System.StringComparison.Ordinal);
-        Assert.True(shapesUnionAt >= 0 && instancesUnionAt >= 0 && instancesUnionAt > shapesUnionAt);
+        // Both loops union into the SAME `bbox`, the instances unconditionally after the shapes.
+        int shapesUnionAt    = body.IndexOf("view.Shapes", System.StringComparison.Ordinal);
+        int instancesUnionAt = body.IndexOf("view.Instances", System.StringComparison.Ordinal);
+        Assert.True(shapesUnionAt >= 0 && instancesUnionAt > shapesUnionAt);
+    }
+
+    private static string MethodBody(string src, string signature)
+    {
+        int start = src.IndexOf(signature, System.StringComparison.Ordinal);
+        Assert.True(start >= 0, $"{signature} not found");
+        int end = src.IndexOf("\n    }", start, System.StringComparison.Ordinal);
+        Assert.True(end > start, $"could not find the end of {signature}");
+        return src[start..end];
     }
 }

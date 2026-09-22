@@ -1702,7 +1702,17 @@ public partial class WorkspaceViewModel
         _restorePlacer = null;
 
         if (read.Report is not null) Messages.Warning(read.Report);
-        if (read.Layout is not { } layout) return;
+
+        // A workspace with no usable saved arrangement keeps the clean-slate DEFAULT one, and that
+        // arrangement's Library is two glyphs wide whatever size the window is (field report,
+        // 2026-09-22: a maximised window opened a new workspace at three). Only asked when nothing
+        // saved will be applied — a saved arrangement carries the width its user chose, and the
+        // request would override it.
+        if (read.Layout is not { } layout)
+        {
+            _factory.PaletteTool?.RequestDefaultWidth();
+            return;
+        }
 
         // Before applying it: the CLOSED entries are places, not panels, and the apply drops them.
         SeedPanelHomesFrom(layout);
@@ -1717,6 +1727,7 @@ public partial class WorkspaceViewModel
         catch (Exception ex)
         {
             Messages.Warning($"Saved window layout could not be applied; using the default layout. ({ex.Message})");
+            _factory.PaletteTool?.RequestDefaultWidth();
         }
     }
 

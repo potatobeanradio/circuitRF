@@ -74,6 +74,28 @@ public readonly record struct LayoutViewport(double PanX, double PanY, double Zo
     }
 
     /// <summary>
+    /// Brings <paramref name="region"/> on screen <b>without changing the zoom</b>: unchanged when it
+    /// is already wholly visible, otherwise re-centred on it. A region larger than the view at this
+    /// zoom is centred and overflows equally on each side.
+    ///
+    /// <para>Update Layout from Schematic on a layout that is already open uses this rather than a
+    /// fit: the user chose that zoom, and a command that only added parts has no business changing
+    /// it (field report, 2026-09-22). Panning is still owed, because an added instance lands where
+    /// the command puts it rather than where anyone was looking.</para>
+    /// </summary>
+    public LayoutViewport Reveal(Bbox region)
+    {
+        if (region.IsEmpty || Zoom <= 0 || Width < 1 || Height < 1) return this;
+        if (region.MinX >= VisibleMinX && region.MaxX <= VisibleMaxX &&
+            region.MinY >= VisibleMinY && region.MaxY <= VisibleMaxY)
+            return this;
+
+        double cx = (region.MinX + region.MaxX) / 2.0;
+        double cy = (region.MinY + region.MaxY) / 2.0;
+        return this with { PanX = cx - Width / (2.0 * Zoom), PanY = cy - Height / (2.0 * Zoom) };
+    }
+
+    /// <summary>
     /// A physically-meaningful default viewport for an empty layout, origin-centered.
     /// <see cref="Zoom"/> is device pixels per DBU, so a fixed <c>zoom = 1.0</c> (the old behavior)
     /// meant 1 screen pixel per DBU — at the default 1000 DBU/µm that is 1 pixel per NANOMETRE, so a

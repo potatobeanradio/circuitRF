@@ -1509,6 +1509,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // hardcoded §2.0 default.
             var windowLayoutPreset = AppPreferencesIo.Load().WindowLayout ?? WindowLayout.ProjectTreeAndLibrary;
             var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
+            // A new workspace has no saved arrangement to restore, so this IS the shipped one — and
+            // the shipped Library is two glyphs wide at any window size (see RebuildLayoutFrom).
+            _factory.PaletteTool?.RequestDefaultWidth();
             _factory.InitLayout(newLayout);
             Layout = newLayout;
             FocusPaneFor(windowLayoutPreset);
@@ -3164,6 +3167,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WhileRebuildingLayout(() =>
         {
             var newLayout = _factory.CreateDefaultLayout(Docking.DockLayoutDefaults.For(windowLayoutPreset));
+            // No workspace means no saved arrangement follows: the shipped Library width, as above.
+            _factory.PaletteTool?.RequestDefaultWidth();
             _factory.InitLayout(newLayout);
             Layout = newLayout;
             FocusPaneFor(windowLayoutPreset);

@@ -113,6 +113,10 @@ public partial class WorkspaceViewModel
             _factory.ProjectTreeTool?.Refresh();
         }
 
+        // Asked BEFORE opening it: a layout already on screen has a zoom the user chose, and this
+        // command must leave it alone (see the reveal below).
+        bool layoutWasOpen = _openDocsByPath.ContainsKey(targetPath);
+
         // R-L5-16: open it and make it the active document — no prompt, whether created or pre-existing.
         OpenOrActivateLayout(targetPath);
         var layoutVm = GetOrCreateLayoutSession(targetPath);
@@ -168,7 +172,14 @@ public partial class WorkspaceViewModel
         // …and now say where it went. Harmless if the canvas has not been laid out yet — neither zoom
         // does anything without valid bounds, and the canvas's own initial fit then runs against a
         // model that is by this point populated.
-        if (!addedRegion.IsEmpty)
+        //
+        // Field report (2026-09-22): going schematic -> layout with Update Layout re-zoomed a layout
+        // that was already open, so the user's working zoom was lost on every round trip. An OPEN
+        // layout keeps its zoom and is only panned, and only when what was added is off screen; a
+        // layout this command just opened has no zoom of its own yet and is framed as before.
+        if (!addedRegion.IsEmpty && layoutWasOpen)
+            layoutVm.RequestRevealRegion(addedRegion);
+        else if (!addedRegion.IsEmpty)
             layoutVm.RequestZoomToRegion(addedRegion);
         else if (layoutWasEmpty
                  && (layoutVm.Model.Shapes.Count > 0 || layoutVm.Model.Instances.Count > 0)

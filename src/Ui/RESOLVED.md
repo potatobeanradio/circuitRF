@@ -1,5 +1,44 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Field bug list, 2026-09-22 — the layout's fit, a lost zoom, Disable on the menu, the Library width
+
+Four of a five-item list; the fifth (some capacitor designators not drawn on a board) was dropped
+by the owner before a reproduction was attempted on the reporter's file. For the record: every
+designator draws on both shipped PCB examples, and an MMIC technology declares no silkscreen role, so
+it draws none by design (R-fp4b-4c) — neither is the reported "some".
+
+- **Zoom to Fit framed hidden layers — it had been fixed, but only in the CLI.**
+  `DocumentExtents.LayoutBox` has left out `LayerDef.Visible == false` layers since RND-3, and
+  `render --fit` uses it; `LayoutCanvas.ZoomToFitInternal` kept its own union (shapes, instances,
+  rulers) that never asked. The canvas now calls `DocumentExtents.LayoutFitBox` with the document's
+  technology, so the editor and the CLI fit one box. That also brings in what the private union
+  missed: a label's painted text, a port's direction hint, a placement's designator, and a Fixed
+  ruler measured at the zoom the fit lands on. If everything visible is empty the fit falls back to
+  all layers rather than jumping to the origin. `LayoutZoomToFitInstancesTests`' scan was re-pointed
+  at `DocumentExtents` — it pinned the old private loop, not the claim.
+- **Update Layout from Schematic re-zoomed a layout that was already open.** It called
+  `RequestZoomToRegion(addedRegion)` unconditionally (the 2026-09-15 "say where it put it" fix). An
+  already-open layout now gets `RequestRevealRegion` instead — `LayoutViewport.Reveal`: no change
+  when the added region is on screen, otherwise re-centred **at the same zoom**. A layout the command
+  itself just opened is framed as before; whether it was open is asked BEFORE `OpenOrActivateLayout`.
+- **The schematic canvas had no viewport memory at all.** The layout canvas gained
+  `LastViewport` on 2026-09-04 because a re-realised view re-fits on bind; the schematic canvas had
+  the same one-shot fit-on-bind and nothing to restore from. `SchematicViewModel.LastViewport` now
+  records every pan/zoom (all six `ViewportChanged` invokes go through one `RaiseViewportChanged`),
+  and a canvas that has not yet established a view restores it instead of fitting. A push-in inside a
+  live canvas is unchanged — only a fresh canvas restores. Not seen in pixels: this session cannot
+  launch the GUI, so this is held by build + scans, not observation.
+- **Disable (Open) / Disable (Short) on the component menu** call the toolbar's own
+  `OnDisableOpen`/`OnDisableShort`. The header reads "Enable (currently …)" when EVERY selected
+  component is already in that state, because that is exactly when `DisableSelection` toggles back —
+  judging it from the right-clicked part alone would mislabel a mixed selection.
+- **A maximised window opened a new workspace's Library at three columns.** `PaletteColumnPin` reads
+  the count off the panel on a new arrangement, and the default layout's FRACTION is two glyphs only
+  at the window's opening size. Reset Layout already raised `RequestDefaultWidth`; the three
+  clean-slate rebuilds did not. New Workspace and the blank shell now always ask; opening a workspace
+  asks only when its `.cws` has no usable layout (`ApplyRestoredDockShell`'s null and exception
+  paths) — a saved arrangement carries the width its user chose and the request would override it.
+
 ## railRF field report 3 — the parts table had no producer a user could reach (2026-09-22)
 
 A third round of outside railRF use, on a production six-layer board imported from its own Gerber

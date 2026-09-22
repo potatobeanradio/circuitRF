@@ -86,6 +86,20 @@ public sealed partial class LayoutEditorViewModel
         if (!region.IsEmpty) ZoomToRegionRequested?.Invoke(region);
     }
 
+    /// <summary>Raised to bring a region on screen at the CURRENT zoom — see
+    /// <see cref="RequestRevealRegion"/>.</summary>
+    public event Action<Bbox>? RevealRegionRequested;
+
+    /// <summary>
+    /// <see cref="RequestZoomToRegion"/>'s pan-only counterpart, for a layout that is already open:
+    /// Update Layout from Schematic brings what it added into view without taking away the zoom the
+    /// user was working at (<c>LayoutViewport.Reveal</c>).
+    /// </summary>
+    public void RequestRevealRegion(Bbox region)
+    {
+        if (!region.IsEmpty) RevealRegionRequested?.Invoke(region);
+    }
+
     public string DrcSummaryText => DrcResult is not { } r
         ? "Not checked."
         : r.IsClean

@@ -697,9 +697,17 @@ public partial class LayoutEditorView : UserControl
     private void RebindDrcZoomSubscription(LayoutEditorViewModel? vm)
     {
         if (ReferenceEquals(_drcZoomVm, vm)) return;
-        if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested -= OnDrcZoomToRegion;
+        if (_drcZoomVm is not null)
+        {
+            _drcZoomVm.ZoomToRegionRequested -= OnDrcZoomToRegion;
+            _drcZoomVm.RevealRegionRequested -= OnRevealRegion;
+        }
         _drcZoomVm = vm;
-        if (_drcZoomVm is not null) _drcZoomVm.ZoomToRegionRequested += OnDrcZoomToRegion;
+        if (_drcZoomVm is not null)
+        {
+            _drcZoomVm.ZoomToRegionRequested += OnDrcZoomToRegion;
+            _drcZoomVm.RevealRegionRequested += OnRevealRegion;
+        }
 
         RebindWBondDropSubscription(vm);
     }
@@ -732,6 +740,7 @@ public partial class LayoutEditorView : UserControl
     }
 
     private void OnDrcZoomToRegion(Bbox region) => LayoutCanvasCtrl.ZoomToRegion(region);
+    private void OnRevealRegion(Bbox region) => LayoutCanvasCtrl.RevealRegion(region);
 
     /// <summary>
     /// Toolbar entry point.
