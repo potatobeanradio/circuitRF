@@ -32,6 +32,34 @@ public class GridPinNetLabelPolishTests
         vm.CycleSnapMode(); Assert.Equal(SnapMode.FineGrid,       vm.SnapMode);
     }
 
+    /// <summary>
+    /// The Snap button governs the DOCUMENT's own <c>GridSnap</c> too — the flag components and
+    /// wires snap through.
+    /// </summary>
+    /// <remarks>
+    /// Without this the tri-state governed labels alone, so a drawing saved with <c>GridSnap</c>
+    /// false opened reading "Fine Grid" while no component snapped, and no gesture anywhere in
+    /// the application could put it back. The four LVS example schematics shipped in that state.
+    /// </remarks>
+    [Fact]
+    public void CycleSnapMode_CarriesTheDocumentsOwnGridSnap_AndOpensTellingTheTruth()
+    {
+        var off = new SchematicViewModel(new SchematicEditModel { GridSnap = false });
+        Assert.Equal(SnapMode.None, off.SnapMode);          // the button does not claim otherwise
+
+        off.CycleSnapMode();                                 // None → ConnectionGrid
+        Assert.Equal(SnapMode.ConnectionGrid, off.SnapMode);
+        Assert.True(off.EditModel.GridSnap);
+        Assert.Equal(100.0, off.EditModel.SnapToGrid(137.0));
+
+        off.CycleSnapMode();                                 // → FineGrid, still snapping
+        Assert.True(off.EditModel.GridSnap);
+
+        off.CycleSnapMode();                                 // → None, and the document says so
+        Assert.False(off.EditModel.GridSnap);
+        Assert.Equal(137.0, off.EditModel.SnapToGrid(137.0));
+    }
+
     [Fact]
     public void LabelDelta_ConnectionGrid_SnapsToGridSize()
     {

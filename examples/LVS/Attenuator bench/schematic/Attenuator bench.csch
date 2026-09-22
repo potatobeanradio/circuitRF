@@ -2,7 +2,7 @@
   "FormatVersion": 2,
   "CellName": "Attenuator bench",
   "GridSize": 100,
-  "GridSnap": false,
+  "GridSnap": true,
   "AuthorGridDivisor": 20,
   "Components": [
     {

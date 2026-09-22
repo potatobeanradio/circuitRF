@@ -2,7 +2,7 @@
   "FormatVersion": 2,
   "CellName": "Bias tee",
   "GridSize": 100,
-  "GridSnap": false,
+  "GridSnap": true,
   "AuthorGridDivisor": 20,
   "Components": [
     {

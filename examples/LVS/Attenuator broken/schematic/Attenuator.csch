@@ -2,7 +2,7 @@
   "FormatVersion": 2,
   "CellName": "Attenuator",
   "GridSize": 100,
-  "GridSnap": false,
+  "GridSnap": true,
   "AuthorGridDivisor": 20,
   "Components": [
     {
@@ -67,7 +67,7 @@
         {
           "Name": "R",
           "Expression": "17.4",
-          "Unit": "\u03a9",
+          "Unit": "\u03A9",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         },
@@ -92,7 +92,7 @@
         {
           "Name": "R",
           "Expression": "294",
-          "Unit": "\u03a9",
+          "Unit": "\u03A9",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         },
@@ -117,7 +117,7 @@
         {
           "Name": "R",
           "Expression": "294",
-          "Unit": "\u03a9",
+          "Unit": "\u03A9",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         },
@@ -134,7 +134,7 @@
       "InstanceName": "C1",
       "Symbol": "Capacitor",
       "X": 500,
-      "Y": -400,
+      "Y": -500,
       "Rotation": "R270",
       "MirrorX": false,
       "Disable": "None",
@@ -237,7 +237,7 @@
         ],
         [
           300,
-          -400
+          -500
         ]
       ]
     },
@@ -249,7 +249,7 @@
         ],
         [
           700,
-          -400
+          -500
         ]
       ]
     }

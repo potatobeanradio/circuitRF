@@ -153,6 +153,13 @@ public sealed partial class SchematicViewModel : ObservableObject
     };
 
     /// <summary>Cycles P → p → none → P (same order as the Symbol Editor).</summary>
+    /// <remarks>
+    /// <b>It carries the document's own <c>GridSnap</c> with it.</b> Components and wires snap
+    /// through <see cref="SchematicEditModel.SnapToGrid"/>, which reads that flag; labels and
+    /// canvas objects snap through this tri-state. Leaving the two unconnected made the button a
+    /// lie on any drawing saved with the flag off — nothing snapped, the tooltip said "Fine Grid",
+    /// and there was no control anywhere that could put it back.
+    /// </remarks>
     public void CycleSnapMode()
     {
         SnapMode = SnapMode switch
@@ -161,6 +168,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SnapMode.FineGrid       => SnapMode.None,
             _                       => SnapMode.ConnectionGrid,
         };
+        EditModel.GridSnap = SnapMode != SnapMode.None;
     }
 
     private SymbolKind     _placementSymbol;
@@ -329,6 +337,12 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         EditModel    = editModel;
         _messageSink = messageSink;
+
+        // The button must tell the truth about the document it opened. `GridSnap` is a per-DOCUMENT
+        // flag governing components and wires, and the tri-state governs labels and canvas objects;
+        // a drawing saved with the flag off used to open showing "Fine Grid" while nothing snapped,
+        // and no gesture in the application could turn it back on.
+        if (!editModel.GridSnap) _snapMode = SnapMode.None;
 
         EditModel.Changed += (_, _) => RebuildRenderModel();
         Selection.Changed += (_, _) => RebuildOverlay();

@@ -334,10 +334,10 @@ public static class DockPanelIds
     /// Messages and DRC by default, for the reason those two are: all three are "what the tool has
     /// to tell you about this design".
     ///
-    /// <para>Absent from both shipped default layouts, deliberately. LVS needs a cell with both
-    /// views drawn, which most documents being edited do not yet have, and a panel that would be
-    /// empty for most users is one they would have to learn about only to close. It opens from
-    /// View ▸ Panels and is then captured and restored with every other panel.</para>
+    /// <para><b>In both shipped default layouts since 2026-09-21, as the THIRD tab</b> — behind
+    /// Messages and DRC, never in front of them. It is the one of the three a design most often
+    /// has nothing to say about, so it costs a tab nobody has to close and is where a designer
+    /// would look for it rather than something to be discovered under View ▸ Panels.</para>
     /// </summary>
     public const string Lvs         = "Lvs";
 

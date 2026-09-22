@@ -85,7 +85,7 @@ public static class DockLayoutDefaults
 
     /// <summary>
     /// The §2.0 layout: Project Tree + Library tabbed above Properties + Analyses in a left column,
-    /// Messages under the documents.
+    /// Messages — with DRC and LVS behind it — under the documents.
     /// </summary>
     public static CwsDockLayout Default() => new()
     {
@@ -102,12 +102,13 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion         },
+            new CwsDockPanel { Id = DockPanelIds.Lvs,         Side = DockSide.Bottom, Group = 0, Order = 2, Active = false, Proportion = MessagesProportion         },
         ],
     };
 
     /// <summary>
     /// The shipped default since 2026-08-15: Project Tree above Properties + Analyses on the left,
-    /// the Library in its OWN column on the RIGHT of the documents, Messages + DRC below them.
+    /// the Library in its OWN column on the RIGHT of the documents, Messages + DRC + LVS below them.
     ///
     /// <para>Originally transcribed from the owner's own <c>new_layout.cws</c>, which is why most of
     /// these proportions are the untidy numbers a dragged splitter leaves rather than round ones. Its
@@ -132,6 +133,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Palette,     Side = DockSide.Right,  Group = 0, Order = 0, Active = true,  Proportion = 1.0                            },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion             },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion             },
+            new CwsDockPanel { Id = DockPanelIds.Lvs,         Side = DockSide.Bottom, Group = 0, Order = 2, Active = false, Proportion = MessagesProportion             },
         ],
     };
 
