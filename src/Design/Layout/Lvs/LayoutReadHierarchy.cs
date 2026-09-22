@@ -74,7 +74,8 @@ internal static class LayoutReadHierarchy
             if (hierarchy.Flat) continue;
 
             string? reason =
-                hierarchy.Descending.Contains(dir)  ? LvsHierarchy.FlattenReason.Cycle
+                hierarchy.Descending.Contains(LvsHierarchyContext.IdentityOf(dir))
+                                                    ? LvsHierarchy.FlattenReason.Cycle
               : hierarchy.FlattenCells.Contains(LvsHierarchyContext.NameOf(dir))
                                                     ? LvsHierarchy.FlattenReason.Asked
               : LvsHierarchy.DeclaresFlattenForLvs(dir)

@@ -130,9 +130,15 @@ public static class LvsWaivers
         foreach (var w in waivers) byKey[w.Key] = w;
         if (byKey.Count == 0) return findings;
 
+        // Clearing a finding no key matches is what makes un-waiving work: the panel removes the
+        // row and re-applies over the result in hand. A finding hoisted out of a SUB-CELL is the
+        // one exception — it was marked against its own `.clay` and this list has never heard of
+        // it, so it falls back to that sign-off rather than to "not waived".
         return [.. findings.Select(f => byKey.TryGetValue(LvsWaiverKey.For(f), out var w)
             ? f with { Waived = true, WaiverReason = w.Reason }
-            : f with { Waived = false, WaiverReason = null })];
+            : f.InheritedWaiver is { } inherited
+                ? f with { Waived = true, WaiverReason = inherited }
+                : f with { Waived = false, WaiverReason = null })];
     }
 
     /// <summary>

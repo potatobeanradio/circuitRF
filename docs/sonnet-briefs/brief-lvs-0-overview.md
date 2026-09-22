@@ -1,6 +1,7 @@
 # Brief — LVS: layout versus schematic — the series
 
-**Status:** unstarted, briefs 1-15 · **Date:** 2026-09-21 · **Design note:** [`docs/design/lvs.md`](../design/lvs.md) rev 2, approved
+**Status:** **BUILT** — briefs 1-15, all shipped 2026-09-21 · **Date:** 2026-09-21 ·
+**Design note:** [`docs/design/lvs.md`](../design/lvs.md) rev 3, BUILT
 **Area:** `src/Design/Layout/Extraction/` (new), `src/Design/Layout/Lvs/` (new),
 `src/Design/Layout/Pdn/`, `src/Design/Layout/Drc/`, `src/Design/Cells/`, `src/Design/Schematic/`,
 `src/Cli/`, `src/Ui/Layout/`, `src/Ui/Views/Lvs/`, `examples/`

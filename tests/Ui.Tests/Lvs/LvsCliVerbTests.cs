@@ -38,6 +38,7 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Lvs;
 
+[Collection(LvsCliConsoleCollection.Name)]
 public sealed class LvsCliVerbTests(ITestOutputHelper output) : IDisposable
 {
     private const string Correct = "Attenuator";

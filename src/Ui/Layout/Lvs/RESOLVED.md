@@ -41,6 +41,14 @@ The verb takes a cell folder, and R-lvs12-1c requires both surfaces to pass the 
 what was compared. That is the same sentence R-lvs12-3d already required the panel to carry, so one
 mark serves both facts; it is not two bugs' worth of wording sharing a flag by accident.
 
+**The argument had a hole, closed on review (2026-09-21): a fresh result CLEARS the mark.** So the
+one sequence the mechanism did not cover was the one it exists for — edit, press Run, and be told
+the artwork implements a drawing you have already changed, with the banner gone because the result
+was new. `RunLvs` now reads `IsDirty` before the run and re-raises the mark after it, with its own
+sentence: the generic one says the design changed since the comparison, this one says the
+comparison read the saved files and names saving as the fix. One flag still, because
+cross-probing is refused for the same reason in both cases.
+
 ## 4. A device path carries two decorations neither editor's own part list has
 
 `R1[0,2]` (an array element) and `U3/M1` (a part inside a placed cell) are paths, not names. The

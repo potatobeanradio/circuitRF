@@ -353,6 +353,40 @@ public sealed class HierarchyTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    // ══ 11 — a cell's own sign-off survives the board's waiver list ═════════════════════════════
+
+    /// <summary>
+    /// A finding hoisted out of a sub-cell keeps the waiver that cell's own <c>.clay</c> granted
+    /// it, even once the BOARD waives something of its own.
+    /// </summary>
+    /// <remarks>
+    /// <b>The two halves of the claim only bite together.</b> <c>LvsWaivers.Apply</c> clears every
+    /// finding no key matches — which is what makes un-waiving in the panel work — and a hoisted
+    /// finding's key names the PLACEMENT, so the cell's own key can never match it. Before the
+    /// inherited waiver was carried, adding one board-level waiver silently un-waived every
+    /// finding signed off inside every cell, and the only symptom was the error count.
+    /// </remarks>
+    [Fact]
+    public void ACellsOwnWaiverSurvivesTheBoardsWaiverList()
+    {
+        var inCell = LvsMarker.Of(LvsDiagnostics.NetShort("A, B", 2, "net 3"), ["A", "B"], Bbox.Empty);
+        var signedOff = inCell with { Waived = true, WaiverReason = "known, and deliberate" };
+        var hoisted = LvsHierarchy.Within("U1", signedOff);
+
+        var ownFinding = LvsMarker.Of(
+            LvsDiagnostics.NetShort("C, D", 2, "net 7"), ["C", "D"], Bbox.Empty);
+        var boardWaiver = new LvsWaiver { Key = LvsWaiverKey.For(ownFinding), Reason = "board level" };
+
+        var applied = LvsWaivers.Apply([hoisted, ownFinding], [boardWaiver]);
+
+        Assert.True(applied[0].Waived);
+        Assert.Equal("known, and deliberate", applied[0].WaiverReason);
+        Assert.True(applied[1].Waived);
+
+        // And the board can still un-waive its own, which is the behaviour the clearing exists for.
+        Assert.False(LvsWaivers.Apply([hoisted, ownFinding], [])[1].Waived);
+    }
+
     // ── Fixture machinery ───────────────────────────────────────────────────────────────────────
 
     /// <summary>Every file under the fixture root, with its length and last write — what "wrote

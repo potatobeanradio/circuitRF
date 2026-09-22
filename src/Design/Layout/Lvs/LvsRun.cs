@@ -205,7 +205,7 @@ public static class LvsRun
 
         // This cell is now ON the descent stack, so a cell that places itself is flattened and
         // reported rather than recursed into until the stack runs out.
-        string identity = Path.GetFullPath(cellDir);
+        string identity = LvsHierarchyContext.IdentityOf(cellDir);
         bool entered = hierarchy.Descending.Add(identity);
         try
         {

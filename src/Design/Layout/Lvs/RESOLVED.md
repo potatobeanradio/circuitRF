@@ -313,3 +313,67 @@ designer drew**, so every finding un-reduces before it is reported: a collapsed 
 names all four. A report naming an object that exists only inside the comparison is a report nobody
 can act on, which is the same rule that makes a short carry its neck and a property mismatch carry
 its tolerance.
+
+---
+
+# Review of the shipped series (2026-09-21)
+
+Read after the fifteen briefs landed, against the briefs and the note. Three things were wrong and
+are fixed here; two are recorded because they are not what they look like.
+
+## A board-level waiver un-waived every finding a CELL had signed off
+
+`LvsWaivers.Apply` clears the waiver on every finding no key matches — deliberately, because that
+is what makes un-waiving in the panel work: the row is removed from the document's list and the
+result in hand is re-marked. A finding hoisted out of a sub-cell by `LvsHierarchy.Within` carries a
+key naming the PLACEMENT (`U1/R3`), which the cell's own `.clay` cannot possibly have recorded — so
+the parent's list never matches it and the clearing branch took it.
+
+The effect was conditional on the parent having **any** waiver at all (`Apply` returns early on an
+empty list), which is why it was invisible: the same design signed off one way reported six errors
+and signed off another way reported seven, and nothing said which was the run's own opinion. The
+section above — *"a sub-cell's findings arrive already marked against its own `.clay`, which is
+right"* — is the stated intent, and the code did not do it.
+
+`LvsFinding.InheritedWaiver` now carries the cell's own sign-off up with the finding, and `Apply`
+falls back to it rather than to "not waived". The board can still waive a hoisted finding by its
+prefixed key, and can still un-waive its own. `HierarchyTests` gate 11 is the claim.
+
+## The descent stack's spelling, and the cycle it would have missed
+
+`LvsRun` entered `Descending` with `Path.GetFullPath(cellDir)` and `LayoutReadHierarchy` consulted
+it with the resolver's own answer. `GetFullPath` **keeps a trailing separator** and the resolver
+never writes one, so `circuitrf lvs "cells/Amp/"` on a cell that places itself would have recursed
+until the stack ran out rather than flattening and reporting it. One spelling now —
+`LvsHierarchyContext.IdentityOf` — used on both sides of the test.
+
+## `LvsReduceOptions.MeasuredNames` is inert, and R-lvs6-3c is satisfied by the clause below it
+
+Nothing in the run path populates it: `LvsRun` passes `LvsReduceOptions.Default` or `NoReduce` and
+there is no flag for it. That is **not** a hole in R-lvs6-3a, because the measure clause in
+`NodeIsCollapsible` can only fire when the node carries a label and the very next clause refuses
+every labelled node. A net's name here IS its label — `tb.LabeledNets` plus the cell ports on the
+schematic side, the copper's own `Net` stamp on the layout side — so a node no measure could name
+is a node already excluded. `ReductionTests`' own measure test says the same thing in its closing
+comment.
+
+The option is kept rather than deleted because the label clause is the one that would be relaxed if
+hierarchy stitching ever carried a name that is not a label, and the measure refusal must outlive
+it. **Wiring it today would be dead plumbing**, so it is documented instead of plumbed.
+
+## Two in-process CLI test classes cannot run concurrently, and xUnit ran them that way
+
+`LvsPanelTests` and `LvsCliVerbTests` both drive `CliEntry.Run` in process and capture stdout, and
+`Console.Out` is one process-wide writer — as is `JsonRun`'s state. xUnit parallelises distinct test
+classes, so both verbs' JSON documents landed in whichever buffer was installed last and the second
+parse failed with *"'{' is invalid after a single JSON value"*. Reproducible on the filtered run,
+not a load-dependent flake. Both classes are now in one collection
+(`tests/Ui.Tests/Lvs/LvsCliConsoleCollection.cs`); every other CLI gate in the repository launches
+a real process and was never exposed to it.
+
+## The series' own gate (`R-lvs0-1`, `R-lvs0-2`) had not been written
+
+The overview says a test parses the note's requirement numbers and the traceability table and
+compares the sets. It did not exist. `tests/Ui.Tests/Lvs/SeriesTraceabilityTests.cs` is it, and it
+passes as written — the table does cover `R-lvs-1 … R-lvs-55` with no hole — so what it buys is the
+next requirement somebody adds to the note.

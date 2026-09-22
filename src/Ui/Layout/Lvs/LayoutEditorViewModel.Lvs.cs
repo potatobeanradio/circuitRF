@@ -128,9 +128,20 @@ public sealed partial class LayoutEditorViewModel
         : LvsResult is null ? "" : "No technology resolved.";
 
     /// <summary>R-lvs12-3d's own sentence, empty while the result still describes the design.</summary>
-    public string LvsStaleText => IsLvsStale
-        ? "The design has changed since this comparison. Cross-probing is off until it is run again."
-        : "";
+    public string LvsStaleText =>
+        !IsLvsStale                 ? ""
+      : _lvsComparedUnsavedDocument ? "This compared the SAVED .clay and .csch — the open document "
+                                    + "has changes that were not in them. Save and run again to "
+                                    + "compare what you are looking at. Cross-probing is off."
+      :                               "The design has changed since this comparison. Cross-probing "
+                                    + "is off until it is run again.";
+
+    /// <summary>
+    /// Whether the run in hand read files the open document had already moved on from — see
+    /// <see cref="RunLvs"/>. Not a second staleness: it sets the same flag, and only the sentence
+    /// differs, because what the user has to DO about it is different.
+    /// </summary>
+    private bool _lvsComparedUnsavedDocument;
 
     private void OnLvsResultChanged(LvsRunResult? value)
     {
@@ -200,8 +211,16 @@ public sealed partial class LayoutEditorViewModel
             return null;
         }
 
+        // What the verb reads is what is ON DISK (see this folder's RESOLVED.md §3), so a run made
+        // over an edited document did not compare that document. The staleness mark already exists
+        // for "edited SINCE the run" and this is the same fact one moment earlier — the one case
+        // the mark would otherwise miss, because a fresh result clears it.
+        bool unsaved = IsDirty;
+
         var result = LvsRun.Run(cell, options, control);
-        LvsResult = result;
+        LvsResult = result;                       // clears IsLvsStale and the sentence with it
+        _lvsComparedUnsavedDocument = unsaved;
+        if (unsaved) IsLvsStale = true;
         return result;
     }
 

@@ -179,6 +179,20 @@ public sealed class LvsHierarchyContext
     /// <summary>What a cell folder is CALLED — its own folder name.</summary>
     public static string NameOf(string cellDir)
         => new DirectoryInfo(cellDir.TrimEnd(Path.DirectorySeparatorChar)).Name;
+
+    /// <summary>
+    /// How a cell folder is spelled in <see cref="Descending"/> — <b>one rule, both sides of the
+    /// test</b>.
+    /// </summary>
+    /// <remarks>
+    /// The stack is entered with the path the caller gave and consulted with the path the resolver
+    /// produced. <c>Path.GetFullPath</c> keeps a trailing separator and the resolver never writes
+    /// one, so <c>"…/Amp/"</c> and <c>"…/Amp"</c> would be two cells to the set and one to
+    /// everybody else — and the cell that places itself would then recurse until the stack runs
+    /// out rather than being flattened and reported.
+    /// </remarks>
+    public static string IdentityOf(string cellDir)
+        => Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir));
 }
 
 /// <summary>The rules that decide what a placed cell IS — R-lvs9-2c.</summary>
@@ -256,6 +270,11 @@ public static class LvsHierarchy
         {
             Waived = finding.Waived,
             WaiverReason = finding.WaiverReason,
+
+            // The cell's own sign-off travels with the finding, because the parent's waiver list is
+            // keyed on paths that name the PLACEMENT and can never match the cell's own key.
+            InheritedWaiver = finding.InheritedWaiver
+                           ?? (finding.Waived ? finding.WaiverReason ?? "" : null),
         };
     }
 

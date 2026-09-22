@@ -35,6 +35,7 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.Lvs;
 
+[Collection(LvsCliConsoleCollection.Name)]
 public sealed class LvsPanelTests : IDisposable
 {
     private const string Broken = "Attenuator broken";
@@ -209,6 +210,31 @@ public sealed class LvsPanelTests : IDisposable
         var refused = vm.ProbeFromSchematic();
         Assert.False(refused.Matched);
         Assert.Equal(vm.LvsStaleText, refused.Message);
+    }
+
+    // ══ 5b — a run over an UNSAVED document says which files it read ════════════════════════════
+    //
+    // The panel compares what is on disk (this folder's RESOLVED.md §3) and the staleness mark is
+    // what makes that honest — but a fresh result CLEARS that mark, so the one case it would
+    // otherwise miss is the one it is most needed for: edit, run, and be told the artwork matches
+    // a drawing you have already changed.
+
+    [Fact]
+    public void ARunOverAnUnsavedDocumentSaysItComparedTheSavedFiles()
+    {
+        var vm = Panel(Repo(Broken));
+        vm.RunLvs();
+        Assert.False(vm.IsLvsStale);
+
+        // Any unsaved edit will do; a waiver is the one this view model can make on its own.
+        vm.SetLvsWaived(vm.LvsFindings.First(r => r.IsError), true, "for now");
+        Assert.True(vm.IsDirty);
+
+        vm.RunLvs();
+
+        Assert.True(vm.IsLvsStale);
+        Assert.False(vm.CanCrossProbeLvs);
+        Assert.Contains("SAVED", vm.LvsStaleText, StringComparison.Ordinal);
     }
 
     // ══ 6 — waiver round trip (R-lvs12-4a) ══════════════════════════════════════════════════════

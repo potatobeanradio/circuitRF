@@ -72,6 +72,20 @@ public sealed record LvsFinding(
     public string? WaiverReason { get; init; }
 
     /// <summary>
+    /// The reason a SUB-CELL's own document already waived this finding with, carried up by
+    /// <see cref="LvsHierarchy.Within"/>; null for a finding of this design's own.
+    /// </summary>
+    /// <remarks>
+    /// <b>A waiver is a statement about the drawing it is stored on</b>, so a finding that arrived
+    /// from a cell keeps that cell's sign-off even though the parent's <c>.clay</c> has never heard
+    /// of it. Without this the parent's own waiver list would un-waive it — <c>LvsWaivers.Apply</c>
+    /// clears every finding no key matches, which is what makes un-waiving in the panel work — and
+    /// the symptom would be that adding ONE waiver at board level silently resurrects every waived
+    /// finding inside every cell.
+    /// </remarks>
+    public string? InheritedWaiver { get; init; }
+
+    /// <summary>
     /// A line about the RUN rather than about an object — <b>no objects, and so no marker</b>
     /// (R-lvs8-2c). This is <c>SchematicToLayoutGenerator.ReportLine</c>'s own convention, where an
     /// empty instance name means the line is about the run.
