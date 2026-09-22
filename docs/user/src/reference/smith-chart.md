@@ -142,7 +142,7 @@ because a walk across a chart has to be a walk.
 | | |
 |---|---|
 | **Add &#9662;** | Appends at the end, nearest the load. |
-| **Insert &#9662;** | Places before the selected element. With nothing selected it appends, because *before nothing* and *at the end* are the same place in a list. |
+| **Copy** / **Paste** | Copy puts the cascade on the clipboard as a real schematic selection ([below](#clipboard)); Paste replaces the whole cascade with one. Paste is greyed when the clipboard holds no circuitRF schematic selection, and the state is re-read whenever you come back to the window. |
 | **Delete** | Removes the selected element; the chain closes up. The **Delete** key does the same thing when no marker is selected on the chart. |
 | **&#8597;** / drag | Reorders. Dragging an element along the strip does the same thing &mdash; and the whole drawing follows the pointer as you go, with the other parts stepping aside and the wires re-drawn, so what you see while dragging is exactly what dropping will leave. |
 | **Zoom to Fit** (**F**) | Frames the whole drawing. The strip re-frames itself whenever the drawing changes size &mdash; adding, deleting or mirroring &mdash; and keeps your zoom when it does not. |
@@ -485,7 +485,8 @@ because the picture invites the opposite assumption.</p>
 
 ### Copying the network out
 
-Right-click the network strip &rsaquo; **Copy**. What goes on the clipboard is, all at once, the
+**Copy** on the network toolbar, right-click the strip &rsaquo; **Copy**, or Edit &rsaquo; Copy with the
+network focused &mdash; one command behind all three. What goes on the clipboard is, all at once, the
 schematic JSON, vector **SVG** and **PDF**, and a **PNG** &mdash; the same clipboard the schematic
 editor's own Copy writes, so it pastes as real editable components into a `.csch`, and as a vector into
 a presentation.
@@ -507,15 +508,21 @@ because the copy is still the right circuit at the design frequency, which is wh
 The copy follows the mirror. Someone who flipped the network to make a figure would not thank us for
 un-flipping it on the way out; the circuit is electrically identical either way.
 
-**Right-click the chart &rsaquo; Copy** does the same for the picture &mdash; PDF, SVG, the plot
+**Copy** on the chart's own strip, left of Save &mdash; or right-click the chart &rsaquo; **Copy**, or
+Edit &rsaquo; Copy with the chart focused &mdash; does the same for the picture &mdash; PDF, SVG, the plot
 configuration and a 2&times; bitmap &mdash; with the trajectories, grippers, targets, Q arcs, load
 labels and markers all in it.
 
 ### Pasting a schematic in
 
-Right-click the network strip &rsaquo; **Paste** takes a selection copied out of a schematic and
-replaces the whole cascade with it, or refuses with a sentence naming what stopped it. **One paste is
-one undo entry**, restoring the entire previous network.
+**Paste** on the network toolbar, right-click the strip &rsaquo; **Paste**, or Edit &rsaquo; Paste takes a
+selection copied out of a schematic and replaces the whole cascade with it, or refuses with a sentence
+naming what stopped it. **One paste is one undo entry**, restoring the entire previous network.
+
+The button is greyed only when the clipboard holds nothing of circuitRF's at all. A selection that *is*
+one of ours but is not a cascade this tool can draw leaves it live, so that pressing it tells you which
+part was the problem &mdash; which is the whole point of the rules below, and more use than a grey
+button.
 
 A refusal matters more here than a success would: a reader that accepted *part* of a paste would
 replace your network with something that is not what you copied, and report success.

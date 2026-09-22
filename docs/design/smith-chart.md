@@ -557,7 +557,7 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │ • lna_input_match.csmith                                                     (document tab)  │
 ├───────────────────┬──────────────────────────────────────────────────────────────────────────┤
-│ GEN.       [~] [v]│ [ lna_s2p        v ]                        [S] [S+] [Q]                 │
+│ GEN.       [~] [v]│ [ lna_s2p        v ]                    [C] [S] [S+] [Q]                 │
 │  f      R      X  │                    .----------------------.                              │
 │ 1.80G  12.0  -8.5 │                 .--'                      '--.                           │
 │ 2.00G  11.4  -9.1 │                /      ,2.20G                  \                          │
@@ -574,7 +574,7 @@ There is no standalone `smithRF` binary and none is proposed. This is a document
 │                   │   (overlays are added in Plot Properties... - 5.7 - and the              │
 │                   │    combo at the top left is what a new trace is seeded from)             │
 ├───────────────────┴──────────────────────────────────────────────────────────────────────────┤
-│ NETWORK                  [Fit] [Zoom box] | [ Add v ] [ Insert v ] [ Del ] [ <> ] [ M ]      │
+│ NETWORK          [Fit] [Zoom box] | [C] [P] [ Add v ] [ Del ] [ <> ] [ M ]                   │
 │                                                                                              │
 │         +---+        +----+         +----+                                                   │
 │    G ---|   |----+---| L2 |-----+---| TL1|------* load                                       │
@@ -707,8 +707,13 @@ It is a **projection, not an editable schematic**: there is no selection model, 
 free placement, because the topology is a list.
 
 - **Selection** is by click, on the symbol or on its label; the selected element's sliders appear beneath.
-- **Add** appends at the end (nearest the load); **Insert** places before the selected element; the
-  buttons carry a menu of the §3.3 vocabulary, each entry naming series or shunt.
+- **Add** appends at the end (nearest the load) and carries a menu of the §3.3 vocabulary, each entry
+  naming series or shunt. **Insert** — the same menu, placing before the selected element — is a command
+  with no button on this toolbar (owner instruction, 2026-09-22): it is redundant with the drag that
+  moves an element along the strip, so the way to put a part in the middle is to add it and drag it
+  there. The command and the one menu list both stay, so §5.8's Insert menu is filled from them.
+- **Copy** and **Paste** (§6.1, §6.2) sit left of Add — the same two commands the strip's right-click menu
+  and the shell's Edit menu carry, so no two of the three can disagree.
 - **Reorder** by drag along the strip, or by the ⇅ buttons.
 - **Delete** removes the selected element; the chain closes up.
 - Instance names are auto-assigned per type (`L1`, `L2`, `C1`, `TL1`, …), editable, unique, and are what
@@ -961,7 +966,8 @@ a call rather than as a pattern.
 
 ### 6.1 Copy the network out
 
-Right-click the network strip ▸ **Copy**. A projection built exactly as `MatchSchematicCopy` builds the
+The network toolbar's **Copy** button, the strip's right-click ▸ **Copy**, or Edit ▸ Copy with the
+network focused — one command behind all three. A projection built exactly as `MatchSchematicCopy` builds the
 Designer's — real `EditableComponent`s at the coordinates the strip drew them at, real `EditableWire`
 spine segments in the gaps between series bodies, one ground per shunt column — is handed to
 **`SchematicClipboard.CopyAsync`**. That one call produces, simultaneously:
@@ -993,7 +999,9 @@ netlist through the engine, so the two agree by test.
 
 ### 6.2 Paste a `.csch` selection in
 
-Right-click the network strip ▸ **Paste**. `SchematicClipboard.PasteAsync` returns components and wires;
+The network toolbar's **Paste** button, the strip's right-click ▸ **Paste**, or Edit ▸ Paste — which
+has this one meaning wherever the focus is, because a chart is not something a schematic selection can be
+pasted into. `SchematicClipboard.PasteAsync` returns components and wires;
 a **recognizer** then decides whether they form a cascade this tool can represent, and either replaces the
 network wholesale or refuses with a sentence naming what stopped it.
 
@@ -1022,9 +1030,24 @@ as the shape to copy.
 
 **One paste is one undo entry**, restoring the entire previous network.
 
+**The toolbar's Paste is greyed when the clipboard holds nothing of ours, and for nothing else** (owner
+instruction, 2026-09-22). A selection that *is* ours but cannot be read as a cascade — a transistor in it,
+a branch — leaves the button live and is refused by name on the strip, because that sentence is the whole
+value of the recognizer and a grey button says nothing. The probe is `NetworkPasteSource` itself, asked
+the same question the command asks, so the two cannot disagree — with one tightening: **a payload must
+carry at least one component**, since `SchematicPersistence`'s selection reader accepts any valid JSON and
+answers an EMPTY selection for anything that is not ours (the Data Display's own clipboard config is
+exactly that shape).
+
+**The clipboard is read on window activation and on a copy, never polled.** Its contents can only change
+behind this application's back while another one has the focus, so returning to the window is the moment;
+a copy refreshes it because no activation follows one. A platform clipboard read is a cross-process call
+and a toolbar cannot afford one per frame.
+
 ### 6.3 Copy the chart
 
-Right-click the chart ▸ **Copy**, or Edit ▸ Copy with the chart focused, calls
+The chart toolbar's **Copy** button (left of Save, owner instruction 2026-09-22), right-click the chart
+▸ **Copy**, or Edit ▸ Copy with the chart focused — all three are `CopyChartCommand`, which calls
 **`PlotExporter.CopyPlotToClipboardAsync`** — PDF, SVG, the Data Display config JSON, and a 2× bitmap, all
 on the clipboard at once. Trajectories, grippers, targets, Q arcs and markers are all in the rendered
 picture, because they are all in the `Plot` and its overlay.

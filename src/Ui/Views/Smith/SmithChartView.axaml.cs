@@ -78,6 +78,7 @@ public partial class SmithChartView : UserControl
         BindChartPlot(_doc.ViewModel);
         BuildElementMenus(_doc.ViewModel);
         BindClipboard(_doc.ViewModel);
+        RefreshPasteState();
 
         // The picker is the view's; the refusal that follows a cancelled one is the view model's.
         // THE BUTTON FOLLOWS THE CANVAS, not the other way round: Z on the canvas and Esc both
@@ -101,6 +102,60 @@ public partial class SmithChartView : UserControl
 
     private void OnZoomBoxArmedChanged(object? sender, EventArgs e)
         => ZoomBoxToolBtn.Classes.Set("ToolActive", NetworkCanvas.ZoomBoxArmed);
+
+    // ── Is there anything to paste? (owner instruction, 2026-09-22) ──────────
+
+    private Window? _attachedWindow;
+
+    /// <summary>
+    /// Re-reads the clipboard when the host window is activated, which is what keeps the network
+    /// strip's <b>Paste</b> button greyed or live.
+    /// </summary>
+    /// <remarks>
+    /// <b>Activation is the whole trigger, and that is deliberate.</b> The contents of a platform
+    /// clipboard can only change behind this application's back while another one has the focus, so
+    /// coming back to this window is exactly the moment — and it costs one cross-process read at a
+    /// moment the user is not drawing. A timer, or a probe per property read, would pay that cost
+    /// over and over for an answer that cannot have changed.
+    ///
+    /// <para><c>SymbolEditorView</c>'s own wiring, for the same reason it has it: a torn-off document
+    /// is in a DIFFERENT window, so the window is found on attach rather than assumed to be the
+    /// shell's. Both halves are needed — a subscription left on a window this view has left is a leak
+    /// that also fires into a dead document.</para>
+    /// </remarks>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+
+        _attachedWindow = TopLevel.GetTopLevel(this) as Window;
+        if (_attachedWindow is not null) _attachedWindow.Activated += OnHostWindowActivated;
+
+        // The first read: the document may be opened into a window that is already active, and no
+        // activation follows that.
+        RefreshPasteState();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+
+        if (_attachedWindow is not null)
+        {
+            _attachedWindow.Activated -= OnHostWindowActivated;
+            _attachedWindow = null;
+        }
+    }
+
+    private void OnHostWindowActivated(object? sender, EventArgs e) => RefreshPasteState();
+
+    /// <summary>
+    /// Fires the view model's clipboard probe. Fire-and-forget on purpose: the answer is a button's
+    /// enabled state, and there is nothing to do with the task.
+    /// </summary>
+    private void RefreshPasteState()
+    {
+        if (_doc?.ViewModel is { } vm) _ = vm.RefreshPasteStateAsync();
+    }
 
     /// <summary>
     /// <b>Escape disarms the zoom box wherever the focus is</b> (owner report, 2026-09-19).
@@ -512,8 +567,12 @@ public partial class SmithChartView : UserControl
     /// </remarks>
     private void BuildElementMenus(SmithChartViewModel vm)
     {
-        AddElementButton.Flyout    = Menu(vm.AddElementCommand);
-        InsertElementButton.Flyout = Menu(vm.InsertElementCommand);
+        AddElementButton.Flyout = Menu(vm.AddElementCommand);
+
+        // INSERT HAS NO BUTTON HERE ANY MORE (owner instruction, 2026-09-22) — it is redundant with
+        // the drag that moves an element along the strip. The COMMAND and the one list both stay, so
+        // the shell's own Insert menu is still `Menu(vm.InsertElementCommand)` and nothing has to be
+        // rebuilt to put it back.
 
         static MenuFlyout Menu(System.Windows.Input.ICommand command)
         {

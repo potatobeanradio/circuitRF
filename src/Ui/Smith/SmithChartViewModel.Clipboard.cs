@@ -81,6 +81,10 @@ public sealed partial class SmithChartViewModel
         StripNotice = SmithSchematicCopy.LossyGeneratorNote(_design);
 
         if (NetworkCopySink is { } sink) await sink(model);
+
+        // What was just copied is pastable, and nothing else is going to say so: the window was
+        // already active when the copy happened, so no activation follows it.
+        await RefreshPasteStateAsync();
     }
 
     // ── R-smith7-6 / R-smith7-7 / R-smith7-8 — paste one in ──────────────────
@@ -104,7 +108,7 @@ public sealed partial class SmithChartViewModel
     /// clipboard that was not — and the refusal half of the strip is for a design that cannot be
     /// evaluated.</para>
     /// </remarks>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanPasteNetwork))]
     private async Task PasteNetwork()
     {
         if (NetworkPasteSource is not { } source) return;
@@ -143,6 +147,63 @@ public sealed partial class SmithChartViewModel
         // R-smith7-7: the strip states WHICH end rule fired, because the two can disagree and the
         // user is the only one who knows which they meant. Set after Edit, which clears the note.
         StripNotice = result.Note;
+    }
+
+    // ── Is there anything to paste? (owner instruction, 2026-09-22) ─────────
+
+    private bool _canPasteNetwork;
+
+    /// <summary>
+    /// Whether the toolbar's <b>Paste</b> is live: does the clipboard hold a circuitRF schematic
+    /// selection at all?
+    /// </summary>
+    /// <remarks>
+    /// <b>The clipboard is not polled</b>, because a platform clipboard read is a cross-process call
+    /// and a toolbar cannot afford one per frame or per property read. The state is a field, and
+    /// <see cref="RefreshPasteStateAsync"/> is what moves it — from the view, when the host window is
+    /// activated, which is the only moment at which the contents can have changed without this
+    /// application knowing.
+    ///
+    /// <para><b>It asks "is it ours", not "will it paste".</b> A selection this strip cannot read as a
+    /// cascade — one with a transistor in it, one with a branch the list cannot express — leaves the
+    /// button LIVE and is refused by name on the strip (<c>R-smith7-7</c>). Greying it out instead
+    /// would trade a sentence that says which element was the problem for a button that says nothing,
+    /// and the refusal is the whole value of that half of the feature.</para>
+    /// </remarks>
+    private bool CanPasteNetwork() => _canPasteNetwork;
+
+    /// <summary>
+    /// Re-reads the clipboard and updates <b>Paste</b>'s enabled state.
+    /// </summary>
+    /// <remarks>
+    /// <b>Through <see cref="NetworkPasteSource"/> and not a fourth seam.</b> The probe has to agree
+    /// with the paste exactly — a button that is live for something the command then rejects as "not
+    /// ours" is worse than no button — and the cheapest way to guarantee that is to ask the same
+    /// delegate the same question. The payload it builds is thrown away; it is a few cloned
+    /// components, and the read is what costs.
+    ///
+    /// <para>Null seam, null answer or a throwing clipboard all mean the same thing: nothing of ours
+    /// is there. Headless, with no seam set, the button is dark — which is correct, because there is
+    /// no clipboard.</para>
+    /// </remarks>
+    public async Task RefreshPasteStateAsync()
+    {
+        bool can = false;
+
+        if (NetworkPasteSource is { } source)
+        {
+            // A COMPONENT IS THE TEST, not a non-null payload. `SchematicPersistence`'s selection
+            // reader accepts "any valid JSON" and answers an EMPTY selection for JSON that is simply
+            // not ours — the Data Display's own clipboard config is exactly that shape — so a
+            // non-null answer alone would light the button up for a plot.
+            try   { can = await source() is { } payload && payload.Components.Count > 0; }
+            catch { can = false; }
+        }
+
+        if (can == _canPasteNetwork) return;
+
+        _canPasteNetwork = can;
+        PasteNetworkCommand.NotifyCanExecuteChanged();
     }
 
     // ── R-smith7-5 — copy the chart ──────────────────────────────────────────

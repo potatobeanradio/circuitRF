@@ -501,6 +501,78 @@ public sealed class SmithClipboardTests
         Assert.False(vm.UndoRedo.CanUndo);
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  8. The toolbar's Paste is greyed for the clipboard and nothing else
+    //     (owner instruction, 2026-09-22)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>Paste is live when the clipboard holds one of our schematic selections and dark when it
+    /// does not — and a selection that is ours but cannot be READ as a cascade leaves it live, so
+    /// the refusal that names the offending part still has somewhere to come from.</b>
+    /// </summary>
+    /// <remarks>
+    /// The empty-payload rung is the one worth the line. <c>SchematicPersistence</c>'s selection
+    /// reader accepts any valid JSON and answers an EMPTY selection for anything that is not ours —
+    /// the Data Display's own clipboard config is exactly that shape — so a probe that tested the
+    /// payload for null would light the button up for a plot.
+    /// </remarks>
+    [Fact]
+    public async Task PasteIsGreyedForTheClipboardAndNothingElse()
+    {
+        var vm = new SmithChartViewModel(FourElements());
+
+        // (a) No seam at all — headless, there is no clipboard.
+        await vm.RefreshPasteStateAsync();
+        Assert.False(vm.PasteNetworkCommand.CanExecute(null));
+
+        // (b) Something on the clipboard that is not ours.
+        vm.NetworkPasteSource = () => Payload(([], []));
+        await vm.RefreshPasteStateAsync();
+        Assert.False(vm.PasteNetworkCommand.CanExecute(null));
+
+        // (c) Ours, and representable.
+        var good = ThroughTheClipboard(Design(C(2.7e-12, SmithPlacement.Series, "Cs")));
+        vm.NetworkPasteSource = () => Payload((good.Comps, good.Wires));
+        await vm.RefreshPasteStateAsync();
+        Assert.True(vm.PasteNetworkCommand.CanExecute(null));
+
+        // (d) Ours, and NOT representable — a branch. The button stays live and the strip says why.
+        var third = Series(SymbolKind.Resistor, "R3", 200, "R", "50", "Ω");
+        third.Y        = 200;
+        third.Rotation = SymbolRotation.R0;
+        var branch = Wired(
+            [Series(SymbolKind.Resistor, "R1", 0,   "R", "50", "Ω"),
+             Series(SymbolKind.Resistor, "R2", 400, "R", "50", "Ω"),
+             third],
+            []);
+
+        vm.NetworkPasteSource = () => Payload((branch.C, branch.W));
+        await vm.RefreshPasteStateAsync();
+        Assert.True(vm.PasteNetworkCommand.CanExecute(null));
+
+        await vm.PasteNetworkCommand.ExecuteAsync(null);
+        Assert.Contains("branch", vm.StripNotice ?? "", StringComparison.Ordinal);
+        Assert.Equal(4, vm.Design.Elements.Count);          // and nothing was replaced
+
+        // (e) A COPY makes Paste live with no activation to follow it — the window was already
+        // active when the copy happened, so nothing else would have said so.
+        var copied = new SmithChartViewModel(FourElements())
+        {
+            NetworkCopySink   = _ => Task.CompletedTask,
+            NetworkPasteSource = () => Payload((good.Comps, good.Wires)),
+        };
+        Assert.False(copied.PasteNetworkCommand.CanExecute(null));
+        await copied.CopyNetworkCommand.ExecuteAsync(null);
+        Assert.True(copied.PasteNetworkCommand.CanExecute(null));
+
+        static Task<(IReadOnlyList<EditableComponent> Components,
+                     IReadOnlyList<EditableWire>      Wires)?> Payload(
+            (IReadOnlyList<EditableComponent>, IReadOnlyList<EditableWire>) p)
+            => Task.FromResult<(IReadOnlyList<EditableComponent>,
+                                IReadOnlyList<EditableWire>)?>(p);
+    }
+
     // ── assertions and builders ──────────────────────────────────────────────
 
     /// <summary>

@@ -657,6 +657,20 @@
                                  document that was never written. A scratch document's Save asks for
                                  a path, which is Save As by another name and is what makes the two
                                  buttons honest rather than redundant. -->
+                            <!-- ── Copy (owner instruction, 2026-09-22) ────────────────────────
+                                 THE CONTEXT MENU'S OWN COPY, on the toolbar. PlotControl's
+                                 right-click ▸ Copy has always been here and stays — this is the
+                                 same CopyChartCommand, which is the same PlotExporter call with
+                                 the same container, so the two cannot put different pictures on
+                                 the clipboard.
+
+                                 LEFT OF SAVE (owner instruction): both write the document out,
+                                 and the clipboard is the cheaper of the two. -->
+                            <Button Name="CopyChartButton" Classes="SelectionBtn" Padding="6,3"
+                                    Command="{Binding ViewModel.CopyChartCommand}"
+                                    ToolTip.Tip="Copy — puts the chart on the clipboard as a PDF, an SVG and a bitmap at once, with every trace, marker and gripper that is drawn. The same copy the chart's right-click menu makes.">
+                                <mi:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/>
+                            </Button>
                             <Button Name="SaveButton" Classes="SelectionBtn" Padding="6,3"
                                     Click="OnSave"
                                     ToolTip.Tip="Save — writes this .csmith. A document that has never been saved is asked where to go.">
@@ -720,8 +734,9 @@
         <Border Grid.Row="2" Classes="pane" Name="NetworkRegion" Padding="6">
             <Grid RowDefinitions="Auto,*,Auto">
 
-                <!-- The toolbar. Add appends at the end (nearest the load); Insert places before the
-                     selection. BOTH MENUS ARE BUILT IN CODE from SmithChartViewModel.ElementMenuGroups
+                <!-- The toolbar. Add appends at the end (nearest the load); Insert, which no longer
+                     has a button here, places before the selection.
+                     BOTH MENUS ARE BUILT IN CODE from SmithChartViewModel.ElementMenuGroups
                      — one vocabulary in one layout, so the two cannot disagree, and so the shell's own
                      Insert menu can be filled from the same list. The eight-member RLC family sits
                      under one submenu there (owner, 2026-09-20); everything else is a row. -->
@@ -761,14 +776,41 @@
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                        <!-- ── COPY / PASTE (owner instruction, 2026-09-22) ─────────────────
+                             brief 7's two network commands, which until now had only the canvas'
+                             right-click menu and the shell's Edit menu — both places you have to
+                             already know about. Same commands, so the three surfaces cannot
+                             disagree: Copy puts the cascade out as a runnable two-port schematic
+                             selection, and Paste REPLACES the cascade with one.
+
+                             PASTE IS GREYED WHEN THE CLIPBOARD HOLDS NOTHING OF OURS, and that is
+                             the only thing it is greyed for. A selection that IS ours but cannot be
+                             read as a cascade — a transistor in it, a branch the strip cannot draw —
+                             leaves the button live and refuses BY NAME on the strip (R-smith7-7),
+                             because a grey button says nothing and that refusal is the whole answer.
+                             The state is re-read when the window is activated; see
+                             RefreshPasteStateAsync. -->
+                        <Button Name="CopyNetworkButton" Classes="SelectionBtn" Padding="6,3"
+                                Command="{Binding ViewModel.CopyNetworkCommand}"
+                                ToolTip.Tip="Copy — puts the cascade on the clipboard as a real two-port schematic selection, terminated at both ends, that can be pasted into a schematic and run.">
+                            <mi:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/>
+                        </Button>
+                        <Button Name="PasteNetworkButton" Classes="SelectionBtn" Padding="6,3"
+                                Command="{Binding ViewModel.PasteNetworkCommand}"
+                                ToolTip.Tip="Paste — replaces the whole cascade with the schematic selection on the clipboard, as one undo entry. Greyed when the clipboard holds no circuitRF schematic selection.">
+                            <mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/>
+                        </Button>
+
                         <Button Name="AddElementButton" Classes="SelectionBtn" Padding="6,3"
                                 ToolTip.Tip="Add — an element at the end of the cascade, nearest the load.">
                             <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
                         </Button>
-                        <Button Name="InsertElementButton" Classes="SelectionBtn" Padding="6,3"
-                                ToolTip.Tip="Insert — an element before the selected one. With nothing selected this appends, because &quot;before nothing&quot; and &quot;at the end&quot; are the same place in a list.">
-                            <mi:MaterialIcon Kind="TableColumnPlusBefore" Width="16" Height="16"/>
-                        </Button>
+                        <!-- INSERT HAS NO BUTTON (owner instruction, 2026-09-22). It is redundant
+                             with the drag that moves an element along the strip: add at the end and
+                             drag it where it belongs. The COMMAND stays — SmithChartViewModel's
+                             InsertElementCommand, its menu groups and BuildElementMenus' Menu()
+                             builder are untouched, so the shell's own Insert menu (R-smith4-9) can
+                             still be filled from the same one list. -->
                         <Button Classes="SelectionBtn" Padding="6,3"
                                 Command="{Binding ViewModel.DeleteElementCommand}"
                                 ToolTip.Tip="Delete — removes the selected element. The chain closes up.">

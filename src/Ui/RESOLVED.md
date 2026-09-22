@@ -34552,3 +34552,46 @@ it stays, that is one more candidate eliminated, on a path where nothing is bein
 see what is painted, and a menu-bar tracking session cannot be driven without a real click, so this
 change is reasoned from the mechanism and gated by `MenuBarRepairGateTests` (the state machine only).
 It needs the owner to click a menu to confirm it.
+
+## Smith Chart: Copy and Paste on the two toolbars, and Insert's button withdrawn (2026-09-22)
+
+Owner instruction. Three surface changes, one of them with a trap underneath it.
+
+**The chart's Copy button is the context menu's own command.** `PlotControl`'s right-click ▸ Copy has
+been there since it had a menu; the toolbar button left of Save binds the same `CopyChartCommand`, which
+is the same `PlotExporter.CopyPlotToClipboardAsync` call with the same container. Nothing was added
+below the button, so the two cannot put different pictures on the clipboard. The chart still gets no
+`ContextMenu` of this view's own — assigning one would replace `PlotControl`'s five items with one.
+
+**Insert lost its button, not its command.** It is redundant with the drag that moves an element along
+the strip. `SmithChartViewModel.InsertElementCommand`, `ElementMenuGroups` and `BuildElementMenus`'
+`Menu()` builder are all untouched, so the shell's own Insert menu is still one call away and the one
+vocabulary list still has exactly one author.
+
+**The trap: `SchematicPersistence.DeserializeSelection` accepts ANY valid JSON.** It deserializes into a
+`CschFile` and returns whatever that yields — for JSON that is not ours, an EMPTY selection rather than a
+throw. `SchematicClipboard.PasteAsync` therefore answers a non-null payload with zero components for,
+say, the Data Display's own clipboard config, which is a `{`-shaped text flavour sitting on the same
+clipboard. A "can I paste?" probe written as `await source() is not null` is true for a copied PLOT, so
+the network strip's Paste would have been lit up for it and would then have refused. The probe tests for
+**at least one component**.
+
+**Paste is greyed for the clipboard and for nothing else.** A selection that IS ours but cannot be read
+as a cascade — a branch, a transistor, a parameter carrying an expression — leaves the button live and is
+refused by name on the strip. That sentence is the whole value of `SmithPasteRecognizer`; a grey button
+says nothing, and greying it out would have traded a diagnosis for silence.
+
+**The probe is the paste seam itself**, `NetworkPasteSource`, asked the same question the command asks.
+A second seam could drift from the first, and a button that is live for something the command then
+rejects as "not ours" is worse than no button at all.
+
+**The clipboard is read on window activation and after a copy, never polled.** Its contents can only
+change behind this application's back while another application has the focus, so coming back to the
+window is the moment — `SymbolEditorView`'s own `OnAttachedToVisualTree`/`OnDetachedFromVisualTree`
+wiring, which finds the window rather than assuming the shell's because a torn-off document is in a
+different one. The copy refresh is separate and necessary: the window was already active when the copy
+happened, so no activation follows it and nothing else would have lit the button up. A platform
+clipboard read is a cross-process call; one per frame, or one per property read, is not affordable.
+
+Gate: `SmithClipboardTests.PasteIsGreyedForTheClipboardAndNothingElse` — the four clipboard states and
+the copy refresh, all through the real command's `CanExecute`.
