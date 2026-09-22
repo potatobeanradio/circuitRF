@@ -300,6 +300,13 @@ When a trace needs arithmetic across cubes, the spec box accepts a free expressi
 measurement names work as single-token specs (`PDC`); using a bare name *inside* a larger
 expression still requires the qualified form today (a noted future enhancement).
 
+**`freq` is bound in a trace expression** (2026-09-22, `src/Engine/RESOLVED.md`) — the frequency of the
+sample being evaluated, in Hz. The path evaluates one X-sample at a time, so unlike the measurement
+scope's cube-valued `freq` this one is a scalar; it is the same arithmetic and the same curve, so
+`mag(SP1.Z[:, 1, 1]) / (2*pi*freq)` writes the same in both places. It is bound only when the X axis
+IS a frequency (`freq` or `ssfreq`); on a Pin- or Γ-swept trace there is no single frequency the sample
+stands at, and the refusal names the axis the trace does have.
+
 ---
 
 ## 9a. The WSProbe section (WSP-4)

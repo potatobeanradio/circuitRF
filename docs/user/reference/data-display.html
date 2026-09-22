@@ -470,6 +470,11 @@ RF engineer names them. Every other axis (<code>freq</code>, a sweep, <code>harm
 </div>
 <p>Validity is checked as you type: exactly one X or none, at most one <code>~</code>, and a <code>~</code> needs an X. Anything
 else is reported inline under the box rather than silently producing a different curve.</p>
+<p>The box also accepts a free <strong>expression</strong> across cubes — <code>mag(HB1.V) - mag(HB1.Vref)</code>,
+<code>dB20(SP1.S[:, 2, 1])</code> — evaluated element-wise. Inside one, <strong><code>freq</code> is the sample's own frequency in
+Hz</strong>, so <code>imag(SP1.Z[:, 1, 1]) / (2*pi*freq)</code> plots an inductance against frequency. <code>freq</code> is bound
+only when the X axis is a frequency; on a Pin- or Γ-swept trace the error names the axis the trace
+actually has.</p>
 <h2 id="families">Families of curves</h2>
 <p>A <strong>family is one trace object that renders N curves</strong> — not N traces. Mark an axis <strong>Fam</strong> (or type <code>~</code>
 in its position) and every value of that axis draws its own curve, with one legend entry and one set of

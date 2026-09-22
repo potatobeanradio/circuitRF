@@ -162,6 +162,24 @@ per sweep point) rather than a scalar — so `Pin_avail = Pin` over a 10-point `
 10-element curve. Its axis matches the swept analysis's axis, so it broadcast-aligns: `Gain =
 dB(HB1.V("out",1,All)) - Pin` resolves element-wise. A non-swept global stays a scalar.
 
+## Frequency: `freq` {#freq}
+
+`freq` in a measurement is the run's **frequency axis in Hz**, as a 1-D cube — one element per
+analysis point — so a quantity that needs ω is written the obvious way:
+
+```text
+measure  Xm    = imag(zm)                 an intermediate reactance, in ohms
+measure  Lval  = Xm / (2*pi*freq)         henries, one per frequency
+```
+
+Its axis is the analysis's own `freq` axis, so it broadcast-aligns with every cube taken from that
+analysis. `freq` is reserved — a VAR may not be named `freq`.
+
+It needs a frequency axis to be. A run whose analyses produced none (DC only), or two analyses on
+different frequency grids, leaves `freq` unresolved and the measurement's error says which of the
+two it was — rather than silently computing against the wrong grid. Under harmonic balance the
+spectral axis is `harmonic` (or `mixIndex`) and a small-signal sweep is `ssfreq`; neither is `freq`.
+
 ---
 
 <p class="small">See also: <a href="expressions.html">Expressions</a> (the language) ·

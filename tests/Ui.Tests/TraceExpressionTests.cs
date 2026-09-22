@@ -268,4 +268,43 @@ public sealed class TraceExpressionTests
         Assert.NotNull(rz);
         Assert.Equal(3, rz!.Length);
     }
+
+    // ── `freq` on a trace card ────────────────────────────────────────────────
+
+    /// <summary>
+    /// "…/freq" in a trace expression used to fail with "Unresolved name 'freq' in scope 'te'".
+    /// The trace's X axis IS the frequency, so the sample's own frequency is bound per sample.
+    /// </summary>
+    [Fact]
+    public void Expr_FreqIsTheSamplesOwnFrequency()
+    {
+        var ds = MakeDs();
+        bool ok = TraceExpression.TryEvaluate(
+            "mag(V[:, 1]) / (2*pi*freq)", ds, PlotType.Rect,
+            out var xVals, out _, out var rz, out _, out _, out _, out var err);
+
+        Assert.True(ok, err);
+        Assert.NotNull(rz);
+        double[] mags = [2.0, Math.Sqrt(2.0), Math.Sqrt(1.62)];
+        for (int i = 0; i < 3; i++)
+            Assert.Equal(mags[i] / (2 * Math.PI * xVals[i]), rz![i], 15);
+    }
+
+    /// <summary>A non-frequency X axis has no single frequency, so the refusal names the axis
+    /// it does have rather than leaving a bare unresolved name.</summary>
+    [Fact]
+    public void Expr_FreqOnANonFrequencyAxis_NamesTheAxis()
+    {
+        var pin  = new Axis("Pin", [-20.0, -10.0, 0.0], "dBm");
+        var cube = new DataCube([pin], new[] { 1.0, 2.0, 3.0 });
+        var ds   = new DataSet();
+        ds.Add("Pout", cube);
+
+        bool ok = TraceExpression.TryEvaluate(
+            "Pout / freq", ds, PlotType.Rect,
+            out _, out _, out _, out _, out _, out _, out var err);
+
+        Assert.False(ok);
+        Assert.Contains("Pin", err);
+    }
 }

@@ -180,6 +180,12 @@ RF engineer names them. Every other axis (<code>freq</code>, a sweep, <code>harm
 Validity is checked as you type: exactly one X or none, at most one `~`, and a `~` needs an X. Anything
 else is reported inline under the box rather than silently producing a different curve.
 
+The box also accepts a free **expression** across cubes — `mag(HB1.V) - mag(HB1.Vref)`,
+`dB20(SP1.S[:, 2, 1])` — evaluated element-wise. Inside one, **`freq` is the sample's own frequency in
+Hz**, so `imag(SP1.Z[:, 1, 1]) / (2*pi*freq)` plots an inductance against frequency. `freq` is bound
+only when the X axis is a frequency; on a Pin- or Γ-swept trace the error names the axis the trace
+actually has.
+
 ## Families of curves {#families}
 
 A **family is one trace object that renders N curves** — not N traces. Mark an axis **Fam** (or type `~`

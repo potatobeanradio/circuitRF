@@ -235,6 +235,15 @@ public static class TraceExpression
         for (int k = 0; k < uniqueRefs.Count; k++)
             scope.Bind($"__c{k}", "0");
 
+        // `freq` — the trace's own X axis in Hz, when that axis IS a frequency. A trace expression is
+        // evaluated one X-sample at a time, so unlike the measurement scope's cube-valued `freq` this
+        // one is the scalar for THIS sample — which is the same arithmetic and the same answer.
+        // Bound only when the X axis is frequency: on a Pin- or gS-swept trace there is no single
+        // frequency the sample stands at, and binding the sweep value would divide by the wrong number.
+        var  xAx      = uniqueRefs[0].XAxis!;
+        bool freqIsX  = xAx.Name is "freq" or "ssfreq";
+        if (freqIsX) scope.Bind("freq", "0");
+
         // ── Step 6: Evaluate per X-sample ─────────────────────────────────────
         var results    = new Value[n];
         bool anyComplex = false;
@@ -244,6 +253,7 @@ public static class TraceExpression
             var ev = new Evaluator();
             for (int k = 0; k < uniqueRefs.Count; k++)
                 ev.InjectResolved("te", $"__c{k}", new Value(uniqueRefs[k].Data![i]));
+            if (freqIsX) ev.InjectResolved("te", "freq", new Value(xAx.Values[i]));
 
             try
             {
@@ -256,7 +266,11 @@ public static class TraceExpression
             }
             catch (ExpressionException ex)
             {
-                error = ex.Message;
+                // `freq` is available on a frequency-swept trace and on no other; the bare unresolved
+                // name reads as "never supported", so say which axis this trace actually has.
+                error = ex is UnresolvedNameException { Name: "freq" } && !freqIsX
+                      ? $"'freq' is available only on a frequency-swept trace; this one's X axis is '{xAx.Name}'."
+                      : ex.Message;
                 return false;
             }
 

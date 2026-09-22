@@ -94,6 +94,42 @@ public sealed class MeasurementEvaluator
             }
         }
 
+        // `freq` — the run's own frequency axis, as a 1-D cube. A measurement over an S-parameter
+        // analysis has a natural frequency variable, and without this one a caller has no spelling
+        // for it at all: the reserved `freq` keyword is injected per-stamping-frequency into a
+        // component-value scope (Z_Port, an SDD equation) and never reached a measurement, so
+        // "myCalc = 1/2/pi/freq" failed with an unresolved name. Injected as a cube (not a scalar)
+        // for the same reason a swept variable is: it broadcast-aligns by axis name+values with the
+        // analysis cubes it is used alongside, so "1/(2*pi*freq*C)" lands one element per frequency.
+        string? freqHint = null;
+        {
+            var grids = new List<Axis>();
+            foreach (var ds in _analysisResults.Values)
+                foreach (var (_, cube) in ds.Cubes)
+                    foreach (var ax in cube.Axes)
+                        if (ax.Name == FreqName && !grids.Any(g => SameGrid(g, ax)))
+                            grids.Add(ax);
+
+            if (grids.Count == 1)
+            {
+                var ax = grids[0];
+                var freqCube = new DataCube([new Axis(FreqName, ax.Values, ax.Unit)],
+                                            (double[])ax.Values.Clone());
+                globalScope.Bind(FreqName, "0");                            // ensure Lookup succeeds
+                eval.InjectResolved("globals", FreqName, new Value(freqCube));
+            }
+            else if (grids.Count == 0)
+            {
+                freqHint = "no analysis in this run produced a frequency axis "
+                         + $"(available: [{string.Join(", ", _analysisResults.Keys)}])";
+            }
+            else
+            {
+                freqHint = $"this run's analyses use {grids.Count} different frequency grids, so "
+                         + "'freq' is ambiguous — reference the analysis-qualified cube instead";
+            }
+        }
+
         // Measurement scope: child of globals; used to inject computed measurement cubes.
         var mScope = new Scope("measurements", globalScope);
 
@@ -103,7 +139,12 @@ public sealed class MeasurementEvaluator
             try { result = eval.Eval(m.Expression, mScope, m.Unit); }
             catch (Exception ex)
             {
-                errors.Add($"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {ex.Message}");
+                // An unresolved `freq` is the one name whose absence has a reason worth reporting:
+                // it IS available in most runs, so the bare name alone reads as "never supported".
+                var why = ex is UnresolvedNameException { Name: FreqName } && freqHint is not null
+                        ? $"{ex.Message} — {freqHint}"
+                        : ex.Message;
+                errors.Add($"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {why}");
                 continue;  // skip bind+emit; later measurements referencing this name report cascade error
             }
 
@@ -118,6 +159,21 @@ public sealed class MeasurementEvaluator
             }
         }
         return errors;
+    }
+
+    /// <summary>The reserved frequency name (expressions.md §3) — the axis S-parameter cubes carry.</summary>
+    private const string FreqName = "freq";
+
+    /// <summary>Two frequency axes are the same grid when they agree to the tolerance
+    /// <see cref="DataCube"/>'s own broadcast alignment uses — anything else would inject a `freq`
+    /// that cannot align with the cube a measurement uses it against.</summary>
+    private static bool SameGrid(Axis a, Axis b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int k = 0; k < a.Length; k++)
+            if (Math.Abs(a.Values[k] - b.Values[k]) > 1e-12 * (1 + Math.Abs(b.Values[k])))
+                return false;
+        return true;
     }
 
     private static DataCube ToCube(Measurement m, Value result) => result.Kind switch

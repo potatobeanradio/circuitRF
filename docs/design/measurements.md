@@ -250,10 +250,21 @@ ordinary thing to want: a coupling factor k = M/√(L₁L₂), an RMS, a |Z| tak
 it stays Real unless an element is negative, which promotes the cube to Complex, matching `Value.Pow`'s
 own rule for a negative base so the two spellings cannot disagree.
 
-**There is no accessor for a cube's own axis VALUES** — nothing yields the `freq` vector — so a
-measurement that needs ω (an inductance in henries from a reactance in ohms, say) cannot be written.
-Quantities whose ω cancels are unaffected, which covers most figures of merit; the shipped
-`CoupledInductors` example publishes reactances and says to divide.
+**`freq` is the run's own frequency axis**, injected into measurement scope as a 1-D cube (2026-09-22,
+`src/Engine/RESOLVED.md`) — so a measurement that needs ω can be written directly: an earlier
+measurement publishing a reactance in ohms can be divided, `Lval = Xm / (2*pi*freq)`, for one henry
+per frequency. It is a cube rather than a scalar for the same reason a swept variable is: it broadcast-aligns by axis name and values
+with the analysis cubes it is used alongside. The name is the same reserved `freq` the engine injects
+per stamping frequency into a component-value scope (`expressions.md` §3), so a user variable still
+may not shadow it.
+
+It is injected only when the run's results agree on ONE frequency grid. With none (a DC-only run) or
+with two analyses on different grids, `freq` stays unresolved and the measurement's error names the
+reason rather than leaving a bare "Unresolved name" — picking one of two grids would produce a
+plausible cube computed against the wrong frequencies.
+
+**There is still no accessor for a cube's own axis VALUES in general** — nothing yields a `harmonic`
+or `gS` vector — so `freq` is the one axis a measurement can read back.
 
 **Branch-current accessor** (`brief-unify-i-cube-engine`, 2026-06-18) — `HB1.I("branchName", ...)` pins
 the `branch` axis of the single `I` cube, exactly mirroring `HB1.V("nodeName", ...)` for the `node`

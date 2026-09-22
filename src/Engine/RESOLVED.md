@@ -2515,3 +2515,53 @@ repo's one assembler rather than a second one, and an N-cell impedance field gen
 read back out of an `ElaboratedNetlist` sweep. But the overview's sentence and the code disagree, and
 one of the two should move — either the scan extends to `src/Engine/Pdn/` and this is refactored, or
 the overview's rule is narrowed to the `src/Design` half it was really about. An owner call.
+
+## `freq` in a measurement — the run's frequency axis, as a cube (2026-09-22)
+
+Reported as a bug: `measure myCalc = 1/2/pi/freq` over an S-parameter analysis failed with
+*"Unresolved name 'freq' in scope 'measurements'"*. It was accurate — nothing had ever injected it —
+and `docs/design/measurements.md` recorded the consequence as a known limitation ("nothing yields the
+`freq` vector — so a measurement that needs ω cannot be written"). It reads as a bug because `freq`
+IS a reserved keyword the engine injects everywhere else a frequency is in play (`Z_Port`, `ChainModel`,
+an SDD equation), so a user meeting it in one place reasonably expects it in the other.
+
+`MeasurementEvaluator` now injects it into the globals scope alongside the swept variables, **as a 1-D
+cube rather than a scalar, and for the same reason**: a measurement over a swept analysis is a curve,
+and `DataCube`'s broadcast aligns operands by axis NAME and VALUES, so a `freq` carrying the analysis's
+own axis composes with `SP1.S(2,1)` and lands one element per point. A scalar would have been the wrong
+shape and — worse — would have silently collapsed a per-frequency quantity to one number.
+
+**The grid is taken from the RESULTS, not from the analysis declaration.** Same argument as the swept
+axis above it in that method: the declaration says what was asked for, the cubes say what was produced,
+and a segmented or adaptively-refined sweep differs between the two.
+
+**Two analyses on different frequency grids inject NOTHING, and the error says so.** Picking either one
+produces a cube of entirely plausible numbers computed against the wrong frequencies, which nothing
+downstream can detect. A DC-only run says the other half (no analysis produced a frequency axis) —
+without those two sentences the caller sees only the bare unresolved name and concludes the feature does
+not exist, which is exactly the report this fix came from.
+
+Scoped to `freq` deliberately. `ssfreq`, `harmonic` and `mixIndex` are NOT injected: a spectral axis is
+an index set, not a frequency the measurement can divide by, and `ssfreq` has no reserved-name
+protection, so a user's global could already carry that spelling.
+
+Gate: `tests/Engine.Tests/Measurements/FrequencyInMeasurementTests.cs` (2 tests — alignment against an
+S cube, and the ambiguous-grid refusal). Both entry points are covered by the one change: the GUI's
+`SchematicRunService` and `circuitrf sparam`/`hb` call the same evaluator.
+
+### The same name on a trace card (`src/Render/DataDisplay/TraceExpression.cs`)
+
+Reported the same day and the same root: a trace-card expression dividing by `freq` failed with
+*"Unresolved name 'freq' in scope 'te'"*. Fixed alongside, because two spellings of one idea that
+disagree about whether `freq` exists is worse than neither having it.
+
+**It is a SCALAR here, not a cube, and that is not an inconsistency.** `TraceExpression` evaluates the
+expression once per X-sample with each cube slice injected as that sample's own value; binding `freq`
+to `xAxis.Values[i]` is the identical arithmetic the measurement's cube-valued `freq` performs
+element-wise, so `mag(...)/(2*pi*freq)` is the same curve written the same way in both places.
+
+**Bound only when the X axis IS a frequency** (`freq` or `ssfreq`). A trace whose X is `Pin` or a Γ
+sweep has no single frequency the sample stands at, and binding the sweep coordinate there would be a
+divide by a number in dBm that produces a perfectly plausible curve. `ssfreq` IS bound, unlike in the
+measurement scope, because here it is the trace's X axis in Hz rather than a name competing with a
+user's own global.
