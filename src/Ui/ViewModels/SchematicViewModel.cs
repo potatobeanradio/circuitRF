@@ -4167,6 +4167,23 @@ public sealed partial class SchematicViewModel : ObservableObject
         Selection.Clear();
     }
 
+    /// <summary>Why Sort Placement cannot run on the current selection, or null when it can.</summary>
+    public string? SortPlacementRefusal() =>
+        RenderModel is null ? "Nothing to sort." : SchematicSortPlacement.Refusal(EditModel, RenderModel, Selection.Ids);
+
+    /// <summary>
+    /// Lays the selected, unconnected components out in instance-name order, in the nearest free
+    /// space (<see cref="SchematicSortPlacement"/>). Returns the arranged block's world extent for the
+    /// view to bring on screen, or null when the selection was refused.
+    /// </summary>
+    public (double MinX, double MinY, double MaxX, double MaxY)? SortSelectedPlacement()
+    {
+        if (RenderModel is null) return null;
+        if (SchematicSortPlacement.Plan(EditModel, RenderModel, Selection.Ids) is not { } plan) return null;
+        Execute(new SortPlacementCommand(EditModel, plan.Moves));
+        return plan.Region;
+    }
+
     public void RotateSelection(bool clockwise = false)
     {
         var ids = Selection.Ids.ToList();

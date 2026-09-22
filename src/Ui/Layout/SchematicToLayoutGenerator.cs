@@ -60,7 +60,8 @@ public static class SchematicToLayoutGenerator
         int OverwrittenParameterCount,
         IReadOnlyList<string> NoLayoutWarnings,
         Bbox AddedRegion = default,
-        int DeletedCount = 0)
+        int DeletedCount = 0,
+        bool OrientationLinksRecorded = false)
     {
         public bool NothingChanged => Command is null && NoLayoutWarnings.Count == 0;
     }
@@ -168,6 +169,8 @@ public static class SchematicToLayoutGenerator
         var noLayoutWarnings = new List<string>();
         IUiCommand? chain = null;
         int added = 0, updated = 0, unchanged = 0, overwritten = 0;
+        int unlinkedDiffering = 0;
+        bool linksRecorded = false;
 
         for (int slot = 0; slot < physical.Count; slot++)
         {
@@ -228,6 +231,13 @@ public static class SchematicToLayoutGenerator
                 // command holds this instance by reference and has not run yet, so moving it now is
                 // moving it before it exists. See PlaceNewInstances.
                 var inst = new LayoutInstance { CellRef = resolvedCellRef, X = 0, Y = 0, Mag = 1.0, SchematicId = schematicId };
+                // Placed facing the way the symbol faces, and linked, so a rotation made on either side
+                // from here on is carried across by the next run.
+                var facing = SchematicLayoutOrientation.FromSchematic((int)comp.Rotation, comp.MirrorX)
+                    .Compose(PinAlignment(comp, schematicDir, resolvedCellRef, targetLayoutBaseDir, technology));
+                inst.MirrorX = facing.Mirror;
+                inst.RotationDegrees = facing.Deg;
+                inst.OrientationLink = SchematicLayoutOrientation.Link((int)comp.Rotation, comp.MirrorX, facing);
                 newInstances.Add((slot, inst));
                 chain = Chain(chain, new AddInstanceCommand(target, inst));
                 added++;
@@ -280,40 +290,57 @@ public static class SchematicToLayoutGenerator
                 }
 
                 target.SchematicPCellSnapshots[schematicId] = new Dictionary<string, PCellValue>(pcellParams);
-
-                if (cellRefChanged)
-                {
-                    var after = LayoutGeometry.Clone(before);
-                    after.CellRef = resolvedCellRef;
-                    after.SchematicId = schematicId;
-                    chain = Chain(chain, new ReplaceInstanceCommand(target, existing.Index, before, after));
-                    updated++;
-                    if (!reportedThisInstance)
-                        lines.Add(new ReportLine(schematicId, $"{schematicId} — updated", ReportSeverity.Info));
-                }
-                else
-                {
-                    unchanged++;
-                }
+                UpdateExisting(reportedThisInstance);
                 continue;
             }
 
             // Non-PCell (hierarchical cell-ref, or an unresolved reference that happens to still match) —
             // plain CellRef tracking, no parameter concept to overwrite.
-            if (cellRefChanged)
+            UpdateExisting(reportedThisInstance: false);
+
+            // The one tail both branches share: a new cell reference, a rotation carried from the
+            // schematic, or both, as ONE replacement — so the orientation link rides inside the undoable
+            // command whenever there is one, and an Undo takes the baseline back with the rotation.
+            void UpdateExisting(bool reportedThisInstance)
             {
+                var rot = CarryRotation(comp, before, schematicId,
+                    () => PinAlignment(comp, schematicDir, before.CellRef, targetLayoutBaseDir, technology));
+                if (rot.Unlinked) unlinkedDiffering++;
+
+                if (!cellRefChanged && !rot.Changes)
+                {
+                    // Nothing to replace, but the baseline may be new (first sync of this pair) or have
+                    // advanced (both sides were already turned alike). Bookkeeping, like the snapshots.
+                    if (!Equals(before.OrientationLink, rot.Link))
+                    {
+                        before.OrientationLink = rot.Link;
+                        linksRecorded = true;
+                    }
+                    unchanged++;
+                    return;
+                }
+
                 var after = LayoutGeometry.Clone(before);
                 after.CellRef = resolvedCellRef;
                 after.SchematicId = schematicId;
+                after.OrientationLink = rot.Link;
+                if (rot.Changes) TurnInPlace(before, after, rot.Target, targetLayoutBaseDir);
                 chain = Chain(chain, new ReplaceInstanceCommand(target, existing.Index, before, after));
                 updated++;
-                lines.Add(new ReportLine(schematicId, $"{schematicId} — updated", ReportSeverity.Info));
-            }
-            else
-            {
-                unchanged++;
+
+                if (rot.Line is { } rotLine)
+                {
+                    lines.Add(new ReportLine(schematicId, rotLine,
+                        rot.Overwrote ? ReportSeverity.Warning : ReportSeverity.Info));
+                    if (rot.Overwrote) overwritten++;
+                }
+                else if (!reportedThisInstance)
+                    lines.Add(new ReportLine(schematicId, $"{schematicId} — updated", ReportSeverity.Info));
             }
         }
+
+        if (unlinkedDiffering > 0)
+            lines.Add(new ReportLine("", UnlinkedRotationNote(unlinkedDiffering), ReportSeverity.Info));
 
         // R-L5-4: report, never auto-delete, an instance whose schematic component is gone.
         int removed = 0;
@@ -338,7 +365,101 @@ public static class SchematicToLayoutGenerator
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
 
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
-                                    noLayoutWarnings, addedRegion, deleteIndices.Count);
+                                    noLayoutWarnings, addedRegion, deleteIndices.Count,
+                                    linksRecorded);
+    }
+
+    // ── Rotation (Update Layout from Schematic carries a symbol's turn to its placement) ──────────
+
+    internal readonly record struct RotationCarry(
+        bool Changes, VisualOrientation Target, OrientationLink Link, string? Line, bool Overwrote, bool Unlinked);
+
+    /// <summary>
+    /// Whether the schematic side turned since the last sync, and if so where the placement goes.
+    /// See <see cref="SchematicLayoutOrientation"/> for why a CHANGE is carried rather than an angle.
+    ///
+    /// <para>The rules mirror the parameter table (R-L5-11) with one deliberate difference: a
+    /// placement turned only in the LAYOUT is left alone here rather than turned back. A parameter is
+    /// one value the two views must agree on; a rotation is also the layout's own arrangement, and
+    /// Update Layout is run for many reasons besides this one — reverting a routing decision every
+    /// time someone pushes a width change would make the command unusable on a routed board. The
+    /// layout's turn stays pending in the link, and Update Schematic from Layout carries it back.</para>
+    ///
+    /// <para>No link yet (a placement from before this existed): the pair is recorded and nothing
+    /// turns, because nothing says which side's orientation is the intended one.</para>
+    /// </summary>
+    /// <param name="alignment">The pin alignment (<see cref="SchematicLayoutOrientation.PinAlignment"/>),
+    /// asked for only when the pair has no link yet — it resolves the cell's pins.</param>
+    internal static RotationCarry CarryRotation(EditableComponent comp, LayoutInstance inst, string schematicId,
+                                                Func<VisualOrientation> alignment)
+    {
+        int sDeg = (int)comp.Rotation;
+        var s = SchematicLayoutOrientation.FromSchematic(sDeg, comp.MirrorX);
+        var l = SchematicLayoutOrientation.FromLayout(inst);
+
+        if (inst.OrientationLink is not { } b)
+            return new(false, l, SchematicLayoutOrientation.Link(sDeg, comp.MirrorX, l), null, false,
+                       Unlinked: !s.Compose(alignment()).SameAs(l));
+
+        var sb = SchematicLayoutOrientation.FromSchematic(b.SchematicDeg, b.SchematicMirror);
+        var lb = new VisualOrientation(b.LayoutMirror, b.LayoutDeg);
+        if (s.SameAs(sb)) return new(false, l, b, null, false, false);
+
+        var target = SchematicLayoutOrientation.Carry(s, sb, lb);
+        var link = SchematicLayoutOrientation.Link(sDeg, comp.MirrorX, target);
+        if (target.SameAs(l)) return new(false, l, link, null, false, false);
+
+        bool layoutMoved = !l.SameAs(lb);
+        string line = $"{schematicId} — rotation changed from {SchematicLayoutOrientation.Describe(l)} to " +
+                      $"{SchematicLayoutOrientation.Describe(target)}" +
+                      (layoutMoved ? " (a layout rotation is being overwritten)" : " (from schematic)");
+        return new(true, target, link, line, layoutMoved, false);
+    }
+
+    /// <summary>
+    /// <see cref="SchematicLayoutOrientation.PinAlignment"/> for this component and this cell — the
+    /// symbol's ports as the schematic draws them, and the cell's pins as the layout draws them.
+    /// </summary>
+    internal static VisualOrientation PinAlignment(EditableComponent comp, string? schematicDir,
+                                                   string cellRef, string layoutBaseDir, Technology? technology)
+    {
+        var cell = CellLayoutResolver.Resolve(cellRef, layoutBaseDir);
+        return cell.State == CellLayoutState.Resolved
+            ? PinAlignment(comp, schematicDir, cell.View!, technology)
+            : new VisualOrientation(false, 0);
+    }
+
+    internal static VisualOrientation PinAlignment(EditableComponent comp, string? schematicDir,
+                                                   LayoutView cell, Technology? technology)
+    {
+        var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
+        var ports = comp.ToRenderComponent(null, symbol).Ports.Select(p => ((double)p.LocalX, (double)p.LocalY)).ToList();
+        return SchematicLayoutOrientation.PinAlignment(ports, CellPins.Resolve(cell, technology));
+    }
+
+    /// <summary>The run-level note for placements with no link whose two orientations disagree —
+    /// shared by both directions, which record the link the same way.</summary>
+    internal static string UnlinkedRotationNote(int count) =>
+        $"{count} component{(count == 1 ? "'s" : "s'")} schematic and layout rotations differ and had never " +
+        "been synced, so neither was turned. They are linked now: a rotation made on either side from " +
+        "here on is carried across by Update Layout from Schematic and Update Schematic from Layout.";
+
+    /// <summary>
+    /// Sets <paramref name="after"/>'s orientation and moves its origin so the part turns about the
+    /// centre of its own artwork, which is what rotating one part means to whoever is looking at it.
+    /// An instance's origin is wherever its cell's (0,0) happens to be, often a corner; turning about
+    /// that would swing the part across its neighbours.
+    /// </summary>
+    private static void TurnInPlace(LayoutInstance before, LayoutInstance after, VisualOrientation target,
+                                    string targetLayoutBaseDir)
+    {
+        var was = CellHierarchy.InstanceBbox(before, targetLayoutBaseDir);
+        after.MirrorX = target.Mirror;
+        after.RotationDegrees = target.Deg;
+        var now = CellHierarchy.InstanceBbox(after, targetLayoutBaseDir);
+        if (was.IsEmpty || now.IsEmpty) return;
+        after.X += (was.MinX + was.MaxX) / 2 - (now.MinX + now.MaxX) / 2;
+        after.Y += (was.MinY + was.MaxY) / 2 - (now.MinY + now.MaxY) / 2;
     }
 
     /// <summary>
@@ -460,8 +581,8 @@ public static class SchematicToLayoutGenerator
         if (placed.Count == 0) return Bbox.Empty;
 
         // Measured at the origin, which is where they still are: an instance's box includes its own
-        // placement, so this is the cell's own extent and the offset below is exact (no rotation, no
-        // magnification — a freshly placed instance is neither).
+        // placement — the rotation Run gave it included — so the offset below is exact. The pitch
+        // takes the larger of the two sides, which a quarter turn does not change.
         var extents = new List<Bbox>(placed.Count);
         long largest = 0;
         foreach (var (_, inst) in placed)

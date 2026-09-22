@@ -42,8 +42,14 @@ public static class LayoutToSchematicGenerator
         int UpdatedCount,
         int UnchangedCount,
         int OverwrittenParameterCount,
-        IReadOnlyList<string>? CellsWithoutSymbols = null)
+        IReadOnlyList<string>? CellsWithoutSymbols = null,
+        bool OrientationLinksRecorded = false)
     {
+        /// <summary>True when this run wrote the orientation baseline onto a LAYOUT instance — the
+        /// other document, which the caller must mark modified or the link is lost at close
+        /// (<see cref="LayoutInstance.OrientationLink"/>).</summary>
+        public bool OrientationLinksRecorded { get; init; } = OrientationLinksRecorded;
+
         /// <summary>Absolute cell directories that were placed but have NO symbol view at all
         /// (<see cref="PrimaryState.NoView"/>) — so the component renders as a bare placeholder with no
         /// pins. Reported rather than resolved here because generating a symbol writes a file into
@@ -95,6 +101,71 @@ public static class LayoutToSchematicGenerator
                       ?? WorkspaceRootFinder.WorkspaceDirOf(layoutBaseDir);
         IUiCommand? chain = null;
         int created = 0, updated = 0, unchanged = 0, overwritten = 0;
+        int unlinkedDiffering = 0;
+        bool linksRecorded = false;
+
+        // The pin alignment between a component's symbol and the cell its placement draws —
+        // SchematicLayoutOrientation.PinAlignment, which is why an upright resistor symbol and a flat
+        // land pattern still face the same way.
+        VisualOrientation Alignment(EditableComponent c, LayoutInstance li) =>
+            CellLayoutResolver.Resolve(li.CellRef, layoutBaseDir) is { State: CellLayoutState.Resolved, View: { } cell }
+                ? SchematicToLayoutGenerator.PinAlignment(c, schematic.SchematicDirectory, cell, technology)
+                : new VisualOrientation(false, 0);
+
+        // A new component faces the way its placement faces, to the nearest quarter turn, and is
+        // linked so a later turn on either side is carried across.
+        void FaceLikeLayout(EditableComponent c, LayoutInstance li)
+        {
+            var l = SchematicLayoutOrientation.FromLayout(li);
+            var symbolFacing = l.Compose(Alignment(c, li).Inverse());
+            int deg = SchematicLayoutOrientation.ToSchematicDeg(symbolFacing, out _);
+            c.Rotation = (SymbolRotation)deg;
+            c.MirrorX  = symbolFacing.Mirror;
+            li.OrientationLink = SchematicLayoutOrientation.Link(deg, symbolFacing.Mirror, l);
+            linksRecorded = true;
+        }
+
+        // The reverse of SchematicToLayoutGenerator.CarryRotation, with the same rules and roles
+        // swapped: a placement turned since the last sync turns its component by the same world-frame
+        // change; a component turned only in the schematic is left alone for Update Layout to carry.
+        // True when the component is being turned.
+        bool CarryRotationBack(LayoutInstance li, EditableComponent c)
+        {
+            int sDeg = (int)c.Rotation;
+            var sNow = SchematicLayoutOrientation.FromSchematic(sDeg, c.MirrorX);
+            var lNow = SchematicLayoutOrientation.FromLayout(li);
+
+            if (li.OrientationLink is not { } b)
+            {
+                li.OrientationLink = SchematicLayoutOrientation.Link(sDeg, c.MirrorX, lNow);
+                linksRecorded = true;
+                if (!sNow.Compose(Alignment(c, li)).SameAs(lNow)) unlinkedDiffering++;
+                return false;
+            }
+
+            var lb = new VisualOrientation(b.LayoutMirror, b.LayoutDeg);
+            if (lNow.SameAs(lb)) return false;
+
+            var sb = SchematicLayoutOrientation.FromSchematic(b.SchematicDeg, b.SchematicMirror);
+            var target = SchematicLayoutOrientation.Carry(lNow, lb, sb);
+            int tDeg = SchematicLayoutOrientation.ToSchematicDeg(target, out bool exact);
+            var link = SchematicLayoutOrientation.Link(tDeg, target.Mirror, lNow);
+            linksRecorded = true;
+            li.OrientationLink = link;
+            if (tDeg == sDeg && target.Mirror == c.MirrorX) return false;
+
+            bool schematicMoved = !sNow.SameAs(sb);
+            chain = Chain(chain, new Commands.Schematic.SetOrientationCommand(schematic, c, (SymbolRotation)tDeg, target.Mirror));
+            lines.Add(new SchematicToLayoutGenerator.ReportLine(c.InstanceName,
+                $"{c.InstanceName} — rotation changed from {SchematicLayoutOrientation.DescribeSchematic(sDeg, c.MirrorX)} " +
+                $"to {SchematicLayoutOrientation.DescribeSchematic(tDeg, target.Mirror)}" +
+                (schematicMoved ? " (a schematic rotation is being overwritten)" : " (from layout)") +
+                (exact ? "" : $" — the placement is at {SchematicLayoutOrientation.Describe(lNow)}, which a symbol " +
+                              "cannot take, so it was given the nearest quarter turn"),
+                schematicMoved ? SchematicToLayoutGenerator.ReportSeverity.Warning : SchematicToLayoutGenerator.ReportSeverity.Info));
+            if (schematicMoved) overwritten++;
+            return true;
+        }
 
         // brief-footprint-6 R-fp6-1b: placements that ARE bare land patterns. Counted rather than
         // listed — a hand-authored board can hold a hundred of them, and a hundred identical lines is
@@ -137,9 +208,10 @@ public static class LayoutToSchematicGenerator
                 // An ordinary hierarchical instance. It carries no PCell parameters, so the only thing
                 // to do is the create half — and the only thing to check is whether it is already
                 // linked to a component.
-                if (inst.SchematicId is { Length: > 0 } psid && bySchematicId.ContainsKey(psid))
+                if (inst.SchematicId is { Length: > 0 } psid && bySchematicId.TryGetValue(psid, out var plainComp))
                 {
-                    unchanged++;
+                    if (CarryRotationBack(inst, plainComp)) updated++;
+                    else unchanged++;
                     continue;
                 }
 
@@ -149,6 +221,7 @@ public static class LayoutToSchematicGenerator
                 placed.X = (newSlot % GridCols) * GridPitchSchematic;
                 placed.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
+                FaceLikeLayout(placed, inst);
 
                 chain = Chain(chain, new Commands.Schematic.PlaceComponentCommand(schematic, placed));
                 inst.SchematicId = placed.InstanceName;
@@ -187,9 +260,10 @@ public static class LayoutToSchematicGenerator
             SymbolKind? layoutFirstPart = null;
             if (!builtIn && kitRef is null)
             {
-                if (inst.SchematicId is { Length: > 0 } landSid && bySchematicId.ContainsKey(landSid))
+                if (inst.SchematicId is { Length: > 0 } landSid && bySchematicId.TryGetValue(landSid, out var landComp))
                 {
-                    unchanged++;
+                    if (CarryRotationBack(inst, landComp)) updated++;
+                    else unchanged++;
                     continue;
                 }
 
@@ -257,6 +331,7 @@ public static class LayoutToSchematicGenerator
                 comp.X = (newSlot % GridCols) * GridPitchSchematic;
                 comp.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
+                FaceLikeLayout(comp, inst);
                 if (kitRef is null)
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
                         comp.Parameters.Add(new EditableParameter
@@ -343,6 +418,12 @@ public static class LayoutToSchematicGenerator
 
             source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
 
+            if (CarryRotationBack(inst, comp))
+            {
+                anyChanged = true;
+                reportedThisInstance = true;
+            }
+
             if (anyChanged)
             {
                 updated++;
@@ -377,7 +458,12 @@ public static class LayoutToSchematicGenerator
                 "draws no wires, so the parts it created are unconnected.",
                 SchematicToLayoutGenerator.ReportSeverity.Info));
 
-        return new GenerationResult(chain, lines, created, updated, unchanged, overwritten, noSymbol);
+        if (unlinkedDiffering > 0)
+            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+                SchematicToLayoutGenerator.UnlinkedRotationNote(unlinkedDiffering),
+                SchematicToLayoutGenerator.ReportSeverity.Info));
+
+        return new GenerationResult(chain, lines, created, updated, unchanged, overwritten, noSymbol, linksRecorded);
     }
 
     /// <summary>

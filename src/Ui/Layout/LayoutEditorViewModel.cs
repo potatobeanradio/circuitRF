@@ -82,6 +82,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void RefreshDirty() => IsDirty = _prefsDirty || _wireDirty || _undoRedo.IsModified;
 
+    /// <summary>Marks the document modified for a change that deliberately carries no undo entry —
+    /// the orientation link Update Layout / Update Schematic record on an instance
+    /// (<see cref="LayoutInstance.OrientationLink"/>), which is lost at close unless it is saved.
+    /// Rides the same flag as the preference edits, so <see cref="MarkSaved"/> clears it.</summary>
+    internal void MarkBookkeepingDirty()
+    {
+        _prefsDirty = true;
+        RefreshDirty();
+    }
+
     /// <summary>Records the current state (undo position + preference edits) as the clean,
     /// just-saved baseline. Call after the document has been written to disk.</summary>
     public void MarkSaved()

@@ -357,6 +357,35 @@ public sealed class SchematicCanvas : Control
         RaiseViewportChanged();
     }
 
+    /// <summary>
+    /// Brings a world rectangle on screen with as little change to the view as possible: nothing when
+    /// it is already fully visible, a pan that centres it when it fits at the current zoom, and a
+    /// zoom out to fit it only when it does not. The user's zoom is theirs; a command that put
+    /// something off screen owes them a pan, not a re-framing.
+    /// </summary>
+    public void RevealWorldRect(double minX, double minY, double maxX, double maxY)
+    {
+        double canvasW = Bounds.Width, canvasH = Bounds.Height;
+        if (canvasW < 1 || canvasH < 1 || _zoom <= 0) return;
+
+        double viewW = canvasW / _zoom, viewH = canvasH / _zoom;
+        if (minX >= _panX && maxX <= _panX + viewW && minY >= _panY && maxY <= _panY + viewH) return;
+
+        const double pad = 0.05;
+        double w = Math.Max(maxX - minX, 1), h = Math.Max(maxY - minY, 1);
+        if (w > viewW * (1 - 2 * pad) || h > viewH * (1 - 2 * pad))
+        {
+            _zoom = Math.Clamp(Math.Min(canvasW / w, canvasH / h) * (1.0 - 2 * pad), MinZoom, MaxZoom);
+            if (_editContext is not null) _editContext.CanvasZoom = _zoom;
+            viewW = canvasW / _zoom;
+            viewH = canvasH / _zoom;
+        }
+        _panX = (minX + maxX) / 2 - viewW / 2;
+        _panY = (minY + maxY) / 2 - viewH / 2;
+        InvalidateVisual();
+        RaiseViewportChanged();
+    }
+
     private void ZoomToFitInternal(double canvasW, double canvasH)
     {
         if (_model is null || canvasW < 1 || canvasH < 1) return;

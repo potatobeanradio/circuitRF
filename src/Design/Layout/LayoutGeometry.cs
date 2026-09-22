@@ -258,6 +258,9 @@ public static class LayoutGeometry
         // an ordinary edit — after which Update Schematic from Layout creates nothing for it and the
         // only trace is a designator with nothing behind it.
         PartKind = inst.PartKind,
+        // And the orientation baseline, so a moved or re-pointed instance still knows which side of a
+        // schematic/layout pair was rotated since the last sync. Immutable, so sharing it is safe.
+        OrientationLink = inst.OrientationLink,
     };
 
     /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape

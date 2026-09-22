@@ -2,6 +2,60 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Update Layout/Schematic carry ROTATION, and Sort Placement (2026-09-22)
+
+Owner: a component turned in one view should turn in the other when the Update commands run; and a
+way to lay a heap of unconnected parts out in name order.
+
+**The two views turn in opposite senses.** The schematic is Y-DOWN — `SchematicGeometry.LocalToWorld`
+maps R90's local +x to world +y, which is down the screen, a CLOCKWISE quarter turn — and the layout
+is Y-up with angles counter-clockwise. Both apply mirror-then-rotate and both mirrors negate local X,
+so conjugating by the Y flip gives the whole correspondence: a symbol at Rθ looks like a placement at
+−θ, same mirror. Copying the number across instead turns every part the wrong way on the other side.
+`SchematicLayoutOrientation` (in `src/Design/Layout`) is the one place this is written.
+
+**What is carried is the CHANGE, not the angle.** A symbol's R0 and a cell's R0 need not face the same
+way, so matching absolute orientations would rotate parts a user had arranged deliberately. Each sync
+records the pair it left behind on the layout instance (`LayoutInstance.OrientationLink`, additive,
+`WhenWritingNull`); the next run compares each side with its own half and applies the moved side's
+world-frame delta to the other side's baseline. A reflection composes as a reflection — a flipped
+symbol negates the placement's angle as well as toggling its mirror.
+
+**A new placement is lined up by its PINS, not by its angle** (owner report, same day: parts upright
+on the sheet came out lying flat on the board). A resistor symbol stands upright at R0 and its land
+pattern lies flat at R0, so "the same angle" is a quarter turn wrong for every such part.
+`SchematicLayoutOrientation.PinAlignment` pairs symbol port k with the cell's pin named k (every
+built-in generator and land pattern numbers them), turns the symbol's pin-1→pin-2 direction onto
+the cell's, and rounds to a quarter turn; both directions and the unlinked-pair comparison use it.
+A turn that is carried afterwards is a delta and needs no alignment.
+
+**Deliberately unlike the parameter table (R-L5-11), a layout-only turn is NOT reverted by Update
+Layout.** A parameter is one value both views must agree on; a rotation is also the board's own
+arrangement, and Update Layout runs for many other reasons — reverting a routing decision on every
+width push would make the command unusable on a routed board. That turn stays pending in the link
+and Update Schematic carries it back. Both sides turned: the command's direction wins, with the
+same "is being overwritten" warning the parameters use.
+
+**An instance with no link (every `.clay` older than this) turns nothing on the first run** — nothing
+says which side is intended, and the old generator placed every instance at R0 whatever the symbol
+was, so "sync to the source" would have spun every part on every existing board. The link is
+recorded and one run-level line says so; the next turn is carried. New placements are created facing
+the source and linked from the start.
+
+**The link is bookkeeping on the LAYOUT even when the command edits the schematic**, so Update
+Schematic marks the layout modified (`MarkBookkeepingDirty`) — otherwise it is lost at close. The
+same was already silently true of the `SchematicId` that command writes onto a layout instance; it now
+rides along. Forward, a turn is part of the one `ReplaceInstanceCommand`, so Undo takes the baseline
+back with the rotation. A layout turn is applied about the instance's artwork CENTRE (an instance's
+origin is often a corner); a schematic turn about the component origin, as the editor's own Rotate
+does. A non-quarter-turn layout angle gives the symbol the nearest quarter turn and says so.
+
+**Sort Placement refuses a selection with any connected pin**, naming the parts: moving a wired part
+pulls its pins off the wires. The obstacle set is every other component's `FullBb` (plus its pins),
+every wire and every net label, grown by a grid square; canvas text and pictures connect nothing and
+are not obstacles. `SchematicComponent.BbMinX` is a FIXED hit envelope, not the drawn extent — use
+`FullBb*`, as `SchematicCanvas.DrawnExtent` already explains.
+
 ## The RLC family: nine parts, one pin contract, two sub-glyph sizes (2026-09-20)
 
 Owner: add `SRL`, `PRL`, `SRC`, `PRC`, `SLC` and `PLC` beside `SRLC` and `PRLC`.

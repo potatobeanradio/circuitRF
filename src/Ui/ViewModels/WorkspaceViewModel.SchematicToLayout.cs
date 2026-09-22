@@ -158,6 +158,8 @@ public partial class WorkspaceViewModel
 
             if (result.Command is not null)
                 layoutVm.Execute(result.Command);
+            if (result.OrientationLinksRecorded)
+                layoutVm.MarkBookkeepingDirty();
 
             ReportGenerationResult(result.Command, result.Lines, result.NoLayoutWarnings,
                 result.AddedCount, result.UpdatedCount, result.UnchangedCount, result.RemovedCount,
@@ -319,6 +321,10 @@ public partial class WorkspaceViewModel
 
         if (result.Command is not null)
             schematicVm.Execute(result.Command);
+        // The link lives on the LAYOUT's instances, and this command's undoable edit is on the
+        // schematic — so the layout has to be told it has something to save.
+        if (result.OrientationLinksRecorded)
+            layoutVm.MarkBookkeepingDirty();
 
         ReportGenerationResult(result.Command, result.Lines, [],
             result.CreatedCount, result.UpdatedCount, result.UnchangedCount, 0,

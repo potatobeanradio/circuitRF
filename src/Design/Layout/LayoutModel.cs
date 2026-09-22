@@ -849,6 +849,18 @@ public sealed class LayoutInstance
     public string? PartKind { get; set; }
 
     /// <summary>
+    /// The orientations the schematic component and this placement had the last time Update Layout
+    /// from Schematic or Update Schematic from Layout brought the two into step — the baseline that
+    /// lets either command tell WHICH side was rotated since, and carry only that change across
+    /// (<see cref="SchematicLayoutOrientation"/>). Null on every instance no sync has touched yet.
+    ///
+    /// <para>Only meaningful beside a <see cref="SchematicId"/>. Nullable and omitted when null, so
+    /// no <c>FormatVersion</c> bump — the additive convention every field in this block follows.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public OrientationLink? OrientationLink { get; set; }
+
+    /// <summary>
     /// Where the designator sits relative to this instance's own origin, <b>in the instance's placed
     /// frame and in the PARENT's DBU</b> (R-fp4b-2b) — so it moves and rotates with its part, which
     /// is what a user who dragged it there meant, and so a drag stores the delta in the frame the

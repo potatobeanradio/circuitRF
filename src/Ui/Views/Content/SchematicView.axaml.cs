@@ -554,6 +554,16 @@ public partial class SchematicView : UserControl
         CtxDisableOpen.Header  = AllIn(DisableState.Open)  ? "Enable (currently Open)"  : "Disable (Open)";
         CtxDisableShort.Header = AllIn(DisableState.Short) ? "Enable (currently Short)" : "Disable (Short)";
 
+        // Sort Placement belongs to a multi-part selection; its refusal (a wired part) is the tooltip.
+        CtxSortPlacement.IsVisible = selected.Count >= 2;
+        if (selected.Count >= 2)
+        {
+            string? refusal = Vm?.SortPlacementRefusal();
+            CtxSortPlacement.IsEnabled = refusal is null;
+            ToolTip.SetTip(CtxSortPlacement, refusal
+                ?? $"Arrange the {selected.Count} selected components in instance-name order, in free space.");
+        }
+
         CtxPushIn.IsVisible      = isCell;
         CtxOpenInNewTab.IsVisible = isCell;
 
@@ -717,6 +727,12 @@ public partial class SchematicView : UserControl
 
     private void OnCtxRotate(object? sender, RoutedEventArgs e) =>
         Vm?.RotateSelection(clockwise: false);
+
+    private void OnCtxSortPlacement(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.SortSelectedPlacement() is { } region)
+            SchematicCanvasCtrl.RevealWorldRect(region.MinX, region.MinY, region.MaxX, region.MaxY);
+    }
 
     private void OnCtxDisconnect(object? sender, RoutedEventArgs e)
         => Vm?.DisconnectSelection();
