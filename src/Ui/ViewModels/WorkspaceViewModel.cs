@@ -15028,6 +15028,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.DrcTool?.SetActiveLayout(null);
         _factory.LvsTool?.SetActiveLayout(null);
 
+        // brief-find-instance-panel.md — the Instances panel lists THIS document's placed components,
+        // and nothing for a document that is neither a schematic nor a layout (R-fi-3), on the same
+        // rule as the two panels above.
+        RouteInstancesPanel(activeDockable);
+
         // wbond.md §10.1 — the two wBond panels follow the same rule, for the same reason: a wire
         // profile shown beside a schematic is worse than an empty panel that says so.
         _factory.WBondProfileTool?.SetActiveWBond(null);
@@ -15170,6 +15175,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
+        FindInstanceCommand.NotifyCanExecuteChanged();
 
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.
@@ -15461,6 +15468,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
+        FindInstanceCommand.NotifyCanExecuteChanged();
     }
 
     // ---- Dock float — per-window undo wiring --------------------------------
@@ -15852,6 +15861,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // After removing the doc from _openDocsByPath, retire its session if clean + unreferenced.
         if (dockable is SchematicDocument closedSchDoc && closedSchDoc.FilePath is { } closedPath)
             RetireSessionIfUnreferenced(closedPath);
+
+        // The Instances panel must not go on listing a document that has gone — a torn-off window's
+        // close in particular changes no shell dock's ActiveDockable, so nothing else would clear it.
+        if (ReferenceEquals(dockable, _instancesFrameDoc)) RouteInstancesPanel(null);
 
         // If the retained schematic is closed, blank the Analyses panel.
         if (ReferenceEquals(dockable, _lastActiveSchematicDoc))

@@ -22,6 +22,7 @@ time in, and it is the only one an analysis runs on.
 <li><a href="#hierarchy">Hierarchy: putting one schematic inside another</a></li>
 <li><a href="#views">The other two views</a></li>
 <li><a href="#analyses">Simulating: an Analysis</a></li>
+<li><a href="#find">Finding a component</a></li>
 <li><a href="#toolbar">The toolbar</a></li>
 </ol>
 </nav>
@@ -311,6 +312,26 @@ what <a href="measurements.html">Measurements</a> are for.</p>
 <a href="netlist.html">netlist</a>, with <strong>Simulate ▸ Generate Netlist</strong> producing the
 <code>.cnl</code>. See {{anchor: cli|The Command Line}}.</p>
 </div>
+
+## Finding a component {#find}
+
+**Design ▸ Find Instance…** — <kbd>⌘F</kbd> / <kbd>Ctrl</kbd>+<kbd>F</kbd> — opens the **Instances**
+panel for the schematic you are working in and puts the cursor in its search box, so you can type a
+name straight away. The panel lists every component on the sheet by **Name**, **Type** and, where it
+adds something, the **Cell/Part** it comes from, sorted so that `R2` comes before `R10`.
+
+- **Type to filter by name** — any part of the name, upper or lower case. The **type** picker beside
+  the box narrows the list to one kind of component; the two combine.
+- **Double-click a row** (or press <kbd>Enter</kbd>) to **zoom to that component and select it**. A
+  single click only highlights the row, so you can arrow down the list without the view jumping about.
+  <kbd>Enter</kbd> in the search box goes to the highlighted row, or the first match.
+- <kbd>Esc</kbd> in the search box puts you back on the canvas.
+
+The panel always shows the schematic that has focus, and says which one in its header. Grounds, `VAR`
+and `MEAS` blocks are left out — they are rarely what you are looking for, and a sheet's grounds would
+bury its parts. **Only the level you are looking at is listed**: components inside a placed cell belong
+to that cell, so [push into it](#hierarchy) to find them. The command is greyed out unless a schematic
+or a layout has focus; the panel itself is also under **View ▸ Panels ▸ Instances**.
 
 ## The toolbar {#toolbar}
 

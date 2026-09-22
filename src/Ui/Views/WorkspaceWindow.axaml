@@ -158,6 +158,7 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Place Cell Instance…"       Command="{Binding PlaceCellInstanceCommand}" Gesture="Meta+Shift+I"/>
+                        <NativeMenuItem Header="Find Instance…"             Command="{Binding FindInstanceCommand}" Gesture="Meta+F"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
@@ -241,6 +242,7 @@
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
                                     <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
+                                    <NativeMenuItem Header="Instances"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Instances"/>
                                     <NativeMenuItem Header="History"      Command="{Binding ShowToolPanelCommand}" CommandParameter="History"/>
                                     <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
                                     <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
@@ -331,6 +333,13 @@
         <KeyBinding Gesture="Meta+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+I"  Command="{Binding PlaceCellInstanceCommand}"/>
         <KeyBinding Gesture="Meta+Shift+I"  Command="{Binding PlaceCellInstanceCommand}"/>
+        <!-- brief-find-instance-panel.md R-fi-12. Ctrl/Meta+F was audited (2026-09-22) against every
+             gesture in this file and every canvas's own key handler before being taken: harmonicaRF's
+             Class F uses it in harmonicaRF's OWN menu, and every canvas's bare-F Zoom to Fit rejects a
+             Ctrl/Meta modifier. Greyed out (so handling nothing) unless a schematic or layout is
+             focused, which also leaves a docked harmonicaRF document's own Meta+F alone. -->
+        <KeyBinding Gesture="Ctrl+F"        Command="{Binding FindInstanceCommand}"/>
+        <KeyBinding Gesture="Meta+F"        Command="{Binding FindInstanceCommand}"/>
         <!-- §9B.6 R-rul-13: clear every in-design ruler annotation, one undo entry, no prompt. The
              UNSHIFTED K is free — Ctrl+Shift+K above is Check Design Rules and is left alone. -->
         <KeyBinding Gesture="Ctrl+K"        Command="{Binding ClearAllRulersCommand}"/>
@@ -727,6 +736,12 @@
                           ToolTip.Tip="Choose a cell and click to place an instance of it. Requires an active schematic or layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ShapeSquarePlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="_Find Instance…"
+                          Command="{Binding FindInstanceCommand}"
+                          InputGesture="Ctrl+F"
+                          ToolTip.Tip="List the placed components of the active schematic or layout, filter them by name or type, and double-click one to zoom to it. Requires an active schematic or layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <Separator/>
                 <MenuItem Header="Update _Layout from Schematic"
                           Command="{Binding UpdateLayoutFromSchematicCommand}"
@@ -867,6 +882,12 @@
                     <MenuItem Header="_LVS"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs">
                         <MenuItem.Icon><mi:MaterialIcon Kind="CompareHorizontal" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-find-instance-panel.md. Not in either shipped default layout: it appears
+                         when asked for, usually by Design ▸ Find Instance… (Ctrl/⌘+F). -->
+                    <MenuItem Header="_Instances"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Instances">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <!-- revision-control.md §5.10, RC-10 R-rc10-1. ONE panel, replacing Restore Points
                          and Versions. §5's argument is about two kinds of ENTRY and rev 2 spent it as

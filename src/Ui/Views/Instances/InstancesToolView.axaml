@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Instances.InstancesToolView"
+             x:DataType="dockVm:InstancesTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Styles>
+        <Style Selector="ListBox.InstanceRows ListBoxItem">
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+
+        <!-- Which document this is — the Analyses panel's header, for the LVS panel's reason: one
+             document's list beside another document is worse than none. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="6,4,6,2">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding ListVm.HeaderLabel}"
+                       FontWeight="SemiBold" FontSize="12"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1"
+                       Text="{Binding ListVm.CountText}"
+                       FontSize="11" Opacity="0.6"
+                       Margin="8,0,0,0"
+                       VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Name filter (case-insensitive substring) and type filter, AND-combined. The picker's
+             items AND selection are set from code-behind, never bound: src/Ui/CLAUDE.md's ComboBox
+             rule, since its item list is replaced whenever the document's set of types changes. -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="6,0,6,4">
+            <TextBox Grid.Column="0"
+                     x:Name="SearchBox"
+                     Text="{Binding ListVm.FilterText}"
+                     PlaceholderText="Find by name"
+                     FontSize="12"
+                     IsEnabled="{Binding ListVm.HasDocument}">
+                <TextBox.InnerLeftContent>
+                    <mi:MaterialIcon Kind="Magnify" Width="14" Height="14" Margin="6,0,0,0" Opacity="0.6"/>
+                </TextBox.InnerLeftContent>
+            </TextBox>
+            <ComboBox Grid.Column="1"
+                      x:Name="TypePicker"
+                      FontSize="12"
+                      MinWidth="96"
+                      Margin="4,0,0,0"
+                      IsEnabled="{Binding ListVm.HasDocument}"
+                      ToolTip.Tip="Show one component type only"/>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="3*,2*,2*" Margin="12,0,12,2">
+            <TextBlock Grid.Column="0" Text="Name" FontSize="11" Opacity="0.6"/>
+            <TextBlock Grid.Column="1" Text="Type" FontSize="11" Opacity="0.6"/>
+            <TextBlock Grid.Column="2" Text="Cell/Part" FontSize="11" Opacity="0.6"/>
+        </Grid>
+
+        <!-- A ListBox virtualises its rows (R-fi-6); an ItemsControl in a ScrollViewer would realise
+             every one of ten thousand. -->
+        <ListBox Grid.Row="3"
+                 x:Name="RowsList"
+                 Classes="InstanceRows"
+                 ItemsSource="{Binding ListVm.VisibleRows}"
+                 SelectedItem="{Binding ListVm.SelectedRow, Mode=TwoWay}"
+                 SelectionMode="Single"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:InstanceRow">
+                    <Grid ColumnDefinitions="3*,2*,2*">
+                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Type}" FontSize="12"
+                                   TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="12" Opacity="0.55"
+                                   TextTrimming="CharacterEllipsis" Margin="6,0,0,0"
+                                   ToolTip.Tip="{Binding Detail}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock Grid.Row="3"
+                   Text="{Binding ListVm.EmptyStateText}"
+                   IsVisible="{Binding ListVm.ShowEmptyState}"
+                   IsHitTestVisible="False"
+                   FontSize="12"
+                   Opacity="0.6"
+                   Margin="12"
+                   TextWrapping="Wrap"/>
+    </Grid>
+</UserControl>

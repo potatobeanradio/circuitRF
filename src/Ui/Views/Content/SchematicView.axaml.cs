@@ -83,6 +83,7 @@ public partial class SchematicView : UserControl
             _subscribedDoc.ActiveViewModelChanged   -= OnActiveViewModelChanged;
             _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
             _subscribedDoc.ZoomToFitRequested       -= OnZoomToFitRequestedFromMenu;
+            _subscribedDoc.ZoomToWorldRectRequested -= OnZoomToWorldRectRequested;
             _subscribedDoc.PlaceCellInstanceRequested -= OnPlaceCellInstanceRequestedFromMenu;
             _subscribedDoc = null;
         }
@@ -96,6 +97,7 @@ public partial class SchematicView : UserControl
             doc.ActiveViewModelChanged   += OnActiveViewModelChanged;
             doc.ActivationFocusRequested += OnActivationFocusRequested;
             doc.ZoomToFitRequested       += OnZoomToFitRequestedFromMenu;
+            doc.ZoomToWorldRectRequested += OnZoomToWorldRectRequested;
             doc.PlaceCellInstanceRequested += OnPlaceCellInstanceRequestedFromMenu;
             // If this tab was activated before the view bound (first open), the request is pending.
             if (doc.ConsumeActivationFocus()) FocusCanvasDeferred();
@@ -104,6 +106,10 @@ public partial class SchematicView : UserControl
 
     // View->Zoom to Fit dispatches here from WorkspaceViewModel via SchematicDocument.RequestZoomToFit().
     private void OnZoomToFitRequestedFromMenu() => SchematicCanvasCtrl.ZoomToFit();
+
+    // The Instances panel's double-click dispatches here the same way.
+    private void OnZoomToWorldRectRequested(double minX, double minY, double maxX, double maxY)
+        => SchematicCanvasCtrl.FrameWorldRect(minX, minY, maxX, maxY);
 
     // Design ▸ Place Cell Instance… dispatches here the same way.
     private void OnPlaceCellInstanceRequestedFromMenu() => _ = BeginCellPlacementAsync();

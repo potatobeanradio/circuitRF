@@ -373,6 +373,16 @@ public static class DockPanelIds
     public const string History = "History";
 
     /// <summary>
+    /// brief-find-instance-panel.md's Instances panel — the placed components of the focused
+    /// schematic or layout, filtered by name and type, double-click to zoom to one.
+    ///
+    /// <para>Absent from both shipped default layouts, deliberately: it appears when asked for
+    /// (Design ▸ Find Instance…, Ctrl/⌘+F, or View ▸ Panels) and is then captured and restored with
+    /// every other panel.</para>
+    /// </summary>
+    public const string Instances = "Instances";
+
+    /// <summary>
     /// <b>The two ids RC-10 retired, and they must keep resolving</b> (R-rc10-3).
     ///
     /// <para><c>RestorePoints</c> and <c>VersionHistory</c> are written into every <c>.cwsuser</c> in
@@ -391,7 +401,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History,
+        WBondInductance, History, Instances,
     ];
 
     /// <summary>

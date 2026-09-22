@@ -52,6 +52,7 @@ stackup, a mesh and ports. That half has its own chapters —
 <li><a href="#tools">Drawing and editing</a></li>
 <li><a href="#selection">Selection and vertex editing</a></li>
 <li><a href="#hierarchy">Hierarchy, instances and arrays</a></li>
+<li><a href="#find">Finding an instance</a></li>
 <li><a href="#schematic-flow">Schematic ⇄ layout</a></li>
 <li><a href="#geometry-snap">Geometry snap</a></li>
 <li><a href="#ruler">The Ruler</a></li>
@@ -420,6 +421,19 @@ an MMIC unit-cell array nearly free to render.</li>
 cell</strong> does the reverse — hierarchy you can build after the fact, out of artwork you have already
 drawn. Cycles are detected at edit time, not discovered at render time.</li>
 </ul>
+<h2 id="find">Finding an instance</h2>
+<p>On a board with hundreds of parts, <strong>Design ▸ Find Instance…</strong> — <kbd>⌘F</kbd> /
+<kbd>Ctrl</kbd>+<kbd>F</kbd> — is the quick way to one of them. It opens the <strong>Instances</strong> panel for
+the layout you are working in, with the cursor in its search box. Each placed instance is listed by
+its <strong>designator</strong> (or, for one that has none, the name of the cell it places), its <strong>type</strong> — the
+PCell generator or the part it was placed as, otherwise the cell — and the cell itself where that adds
+something, including an array's rows × columns.</p>
+<p>Type part of a designator to filter, pick a type to narrow further, and <strong>double-click</strong> a row — or
+press <kbd>Enter</kbd> — to <strong>zoom to that instance and select it</strong>. An instance whose cell no longer
+resolves is still listed and still zoomed to, at its placement point: that is often exactly why you
+are looking for it. As in the schematic, only the level you are looking at is listed; instances inside
+a placed cell are that cell's own, so push into it to find them. The panel works identically for a
+schematic — see <a href="schematic-editor.html#find">Finding a component</a>.</p>
 <h2 id="schematic-flow">Schematic ⇄ layout</h2>
 <p>Two commands under the <strong>Design</strong> menu move work between the two views. They are deliberately symmetric,
 and <strong>neither ever runs by itself</strong> — there is no save hook, no open hook, no activation hook. They run

@@ -1,5 +1,58 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The Instances panel and Design ▸ Find Instance… (2026-09-22, brief-find-instance-panel)
+
+A dockable **Instances** panel (`InstancesTool`, id `Instances`, in no shipped default layout) listing
+the focused `.csch`'s or `.clay`'s top-level components, filtered by name and type; double-click or
+Enter selects and FRAMES one. **Design ▸ Find Instance…**, Ctrl/⌘+F, greyed out unless a schematic or
+layout is focused. The list is `InstanceListViewModel` (no Dock, no Avalonia controls); the gesture is
+`InstanceReveal`; the routing is `WorkspaceViewModel.Instances.cs`.
+
+- **It follows the active FRAME, not the document.** A push-in swaps the view model the canvas shows
+  without the tab changing — the Properties panel's 2026-08-25 bug — so `RouteInstancesPanel`
+  subscribes to the routed document's own `ActiveViewModelChanged`. The header is the frame's file.
+- **Routed from `ActivateDocument` only, deliberately NOT from `RaiseFileMenuEnablementChanged`.** The
+  second fan-out runs when the SHELL window activates, which clicking into a docked Instances panel
+  does — so following it would re-point the list at the shell's document while the user was clicking
+  a row of a torn-off window's. Torn-off documents still arrive, through `FocusedDockableChanged` →
+  `ActivateDocument`; tool panels return early there. The command routes explicitly from
+  `ResolveActiveDocumentForCommands()` so Ctrl/⌘+F in a torn-off window lists that window's document.
+  The document-close path clears it, because a torn-off window closing changes no shell dock.
+- **Closed and never placed → docked, not floated, and without a rebuild.** `ShowToolPanel`'s fallback
+  floats a window over the canvas the user is about to search. After `RestorePanelToItsHome` finds no
+  home it is `InsertDockable`d into the dock holding Analyses (then Properties, then the Project tree)
+  — the same live insert that path's cheap branch uses, because a layout rebuild re-realises every
+  open canvas.
+- **Rebuild is debounced and filtered at the source.** `LayoutChangeKind` already says whether a change
+  touched instances: only `InstancesChanged` and `Full` schedule a rebuild. The debounce restarts on
+  every change, so a drag rebuilds once when it ends. Hidden = detached from the visual tree = nothing
+  scheduled; it rebuilds on the next attach. The scheduler is injectable (`Schedule`), which is what
+  the test drives instead of a clock.
+- **A narrowing keystroke scans only the survivors.** Text containing the previous text with the same
+  type can only match rows already showing — 10,000 → 1,112 → 111 rows scanned for `u`, `u1`, `u12` on
+  the 10k fixture. Held by the `LastFilterScanned` counter, not a timing.
+- **The type picker is not bound.** Its item list is replaced when a document's set of types changes,
+  which is exactly src/Ui/CLAUDE.md's ComboBox trap (a bound selection resolved against the old items
+  is silently cleared, which would drop the user's type filter on every rebuild). Items then selection,
+  in one code-behind path.
+- **Schematic framing is new; layout reuses `RequestZoomToRegion`.** `SchematicDocument` gained
+  `ZoomToWorldRectRequested` (ZoomToFit's shape), routed by `SchematicView` to a new public
+  `SchematicCanvas.FrameWorldRect` over the existing private `ZoomToRect`. The frame is a square
+  3× the component's `FullBb` (glyph plus labels), never under 1200 world units (12 grid squares), so
+  a two-pin part is shown with its neighbours rather than blown up. A layout instance is framed at 3×
+  its `InstanceBbox`; an empty box falls back to its origin at 100 µm. A row activated for a document
+  that was not in front is revealed on a `Background` post, after the activated view has bound and
+  laid out — a zoom asked of a canvas with no size does nothing.
+- **Enter in the search box goes to the highlighted row, else the first match** — type a name, press
+  Enter. Down walks into the list. Escape (tunnel, `handledEventsToo`, because the window's Escape
+  KeyBinding marks it handled first) returns the keyboard to the listed document's canvas.
+- **Ctrl/⌘+F re-audited 2026-09-22:** only harmonicaRF's Class F uses it, in harmonicaRF's own menu;
+  every canvas's bare-F Zoom to Fit rejects a Ctrl/Meta modifier; `WirePanelKeys` already skips a
+  focused `TextBox`, so the bare P/A keys cannot fire while typing in the box.
+- Not seen in pixels: this session cannot launch the GUI. Held by `InstancesPanelTests` (9) and the
+  existing dock/menu gates; the zoom-after-activation ordering in particular is untested by anything
+  but reasoning.
+
 ## Field bug list, 2026-09-22 — the layout's fit, a lost zoom, Disable on the menu, the Library width
 
 Four of a five-item list; the fifth (some capacitor designators not drawn on a board) was dropped

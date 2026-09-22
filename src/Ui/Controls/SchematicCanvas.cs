@@ -386,6 +386,17 @@ public sealed class SchematicCanvas : Control
         RaiseViewportChanged();
     }
 
+    /// <summary>
+    /// Frames a world rectangle — zooms so it fills the view and centres it, whatever the zoom was.
+    /// <see cref="RevealWorldRect"/>'s opposite, for a command whose whole point is to SHOW something
+    /// (the Instances panel's double-click, brief-find-instance-panel.md R-fi-10).
+    /// </summary>
+    public void FrameWorldRect(double minX, double minY, double maxX, double maxY)
+    {
+        if (Bounds.Width < 1 || Bounds.Height < 1) return;
+        ZoomToRect(minX, minY, maxX, maxY);
+    }
+
     private void ZoomToFitInternal(double canvasW, double canvasH)
     {
         if (_model is null || canvasW < 1 || canvasH < 1) return;

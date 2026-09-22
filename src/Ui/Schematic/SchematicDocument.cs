@@ -55,6 +55,13 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     public event Action? ZoomToFitRequested;
     public void RequestZoomToFit() => ZoomToFitRequested?.Invoke();
 
+    // ── Frame a world rectangle — ZoomToFitRequested's shape, carrying the rectangle. The Instances
+    // panel's double-click (brief-find-instance-panel.md R-fi-10) is the first caller: it FRAMES the
+    // component, where Sort Placement's RevealWorldRect only pans. Coordinates are schematic world units.
+    public event Action<double, double, double, double>? ZoomToWorldRectRequested;
+    public void RequestZoomToWorldRect(double minX, double minY, double maxX, double maxY)
+        => ZoomToWorldRectRequested?.Invoke(minX, minY, maxX, maxY);
+
     // ── Design ▸ Place Cell Instance… — mirrors ZoomToFitRequested exactly. The cell picker is a
     // Window and lives in the view's code-behind (UI firewall); the menu item is bound to
     // WorkspaceViewModel, which has no view reference, so it raises this instead.

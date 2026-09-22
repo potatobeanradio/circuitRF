@@ -26,6 +26,7 @@ at any moment:
 <li><a href="#tools">Drawing and editing</a></li>
 <li><a href="#selection">Selection and vertex editing</a></li>
 <li><a href="#hierarchy">Hierarchy, instances and arrays</a></li>
+<li><a href="#find">Finding an instance</a></li>
 <li><a href="#schematic-flow">Schematic ⇄ layout</a></li>
 <li><a href="#geometry-snap">Geometry snap</a></li>
 <li><a href="#ruler">The Ruler</a></li>
@@ -211,6 +212,22 @@ Three things are the layout's own:
 - **Flatten** (one level or all levels) turns instances back into geometry, and **Group into new
   cell** does the reverse — hierarchy you can build after the fact, out of artwork you have already
   drawn. Cycles are detected at edit time, not discovered at render time.
+
+## Finding an instance {#find}
+
+On a board with hundreds of parts, **Design ▸ Find Instance…** — <kbd>⌘F</kbd> /
+<kbd>Ctrl</kbd>+<kbd>F</kbd> — is the quick way to one of them. It opens the **Instances** panel for
+the layout you are working in, with the cursor in its search box. Each placed instance is listed by
+its **designator** (or, for one that has none, the name of the cell it places), its **type** — the
+PCell generator or the part it was placed as, otherwise the cell — and the cell itself where that adds
+something, including an array's rows × columns.
+
+Type part of a designator to filter, pick a type to narrow further, and **double-click** a row — or
+press <kbd>Enter</kbd> — to **zoom to that instance and select it**. An instance whose cell no longer
+resolves is still listed and still zoomed to, at its placement point: that is often exactly why you
+are looking for it. As in the schematic, only the level you are looking at is listed; instances inside
+a placed cell are that cell's own, so push into it to find them. The panel works identically for a
+schematic — see [Finding a component](schematic-editor.html#find).
 
 ## Schematic ⇄ layout {#schematic-flow}
 
