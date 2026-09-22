@@ -330,6 +330,18 @@ public static class DockPanelIds
     public const string Drc         = "Drc";
 
     /// <summary>
+    /// brief-lvs-12-gui.md's results panel — does the artwork implement the drawing? Tabbed with
+    /// Messages and DRC by default, for the reason those two are: all three are "what the tool has
+    /// to tell you about this design".
+    ///
+    /// <para>Absent from both shipped default layouts, deliberately. LVS needs a cell with both
+    /// views drawn, which most documents being edited do not yet have, and a panel that would be
+    /// empty for most users is one they would have to learn about only to close. It opens from
+    /// View ▸ Panels and is then captured and restored with every other panel.</para>
+    /// </summary>
+    public const string Lvs         = "Lvs";
+
+    /// <summary>
     /// wbond.md §10.1 (WB39a/M3) — the profile view and the Array Inductance panel, as dockable tools
     /// that follow the active layout. That is what makes "the wBond Editor" stop being a separate
     /// editor and become the Layout Editor with two panels open: push into a wirebond cell (WB40) and
@@ -378,8 +390,8 @@ public static class DockPanelIds
 
     public static readonly string[] All =
     [
-        ProjectTree, Palette, Properties, Analyses, Messages, Drc, WBondProfile, WBondInductance,
-        History,
+        ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
+        WBondInductance, History,
     ];
 
     /// <summary>

@@ -282,6 +282,18 @@ public static class LvsRun
                           .Where(f => !f.IsRunLevel)
                           .Select(f => LvsHierarchy.Within(c.Placements[0], f)))));
 
+        // ── R-lvs12-4f/4g: the document's own waivers, HONOURED and never written ──────────────
+        //
+        // Here rather than in either surface, so the CLI and the panel cannot disagree about what a
+        // waiver suppresses — the same argument that put the whole comparison behind one entry
+        // point. A sub-cell's findings arrive already marked against ITS `.clay`, which is the
+        // right answer: a waiver is a statement about the drawing it is stored on.
+        //
+        // The run writes nothing. This reads `layout.LvsWaivers` and hands back findings with
+        // `Waived` set; the list on the document is untouched, which is `check`'s own rule
+        // (R-aut4-6) and is what keeps a run usable on a read-only tree.
+        findings = LvsWaivers.Apply(findings, layout.LvsWaivers);
+
         return new LvsRunResult(
             findings, comparison, reducedSchematic, reducedLayout, geometry,
             schematicLog, layoutLog, counts, tech?.Name)

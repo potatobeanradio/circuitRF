@@ -1,0 +1,200 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Lvs.LvsToolView"
+             x:DataType="vm:LvsTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- The DRC panel's layout, deliberately (R-lvs12-1a): header, summary strip, list. What is
+         added is the STRIP's content — R-lvs12-1b wants the counts per side before and after the
+         collapse, the technology by name and the reduction mode, because a workspace with two
+         processes has a default that may not be the one the designer has in mind. -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*" Margin="4,2">
+            <Button Grid.Column="0"
+                    x:Name="RunButton"
+                    Click="OnRunClick"
+                    IsEnabled="{Binding IsLayoutActive}"
+                    ToolTip.Tip="Compare this cell's artwork against its schematic"
+                    Padding="6,2"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    FontSize="11">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="CompareHorizontal" Width="14" Height="14"/>
+                    <TextBlock Text="Compare" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <CheckBox Grid.Column="1"
+                      Content="Markers"
+                      FontSize="11"
+                      Margin="8,0,0,0"
+                      IsEnabled="{Binding IsLayoutActive}"
+                      IsChecked="{Binding EditorVm.ShowLvsMarkers, Mode=TwoWay, FallbackValue=True}"
+                      ToolTip.Tip="Draw finding regions over the artwork"/>
+
+            <!-- R-lvs12-3b, the "select a part and find its counterpart" half. Two buttons rather
+                 than one, because which direction is being asked is the question. -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="8,0,0,0">
+                <Button Command="{Binding EditorVm.ProbeLayoutToSchematicCommand}"
+                        Content="Layout → Schematic"
+                        FontSize="11" Padding="5,1"
+                        Background="Transparent" BorderThickness="0"
+                        ToolTip.Tip="Find the selected artwork's component in the drawing"/>
+                <Button Command="{Binding EditorVm.ProbeSchematicToLayoutCommand}"
+                        Content="Schematic → Layout"
+                        FontSize="11" Padding="5,1"
+                        Background="Transparent" BorderThickness="0"
+                        ToolTip.Tip="Find the selected component's artwork"/>
+            </StackPanel>
+
+            <TextBlock Grid.Column="3"
+                       Text="{Binding EditorVm.LvsTechnologyText, FallbackValue=''}"
+                       FontSize="11"
+                       Opacity="0.7"
+                       Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Margin="8,0,8,4" Spacing="1">
+            <TextBlock FontSize="11"
+                       Opacity="0.75"
+                       TextWrapping="Wrap"
+                       Text="{Binding EditorVm.LvsSummaryText, FallbackValue='Open a layout to compare it.'}"/>
+
+            <!-- R-lvs12-3d. The correspondence is a snapshot of the last run; the panel marks itself
+                 stale on any document change and SAYS SO, rather than highlighting against a result
+                 that no longer describes the design. -->
+            <TextBlock FontSize="11"
+                       Opacity="0.85"
+                       TextWrapping="Wrap"
+                       FontStyle="Italic"
+                       IsVisible="{Binding EditorVm.IsLvsStale, FallbackValue=False}"
+                       Text="{Binding EditorVm.LvsStaleText, FallbackValue=''}"/>
+        </StackPanel>
+
+        <!-- The last cross-probe's own sentence — R-lvs12-3b/3c. A probe that quietly highlighted
+             nothing is indistinguishable from one whose answer is off screen. -->
+        <TextBlock Grid.Row="2"
+                   Margin="8,0,8,4"
+                   FontSize="11"
+                   Opacity="0.8"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding EditorVm.LvsProbeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}"
+                   Text="{Binding EditorVm.LvsProbeText, FallbackValue=''}"/>
+
+        <TextBlock Grid.Row="3"
+                   Text="Open a layout document in a cell folder to compare it against its schematic."
+                   FontSize="12"
+                   Opacity="0.6"
+                   Margin="12"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding !IsLayoutActive}"/>
+
+        <ListBox Grid.Row="3"
+                 x:Name="FindingsList"
+                 IsVisible="{Binding IsLayoutActive}"
+                 ItemsSource="{Binding EditorVm.LvsFindings}"
+                 SelectedItem="{Binding EditorVm.SelectedLvsFinding, Mode=TwoWay}"
+                 DoubleTapped="OnRowDoubleTapped"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionMode="Single">
+
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="lay:LvsFindingRow">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="2,2">
+
+                        <!-- Icon carries severity as well as colour — never colour alone. -->
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="AlertCircleOutline"
+                                         Width="14" Height="14"
+                                         Margin="0,2,6,0"
+                                         VerticalAlignment="Top"
+                                         IsVisible="{Binding IsError}"
+                                         Foreground="{DynamicResource CrfWarningBrush}"/>
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="AlertOutline"
+                                         Width="14" Height="14"
+                                         Margin="0,2,6,0"
+                                         VerticalAlignment="Top"
+                                         Opacity="0.75"
+                                         IsVisible="{Binding IsWarning}"/>
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="CheckCircleOutline"
+                                         Width="14" Height="14"
+                                         Margin="0,2,6,0"
+                                         VerticalAlignment="Top"
+                                         Opacity="0.5"
+                                         IsVisible="{Binding IsWaived}"/>
+
+                        <StackPanel Grid.Column="1" Spacing="1">
+                            <!-- The ID is the contract and the sentence is not (R-lvs8-2a), so the
+                                 id is on the row: it is the thing a user can name in a report that a
+                                 reword cannot change. -->
+                            <Border Background="{DynamicResource SystemChromeMediumColor}"
+                                    CornerRadius="3"
+                                    Padding="4,0"
+                                    HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding IdText}" FontSize="10" Opacity="0.8"/>
+                            </Border>
+                            <TextBlock Text="{Binding MessageText}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Opacity="{Binding RowOpacity}"/>
+                            <!-- R-lvs8-2b: the designer's OWN names, un-reduced. -->
+                            <TextBlock Text="{Binding ObjectsText}"
+                                       IsVisible="{Binding HasObjects}"
+                                       FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2"
+                                Command="{Binding ToggleWaiveCommand}"
+                                Padding="4,1"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FontSize="11"
+                                VerticalAlignment="Top"
+                                ToolTip.Tip="Waive or un-waive this finding. Saved with the layout; a waived finding is still reported and merely not counted.">
+                            <mi:MaterialIcon Kind="EyeOffOutline" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- R-lvs12-4d: a waiver whose key no longer matches anything is LISTED, with the finding's
+             text at the time of waiving, and removable by a human who recognises it. -->
+        <StackPanel Grid.Row="4"
+                    Margin="8,4"
+                    IsVisible="{Binding EditorVm.LvsOrphanWaivers.Count, FallbackValue=False}">
+            <TextBlock Text="Waivers that no longer match any finding"
+                       FontSize="11" Opacity="0.7" Margin="0,0,0,2"/>
+            <ItemsControl ItemsSource="{Binding EditorVm.LvsOrphanWaivers}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="lay:LvsOrphanWaiverRow">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding FindingText}" FontSize="11"
+                                           Opacity="0.7" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ReasonText}" FontSize="10"
+                                           Opacity="0.5" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Command="{Binding RemoveCommand}"
+                                    Content="Remove"
+                                    FontSize="11" Padding="5,1"
+                                    Background="Transparent" BorderThickness="0"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Grid>
+</UserControl>

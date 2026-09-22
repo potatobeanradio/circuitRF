@@ -519,6 +519,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // nothing — so the result is dropped rather than refreshed (R16b: checking is on demand).
             ClearDrcResultOnEdit();
 
+            // brief-lvs-12-gui.md R-lvs12-3d: an LVS result is MARKED stale rather than dropped —
+            // its correspondence is what cross-probing runs on and is the part a user still wants
+            // after nudging a pad. The panel says so and refuses to probe; it does not re-run.
+            MarkLvsStaleOnEdit();
+
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
             bool rulersChanged = PruneRulerSelection();
@@ -4443,6 +4448,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             ShowScaleHandles = ShowScaleHandles,
             SnapMarker = _currentSnapCandidate,
             DrcMarkers = BuildDrcMarkers(),
+            LvsMarkers = BuildLvsMarkers(),
             // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
             // one is being dragged live — the regenerated artwork to draw in that instance's place.
             PCellHandles = BuildPCellHandleMarkers(instanceDragOverrides),

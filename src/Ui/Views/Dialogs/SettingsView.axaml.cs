@@ -174,6 +174,9 @@ public partial class SettingsView : Window
 
             CheckDrcOnExportCheck.IsChecked = prefs.CheckDrcOnExport ?? true;
 
+            // R-lvs12-1e: the LVS gate's default is OFF, deliberately — see AppPreferences.
+            CheckLvsOnExportCheck.IsChecked = prefs.CheckLvsOnExport ?? false;
+
             CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
 
             MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
@@ -263,6 +266,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CheckDrcOnExport = CheckDrcOnExportCheck.IsChecked);
+    }
+
+    private void OnCheckLvsOnExportChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.CheckLvsOnExport = CheckLvsOnExportCheck.IsChecked);
     }
 
     private void OnCoalesceRasterFillChanged(object? sender, RoutedEventArgs e)

@@ -12189,6 +12189,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // artwork would be worse than showing none.
         _factory.DrcTool?.SetActiveLayout(doc.ActiveViewModel);
 
+        // brief-lvs-12-gui.md: and so does the LVS panel, on the same signal and for the same
+        // reason — an LVS result belongs to the CELL that was compared.
+        _factory.LvsTool?.SetActiveLayout(doc.ActiveViewModel);
+        InstallLvsSchematic(doc.ActiveViewModel);
+
         // wbond.md §10.1 (WB39a/M3): so do the two wBond panels, and that is the milestone — push into
         // a wirebond cell (WB40) and its wires' profile and its arrays' inductance are right there,
         // with no second editor to open. A layout with no wires leaves both saying so.
@@ -15016,6 +15021,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // WBondDocument's reference layout — so no document type can leave a previous layout's
         // violations on screen beside unrelated artwork by simply not knowing about this panel.
         _factory.DrcTool?.SetActiveLayout(null);
+        _factory.LvsTool?.SetActiveLayout(null);
 
         // wbond.md §10.1 — the two wBond panels follow the same rule, for the same reason: a wire
         // profile shown beside a schematic is worse than an empty panel that says so.

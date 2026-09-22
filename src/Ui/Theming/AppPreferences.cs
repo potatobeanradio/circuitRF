@@ -139,6 +139,21 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckDrcOnExport { get; set; }
 
+    // brief-lvs-12-gui.md R-lvs12-1e: the same gate for LVS, and null means the default, which is
+    // OFF — the one place the two deliberately differ.
+    //
+    // LVS needs a SCHEMATIC, and exporting artwork alone is a legitimate thing to do: a fab package
+    // for a board whose drawing lives elsewhere, a footprint library, a panel of test coupons. On by
+    // default, every one of those would meet a comparison that could not run and a dialog about it,
+    // which is the prompt people learn to dismiss unread — and once learned, it gets dismissed on
+    // the export that mattered too.
+    //
+    // OFF WITH THE BOX VISIBLE IS NOT THE SAME AS ABSENT. A user who wants the gate can have it, and
+    // discovers it in the same place DRC's lives; a user who does not is never interrupted.
+    [JsonPropertyName("check_lvs_on_export")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckLvsOnExport { get; set; }
+
     // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
     // of abutting scanline strokes — back into the region it paints. Null means the default, which is
     // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and

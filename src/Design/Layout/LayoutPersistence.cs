@@ -74,6 +74,11 @@ public sealed class ClayFile
     /// bump.</summary>
     public List<Drc.DrcWaiver>? DrcWaivers { get; set; }
 
+    /// <summary>See <see cref="LayoutView.LvsWaivers"/> (brief-lvs-12-gui.md R-lvs12-4e). Additive —
+    /// omitted when empty, so every existing <c>.clay</c> re-serializes byte-for-byte and needs no
+    /// <see cref="FormatVersion"/> bump.</summary>
+    public List<Lvs.LvsWaiver>? LvsWaivers { get; set; }
+
     /// <summary>See <see cref="LayoutView.Rulers"/> (docs/design/layout-view.md §9B.7, R-rul-15).
     /// Additive — omitted when empty, so every existing ruler-free <c>.clay</c> re-serializes
     /// byte-for-byte and needs no <see cref="FormatVersion"/> bump.</summary>
@@ -327,6 +332,7 @@ public static class LayoutPersistence
             : null,
         Pins          = view.Pins.Count > 0 ? [.. view.Pins] : null,
         DrcWaivers    = view.DrcWaivers.Count > 0 ? [.. view.DrcWaivers] : null,
+        LvsWaivers    = view.LvsWaivers.Count > 0 ? [.. view.LvsWaivers] : null,
         Rulers        = view.Rulers.Count > 0 ? [.. view.Rulers] : null,
         Shapes        = [.. view.Shapes],
         Instances     = [.. view.Instances],
@@ -380,6 +386,7 @@ public static class LayoutPersistence
         view.Instances.AddRange(file.Instances);
         if (file.Pins is not null) view.Pins.AddRange(file.Pins);
         if (file.DrcWaivers is not null) view.DrcWaivers.AddRange(file.DrcWaivers);
+        if (file.LvsWaivers is not null) view.LvsWaivers.AddRange(file.LvsWaivers);
         if (file.Rulers is not null) view.Rulers.AddRange(file.Rulers);
 
         return view;

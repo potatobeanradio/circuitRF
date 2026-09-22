@@ -1089,6 +1089,21 @@ public sealed class LayoutView
     /// </summary>
     public List<Drc.DrcWaiver> DrcWaivers { get; } = [];
 
+    /// <summary>
+    /// brief-lvs-12-gui.md R-lvs12-4: deliberate, persisted exceptions to an LVS finding — see
+    /// <see cref="Lvs.LvsWaiver"/>. Beside <see cref="DrcWaivers"/> and on the same terms: on the
+    /// LAYOUT that was checked, still reported and merely not counted, dirty but not undoable.
+    ///
+    /// <para><b>The KEY is the one place the two differ</b>, deliberately (R-lvs12-4b). A DRC waiver
+    /// names a place and stops applying when the shape moves; an LVS waiver names a relationship,
+    /// survives every layout edit, and is invalidated by a schematic one. See
+    /// <see cref="Lvs.LvsWaiverKey"/>.</para>
+    ///
+    /// <para><b>The RUN never writes this</b> (R-lvs12-4g) — it reads the list and hands back
+    /// findings marked, which is what keeps an LVS run usable on a read-only tree.</para>
+    /// </summary>
+    public List<Lvs.LvsWaiver> LvsWaivers { get; } = [];
+
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 

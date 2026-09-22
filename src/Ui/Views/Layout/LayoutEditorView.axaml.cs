@@ -832,6 +832,40 @@ public partial class LayoutEditorView : UserControl
         return await new DrcExportGateDialog(result, format).ShowDialog<bool>(owner);
     }
 
+    /// <summary>
+    /// R-lvs12-1e's pre-export comparison, beside the design-rule one and on its terms. Returns false
+    /// only when the user cancelled.
+    ///
+    /// <para><b>Off by preference is the DEFAULT here</b> (see <c>AppPreferences.CheckLvsOnExport</c>)
+    /// — off → no comparison, no dialog, no delay, which is what every existing export does today.
+    /// On and matching → no dialog either. On and diverging → the findings are shown, the LVS panel's
+    /// own list is populated behind it, and the export still goes ahead if the user says so.</para>
+    /// </summary>
+    private async Task<bool> ConfirmLayoutVersusSchematicBeforeExportAsync(
+        LayoutEditorViewModel vm, Window owner, string format)
+    {
+        if ((AppPreferencesIo.Load().CheckLvsOnExport ?? false) is false) return true;
+
+        Design.Layout.Lvs.LvsRunResult? result;
+        try { result = vm.RunLvs(); }
+        catch (Exception ex)
+        {
+            // A comparison that itself failed must never be the thing that stops an export — the DRC
+            // gate's own rule.
+            vm.ReportWarning($"LVS before export: the comparison could not run ({ex.Message}). Exporting anyway.");
+            return true;
+        }
+
+        // Null is "this document belongs to no cell folder", which RunLvs has already reported. It is
+        // an ordinary state for an artwork-only export and is not a reason to interrupt one.
+        if (result is null) return true;
+
+        Ui.Layout.Lvs.LvsRunReport.Post(vm.MessageSink, result);
+        if (result.IsClean) return true;
+
+        return await new LvsExportGateDialog(result, format).ShowDialog<bool>(owner);
+    }
+
     private void OnActivationFocusRequested()
     {
         _subscribedDoc?.ConsumeActivationFocus();
@@ -1670,6 +1704,7 @@ public partial class LayoutEditorView : UserControl
         else if (!plan.CanWrite) return;
 
         if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "GDSII")) return;
+        if (!await ConfirmLayoutVersusSchematicBeforeExportAsync(vm, owner, "GDSII")) return;
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -1759,6 +1794,7 @@ public partial class LayoutEditorView : UserControl
         _lastAcadVersion = dialog.AcadVersion;
 
         if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "DXF")) return;
+        if (!await ConfirmLayoutVersusSchematicBeforeExportAsync(vm, owner, "DXF")) return;
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -1850,6 +1886,7 @@ public partial class LayoutEditorView : UserControl
         }
 
         if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "Gerber")) return;
+        if (!await ConfirmLayoutVersusSchematicBeforeExportAsync(vm, owner, "Gerber")) return;
 
         var folder = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {

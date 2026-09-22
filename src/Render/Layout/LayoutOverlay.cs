@@ -187,6 +187,19 @@ public sealed record class LayoutOverlay
     /// off, or when an edit has invalidated the last result.
     /// </summary>
     public IReadOnlyList<DrcMarker> DrcMarkers { get; init; } = [];
+
+    /// <summary>
+    /// brief-lvs-12-gui.md R-lvs12-2a: the LVS finding regions to draw over the artwork. <b>The same
+    /// superimposed mechanism</b> <see cref="DrcMarkers"/> and the mesh viewer use — a system layer
+    /// in the design doc's sense, never a <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never
+    /// reachable by an exporter, never counted in <c>LayoutFrameCounters</c>.
+    ///
+    /// <para>A separate list rather than more <see cref="DrcMarkers"/>: the two panels toggle
+    /// independently and a marker has to know which list it came from to be cleared with it. What is
+    /// built once and used three times is the DRAWING (see <c>LayoutRenderer.Drc.cs</c>), which is
+    /// the part with the hairline-crosshair rule in it.</para>
+    /// </summary>
+    public IReadOnlyList<LvsFindingMarker> LvsMarkers { get; init; } = [];
 }
 
 /// <summary>
@@ -259,3 +272,22 @@ public readonly record struct DrcMarker(
     DrcSeverity           Severity,
     bool                  Waived,
     bool                  Selected);
+
+/// <summary>
+/// One LVS finding's region, ready to draw — <see cref="DrcMarker"/>'s shape and its reasoning, with
+/// the one severity a finding actually has (brief 8's R-lvs8-2z: it lives on the diagnostic).
+/// </summary>
+/// <remarks>
+/// <b>The rings come straight off the finding and nothing here recomputes them</b> (R-lvs12-2b) — an
+/// open carries one ring per island (R-lvs12-2d) and a short carries the JOIN, never the net
+/// (R-lvs12-2c), both decided where the geometry is, in <c>LvsReport</c>.
+/// </remarks>
+/// <param name="Rings">Flat, implicitly-closed DBU vertex lists, in world coordinates.</param>
+/// <param name="Severity">Drives the marker colour.</param>
+/// <param name="Waived">A waived finding still draws, muted — waivers must stay VISIBLE.</param>
+/// <param name="Selected">The row the LVS panel currently has selected.</param>
+public readonly record struct LvsFindingMarker(
+    IReadOnlyList<long[]>              Rings,
+    CircuitRF.Diagnostics.DiagnosticSeverity Severity,
+    bool                               Waived,
+    bool                               Selected);

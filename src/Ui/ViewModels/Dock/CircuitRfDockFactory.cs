@@ -81,6 +81,10 @@ public class CircuitRfDockFactory : Factory
     public PaletteTool?      PaletteTool      { get; private set; }
     public DrcTool?          DrcTool          { get; private set; }
 
+    /// <summary>brief-lvs-12-gui.md's LVS results panel — <see cref="DrcTool"/>'s own contract,
+    /// following the active layout.</summary>
+    public LvsTool?          LvsTool          { get; private set; }
+
     /// <summary>
     /// RC-10's one history panel (§5.10) — the versions and the restore points in one list.
     /// <b>Replaces the two properties this factory carried before</b>, which is what makes "a layout
@@ -187,6 +191,7 @@ public class CircuitRfDockFactory : Factory
             PaletteTool     = new PaletteTool();
             MessagesTool    = new MessagesTool();
             DrcTool         = new DrcTool();
+            LvsTool         = new LvsTool();
             HistoryTool = new HistoryTool();
             WBondProfileTool    = new WBondProfileTool();
             WBondInductanceTool = new WBondInductanceTool();
@@ -201,6 +206,7 @@ public class CircuitRfDockFactory : Factory
             PaletteTool     ??= new PaletteTool();
             MessagesTool    ??= new MessagesTool();
             DrcTool         ??= new DrcTool();
+            LvsTool         ??= new LvsTool();
             HistoryTool ??= new HistoryTool();
             WBondProfileTool    ??= new WBondProfileTool();
             WBondInductanceTool ??= new WBondInductanceTool();
@@ -220,6 +226,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Analyses    => AnalysesTool,
             DockPanelIds.Messages    => MessagesTool,
             DockPanelIds.Drc         => DrcTool,
+            DockPanelIds.Lvs         => LvsTool,
             DockPanelIds.History     => HistoryTool,
             DockPanelIds.WBondProfile    => WBondProfileTool,
             DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -701,6 +708,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Analyses    => AnalysesTool,
         DockPanelIds.Messages    => MessagesTool,
         DockPanelIds.Drc         => DrcTool,
+        DockPanelIds.Lvs         => LvsTool,
         DockPanelIds.History     => HistoryTool,
         DockPanelIds.WBondProfile    => WBondProfileTool,
         DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -710,7 +718,7 @@ public class CircuitRfDockFactory : Factory
     /// <summary>Every tool panel instance this factory owns, in <see cref="DockPanelIds.All"/> order.</summary>
     private IEnumerable<ITool?> AllTools() =>
     [
-        ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool,
+        ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
         WBondProfileTool, WBondInductanceTool, HistoryTool,
     ];
 

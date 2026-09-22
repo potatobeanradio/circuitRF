@@ -42,10 +42,14 @@ namespace CircuitRF.Design.Layout.Lvs;
 /// <param name="Marker">Bounding box of <paramref name="MarkerRings"/> — what click-to-zoom
 /// uses.</param>
 /// <param name="Key">
-/// The stable identity a waiver names — brief 12 consumes it and nothing here reads it. Derived
-/// from the id, the objects and the marker's exact box, on <c>DrcEngine.KeyFor</c>'s terms: moving
-/// the offending artwork produces a different finding, which is the correct outcome because the
-/// waiver named a place that no longer exists.
+/// This finding's identity as a PLACE — id, objects and the marker's exact box, on
+/// <c>DrcEngine.KeyFor</c>'s terms. It is what the panel matches a selected row's marker by.
+///
+/// <para><b>It is NOT what a waiver names, and brief 12 does not use it</b> (R-lvs12-4b). A DRC
+/// waiver keys on a box deliberately, because a DRC waiver names a place and moving the shape
+/// should stop it applying; an LVS waiver names a RELATIONSHIP, which survives moving the part and
+/// is invalidated by a schematic edit. <see cref="LvsWaiverKey"/> is that second key, and
+/// <c>src/Design/Layout/Lvs/RESOLVED.md</c> is why there are two.</para>
 /// </param>
 public sealed record LvsFinding(
     Diagnostic Diagnostic,

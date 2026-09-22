@@ -786,12 +786,28 @@ place. An LVS waiver names a *relationship* — "R7's pin 2 is deliberately not 
 relationship survives moving R7. The key is (finding id, the schematic-side identity, the terminal),
 which is stable under every layout edit and correctly stops applying when the schematic changes.
 
+**Built** (`brief-lvs-12-gui.md`). `LvsWaiver` lives beside `DrcWaiver` in `src/Design`, because it
+is persisted on the `LayoutView` and is therefore part of the `.clay` format; it is additive and
+omitted when empty, so no `FormatVersion` bump. The key is `LvsWaiverKey.For`, which is a **second**
+key rather than `LvsFinding.Key` — that one is DRC's box-based form and is what the panel matches a
+selected row's marker by. Both surfaces honour waivers because `LvsRun.Run` applies them, and the
+run still writes nothing.
+
 ### 8.3 Surfaces
 
 **GUI.** A results panel on the DRC panel's pattern — click a finding, zoom to its marker on the
 system layer, cross-probe the corresponding schematic component. Cross-probing is the feature that
 makes LVS usable rather than merely correct, and the correspondence is what makes it possible: once
 LVS has matched R7 to R7, selecting one selects the other.
+
+**Built** (`brief-lvs-12-gui.md`). `LvsTool` beside `DrcTool`, `LvsToolView` beside `DrcToolView`,
+the markers on the same superimposed system layer drawn by the same routine in `src/Render`, and
+the panel's whole behaviour on `LayoutEditorViewModel` — which is what makes it testable with no
+display at all (`tests/Ui.Tests/Lvs/LvsPanelTests.cs`). The panel calls `LvsRun.Run` with the verb's
+own arguments and computes no finding. Two things worth knowing before changing it are in
+`src/Ui/Layout/Lvs/RESOLVED.md`: an LVS result is MARKED stale rather than dropped (the opposite of
+a DRC result, and for the correspondence's sake), and a record-valued `[ObservableProperty]`
+silently swallows the one refresh that matters most.
 
 **CLI.**
 

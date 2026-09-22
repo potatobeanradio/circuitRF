@@ -490,4 +490,47 @@ public partial class WorkspaceViewModel
         string deletedSuffix = deleted > 0 ? $", {deleted} removed (footprint set to None)" : "";
         Messages.Success($"{commandLabel}: {addedOrCreated} added, {updated} updated, {unchanged} unchanged{removedSuffix}{deletedSuffix}.");
     }
+
+    /// <summary>
+    /// Points a layout editor at the SCHEMATIC of its own cell, when that drawing happens to be open
+    /// — brief-lvs-12-gui.md R-lvs12-3a's second half.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cross-probing needs both views and only one of them can own the code.</b> The layout
+    /// editor does (see <c>LayoutEditorViewModel.LvsSchematic</c>), so the workspace's job is the
+    /// one thing only it knows: which documents are open, and which of them is this cell's drawing.
+    ///
+    /// <para>Null is the ordinary case and is not a failure — the drawing is simply not open, and
+    /// every probe says so rather than highlighting nothing. Matched by CELL FOLDER rather than by
+    /// name, because two cells in different libraries may well share one.</para>
+    /// </remarks>
+    private void InstallLvsSchematic(LayoutEditorViewModel? layout)
+    {
+        if (layout is null) return;
+
+        if (layout.CurrentCellDir is not { Length: > 0 } cell) { layout.LvsSchematic = null; return; }
+
+        layout.LvsSchematic = _openDocsByPath.Values.OfType<SchematicDocument>()
+            .Concat(_scratchDocs)
+            .Where(d => d.FilePath is { Length: > 0 })
+            .FirstOrDefault(d => SameCell(d.FilePath!, cell))
+            ?.ActiveViewModel;
+    }
+
+    /// <summary>Whether a view file lives in <paramref name="cellDir"/>'s own cell folder — its view
+    /// sub-folder's parent, or the folder itself for a document sitting loose in one.</summary>
+    private static bool SameCell(string viewFile, string cellDir)
+    {
+        try
+        {
+            string? dir = Path.GetDirectoryName(Path.GetFullPath(viewFile));
+            if (dir is null) return false;
+            string target = Path.GetFullPath(cellDir).TrimEnd(Path.DirectorySeparatorChar);
+
+            return string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar), target, StringComparison.Ordinal)
+                || string.Equals(Path.GetDirectoryName(dir)?.TrimEnd(Path.DirectorySeparatorChar),
+                                 target, StringComparison.Ordinal);
+        }
+        catch (Exception) { return false; }
+    }
 }

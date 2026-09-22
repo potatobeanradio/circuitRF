@@ -1012,6 +1012,13 @@ public static partial class LayoutRenderer
                     ?? (opts.ShowDrcMarkers ? opts.DrcMarkers : null);
                 if (drcMarkers is { Count: > 0 })
                     DrawDrcMarkers(canvas, drcMarkers, theme, ps, scaleUm);
+
+                // brief-lvs-12-gui.md R-lvs12-2a: the same system layer, for the other check.
+                // Overlay-only — there is deliberately no export opt-in pair like ShowDrcMarkers':
+                // LVS needs a schematic, and an export of the artwork alone is a legitimate thing to
+                // do (R-lvs12-1e), so nothing headless draws these.
+                if (opts.Overlay?.LvsMarkers is { Count: > 0 } lvsMarkers)
+                    DrawLvsMarkers(canvas, lvsMarkers, theme, ps, scaleUm);
             }
             finally
             {

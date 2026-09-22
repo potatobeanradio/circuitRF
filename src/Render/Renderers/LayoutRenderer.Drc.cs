@@ -11,6 +11,8 @@
 // last one is true by construction here rather than by a flag — a marker lives on LayoutOverlay, and
 // every export path passes Overlay = null.
 
+using System.Linq;
+using CircuitRF.Diagnostics;
 using SkiaSharp;
 
 namespace CircuitRF.Render;
@@ -40,9 +42,52 @@ public static partial class LayoutRenderer
     internal static void DrawDrcMarkers(
         SKCanvas canvas, IReadOnlyList<DrcMarker> markers, LayoutRenderTheme theme,
         PathSpace ps, double scaleUm)
-    {
-        if (markers.Count == 0) return;
+        => DrawFindingMarkers(canvas, markers.Select(m => (
+               m.Rings,
+               m.Waived
+                   ? theme.DrcWaived
+                   : m.Severity == DrcSeverity.Error ? theme.DrcError : theme.DrcWarning,
+               m.Waived, m.Selected)), ps, scaleUm);
 
+    /// <summary>
+    /// brief-lvs-12-gui.md R-lvs12-2a/5b: the LVS findings, drawn by the same routine.
+    /// </summary>
+    /// <remarks>
+    /// <b>The DRC marker colours, deliberately reused.</b> They are named for the surface that first
+    /// needed them, but what they mean is "a finding of this severity, over the artwork" — and three
+    /// more <c>ColorRole</c>s would have to be added to the <c>.ccolor</c> format, the theme editor
+    /// and every shipped theme to say the same thing twice. The two panels toggle independently, so
+    /// a user who wants to tell them apart turns one off.
+    ///
+    /// <para><see cref="DiagnosticSeverity.Info"/> draws in the warning colour: an info-level finding
+    /// with a region is still somewhere the user asked to be shown, and a fourth colour for it would
+    /// be a distinction nothing else in the panel makes.</para>
+    /// </remarks>
+    internal static void DrawLvsMarkers(
+        SKCanvas canvas, IReadOnlyList<LvsFindingMarker> markers, LayoutRenderTheme theme,
+        PathSpace ps, double scaleUm)
+        => DrawFindingMarkers(canvas, markers.Select(m => (
+               m.Rings,
+               m.Waived
+                   ? theme.DrcWaived
+                   : m.Severity == DiagnosticSeverity.Error ? theme.DrcError : theme.DrcWarning,
+               m.Waived, m.Selected)), ps, scaleUm);
+
+    /// <summary>
+    /// One region per marker: a translucent fill so the metal underneath stays readable, a solid
+    /// outline so a hairline is visible at any zoom, and the crosshair fallback below.
+    /// </summary>
+    /// <remarks>
+    /// <b>Built once and used by both callers above</b> — the DRC panel and the LVS panel — because
+    /// the part worth sharing is not the colour but the <see cref="DrcMinRegionDevicePixels"/> rule:
+    /// a marker the user cannot see is a check that did not run, and that is as true of an LVS
+    /// finding on a via as it is of a spacing violation.
+    /// </remarks>
+    private static void DrawFindingMarkers(
+        SKCanvas canvas,
+        IEnumerable<(IReadOnlyList<long[]> Rings, SKColor Colour, bool Muted, bool Selected)> markers,
+        PathSpace ps, double scaleUm)
+    {
         float stroke         = DevicePixelsToPathSpace(scaleUm, DrcMarkerStrokeDevicePixels);
         float selectedStroke = DevicePixelsToPathSpace(scaleUm, DrcSelectedStrokeDevicePixels);
         float crossHalf      = DevicePixelsToPathSpace(scaleUm, DrcCrosshairDevicePixels) / 2f;
@@ -50,19 +95,15 @@ public static partial class LayoutRenderer
         using var fillPaint   = new SKPaint { IsStroke = false, IsAntialias = true };
         using var strokePaint = new SKPaint { IsStroke = true,  IsAntialias = true };
 
-        foreach (var marker in markers)
+        foreach (var (rings, colour, muted, selected) in markers)
         {
-            if (marker.Rings.Count == 0) continue;
-
-            var colour = marker.Waived
-                ? theme.DrcWaived
-                : marker.Severity == DrcSeverity.Error ? theme.DrcError : theme.DrcWarning;
+            if (rings.Count == 0) continue;
 
             using var path = new SKPath();
             double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
             double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
 
-            foreach (var ring in marker.Rings)
+            foreach (var ring in rings)
             {
                 if (ring.Length < 6) continue;   // fewer than 3 points bounds no region
                 for (int i = 0; i < ring.Length; i += 2)
@@ -78,11 +119,11 @@ public static partial class LayoutRenderer
 
             if (path.IsEmpty) continue;
 
-            fillPaint.Color = colour.WithAlpha(marker.Waived ? DrcWaivedFillAlpha : DrcFillAlpha);
+            fillPaint.Color = colour.WithAlpha(muted ? DrcWaivedFillAlpha : DrcFillAlpha);
             canvas.DrawPath(path, fillPaint);
 
             strokePaint.Color       = colour.WithAlpha(DrcOutlineAlpha);
-            strokePaint.StrokeWidth = marker.Selected ? selectedStroke : stroke;
+            strokePaint.StrokeWidth = selected ? selectedStroke : stroke;
             canvas.DrawPath(path, strokePaint);
 
             // See DrcMinRegionDevicePixels: a hairline region gets a crosshair so it can be found.

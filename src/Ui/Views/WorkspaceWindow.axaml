@@ -240,6 +240,7 @@
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
+                                    <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
                                     <NativeMenuItem Header="History"      Command="{Binding ShowToolPanelCommand}" CommandParameter="History"/>
                                     <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
                                     <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
@@ -860,6 +861,12 @@
                     <MenuItem Header="_DRC"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-lvs-12-gui.md. Not in either shipped default layout: LVS needs a cell
+                         with both views drawn, which most documents being edited do not yet have. -->
+                    <MenuItem Header="_LVS"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CompareHorizontal" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <!-- revision-control.md §5.10, RC-10 R-rc10-1. ONE panel, replacing Restore Points
                          and Versions. §5's argument is about two kinds of ENTRY and rev 2 spent it as

@@ -185,6 +185,17 @@
                                        ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
                         </Grid>
 
+                        <!-- brief-lvs-12-gui.md R-lvs12-1e. The same offer, DEFAULT OFF — LVS needs a
+                             schematic, and exporting artwork alone is a legitimate thing to do. Off
+                             with the box visible is not the same as absent. -->
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto" Margin="0,4,0,0">
+                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Name="CheckLvsOnExportCheck"
+                                       Content="Run LVS before exporting" FontSize="12"
+                                       IsCheckedChanged="OnCheckLvsOnExportChanged"
+                                       ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
+                        </Grid>
+
                         <!-- Import — R-rf3-7. ON by default: an imported board whose pours arrived as
                              tens of thousands of painted scanlines is neither editable copper nor
                              meshable, and the region is what every consumer wants. The switch is here
