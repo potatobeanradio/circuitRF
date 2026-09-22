@@ -704,7 +704,7 @@ public static class RailMapRenderer
             float padY = Math.Max(0f, MinHighlightPx - rect.Height) / 2f;
             rect.Inflate(padX + HighlightInsetPx, padY + HighlightInsetPx);
 
-            canvas.DrawRoundRect(rect, HighlightCornerPx, HighlightCornerPx, stroke);
+            canvas.DrawRoundRectDashSafe(rect, HighlightCornerPx, HighlightCornerPx, stroke);
             canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Bottom, solid);
             canvas.DrawLine(rect.Left, rect.Bottom, rect.Right, rect.Top, solid);
 

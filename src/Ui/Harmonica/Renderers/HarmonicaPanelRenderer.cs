@@ -947,7 +947,7 @@ public static class HarmonicaPanelRenderer
             Color = theme.AxisLine,
             PathEffect = SKPathEffect.CreateDash([3f, 2.5f], 0),
         };
-        canvas.DrawCircle(p, r + 1.5f, ring);
+        canvas.DrawCircleDashSafe(p, r + 1.5f, ring);
 
         using var tick = new SKPaint
         {

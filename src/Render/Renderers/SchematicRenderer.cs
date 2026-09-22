@@ -661,7 +661,7 @@ public static class SchematicRenderer
                         var (x0, y0) = LP(rr.Cx - hw, rr.Cy - hh);
                         var (x1, y1) = LP(rr.Cx + hw, rr.Cy + hh);
                         float rx = (float)(rr.Radius * zoom);
-                        canvas.DrawRoundRect(new SKRoundRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), rx), paint);
+                        canvas.DrawRoundRectDashSafe(new SKRoundRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), rx), paint);
                     }
                     else
                     {
@@ -677,9 +677,9 @@ public static class SchematicRenderer
                     var (pcx, pcy) = LP(c.Cx, c.Cy);
                     float pr = (float)(c.R * zoom);
                     if (info.filled)
-                        canvas.DrawCircle(pcx, pcy, pr, paint);
+                        canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
                     else
-                        canvas.DrawCircle(pcx, pcy, pr, paint);
+                        canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
                     break;
                 }
 
@@ -688,7 +688,7 @@ public static class SchematicRenderer
                     var (pcx, pcy) = LP(e.Cx, e.Cy);
                     float prx = (float)(e.Rx * zoom);
                     float pry = (float)(e.Ry * zoom);
-                    canvas.DrawOval(pcx, pcy, prx, pry, paint);
+                    canvas.DrawOvalDashSafe(pcx, pcy, prx, pry, paint);
                     break;
                 }
 
@@ -1150,7 +1150,7 @@ public static class SchematicRenderer
             Color       = warnPaint.Color,
             PathEffect  = SKPathEffect.CreateDash([(float)(zoom * 30), (float)(zoom * 20)], 0),
         };
-        canvas.DrawRect(SKRect.Create(left, top, right - left, bottom - top), stroke);
+        canvas.DrawRectDashSafe(SKRect.Create(left, top, right - left, bottom - top), stroke);
 
         using var textPaint = new SKPaint { IsAntialias = true, Color = warnPaint.Color };
         canvas.DrawText("interface changed", right, bottom + font.Size, SKTextAlign.Right, font, textPaint);
@@ -1257,7 +1257,7 @@ public static class SchematicRenderer
                 var (bx, by) = ToPixel(bbMaxX, bbMaxY, panX, panY, zoom);
                 var rect = SKRect.Create(ax - pad, ay - pad, bx - ax + pad * 2, by - ay + pad * 2);
                 canvas.DrawRect(rect, selFill);
-                canvas.DrawRect(rect, selStroke);
+                canvas.DrawRectDashSafe(rect, selStroke);
             }
 
             using var wSel = new SKPaint
@@ -1416,7 +1416,7 @@ public static class SchematicRenderer
                 {
                     var (x0, y0) = ToPixel(rx, ry, panX, panY, zoom);
                     var (x1, y1) = ToPixel(rx + rw, ry + rh, panX, panY, zoom);
-                    canvas.DrawRect(new SKRect(x0, y0, x1, y1), ghostPaint);
+                    canvas.DrawRectDashSafe(new SKRect(x0, y0, x1, y1), ghostPaint);
                 }
             }
         }
@@ -1453,7 +1453,7 @@ public static class SchematicRenderer
                 var (bx, by) = ToPixel(wx + ww, wy + wh, panX, panY, zoom);
                 var rect = SKRect.Create(ax - bmPad, ay - bmPad, bx - ax + bmPad * 2, by - ay + bmPad * 2);
                 canvas.DrawRect(rect, bmSelFill);
-                canvas.DrawRect(rect, bmSelStroke);
+                canvas.DrawRectDashSafe(rect, bmSelStroke);
             }
         }
 
@@ -1488,7 +1488,7 @@ public static class SchematicRenderer
             var (bx, by) = ToPixel(rb.X + rb.W,  rb.Y + rb.H,  panX, panY, zoom);
             var rect = SKRect.Create(ax, ay, bx - ax, by - ay);
             canvas.DrawRect(rect, rbFill);
-            canvas.DrawRect(rect, rbStroke);
+            canvas.DrawRectDashSafe(rect, rbStroke);
         }
     }
 

@@ -399,7 +399,7 @@ public sealed class HarmonicaCanvas : Control
                 float w = (float)(p.W * Bounds.Width),  h = (float)(p.H * Bounds.Height);
                 if (w <= 1 || h <= 1) continue;
 
-                canvas.DrawRect(new SKRect(x + 1, y + 1, x + w - 1, y + h - 1), outline);
+                canvas.DrawRectDashSafe(new SKRect(x + 1, y + 1, x + w - 1, y + h - 1), outline);
 
                 float g = (float)HarmonicaEditTarget.GripDevicePixels;
                 canvas.DrawRect(new SKRect(x + w - g, y + h - g, x + w - 1, y + h - 1), grip);

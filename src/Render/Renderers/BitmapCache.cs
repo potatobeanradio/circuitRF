@@ -59,7 +59,7 @@ public static class BitmapCache
             StrokeWidth = 1.5f, Color = warningColor.WithAlpha(180),
             PathEffect = dashEffect,
         };
-        canvas.DrawRect(SKRect.Create(x, y, w, h), strokePaint);
+        canvas.DrawRectDashSafe(SKRect.Create(x, y, w, h), strokePaint);
         strokePaint.PathEffect = null;
         strokePaint.StrokeWidth = 1f;
         canvas.DrawLine(x,     y,     x + w, y + h, strokePaint);

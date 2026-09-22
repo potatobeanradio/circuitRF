@@ -1300,7 +1300,7 @@ public static partial class LayoutRenderer
             Color = theme.Warning,
             PathEffect = SKPathEffect.CreateDash([6f, 3f], 0),
         };
-        canvas.DrawRect(rect, stroke);
+        canvas.DrawRectDashSafe(rect, stroke);
         counters.DrawCalls++;
 
         using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
@@ -1594,7 +1594,7 @@ public static partial class LayoutRenderer
         float y0 = ps.Y(bb.MaxY), y1 = ps.Y(bb.MinY);   // path space is Y-down
         var rect = SKRect.Create(x0, y0, x1 - x0, y1 - y0);
         canvas.DrawRect(rect, fill);
-        canvas.DrawRect(rect, stroke);
+        canvas.DrawRectDashSafe(rect, stroke);
         counters.DrawCalls += 2;
     }
 
@@ -1654,7 +1654,7 @@ public static partial class LayoutRenderer
         // for a sparse sub-cell — mirrors the original box ghost's own outline, now drawn over the
         // real geometry rather than instead of it.
         var rect = NormalizedRect(ps.X(pending.Bbox.MinX), ps.Y(pending.Bbox.MinY), ps.X(pending.Bbox.MaxX), ps.Y(pending.Bbox.MaxY));
-        canvas.DrawRect(rect, ghostStroke);
+        canvas.DrawRectDashSafe(rect, ghostStroke);
     }
 
     /// <summary>L5, R-L5-7: the palette→layout PCell drag's live ghost — draws the generator's real

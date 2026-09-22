@@ -263,7 +263,7 @@ internal static class SymbolEditorRenderer
                 var p  = pins[si];
                 float gx = (float)((p.LocalX + pinDx - panX) * zoom);
                 float gy = (float)((p.LocalY + pinDy - panY) * zoom);
-                canvas.DrawCircle(gx, gy, r, ghostPaint);
+                canvas.DrawCircleDashSafe(gx, gy, r, ghostPaint);
             }
         }
     }
@@ -471,7 +471,7 @@ internal static class SymbolEditorRenderer
                         float sy0 = (float)((by0 - panY) * zoom);
                         float sx1 = (float)((bx1 - panX) * zoom);
                         float sy1 = (float)((by1 - panY) * zoom);
-                        canvas.DrawRect(SKRect.Create(sx0, sy0, sx1 - sx0, sy1 - sy0), boxStroke);
+                        canvas.DrawRectDashSafe(SKRect.Create(sx0, sy0, sx1 - sx0, sy1 - sy0), boxStroke);
                     }
                 }
                 else

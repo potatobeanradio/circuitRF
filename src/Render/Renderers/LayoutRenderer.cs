@@ -2143,7 +2143,7 @@ public static partial class LayoutRenderer
         };
 
         canvas.DrawRect(rect, fillPaint);
-        canvas.DrawRect(rect, strokePaint);
+        canvas.DrawRectDashSafe(rect, strokePaint);
     }
 
     // ── Shape-reshape handles (L1d, docs/design/layout-view.md §6.3) ───────────────────────────

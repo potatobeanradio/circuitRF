@@ -1,5 +1,62 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A dashed closed shape exported SOLID, and the only warning was native console noise (2026-09-21)
+
+Owner report: a run printed `Unsupported path effect in addPaint.` repeatedly — no newline between
+repeats, no file, no shape, no stack.
+
+**It is a third member of the family recorded below in "Two constructs that are right on a raster
+canvas and do not exist in SVG" — a Skia call the raster backend honours and the SVG device cannot
+express.** Skia's SVG device writes `drawRect`/`drawRRect`/`drawOval`/`drawCircle` as `<rect>`,
+`<ellipse>` and `<circle>` elements, then calls `addPaint` to attach the stroke. A path effect
+cannot be carried on a primitive element, so `addPaint` prints that line and emits the element
+**without the effect**. `drawPath` has no such branch: the device flattens the effect into the
+path's own geometry, so the dash lands in the emitted `<path d="…">` as real segments.
+
+So a crossing marquee, a drag ghost, a broken-bitmap placeholder, an interface-changed mark, a
+not-fitted part outline and a selection box all exported as SOLID outlines — each of which means
+something different from the dashed one it is supposed to be. Raster and PDF never had it: both
+devices convert the primitive to a path internally before applying the effect.
+
+**The fix is a route, not a redraw.** `Renderers/DashSafeShapes.cs` adds `DrawRectDashSafe`,
+`DrawRoundRectDashSafe`, `DrawOvalDashSafe` and `DrawCircleDashSafe`; each falls straight through to
+the plain primitive when `paint.PathEffect is null` and builds a one-shot `SKPath` only when there
+is an effect to preserve. Nothing that was already correct changes shape or cost, and the on-screen
+path pays nothing. The path is built per call rather than cached deliberately — a cached instance
+would have to be thread-static, because layout tiles render in parallel, and the allocation is far
+below the cost of the dash geometry Skia is about to build from it.
+
+**Twenty-one call sites across nine files were converted**, in `SchematicRenderer` (9),
+`LayoutRenderer.Instances` (3), `SymbolEditorRenderer` (2), and one each in `BitmapCache`,
+`LayoutRenderer`, `WBondRenderer`, `RailMapRenderer`, `HarmonicaCanvas`, `WBondProfileCanvas` and
+`HarmonicaPanelRenderer`. Sites whose paint is unconditionally solid were left on the plain
+primitive: the `DashSafe` name is a claim about the paint, and using it where the claim is not true
+costs the next reader a check.
+
+**The scan is the part that protects the future**, and is why the test does more than exercise the
+helper. `NoEffectCarryingPaintReachesABareClosedPrimitive` reads every `.cs` under `src/Render`,
+`src/Ui`, `src/Cli` and `src/Design` that mentions `PathEffect` and fails on any bare closed
+primitive handed a paint known to carry one. Three things it needs in order to be worth running:
+
+- **It is scope-aware.** A paint name is live only from its declaration until the brace depth falls
+  back below it. Without that, five solid paints sharing a common name (`stroke`, `paint`, `edge`)
+  in a file that also holds one dashed paint all read as offenders.
+- **Comments are stripped first**, since several of these files DISCUSS a dash they do not draw.
+- **A draw call is rejoined across lines before the paint is looked for.** Five multi-line calls
+  exist today (none of them offenders, checked by hand); without the rejoin the rule the scan
+  actually enforces is "no offender that fits on one line", which is not a rule anyone writing code
+  knows they are subject to.
+
+**Both halves of the defect are asserted, not just the repair.** The export test proves the dash
+survives THROUGH the helper and is silently lost WITHOUT it — proving only the helper's half would
+pass vacuously the day Skia starts emitting `stroke-dasharray` on a primitive element, and would
+stop guarding anything from that day on. The discriminator is the **subpath count**, not the element
+name: a bare rounded rect already comes out as a `<path>` because Skia has no rounded-rect element,
+but it is a single solid outline through the same `addPaint`. Only the flattened form is many
+disjoint subpaths.
+
+---
+
 ## Schematic wires were invisible in the user-doc figures, and nothing was missing from them (2026-09-20)
 
 Owner: four of the six Smith Chart figures draw the components with nothing connecting them —

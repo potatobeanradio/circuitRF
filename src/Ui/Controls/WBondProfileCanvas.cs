@@ -1329,7 +1329,7 @@ public sealed class WBondProfileCanvas : Control
                 Color = _layoutTheme.Selection.WithAlpha(255),
                 PathEffect = crossing ? SKPathEffect.CreateDash([6f, 4f], 0f) : null,
             };
-            canvas.DrawRect(rect, stroke);
+            canvas.DrawRectDashSafe(rect, stroke);
             stroke.PathEffect?.Dispose();
         }
 
