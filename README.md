@@ -1,21 +1,29 @@
 # circuitRF
 
-**A lightweight, cross-platform RF circuit simulator — for the RF community, by the RF community.**
+**A lightweight, cross-platform EDA tool for RF design — for the RF community, by the RF community.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#getting-started)
 [![UI: Avalonia](https://img.shields.io/badge/UI-Avalonia%2012-7B68EE.svg)](https://avaloniaui.net/)
 
-circuitRF is an EDA tool for developing RF circuits.  It can analyze the frequency response and nonlinear behavior of RF circuits — from a handful of components to hierarchical, multi-port designs with thousands of components — using **DC**, **S-parameter**, and **harmonic-balance** analyses, plus first-class **loadpull / sourcepull**. The analyses and the workflow are built around the RF/microwave problem, the file formats are human-readable, and the headline goal is to make loadpull as easy as a few clicks. circuitRF also includes a **layout editor** for PCB and MMIC design — with substrate-aware microstrip components, schematic↔layout generation, and full two-way interchange with **Gerber + Excellon**, **GDSII**, **DXF** and `.kicad_pcb` board files — read, written, and convertible in any direction, from the GUI or from command line user `circuitrf convert` — and a **2.5D electromagnetic solver** that analyses that layout geometry using its substrate stackup.
+circuitRF is a full-featured EDA tool for RF and microwave design — schematic capture, layout and
+simulation in one cross-platform application. **DC**, **S-parameter** and **harmonic-balance**
+analyses with first-class **loadpull / sourcepull**, over designs from a handful of components to
+hierarchical, multi-port ones with thousands. A **layout editor** for PCB and MMIC work, with
+substrate-aware microstrip components, schematic↔layout generation, **DRC** and **LVS**, and two-way
+interchange with **Gerber + Excellon**, **GDSII**, **DXF** and `.kicad_pcb` boards. A **2.5D
+electromagnetic solver** over the layout's own substrate stackup. And a headless command line that
+runs all of it. The file formats are human-readable, and the headline goal is to make loadpull as
+easy as a few clicks.
 
 **📖 [Read the user documentation online](https://potatobeanradio.github.io/circuitRF/)**
 
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
-> **Status:** v1 *beta*.
-> ([Roadmap & status](#roadmap--status)). Expect rough edges, and please file issues.
+> **Status:** v1 *beta* — expect rough edges, and please file issues. What is *not* in it yet:
+> [the open green fields](#what-circuitrf-doesnt-do).
 
 ---
 
@@ -68,23 +76,23 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.27-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.27-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.27-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.28-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.28-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.28-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.27-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.27-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.28-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.28-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.27-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.27-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.27/circuitRF-1.0.0-beta.27-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.28-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.28-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.27-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.27/install.sh
+tar xzf circuitRF-1.0.0-beta.28-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.28/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -129,12 +137,12 @@ product) independent of any GUI framework. Full detail:
         ▲        and the planar method-of-moments EM kernel.  Consumes the elaborated
         │        netlist, produces a DataSet.  No UI.
         │
-  src/Design    Design-layer DOCUMENTS: the layout model and .clay reader, the technology/
-        ▲        stackup model and .ctech reader, the .ccell cell folder, the .cem EM setup and
-        │        its extractors, the interchange readers/writers, the DRC engine, and — since
-        │        2026-09 — the .csch/.csym schematic and symbol model with net extraction, plus
-        │        the functions that CREATE a workspace, a cell and an imported part.  No UI:
-        │        it draws nothing and docks nothing; the EDITORS all stay in src/Ui.
+  src/Design    Design-layer DOCUMENTS: the .clay layout model, the .ctech technology and
+        ▲        stackup, the .ccell cell folder, the .csch/.csym schematic and symbol models
+        │        with net extraction, the .cem EM setup and its extractors, the interchange
+        │        readers/writers, the DRC and LVS engines, and the functions that CREATE a
+        │        workspace, a cell and an imported part.  No UI: it draws nothing and docks
+        │        nothing; the EDITORS all stay in src/Ui.
         │
   src/Render    The Skia RENDERERS: schematic, symbol, layout and bondwire, their themes and
         ▲        caches, the colour-theme model and .ccolor reader, and the overlay descriptions
@@ -154,8 +162,9 @@ product) independent of any GUI framework. Full detail:
 
   src/Cli       Headless driver — depends on Core/Engine/RfCore/Design, NOT on src/Ui. Proof
                  the engines are fully usable with no GUI; the engines' primary test harness.
-                 Verbs: sparam, dc, hb, lp, lpp, em, elab, convert, new, import, check,
-                 explain, read, serve.  See docs/user/reference/cli.html.
+                 Verbs: sparam, dc, hb, lp, lpp, em, elab, netlist, check, explain, lvs,
+                 rail, smith, convert, new, import, render, plot, find, read, reference,
+                 history, serve.  See docs/user/reference/cli.html.
 ```
 
 ### The three layers (design → elaboration → numeric)
@@ -202,38 +211,30 @@ global variables, cell parameters, the SDD's device equations, and measurements
 
 ### How rendering works — SkiaSharp and Avalonia
 
-The GUI is **Avalonia 12** (the cross-platform .NET UI framework — same window/menu/dock machinery on all
-three OSes). But circuitRF does **not** render schematics or plots as Avalonia controls — a 10,000-component
-schematic would die under one control per component. Instead, both the schematic canvas and the Data
-Display draw themselves with **SkiaSharp** (a fast 2D graphics library) through a custom control, with
-**viewport virtualization** and a **spatial index** for hit-testing and pan/zoom.
-
-The split is deliberate: a **pure renderer** (`SchematicRenderer`, the plot renderers — Skia only, no
-Avalonia types) draws a model + transform onto a surface, and a thin **Avalonia control** hosts that
-surface and pumps input events. The rendering investment lives in the renderer; the Avalonia control is
-just a host.
+The GUI is **Avalonia 12** (the cross-platform .NET UI framework — the same window, menu and dock
+machinery on all three OSes). But circuitRF does **not** render schematics, layouts or plots as
+Avalonia controls — a 10,000-component schematic would die under one control per component. Each
+canvas draws itself with **SkiaSharp** through a custom control, with **viewport virtualization**
+and a **spatial index** for hit-testing and pan/zoom. The split is deliberate: a **pure renderer**
+(Skia only, no Avalonia types) draws a model + transform onto a surface, and a thin Avalonia control
+hosts that surface and pumps input events. The rendering investment lives in the renderer.
 
 ### The framework firewall
 
-The circuitRF *engines* must be skinnable by any new
-UI with as little trouble as possible — so **`RfCore`, `src/Core`, `src/Engine`, `src/Design`,
-`src/Render`, `src/Cli`, `src/Diagnostics`, `src/Harmonica` and `src/WBond` reference no UI framework at
-all** (no Avalonia). This is **not** a hope; it's an **enforced invariant** —
-[`tests/Firewall.Tests`](tests/Firewall.Tests) loads each of those nine assemblies and fails the build if
-any references `Avalonia*`.
+The circuitRF *engines* must be skinnable by any new UI with as little trouble as possible — so
+**`RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Render`, `src/Cli`, `src/Diagnostics`,
+`src/Harmonica` and `src/WBond` reference no UI framework at all** (no Avalonia). This is **not** a
+hope; it's an **enforced invariant** — [`tests/Firewall.Tests`](tests/Firewall.Tests) loads each of
+those nine assemblies and fails the build if any references `Avalonia*`.
 
-That firewall is how the command `circuitrf em` from a terminal even works at all. The half of the EM path that
-turns a `.cem` plus a `.clay` into an `EmProblem` used to sit in the `CircuitRF.Ui` assembly; it was carved
-out into **`src/Design`** so the CLI could reach it without dragging Avalonia across the line — one implementation
-of the layout reader, the stackup resolver and the run service, driven by both the
-Simulate button and the command line.
+That firewall is why `circuitrf em`, `circuitrf lvs` and `circuitrf render` work from a terminal at
+all: the EM run service, the DRC and LVS engines and the renderers all sit below the line, so the
+headless answer and the on-screen one come from one implementation instead of two that drift.
 
 The entire engine↔UI contract is two shapes: **design model down, `DataSet` up.** A replacement UI
-re-implements only the *presentation* of those two shapes; the engine, elaboration, analyses, result model,
-net extraction, and file formats are untouched. (SkiaSharp is allowed below the UI — it's a graphics
-library, not a UI framework — but in practice the renderers live with the display layer.) That's the whole
-point of the firewall: **the simulator survives the UI.** Detail in
-[`docs/design/ui-architecture.md`](docs/design/ui-architecture.md).
+re-implements only the *presentation* of those two; the engines, elaboration, analyses, result model
+and file formats are untouched. That's the whole point of the firewall: **the simulator survives the
+UI.** Detail in [`docs/design/ui-architecture.md`](docs/design/ui-architecture.md).
 
 ---
 
@@ -242,116 +243,50 @@ point of the firewall: **the simulator survives the UI.** Detail in
 ```
 circuitRF/
 ├─ src/
-│  ├─ RfCore/          Shared RF result/network library — everything below depends on it (no UI)
-│  │  ├─ (root)          Touchstone I/O, SNP, RFNetwork S/Z/Y math + renormalization, interpolation
-│  │  ├─ Data/           DataSet/DataCube result model, network metrics (stability, passivity)
-│  │  ├─ Export/         .npy native format + .mat/.tsv/Touchstone exporters and importers
-│  │  └─ Loadpull/       loadpull surfaces, contour extraction, RBF interpolation, FOM dialects
-│  ├─ Core/            Design + elaboration layers, and the expression engine (no UI, no numerics)
-│  │  ├─ Design/         cells, instances, TestBench, analyses, measurements
-│  │  ├─ Elaboration/    flatten hierarchy, resolve parameters/sweeps, number nodes
-│  │  ├─ Devices/        ComponentModel base + built-in models (R/L/C, FET, SDD, TLIN, …)
-│  │  │  └─ Microstrip/    substrate-aware microstrip: Hammerstad-Jensen, dispersion, loss,
-│  │  │                    discontinuities, Klopfenstein taper
-│  │  ├─ Expressions/    tokenizer, Pratt parser, evaluator, automatic differentiation
-│  │  ├─ Netlist/        .cnl reader/writer
-│  │  └─ Data/           DataSet/DataCube result model (mirrors RfCore)
-│  ├─ Engine/          Numeric layer — consumes the elaborated netlist, returns a DataSet (no UI)
-│  │  ├─ (root)            sparse MNA, DC, S-parameters, parametric sweeps, measurements
-│  │  ├─ HarmonicBalance/  HB residual, conversion-matrix Jacobian, single/two-tone, continuation
-│  │  ├─ Loadpull/         loadpull + pursuit engines, .gam terminations
-│  │  ├─ Match/            termination probe for the Match component's direct synthesis
-│  │  └─ Mom/              the EM kernels: quasi-static cross-section + full-wave planar MoM,
-│  │                       layered Green's function, mesher, ports, de-embedding, AIM accelerator
-│  ├─ Design/          Design-layer DOCUMENTS — the artefacts a design is made of, and the code
-│  │  │                that reads, writes, validates and CREATES them (no UI: draws nothing,
-│  │  │                docks nothing). Referenced by BOTH src/Ui and src/Cli, so there is exactly
-│  │  │                one layout reader, one stackup resolver and one net extractor.
-│  │  │                See src/Design/CLAUDE.md.
-│  │  ├─ Layout/         layout model + .clay reader, integer-DBU geometry, flatten/booleans,
-│  │  │  │               spatial index, technology/stackup model + .ctech reader, ComponentImport
-│  │  │  ├─ Em/            the .cem EM setup, its reader, the cross-section and planar extractors,
-│  │  │  │                 EmRunService (what the Simulate button and `circuitrf em` both call)
-│  │  │  ├─ Drc/           the DRC ENGINE and the .ctech layer-expression format — it draws
-│  │  │  │                 nothing, and `circuitrf check` runs design rules with no display
-│  │  │  ├─ Assembly/      the .wasm assembly rule model, its reader and its validation
-│  │  │  ├─ Interchange/   GDSII, DXF, Gerber, Excellon and .kicad_pcb readers AND writers —
-│  │  │  │                 `circuitrf convert` is both directions (the font SOURCE stays in src/Ui)
-│  │  │  └─ PCells/        PCell parameter VALUE types (the generators stay in src/Ui)
-│  │  ├─ Schematic/      the .csch document model, SchematicPersistence, CellSymbolResolver and
-│  │  │                  NetExtractor  (the EDITOR, the canvas and the edit session stay in src/Ui)
-│  │  ├─ Symbol/         the .csym symbol model, its persistence and its geometry
-│  │  ├─ Cells/          the .ccell cell-folder format, its atomic writer, CellCreate, the view
-│  │  │                  and name validators
-│  │  ├─ Workspace/      the .cws reader, the workspace-root walk-up, WorkspaceCreate
-│  │  ├─ Theming/        the framework-free colour value the document formats store
-│  │  ├─ resources/      the shipped .ctech technologies, as embedded resources
-│  │  └─ Results/        the results-folder convention: <base>/results/<key>.npy
-│  ├─ Diagnostics/     the coded-diagnostic leaf: id, typed arguments, English template (no UI)
-│  ├─ Harmonica/       harmonicaRF's framework-free half — interactive harmonic loadpull (no UI)
-│  ├─ WBond/           wBond's framework-free half — bondwire geometry + its own 3D MoM (no UI)
-│  ├─ Render/          The Skia RENDERERS, below the firewall — one renderer, called by the GUI
-│  │  │                and (from RND-1 on) by the command line, so a headless picture cannot
-│  │  │                drift from the one on screen. It draws; it does not edit.
-│  │  ├─ Renderers/      SchematicRenderer, SymbolEditorRenderer, LayoutRenderer + partials,
-│  │  │                  WBondRenderer, their themes, the path/bitmap caches and the LOD tiers
-│  │  ├─ Layout/         the hit-test, handle, snap and overlay geometry the renderer shares with
-│  │  │                  the editors (the EDITORS themselves stay in src/Ui)
-│  │  ├─ Schematic/      the schematic and symbol OVERLAY types — a frame's transient chrome
-│  │  ├─ Theming/        the colour-theme model, its roles and the .ccolor reader
-│  │  └─ Assets/         the embedded fonts and the shipped Default.ccolor — src/Ui LINKS these
-│  │                     rather than holding a second copy
-│  ├─ Ui/              Avalonia 12 + SkiaSharp — the only place UI-framework code lives
-│  │  ├─ Schematic/      the schematic EDITOR: canvas, edit session, undo, hit-testing, the
-│  │  │                  library palette, PlacementService  (the MODEL is in src/Design)
-│  │  ├─ Layout/         layout EDITOR: commands, snapping, handles, schematic↔layout generation,
-│  │  │  │                the .ctech editor  (the MODEL and the DRC ENGINE are in src/Design)
-│  │  │  ├─ PCells/        parametric-cell generators — geometry from component parameters
-│  │  │  ├─ Em/            the .cem editor panel and back-annotation  (the RUN is in src/Design)
-│  │  │  ├─ Drc/           the DRC run's Messages report and the per-user wBond clearance setting
-│  │  │  └─ TechImport/    importing a technology from a foreign stackup
-│  │  ├─ Renderers/      what is left of the render layer here: the module initializers that hand
-│  │  │                  src/Render its Avalonia-loaded pieces, harmonicaRF's theme bridge (it
-│  │  │                  reaches a Data Display type), and the Avalonia-Bitmap adapter over the
-│  │  │                  component preview  (the RENDERERS are in src/Render)
-│  │  ├─ Controls/       Avalonia custom controls hosting Skia surfaces + input
-│  │  ├─ DataDisplay/    DataCube-native plots (Smith/polar/rect/table), loadpull surface, contours
-│  │  ├─ Harmonica/  WBond/   the two standalone tools' views — each also has its own Main()
-│  │  ├─ Diagnostics/    the docs factory's capture side: figure catalog, fixtures, SVG lint
-│  │  ├─ Updates/        the in-app updater
-│  │  └─ ViewModels/  Views/  Commands/  Theming/  Docking/  …   the MVVM shell
-│  └─ Cli/             Headless driver + the engines' test harness (no UI)
-│     │                  verbs: sparam, dc, hb, lp, lpp, em, elab, convert, new, import, check,
-│     │                  explain, read, serve — docs/design/cli.md
-│     └─ Serve/          the protocol adapter: it translates a request into a verb's argument
-│                        vector and hands back that verb's own document. Owns no logic, and is
-│                        meant to be deletable in one commit.
-├─ tools/             programs that are not part of the application (none in circuitRF.slnx)
-│  ├─ DocGen/           the user-docs factory: regenerates docs/user/ + docs/slides/ from the app
-│  ├─ IconGen/          rasterises the brand SVGs into .icns/.ico/.png — run by every packaging script
-│  ├─ senior-worker/    the shipped device worker for compiled vendor model libraries (C)
-│  ├─ osdi-worker/  netlist-worker/   the OSDI and netlist-model device workers (C)
-│  ├─ pcell-python/     the Python PCell host a kit's generators run in
-│  ├─ DeviceWorkerExample/  fake-model-lib/  fake-osdi-model/   reference + test-only workers,
-│  │                    deliberately referencing no other project in this repo
-│  ├─ ReleaseSigner/    release signing for the updater's payloads
-│  └─ macos-vmhost/  macos-vmimage/   the macOS VM used for cross-platform build checks
-├─ packaging/         one script per platform, each building everything that platform ships
-│  ├─ windows/          build-windows.ps1 → 3 .msi architectures × 2 scopes + the updater .zip
-│  ├─ macos/            build-macos.sh    → 2 .dmg (x64, arm64)
-│  └─ linux/            build-linux.sh    → .deb and .tar.gz for x64 and arm64
-├─ docs/
-│  ├─ PRD.md             what v1 must do + the five "hero" acceptance circuits
-│  ├─ Development_Plan.md  the roadmap, status, and AI-workflow strategy
-│  ├─ design/            per-subsystem design notes (the "why")  ← start here to go deep
-│  ├─ skills/            step-by-step procedures (e.g. adding-a-library-component.md)
-│  ├─ sonnet-briefs/     the per-phase implementation briefs work is cut from
-│  ├─ slides/            generated landscape PDF decks (light and dark)
-│  └─ user/             the shipped user documentation — GENERATED; sources in docs/user/src/
-├─ testdata/           golden references + regression fixtures (the five heroes live here)
-├─ tests/              Core, Engine, Ui, RfCore, Harmonica, WBond and Firewall test projects
-├─ VERSION             the ONE place the version number is written
-└─ CLAUDE.md           standing project memory (architecture, invariants) — root + nested per subsystem
+│  ├─ RfCore/       Shared RF result/network library (no UI) — Touchstone I/O, S/Z/Y math and
+│  │                renormalization, interpolation, the DataSet/DataCube result model, the
+│  │                .npy/.mat/TSV exporters, loadpull surfaces, contours and FOM dialects
+│  ├─ Core/         Design + elaboration, and the expression engine (no UI, no numerics) —
+│  │                cells, instances, TestBench, analyses, measurements; flatten and resolve
+│  │                top-down; the ComponentModel family including the SDD and the
+│  │                substrate-aware microstrip models; the .cnl reader/writer
+│  ├─ Engine/       Numeric layer (no UI) — sparse MNA, DC, S-parameters, parametric sweeps,
+│  │                harmonic balance, loadpull + pursuit, and the two MoM EM kernels
+│  │                (quasi-static cross-section, and full-wave planar with AIM)
+│  ├─ Design/       Design-layer DOCUMENTS, and the code that reads, writes, validates and
+│  │                CREATES them (no UI: it draws nothing and docks nothing). Referenced by
+│  │                BOTH src/Ui and src/Cli, so there is exactly one of each:
+│  │                  Layout/     .clay model, integer-DBU geometry, booleans, spatial index,
+│  │                              .ctech technology + stackup, footprints, the DRC and LVS
+│  │                              engines, the GDSII / DXF / Gerber+Excellon / .kicad_pcb
+│  │                              readers AND writers, and Em/ — the .cem setup, its
+│  │                              extractors and EmRunService
+│  │                  Schematic/  .csch model, persistence and NetExtractor (EDITOR: src/Ui)
+│  │                  Symbol/  Cells/  Workspace/  RailRf/  Matching/  Revision/  Results/
+│  ├─ Render/       The Skia RENDERERS, below the firewall — schematic, symbol, layout and
+│  │                bondwire, their themes, caches and LOD tiers, the .ccolor colour-theme
+│  │                model, and the hit-test / handle / snap / overlay geometry shared with the
+│  │                editors. Called by the GUI *and* by the CLI, so there is one renderer.
+│  ├─ Ui/          Avalonia 12 + SkiaSharp — the only place UI-framework code lives: the
+│  │                schematic, symbol, layout, .cem and .ctech EDITORS, the PCell generators,
+│  │                the Data Display, the harmonicaRF / wBond / railRF views, the docs
+│  │                factory's capture side, the updater, and the MVVM shell
+│  ├─ Diagnostics/ The coded-diagnostic leaf: an id, typed arguments, an English template
+│  ├─ Harmonica/   harmonicaRF's framework-free half — interactive harmonic loadpull (no UI)
+│  ├─ WBond/       wBond's framework-free half — bondwire geometry + its own 3D MoM (no UI)
+│  └─ Cli/         Headless driver + the engines' test harness (no UI) — docs/design/cli.md
+├─ tools/          Programs that are not part of the application (none in circuitRF.slnx):
+│                  DocGen (the user-docs factory), IconGen, the device workers (C), the
+│                  Python PCell host, the release signer, the macOS build VM
+├─ packaging/      One script per platform, each building everything that platform ships
+├─ docs/           PRD.md, Development_Plan.md, design/ (the "why" — start here to go deep),
+│                  skills/, sonnet-briefs/, and user/ (the shipped documentation — GENERATED;
+│                  sources in docs/user/src/)
+├─ examples/       The workspaces Tools ▸ Examples opens
+├─ testdata/       Golden references + regression fixtures (the five heroes live here)
+├─ tests/          Core, Engine, Ui, RfCore, Harmonica, WBond and Firewall test projects
+├─ VERSION         The ONE place the version number is written
+└─ CLAUDE.md       Standing project memory (architecture, invariants) — root + per subsystem
 ```
 
 ---
@@ -487,6 +422,9 @@ dotnet run --project src/Cli -- import part parts/ --into ~/designs/Amp --cell S
 # Is it well formed, does it resolve, is it sound? Runs no analysis and writes nothing
 dotnet run --project src/Cli -- check ~/designs/Amp
 
+# Does the artwork match the drawing? (LVS — read-only; -o writes a report)
+dotnet run --project src/Cli -- lvs ~/designs/Amp/Stage1
+
 # What did circuitRF DECIDE — which technology, which chain, what value?
 dotnet run --project src/Cli -- explain Amp.cem
 dotnet run --project src/Cli -- explain Stage1.csch --expr "Zopt*2"
@@ -520,49 +458,22 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 ---
 
-## Roadmap & status
+## What circuitRF doesn't do
 
-circuitRF is **v1 beta**. The engine and editors work; The five "hero"
-circuits in [`docs/PRD.md`](docs/PRD.md) (a 4-port S-parameter network, a single-FET PA HB power sweep, a
-loadpull, a 2-stage PA, and a two-tone IM case) are the validated acceptance anchors.
+circuitRF is **v1 beta**, and it is feature-complete for v1: the five "hero" circuits in
+[`docs/PRD.md`](docs/PRD.md) (a 4-port S-parameter network, a single-FET PA power sweep, a loadpull,
+a 2-stage PA and a two-tone IM case) are the validated acceptance anchors, and what is left before
+the stable release is **beta test**.
 
-**Done:** S-parameters; nonlinear DC + diode/FET/BJT + the SDD with automatic differentiation; single- and
-two-tone harmonic balance with continuation; parametric sweeps; the `DataSet`/`DataCube` result model;
-loadpull/sourcepull + pursuit; `.mat` / `.npy` / Touchstone / `.spl` / `.lpcwave` export; the Avalonia
-schematic + symbol editors, library palette, workspace/project tree, hierarchy navigation, and undo/redo;
-the `DataCube`-native Data Display with Smith/polar/rect/table plots; **end-to-end loadpull contour
-plotting** (engine → RBF surface fit → contour render, for simulated *and* measured data); and
-**interactive markers**, including markers that read and drag on the contour surface.
+So the useful question is no longer what circuitRF does — it is what it doesn't. These are the open
+green fields, and each is a good place to contribute:
 
-**Done:** **PDK Support** - see [`docs/design/pdk-external-devices.md`](docs/design/pdk-external-devices.md) and
-[`docs/design/pdk-import.md`](docs/design/pdk-import.md) 
-
-**Done: layout editor** based on an integer-DBU geometry model — drawing tools,
-curves and holes, booleans and offsets, scale, technologies with layer tables and substrate **stackups**,
-hierarchy with instances and arrays, push-in/pop-out navigation, flatten and group-into-cell, a spatial index
-and LOD rendering for large designs, import and export of **GDSII / DXF / Gerber+Excellon / .kicad_pcb** file formats,
-a **parametric cell (PCell)** mechanism, the **microstrip component family** with published discontinuity models,
-**schematic↔layout generation** in both directions, and bondwire layout-driven design and
-modeling [`docs/design/wbond.md`](docs/design/wbond.md).
-
-**Done: electromagnetic simulation using MoM.** A **2.5D method-of-moments** solver that analyses layout
-geometry against its technology stackup and returns S-parameters:
-quasi-static per-unit-length and full-wave over a general layered stack
-with vias and z-directed current. See [`docs/design/mom-engine.md`](docs/design/mom-engine.md).
-
-**Done: harmonicaRF.** A waveform engineering solver with convenient UI that shows you what the current generator is actually doing, and what it costs in power and efficiency. It mimics what an active loadpull measurement system does.  View loadpull contours, time-domain waveforms and loadline simultaneously in a realtime envrionment. See [`docs/design/harmonicarf.md`](docs/design/harmonicarf.md).
-
-
-What's left for the v1 release is **beta test**.
-
-**Deferred to v2:**
-** open green fields for development**
-- Parameter **tuning** and RF design **optimization**
-- **Noise analysis** — noise figure, phase noise, or noise-parameter (Fmin, Γopt, Rn) extraction. 
-- **LVS**
-- **Transient Analysis**
-- **Envelope Analysis** for modulated waveforms
-- **FEM Analysis?** (electromagnetic and thermal)
+- **Tuning and optimization** — no interactive parameter tuner, and no optimizer.
+- **Noise analysis** — no noise figure, no phase noise, no Fmin / Γopt / Rn extraction.
+- **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
+- **Envelope analysis** — no simulation of modulated waveforms.
+- **3D EM, and thermal** — the electromagnetic solver is 2.5D planar method-of-moments over a
+  layered stackup. There is no 3D FEM solver, and no thermal solver.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
 
