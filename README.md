@@ -22,7 +22,7 @@ easy as a few clicks.
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
-> **Status:** v1 *beta* — expect rough edges, and please file issues. What is *not* in it yet:
+> **Status:** v1 *beta* — almost at v1 release... please file issues. What is *not* in it yet:
 > [the open green fields](#what-circuitrf-doesnt-do).
 
 ---
@@ -76,23 +76,23 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.28-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.28-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.28-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.29-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.29-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.29-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.28-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.28-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.29-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.29-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.28-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.28-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.28/circuitRF-1.0.0-beta.28-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.29-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.29-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.29/circuitRF-1.0.0-beta.29-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.28-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.28/install.sh
+tar xzf circuitRF-1.0.0-beta.29-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.29/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
