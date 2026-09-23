@@ -752,8 +752,39 @@ public static class PdnMeshExtractor
     /// <see cref="PdnRegion"/>-list overload above is the per-layer route and the only one a rail's
     /// whole copper should take.</para>
     /// </remarks>
-    internal static long MinimumFeatureWidthDbu(Paths64 all)
+    internal static long MinimumFeatureWidthDbu(Paths64 all) =>
+        MinimumFeatureWidthDbu(all, skipProvablyEmpty: true, out _);
+
+    /// <summary>
+    /// The measurement itself, with the one short cut it takes made switchable and COUNTED — the
+    /// switch exists so a test can hold the short cut to the answer the plain bisection gives, and
+    /// the count so it can hold the saving (brief-railrf-30).
+    /// </summary>
+    /// <param name="all">The copper, DBU.</param>
+    /// <param name="skipProvablyEmpty">Skip every step <see cref="InscribedRadiusBoundDbu"/> proves
+    /// erodes to nothing. False is the plain bisection.</param>
+    /// <param name="offsetPairs">How many erode-then-dilate steps were actually computed.</param>
+    /// <remarks>
+    /// <b>WHY THE SHORT CUT, and why it cannot change the answer.</b> An erosion's cost grows with
+    /// its DISTANCE, not only with the vertex count: on a 60,000-vertex pour every offset edge
+    /// crosses every other within the distance, and the bisection starts at half the piece's
+    /// smaller span. Measured on a field-report board (Release): the three opening steps, at 49, 25
+    /// and 12 mm on a pour whose narrowest copper is 0.25 mm, took 79, 40 and 19 s and each eroded
+    /// to NOTHING — 137 of the 167 s the measurement cost, to learn what the pour's own geometry
+    /// already says.
+    ///
+    /// <para>A step whose half-width exceeds the largest disc that fits in the copper erodes to the
+    /// empty set, and <see cref="LosesArea"/> answers exactly that case with "loses" before it
+    /// dilates anything. Clipper's mitred inward offset removes AT LEAST the true erosion (a mitre
+    /// at a reflex corner reaches past the arc a round join would draw), so where no disc fits
+    /// Clipper finds nothing either. The steps skipped are therefore only ones whose answer is
+    /// already known, in the order the bisection would have asked them, and the path it walks is
+    /// unchanged.</para>
+    /// </remarks>
+    internal static long MinimumFeatureWidthDbu(Paths64 all, bool skipProvablyEmpty, out int offsetPairs)
     {
+        Measurements++;
+        offsetPairs = 0;
         all = DrcRegions.Union(all);
         var bounds = DrcRegions.BoundsOf(all);
 
@@ -765,16 +796,141 @@ public static class PdnMeshExtractor
         long hi = Math.Max(2, Math.Min(bounds.MaxX - bounds.MinX, bounds.MaxY - bounds.MinY));
         long lo = 1;
 
+        // Only where offsets are expensive: on a piece of a few hundred vertices the whole bisection
+        // costs less than the raster the bound is read from.
+        int vertices = 0;
+        foreach (var ring in all) vertices += ring.Count;
+        double fits = skipProvablyEmpty && vertices >= InscribedBoundMinimumVertices
+            ? InscribedRadiusBoundDbu(all, bounds)
+            : double.PositiveInfinity;
+
+        int computed = 0;
+        bool Loses(long width)
+        {
+            if (width / 2.0 > fits) return true;
+            computed++;
+            return LosesArea(all, width, total);
+        }
+
         // Everything is at least `hi` wide — a solid plane. Nothing narrower exists to resolve.
-        if (!LosesArea(all, hi, total)) return hi;
+        if (!Loses(hi)) { offsetPairs = computed; return hi; }
 
         while (hi - lo > 1 && hi - lo > lo / 32)
         {
             long mid = lo + (hi - lo) / 2;
-            if (LosesArea(all, mid, total)) hi = mid; else lo = mid;
+            if (Loses(mid)) hi = mid; else lo = mid;
         }
 
+        offsetPairs = computed;
         return Math.Max(1, lo);
+    }
+
+    /// <summary>How many single-shape measurements THIS THREAD has taken — the counter that holds
+    /// "each piece is measured once per extraction" (brief-railrf-30). Thread-static because the
+    /// test runner runs extractions side by side.</summary>
+    [ThreadStatic] internal static int Measurements;
+
+    /// <summary>Below this many vertices the bisection is cheaper than the bound that would shorten
+    /// it.</summary>
+    internal const int InscribedBoundMinimumVertices = 2_000;
+
+    /// <summary>How many raster cells the bound is read from, at most. Its precision is two cells,
+    /// and it only has to separate the steps that cost minutes — tens of millimetres — from a
+    /// narrowest feature of a fraction of one.</summary>
+    private const int InscribedBoundMaxCells = 1 << 18;
+
+    /// <summary>
+    /// An UPPER bound on the radius of the largest disc inside <paramref name="all"/>, DBU.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why it is a bound, and on which side.</b> The copper is rasterised at pixel centres by
+    /// <see cref="PdnTraceRaster.Scanline"/>, and every OFF centre lies outside the copper's
+    /// interior. If a disc of radius <c>r</c> about <c>c</c> fits, the pixel centre <c>q</c> nearest
+    /// <c>c</c> is within <c>pitch/√2</c> of it and every off centre is at least <c>r</c> from
+    /// <c>c</c> — so the exact Euclidean distance from <c>q</c> to the nearest off centre is at least
+    /// <c>r − pitch/√2</c>. The raster's border is off by construction, and leaving the off centres
+    /// beyond it out only lengthens distances, which keeps the inequality on the safe side. A second
+    /// pitch on top absorbs the scanline's floating-point crossing positions and Clipper's rounding
+    /// to whole DBU.
+    /// </remarks>
+    internal static double InscribedRadiusBoundDbu(Paths64 all, Bbox bounds)
+    {
+        long w = Math.Max(1, bounds.MaxX - bounds.MinX), h = Math.Max(1, bounds.MaxY - bounds.MinY);
+        long pitch = Math.Max(1, (long)Math.Ceiling(Math.Sqrt((double)w * h / InscribedBoundMaxCells)));
+
+        long x0 = bounds.MinX - pitch, y0 = bounds.MinY - pitch;
+        int nx = (int)(w / pitch) + 3, ny = (int)(h / pitch) + 3;
+        var on = new bool[nx * ny];
+        PdnTraceRaster.Scanline(all, x0, y0, pitch, nx, ny, on);
+
+        // Exact squared Euclidean distance to the nearest OFF pixel centre, in pixel units — P. F.
+        // Felzenszwalb and D. P. Huttenlocher, "Distance Transforms of Sampled Functions", Theory of
+        // Computing 8 (2012): one lower-envelope pass per column, then per row.
+        // The column pass is the 1-D distance itself, swept down and up. Every column is finite
+        // because the raster's first and last rows are off, so no infinity ever reaches the
+        // envelope's arithmetic.
+        var d2 = new double[nx * ny];
+        for (int i = 0; i < nx; i++)
+        {
+            int run = 0;
+            for (int j = 0; j < ny; j++)
+            {
+                run = on[j * nx + i] ? run + 1 : 0;
+                d2[j * nx + i] = run;
+            }
+            run = 0;
+            for (int j = ny - 1; j >= 0; j--)
+            {
+                run = on[j * nx + i] ? run + 1 : 0;
+                double r = Math.Min(run, d2[j * nx + i]);
+                d2[j * nx + i] = r * r;
+            }
+        }
+
+        var f = new double[nx];
+        var outBuf = new double[nx];
+        var v = new int[nx];
+        var z = new double[nx + 1];
+
+        double max = 0;
+        for (int j = 0; j < ny; j++)
+        {
+            for (int i = 0; i < nx; i++) f[i] = d2[j * nx + i];
+            LowerEnvelope(f, nx, outBuf, v, z);
+            for (int i = 0; i < nx; i++) max = Math.Max(max, outBuf[i]);
+        }
+
+        return (Math.Sqrt(max) + Math.Sqrt(0.5) + 1.0) * pitch;
+    }
+
+    private static void LowerEnvelope(double[] f, int n, double[] d, int[] v, double[] z)
+    {
+        int k = 0;
+        v[0] = 0;
+        z[0] = double.NegativeInfinity;
+        z[1] = double.PositiveInfinity;
+
+        for (int q = 1; q < n; q++)
+        {
+            double s = ((f[q] + (double)q * q) - (f[v[k]] + (double)v[k] * v[k])) / (2.0 * q - 2.0 * v[k]);
+            while (s <= z[k])
+            {
+                k--;
+                s = ((f[q] + (double)q * q) - (f[v[k]] + (double)v[k] * v[k])) / (2.0 * q - 2.0 * v[k]);
+            }
+            k++;
+            v[k] = q;
+            z[k] = s;
+            z[k + 1] = double.PositiveInfinity;
+        }
+
+        k = 0;
+        for (int q = 0; q < n; q++)
+        {
+            while (z[k + 1] < q) k++;
+            double dq = q - v[k];
+            d[q] = dq * dq + f[v[k]];
+        }
     }
 
     private static bool LosesArea(Paths64 paths, long width, double total)

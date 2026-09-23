@@ -192,6 +192,13 @@ unusable.
 | [25 — a series element](brief-railrf-25-series-element.md) | a ferrite in the middle of a rail: **a second rail node**, partitioned off the artwork | a closed-form oracle, and every existing answer unchanged bit for bit |
 | [26 — parts from the board](brief-railrf-26-parts-from-the-board.md) | **the parts table has no producer** — nothing in circuitRF ever makes a part row, so a board whose parts are placed footprints shows an empty pane | a load, a series element and a part off the rail must never become a shunt capacitor |
 | [27 — a Gerber set to a curve](brief-railrf-27-gerber-set-to-a-curve.md) | the four steps still standing behind 26: copper that never reached the stackup, a rail picked on its own reference, rows with no value, a source with no voltage | ONE end-to-end test: fab set in, curve out, no display and no hand-edited JSON |
+| [28 — the pads follow the layout](brief-railrf-28-pads-follow-the-layout.md) | an edit in the layout re-reads pads, net points and the turned-parts reading, debounced and off the UI thread | the Turn gesture and a hand edit leave the same board |
+| [29 — the refusal that blamed the source pad](brief-railrf-29-the-refusal-that-blamed-the-source-pad.md) | a disconnected rail refused before pricing, with its real cause | refuses in seconds, not minutes |
+| [30 — where the minutes go](brief-railrf-30-where-the-minutes-go.md) | the measured breakdown; one measurement taken three times, fixed with the netlist unchanged | byte-identical netlists before and after |
+| [31 — the return is a net](brief-railrf-31-the-return-is-a-net.md) | the return resolved as a NET (measured), a rail seed never claims it, a split return refused | the field board's rail is its own copper; Accurate equals the hand-seeded run |
+| [32 — Accurate that is not converged](brief-railrf-32-accurate-that-is-not-converged.md) | the default mesh reads 3.6× high on real routing; find why, and never return an unconverged number | default within 2 % of 8 cells across; a 45° trace to 1 % |
+| [33 — the fast model and the return plane](brief-railrf-33-the-fast-model-and-the-return-plane.md) | a return plane is never a ribbon; the coarse mesh resolves the return or Fast refuses | Fast within 5 % of converged Accurate on the field board, or a refusal |
+| [34 — an anchor over two nets](brief-railrf-34-an-anchor-over-two-nets.md) | a pad anchor seeds its land; a coordinate over two nets states its layer or is refused | two supplies never become one rail |
 
 **19-24 are window-level and independent of each other.** 25 is a model change and is the largest
 of the seven; it blocks

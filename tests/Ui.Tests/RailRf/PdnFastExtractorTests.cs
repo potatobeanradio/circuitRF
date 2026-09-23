@@ -205,6 +205,29 @@ public sealed class PdnFastExtractorTests
                                             && o.From is { IsReference: false }));
     }
 
+    /// <summary>
+    /// <b>brief-railrf-30.</b> Each piece's narrowest copper is measured ONCE per extraction: by the
+    /// classifier, whose number the trace raster is then sized from. It was measured three times on a
+    /// trace piece — pooled per layer for an extent the default reference never reads, by the
+    /// classifier, and again by the raster — and on a field report's 60,000-vertex pour each was
+    /// ~155 s of the same answer.
+    /// </summary>
+    [Fact]
+    public void R_rail30_EveryPieceIsMeasuredOnce()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+        long w = Mm(0.3), l = Mm(50);
+        var shapes = new List<LayoutShape> { Rect(Top, 0, 0, l, w), Rect(Bot, 0, -Mm(0.35), l, w + Mm(0.35)) };
+
+        PdnMeshExtractor.Measurements = 0;
+        var result = PdnGraphExtractor.Extract(
+            Request(tech, shapes, source: (Mm(0.05), w / 2), load: (l - Mm(0.05), w / 2)));
+
+        Assert.Null(result.Refusal);
+        Assert.Contains(result.Classification, c => c.Class == PdnCopperClass.Trace);
+        Assert.Equal(result.Classification.Count, PdnMeshExtractor.Measurements);
+    }
+
     // ── R-rail4-2: every result says which model produced it ───────────────────────────────────
 
     /// <summary>

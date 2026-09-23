@@ -1,5 +1,178 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Where the minutes went: one measurement taken three times, and a rail that was never the rail (2026-09-22, brief-railrf-30)
+
+Measured on the fourth field report's board with a scratch harness (board and workspace outside the
+repo; footprints regenerated, `ArtworkCellRef` made relative), Release AND Debug, one extraction per
+process. Three configurations of the one rail — a coordinate source on the 3v3 connector land, a
+30 mA coordinate load on a VDD pad:
+
+- **as stated** — Bottom Copper as the reference. Refused by brief 29's check in ~10 s, correctly;
+  measured below with that check bypassed, for the reference-classification figures only.
+- **brief 29's "solves"** — JP1 declared series, the inner GND layer (3/0) attached and named as the
+  reference.
+- **correctly seeded** — the same, with the Bottom Copper GND pour's 246 shapes deleted in the
+  harness. With 3/0 as the reference that pour is neither rail nor return, so this is the rail the
+  designer meant (3v3 + VDD islands only), and the only way to time and check it before the seeding
+  fault below is fixed.
+
+### First, a correctness finding: brief 29's "solves" priced the ground net
+
+**The load anchor is a bare coordinate on a VDD pad, and directly under it on Bottom Copper is the
+1,621 mm² GND pour (the board's ground: 1,055 GND net points on that galvanic net).** `Regions.Walk`
+seeds a coordinate anchor on EVERY layer except the reference, so with Bottom Copper as the reference
+the pour was skipped and with 3/0 as the reference it is seeded: rail island 0 becomes the whole GND
+net — the pour, 2,050 mm² of 3/0 and the top-side ground pours. The note above that the rail "solves"
+is wrong, and so is the number it solved to:
+
+| Rail | Fast (default) | Fast, reference plane forced Spreading | Accurate |
+|---|---|---|---|
+| brief 29's configuration (GND in the rail) | **−149,954,700 V** at the load | — | **1.316 mV** drop |
+| correctly seeded | **−149,954,700 V** | 4.525 mV | **4.091 mV** |
+
+**Correction, measured later the same day: 4.091 mV is not the right answer either.** It carried
+fault 3 below (the rail's own 3v3 island counted as reference, next to the source) and an Accurate mesh
+that is not converged on this board. With the reference set to the GND net, Accurate reads 12.31, 14.55,
+4.13, 3.93 and 4.03 mV at 2, 3 (the default), 4, 6 and 8 cells across the narrowest copper. The real
+drop is **~4.0 mV**, and the default mesh is 3.6× high. Fast with the right reference reads 5.38 mV
+with the plane as Trace, and 4.53 mV with the plane as Spreading. Briefs 31-34 take these up.
+
+Two more faults show up in that table. **The Fast default answers −150 MV and does not refuse.**
+The netlist is three disconnected graphs: the rail; the reference plane, thinned to a skeleton, which
+carries the load's return; and a 22-node reference piece carrying node 0, the source's return. That
+piece is a ~2.5 mm² island inside an antipad next to the source. It is the rail's OWN copper on the
+inner layer, and it was read as reference because, with no reference net named, every piece on the
+reference layer is reference (`Regions.Walk`, `refNets`). A 30 mA source then drives a floating
+network. **Accurate on the GND-in-rail configuration answers 1.3 mV** — a third of the real 4.1 mV,
+optimistic, and entirely ordinary-looking, which is §9's failure shape exactly. All of these change
+numbers, so none is fixed here. They are the first four rows of the list at the end.
+
+**Lead 1, the reference plane priced as a trace, measured.** The holed inner plane classifies Trace
+at 28.4 squares; the Bottom Copper pour, as the stated reference, at 205.7. On the correctly seeded
+rail, forcing the plane to Spreading moves the load from −150 MV to 4.525 mV. Accurate reads
+4.091 mV, so Fast-with-a-spreading-plane is **+10.6 %**, pessimistic and outside §7's 5 %. Fast as it
+ships is not optimistic here; it is meaningless, and the cause is the split reference graph above, not
+the closed form. Whether a holed or reference piece should classify differently is the owner's call;
+the rule is unchanged.
+
+### The breakdown
+
+**Fast DC, whole run, seconds** (pads not included; one process at a time except where marked):
+
+| Stage | GND-in-rail, Release before | Debug before | Release after | Debug after | Seeded, Release before | Debug before | Release after | Debug after |
+|---|---|---|---|---|---|---|---|---|
+| following the connectivity | 205.5 | 215.1 | 5.9 | 7.2 | 1.4 | 1.8 | 1.1 | 1.3 |
+| sorting (classification) | 203.0 | 208.8 | 52.4 | 55.5 | 23.1 | 28.2 | 10.2 | 11.7 |
+| measuring (per piece) | 196.7 | 183.9 | 0.4 | 1.8 | 20.4 | 24.9 | 0.16 | 0.46 |
+| solving | 0.1 | 0.1 | 0.1 | 0.1 | 0.02 | 0.03 | 0.03 | 0.03 |
+| **total** | **605** | **608** | **59** | **65** | **45** | **55** | **11.5** | **13.5** |
+
+The GND-in-rail Release-before column ran beside two other harnesses; brief 29's standalone figures
+(190 / 173 / 168 s) agree. **Debug and Release are within 10 % throughout** — the cost is Clipper, which
+ships optimised.
+
+**Inside the stages** (Release, before; GND-in-rail unless stated):
+
+- **"following the connectivity" is `MinimumFeatureWidthDbu(regions.Power)`: 181.6 of ~190 s.**
+  `Regions.Walk` is 3.3 s (`DrcConnectivity.Extract` 3.1 s of it), `PdnRailConnectivity.Refusal`
+  (brief 29's new code) 2.3 s, `ResolveConductors` 1 ms, `ResolveReferenceCopper` under `AsImported`
+  under 1 ms. Of the 181.6 s, 153.9 s is the GND pour on Bottom Copper (61,164 vertices, 14 steps) and
+  21.4 s is 3/0. The answer is used only to pad the extent — and the extent is read only by an
+  `Infinite` reference.
+- **Sorting is the same measurement again, per piece, in `PdnCopperClassifier`:** the pour
+  (59,757 vertices, 29 rings) 145 s, the 3/0 plane (30,405 vertices, 62 rings) 20 s. `PortsOn` is
+  3.8 s and 1.4 s on those two (407 `Regions.Contains` calls each, ~9 ms per call on a plane), and
+  every other piece on every layer is under 0.5 s together. `DrcRegions.Union`/`Components` are 0.03 s.
+- **Measuring is the same measurement a third time, in `Trace()`:** 130 pieces (11 trace, 119
+  spreading); the pour is 155.4 s, of which raster + thin + assign is **0.19 s** (461,442 copper
+  pixels at 59 µm, 11,890 skeleton, not coarsened) and the rest is `MinimumFeatureWidthDbu`; the 3/0
+  plane is 20.8 s (raster 0.05 s). Every other piece is under 0.5 s. **Nothing hit `MaxRasterCells`.**
+- **Why each call costs minutes: an erosion's cost grows with its distance.** Per bisection step on
+  the pour: 49 mm 78.8 s, 25 mm 39.7 s, 12 mm 18.6 s — each eroding to NOTHING — then 9.8, 5.9, 4.1,
+  2.5, 1.2 s and ~0.8 s for each of the last six. The first three steps are 137 of 167 s, spent
+  learning that no 12 mm disc fits in copper whose narrowest feature is 0.25 mm.
+- **The correctly seeded rail** has the same shape at a smaller scale: 1.1 s of walk, and the 3/0 plane
+  measured twice (22 s classifying, 23 s in `Trace()`) is 45 of its 45 s.
+- **Stated reference (Bottom Copper), check bypassed:** the pour is the reference instead of the rail
+  and costs the same — Trace at 205.7 squares, 185 s classifying, 159 s measuring.
+
+**Other paths:**
+
+| Path | Before | After |
+|---|---|---|
+| `RailArtwork.PadsFor` (open, import, and the window's debounced re-read after an edit) | 7.4 s Release, 8.5 s Debug | unchanged |
+| Accurate, correctly seeded (299,023 elements) | 10.9 s | 10.7 s |
+| Accurate, GND in rail (568,025 elements) | 252 s | 73 s |
+| Plane modes, 100 MHz, correctly seeded | 28.7 s | 31.8 s (under load) |
+| Plane modes, GND in rail | 678 s | 215 s |
+| Mounting loops (the sweep's only artwork work of its own) | 2 ms | — |
+
+- **`PadsFor`'s 7 s is not the turned-parts reading** (`TurnedParts.Read` 6 ms). It is one
+  `CopperPieces.Build` with stamps, 5.1 s — `DrcConnectivity.ExtractWithGround` 2.3 s plus a
+  point-probe per shape — which the turned-parts reading then reuses, plus `PlacedPins.NetPointsOf`
+  probing against that partition, 2.4 s. It is built because 18 of the board's 6,868 root shapes state
+  a net.
+- **Plane modes** run the mesh extractor once per fit attempt — three on this board, each repeating
+  the walk and `MinimumFeatureWidthDbu(regions.Power)` although only the cell size changes — then the
+  dense cavity solve (13 s seeded, 35 s with the pour in the rail).
+- **The window after an edit** re-flattens (20 ms) and schedules the debounced `PadsFor`
+  (`NotifyArtworkChanged`); it re-runs no extraction. The frequency sweep extracts no copper of its
+  own: it reads the DC result, plus the mounting loops.
+
+### What was fixed — the netlist is identical
+
+1. **Measured once per piece.** `PdnClassification` carries the classifier's `MinimumFeatureDbu`, and
+   `GraphBuild.Trace` sizes its raster from it rather than bisecting the same copper again.
+2. **Not measured where nothing reads it.** The fast extractor takes the pooled
+   `MinimumFeatureWidthDbu(regions.Power)` only for an `Infinite` reference, the one extent whose plate
+   is sized from it. The mesh keeps its own, because its cell size is set from it.
+3. **A step no disc can survive is not computed.** `InscribedRadiusBoundDbu` rasterises the copper
+   (at most 2¹⁸ cells, through `PdnTraceRaster.Scanline`'s own rule) and takes an exact Euclidean
+   distance transform. The largest pixel distance plus `pitch/√2`, plus one pitch of margin, is an UPPER
+   bound on the largest inscribed disc. A step whose half-width exceeds it erodes to the empty set,
+   which `LosesArea` answers "loses" before dilating anything. Clipper's mitred inward offset removes at
+   least the true erosion, so it finds nothing either. The bisection walks the same path; it skips only
+   steps whose answer is already known. It engages only at 2,000 vertices and up, below which the
+   bisection is cheaper than the raster.
+
+**Gates.** Byte-identical dumps — every element, parameter, node, port, node cell and solved voltage:
+the correctly seeded board (430 elements), the GND-in-rail board (3,003), and all 33 extractions that
+`PdnFastExtractorTests` and `PdnRefusalCauseTests` make (every classification reason and provenance
+too, 419k lines), old DLL against new. Accurate on both board configurations reads the same to the
+last digit. The bisection itself, short cut against plain, on every piece and whole layer of the
+board at 2,000+ vertices: **6/6 identical, 83 steps → 64, 440.6 s → 89.4 s.** Held by COUNTERS:
+`PdnMeshExtractorTests.R_rail30_AStepTooWideForAnyDiscIsSkipped_AndTheWidthIsUnchanged` (a plate with
+64 antipads: same width, exactly three steps fewer) and
+`PdnFastExtractorTests.R_rail30_EveryPieceIsMeasuredOnce` (a thread-static
+`PdnMeshExtractor.Measurements` equals the classification count; it was pieces + trace pieces + one
+per rail layer). **Cancellation is unchanged**: nothing new runs between `TickStage` calls, and the
+per-piece loop got shorter, not longer.
+
+### What is left, ranked (the next brief's input)
+
+**Briefed the same day:** rows 1-3 as brief 31 (the return is a net), the unconverged Accurate mesh as
+brief 32, row 4 with row 5's cache as brief 33, and the anchor-over-two-nets remainder of row 1 as
+brief 34.
+
+Shares are of the correctly seeded rail's Fast run AFTER this brief (11.5 s Release) unless stated.
+
+| # | Lead | Measured | Changes a number? | Expected effect |
+|---|---|---|---|---|
+| 1 | A coordinate anchor seeds every non-reference layer under it, so a second ground layer (a pour under a pad) becomes the rail | the whole GND net read as rail; 5× the run time; Accurate answers 1.3 mV for 4.1 | **yes** — the fix makes brief 29's configuration price the right rail | correctness; takes the configuration from 59 s to ~12 s |
+| 2 | No refusal when the REFERENCE graph splits a source's return from a load's | Fast answers −150 MV as solved on both configurations | **yes** (a refusal where a number was) | correctness |
+| 3 | With no reference net named, every piece on the reference layer is reference, including the rail's own lands there; the source's return landed on one | node 0 on a 2.5 mm² 3v3 island | **yes** | correctness; one cause of #2 |
+| 4 | Reference plane classified Trace (28.4 sq holed plane; 205.7 sq pour) | forced Spreading reads +10.6 % vs Accurate; Trace reads −150 MV | **yes** — the classification rule | correctness first; also removes the Trace raster's need for the measurement |
+| 5 | The reference plane's `MinimumFeatureWidthDbu`, still taken once per run | ~7.7 s of the 11.5 s | no | ~8 s per re-run and per extra rail, via a cache keyed on the piece's geometry (not on object identity: `TechnologyCache` shares instances). Reference-only work is ~85 % of this run |
+| 6 | `PadsFor`: a stamped `CopperPieces.Build` plus `NetPointsOf`, both probing points with Clipper booleans | 7.4 s on open, import and every debounced re-read after an edit | no | a few seconds from a cheaper exact membership test; the connectivity half (2.3 s) stays |
+| 7 | `PortsOn`: one Clipper boolean per attachment inside a big piece's bounds | 1.4 s on the plane (407 calls); 3.8 s on the misread pour | no | ~1.4 s, same cheaper membership test as #6 |
+| 8 | Plane modes repeat the walk and the pooled measurement on every fit attempt | 3 attempts; ~1.5 s each seeded, ~45 s each with the pour in the rail (after this brief) | no | reuse the walk across attempts |
+| 9 | `ResolveReferenceCopper` under `AsImported` takes the whole pour (2,139 mm² here) | costs nothing itself (<1 ms); what it costs is #5 and #4 downstream | **yes** — the default extent is the owner's call | — |
+
+Also noted: the mesh sizes its DC cell from copper that includes rail pieces on the reference layer,
+which it then does not mesh ("a conductor cannot be its own return"); and the coarse pour mesh joined
+that 2.5 mm² island to the plane in the Spreading variant. The mechanism of that join was not
+traced.
+
 ## The refusal that blamed the source pad: a connectivity question answered after the pricing (2026-09-22, brief-railrf-29)
 
 From the same fourth field report. The designer's rail — a coordinate source on a connector land, a
@@ -63,7 +236,8 @@ diagnostics, so "the diagnostics say which" would have been a promise nothing ke
 sentence has to carry the cause itself.
 
 With JP1 declared **and** the inner GND plane attached to its drawing layer and named as the
-reference, the rail **solves** (Release, ~9 min — see the classification note above).
+reference, the rail **solves** (Release, ~9 min — see the classification note above). **Corrected
+by brief 30 (entry above): it solved the GND net, and the number it solved to is −150 MV.**
 
 ### A terminal's own landing piece is exempt from the pour refusal — the decision and why
 

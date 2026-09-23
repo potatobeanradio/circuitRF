@@ -201,6 +201,39 @@ public sealed class PdnMeshExtractorTests
     }
 
     /// <summary>
+    /// <b>brief-railrf-30.</b> A bisection step too wide for any disc to fit in the copper erodes to
+    /// nothing, and is now answered from the copper's inscribed-radius bound instead of computed — the
+    /// opening steps on a field report's pour cost 137 of 167 s that way. It must be the SAME answer:
+    /// the steps skipped are ones the plain bisection answers "loses" anyway.
+    /// </summary>
+    /// <remarks>
+    /// A 40 mm plate with an 8 × 8 field of antipads is the shape a return plane is, and at 2,052
+    /// vertices it is just over the size at which the bound is taken at all. The largest disc between
+    /// four antipads is ~2.9 mm across its radius, so the 40, 20 and 10 mm steps cannot hold one.
+    /// </remarks>
+    [Fact]
+    public void R_rail30_AStepTooWideForAnyDiscIsSkipped_AndTheWidthIsUnchanged()
+    {
+        var plate = RectPaths(0, 0, Mm(40), Mm(40));
+        for (int i = 0; i < 8; i++)
+            for (int j = 0; j < 8; j++)
+            {
+                double cx = Mm(2.5) + i * Mm(5), cy = Mm(2.5) + j * Mm(5), r = Mm(0.6);
+                var hole = new Path64();
+                for (int k = 31; k >= 0; k--)                      // clockwise: a hole
+                    hole.Add(new Point64(cx + r * Math.Cos(k * Math.PI / 16), cy + r * Math.Sin(k * Math.PI / 16)));
+                plate.Add(hole);
+            }
+        Assert.True(plate.Sum(p => p.Count) >= PdnMeshExtractor.InscribedBoundMinimumVertices);
+
+        long plain = PdnMeshExtractor.MinimumFeatureWidthDbu(plate, skipProvablyEmpty: false, out int plainSteps);
+        long cut = PdnMeshExtractor.MinimumFeatureWidthDbu(plate, skipProvablyEmpty: true, out int cutSteps);
+
+        Assert.Equal(plain, cut);
+        Assert.Equal(plainSteps - 3, cutSteps);
+    }
+
+    /// <summary>
     /// End to end on the board shape this defect is ABOUT — a rail on two layers, joined by vias,
     /// with its reference on a third. The accurate mesh's cell size is R-rail3-14's rule, and the
     /// provenance names a real width rather than 0 mm.

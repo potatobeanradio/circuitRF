@@ -275,10 +275,18 @@ public static class PdnGraphExtractor
                                                out _, out var byLayer) is { } conductorRefusal)
             return PdnExtraction.Refused(conductorRefusal, regions);
 
-        long minFeature = PdnMeshExtractor.MinimumFeatureWidthDbu(regions.Power);
         double dbuPerMetre = request.DbuPerMicron * 1e6;
 
-        var extent = PdnMeshExtractor.ExtentOf(regions, anchorSeeds, Math.Max(1, minFeature));
+        // The narrowest rail copper pads the extent, and the extent is read ONLY by an INFINITE
+        // reference, which is realised as a plate over it. As imported or filled to the outline it
+        // is never read, and the measurement is the costliest single call on a board with a pour
+        // in the rail — 182 s of a field report's 190 s "following the connectivity" stage
+        // (brief-railrf-30). The mesh keeps its own: its cell size is set from it.
+        long extentPad = rail.ReferenceExtent == RailReferenceExtent.Infinite
+            ? Math.Max(1, PdnMeshExtractor.MinimumFeatureWidthDbu(regions.Power))
+            : 1;
+
+        var extent = PdnMeshExtractor.ExtentOf(regions, anchorSeeds, extentPad);
         if (PdnMeshExtractor.ResolveReferenceCopper(request, regions, referenceLayer, extent, notes,
                                                     out var referenceCopper) is { } extentRefusal)
             return PdnExtraction.Refused(extentRefusal, regions);
@@ -815,7 +823,7 @@ internal sealed class PdnTraceRaster
     /// <para>Centres are taken at half-pixel offsets, which is what keeps a vertex lying exactly on a
     /// row from being counted twice.</para>
     /// </summary>
-    private static int Scanline(
+    internal static int Scanline(
         Paths64 piece, long x0, long y0, long pitch, int nx, int ny, bool[] on)
     {
         int count = 0;
@@ -1477,7 +1485,10 @@ internal sealed class GraphBuild(
         // 15 mm, so the width rule alone rasters it eight pixels across and the whole region thins to
         // a single junction worth zero ohms. A forced region must be priced as the closed form along
         // its own length — optimistically, which is the user's stated choice — and not as a short.
-        long minFeature = PdnMeshExtractor.MinimumFeatureWidthDbu(c.Copper);
+        // Measured once, by the classifier, on this same copper (brief-railrf-30).
+        long minFeature = c.MinimumFeatureDbu > 0
+            ? c.MinimumFeatureDbu
+            : PdnMeshExtractor.MinimumFeatureWidthDbu(c.Copper);
         long byWidth = Math.Max(1, minFeature / Math.Max(1, request.Graph.RasterCellsAcrossMinimumFeature));
         long byLength = Math.Max(1, (long)(c.EquivalentLengthMetres * dbuPerMetre / MinimumStepsAlongASection));
 

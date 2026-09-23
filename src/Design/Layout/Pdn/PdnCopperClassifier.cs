@@ -125,6 +125,15 @@ public sealed record PdnClassification(
 
     /// <summary>True on the reference conductor rather than the rail's own copper.</summary>
     public bool IsReference { get; init; }
+
+    /// <summary>
+    /// The piece's narrowest copper, DBU, exactly as <see cref="PdnMeshExtractor.MinimumFeatureWidthDbu(Paths64)"/>
+    /// measured it for <see cref="Reason"/> — zero where nothing measured it.
+    /// </summary>
+    /// <remarks>Carried so the fast extractor sizes a trace piece's raster from the SAME
+    /// measurement rather than taking it a second time: on a 30,000-vertex reference plane read as
+    /// a trace, each one is tens of seconds (brief-railrf-30).</remarks>
+    internal long MinimumFeatureDbu { get; init; }
 }
 
 /// <summary>Copper in, a decision and its reason out. It measures; it does not extract.</summary>
@@ -269,6 +278,7 @@ public static class PdnCopperClassifier
             EquivalentWidthMetres = widthDbu / dbuPerMetre,
             Squares = squares,
             IsReference = isReference,
+            MinimumFeatureDbu = minFeature,
         };
     }
 
