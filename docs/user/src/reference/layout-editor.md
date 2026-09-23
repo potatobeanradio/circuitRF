@@ -225,9 +225,11 @@ something, including an array's rows × columns.
 Type part of a designator to filter, pick a type to narrow further, and **double-click** a row — or
 press <kbd>Enter</kbd> — to **zoom to that instance and select it**. An instance whose cell no longer
 resolves is still listed and still zoomed to, at its placement point: that is often exactly why you
-are looking for it. As in the schematic, only the level you are looking at is listed; instances inside
-a placed cell are that cell's own, so push into it to find them. The panel works identically for a
-schematic — see [Finding a component](schematic-editor.html#find).
+are looking for it. As in the schematic, only the level you are looking at is listed unless you tick
+**Include sub-cells**: then every instance inside every placed cell is listed too, by path (`U1.U2`),
+and double-clicking one pushes down to it. A parametric cell is listed but not searched inside — its
+geometry is generated. The panel works identically for a schematic — see
+[Finding a component](schematic-editor.html#find).
 
 ## Schematic ⇄ layout {#schematic-flow}
 

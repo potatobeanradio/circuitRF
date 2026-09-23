@@ -198,6 +198,33 @@ layout is focused. The list is `InstanceListViewModel` (no Dock, no Avalonia con
   its `InstanceBbox`; an empty box falls back to its origin at 100 µm. A row activated for a document
   that was not in front is revealed on a `Background` post, after the activated view has bound and
   laid out — a zoom asked of a canvas with no size does nothing.
+
+### Include sub-cells (2026-09-22)
+
+A checkbox that lists every instance inside every placed cell as well, by dotted path (`X1.X3.R5`).
+The walk is `InstanceHierarchyWalk`; the rows it makes carry a `SubCellInstance` (names + index hints)
+as their `Source`, never an object.
+
+- **Off the UI thread, and it never touches a live model there.** The UI thread copies the listed
+  frame and every OPEN session (`SnapshotOpenCellLevels`, both registries) into `Level`s — names, types
+  and cell references, no filesystem. The background walk resolves references, reads unopened cells
+  from disk, sorts and computes the type list; the UI thread only merges two sorted arrays. An open
+  session is always taken from the copy, which is also how an unsaved edit in a sub-cell is found. A
+  layout read goes through `CellLayoutResolver` for its cache; the only way that can hand back a live
+  view is a session opened after the copy, and that read is inside a catch.
+- **With it on, the panel lists the TAB's top frame, not the active one.** Otherwise double-clicking
+  `X1.X3.R5` would push in, re-point the list at X3's contents, and throw away the other results mid-
+  search. The active frame is still subscribed, because that is where edits happen.
+- **A double-click keeps frames already on the path** (schematic: frame labels are instance names;
+  layout: `DescentChain`, trusted only when complete) and pushes the rest through the ordinary
+  `PushIntoCell`. A step is found by name, with the index only breaking a tie. A row that no longer
+  resolves says so once and rebuilds the list. The reveal is posted, since the canvas re-points at the
+  pushed frame on its own schedule.
+- **Bounded:** a cell reachable from itself is listed but not re-walked, 32 levels, 100,000 rows (the
+  count shows `+`). Cells read from disk are cached by mtime across walks, so the rebuild after an edit
+  re-walks from memory — held by `DiskLevelCache.Reads`.
+- **Not tested end to end:** the push-down itself lives in `WorkspaceViewModel`, which cannot be built
+  without a shell; `FindStep` and the list behaviour are tested, the navigation was not seen running.
 - **Enter in the search box goes to the highlighted row, else the first match** — type a name, press
   Enter. Down walks into the list. Escape (tunnel, `handledEventsToo`, because the window's Escape
   KeyBinding marks it handled first) returns the keyboard to the listed document's canvas.

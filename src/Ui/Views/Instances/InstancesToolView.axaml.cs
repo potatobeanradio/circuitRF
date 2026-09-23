@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CircuitRF.Ui.Controls;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.ViewModels.Dock;
 
@@ -83,6 +84,8 @@ public partial class InstancesToolView : UserControl
         _tool.ActivationFocusRequested += OnActivationFocusRequested;
         _tool.SearchFocusRequested     += OnSearchFocusRequested;
         _tool.ListVm.PropertyChanged   += OnListPropertyChanged;
+        // Per USER, like every other working habit here: a search scope is not a property of a design.
+        _tool.ListVm.IncludeSubCells = AppPreferencesIo.Load().InstancesIncludeSubCells ?? false;
         SyncTypePicker();
         PublishShown();
 
@@ -98,6 +101,12 @@ public partial class InstancesToolView : UserControl
     {
         if (e.PropertyName is nameof(InstanceListViewModel.TypeOptions) or nameof(InstanceListViewModel.SelectedType))
             SyncTypePicker();
+        else if (e.PropertyName is nameof(InstanceListViewModel.IncludeSubCells) && _tool is { } tool)
+        {
+            bool include = tool.ListVm.IncludeSubCells;
+            if ((AppPreferencesIo.Load().InstancesIncludeSubCells ?? false) != include)
+                AppPreferencesIo.Update(p => p.InstancesIncludeSubCells = include);
+        }
     }
 
     /// <summary>Items first, then the selection, in one path — the order src/Ui/CLAUDE.md requires.</summary>

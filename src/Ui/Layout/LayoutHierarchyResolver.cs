@@ -68,6 +68,26 @@ internal static class LayoutHierarchyResolver
     }
 
     /// <summary>
+    /// Where <paramref name="cellRef"/>'s primary <c>.clay</c> lives, WITHOUT loading it — the
+    /// Instances panel's sub-cell search needs the path first, to prefer an open session's unsaved
+    /// model and to stop at a cell that contains itself. Null when there is no primary layout.
+    /// </summary>
+    public static string? ResolvePrimaryPath(string? cellRef, string? baseDir)
+    {
+        if (string.IsNullOrEmpty(cellRef) || string.IsNullOrEmpty(baseDir)) return null;
+        var cellAbsDir = ExternalCellRef.ResolveCellDir(cellRef, baseDir);
+        if (cellAbsDir is null || !Directory.Exists(cellAbsDir)) return null;
+
+        PrimaryResolution pr;
+        try { pr = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Layout); }
+        catch { return null; }
+
+        return pr.State is PrimaryState.SoleFile or PrimaryState.NamedPresent
+            ? Path.Combine(CellFolder.SubFolderPath(cellAbsDir, ViewType.Layout), pr.ResolvedName!)
+            : null;
+    }
+
+    /// <summary>
     /// brief-L5-followups-3.md §1 (R-L5h-1): true when <paramref name="instance"/> resolves to a
     /// PCell-generated cell — the double-click dispatch (<c>LayoutEditorView.
     /// OnInstanceDoubleTapped</c>) calls this FIRST, before <see cref="CanPushInto"/> is ever reached,

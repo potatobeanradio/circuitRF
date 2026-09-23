@@ -14,7 +14,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
 
         <!-- Which document this is — the Analyses panel's header, for the LVS panel's reason: one
              document's list beside another document is worse than none. -->
@@ -26,6 +26,7 @@
                        VerticalAlignment="Center"/>
             <TextBlock Grid.Column="1"
                        Text="{Binding ListVm.CountText}"
+                       ToolTip.Tip="{Binding ListVm.CountToolTip}"
                        FontSize="11" Opacity="0.6"
                        Margin="8,0,0,0"
                        VerticalAlignment="Center"/>
@@ -54,7 +55,30 @@
                       ToolTip.Tip="Show one component type only"/>
         </Grid>
 
-        <Grid Grid.Row="2" ColumnDefinitions="3*,2*,2*" Margin="12,0,12,2">
+        <!-- Include sub-cells: the walk runs off the UI thread, so the top level is listed at once and
+             the rows below it arrive when it finishes. With it on the panel lists the TAB from its top
+             frame, so a double-click that pushes down to a result leaves the list where it was. -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*" Margin="6,0,6,4">
+            <CheckBox Grid.Column="0"
+                      x:Name="IncludeSubCellsCheck"
+                      Content="Include sub-cells"
+                      FontSize="12"
+                      MinHeight="0"
+                      IsChecked="{Binding ListVm.IncludeSubCells}"
+                      IsEnabled="{Binding ListVm.HasDocument}"
+                      ToolTip.Tip="Also list the instances inside every placed cell, from the top of this tab down"/>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Spacing="6"
+                        IsVisible="{Binding ListVm.IsSearchingSubCells}">
+                <ProgressBar IsIndeterminate="True" Width="40" MinWidth="0" Height="3" MinHeight="0"/>
+                <TextBlock Text="Searching…" FontSize="11" Opacity="0.6"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="3*,2*,2*" Margin="12,0,12,2">
             <TextBlock Grid.Column="0" Text="Name" FontSize="11" Opacity="0.6"/>
             <TextBlock Grid.Column="1" Text="Type" FontSize="11" Opacity="0.6"/>
             <TextBlock Grid.Column="2" Text="Cell/Part" FontSize="11" Opacity="0.6"/>
@@ -62,7 +86,7 @@
 
         <!-- A ListBox virtualises its rows (R-fi-6); an ItemsControl in a ScrollViewer would realise
              every one of ten thousand. -->
-        <ListBox Grid.Row="3"
+        <ListBox Grid.Row="4"
                  x:Name="RowsList"
                  Classes="InstanceRows"
                  ItemsSource="{Binding ListVm.VisibleRows}"
@@ -76,7 +100,8 @@
                 <DataTemplate x:DataType="vm:InstanceRow">
                     <Grid ColumnDefinitions="3*,2*,2*">
                         <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12"
-                                   TextTrimming="CharacterEllipsis"/>
+                                   TextTrimming="{x:Static TextTrimming.PrefixCharacterEllipsis}"
+                                   ToolTip.Tip="{Binding Name}"/>
                         <TextBlock Grid.Column="1" Text="{Binding Type}" FontSize="12"
                                    TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
                         <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="12" Opacity="0.55"
@@ -87,7 +112,7 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <TextBlock Grid.Row="3"
+        <TextBlock Grid.Row="4"
                    Text="{Binding ListVm.EmptyStateText}"
                    IsVisible="{Binding ListVm.ShowEmptyState}"
                    IsHitTestVisible="False"

@@ -166,6 +166,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CoalesceRasterFillOnImport { get; set; }
 
+    // The Instances panel's "Include sub-cells". Null means the default, which is OFF: the top level
+    // is what the canvas shows, and a search that reads every cell below it is the one the user asks
+    // for. Per USER for CheckDrcOnExport's own reason — a working habit, not a property of a design.
+    [JsonPropertyName("instances_include_sub_cells")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? InstancesIncludeSubCells { get; set; }
+
     // The built-in wire-to-wire clearance, in MIL — the one number circuitRF's own assembly rule set
     // states, applied when a wirebond design references no `.wasm`. Null means the default (0.5 mil).
     // Per USER for CheckDrcOnExport's own reason, and stored in mil because mil is the unit it is

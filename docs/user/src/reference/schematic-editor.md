@@ -329,9 +329,18 @@ adds something, the **Cell/Part** it comes from, sorted so that `R2` comes befor
 
 The panel always shows the schematic that has focus, and says which one in its header. Grounds, `VAR`
 and `MEAS` blocks are left out — they are rarely what you are looking for, and a sheet's grounds would
-bury its parts. **Only the level you are looking at is listed**: components inside a placed cell belong
-to that cell, so [push into it](#hierarchy) to find them. The command is greyed out unless a schematic
-or a layout has focus; the panel itself is also under **View ▸ Panels ▸ Instances**.
+bury its parts. The command is greyed out unless a schematic or a layout has focus; the panel itself is
+also under **View ▸ Panels ▸ Instances**.
+
+**Searching inside placed cells.** By default only the level you are looking at is listed. Tick
+**Include sub-cells** and the panel also lists every component inside every placed cell, all the way
+down, named by its path — `X1.X3.R5` is `R5` inside `X3` inside `X1`, so typing `x1.` lists everything
+under `X1`. The top level appears at once; the rest arrives a moment later (the panel shows
+*Searching…* meanwhile), and the window stays responsive while it does. With the box ticked the panel
+lists the whole tab from its top level, wherever you have [pushed in](#hierarchy) to, so
+double-clicking `X1.X3.R5` pushes down into `X1`, then `X3`, and zooms to `R5` — and the list stays put
+for the next result. Unsaved edits in a cell you have open are included. A search that finds more than
+100,000 components stops there and shows a `+` after the count. The box is remembered between sessions.
 
 ## The toolbar {#toolbar}
 

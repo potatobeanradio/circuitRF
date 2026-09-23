@@ -62,4 +62,21 @@ public static class HierarchyResolver
         var pr      = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
         return Path.Combine(cellDir, CellFolder.SchematicSubFolder, pr.ResolvedName!);
     }
+
+    /// <summary>
+    /// The same answer from the reference and the parent's folder alone, for a caller holding no
+    /// live component — the Instances panel's sub-cell search, which reads the placements it walks
+    /// off the UI thread. Null wherever <see cref="CanPushInto"/> would refuse.
+    /// </summary>
+    public static string? ResolvePrimaryPath(string? cellRef, string? schematicDirectory)
+    {
+        if (cellRef is null || schematicDirectory is null) return null;
+        var cellDir = ExternalCellRef.ResolveCellDir(cellRef, schematicDirectory);
+        if (cellDir is null || !Directory.Exists(cellDir)) return null;
+
+        var pr = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
+        return pr.State is PrimaryState.SoleFile or PrimaryState.NamedPresent
+            ? Path.Combine(cellDir, CellFolder.SchematicSubFolder, pr.ResolvedName!)
+            : null;
+    }
 }

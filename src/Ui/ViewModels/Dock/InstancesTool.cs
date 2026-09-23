@@ -34,9 +34,11 @@ public sealed class InstancesTool : Tool, IActivatableTool
     public InstanceListViewModel ListVm { get; } = new();
 
     /// <summary>Called by <c>WorkspaceViewModel</c> whenever the focused document changes: a
-    /// <c>SchematicViewModel</c> or a <c>LayoutEditorViewModel</c>, or null for anything else.</summary>
-    public void SetActiveDocument(object? documentViewModel, string? displayName)
-        => ListVm.SetActiveDocument(documentViewModel, displayName);
+    /// <c>SchematicViewModel</c> or a <c>LayoutEditorViewModel</c>, or null for anything else — and the
+    /// tab's top frame, which "Include sub-cells" lists from.</summary>
+    public void SetActiveDocument(object? documentViewModel, string? displayName,
+                                  object? rootViewModel = null, string? rootDisplayName = null)
+        => ListVm.SetActiveDocument(documentViewModel, displayName, rootViewModel, rootDisplayName);
 
     // ── Activation focus (IActivatableTool) ──────────────────────────────────
 
