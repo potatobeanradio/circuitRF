@@ -1097,6 +1097,14 @@
                                          standing on that copper. -->
                                     <TextBlock Classes="note" Text="{Binding NetPreviewNote}"
                                                IsVisible="{Binding HasNetPreviewNote}"/>
+                                    <!-- And beside the list that was clicked — the same sentence the
+                                         board's chip carries (CopperReadText). -->
+                                    <StackPanel Spacing="3" IsVisible="{Binding IsReadingCopper}">
+                                        <ProgressBar IsIndeterminate="True" Height="3"
+                                                     Minimum="0" Maximum="1"/>
+                                        <TextBlock Classes="note" TextWrapping="Wrap"
+                                                   Text="{Binding CopperReadText}"/>
+                                    </StackPanel>
                                     <!-- The same report: two-terminal parts placed end for end,
                                          read from the copper, named, and turned in the layout on
                                          request — the only fix that makes the document agree. -->
@@ -1634,6 +1642,26 @@
                                     <TextBlock Classes="note" Text="{Binding BoardLayout.CursorXText}"/>
                                     <TextBlock Classes="note" Text="Y:" Margin="6,0,0,0"/>
                                     <TextBlock Classes="note" Text="{Binding BoardLayout.CursorYText}"/>
+                                </StackPanel>
+                            </Border>
+                            <!-- THE BOARD IS BEING READ, said on the board (field report, 2026-09-23).
+                                 The first net picked on a board takes seconds, and the only sign of
+                                 it was a clause in the status strip, so a click read as a click that
+                                 did nothing. Top centre, clear of both readouts; the bar is
+                                 indeterminate because the partition reports no progress. Not hit
+                                 testable, so panning straight through it still works. -->
+                            <Border Name="CopperReadChip" IsVisible="{Binding IsReadingCopper}"
+                                    IsHitTestVisible="False"
+                                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                                    Margin="6" Padding="8,4" CornerRadius="4" MaxWidth="380"
+                                    Background="{DynamicResource SystemChromeLowColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="note" TextWrapping="Wrap"
+                                               Text="{Binding CopperReadText}"/>
+                                    <ProgressBar IsIndeterminate="True" Height="3"
+                                                 Minimum="0" Maximum="1"/>
                                 </StackPanel>
                             </Border>
                             <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"

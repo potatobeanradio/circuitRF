@@ -35156,3 +35156,36 @@ Asked how to model a 0 Ω link, jumper, ferrite bead or RF choke, given that the
   wherever f₀ is blank (`FromRow`: derived ?? stated), so C + ESL + ESR is a working R-L-C triple;
   the column tooltip said it was never used. `docs/design/railrf.md` §2.2/§4.3, the user reference,
   and the tooltips now say both.
+
+## railRF — picking a net outlined nothing; generated cells did not travel (2026-09-23)
+
+**Picking a net did outline it — five to eight seconds later, with nothing said on the board.**
+Reproduced on a reported two-layer Gerber board: the view model published a correct preview for
+every net, at 5.2 s per first pick and 7.9 s for the ground net, Release and Debug alike. A second
+click meanwhile abandoned the first read (it cannot be stopped, only dropped), so a list clicked at
+ordinary speed never outlined anything. Two costs, both fixed:
+- **The galvanic partition was redone per net.** `RailRfViewModel.NetPreview` cached the flatten
+  but called the public `Regions.Walk`, which re-runs `DrcConnectivity.Extract`. The partition is
+  now cached beside the flatten (`_copperPieces`, dropped by `InvalidateNetWalks`) and the walk
+  takes the internal pieces overload; `NetPartitionsBuilt` counts it.
+- **`Regions.Contains` clipped against the whole pour** — `src/Design/RESOLVED.md` has it.
+Together: first read at open 6.4 → 3.1 s, each pick 5.2 → 0.28 s, ground 7.9 → 0.55 s, same copper.
+**The wait is now shown where the user is looking** — a chip over the board and a line under the
+pick list, both bound to `CopperReadText`, which names the net and says the first read is the slow
+one. **A failed copper read used to be silent** (an unobserved `Task.Run` exception: no outline, no
+message, every later pick the same); it is now `CopperReadError`, on the status strip and under the
+list. Not unit-tested: nothing in the job can be made to throw from a test without a seam added for it.
+
+**A generated cell's technology was recorded as an absolute path.** The PCell snapshot — the ONLY
+thing a cell is rebuilt from, since `.generated-cells/` is never committed — hashed and stored the
+placing machine's absolute `.ctech` path, so on any other machine, or after the workspace moved,
+the rebuild found no technology. The reported board lost all ~50 footprint instances that way, and
+the shipped `examples/PDK PCells/SpiralResonator` carried the author's own home path (which
+`ExampleWorkspacesTests` was already failing on). `GeneratedCellStore.CanonicalTechIdentity` now
+spells a technology inside the workspace RELATIVE to its root, in the name hash and in the
+snapshot; an old absolute identity is re-rooted to the longest trailing run of its segments that
+exists under this workspace, TRIED FIRST even where the recorded file still exists — a copied
+workspace uses its own copy (the example, copied out of the repository, otherwise kept naming the
+repository's file). Windows drive paths count as rooted on every platform. **The rename is one-time
+and already handled**: `GeneratedCellsLifecycle.Regenerate` repoints and saves, as after a
+generator edit — so an existing workspace's `.clay` is rewritten once on first open.

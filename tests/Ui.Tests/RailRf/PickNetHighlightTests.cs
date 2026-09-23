@@ -140,6 +140,109 @@ public sealed class PickNetHighlightTests
         Assert.Equal(walks + 1, vm.NetWalksPerformed);
     }
 
+    /// <summary>
+    /// <b>The board is partitioned once, however many nets are picked.</b>
+    /// </summary>
+    /// <remarks>
+    /// Field report, 2026-09-23: every first pick of a net re-ran the galvanic partition of the whole
+    /// board — ~5 s on a two-layer eval board, 8 s for its ground — and a user clicking down the list
+    /// abandoned each read before it landed, so nothing was ever outlined. The reference measurement
+    /// the window makes on opening and every net after it share one partition now.
+    /// </remarks>
+    [Fact]
+    public void EveryPickReusesTheOnePartition()
+    {
+        var vm = Example();
+
+        vm.SelectNet("+3V3");
+        vm.SelectNet("GND");
+
+        Assert.Equal(2, vm.NetWalksPerformed);
+        Assert.Equal(1, vm.NetPartitionsBuilt);
+        Assert.NotNull(vm.NetPreview);
+    }
+
+    /// <summary>
+    /// <b>The fast containment test answers exactly what the probe-square clip answers</b> — on
+    /// real copper, at the points where the two could come apart.
+    /// </summary>
+    /// <remarks>
+    /// Same field report: the clip was the whole of a net pick's remaining cost, and it is used by
+    /// the solve's extraction as well, so a fast path that differed by a single point would move a
+    /// result. Probed at every vertex and at 1, 2 and 3 DBU off it in eight directions (inside the
+    /// clip's reach, on its margin, and just past it), at every edge midpoint, and on a grid over
+    /// each piece's bounds.
+    /// </remarks>
+    [Fact]
+    public void FastContainsAgreesWithTheClipEverywhere()
+    {
+        var board = Example().Board!;
+        var pieces = CircuitRF.Design.Layout.Drc.DrcConnectivity.Extract(
+            LayerRegions.Build(board.Shapes, board.Technology), board.Technology);
+
+        int probes = 0;
+        void Probe(Clipper2Lib.Paths64 paths, long x, long y)
+        {
+            probes++;
+            Assert.True(
+                Regions.ClipContains(paths, x, y) == Regions.Contains(paths, x, y),
+                $"({x}, {y}): the clip and the fast path disagree");
+        }
+
+        foreach (var piece in pieces)
+        {
+            foreach (var path in piece.Paths)
+                for (int i = 0; i < path.Count; i++)
+                {
+                    var a = path[i];
+                    var b = path[(i + 1) % path.Count];
+                    Probe(piece.Paths, (a.X + b.X) / 2, (a.Y + b.Y) / 2);
+                    foreach (int d in (int[])[0, 1, 2, 3])
+                        for (int sx = -1; sx <= 1; sx++)
+                            for (int sy = -1; sy <= 1; sy++)
+                                Probe(piece.Paths, a.X + sx * d, a.Y + sy * d);
+                }
+
+            var bounds = piece.Bounds;
+            for (int gx = 0; gx <= 12; gx++)
+                for (int gy = 0; gy <= 12; gy++)
+                    Probe(piece.Paths,
+                          bounds.MinX + (bounds.MaxX - bounds.MinX) * gx / 12,
+                          bounds.MinY + (bounds.MaxY - bounds.MinY) * gy / 12);
+        }
+
+        Assert.True(probes > 1000, $"only {probes} probes — the example board did not partition");
+    }
+
+    /// <summary>
+    /// <b>While a pick is being traced, the window says which net and that the first is the slow
+    /// one</b> — and stops saying it when the outline lands.
+    /// </summary>
+    [Fact]
+    public void APendingTraceIsNamedUntilItLands()
+    {
+        var vm = Example();
+        var background = new System.Collections.Generic.Queue<Action>();
+        vm.ReadCopperOffThread = work => { background.Enqueue(work); return System.Threading.Tasks.Task.CompletedTask; };
+
+        // A fresh board: nothing partitioned yet, so the first trace carries the partition's cost.
+        vm.AdoptTechnology(TechnologyLayerSelection.WithLayers(vm.Board!.Technology, _ => true, null));
+        vm.SelectNet("+3V3");
+
+        Assert.True(vm.IsReadingCopper);
+        Assert.Contains("'+3V3'", vm.CopperReadText);
+        Assert.Contains("first net", vm.CopperReadText);
+
+        while (background.Count > 0) background.Dequeue()();
+        Assert.False(vm.IsReadingCopper);
+        Assert.Equal("", vm.CopperReadText);
+        Assert.NotNull(vm.NetPreview);
+
+        vm.SelectNet("GND");
+        Assert.Contains("'GND'", vm.CopperReadText);
+        Assert.DoesNotContain("first net", vm.CopperReadText);
+    }
+
     private static RailRfViewModel Example()
     {
         string crail = Path.Combine(

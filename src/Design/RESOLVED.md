@@ -11771,3 +11771,16 @@ it.
 - **The parts table rebuilds when a measurement lands under no name**, including when the net is the
   same as before: `GND` by name and `GND` measured are the same string, and keying the rebuild on the net
   alone left the rows read against the name.
+
+## `Regions.Contains` clips only near a boundary (2026-09-23)
+
+It answered "is this point on this copper" with a Clipper intersection of a 2 DBU square against the
+whole piece. A ground pour is one piece whose bounds hold every pad, so every net point paid a full
+clip of the pour — 2.9 s of a 2.9 s net walk on a reported two-layer board, and `MixedReturnRefusalFor`
+5.6 s of the ground net's. Now: more than 2 DBU from every edge, the square (half-diagonal √2) crosses
+no edge, so it is wholly in or wholly out and the NonZero winding number at its centre IS the clip's
+answer — exact, not approximate. Nearer than that, the clip decides as before (`ClipContains`).
+`PickNetHighlightTests.FastContainsAgreesWithTheClipEverywhere` holds the equivalence on real copper
+at every vertex, 0–3 DBU off it, every edge midpoint and a grid; the railRF, LVS and extraction test
+namespaces (928) pass unchanged. It is also on the solve's own extraction path, which gets the same
+speed-up.

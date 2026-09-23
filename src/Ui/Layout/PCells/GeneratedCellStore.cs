@@ -111,7 +111,7 @@ public static class GeneratedCellStore
         if (!PCellRegistry.TryGet(generatorId, out var generator))
             throw new ArgumentException($"Unknown PCell generator '{generatorId}'.", nameof(generatorId));
 
-        string cellName = BuildCellName(generatorId, parameters, techIdentity, layerSelection);
+        string cellName = BuildCellName(workspaceRootDir, generatorId, parameters, techIdentity, layerSelection);
         string genRoot  = Path.Combine(workspaceRootDir, ReservedFolderName);
         string cellDir  = Path.Combine(genRoot, cellName);
         string clayPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), cellName + CellFolder.ViewExtension(ViewType.Layout));
@@ -226,15 +226,84 @@ public static class GeneratedCellStore
     /// already-known cell (the common "two instances share one cell" case, R-L5-1) is a harmless
     /// overwrite with identical content, not a growing table.
     /// </summary>
+    /// <param name="workspaceRootDir">Where the snapshot's technology is recorded RELATIVE to — see
+    /// <see cref="CanonicalTechIdentity"/>. Null records <paramref name="techIdentity"/> as given,
+    /// which is only right for an identity that is not a path.</param>
     public static void RecordSnapshot(
         LayoutView view, string cellDir, string generatorId,
-        IReadOnlyDictionary<string, PCellValue> parameters, string? techIdentity, PCellLayerSelection layerSelection)
+        IReadOnlyDictionary<string, PCellValue> parameters, string? techIdentity, PCellLayerSelection layerSelection,
+        string? workspaceRootDir = null)
     {
         string cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (workspaceRootDir is not null) techIdentity = CanonicalTechIdentity(workspaceRootDir, techIdentity);
         view.PCellSnapshots[cellName] = new PCellSnapshot(
             generatorId, new Dictionary<string, PCellValue>(parameters), techIdentity,
             layerSelection.SignalLayerNameOverride, layerSelection.GroundLayerNameOverride);
     }
+
+    // ── The technology identity is WORKSPACE-RELATIVE (field report, 2026-09-23) ─────────────
+    //
+    // It used to be the absolute .ctech path of whichever machine placed the cell — and it is both
+    // hashed into the cell's folder name and recorded in the layout's snapshot, which is the ONLY
+    // thing the cell is rebuilt from, because `.generated-cells/` is a cache nobody commits. So on
+    // any other machine, or after the workspace folder moved, the rebuild found no technology: a
+    // reported Gerber board opened with all ~50 of its footprint instances unresolved and its pads
+    // gone. The shipped PDK PCells example carried the author's own absolute path the same way.
+    //
+    // A technology inside the workspace is now named by its path RELATIVE to the workspace root,
+    // '/'-separated, in both places. An identity recorded the old way is re-rooted where the file
+    // is no longer there: the LONGEST trailing run of its segments that names a file under this
+    // workspace, tried even where the recorded file still exists (a copied workspace uses its own).
+    // A technology outside the workspace with no copy inside it is left absolute — there is no
+    // portable spelling for it, and it is found where it was. Changing the spelling changes the
+    // hash, which is a one-time rename on first open that GeneratedCellsLifecycle.Regenerate
+    // already performs (it repoints the instances and saves the layout), exactly as it does after
+    // a generator edit.
+
+    /// <summary>
+    /// The spelling a cell's name and snapshot use for <paramref name="techIdentity"/> — relative to
+    /// <paramref name="workspaceRootDir"/> where the technology is inside it.
+    /// </summary>
+    public static string? CanonicalTechIdentity(string workspaceRootDir, string? techIdentity)
+    {
+        if (string.IsNullOrEmpty(techIdentity)) return techIdentity;
+        if (!IsRootedAnywhere(techIdentity)) return techIdentity.Replace('\\', '/');
+
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspaceRootDir)) + Path.DirectorySeparatorChar;
+        string full = techIdentity;
+        try { if (Path.IsPathRooted(techIdentity)) full = Path.GetFullPath(techIdentity); } catch { }
+
+        if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return full[root.Length..].Replace('\\', '/');
+
+        // Recorded on another machine, or before the workspace was moved or COPIED. Tried before the
+        // recorded path itself, because a copy's own technology is the one it was copied with — the
+        // shipped example, copied out of the repository, still found the repository's file and kept
+        // naming it.
+        string[] segments = techIdentity.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        for (int first = 1; first < segments.Length; first++)
+        {
+            string tail = string.Join('/', segments[first..]);
+            if (File.Exists(Path.Combine(root, tail))) return tail;
+        }
+        return techIdentity;
+    }
+
+    /// <summary>The file <paramref name="techIdentity"/> names — the canonical spelling resolved
+    /// against <paramref name="workspaceRootDir"/>, or null for no technology.</summary>
+    public static string? ResolveTechPath(string workspaceRootDir, string? techIdentity)
+    {
+        string? canonical = CanonicalTechIdentity(workspaceRootDir, techIdentity);
+        if (string.IsNullOrEmpty(canonical)) return null;
+        return IsRootedAnywhere(canonical) ? canonical : Path.GetFullPath(Path.Combine(workspaceRootDir, canonical));
+    }
+
+    /// <summary>Rooted on THIS platform or on Windows — a snapshot written on Windows is read on
+    /// macOS and Linux, where <c>C:\…</c> is otherwise a relative path.</summary>
+    private static bool IsRootedAnywhere(string path) =>
+        Path.IsPathRooted(path)
+        || (path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] is '\\' or '/')
+        || path.StartsWith(@"\\", StringComparison.Ordinal);
 
     /// <summary>
     /// R-L5g-9/10 (brief-L5-followups-2.md §4): true when <paramref name="absolutePath"/> sits under a
@@ -259,7 +328,7 @@ public static class GeneratedCellStore
         IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
     {
-        string cellName = BuildCellName(generatorId, parameters, techIdentity, layerSelection);
+        string cellName = BuildCellName(workspaceRootDir, generatorId, parameters, techIdentity, layerSelection);
         string clayPath = Path.Combine(workspaceRootDir, ReservedFolderName, cellName,
             CellFolder.LayoutSubFolder, cellName + CellFolder.ViewExtension(ViewType.Layout));
         return File.Exists(clayPath);
@@ -351,9 +420,13 @@ public static class GeneratedCellStore
         ["Visible", "Selectable", "Color", "FillOpacity", "FillPattern", "ZOrder"];
 
     private static string BuildCellName(
-        string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
+        string workspaceRootDir, string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
     {
+        // The WORKSPACE-RELATIVE spelling, so a cell has the same name on every machine the
+        // workspace is opened on — see CanonicalTechIdentity.
+        techIdentity = CanonicalTechIdentity(workspaceRootDir, techIdentity);
+
         // The folder name IS this hash, and a placed instance's CellRef names that folder — so this
         // encoding is a compatibility surface, not an implementation detail. PCellValue.ToString
         // writes a Real exactly as the pre-contract-v2 code wrote a double, which is what keeps every
@@ -383,7 +456,7 @@ public static class GeneratedCellStore
         // Appended only when there is something to append, so every existing cell whose identity is
         // not a readable file — which is every one in a test fixture, and any workspace with no
         // technology — keeps the name it already has.
-        string techKey = TechnologyContentKey(techIdentity);
+        string techKey = TechnologyContentKey(ResolveTechPath(workspaceRootDir, techIdentity));
         if (techKey.Length > 0) sb.Append('|').Append(techKey);
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

@@ -903,7 +903,7 @@ public static class SchematicToLayoutGenerator
         {
             cellDir = GeneratedCellStore.GetOrCreate(
                 workspaceRootDir, reference, resolved, technology, techIdentity, layerSelection, out pcellDiagnostics);
-            GeneratedCellStore.RecordSnapshot(target, cellDir, reference, resolved, techIdentity, layerSelection);
+            GeneratedCellStore.RecordSnapshot(target, cellDir, reference, resolved, techIdentity, layerSelection, workspaceRootDir);
         }
         catch (Exception ex)
         {
@@ -980,7 +980,7 @@ public static class SchematicToLayoutGenerator
                     workspaceRootDir, generator, parameters, technology, techIdentity,
                     PCellLayerSelection.Default, out pcellDiagnostics);
                 GeneratedCellStore.RecordSnapshot(
-                    target, generatedDir, generator, parameters, techIdentity, PCellLayerSelection.Default);
+                    target, generatedDir, generator, parameters, techIdentity, PCellLayerSelection.Default, workspaceRootDir);
             }
             catch (Exception ex)
             {

@@ -17,7 +17,15 @@
 // the one method the board already calls when the artwork moves (NotifyArtworkChanged):
 //
 //   _layerRegions   the flattened copper, which every walk takes as its input
+//   _copperPieces   the galvanic partition of it — THE EXPENSIVE HALF, and the same for every net
 //   _netPreviews    net name → the preview, so re-selecting a row is free
+//
+// _copperPieces was missing until a field report (2026-09-23): the public Walk re-partitions the
+// whole board per call, so on a two-layer eval board every FIRST click on a net cost ~5 s (8 s for
+// the ground net) in Release as in Debug, with nothing on the board while it ran. A user clicking a
+// second net meanwhile abandoned the first, so a list clicked through at ordinary speed never
+// outlined anything and read as "clicking a net highlights nothing". Only the first read after the
+// board loads pays for the partition now; NetPartitionsBuilt is what holds that.
 //
 // The flatten is shared with nothing else on purpose: PdnMeshExtractor builds its own inside the
 // extraction, at solve time, from the same function. Sharing THAT would tie a repaint to a solve.
@@ -64,6 +72,7 @@ namespace CircuitRF.Ui.RailRf;
 public sealed partial class RailRfViewModel
 {
     private Dictionary<LayerKey, Paths64>? _layerRegions;
+    private IReadOnlyList<DrcNetPiece>? _copperPieces;
     private readonly Dictionary<string, RailNetPreview> _netPreviews =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -98,6 +107,10 @@ public sealed partial class RailRfViewModel
     /// <summary>How many times the reference return has been measured off this board.</summary>
     internal int ReferenceMeasurements { get; private set; }
 
+    /// <summary>How many galvanic partitions of this board have been published — one per loaded
+    /// artwork, however many nets are picked. Counted for the same reason as the two above.</summary>
+    internal int NetPartitionsBuilt { get; private set; }
+
     // ── The copper jobs ────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -129,7 +142,39 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private bool _isReadingCopper;
 
-    partial void OnIsReadingCopperChanged(bool value) => OnPropertyChanged(nameof(StatusLine));
+    partial void OnIsReadingCopperChanged(bool value)
+    {
+        OnPropertyChanged(nameof(StatusLine));
+        OnPropertyChanged(nameof(CopperReadText));
+    }
+
+    /// <summary>
+    /// What the board and the pick list say while a copper read is in flight — empty otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>Beside the thing that is waiting, not only in the status strip</b> (field report,
+    /// 2026-09-23). The strip said it all along and nobody reads a strip at the far edge of the
+    /// window while watching the board for an outline. It names the NET, because a user who has
+    /// clicked three rows needs to know which one the board is still working on, and it says the
+    /// first read is the slow one because that is the only part of the wait a user can plan around.
+    /// </remarks>
+    public string CopperReadText => !IsReadingCopper ? "" : _copperJob switch
+    {
+        { PreviewNet: { } net } when _copperPieces is null =>
+            $"Tracing '{net}' through the board's copper — the first net read after the board loads takes the longest",
+        { PreviewNet: { } net } => $"Tracing '{net}' through the board's copper",
+        _ => "Reading the board's copper to find the return net",
+    };
+
+    /// <summary>
+    /// Why the last copper read failed, or empty — <b>a failure used to be silent</b>: the read runs
+    /// under <c>Task.Run</c>, whose exception nobody observed, so the board simply never outlined
+    /// anything and every later pick failed the same way with nothing said.
+    /// </summary>
+    [ObservableProperty]
+    private string _copperReadError = "";
+
+    partial void OnCopperReadErrorChanged(string value) => OnPropertyChanged(nameof(StatusLine));
 
     /// <summary>
     /// The net highlighted in the pick list, outlined on the board — or null for none.
@@ -269,6 +314,7 @@ public sealed partial class RailRfViewModel
         _copperCts = cts;
         _copperJob = job;
         IsReadingCopper = true;
+        OnPropertyChanged(nameof(CopperReadText));   // a replaced job leaves IsReadingCopper true
 
         // Everything the job reads is captured HERE, on the UI thread, for BuildRequest's own reason:
         // the rows and the board move under a user who keeps working while this runs.
@@ -278,6 +324,7 @@ public sealed partial class RailRfViewModel
         string? namedReturn = NamedReturnNet;
         var railReference = SelectedRail?.ReferenceLayer;
         var regions = _layerRegions;
+        var pieces = _copperPieces;
 
         // The resolved return, where there is one for this reference — so the schematic's ground
         // (`0`) is not reported as a short against the net it IS, and so the preview walks the rail
@@ -286,16 +333,25 @@ public sealed partial class RailRfViewModel
 
         CopperRead = ReadCopperOffThread(() =>
         {
+          try
+          {
             regions ??= LayerRegions.Build(shapes, tech);
 
             PdnReturnNet? measured = null;
             RailNetPreview? preview = null;
             string note = "";
 
+            // A named return needs no partition at all, which is the public overload's own rule;
+            // anything else partitions ONCE per board and every later question reuses it.
+            bool needsPieces = job.PreviewNet is not null || namedReturn is null;
+            if (needsPieces) pieces ??= DrcConnectivity.Extract(regions, tech);
+
             // R-rail31-1: THE SAME CALL THE EXTRACTION MAKES. The run and this row used to reach the
             // return by two routes, and on a Gerber board only this one found it.
             if (job.MeasureReference is { } layer)
-                measured = Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer);
+                measured = pieces is null
+                    ? Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer)
+                    : Regions.ResolveReturnNet(namedReturn, pieces, tech, netPoints, layer);
 
             if (job.PreviewNet is { } net)
             {
@@ -305,7 +361,7 @@ public sealed partial class RailRfViewModel
                 // LayerKey this board does not have is how you say "exclude nothing" to a parameter
                 // that is not nullable.
                 var walked = Regions.Walk(
-                    regions, tech, netPoints, net,
+                    pieces!, tech, netPoints, net,
                     railReference ?? AbsentLayer(regions), measuredReturn ?? namedReturn, extraRailSeeds: []);
 
                 var copper = new List<(LayerKey Layer, Paths64 Paths)>();
@@ -334,14 +390,45 @@ public sealed partial class RailRfViewModel
             }
 
             var finished = regions;
-            PostToUi(() => FinishCopperJob(cts, job, finished, namedReturn, measured, preview, note));
+            var partition = pieces;
+            PostToUi(() => FinishCopperJob(cts, job, finished, partition, namedReturn, measured, preview, note));
+          }
+          catch (Exception ex)
+          {
+            PostToUi(() => FailCopperJob(cts, job, ex));
+          }
         });
+    }
+
+    /// <summary>
+    /// Publishes a copper job's FAILURE, unless it has been superseded — see
+    /// <see cref="CopperReadError"/> for why this exists at all.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is cached: the next pick asks again, which is right for a failure that was about the
+    /// state of the board at the time and harmless for one that recurs — it says so again.
+    /// </remarks>
+    private void FailCopperJob(CancellationTokenSource cts, CopperJob job, Exception ex)
+    {
+        if (!ReferenceEquals(_copperCts, cts)) { cts.Dispose(); return; }
+
+        _copperCts = null;
+        _copperJob = null;
+        IsReadingCopper = false;
+        cts.Dispose();
+
+        string what = job.PreviewNet is { } net ? $"trace '{net}'" : "find the return net";
+        CopperReadError = $"could not {what} through the board's copper: {ex.Message}";
+
+        if (job.PreviewNet is { } picked && string.Equals(SelectedNet?.Name, picked, StringComparison.OrdinalIgnoreCase))
+            NetPreviewNote = "The board's copper could not be read for this net: " + ex.Message;
     }
 
     /// <summary>Publishes one copper job's answers, unless it has been superseded.</summary>
     private void FinishCopperJob(
         CancellationTokenSource cts, CopperJob job,
-        Dictionary<LayerKey, Paths64> regions, string? namedReturn, PdnReturnNet? measured,
+        Dictionary<LayerKey, Paths64> regions, IReadOnlyList<DrcNetPiece>? pieces,
+        string? namedReturn, PdnReturnNet? measured,
         RailNetPreview? preview, string note)
     {
         // A job from a board that has since changed is DROPPED — not merely stale: it describes
@@ -361,6 +448,15 @@ public sealed partial class RailRfViewModel
         // The FLATTEN is kept whatever the job was for — it is the expensive half and it is the same
         // answer for every question asked of this board.
         _layerRegions = regions;
+
+        // And the partition, on the same terms — it is the same answer whichever net asked.
+        if (pieces is not null && !ReferenceEquals(pieces, _copperPieces))
+        {
+            _copperPieces = pieces;
+            NetPartitionsBuilt++;
+        }
+
+        CopperReadError = "";
 
         if (job.MeasureReference is { } layer)
         {
@@ -477,6 +573,8 @@ public sealed partial class RailRfViewModel
         IsReadingCopper = false;
 
         _layerRegions = null;
+        _copperPieces = null;
+        CopperReadError = "";
         _netPreviews.Clear();
         _netPreviewNotes.Clear();
         _referenceNetMeasuredOn = null;

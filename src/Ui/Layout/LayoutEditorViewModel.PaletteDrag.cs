@@ -288,7 +288,7 @@ public sealed partial class LayoutEditorViewModel
             return null;
         }
 
-        GeneratedCellStore.RecordSnapshot(Model, cellDir, generatorId, defaults, ResolvedTechPath, PCellLayerSelection.Default);
+        GeneratedCellStore.RecordSnapshot(Model, cellDir, generatorId, defaults, ResolvedTechPath, PCellLayerSelection.Default, workspaceRoot);
         if (diagnostics is { Count: > 0 })
             foreach (var d in diagnostics)
                 // A missing COURTYARD is the one of these that breaks nothing — see

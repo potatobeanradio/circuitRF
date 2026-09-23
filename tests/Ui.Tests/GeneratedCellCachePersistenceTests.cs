@@ -71,6 +71,46 @@ public sealed class GeneratedCellCachePersistenceTests : IDisposable
         return clayPath;
     }
 
+    /// <summary>
+    /// <b>A snapshot recorded on another machine rebuilds on this one</b>, under the name this
+    /// machine gives the same cell, and is rewritten to the workspace-relative spelling.
+    /// </summary>
+    /// <remarks>
+    /// Field report, 2026-09-23: the snapshot's technology was the absolute <c>.ctech</c> path of the
+    /// machine that placed the cell, and <c>.generated-cells/</c> is a cache nobody ships — so a
+    /// workspace opened anywhere else could not find its technology and lost every footprint. The
+    /// path below is the SHAPE of that report's, not its text.
+    /// </remarks>
+    [Fact]
+    public void ASnapshotRecordedOnAnotherMachine_RebuildsHere_AndIsRecordedRelative()
+    {
+        string techDir = Directory.CreateDirectory(Path.Combine(_root, "Board")).FullName;
+        string techPath = Path.Combine(techDir, "Board.ctech");
+        File.WriteAllText(techPath, "{}");
+
+        string cellDir   = CellFolder.CreateCellFolder(_root, "Amp");
+        string clayPath  = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), "Amp.clay");
+        var p = MlinParams(0.0006);
+        var view = new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 };
+        view.PCellSnapshots["MLIN_000000000000"] = new PCellSnapshot(
+            "MLIN", p, @"C:\Users\someone\Documents\ws\Board\Board.ctech", null, null);
+        view.Instances.Add(new LayoutInstance { CellRef = "MLIN_000000000000", SchematicId = "X1" });
+        LayoutPersistence.SaveToFile(clayPath, view);
+
+        var asked = new List<string?>();
+        var outcome = GeneratedCellsLifecycle.RegenerateAll(_root, path => { asked.Add(path); return null; });
+
+        // The loader was handed THIS machine's file, not the other machine's path.
+        Assert.Equal([Path.GetFullPath(techPath)], asked);
+        Assert.Equal(1, outcome.InstancesRepointed);
+
+        // The same name this machine gives the cell when it places it itself.
+        string local = Path.GetFileName(GeneratedCellStore.GetOrCreate(_root, "MLIN", p, null, techPath, NoLayers));
+        var saved = LayoutPersistence.LoadFromFile(clayPath);
+        Assert.Equal(local, saved.Instances.Single().CellRef);
+        Assert.Equal("Board/Board.ctech", saved.PCellSnapshots[local].TechIdentity);
+    }
+
     [Fact]
     public void ACellAlreadyOnDisk_IsReused_NotRegenerated()
     {

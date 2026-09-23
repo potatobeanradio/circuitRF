@@ -101,6 +101,14 @@ yours, so nothing is rounded by the choice.</p>
 | **The band and the aggressors** | The frequency span to sweep, and the things on your board that actually generate energy &mdash; the crystal, the converter, the radio reference. |
 
 <div class="callout note">
+<span class="label">Picking a net shows it on the board</span>
+<p>Selecting a net in the pick list outlines its copper on the board, dashed, before anything is made a
+rail. The first net you pick after a board loads has to read the board's copper first, which can take a
+few seconds on a large board; the board and the pick list both say which net is being traced while it
+runs. Every pick after that reuses the same reading and is close to instant.</p>
+</div>
+
+<div class="callout note">
 <span class="label">A two-pin part placed end for end</span>
 <p>A resistor, capacitor or inductor looks the same at 0° and at 180°, so a footprint dragged onto its
 lands can easily sit with its pin 1 on the copper its pin 2 belongs to. railRF reads which way round each

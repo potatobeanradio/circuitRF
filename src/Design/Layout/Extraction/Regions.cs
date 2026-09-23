@@ -833,7 +833,52 @@ public static class Regions
     /// centre of the hole it drilled, which is a HOLE in the copper. A square straddling the
     /// boundary still meets the annulus; a winding test at the exact centre does not.</para>
     /// </summary>
+    /// <remarks>
+    /// <b>The clip is only paid for near a boundary</b> (field report, 2026-09-23). A ground pour is
+    /// one piece whose bounds hold every pad on the board, so every net point paid a full boolean
+    /// intersection against the whole pour: 2.9 s of a 2.9 s net pick on a two-layer eval board, and
+    /// 5.6 s of the ground net's. Where the point is more than 2 DBU from every edge the probe square
+    /// (half-diagonal √2) crosses no edge, so it lies wholly inside or wholly outside the copper and
+    /// the NonZero winding number at its centre IS the clip's answer — exactly, not approximately.
+    /// Anywhere closer, the clip decides, as it always did.
+    /// </remarks>
     internal static bool Contains(Paths64 paths, long x, long y)
+    {
+        int winding = 0;
+        foreach (var path in paths)
+        {
+            int n = path.Count;
+            for (int i = 0; i < n; i++)
+            {
+                Point64 a = path[i], b = path[i + 1 == n ? 0 : i + 1];
+                if (NearSegment(a, b, x, y)) return ClipContains(paths, x, y);
+
+                // Sunday's winding number. No edge is within 2 DBU, so no cross product is zero.
+                Int128 cross = (Int128)(b.X - a.X) * (y - a.Y) - (Int128)(x - a.X) * (b.Y - a.Y);
+                if (a.Y <= y) { if (b.Y > y && cross > 0) winding++; }
+                else if (b.Y <= y && cross < 0) winding--;
+            }
+        }
+        return winding != 0;   // LayoutClipper.Rule is NonZero
+    }
+
+    /// <summary>Within 2 DBU of segment <paramref name="a"/>–<paramref name="b"/> — close enough
+    /// that the probe square might cross it.</summary>
+    private static bool NearSegment(Point64 a, Point64 b, long x, long y)
+    {
+        const double Margin = 2.0;
+        if (x < Math.Min(a.X, b.X) - Margin || x > Math.Max(a.X, b.X) + Margin
+         || y < Math.Min(a.Y, b.Y) - Margin || y > Math.Max(a.Y, b.Y) + Margin) return false;
+
+        double dx = b.X - a.X, dy = b.Y - a.Y, px = x - a.X, py = y - a.Y;
+        double len2 = dx * dx + dy * dy;
+        double t = len2 == 0 ? 0 : Math.Clamp((px * dx + py * dy) / len2, 0, 1);
+        double ex = px - t * dx, ey = py - t * dy;
+        return ex * ex + ey * ey <= Margin * Margin;
+    }
+
+    /// <summary>The probe-square clip itself — the reference <see cref="Contains"/> must agree with.</summary>
+    internal static bool ClipContains(Paths64 paths, long x, long y)
     {
         Paths64 probe = [[new Point64(x - 1, y - 1), new Point64(x + 1, y - 1),
                           new Point64(x + 1, y + 1), new Point64(x - 1, y + 1)]];

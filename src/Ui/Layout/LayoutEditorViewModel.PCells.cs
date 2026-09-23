@@ -162,7 +162,7 @@ public sealed partial class LayoutEditorViewModel
         }
 
         PCells.GeneratedCellStore.RecordSnapshot(
-            Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCellLayerSelection.Default);
+            Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCellLayerSelection.Default, workspaceRoot);
         if (editDiagnostics is { Count: > 0 })
             foreach (var d in editDiagnostics) _messageSink?.Warning(d);
 

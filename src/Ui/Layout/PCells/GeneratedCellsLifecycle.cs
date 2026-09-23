@@ -200,14 +200,21 @@ public static class GeneratedCellsLifecycle
         int repointed = 0;
         bool changed = false;
 
-        foreach (var (oldName, snap) in view.PCellSnapshots)
+        foreach (var (oldName, recorded) in view.PCellSnapshots)
         {
+            // The WORKSPACE-RELATIVE spelling, resolved here for the loader — GeneratedCellStore's
+            // CanonicalTechIdentity says why. A snapshot recorded as an absolute path is rewritten to
+            // it, which renames the cell and so saves the layout below.
+            string? identity = GeneratedCellStore.CanonicalTechIdentity(workspaceRootDir, recorded.TechIdentity);
+            var snap = identity == recorded.TechIdentity ? recorded : recorded with { TechIdentity = identity };
+
             string cellDir;
             try
             {
                 cellDir = GeneratedCellStore.GetOrCreate(
-                    workspaceRootDir, snap.GeneratorId, snap.Parameters, resolveTech(snap.TechIdentity),
-                    snap.TechIdentity, new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride));
+                    workspaceRootDir, snap.GeneratorId, snap.Parameters,
+                    resolveTech(GeneratedCellStore.ResolveTechPath(workspaceRootDir, identity)),
+                    identity, new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride));
             }
             catch (Exception ex)
             {

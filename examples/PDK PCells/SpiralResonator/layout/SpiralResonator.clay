@@ -15,7 +15,7 @@
         "Metal": "Metal1"
       }
     },
-    "KIT_MIMCAP_93119f9de692": {
+    "KIT_MIMCAP_0f17792787f3": {
       "GeneratorId": "KIT_MIMCAP",
       "Parameters": {
         "W": 6E-05,
@@ -23,7 +23,7 @@
         "Connection": "Series",
         "C": 1.0838
       },
-      "TechIdentity": "/Users/damonholmes/claude/circuitRF/examples/PDK PCells/tech/mmic-GaAs_2LM_100um.ctech"
+      "TechIdentity": "tech/mmic-GaAs_2LM_100um.ctech"
     }
   },
   "Shapes": [
@@ -70,7 +70,7 @@
       "PitchY": 0
     },
     {
-      "CellRef": "../../.generated-cells/KIT_MIMCAP_93119f9de692",
+      "CellRef": "../../.generated-cells/KIT_MIMCAP_0f17792787f3",
       "X": -255000,
       "Y": -46000,
       "Rot": "R0",

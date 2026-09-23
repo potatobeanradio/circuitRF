@@ -1020,6 +1020,8 @@ public sealed partial class RailRfViewModel
             // coming, and a user who does not thinks the reference combo did nothing.
             if (IsReadingCopper)
                 parts.Add("reading the board's copper — the layer flatten and the connectivity walk");
+            else if (CopperReadError.Length > 0)
+                parts.Add(CopperReadError);
 
             // Brief 28: the layout moved a part, and until this clears the pads, the pick list and
             // the turned-parts note are still of the placements before it.
