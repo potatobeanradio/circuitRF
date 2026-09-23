@@ -327,8 +327,16 @@ Each part on the rail is one of:
   output. railRF reads its impedance through the shunt-through relation and uses it directly, so the ESR
   and the self-resonance are the part's real ones. Recommended, and already built: see
   [Derived Metrics](../user/reference/derived-metrics.html#fixture).
-- **An R-L-C triple**, or a **SPICE/equivalent-circuit subcircuit** placed as an ordinary circuitRF
-  subcircuit.
+- **An R-L-C triple**, on a library row: C, a stated ESL and an ESR with **f₀ left blank**. The stated
+  ESL is used only where there is no f₀ to derive L from; where both are present it is compared, never
+  used (R-rail2-8).
+- **Not built: a SPICE/equivalent-circuit subcircuit.** A SPICE file attached as a row's model is recorded
+  as its model source but not simulated: the row's own C, f₀ and ESR are what the answer uses
+  (`RailPartResolver.FromFile`).
+  The R-L that does exist belongs to a **series** part: a ferrite bead, 0 Ω link, jumper or RF choke
+  the rail runs through. Its model is a DCR plus either an R-L or a series-thru Touchstone file,
+  stated on the rail's row or on a part-library row classed `Other` (`RailSeriesModel`; brief 25,
+  brief 35).
 
 Plus, per part, the **mounting inductance**: the loop from the pad through its via to the plane pair and
 back. railRF computes this from the actual via positions and the plane separation when it has the artwork,
@@ -721,8 +729,9 @@ mesh knows the actual split and the nearest via of a group routinely carries sev
 
 ## 4.3 What attaches to the mesh
 
-- **Each capacitor** at the cell under its pads: its own model (library row, Touchstone, R-L-C or
-  subcircuit) in series with its **mounting inductance**, connecting the power node to the reference node.
+- **Each capacitor** at the cell under its pads: its own model (library row, Touchstone, or R-L-C
+  from a stated ESL; a SPICE subcircuit is not simulated) in series with its **mounting inductance**,
+  connecting the power node to the reference node.
 - **The mounting loop** from the actual via geometry: the partial self-inductance of the power via and the
   return via, minus twice their partial mutual inductance, plus the pad-to-via trace. The dominant term is
   the via pair's separation and the plane separation `h` — precisely the quantity that changes when a part

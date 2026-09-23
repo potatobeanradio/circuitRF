@@ -387,6 +387,19 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         set => Commit(() => Model.ModelRef = Blank(value), "Change a part model reference", nameof(ModelRef));
     }
 
+    /// <summary>
+    /// Sets <see cref="ModelRef"/> from a file picked on disk — stored RELATIVE to the library, the
+    /// spelling the resolver reads, so the library and its model files can move together. The
+    /// Model file cell's Browse button; the rail row's series editor already had one.
+    /// </summary>
+    public void SetModelFile(string pickedPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pickedPath);
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(owner.FilePath))!;
+        ModelRef = CircuitRF.Core.RefPath.ToStored(
+            System.IO.Path.GetRelativePath(dir, System.IO.Path.GetFullPath(pickedPath))) ?? "";
+    }
+
     // ── what the library already computes, and nothing showed (R-rail24-2) ─────────────────────
 
     /// <summary>L = 1/((2·π·f₀)²·C) — <b>the value used</b>. Read-only, because it is derived and a

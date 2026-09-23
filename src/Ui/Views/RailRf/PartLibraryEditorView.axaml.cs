@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using System;
 using System.Linq;
@@ -100,6 +101,29 @@ public partial class PartLibraryEditorView : UserControl
     private async Task PasteBiasCurveAsync(Ui.RailRf.PartLibraryEditorViewModel vm)
     {
         if (await ClipboardTextAsync() is { Length: > 0 } text) vm.PasteBiasCurve(text);
+    }
+
+    /// <summary>The Model file cell's "…" button. The picker only; the relative spelling is the row
+    /// view model's <c>SetModelFile</c>.</summary>
+    private async void OnModelBrowseClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not Ui.RailRf.PartLibraryRowViewModel row) return;
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"Part library — {row.PartNumber}'s model file",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Touchstone")
+                    { Patterns = ["*.s2p", "*.s1p", "*.S2P", "*.S1P"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } picked) return;
+
+        row.SetModelFile(picked);
     }
 
     /// <summary>

@@ -8,13 +8,14 @@
 //   a Touchstone     C, L AND A REAL ESR, all the part's own.    RECOMMENDED (§2.2), and already
 //                                                                built: PassiveMetrics owns the
 //                                                                shunt-through relation.
-//   an R-L-C triple  all three, typed.
-//   a subcircuit     placed as an ordinary circuitRF subcircuit.
+//   an R-L-C triple  C, a STATED ESL and ESR on a row with no f0 — the stated L is used only
+//                    where there is no f0 to derive one from (FromRow).
+//   a subcircuit     NOT BUILT — a SPICE ModelRef is reported as the source and the ROW's numbers
+//                    are what the answer uses (FromFile below).
 //
 // Q-11 closed it as BOTH, with the file overriding the row (R-rail2-11), and the parts table
-// reports which won. The last two are ordinary circuitRF component models and nothing here builds
-// one — the scope note is explicit: CapacitorModel, SeriesRlcModel, SnpModel and BeadModel cover
-// all four forms.
+// reports which won. The R-L that does exist is a SERIES part's (RailSeriesModel), not a
+// decoupling part's.
 //
 // ── THIS BRIEF WRITES NO TOUCHSTONE ARITHMETIC (R-rail11-2) ────────────────────────────────────
 //

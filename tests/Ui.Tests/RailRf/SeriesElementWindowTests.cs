@@ -63,6 +63,16 @@ public sealed class SeriesElementWindowTests(ITestOutputHelper output)
         Assert.Equal(RailPartRowViewModel.UnstatedText, unstated.EsrText);
         Assert.NotEqual(RailPartRowViewModel.UnresolvedText, unstated.EsrText);
 
+        // No column of a series row reads "unresolved": it has no self-resonance, and its L column
+        // is its own R-L's L — never the library's derived one or a mounting loop the solve does
+        // not stamp on it.
+        Assert.Equal(RailPartRowViewModel.NotApplicableText, row.SelfResonanceText);
+        Assert.Equal("1.2 µH", row.InductanceText);
+        Assert.Equal(RailPartRowViewModel.NotApplicableText,
+            new RailPartRowViewModel(ferrite with { SeriesResistanceOhms = null, SeriesInductanceHenries = null },
+                                     null, null, null, null).InductanceText);
+        Assert.False(row.IsEsrIndicative);
+
         // The caveat a lumped R-L standing in for a bead cannot leave out is on the row too.
         Assert.Contains("BIAS-DEPENDENT", row.RowTooltip, StringComparison.Ordinal);
         _output.WriteLine(row.RowTooltip);

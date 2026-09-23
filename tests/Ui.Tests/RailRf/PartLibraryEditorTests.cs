@@ -250,6 +250,23 @@ public sealed class PartLibraryEditorTests : IDisposable
         Assert.Equal(derived, library.Rows[1].InductanceHenries!.Value, 15);
     }
 
+    /// <summary>
+    /// The Model file cell's Browse stores the picked file RELATIVE to the library, in forward
+    /// slashes — the spelling the resolver reads, so a library and its files move together.
+    /// </summary>
+    [Fact]
+    public void APickedModelFile_IsStoredRelativeToTheLibrary()
+    {
+        var library = new PartLibrary();
+        library.Rows.Add(new PartLibraryRow { PartNumber = "FB-1", DielectricClass = PartLibraryRow.OtherClass });
+        var vm = new PartLibraryEditorViewModel(Path.Combine(_tmp, "l.crlib"), library);
+
+        vm.Rows[0].SetModelFile(Path.Combine(_tmp, "models", "bead.s2p"));
+
+        Assert.Equal("models/bead.s2p", library.Rows[0].ModelRef);
+        Assert.True(vm.UndoRedo.CanUndo);
+    }
+
     // ── 6. Indicative ESR is marked (R-rail24-2b) ─────────────────────────────────────────────
 
     /// <summary>

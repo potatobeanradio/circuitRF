@@ -233,14 +233,14 @@
                                 <TextBlock Grid.Column="7"  Classes="colhdr" Text="f₀"
                                            ToolTip.Tip="The self-resonant frequency, with its unit (28.9 MHz) — where the part's impedance is lowest. With C it gives the part's ESL."/>
                                 <TextBlock Grid.Column="8"  Classes="colhdr" Text="ESL (datasheet)"
-                                           ToolTip.Tip="Optional: the equivalent series inductance your table or datasheet states. railRF does not use it — it checks it against the ESL from C and f₀ and flags the row where the two differ by more than 5 %."/>
+                                           ToolTip.Tip="Optional: the equivalent series inductance your table or datasheet states. Where f₀ is given, railRF does not use it — it checks it against the ESL from C and f₀ and flags the row where the two differ by more than 5 %. Where f₀ is blank, this IS the part's inductance."/>
                                 <TextBlock Grid.Column="9"  Classes="colhdr" Text="ESL from f₀"
                                            ToolTip.Tip="The ESL railRF uses, 1/((2·π·f₀)²·C), from this row's C and f₀. Read-only."/>
                                 <TextBlock Grid.Column="10"  Classes="colhdr" Text="ESR"
-                                           ToolTip.Tip="The equivalent series resistance, if you know it. Blank takes the dielectric class's default, marked indicative."/>
+                                           ToolTip.Tip="The equivalent series resistance, if you know it. Blank takes the dielectric class's default, marked indicative. On a row classed Other — a bead, a 0 Ω link, a choke — this is the part's DC resistance instead."/>
                                 <TextBlock Grid.Column="11" Classes="colhdr" Text="ESR basis"/>
                                 <TextBlock Grid.Column="12" Classes="colhdr" Text="Model file"
-                                           ToolTip.Tip="Optional: the path, relative to this library file, of the part's own Touchstone (.s2p) or SPICE model — not a part number. Where one is given it overrides the row's C, f₀ and ESR, and a Touchstone file is the only route to a measured ESR."/>
+                                           ToolTip.Tip="Optional: the path, relative to this library file, of the part's own Touchstone (.s2p) — not a part number. Where one is given it overrides the row's C, f₀ and ESR, and it is the only route to a measured ESR. On a row classed Other it is the part's measured series impedance. A SPICE file is recorded as the model source but not simulated: the row's own numbers are used."/>
                                 <TextBlock Grid.Column="13" Classes="colhdr" Text="Source"
                                            ToolTip.Tip="Where this row's fields came from. The parts table's own column — a pre-filled number nobody checked is the one that will be wrong."/>
                             </Grid>
@@ -326,10 +326,20 @@
                                             <TextBlock Grid.Column="11" Classes="cell"
                                                        Text="{Binding EsrBasisText}"
                                                        ToolTip.Tip="{Binding ModelSourceText}"/>
-                                            <TextBox Grid.Column="12" Classes="cell"
-                                                     Text="{Binding ModelRef, Mode=TwoWay}"
-                                                     Watermark="parts/cap-100n.s2p"
-                                                     ToolTip.Tip="The path of the part's own Touchstone or SPICE model file, relative to this library — not a part number. It OVERRIDES the row, and it is the only route to a measured ESR."/>
+                                            <!-- A typed path, and a picker beside it that stores the
+                                                 same RELATIVE spelling (the rail row's series editor
+                                                 had a Browse button; this cell did not). -->
+                                            <Grid Grid.Column="12" ColumnDefinitions="*,Auto">
+                                                <TextBox Classes="cell"
+                                                         Text="{Binding ModelRef, Mode=TwoWay}"
+                                                         Watermark="parts/cap-100n.s2p"
+                                                         ToolTip.Tip="The path of the part's own model file, relative to this library — not a part number. A Touchstone file OVERRIDES the row and is the only route to a measured ESR. On a row classed Other it is the part's measured series impedance — a two-port measured series-thru, as a bead supplier publishes it."/>
+                                                <Button Grid.Column="1" Content="…" FontSize="10"
+                                                        Padding="5,1" Margin="0,0,2,0"
+                                                        VerticalAlignment="Center"
+                                                        Click="OnModelBrowseClick"
+                                                        ToolTip.Tip="Pick the part's Touchstone file. It is stored relative to this library."/>
+                                            </Grid>
                                             <!-- R-ab4-3b: a field filled from a bill of materials
                                                  reads as filled from one, so a wrong parse is
                                                  correctable rather than mysterious. Empty on a row

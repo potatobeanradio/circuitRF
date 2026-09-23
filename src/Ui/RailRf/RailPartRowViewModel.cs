@@ -196,8 +196,9 @@ public sealed class RailPartRowViewModel
 
     /// <summary>Q-12's triple, spelled out — what the row's capacitance column means, on its own
     /// tooltip. <c>RailDeratedCapacitance.Describe</c> owns the sentence.</summary>
-    public string CapacitanceTooltip =>
-        Model?.Capacitance.Describe()
+    public string CapacitanceTooltip => _part.IsSeries
+        ? SeriesTooltip
+        : Model?.Capacitance.Describe()
         ?? "No capacitance resolved for this part, so nothing here is derated and nothing is "
          + "defaulted.";
 
@@ -330,7 +331,14 @@ public sealed class RailPartRowViewModel
 
     /// <summary>The sentence behind those two columns — where the number came from, and at what
     /// frequency it was evaluated.</summary>
-    public string EsrTooltip => Model switch
+    public string EsrTooltip => _series is { } series
+        ? series.DcResistanceOhms is not null
+            ? "This element's DC resistance — the resistance the load current runs through, "
+              + (series.DcResistanceFrom == RailSeriesValueSource.Library
+                  ? "from the part library's ESR on its row classed Other."
+                  : "as this rail's own row states it.")
+            : series.UnstatedDcResistanceLine!
+        : Model switch
     {
         null => "No ESR: this part did not resolve, so nothing here is defaulted.",
         { EsrBasis: EsrProvenance.Measured, Measured: { } file } =>
@@ -349,8 +357,11 @@ public sealed class RailPartRowViewModel
            + "here is defaulted — this part contributes no loss.",
     };
 
-    /// <summary>True where the ESR is a class default, so the row can be marked in the table.</summary>
-    public bool IsEsrIndicative => (Model?.EsrBasis ?? _model?.EsrBasis) == EsrProvenance.ClassDefault;
+    /// <summary>True where the ESR is a class default, so the row can be marked in the table. Never
+    /// on a series row: that column is its DCR, and an <c>Other</c> class names no dissipation
+    /// factor.</summary>
+    public bool IsEsrIndicative =>
+        !_part.IsSeries && (Model?.EsrBasis ?? _model?.EsrBasis) == EsrProvenance.ClassDefault;
 
     /// <summary>
     /// The part's OWN series inductance — the package, not the mounting loop.
@@ -387,7 +398,11 @@ public sealed class RailPartRowViewModel
 
     /// <summary>The sentence behind the L column — where each term came from, and what they add
     /// up to.</summary>
-    public string InductanceTooltip => $"{PartInductanceTooltip} {MountingInductanceTooltip}";
+    public string InductanceTooltip => _part.IsSeries
+        ? "A series element carries no mounting loop — it is not a branch to the reference plane — "
+        + "so this column is the L of its own R-L model, and empty where its model is a measured "
+        + "file or nothing at all."
+        : $"{PartInductanceTooltip} {MountingInductanceTooltip}";
 
     /// <summary>
     /// Where this part stops being a capacitor — <c>1/(2π·√(L_total·C))</c> over the numbers this
@@ -400,11 +415,16 @@ public sealed class RailPartRowViewModel
     /// RAISES it by √(marked/derated). <see cref="SelfResonanceTooltip"/> prints the row's own
     /// figure beside it when the two differ.
     /// </remarks>
-    public string SelfResonanceText =>
-        RailValueFormat.FormatWithUnit(Model?.SelfResonanceHz, RailQuantity.Frequency, UnresolvedText, 3);
+    public string SelfResonanceText => _part.IsSeries
+        ? NotApplicableText
+        : RailValueFormat.FormatWithUnit(Model?.SelfResonanceHz, RailQuantity.Frequency, UnresolvedText, 3);
 
     /// <summary>The stated f₀ beside the mounted one, because the difference is the point.</summary>
-    public string SelfResonanceTooltip => Model switch
+    public string SelfResonanceTooltip => _part.IsSeries
+        ? "A series element is not a capacitor, so it has no self-resonance for this column to "
+        + "report. Its whole behaviour over frequency is its model — the R-L or the measured file "
+        + "shown in the capacitance column."
+        : Model switch
     {
         null => "No resonance: this part did not resolve.",
         { SelfResonanceHz: null } => "railRF has no capacitance, no inductance, or neither, so there "
@@ -467,6 +487,14 @@ public sealed class RailPartRowViewModel
     {
         get
         {
+            // A series element is stamped as its own R-L or file BETWEEN two rail nodes, with no
+            // mounting loop (PdnSweep), so the library row's derived L and the geometry's loop are
+            // numbers the answer never uses. The R-L's own L is the one it does.
+            if (_part.IsSeries)
+                return _series is { IsMeasured: false } && _part.SeriesInductanceHenries is { } sl
+                    ? RailValueFormat.FormatWithUnit(sl, RailQuantity.Inductance, 3)
+                    : NotApplicableText;
+
             if (Model is not { } m) return MountingInductanceText;
 
             double? part = m.InductanceHenries, mount = m.MountingInductanceHenries;
@@ -601,6 +629,13 @@ public sealed class RailPartRowViewModel
     /// answer reports a LOWER BOUND rather than a total (R-rail25-3b).
     /// </remarks>
     public const string UnstatedText = "unstated";
+
+    /// <summary>
+    /// What a column that does not describe this KIND of part reads — a series element's
+    /// self-resonance, say. Neither <see cref="UnresolvedText"/> (nothing failed) nor
+    /// <see cref="UnstatedText"/> (nothing is missing).
+    /// </summary>
+    public const string NotApplicableText = "—";
 
     /// <summary>
     /// True where this row is the element the rail runs THROUGH rather than something hung off it

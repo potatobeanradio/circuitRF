@@ -171,10 +171,10 @@ names. **Use existing library…** reuses a library another design already built
 |---|---|
 | **Class** | The capacitor's dielectric class, from the drop-down; it sets the ESR default when no ESR is stated. **Other** marks a part that is not a capacitor &mdash; a ferrite bead, a resistor &mdash; which takes no bias curve. It is the model of a [series part](#series): its **ESR** is read as the part's DC resistance and its **Model file** as its measured impedance, and the other columns are ignored. |
 | **C**, **f₀** | The marked capacitance and the self-resonant frequency, each **with its unit** (`100 nF`, `28.9 MHz`). A bare number is not taken: its scale would be a guess. |
-| **ESL (datasheet)** | Optional &mdash; an inductance your table states. It is not used; it is checked against the next column and the row is flagged where they differ by more than 5 %. |
+| **ESL (datasheet)** | Optional &mdash; an inductance your table states. Where f₀ is also given it is not used: it is checked against the next column and the row is flagged where they differ by more than 5 %. Where f₀ is blank, it **is** the part's inductance, so C, ESL and ESR together describe a capacitor by its R-L-C values. |
 | **ESL from f₀** | Read-only: 1/((2πf₀)²C), the inductance railRF uses. |
 | **ESR** | Where you know it. Blank takes the class's default, and every number computed from one is marked indicative. |
-| **Model file** | Optional &mdash; the path, relative to the library, of the part's own Touchstone or SPICE model. Not a part number. It overrides the row, and a Touchstone file is the only route to a measured ESR. |
+| **Model file** | Optional &mdash; the path, relative to the library, of the part's own Touchstone file. Type it, or pick the file with the **…** button beside the cell. Not a part number. It overrides the row, and it is the only route to a measured ESR. A SPICE file can be named here, but it is not simulated: the row's own C, f₀ and ESR are used and the *model source* column names the file. |
 
 A bias curve can be added only to a capacitor row that states its capacitance.
 
@@ -251,6 +251,31 @@ copper that no chain of series parts connects to the source.
 
 With no artwork, the series rows are a chain in **row order**, nearest the source first, and each other
 part and load sits at the far end unless its row names the element it sits behind.
+
+On a series row the table's columns change meaning: the capacitance column shows the part's model (its
+R-L, or its file), the ESR column shows its DCR, and the self-resonance column reads **—**, because the
+part is not a capacitor. The inductance column shows the L of its R-L, or **—** where its model is a
+file. A series part has no mounting loop: it is a link between two pieces of the rail, not a branch
+to the reference plane.
+
+#### Modelling a 0 Ω link, a jumper, a ferrite bead or an RF choke {#series-recipes}
+
+Each of these is a series part: make it one first, as described above. Until you do, railRF treats
+it as a decoupling capacitor, and the parts table reads *unresolved* in the columns only a capacitor
+could fill. A series part's model is two things: its **DCR** and its **impedance over frequency**.
+You can state them on the rail's row, in the editor under the table, or once in the part library on a row
+classed **Other**, where **ESR** is the DCR and **Model file** is the impedance file. A library row
+cannot state an R-L. Use a Touchstone file there, or state the R-L on each rail's row.
+
+| Part | DCR | Impedance over frequency |
+|---|---|---|
+| **0 Ω link** | The datasheet's maximum resistance. | Leave it blank: the part is modelled as a 0 Ω link, and the result says so. For a large link at high frequency, state an R-L of `0` Ω plus the package inductance. |
+| **Jumper** (fitted) | The same as a 0 Ω link, or the wire's own resistance. | The same as a 0 Ω link. A jumper that is not fitted is not a series part: delete the row. Clearing a series part's *mounted* box opens the rail, and railRF refuses the run. |
+| **Ferrite bead** | The datasheet DCR. | **A Touchstone file**: the supplier's two-port S-parameters, measured series-thru. A bead's impedance falls with DC current and a datasheet curve is usually measured with none, so where the supplier offers curves at several bias currents, pick the one nearest your load current. An R-L is accepted, but it cannot follow a bead's curve, and railRF says so beside every result it produces. There is no "impedance at 100 MHz" field: that single figure does not say how much of it is R and how much is L. |
+| **RF choke** (series inductor) | The datasheet DCR. | Below its self-resonance, an R-L works: R = its DCR, L = its inductance, with a unit (`10 µH`). Above its self-resonance a choke turns capacitive, and an R-L keeps rising, which reads as better filtering than the part gives. Where that band matters, use the supplier's Touchstone file. |
+
+A blank DCR is not read as zero. The part still carries the rail's current, and the DC answer then reports
+its drop as a **lower bound**, not a total.
 
 ## Q0 &mdash; is this rail connected, and what does it cost to get there? {#q0}
 

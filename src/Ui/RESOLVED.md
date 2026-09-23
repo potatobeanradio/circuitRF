@@ -35132,3 +35132,27 @@ is on both context menus (the no-selection one too, since the book button hides 
 on a design with a library Use existing merges into that library's open editor
 (`MergeIntoPartLibrary`) — an unsaved, undoable edit, never a write behind an editor that may hold
 changes of its own.
+
+## railRF — a series row read "unresolved"; the library's model file had no picker (2026-09-23)
+
+Asked how to model a 0 Ω link, jumper, ferrite bead or RF choke, given that the parts table read
+*unresolved* for most of such a part's columns.
+
+- **The root cause is the default connection, not a missing feature.** Every rail row is a SHUNT
+  (decoupling) part until someone says otherwise. A bead left shunt has no C, no f₀ and no class ESR,
+  so every capacitor column reads *unresolved*. Right-click ▸ **Make series element** is the fix, and
+  the series editor (DCR + R-L or Touchstone) or an `Other` library row supplies the model.
+- **Even as a series row, two columns still read "unresolved"**: the self-resonance column always did
+  (`Model?.SelfResonanceHz` is null for a part with no C), and the L column showed the library row's
+  derived L or a mounting loop — numbers `PdnSweep` never stamps on a series element, which is its own
+  R-L or file between two rail nodes with no mounting loop. Both now read `NotApplicableText` ("—"),
+  or the R-L's own L; the ESR/capacitance tooltips describe the DCR and model rather than saying the
+  part "did not resolve"; and `IsEsrIndicative` is false on a series row (an `Other` class otherwise
+  reads as a class-default ESR and was drawn italic).
+- **The library editor's Model file cell had no Browse**, unlike the series editor.
+  `PartLibraryRowViewModel.SetModelFile` stores the pick RELATIVE to the `.crlib` in forward slashes.
+- **Two documentation claims were wrong.** A SPICE `ModelRef` is recorded as the model source and NOT
+  simulated (`RailPartResolver.FromFile` uses the row). And a stated ESL IS used — as the inductance —
+  wherever f₀ is blank (`FromRow`: derived ?? stated), so C + ESL + ESR is a working R-L-C triple;
+  the column tooltip said it was never used. `docs/design/railrf.md` §2.2/§4.3, the user reference,
+  and the tooltips now say both.
